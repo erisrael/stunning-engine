@@ -34,9 +34,10 @@ export async function templateXlsx(key: TemplateKey): Promise<Buffer> {
     cell.note = `${f.label}\n${req}\n${f.description}`;
   });
   for (const ex of t.examples()) sheet.addRow(t.fields.map((f) => ex[f.key] ?? ""));
-  sheet.getRows(2, t.examples().length)?.forEach((r) => {
+  for (let i = 2; i <= t.examples().length + 1; i++) {
+    const r = sheet.getRow(i);
     r.font = { italic: true, color: { argb: "FF4B5563" } };
-  });
+  }
 
   // Allowed values live on a Lists sheet and drive dropdown validation on 500 rows.
   const lists = wb.addWorksheet("Lists");
