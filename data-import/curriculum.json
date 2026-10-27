@@ -1,0 +1,4148 @@
+{
+  "grade-5": {
+    "name": "Grade 5",
+    "type": "Middle School",
+    "subjects": [
+      {
+        "id": "g5-math",
+        "name": "Mathematics",
+        "units": [
+          {
+            "id": "unit-1790061807366",
+            "title": "Unit 1: ልኬት ስፋት እና ይዘት",
+            "parts": [
+              {
+                "id": "part-1790061837824",
+                "title": "Part 1: ልኬት ስፋት እና ይዘት",
+                "videos": [
+                  {
+                    "id": "vid-1790061937549",
+                    "cameraCode": "C0359 & TAKE THIS ONE",
+                    "title": "ልኬት ስፋት እና ይዘት",
+                    "description": "Take this one continue after C0359"
+                  }
+                ]
+              },
+              {
+                "id": "part-1790061950957",
+                "title": "Part 2: ልኬት ስፋት እና ይዘት",
+                "videos": [
+                  {
+                    "id": "vid-1790061980644",
+                    "cameraCode": "PART 2",
+                    "title": "ልኬት ስፋት እና ይዘት",
+                    "description": "ምስሌ"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "unit-1790062025699",
+            "title": "Unit 2: ክፍልፋዮች",
+            "parts": [
+              {
+                "id": "part-1790110941815",
+                "title": "Part 1: ክፍለፋዮች",
+                "videos": [
+                  {
+                    "id": "vid-1790110982979",
+                    "cameraCode": "00002",
+                    "title": "ክፍለፋዮች እና አራቱ መሠረታዊ ስሌቶች",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1790110963169",
+                "title": "Part 2: ክፍለፋዮች እና አራቱ መሠረታዊ ስሌቶች",
+                "videos": [
+                  {
+                    "id": "vid-1790111028027",
+                    "cameraCode": "00003 AND 00004",
+                    "title": "ክፍለፋዮች እና አራቱ መሠረታዊ ስሌቶች",
+                    "description": ""
+                  },
+                  {
+                    "id": "vid-1790111075969",
+                    "cameraCode": "00005",
+                    "title": "ምሳሌ 3",
+                    "description": ""
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "unit-1790106185471",
+            "title": "Unit 3: አስርዮሾች",
+            "parts": [
+              {
+                "id": "part-1790150090500",
+                "title": "Part 1:",
+                "videos": []
+              },
+              {
+                "id": "part-1790150098019",
+                "title": "Part 2:",
+                "videos": []
+              }
+            ]
+          },
+          {
+            "id": "unit-1790106221917",
+            "title": "Unit 4: መቶኛ",
+            "parts": [
+              {
+                "id": "part-1790150119383",
+                "title": "Part 1:",
+                "videos": []
+              },
+              {
+                "id": "part-1790150130878",
+                "title": "Part 2:",
+                "videos": []
+              }
+            ]
+          },
+          {
+            "id": "unit-1790106238101",
+            "title": "Unit 5: በተለዋዋጮች መስራት",
+            "parts": [
+              {
+                "id": "part-1790150142516",
+                "title": "Part 1:",
+                "videos": []
+              },
+              {
+                "id": "part-1790150188544",
+                "title": "Part 2:",
+                "videos": []
+              }
+            ]
+          },
+          {
+            "id": "unit-1790106253986",
+            "title": "Unit 6: መረጃ አያያዝ",
+            "parts": [
+              {
+                "id": "part-1790150200938",
+                "title": "Part 1:",
+                "videos": []
+              },
+              {
+                "id": "part-1790150212066",
+                "title": "Part 2:",
+                "videos": []
+              }
+            ]
+          },
+          {
+            "id": "unit-1790106273646",
+            "title": "Unit 7: የጠጣር ምስሎች ዓይነትና ትርጉም",
+            "parts": []
+          },
+          {
+            "id": "unit-1790106289672",
+            "title": "Unit 8: መስመሮች፣ አንግሎች እና ልኬት",
+            "parts": []
+          }
+        ]
+      },
+      {
+        "id": "g5-eng",
+        "name": "English",
+        "units": [
+          {
+            "id": "unit-1790106325517",
+            "title": "Unit 1: Holiday",
+            "parts": []
+          },
+          {
+            "id": "unit-1790106336257",
+            "title": "Unit 2: Dry Season",
+            "parts": []
+          },
+          {
+            "id": "unit-1790106346423",
+            "title": "Unit 3: Accidents",
+            "parts": []
+          },
+          {
+            "id": "unit-1790106356695",
+            "title": "Unit 4: Minerals",
+            "parts": []
+          },
+          {
+            "id": "unit-1790106370432",
+            "title": "Unit 5: Beekeeping",
+            "parts": []
+          },
+          {
+            "id": "unit-1790106384341",
+            "title": "Unit 6: Water Pollution",
+            "parts": []
+          },
+          {
+            "id": "unit-1790106435622",
+            "title": "Unit 7: Good Citizens",
+            "parts": []
+          },
+          {
+            "id": "unit-1790106449309",
+            "title": "Unit 8: Healthcare Facilities",
+            "parts": []
+          },
+          {
+            "id": "unit-1790106461557",
+            "title": "Unit 9: Living With Differences",
+            "parts": []
+          },
+          {
+            "id": "unit-1790106474135",
+            "title": "Unit 10: Assistive Technology",
+            "parts": []
+          }
+        ]
+      },
+      {
+        "id": "g5-sci",
+        "name": "General Science",
+        "units": []
+      },
+      {
+        "id": "g5-soc",
+        "name": "Social Studies",
+        "units": []
+      },
+      {
+        "id": "subj-1790106626398",
+        "name": "Enviromental Science",
+        "units": [
+          {
+            "id": "unit-1790106662593",
+            "title": "ምዕራፍ 1: የኢትዮጵያ መገኛ ምዕራፍ",
+            "parts": []
+          },
+          {
+            "id": "unit-1790106675705",
+            "title": "2: ሳይንስን መገንዘብ ምዕራፍ",
+            "parts": []
+          },
+          {
+            "id": "unit-1790106690014",
+            "title": "3: ተፈጥሮአዊ አካባቢ",
+            "parts": []
+          },
+          {
+            "id": "unit-1790106702135",
+            "title": "ምዕራፍ 4: የባህል ብዝኀነት በኢትዮጵያ",
+            "parts": []
+          },
+          {
+            "id": "unit-1790106707138",
+            "title": "ምዕራፍ 5: ተፅዕኖ የሚፈጥሩ ድንበር ተሻጋሪ ጉዳዮች",
+            "parts": []
+          }
+        ]
+      }
+    ]
+  },
+  "grade-6": {
+    "name": "Grade 6",
+    "type": "Middle School",
+    "subjects": [
+      {
+        "id": "g6-math",
+        "name": "Mathematics",
+        "units": [
+          {
+            "id": "unit-1790106869942",
+            "title": "ምዕራፍ 1: የሙሉ ቁጥሮች ተካፋይነት",
+            "parts": []
+          },
+          {
+            "id": "unit-1790106881513",
+            "title": "ምዕራፍ 2: ክፍልፋዮች፣አስርዮሾች እና መቶኛዎች",
+            "parts": []
+          },
+          {
+            "id": "unit-1790106892141",
+            "title": "ምዕራፍ 3: ክፍልፋዮች፣አስርዮሾችና አራቱ መሰረታዊ ስሌቶች",
+            "parts": []
+          },
+          {
+            "id": "unit-1790106903931",
+            "title": "ምዕራፍ 4: ያለእኩልነት ዓረፍተ-ነገሮች እና ወደረኛነት",
+            "parts": []
+          },
+          {
+            "id": "unit-1790106911418",
+            "title": "ምዕራፍ 5: ጠለልና ጠጣር ምስሎች",
+            "parts": []
+          },
+          {
+            "id": "unit-1790106915549",
+            "title": "ምዕራፍ 6: መረጃ አያያዝ",
+            "parts": []
+          }
+        ]
+      },
+      {
+        "id": "g6-eng",
+        "name": "English",
+        "units": [
+          {
+            "id": "unit-1790106963025",
+            "title": "Unit 1: Traditional Games",
+            "parts": []
+          },
+          {
+            "id": "unit-1790106976294",
+            "title": "Unit 2: Seasons and Human Activities",
+            "parts": []
+          },
+          {
+            "id": "unit-1790106985339",
+            "title": "Unit 3: Traffic Police Officers",
+            "parts": []
+          },
+          {
+            "id": "unit-1790106996457",
+            "title": "Unit 4: Minerals",
+            "parts": []
+          },
+          {
+            "id": "unit-1790107011410",
+            "title": "Unit 5: Poultry",
+            "parts": []
+          },
+          {
+            "id": "unit-1790107032261",
+            "title": "Unit 6: Air Pollution",
+            "parts": []
+          },
+          {
+            "id": "unit-1790107045214",
+            "title": "Unit 7: Hard Work",
+            "parts": []
+          },
+          {
+            "id": "unit-1790107056264",
+            "title": "Unit 8: First Aid",
+            "parts": []
+          },
+          {
+            "id": "unit-1790107066207",
+            "title": "Unit 9: Unity is Strength",
+            "parts": []
+          },
+          {
+            "id": "unit-1790107075080",
+            "title": "Unit 10: Mobile Phones",
+            "parts": []
+          }
+        ]
+      },
+      {
+        "id": "g6-sci",
+        "name": "General Science",
+        "units": []
+      },
+      {
+        "id": "g6-soc",
+        "name": "Social Studies",
+        "units": []
+      },
+      {
+        "id": "subj-1790107227531",
+        "name": "Enviromental Science",
+        "units": [
+          {
+            "id": "unit-1790107257953",
+            "title": "ምዕራፍ 1: የምሥራቅ አፍሪካ መገኛ",
+            "parts": []
+          },
+          {
+            "id": "unit-1790107266301",
+            "title": "ምዕራፍ 2: ሳይንስን መገንዘብ",
+            "parts": []
+          },
+          {
+            "id": "unit-1790107274784",
+            "title": "ምዕራፍ 3: ተፈጥሮአዊ አካባቢ",
+            "parts": []
+          },
+          {
+            "id": "unit-1790107283597",
+            "title": "ምዕራፍ 4: ማኅበራዊ አካባቢ",
+            "parts": []
+          },
+          {
+            "id": "unit-1790107287512",
+            "title": "ምዕራፍ 5: ድንበር ተሻጋሪ ጉዳዮች",
+            "parts": []
+          }
+        ]
+      }
+    ]
+  },
+  "grade-7": {
+    "name": "Grade 7",
+    "type": "Middle School",
+    "subjects": [
+      {
+        "id": "g7-math",
+        "name": "Mathematics",
+        "units": [
+          {
+            "id": "unit-1790107341648",
+            "title": "Unit 1: Basic Concept of sets",
+            "parts": [
+              {
+                "id": "part-1790196865634",
+                "title": "Part 1:",
+                "videos": [
+                  {
+                    "id": "vid-1790196972853",
+                    "cameraCode": "C0276 & C0277 & C0279",
+                    "title": "Basic concepts of sets",
+                    "description": ""
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "unit-1790107350236",
+            "title": "Unit 2: Integers",
+            "parts": [
+              {
+                "id": "part-1790142277173",
+                "title": "Part 1: Integers",
+                "videos": [
+                  {
+                    "id": "vid-1790752291819",
+                    "cameraCode": "00004",
+                    "title": "Inegers",
+                    "description": "Ask Mubarik"
+                  }
+                ]
+              },
+              {
+                "id": "part-1790142325242",
+                "title": "Part 2: To be determined",
+                "videos": [
+                  {
+                    "id": "vid-1790142348043",
+                    "cameraCode": "00006 & 00007",
+                    "title": "to be determined",
+                    "description": ""
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "unit-1790107358765",
+            "title": "Unit 3: Linear Equations",
+            "parts": []
+          },
+          {
+            "id": "unit-1790107367811",
+            "title": "Unit 4: Ratio, Proportions, and percentage",
+            "parts": []
+          },
+          {
+            "id": "unit-1790107376803",
+            "title": "Unit 5: Perimeter and area of plane figure",
+            "parts": []
+          },
+          {
+            "id": "unit-1790107385990",
+            "title": "Unit 6: Concurrency of plane figure",
+            "parts": []
+          },
+          {
+            "id": "unit-1790107390303",
+            "title": "Unit 7: Data Handling",
+            "parts": []
+          }
+        ]
+      },
+      {
+        "id": "g7-eng",
+        "name": "English",
+        "units": [
+          {
+            "id": "unit-1790107414357",
+            "title": "Unit 1: Living in Rural Area",
+            "parts": []
+          },
+          {
+            "id": "unit-1790107423597",
+            "title": "Unit 2: History of Calendar",
+            "parts": []
+          },
+          {
+            "id": "unit-1790107432561",
+            "title": "Unit 3: Road Safety",
+            "parts": []
+          },
+          {
+            "id": "unit-1790107441194",
+            "title": "Unit 4: Endemic Animals in Ethiopia",
+            "parts": []
+          },
+          {
+            "id": "unit-1790107451769",
+            "title": "Unit 5: Diary",
+            "parts": []
+          },
+          {
+            "id": "unit-1790107523239",
+            "title": "Unit 6: Land Conservation",
+            "parts": []
+          },
+          {
+            "id": "unit-1790107534857",
+            "title": "Unit 7: Volunteerism",
+            "parts": []
+          },
+          {
+            "id": "unit-1790107544593",
+            "title": "Unit 8: Fitness",
+            "parts": []
+          },
+          {
+            "id": "unit-1790107561798",
+            "title": "Unit 9: Self-Expressions",
+            "parts": []
+          },
+          {
+            "id": "unit-1790107571511",
+            "title": "Unit 10: Computer Development",
+            "parts": []
+          }
+        ]
+      },
+      {
+        "id": "g7-sci",
+        "name": "General Science",
+        "units": [
+          {
+            "id": "unit-1790107636263",
+            "title": "Unit 1: Basic Concepts of Science",
+            "parts": []
+          },
+          {
+            "id": "unit-1790107651142",
+            "title": "Unit 2: Matter in Our Surrounding",
+            "parts": [
+              {
+                "id": "part-1793021339778",
+                "title": "Part 1: Topic Name",
+                "videos": [
+                  {
+                    "id": "vid-1793021361485",
+                    "cameraCode": "C0021",
+                    "title": "TO BE DETERMINED",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1793021366679",
+                "title": "Part 2: Topic Name",
+                "videos": []
+              }
+            ]
+          },
+          {
+            "id": "unit-1790107661125",
+            "title": "Unit 3: Elements, Compound and Chemical Reaction",
+            "parts": []
+          },
+          {
+            "id": "unit-1790107668888",
+            "title": "Unit 4: Cell as the Basis of Life",
+            "parts": []
+          },
+          {
+            "id": "unit-1790107680348",
+            "title": "Unit 5: Living Things and Their Diversity",
+            "parts": []
+          },
+          {
+            "id": "unit-1790107690211",
+            "title": "Unit 6: Earth in Space",
+            "parts": []
+          },
+          {
+            "id": "unit-1790107700794",
+            "title": "Unit 7: Motion, Force, Energy And Energy Resources",
+            "parts": []
+          }
+        ]
+      },
+      {
+        "id": "g7-soc",
+        "name": "Social Studies",
+        "units": [
+          {
+            "id": "unit-1790107730136",
+            "title": "Unit 1: Physical Characteristics of the Earth",
+            "parts": []
+          },
+          {
+            "id": "unit-1790107741325",
+            "title": "Unit 2: Human Evolution and World Population",
+            "parts": []
+          },
+          {
+            "id": "unit-1790107751983",
+            "title": "Unit 3: Human and Natural Resources",
+            "parts": []
+          },
+          {
+            "id": "unit-1790107762821",
+            "title": "Unit 4: Ancient Civilizations and Medieva",
+            "parts": []
+          },
+          {
+            "id": "unit-1790107771626",
+            "title": "l Unit 5: Ancient History of Africa",
+            "parts": []
+          },
+          {
+            "id": "unit-1790107791097",
+            "title": "Unit 6: States and Peoples of Ancient and Medieval Ethiopia",
+            "parts": []
+          },
+          {
+            "id": "unit-1790107796099",
+            "title": "Unit 7: Contemporary Global Issues",
+            "parts": []
+          }
+        ]
+      },
+      {
+        "id": "subj-1792069213132",
+        "name": "Chemistry",
+        "units": [
+          {
+            "id": "unit-1792069213132-7z4wa",
+            "title": "Unit 1: Overview & Fundamentals",
+            "parts": [
+              {
+                "id": "part-1792069213132-1",
+                "title": "Part 1: Foundational Theory",
+                "videos": [
+                  {
+                    "id": "vid-1792069213132-1",
+                    "cameraCode": "C001",
+                    "title": "Introduction & Core Concepts",
+                    "description": "Camera shot C001 covering main lecture topic setup and key definitions."
+                  },
+                  {
+                    "id": "vid-1792069213132-2",
+                    "cameraCode": "C002",
+                    "title": "Worked Examples & Walkthrough",
+                    "description": "Camera shot C002 step-by-step problem solving demonstration on blackboard."
+                  }
+                ]
+              },
+              {
+                "id": "part-1792069213132-2",
+                "title": "Part 2: Review & Practice Questions",
+                "videos": [
+                  {
+                    "id": "vid-1792069213132-3",
+                    "cameraCode": "C003",
+                    "title": "Student Q&A and Recap Session",
+                    "description": "Camera shot C003 covering exercise review and common mistakes."
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "unit-1792069213132-9reyp",
+            "title": "Unit 2: Overview & Fundamentals",
+            "parts": [
+              {
+                "id": "part-1792069213132-3",
+                "title": "Part 1: Key Concepts",
+                "videos": [
+                  {
+                    "id": "vid-1792069248247",
+                    "cameraCode": "0Z4A1816",
+                    "title": "To be determined",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1792069251418",
+                "title": "Part 2: Topic Name",
+                "videos": []
+              }
+            ]
+          },
+          {
+            "id": "unit-1792069213132-lhdw1",
+            "title": "Unit 3: Overview & Fundamentals",
+            "parts": [
+              {
+                "id": "part-1792069270299",
+                "title": "Part 1: Topic Name",
+                "videos": [
+                  {
+                    "id": "vid-1792069295619",
+                    "cameraCode": "0Z4A1808",
+                    "title": "To be determined",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1792069297859",
+                "title": "Part 2: Topic Name",
+                "videos": [
+                  {
+                    "id": "vid-1792069314524",
+                    "cameraCode": "0Z4A1809",
+                    "title": "To be determined",
+                    "description": ""
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "unit-1792069213132-ln7ln",
+            "title": "Unit 4: Overview & Fundamentals",
+            "parts": []
+          },
+          {
+            "id": "unit-1792069213132-y4uf1",
+            "title": "Unit 5: Overview & Fundamentals",
+            "parts": []
+          },
+          {
+            "id": "unit-1792069213132-m2hz0",
+            "title": "Unit 6: Overview & Fundamentals",
+            "parts": []
+          },
+          {
+            "id": "unit-1792069213132-u6pw9",
+            "title": "Unit 7: Overview & Fundamentals",
+            "parts": []
+          },
+          {
+            "id": "unit-1792069213132-mhcci",
+            "title": "Unit 8: Overview & Fundamentals",
+            "parts": []
+          },
+          {
+            "id": "unit-1792069213132-m2qcs",
+            "title": "Unit 9: Overview & Fundamentals",
+            "parts": []
+          },
+          {
+            "id": "unit-1792069213132-e56iu",
+            "title": "Unit 10: Overview & Fundamentals",
+            "parts": []
+          }
+        ]
+      }
+    ]
+  },
+  "grade-8": {
+    "name": "Grade 8",
+    "type": "Middle School",
+    "subjects": [
+      {
+        "id": "g8-math",
+        "name": "Mathematics",
+        "units": [
+          {
+            "id": "unit-1792068878964",
+            "title": "Unit 1:",
+            "parts": []
+          },
+          {
+            "id": "unit-1792068884321",
+            "title": "Unit 2:",
+            "parts": [
+              {
+                "id": "part-1792068896942",
+                "title": "Part 1: Topic Name",
+                "videos": [
+                  {
+                    "id": "vid-1792068964027",
+                    "cameraCode": "0Z4A1795",
+                    "title": "To be determined",
+                    "description": "Studio 2"
+                  }
+                ]
+              },
+              {
+                "id": "part-1792068902100",
+                "title": "Part 2: Topic Name",
+                "videos": [
+                  {
+                    "id": "vid-1792068986493",
+                    "cameraCode": "0Z4A1797",
+                    "title": "To be determined",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1792068906282",
+                "title": "Part 3: Topic Name",
+                "videos": [
+                  {
+                    "id": "vid-1792069012731",
+                    "cameraCode": "0Z4A1800",
+                    "title": "To be determined",
+                    "description": ""
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "g8-eng",
+        "name": "English",
+        "units": [
+          {
+            "id": "unit-1790107902199",
+            "title": "Unit 1: Economic Activities in Rural Areas",
+            "parts": []
+          },
+          {
+            "id": "unit-1790107915923",
+            "title": "Unit 2: Types of Calendars",
+            "parts": []
+          },
+          {
+            "id": "unit-1790107925736",
+            "title": "Unit 3: Traffic Rules and Regulations",
+            "parts": []
+          },
+          {
+            "id": "unit-1790107935434",
+            "title": "Unit 4: Animal Conservation",
+            "parts": []
+          },
+          {
+            "id": "unit-1790107945838",
+            "title": "Unit 5: Livestock Farming",
+            "parts": []
+          },
+          {
+            "id": "unit-1790107956989",
+            "title": "Unit 6: Afforestation",
+            "parts": []
+          },
+          {
+            "id": "unit-1790107965330",
+            "title": "Unit 7: Charity",
+            "parts": []
+          },
+          {
+            "id": "unit-1790107976873",
+            "title": "Unit 8: Personal Hygiene",
+            "parts": []
+          },
+          {
+            "id": "unit-1790107987455",
+            "title": "Unit 9: Gender Equality",
+            "parts": []
+          },
+          {
+            "id": "unit-1790107998188",
+            "title": "Unit 10: Computer Technology",
+            "parts": []
+          }
+        ]
+      },
+      {
+        "id": "g8-sci",
+        "name": "General Science",
+        "units": [
+          {
+            "id": "unit-1790108035488",
+            "title": "Unit 1 - Basics of Scientific Investigation",
+            "parts": []
+          },
+          {
+            "id": "unit-1790108044970",
+            "title": "Unit 2 - Composition of Matter",
+            "parts": []
+          },
+          {
+            "id": "unit-1790108053489",
+            "title": "Unit 3 - Classification of Compounds",
+            "parts": []
+          },
+          {
+            "id": "unit-1790108063284",
+            "title": "Unit 4 - Human Body Systems and Health",
+            "parts": []
+          },
+          {
+            "id": "unit-1790108074729",
+            "title": "Unit 5 - Ecosystem and Conservation of Natural Resources",
+            "parts": []
+          },
+          {
+            "id": "unit-1790108086467",
+            "title": "Unit 6 - The Solar System",
+            "parts": []
+          },
+          {
+            "id": "unit-1790108098700",
+            "title": "Unit 7 - Physical Phenomena in the Surrounding",
+            "parts": []
+          }
+        ]
+      },
+      {
+        "id": "g8-soc",
+        "name": "Social Studies",
+        "units": [
+          {
+            "id": "unit-1790108156145",
+            "title": "Unit 1 - Physical Characteristics of the Earth",
+            "parts": []
+          },
+          {
+            "id": "unit-1790108167719",
+            "title": "Unit 2 - People and Socioeconomic Activities",
+            "parts": []
+          },
+          {
+            "id": "unit-1790108179980",
+            "title": "Unit 3 - Natural Resources and Socioeconomic Development",
+            "parts": []
+          },
+          {
+            "id": "unit-1790108191593",
+            "title": "Unit 4 - Early Modern and Modern World History",
+            "parts": []
+          },
+          {
+            "id": "unit-1790108201522",
+            "title": "Unit 5 - Africa since the 1500s",
+            "parts": []
+          },
+          {
+            "id": "unit-1790108211962",
+            "title": "Unit 6 - Modern History of Ethiopia",
+            "parts": []
+          },
+          {
+            "id": "unit-1790108221444",
+            "title": "Unit 7 - Contemporary Global Issues",
+            "parts": []
+          }
+        ]
+      },
+      {
+        "id": "subj-1792069041824",
+        "name": "Chemistry",
+        "units": [
+          {
+            "id": "unit-1792069041824-0hbuv",
+            "title": "Unit 1: Overview & Fundamentals",
+            "parts": [
+              {
+                "id": "part-1792069041824-1",
+                "title": "Part 1: Foundational Theory",
+                "videos": [
+                  {
+                    "id": "vid-1792069041824-1",
+                    "cameraCode": "C001",
+                    "title": "Introduction & Core Concepts",
+                    "description": "Camera shot C001 covering main lecture topic setup and key definitions."
+                  },
+                  {
+                    "id": "vid-1792069041824-2",
+                    "cameraCode": "C002",
+                    "title": "Worked Examples & Walkthrough",
+                    "description": "Camera shot C002 step-by-step problem solving demonstration on blackboard."
+                  }
+                ]
+              },
+              {
+                "id": "part-1792069041824-2",
+                "title": "Part 2: Review & Practice Questions",
+                "videos": [
+                  {
+                    "id": "vid-1792069041824-3",
+                    "cameraCode": "C003",
+                    "title": "Student Q&A and Recap Session",
+                    "description": "Camera shot C003 covering exercise review and common mistakes."
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "unit-1792069041824-ejmaw",
+            "title": "Unit 2: Overview & Fundamentals",
+            "parts": [
+              {
+                "id": "part-1792069041824-3",
+                "title": "Part 1: Key Concepts",
+                "videos": [
+                  {
+                    "id": "vid-1792069173792",
+                    "cameraCode": "0Z4A1812",
+                    "title": "To be determined",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1792069176700",
+                "title": "Part 2: Topic Name",
+                "videos": [
+                  {
+                    "id": "vid-1792069196391",
+                    "cameraCode": "0Z4A1813",
+                    "title": "To be determined",
+                    "description": ""
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "unit-1792069041824-o7kt8",
+            "title": "Unit 3: Overview & Fundamentals",
+            "parts": [
+              {
+                "id": "part-1792069059710",
+                "title": "Part 1: Topic Name",
+                "videos": [
+                  {
+                    "id": "vid-1792069077949",
+                    "cameraCode": "0Z4A1804",
+                    "title": "To be determined",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1792069080120",
+                "title": "Part 2: Topic Name",
+                "videos": [
+                  {
+                    "id": "vid-1792069108144",
+                    "cameraCode": "0Z4A1805",
+                    "title": "To be determined",
+                    "description": ""
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "unit-1792069041824-2pres",
+            "title": "Unit 4: Overview & Fundamentals",
+            "parts": []
+          },
+          {
+            "id": "unit-1792069041824-0qrog",
+            "title": "Unit 5: Overview & Fundamentals",
+            "parts": []
+          },
+          {
+            "id": "unit-1792069041824-i95f4",
+            "title": "Unit 6: Overview & Fundamentals",
+            "parts": []
+          },
+          {
+            "id": "unit-1792069041824-tt0o8",
+            "title": "Unit 7: Overview & Fundamentals",
+            "parts": []
+          },
+          {
+            "id": "unit-1792069041824-33epz",
+            "title": "Unit 8: Overview & Fundamentals",
+            "parts": []
+          },
+          {
+            "id": "unit-1792069041824-kg0m0",
+            "title": "Unit 9: Overview & Fundamentals",
+            "parts": []
+          },
+          {
+            "id": "unit-1792069041824-osj96",
+            "title": "Unit 10: Overview & Fundamentals",
+            "parts": []
+          }
+        ]
+      }
+    ]
+  },
+  "grade-9": {
+    "name": "Grade 9",
+    "type": "Secondary School",
+    "subjects": [
+      {
+        "id": "g9-math",
+        "name": "Mathematics",
+        "units": [
+          {
+            "id": "unit-1790094904575",
+            "title": "Unit 1: Further on sets",
+            "parts": []
+          },
+          {
+            "id": "unit-1790094914377",
+            "title": "Unit 2: The number system",
+            "parts": []
+          },
+          {
+            "id": "unit-1790094926656",
+            "title": "Unit 3: Solving equations",
+            "parts": []
+          },
+          {
+            "id": "unit-1790094937395",
+            "title": "Unit 4: Solving inequalities",
+            "parts": []
+          },
+          {
+            "id": "unit-1790094945993",
+            "title": "Unit 5: Introduction to trigonometry",
+            "parts": []
+          },
+          {
+            "id": "unit-1790094954536",
+            "title": "Unit 6: Regular polygons",
+            "parts": []
+          },
+          {
+            "id": "unit-1790094963200",
+            "title": "Unit 7: Congruency and similarity",
+            "parts": []
+          },
+          {
+            "id": "unit-1790094973994",
+            "title": "Unit 8: Vectors in two dimensions",
+            "parts": []
+          },
+          {
+            "id": "unit-1790094977583",
+            "title": "Unit 9: Statistics and probability",
+            "parts": []
+          }
+        ]
+      },
+      {
+        "id": "g9-eng",
+        "name": "English",
+        "units": [
+          {
+            "id": "unit-1790095124072",
+            "title": "Unit 1: Living in Urban Areas",
+            "parts": []
+          },
+          {
+            "id": "unit-1790095134852",
+            "title": "Unit 2: Study Skills",
+            "parts": [
+              {
+                "id": "part-1790319267962",
+                "title": "Part 1: Topic Name",
+                "videos": [
+                  {
+                    "id": "vid-1790319366812",
+                    "cameraCode": "00001 & 00002",
+                    "title": "COLLOCATIONS",
+                    "description": "00001 & 00002  1 VIDEO CUT IN 2"
+                  }
+                ]
+              },
+              {
+                "id": "part-1790319376800",
+                "title": "Part 2:",
+                "videos": [
+                  {
+                    "id": "vid-1790319445399",
+                    "cameraCode": "00003 & 00004",
+                    "title": "ADDITION MARKERS",
+                    "description": "00003 & 00004 1 VIDEO CUT IN 2"
+                  }
+                ]
+              },
+              {
+                "id": "part-1790319474087",
+                "title": "Part 3: Topic Name",
+                "videos": [
+                  {
+                    "id": "vid-1790319586532",
+                    "cameraCode": "00005 & 00006",
+                    "title": "ADVERBS OF FREQUENCY",
+                    "description": "00005 & 00006 ARE 1 VIDEO CUT IN 2"
+                  }
+                ]
+              },
+              {
+                "id": "part-1790692045810",
+                "title": "Part 4:",
+                "videos": [
+                  {
+                    "id": "vid-1790692923181",
+                    "cameraCode": "C0169",
+                    "title": "UNKNOWN",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1790692052082",
+                "title": "Part 5:",
+                "videos": [
+                  {
+                    "id": "vid-1790692954944",
+                    "cameraCode": "C0170",
+                    "title": "UNKNOWN",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1790692057996",
+                "title": "Part 6:",
+                "videos": [
+                  {
+                    "id": "vid-1790692983159",
+                    "cameraCode": "C0171",
+                    "title": "UNKNOWN",
+                    "description": ""
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "unit-1790095149061",
+            "title": "Unit 3: Traffic Accident",
+            "parts": []
+          },
+          {
+            "id": "unit-1790095163516",
+            "title": "Unit 4: National Parks",
+            "parts": []
+          },
+          {
+            "id": "unit-1790095179276",
+            "title": "Unit 5: Horticulture",
+            "parts": []
+          },
+          {
+            "id": "unit-1790095194738",
+            "title": "Unit 6: Poverty in Ethiopia",
+            "parts": []
+          },
+          {
+            "id": "unit-1790095209478",
+            "title": "Unit 7: Community Services",
+            "parts": []
+          },
+          {
+            "id": "unit-1790095240541",
+            "title": "Unit 8: Communicable Diseases",
+            "parts": []
+          },
+          {
+            "id": "unit-1790095260202",
+            "title": "Unit 9: Fairness and Equity",
+            "parts": []
+          },
+          {
+            "id": "unit-1790095278295",
+            "title": "Unit 10: The Internet",
+            "parts": []
+          }
+        ]
+      },
+      {
+        "id": "g9-phy",
+        "name": "Physics",
+        "units": [
+          {
+            "id": "unit-1790095344362",
+            "title": "Unit 1: Physics and Human Society",
+            "parts": []
+          },
+          {
+            "id": "unit-1790095357452",
+            "title": "Unit 2: Physical Quantities",
+            "parts": [
+              {
+                "id": "part-1790142977146",
+                "title": "Part 1: Physical Quantities",
+                "videos": [
+                  {
+                    "id": "vid-1790143008282",
+                    "cameraCode": "00011 & 00015",
+                    "title": "Physical Quantity",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1790690935297",
+                "title": "Part 2: Topic Name",
+                "videos": [
+                  {
+                    "id": "vid-1790691012210",
+                    "cameraCode": "C0192",
+                    "title": "What are data measuring scale",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1790690943561",
+                "title": "Part 3:",
+                "videos": [
+                  {
+                    "id": "vid-1790691094916",
+                    "cameraCode": "C0191",
+                    "title": "What is scientific notation?",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1790690948429",
+                "title": "Part 4:",
+                "videos": [
+                  {
+                    "id": "vid-1790691284584",
+                    "cameraCode": "C0190",
+                    "title": "Significant Figures",
+                    "description": "Cut 07.45-09.33 accordingly"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "unit-1790095367796",
+            "title": "Unit 3: Motion in a Straight Line",
+            "parts": [
+              {
+                "id": "part-1790895965823",
+                "title": "Part 1:",
+                "videos": [
+                  {
+                    "id": "vid-1790896039730",
+                    "cameraCode": "C0220",
+                    "title": "Motion in a straight line",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1790895973186",
+                "title": "Part 2:",
+                "videos": [
+                  {
+                    "id": "vid-1790896093043",
+                    "cameraCode": "C0221",
+                    "title": "Example   1. If a bus",
+                    "description": ""
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "unit-1790095381655",
+            "title": "Unit 4: Force, Work, Energy, and Power",
+            "parts": []
+          },
+          {
+            "id": "unit-1790095394625",
+            "title": "Unit 5: Simple Machines",
+            "parts": []
+          },
+          {
+            "id": "unit-1790095409079",
+            "title": "Unit 6: Mechanical Oscillation and Sound Wave",
+            "parts": []
+          },
+          {
+            "id": "unit-1790095422272",
+            "title": "Unit 7: Temperature and Thermometer",
+            "parts": []
+          }
+        ]
+      },
+      {
+        "id": "g9-chem",
+        "name": "Chemistry",
+        "units": [
+          {
+            "id": "unit-1790095469500",
+            "title": "Unit 1: Chemistry And Its Importance",
+            "parts": []
+          },
+          {
+            "id": "unit-1790095483134",
+            "title": "Unit 2: Measurements And Scientific Methods",
+            "parts": []
+          },
+          {
+            "id": "unit-1790095493871",
+            "title": "Unit 3: Structure Of The Atom",
+            "parts": []
+          },
+          {
+            "id": "unit-1790095504505",
+            "title": "Unit 4: Periodic Classification Of Elements",
+            "parts": []
+          },
+          {
+            "id": "unit-1790095513956",
+            "title": "Unit 5: Chemical Bonding",
+            "parts": []
+          }
+        ]
+      },
+      {
+        "id": "g9-bio",
+        "name": "Biology",
+        "units": [
+          {
+            "id": "unit-1790094775951",
+            "title": "Unit 1: Introduction to Biology",
+            "parts": []
+          },
+          {
+            "id": "unit-1790094791299",
+            "title": "Unit 2: Characteristics and Classification of Organisms",
+            "parts": []
+          },
+          {
+            "id": "unit-1790094806515",
+            "title": "Unit 3: Cells",
+            "parts": [
+              {
+                "id": "part-1790691321433",
+                "title": "Part 1:",
+                "videos": [
+                  {
+                    "id": "vid-1790691750270",
+                    "cameraCode": "C0172 & CO173 & C0174",
+                    "title": "Unit 3: Cell",
+                    "description": "C0172 & Co173 & C0174 are 1 video cut cause of technical error"
+                  }
+                ]
+              },
+              {
+                "id": "part-1790691327576",
+                "title": "Part 2:",
+                "videos": [
+                  {
+                    "id": "vid-1790691814580",
+                    "cameraCode": "C0175",
+                    "title": "Cell and its environment",
+                    "description": ""
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "unit-1790094815891",
+            "title": "Unit 4: Reproduction",
+            "parts": []
+          },
+          {
+            "id": "unit-1790094824442",
+            "title": "Unit 5: Human Health, Nutrition, and Disease",
+            "parts": []
+          },
+          {
+            "id": "unit-1790094827922",
+            "title": "Unit 6: Ecology",
+            "parts": []
+          }
+        ]
+      },
+      {
+        "id": "g9-his",
+        "name": "History",
+        "units": [
+          {
+            "id": "unit-1790105612715",
+            "title": "Unit 1: The Discipline of History and Human Evolution",
+            "parts": []
+          },
+          {
+            "id": "unit-1790105638930",
+            "title": "Unit 2: Ancient World Civilizations up to c. 500 AD",
+            "parts": []
+          },
+          {
+            "id": "unit-1790105654435",
+            "title": "Unit 3: Peoples and States in Ethiopia and the Horn to the End of 13th Century",
+            "parts": []
+          },
+          {
+            "id": "unit-1790105685854",
+            "title": "Unit 4: The Middle Ages and Early Modern World, C. 500 to 1750s",
+            "parts": [
+              {
+                "id": "part-1790167404298",
+                "title": "Part 1:",
+                "videos": [
+                  {
+                    "id": "vid-1790171947521",
+                    "cameraCode": "00001 & 00002",
+                    "title": "The Middle Ages and Early Modern World",
+                    "description": "00001 & 00002 are 1 video cut in 2"
+                  }
+                ]
+              },
+              {
+                "id": "part-1790167413282",
+                "title": "Part 2:",
+                "videos": [
+                  {
+                    "id": "vid-1790172094557",
+                    "cameraCode": "00003 & 00004",
+                    "title": "The byzantine empire",
+                    "description": "00003 & 00004 are 1 video cut in 2"
+                  }
+                ]
+              },
+              {
+                "id": "part-1790172100811",
+                "title": "Part 3:",
+                "videos": [
+                  {
+                    "id": "vid-1790172180399",
+                    "cameraCode": "00005 & 00006",
+                    "title": "The ottoman empire",
+                    "description": "00005 & 00006 are 1 video cut in 2"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "unit-1790105700118",
+            "title": "Unit 5: Peoples and States of Africa to 1500",
+            "parts": []
+          },
+          {
+            "id": "unit-1790105710087",
+            "title": "Unit 6: Africa and the Outside World 1500- 1880s",
+            "parts": []
+          },
+          {
+            "id": "unit-1790105725746",
+            "title": "Unit 7: States, Principalities, Population Movements &Interactions in Ethiopia 13th to Mid-16th C.",
+            "parts": []
+          },
+          {
+            "id": "unit-1790105740252",
+            "title": "Unit 8: Political, Social, and Economic Processes in Ethiopia Mid-16th to Mid-19th C.",
+            "parts": []
+          },
+          {
+            "id": "unit-1790105745202",
+            "title": "Unit 9: The Age of Revolutions 1750s to 1815",
+            "parts": []
+          }
+        ]
+      },
+      {
+        "id": "g9-geo",
+        "name": "Geography",
+        "units": [
+          {
+            "id": "unit-1790105816816",
+            "title": "Unit 1: Geological History And Topography Of Ethiopia",
+            "parts": [
+              {
+                "id": "part-1790195628066",
+                "title": "Part 1:",
+                "videos": []
+              },
+              {
+                "id": "part-1790195642809",
+                "title": "Part 2:",
+                "videos": [
+                  {
+                    "id": "vid-1790195743088",
+                    "cameraCode": "00008 & 00009 & 00010",
+                    "title": "Size and shape of ethiopia",
+                    "description": "00008 & 00009 are 1 video cut in 2\n00010 is after light comes back"
+                  }
+                ]
+              },
+              {
+                "id": "part-1790195760895",
+                "title": "Part 3: Topic Name",
+                "videos": [
+                  {
+                    "id": "vid-1790195878577",
+                    "cameraCode": "00011 & 00007",
+                    "title": "Introduction to Ethiopian ......",
+                    "description": "00007 is after light comes back"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "unit-1790105826823",
+            "title": "Unit 2: Climate Of Ethiopia",
+            "parts": []
+          },
+          {
+            "id": "unit-1790105837689",
+            "title": "Unit 3: Natural Resource Base Of Ethiopia",
+            "parts": []
+          },
+          {
+            "id": "unit-1790105849261",
+            "title": "Unit 4: Population And Demographic Characteristics Of Ethiopia",
+            "parts": []
+          },
+          {
+            "id": "unit-1790105861368",
+            "title": "Unit 5: Major Economic And Cultural Activities In Ethiopia",
+            "parts": []
+          },
+          {
+            "id": "unit-1790105874944",
+            "title": "Unit 6: Human – Natural Environment Interactions In Ethiopia",
+            "parts": []
+          },
+          {
+            "id": "unit-1790105887655",
+            "title": "Unit 7: Contemporary Geographic Issues And Public Concerns In Ethiopia",
+            "parts": []
+          },
+          {
+            "id": "unit-1790105892216",
+            "title": "Unit 8: Geographic Inquiry Skills And Techniques",
+            "parts": []
+          }
+        ]
+      },
+      {
+        "id": "g9-econ",
+        "name": "Economics",
+        "units": [
+          {
+            "id": "unit-1790105949519",
+            "title": "Unit 1: Introducing Economics",
+            "parts": []
+          },
+          {
+            "id": "unit-1790105961573",
+            "title": "Unit 2: The Basic Economic Problems and Economic Systems",
+            "parts": [
+              {
+                "id": "part-1790142684806",
+                "title": "Part 1: Basic economic question",
+                "videos": [
+                  {
+                    "id": "vid-1790142752267",
+                    "cameraCode": "00001 & 00002",
+                    "title": "Basic economic question",
+                    "description": "00001 and 00002 are 1 video cut in 2"
+                  }
+                ]
+              },
+              {
+                "id": "part-1791415236808",
+                "title": "Part 2: Topic Name",
+                "videos": [
+                  {
+                    "id": "vid-1791415274460",
+                    "cameraCode": "C0926",
+                    "title": "Clearly, the ....",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1791415278811",
+                "title": "Part 3: Topic Name",
+                "videos": [
+                  {
+                    "id": "vid-1791415338072",
+                    "cameraCode": "C0927",
+                    "title": "Hypothetical example......",
+                    "description": ""
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "unit-1790105976437",
+            "title": "Unit 3: Economic Resources and Markets",
+            "parts": [
+              {
+                "id": "part-1790774625657",
+                "title": "Part 1:",
+                "videos": [
+                  {
+                    "id": "vid-1790790943120",
+                    "cameraCode": "C0196 & C0197",
+                    "title": "Economic resources and markets",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1791397800777",
+                "title": "Part 2:",
+                "videos": [
+                  {
+                    "id": "vid-1791398222621",
+                    "cameraCode": "C0023",
+                    "title": "Circular flow of ....",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1791399011102",
+                "title": "Part 3:",
+                "videos": [
+                  {
+                    "id": "vid-1791399078477",
+                    "cameraCode": "C0024",
+                    "title": "Land as an economic ......",
+                    "description": ""
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "unit-1790105988677",
+            "title": "Unit 4: Introduction to Demand and Supply",
+            "parts": []
+          },
+          {
+            "id": "unit-1790105999055",
+            "title": "Unit 5: Introduction to Production and Cost",
+            "parts": []
+          },
+          {
+            "id": "unit-1790106046312",
+            "title": "Unit 6: Introduction to Money",
+            "parts": []
+          },
+          {
+            "id": "unit-1790106057163",
+            "title": "Unit 7: Introduction to Macroeconomics",
+            "parts": []
+          },
+          {
+            "id": "unit-1790106062563",
+            "title": "Unit 8: Basic Entrepreneurship",
+            "parts": []
+          }
+        ]
+      }
+    ]
+  },
+  "grade-10": {
+    "name": "Grade 10",
+    "type": "Secondary School",
+    "subjects": [
+      {
+        "id": "g10-math",
+        "name": "Mathematics",
+        "units": [
+          {
+            "id": "unit-1790093443624",
+            "title": "Unit 1: Relations and Functions",
+            "parts": []
+          },
+          {
+            "id": "unit-1790093668031",
+            "title": "Unit 2: Polynomial Functions",
+            "parts": []
+          },
+          {
+            "id": "unit-1790093679640",
+            "title": "Unit 3: Exponential and Logarithmic Functions",
+            "parts": []
+          },
+          {
+            "id": "unit-1790093689148",
+            "title": "Unit 4: Trigonometric Functions",
+            "parts": []
+          },
+          {
+            "id": "unit-1790093697349",
+            "title": "Unit 5: Circles",
+            "parts": []
+          },
+          {
+            "id": "unit-1790093705667",
+            "title": "Unit 6: Solid Figures",
+            "parts": []
+          },
+          {
+            "id": "unit-1790093713081",
+            "title": "Unit 7: Coordinate Geometry",
+            "parts": []
+          }
+        ]
+      },
+      {
+        "id": "g10-eng",
+        "name": "English",
+        "units": [
+          {
+            "id": "unit-1790093773041",
+            "title": "Unit 1: Population Growth",
+            "parts": []
+          },
+          {
+            "id": "unit-1790093784457",
+            "title": "Unit 2: Travel Behaviors",
+            "parts": [
+              {
+                "id": "part-1790800676787",
+                "title": "Part 1:",
+                "videos": [
+                  {
+                    "id": "vid-1790800706267",
+                    "cameraCode": "C0204",
+                    "title": "Pronunciation ...",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1790800772362",
+                "title": "Part 2:",
+                "videos": [
+                  {
+                    "id": "vid-1790800801123",
+                    "cameraCode": "C0205",
+                    "title": "Giving warning and advice",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1790800818870",
+                "title": "Part 3:",
+                "videos": [
+                  {
+                    "id": "vid-1790800844834",
+                    "cameraCode": "C0206",
+                    "title": "Phrasal Verb",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1790800854424",
+                "title": "Part 4:",
+                "videos": [
+                  {
+                    "id": "vid-1790800884061",
+                    "cameraCode": "C0207",
+                    "title": "Simple past tense",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1791397482960",
+                "title": "Part 5:",
+                "videos": [
+                  {
+                    "id": "vid-1791397514107",
+                    "cameraCode": "C0018",
+                    "title": "Lesson 5 ....",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1791397486544",
+                "title": "Part 6:",
+                "videos": [
+                  {
+                    "id": "vid-1791397529475",
+                    "cameraCode": "C0019",
+                    "title": "Lesson 6 ....",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1791397489986",
+                "title": "Part 7:",
+                "videos": [
+                  {
+                    "id": "vid-1791397542526",
+                    "cameraCode": "C020",
+                    "title": "Lesson 7 ....",
+                    "description": ""
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "unit-1790093793781",
+            "title": "Unit 3: Punctuality",
+            "parts": []
+          },
+          {
+            "id": "unit-1790093803284",
+            "title": "Unit 4: Tourist Attractions",
+            "parts": []
+          },
+          {
+            "id": "unit-1790093814203",
+            "title": "Unit 5: Honey Processing",
+            "parts": []
+          },
+          {
+            "id": "unit-1790093822492",
+            "title": "Unit 6: Migration",
+            "parts": []
+          },
+          {
+            "id": "unit-1790093831709",
+            "title": "Unit 7: Branding Ethiopia and National",
+            "parts": []
+          },
+          {
+            "id": "unit-1790093840416",
+            "title": "Unit 8: The Healing Power of Plants",
+            "parts": []
+          },
+          {
+            "id": "unit-1790093855346",
+            "title": "Unit 9: Multilingualism Unit 10: Digital Vs Satellite Television",
+            "parts": []
+          }
+        ]
+      },
+      {
+        "id": "g10-phy",
+        "name": "Physics",
+        "units": [
+          {
+            "id": "unit-1790093921586",
+            "title": "Unit 1: Vector Quantities",
+            "parts": []
+          },
+          {
+            "id": "unit-1790093929778",
+            "title": "Unit 2: Uniformly Accelerated Motion",
+            "parts": []
+          },
+          {
+            "id": "unit-1790093943317",
+            "title": "Unit 3: Elasticity and Static Equilibrium of Rigid Body",
+            "parts": []
+          },
+          {
+            "id": "unit-1790093952471",
+            "title": "Unit 4: Static and Current Electricity",
+            "parts": []
+          },
+          {
+            "id": "unit-1790093960954",
+            "title": "Unit 5: Magnetism",
+            "parts": []
+          },
+          {
+            "id": "unit-1790093966100",
+            "title": "Unit 6: Electromagnetic Waves and Geometrical Optics",
+            "parts": []
+          }
+        ]
+      },
+      {
+        "id": "g10-chem",
+        "name": "Chemistry",
+        "units": [
+          {
+            "id": "unit-1790094006459",
+            "title": "Unit 1: Chemical Reactions And Stoichiometry",
+            "parts": []
+          },
+          {
+            "id": "unit-1790094016972",
+            "title": "Unit 2: Solutions",
+            "parts": [
+              {
+                "id": "part-1790664759106",
+                "title": "Part 4:",
+                "videos": [
+                  {
+                    "id": "vid-1790664860848",
+                    "cameraCode": "C0007",
+                    "title": "Solubility as an equ....",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1790664871955",
+                "title": "Part 5:",
+                "videos": [
+                  {
+                    "id": "vid-1790664939084",
+                    "cameraCode": "C0008",
+                    "title": "Factors affecting solubility L.....",
+                    "description": ""
+                  },
+                  {
+                    "id": "vid-1790665163658",
+                    "cameraCode": "C0009",
+                    "title": "Exceptions to Henry's ......",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1790665174659",
+                "title": "Part 6:",
+                "videos": [
+                  {
+                    "id": "vid-1790665280698",
+                    "cameraCode": "C0010",
+                    "title": "Describing reactions ....",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1790665295146",
+                "title": "Part 7:",
+                "videos": [
+                  {
+                    "id": "vid-1790665403284",
+                    "cameraCode": "C0011 & C0012",
+                    "title": "Molarity",
+                    "description": "C0011 and C0012 are one part cut in 2 cause of technical problems"
+                  }
+                ]
+              },
+              {
+                "id": "part-1790895874855",
+                "title": "Part 8:",
+                "videos": [
+                  {
+                    "id": "vid-1790895938444",
+                    "cameraCode": "C0217",
+                    "title": "Unit 2: Solutions Entrance ........",
+                    "description": ""
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "unit-1790094028076",
+            "title": "Unit 3: Important Inorganic Compounds",
+            "parts": [
+              {
+                "id": "part-1790858908734",
+                "title": "Part 1:",
+                "videos": [
+                  {
+                    "id": "vid-1790859994960",
+                    "cameraCode": "C0218",
+                    "title": "Important Inorganic Compound",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1790858920872",
+                "title": "Part 2:",
+                "videos": [
+                  {
+                    "id": "vid-1790860219497",
+                    "cameraCode": "C0219",
+                    "title": "Amphoteric oxide: The .....",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1791200722801",
+                "title": "Part 3:",
+                "videos": [
+                  {
+                    "id": "vid-1791232816131",
+                    "cameraCode": "C0003",
+                    "title": "Section 3: Acids",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1791200730145",
+                "title": "Part 4:",
+                "videos": [
+                  {
+                    "id": "vid-1791232873044",
+                    "cameraCode": "C0004",
+                    "title": "General Properties ......",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1791232728648",
+                "title": "Part 5:",
+                "videos": [
+                  {
+                    "id": "vid-1791232925675",
+                    "cameraCode": "C0005",
+                    "title": "PH calculation: ...",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1791232735737",
+                "title": "Part 6:",
+                "videos": [
+                  {
+                    "id": "vid-1791232977895",
+                    "cameraCode": "C0006",
+                    "title": "Section 3.5 : Salts",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1791232741959",
+                "title": "Part 7:",
+                "videos": [
+                  {
+                    "id": "vid-1791397178328",
+                    "cameraCode": "C0007",
+                    "title": "Properties of salt",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1792067094186",
+                "title": "Part 8:",
+                "videos": [
+                  {
+                    "id": "vid-1792067508230",
+                    "cameraCode": "C0015",
+                    "title": "The Hidden half at ....",
+                    "description": "Studio 1"
+                  }
+                ]
+              },
+              {
+                "id": "part-1792067097908",
+                "title": "Part 9:",
+                "videos": [
+                  {
+                    "id": "vid-1792067532872",
+                    "cameraCode": "C0016",
+                    "title": "Decoding the math : ....",
+                    "description": "Studio 1"
+                  }
+                ]
+              },
+              {
+                "id": "part-1792067101870",
+                "title": "Part 10:",
+                "videos": [
+                  {
+                    "id": "vid-1792067563274",
+                    "cameraCode": "C0017",
+                    "title": "Entrance exam multiple ......",
+                    "description": "Studio 1"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "unit-1790094041477",
+            "title": "Unit 4: Energy Changes And Electro-Chemistry",
+            "parts": []
+          },
+          {
+            "id": "unit-1790094050215",
+            "title": "Unit 5: Metals And Non Metals",
+            "parts": []
+          },
+          {
+            "id": "unit-1790094054959",
+            "title": "Unit 6: Hydrocarbons And Their Natural Sources",
+            "parts": []
+          }
+        ]
+      },
+      {
+        "id": "g10-bio",
+        "name": "Biology",
+        "units": [
+          {
+            "id": "unit-1790094109903",
+            "title": "Unit 1: Sub-fields of Biology",
+            "parts": []
+          },
+          {
+            "id": "unit-1790094120697",
+            "title": "Unit 2: Plants",
+            "parts": []
+          },
+          {
+            "id": "unit-1790094131699",
+            "title": "Unit 3: Biochemical molecules",
+            "parts": [
+              {
+                "id": "part-1792068625236",
+                "title": "Part 1: Topic Name",
+                "videos": [
+                  {
+                    "id": "vid-1792068741854",
+                    "cameraCode": "0Z4A1830 & 0Z4A1831",
+                    "title": "Biological Molecule",
+                    "description": "0z4A1830 & 0z4A1831 are 1 video cut into 2\nStudio 2"
+                  }
+                ]
+              },
+              {
+                "id": "part-1792068745803",
+                "title": "Part 2: Topic Name",
+                "videos": [
+                  {
+                    "id": "vid-1792068793028",
+                    "cameraCode": "0Z4A1832",
+                    "title": "Organic molecule",
+                    "description": "studio 2"
+                  }
+                ]
+              },
+              {
+                "id": "part-1792068796933",
+                "title": "Part 3: Topic Name",
+                "videos": [
+                  {
+                    "id": "vid-1792068844713",
+                    "cameraCode": "0Z4A1833",
+                    "title": "Function of lipids",
+                    "description": "Studio 2"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "unit-1790094142620",
+            "title": "Unit 4: Cell reproduction",
+            "parts": []
+          },
+          {
+            "id": "unit-1790094158723",
+            "title": "Unit 5: Human Biology",
+            "parts": []
+          },
+          {
+            "id": "unit-1790094164326",
+            "title": "Unit 6: Ecological interaction",
+            "parts": []
+          }
+        ]
+      },
+      {
+        "id": "g10-his",
+        "name": "History",
+        "units": [
+          {
+            "id": "unit-1790094217239",
+            "title": "Unit 1: Development of Capitalism and Nationalism 1815-1914",
+            "parts": []
+          },
+          {
+            "id": "unit-1790094227571",
+            "title": "Unit 2: Africa & the Colonial Experience(1880s -1960s)",
+            "parts": []
+          },
+          {
+            "id": "unit-1790094244296",
+            "title": "Unit 3: Social, Economic & Political Developments in Ethiopia mid-19th C. to 1941",
+            "parts": []
+          },
+          {
+            "id": "unit-1790094262466",
+            "title": "Unit 4: Society and Politics in the Age of World Wars 1914-1945",
+            "parts": []
+          },
+          {
+            "id": "unit-1790094273441",
+            "title": "Unit 5: Global and Regional Developments Since 1945",
+            "parts": []
+          },
+          {
+            "id": "unit-1790094285387",
+            "title": "Unit 6: Ethiopia: Internal Developments and External Influences from 1941 to 1991",
+            "parts": []
+          },
+          {
+            "id": "unit-1790094298604",
+            "title": "Unit 7: Africa Since 1960 Unit 8: Post-1991 Developments in Ethiopia",
+            "parts": []
+          },
+          {
+            "id": "unit-1790094303689",
+            "title": "Unit 9: Indigenous Knowledge and Heritages of Ethiopia",
+            "parts": []
+          }
+        ]
+      },
+      {
+        "id": "g10-geo",
+        "name": "Geography",
+        "units": [
+          {
+            "id": "unit-1790094360932",
+            "title": "Unit 1: Land-forms Of Africa",
+            "parts": []
+          },
+          {
+            "id": "unit-1790094387052",
+            "title": "Unit 2: Climate Of Africa",
+            "parts": []
+          },
+          {
+            "id": "unit-1790094398319",
+            "title": "Unit 3: Natural Resource Base Of Africa",
+            "parts": [
+              {
+                "id": "part-1792067924427",
+                "title": "Part 1:",
+                "videos": [
+                  {
+                    "id": "vid-1792067963197",
+                    "cameraCode": "C0018",
+                    "title": "Natural Resource ......",
+                    "description": "Studio 1"
+                  }
+                ]
+              },
+              {
+                "id": "part-1792067927513",
+                "title": "Part 2: Topic Name",
+                "videos": [
+                  {
+                    "id": "vid-1792067998043",
+                    "cameraCode": "C0019",
+                    "title": "Africa's major drainage ......",
+                    "description": "Studio 1"
+                  }
+                ]
+              },
+              {
+                "id": "part-1792067931483",
+                "title": "Part 3:",
+                "videos": [
+                  {
+                    "id": "vid-1792068035402",
+                    "cameraCode": "C0020",
+                    "title": "Arenosols & Leptosols",
+                    "description": "Studio 1"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "unit-1790094407996",
+            "title": "Unit 4: Population of Africa",
+            "parts": []
+          },
+          {
+            "id": "unit-1790094419247",
+            "title": "Unit 5: Major Economic and Cultural Activities of Africa",
+            "parts": []
+          },
+          {
+            "id": "unit-1790094427116",
+            "title": "Unit 6: Human – Natural Environment Interactions",
+            "parts": []
+          },
+          {
+            "id": "unit-1790094441222",
+            "title": "Unit 7: Geographic Issues And Public Concerns In Africa",
+            "parts": []
+          },
+          {
+            "id": "unit-1790094446405",
+            "title": "Unit 8: Geospatial Information And Data Processing",
+            "parts": []
+          }
+        ]
+      },
+      {
+        "id": "g10-econ",
+        "name": "Economics",
+        "units": [
+          {
+            "id": "unit-1790094538635",
+            "title": "Unit 1: Theory of Consumer Behaviour",
+            "parts": []
+          },
+          {
+            "id": "unit-1790094548119",
+            "title": "Unit 2: Theories of Demand and Supply",
+            "parts": [
+              {
+                "id": "part-1790318713008",
+                "title": "Part 2",
+                "videos": [
+                  {
+                    "id": "vid-1790318789832",
+                    "cameraCode": "00003 & 00004",
+                    "title": "THEORY OF SUPPLY",
+                    "description": "00003 & 00004 ARE 1 VIDEO CUT IN 2"
+                  }
+                ]
+              },
+              {
+                "id": "part-1791398261217",
+                "title": "Part 3:",
+                "videos": [
+                  {
+                    "id": "vid-1791398345137",
+                    "cameraCode": "C0025",
+                    "title": "Supply , Demand & Market ....",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1791398407136",
+                "title": "Part 4:",
+                "videos": [
+                  {
+                    "id": "vid-1791398427468",
+                    "cameraCode": "C0026",
+                    "title": "Derivation of the .....",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1791399153476",
+                "title": "Part 5:",
+                "videos": [
+                  {
+                    "id": "vid-1791399282317",
+                    "cameraCode": "C0027",
+                    "title": "Worked example: ...",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1791399294040",
+                "title": "Part 6:",
+                "videos": [
+                  {
+                    "id": "vid-1791399339302",
+                    "cameraCode": "C0028",
+                    "title": "Elasticity of Demand",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1791399386712",
+                "title": "Part 7: Bonus Part",
+                "videos": [
+                  {
+                    "id": "vid-1791399447426",
+                    "cameraCode": "C0029",
+                    "title": "Given",
+                    "description": ""
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "unit-1790094557855",
+            "title": "Unit 3: Theories of Production and Cost",
+            "parts": []
+          },
+          {
+            "id": "unit-1790094567946",
+            "title": "Unit 4: Market Structure",
+            "parts": []
+          },
+          {
+            "id": "unit-1790094577087",
+            "title": "Unit 5: Banking and Finance",
+            "parts": []
+          },
+          {
+            "id": "unit-1790094588018",
+            "title": "Unit 6: Economic Growth",
+            "parts": []
+          },
+          {
+            "id": "unit-1790094596406",
+            "title": "Unit 7: The Ethiopian Economy",
+            "parts": []
+          },
+          {
+            "id": "unit-1790094610516",
+            "title": "Unit 8: Business Startups and Innovation",
+            "parts": []
+          }
+        ]
+      }
+    ]
+  },
+  "grade-11": {
+    "name": "Grade 11",
+    "type": "Secondary School",
+    "subjects": [
+      {
+        "id": "g11-math",
+        "name": "Mathematics",
+        "units": [
+          {
+            "id": "unit-1790092845929",
+            "title": "Unit 1: Relations and functions",
+            "parts": []
+          },
+          {
+            "id": "unit-1790092856926",
+            "title": "Unit 2: Rational Expression and Rational Functions",
+            "parts": [
+              {
+                "id": "part-1790791925884",
+                "title": "Part 1:",
+                "videos": [
+                  {
+                    "id": "vid-1790791957730",
+                    "cameraCode": "C0214",
+                    "title": "Rational expression ....",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1790796322565",
+                "title": "Part 2:",
+                "videos": [
+                  {
+                    "id": "vid-1790796384058",
+                    "cameraCode": "C0215",
+                    "title": "Example 1 simplify .....",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1790799735573",
+                "title": "Part 3:",
+                "videos": [
+                  {
+                    "id": "vid-1790799805402",
+                    "cameraCode": "C0216",
+                    "title": "Example    a) 3X-2.....",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1791414123093",
+                "title": "Part 4:",
+                "videos": [
+                  {
+                    "id": "vid-1791414161712",
+                    "cameraCode": "C0054",
+                    "title": "Decomposition of .....",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1791414127106",
+                "title": "Part 5:",
+                "videos": [
+                  {
+                    "id": "vid-1791414173518",
+                    "cameraCode": "C0055",
+                    "title": "Case 3",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1792068243624",
+                "title": "Part 6: Topic Name",
+                "videos": []
+              },
+              {
+                "id": "part-1792068248050",
+                "title": "Part 7: Topic Name",
+                "videos": []
+              },
+              {
+                "id": "part-1792068252879",
+                "title": "Part 8: Topic Name",
+                "videos": [
+                  {
+                    "id": "vid-1792068284809",
+                    "cameraCode": "C0024",
+                    "title": "Solving Rational .......",
+                    "description": "Studio 1"
+                  }
+                ]
+              },
+              {
+                "id": "part-1792068257008",
+                "title": "Part 9: Topic Name",
+                "videos": [
+                  {
+                    "id": "vid-1792068303767",
+                    "cameraCode": "C0022",
+                    "title": "Examples",
+                    "description": "Studio 1"
+                  }
+                ]
+              },
+              {
+                "id": "part-1792068262213",
+                "title": "Part 10: Topic Name",
+                "videos": [
+                  {
+                    "id": "vid-1792068320711",
+                    "cameraCode": "C0023",
+                    "title": "Examples",
+                    "description": "Studio 1"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "unit-1790092866603",
+            "title": "Unit 3: Matrices",
+            "parts": []
+          },
+          {
+            "id": "unit-1790092877588",
+            "title": "Unit 4: Determinants and their properties",
+            "parts": []
+          },
+          {
+            "id": "unit-1790092889717",
+            "title": "Unit 5: Vectors",
+            "parts": []
+          },
+          {
+            "id": "unit-1790092938145",
+            "title": "Unit 6: Transformations of the plane",
+            "parts": []
+          },
+          {
+            "id": "unit-1790092951585",
+            "title": "Unit 7: Statistics",
+            "parts": []
+          },
+          {
+            "id": "unit-1790092957039",
+            "title": "Unit 8: Probability",
+            "parts": []
+          }
+        ]
+      },
+      {
+        "id": "g11-eng",
+        "name": "English",
+        "units": [
+          {
+            "id": "unit-1790092382212",
+            "title": "Unit 1: Environmental Hazards",
+            "parts": []
+          },
+          {
+            "id": "unit-1790092395420",
+            "title": "Unit 2: Civilization",
+            "parts": [
+              {
+                "id": "part-1791399881350",
+                "title": "Part 1:",
+                "videos": [
+                  {
+                    "id": "vid-1791412812971",
+                    "cameraCode": "C0042",
+                    "title": "Lesson 1: Expressing ...",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1791399887582",
+                "title": "Part 2:",
+                "videos": [
+                  {
+                    "id": "vid-1791412839304",
+                    "cameraCode": "C0043",
+                    "title": "Lesson 2: Simple past versus .....",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1791399896182",
+                "title": "Part 3:",
+                "videos": [
+                  {
+                    "id": "vid-1791412862978",
+                    "cameraCode": "C0044",
+                    "title": "Lesson 3: Direct and .....",
+                    "description": ""
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "unit-1790092408579",
+            "title": "Unit 3: Causes of Road Traffic Accidents",
+            "parts": []
+          },
+          {
+            "id": "unit-1790092423109",
+            "title": "Unit 4: People and Natural Resources",
+            "parts": []
+          },
+          {
+            "id": "unit-1790092435914",
+            "title": "Unit 5: Irrigation",
+            "parts": []
+          },
+          {
+            "id": "unit-1790092449904",
+            "title": "Unit 6: Global Warming",
+            "parts": []
+          },
+          {
+            "id": "unit-1790092462341",
+            "title": "Unit 7: Patriotism",
+            "parts": []
+          },
+          {
+            "id": "unit-1790092477769",
+            "title": "Unit 8: Efficiency of Health Services",
+            "parts": []
+          },
+          {
+            "id": "unit-1790092492190",
+            "title": "Unit 9: Indigenous Conflict Resolution",
+            "parts": []
+          },
+          {
+            "id": "unit-1790092501261",
+            "title": "Unit 10: Artificial Intelligence",
+            "parts": []
+          }
+        ]
+      },
+      {
+        "id": "g11-phy",
+        "name": "Physics",
+        "units": [
+          {
+            "id": "unit-1790092719569",
+            "title": "Unit 1: Physics and Human Society",
+            "parts": [
+              {
+                "id": "part-1790700071356",
+                "title": "Part 3:",
+                "videos": [
+                  {
+                    "id": "vid-1790700130682",
+                    "cameraCode": "C0193",
+                    "title": "Current Status of Physics",
+                    "description": ""
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "unit-1790092735096",
+            "title": "Unit 2: Vectors",
+            "parts": [
+              {
+                "id": "part-1790700154391",
+                "title": "Part 7:",
+                "videos": [
+                  {
+                    "id": "vid-1790700218616",
+                    "cameraCode": "C0194",
+                    "title": "Additions of vector that ex....",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1790700228546",
+                "title": "Part 8:",
+                "videos": [
+                  {
+                    "id": "vid-1790700299390",
+                    "cameraCode": "C0195",
+                    "title": "Multiplications of vector",
+                    "description": ""
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "unit-1790092746161",
+            "title": "Unit 3: Motion in one and two dimensions",
+            "parts": []
+          },
+          {
+            "id": "unit-1790092760139",
+            "title": "Unit 4: Dynamics",
+            "parts": []
+          },
+          {
+            "id": "unit-1790092773227",
+            "title": "Unit 5: Heat Conduction and Calorimetry",
+            "parts": []
+          },
+          {
+            "id": "unit-1790092782812",
+            "title": "Unit 6: Electrostatics and Electric Circuit",
+            "parts": []
+          },
+          {
+            "id": "unit-1790092789723",
+            "title": "Unit 7: Nuclear Physics",
+            "parts": []
+          }
+        ]
+      },
+      {
+        "id": "g11-chem",
+        "name": "Chemistry",
+        "units": [
+          {
+            "id": "unit-1790091936130",
+            "title": "Unit 1: Atomic Structure And Periodic Properties Of The Elements",
+            "parts": []
+          },
+          {
+            "id": "unit-1790091955766",
+            "title": "Unit 2: Chemical Bonding",
+            "parts": [
+              {
+                "id": "part-1790665694511",
+                "title": "Part 1: Topic Name",
+                "videos": [
+                  {
+                    "id": "vid-1790665751784",
+                    "cameraCode": "C0166",
+                    "title": "Chemical bonding from ato......",
+                    "description": ""
+                  },
+                  {
+                    "id": "vid-1790896191492",
+                    "cameraCode": "C0224",
+                    "title": "Chemical bonding and Mole.......",
+                    "description": "Reshoot"
+                  }
+                ]
+              },
+              {
+                "id": "part-1790665699484",
+                "title": "Part 2:",
+                "videos": [
+                  {
+                    "id": "vid-1790665795706",
+                    "cameraCode": "C0167",
+                    "title": "Inter molecular force",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1790665704517",
+                "title": "Part 3:",
+                "videos": [
+                  {
+                    "id": "vid-1790665825639",
+                    "cameraCode": "C0168",
+                    "title": "Dipole Dipole",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1790896220777",
+                "title": "Part 4:",
+                "videos": [
+                  {
+                    "id": "vid-1790896278021",
+                    "cameraCode": "C0222",
+                    "title": "Chemical Bonding And Molecu........",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1790896286029",
+                "title": "Part 5:",
+                "videos": [
+                  {
+                    "id": "vid-1790896308248",
+                    "cameraCode": "C0223",
+                    "title": "Chemical Bonding And Molecu........",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1790896324913",
+                "title": "Part 6:",
+                "videos": [
+                  {
+                    "id": "vid-1790896349178",
+                    "cameraCode": "C0225",
+                    "title": "Chemical Bonding And Molecu........",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1790896361667",
+                "title": "Part 7:",
+                "videos": [
+                  {
+                    "id": "vid-1790896387017",
+                    "cameraCode": "C0226",
+                    "title": "Chemical Bonding And Molecu........",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1790896611309",
+                "title": "Part 8:",
+                "videos": [
+                  {
+                    "id": "vid-1790896718291",
+                    "cameraCode": "C0227",
+                    "title": "<empty>",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1790896727321",
+                "title": "Part 9:",
+                "videos": [
+                  {
+                    "id": "vid-1790896871493",
+                    "cameraCode": "C0228",
+                    "title": "<empty>",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1791233884409",
+                "title": "Part 10: Topic Name",
+                "videos": [
+                  {
+                    "id": "vid-1791234761739",
+                    "cameraCode": "C0012",
+                    "title": "Molecular Architecture",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1791233893411",
+                "title": "Part 11:",
+                "videos": [
+                  {
+                    "id": "vid-1791234827764",
+                    "cameraCode": "C0013",
+                    "title": "VSEPR Theory ........",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1791233897685",
+                "title": "Part 12:",
+                "videos": [
+                  {
+                    "id": "vid-1791234880284",
+                    "cameraCode": "C0014",
+                    "title": "Molecular shape with .........",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1791233902289",
+                "title": "Part 13:",
+                "videos": [
+                  {
+                    "id": "vid-1791234932993",
+                    "cameraCode": "C0015",
+                    "title": "Ax4E",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1791233907308",
+                "title": "Part 14:",
+                "videos": [
+                  {
+                    "id": "vid-1791234989033",
+                    "cameraCode": "C0016",
+                    "title": "Molecular shape with six electron",
+                    "description": ""
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "unit-1790091989113",
+            "title": "Unit 3: Physical State Of Matter",
+            "parts": []
+          },
+          {
+            "id": "unit-1790092005571",
+            "title": "Unit 4: Chemical Kinetics",
+            "parts": []
+          },
+          {
+            "id": "unit-1790092026073",
+            "title": "Unit 5: Chemical Equilibrium",
+            "parts": []
+          },
+          {
+            "id": "unit-1790092041521",
+            "title": "Unit 6: Some Important Oxygen-containing Organic Compounds",
+            "parts": []
+          }
+        ]
+      },
+      {
+        "id": "g11-bio",
+        "name": "Biology",
+        "units": [
+          {
+            "id": "unit-1790091733669",
+            "title": "Unit 1: Biology and Technology",
+            "parts": []
+          },
+          {
+            "id": "unit-1790091746084",
+            "title": "Unit 2: Characteristics of animals",
+            "parts": []
+          },
+          {
+            "id": "unit-1790091775024",
+            "title": "Unit 3: Enzymes",
+            "parts": []
+          },
+          {
+            "id": "unit-1790091832125",
+            "title": "Unit 4: Genetics",
+            "parts": []
+          },
+          {
+            "id": "unit-1790091851064",
+            "title": "Unit 5: The human body systems",
+            "parts": []
+          },
+          {
+            "id": "unit-1790091869812",
+            "title": "Unit 6: Population and natural resources",
+            "parts": []
+          }
+        ]
+      },
+      {
+        "id": "g11-his",
+        "name": "History",
+        "units": [
+          {
+            "id": "unit-1790093012067",
+            "title": "Unit 1: History, Historiography, And Human Evolution",
+            "parts": []
+          },
+          {
+            "id": "unit-1790093027341",
+            "title": "Unit 2: Major Spots Of Ancient World Civilizations Up To C.500 A.D",
+            "parts": [
+              {
+                "id": "part-1790791446025",
+                "title": "Part 1: Topic Name",
+                "videos": []
+              },
+              {
+                "id": "part-1790791450838",
+                "title": "Part 2:",
+                "videos": []
+              },
+              {
+                "id": "part-1790791456727",
+                "title": "Part 3:",
+                "videos": []
+              },
+              {
+                "id": "part-1790791463986",
+                "title": "Part 4:",
+                "videos": []
+              }
+            ]
+          },
+          {
+            "id": "unit-1790093046012",
+            "title": "Unit 3: Peoples, States And Historical Processes In Ethiopia And The Horn To The End Of The 13th Century",
+            "parts": []
+          },
+          {
+            "id": "unit-1790093061678",
+            "title": "Unit 4: The Middle Ages And Early Modern World, C. 500 AD-1789",
+            "parts": []
+          },
+          {
+            "id": "unit-1790093072941",
+            "title": "Unit 5: Peoples And States Of Africa To 1500",
+            "parts": []
+          },
+          {
+            "id": "unit-1790093083974",
+            "title": "Unit 6: Africa And The Outside World: 1500-1880",
+            "parts": []
+          },
+          {
+            "id": "unit-1790093099641",
+            "title": "Unit 7: States, Principalities, Population Movements And Interactions In Ethiopia",
+            "parts": []
+          },
+          {
+            "id": "unit-1790093114208",
+            "title": "Unit 8: Political, Social, And Economic Processes In Ethiopia, Mid 16th To Mid-19th Century",
+            "parts": []
+          },
+          {
+            "id": "unit-1790093119936",
+            "title": "Unit 9: The Age Of Revolutions, 1789 To 1815",
+            "parts": []
+          }
+        ]
+      },
+      {
+        "id": "g11-geo",
+        "name": "Geography",
+        "units": [
+          {
+            "id": "unit-1790093172134",
+            "title": "Unit 1: Formation of the Continents",
+            "parts": []
+          },
+          {
+            "id": "unit-1790093188072",
+            "title": "Unit 2: Climate Classification and Climate Regions of Our World",
+            "parts": [
+              {
+                "id": "part-1791233039758",
+                "title": "Part 1:",
+                "videos": [
+                  {
+                    "id": "vid-1791233222153",
+                    "cameraCode": "C0229 & C0230",
+                    "title": "Climate classification and .....",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1791233228682",
+                "title": "Part 2:",
+                "videos": [
+                  {
+                    "id": "vid-1791233321381",
+                    "cameraCode": "C0231",
+                    "title": "The highland (H) .......",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1791233327520",
+                "title": "Part 3:",
+                "videos": [
+                  {
+                    "id": "vid-1791233409739",
+                    "cameraCode": "C0232",
+                    "title": "Mid-Latitude Mild climate ......",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1791233497823",
+                "title": "Part 4:",
+                "videos": [
+                  {
+                    "id": "vid-1791233574397",
+                    "cameraCode": "C0008",
+                    "title": "Mid-Latitude: I. ........",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1791233519408",
+                "title": "Part 5:",
+                "videos": [
+                  {
+                    "id": "vid-1791233717267",
+                    "cameraCode": "C0009 & C0010",
+                    "title": "What controls the ........",
+                    "description": ""
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "unit-1790093201276",
+            "title": "Unit 3: Natural Resources and Conflicts Over Resources",
+            "parts": [
+              {
+                "id": "part-1791233758749",
+                "title": "Part 1: Topic Name",
+                "videos": [
+                  {
+                    "id": "vid-1791233813203",
+                    "cameraCode": "C0011",
+                    "title": "Natural Resources and .........",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1791413879079",
+                "title": "Part 2:",
+                "videos": [
+                  {
+                    "id": "vid-1791413933103",
+                    "cameraCode": "C0051",
+                    "title": "The coming global water",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1791413884359",
+                "title": "Part 3:",
+                "videos": [
+                  {
+                    "id": "vid-1791413984370",
+                    "cameraCode": "C0052",
+                    "title": "River shared b/n .......",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1791413891431",
+                "title": "Part 4:",
+                "videos": [
+                  {
+                    "id": "vid-1791414014466",
+                    "cameraCode": "C0054",
+                    "title": "The Nile Basin Initiative",
+                    "description": ""
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "unit-1790093217237",
+            "title": "Unit 4: Global Population Dynamics and Challenges",
+            "parts": []
+          },
+          {
+            "id": "unit-1790093231511",
+            "title": "Unit 5: Geography and Economic Development",
+            "parts": []
+          },
+          {
+            "id": "unit-1790093244494",
+            "title": "Unit 6: Major Global Environmental Changes",
+            "parts": []
+          },
+          {
+            "id": "unit-1790093255243",
+            "title": "Unit 7: Geographic Issues and Public Concerns",
+            "parts": []
+          },
+          {
+            "id": "unit-1790093275455",
+            "title": "Unit 8: Geo-spatial Information and Data Processing",
+            "parts": []
+          }
+        ]
+      },
+      {
+        "id": "g11-econ",
+        "name": "Economics",
+        "units": [
+          {
+            "id": "unit-1790092126302",
+            "title": "Unit 1: Theory Of Consumer Behavior And Demand",
+            "parts": []
+          },
+          {
+            "id": "unit-1790092142641",
+            "title": "Unit 2: Market Structure And The Decision Of Firms",
+            "parts": [
+              {
+                "id": "part-1790143321590",
+                "title": "Part 1: Market Structure & .......",
+                "videos": [
+                  {
+                    "id": "vid-1790143378516",
+                    "cameraCode": "00005 & 00006",
+                    "title": "Market Structure & ......",
+                    "description": "00005 & 00006 are one video cut in 2"
+                  }
+                ]
+              },
+              {
+                "id": "part-1790716732755",
+                "title": "Part 2:",
+                "videos": [
+                  {
+                    "id": "vid-1790716761593",
+                    "cameraCode": "00034 & 00035",
+                    "title": "Demand ,Revenue.....",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1790774658033",
+                "title": "Part 3:",
+                "videos": [
+                  {
+                    "id": "vid-1790791105531",
+                    "cameraCode": "C0198 & C0199",
+                    "title": "Total revenue- Total Cost",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1791398503333",
+                "title": "Part 4: Topic Name",
+                "videos": [
+                  {
+                    "id": "vid-1791398656857",
+                    "cameraCode": "C0030",
+                    "title": "Pure Monopoly Marked",
+                    "description": ""
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "unit-1790092156732",
+            "title": "Unit 3: National Income Accounting",
+            "parts": []
+          },
+          {
+            "id": "unit-1790092168949",
+            "title": "Unit 4: Consumption, Saving And Investment",
+            "parts": []
+          },
+          {
+            "id": "unit-1790092181932",
+            "title": "Unit 5: Trade And Finance",
+            "parts": []
+          },
+          {
+            "id": "unit-1790092201325",
+            "title": "Unit 6: Economic Development",
+            "parts": []
+          },
+          {
+            "id": "unit-1790092214560",
+            "title": "Unit 7: Main Sectors, Sectorial Policies And Strategies Of Ethiopia",
+            "parts": []
+          }
+        ]
+      }
+    ]
+  },
+  "grade-12": {
+    "name": "Grade 12",
+    "type": "Secondary School",
+    "subjects": [
+      {
+        "id": "g12-math",
+        "name": "Mathematics",
+        "units": [
+          {
+            "id": "unit-1790070913341",
+            "title": "Unit 1: Sequence and Series",
+            "parts": []
+          },
+          {
+            "id": "unit-1790070931094",
+            "title": "Unit 2: Introduction to Calculus",
+            "parts": []
+          },
+          {
+            "id": "unit-1790070947767",
+            "title": "Unit 3: Statistics",
+            "parts": []
+          },
+          {
+            "id": "unit-1790070965163",
+            "title": "Unit 4: Introduction to linear programming",
+            "parts": []
+          },
+          {
+            "id": "unit-1790070982145",
+            "title": "Unit 5: Mathematical Application in Business",
+            "parts": []
+          }
+        ]
+      },
+      {
+        "id": "g12-eng",
+        "name": "English",
+        "units": [
+          {
+            "id": "unit-1790071044709",
+            "title": "Unit 1: Sustainable Development",
+            "parts": []
+          },
+          {
+            "id": "unit-1790071075243",
+            "title": "Unit 2: Time Management",
+            "parts": []
+          },
+          {
+            "id": "unit-1790071103383",
+            "title": "Unit 3: Evidence on Traffic Accident",
+            "parts": [
+              {
+                "id": "part-1792051130887",
+                "title": "Part 1:",
+                "videos": [
+                  {
+                    "id": "vid-1792051170870",
+                    "cameraCode": "C0027",
+                    "title": "Conditional Sentence",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1792051137407",
+                "title": "Part 2:",
+                "videos": [
+                  {
+                    "id": "vid-1792051197485",
+                    "cameraCode": "C0028",
+                    "title": "8. Unless",
+                    "description": ""
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "unit-1790071121017",
+            "title": "Unit 4: Natural Resource Management",
+            "parts": []
+          },
+          {
+            "id": "unit-1790071139842",
+            "title": "Unit 5: Mechanized Agriculture",
+            "parts": []
+          },
+          {
+            "id": "unit-1790071166875",
+            "title": "Unit 6: Green Economies",
+            "parts": []
+          },
+          {
+            "id": "unit-1790071195037",
+            "title": "Unit 7: National Pride",
+            "parts": []
+          },
+          {
+            "id": "unit-1790071211758",
+            "title": "Unit 8: Telemedicine",
+            "parts": []
+          },
+          {
+            "id": "unit-1790071229449",
+            "title": "Unit 9: Conflict Management",
+            "parts": []
+          },
+          {
+            "id": "unit-1790071243782",
+            "title": "Unit 10: Robotics",
+            "parts": []
+          }
+        ]
+      },
+      {
+        "id": "g12-phy",
+        "name": "Physics",
+        "units": [
+          {
+            "id": "unit-1790070436306",
+            "title": "Unit 1: Application of physics in other ﬁelds",
+            "parts": [
+              {
+                "id": "part-1790070531770",
+                "title": "Part 1:  Application of physics in other ﬁelds",
+                "videos": []
+              },
+              {
+                "id": "part-1790070544418",
+                "title": "Part 2:  Application of physics in other ﬁelds",
+                "videos": [
+                  {
+                    "id": "vid-1790070648506",
+                    "cameraCode": "C00008 & C00009",
+                    "title": "Physics and Biolgy",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1790070668681",
+                "title": "Part 3:  Application of physics in other ﬁelds",
+                "videos": [
+                  {
+                    "id": "vid-1790070789720",
+                    "cameraCode": "C00010",
+                    "title": "Application of physics in other ﬁelds",
+                    "description": ""
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "unit-1790070454203",
+            "title": "Unit 2: Two-dimensional motion",
+            "parts": []
+          },
+          {
+            "id": "unit-1790070472269",
+            "title": "Unit 3: Fluid Mechanics",
+            "parts": []
+          },
+          {
+            "id": "unit-1790070486199",
+            "title": "Unit 4: Electromagnetism",
+            "parts": []
+          },
+          {
+            "id": "unit-1790070502887",
+            "title": "Unit 5: Basics of electronics",
+            "parts": []
+          }
+        ]
+      },
+      {
+        "id": "g12-chem",
+        "name": "Chemistry",
+        "units": [
+          {
+            "id": "unit-1790071357969",
+            "title": "Unit 1: Acid-Base Equilibrium",
+            "parts": []
+          },
+          {
+            "id": "unit-1790071373742",
+            "title": "Unit 2: Electrochemistry",
+            "parts": []
+          },
+          {
+            "id": "unit-1790071392731",
+            "title": "Unit 3: Industrial Chemistry",
+            "parts": []
+          },
+          {
+            "id": "unit-1790071408858",
+            "title": "Unit 4: Polymers",
+            "parts": []
+          },
+          {
+            "id": "unit-1790071420324",
+            "title": "Unit 5: Introduction To Environmental Chemistry",
+            "parts": []
+          }
+        ]
+      },
+      {
+        "id": "g12-bio",
+        "name": "Biology",
+        "units": [
+          {
+            "id": "unit-1790071571788",
+            "title": "Unit 1: Application of Biology",
+            "parts": []
+          },
+          {
+            "id": "unit-1790071595585",
+            "title": "Unit 2: Microorganisms",
+            "parts": [
+              {
+                "id": "part-1790167467457",
+                "title": "Part 1: Micro organisms",
+                "videos": [
+                  {
+                    "id": "vid-1790167572019",
+                    "cameraCode": "00001 & 00002",
+                    "title": "Micro Organisms",
+                    "description": "00001 and 0002 are 1 video cut in two"
+                  },
+                  {
+                    "id": "vid-1790167657620",
+                    "cameraCode": "00003 & 00004",
+                    "title": "Bacteria lack true chrolophyll",
+                    "description": "00003 & 00004 are 1 video cut in 2"
+                  }
+                ]
+              },
+              {
+                "id": "part-1790167513637",
+                "title": "Part 2: Gram positive and gram negative ....",
+                "videos": [
+                  {
+                    "id": "vid-1790167760027",
+                    "cameraCode": "00009 & 00010",
+                    "title": "Gram positive and gram negative",
+                    "description": "00009 and 00010 are 1 video cut in 2"
+                  }
+                ]
+              },
+              {
+                "id": "part-1791412585959",
+                "title": "Part 3:",
+                "videos": []
+              },
+              {
+                "id": "part-1791412595750",
+                "title": "Part 4: Topic Name",
+                "videos": [
+                  {
+                    "id": "vid-1791412660079",
+                    "cameraCode": "C0045",
+                    "title": "Bacterial Reproduction",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1791412599918",
+                "title": "Part 5: Topic Name",
+                "videos": [
+                  {
+                    "id": "vid-1791412676699",
+                    "cameraCode": "C0046",
+                    "title": "Archea",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1792003794844",
+                "title": "Part 6: Topic Name",
+                "videos": [
+                  {
+                    "id": "vid-1792067016550",
+                    "cameraCode": "C0013",
+                    "title": "Fungi",
+                    "description": "Studio 1"
+                  }
+                ]
+              },
+              {
+                "id": "part-1792003799772",
+                "title": "Part 7:",
+                "videos": [
+                  {
+                    "id": "vid-1792067043591",
+                    "cameraCode": "C0014",
+                    "title": "The nuclei are ....",
+                    "description": "Studio 1"
+                  }
+                ]
+              },
+              {
+                "id": "part-1793021763500",
+                "title": "Part 7:",
+                "videos": []
+              }
+            ]
+          },
+          {
+            "id": "unit-1790071614890",
+            "title": "Unit 3: Energy transformation",
+            "parts": []
+          },
+          {
+            "id": "unit-1790071646767",
+            "title": "Unit 4: Evolution",
+            "parts": []
+          },
+          {
+            "id": "unit-1790071659241",
+            "title": "Unit 5: Human Body System",
+            "parts": []
+          },
+          {
+            "id": "unit-1790071669484",
+            "title": "Unit 6: Climate Change",
+            "parts": []
+          }
+        ]
+      },
+      {
+        "id": "g12-his",
+        "name": "History",
+        "units": [
+          {
+            "id": "unit-1790072915932",
+            "title": "Unit 1: Development of Capitalism and Nationalism from 1815 to 1914",
+            "parts": []
+          },
+          {
+            "id": "unit-1790072940616",
+            "title": "Unit 2: Africa and the Colonial Experience (1880s – 1960s)",
+            "parts": [
+              {
+                "id": "part-1791396320206",
+                "title": "Part 1:",
+                "videos": [
+                  {
+                    "id": "vid-1791396580714",
+                    "cameraCode": "C0210",
+                    "title": "The illegitment trade",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1791396587416",
+                "title": "Part 2:",
+                "videos": [
+                  {
+                    "id": "vid-1791396653186",
+                    "cameraCode": "C0211",
+                    "title": "Defining \"New Imperialism\"",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1791396593933",
+                "title": "Part 3:",
+                "videos": [
+                  {
+                    "id": "vid-1791396684981",
+                    "cameraCode": "C0212",
+                    "title": "Motives behind the partit......",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1791396606680",
+                "title": "Part 4:",
+                "videos": [
+                  {
+                    "id": "vid-1791396723860",
+                    "cameraCode": "C0213",
+                    "title": "Article 36: \"Effective .......",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1793021822634",
+                "title": "Part 5:",
+                "videos": []
+              }
+            ]
+          },
+          {
+            "id": "unit-1790072960430",
+            "title": "Unit 3: Social, Economic, and Political Developments in Ethiopia, Mid, 19th C. to 1941",
+            "parts": []
+          },
+          {
+            "id": "unit-1790072986855",
+            "title": "Unit 4: Society and Politics in the Age of World Wars, 1914 - 1945",
+            "parts": []
+          },
+          {
+            "id": "unit-1790073013158",
+            "title": "Unit 5: Global and Regional Developments Since 1945",
+            "parts": []
+          },
+          {
+            "id": "unit-1790080081257",
+            "title": "Unit 6: Ethiopia: Internal Developments and External Influences from 1941 to 1991",
+            "parts": []
+          },
+          {
+            "id": "unit-1790080106346",
+            "title": "Unit 7: Africa since the 1960s",
+            "parts": []
+          },
+          {
+            "id": "unit-1790080128053",
+            "title": "Unit 8: Post-1991 Developments in Ethiopia",
+            "parts": []
+          },
+          {
+            "id": "unit-1790080158059",
+            "title": "Unit 9: Indigenous Knowledge Systems and Heritages of Ethiopia",
+            "parts": []
+          }
+        ]
+      },
+      {
+        "id": "g12-geo",
+        "name": "Geography",
+        "units": [
+          {
+            "id": "unit-1790080266401",
+            "title": "Unit 1: Major Geological Processes Associated with Plate Tectonics",
+            "parts": []
+          },
+          {
+            "id": "unit-1790080310533",
+            "title": "Unit 2: Climate Change",
+            "parts": [
+              {
+                "id": "part-1790195515293",
+                "title": "Part 1: Topic Name",
+                "videos": [
+                  {
+                    "id": "vid-1790195578393",
+                    "cameraCode": "00008 & 00009",
+                    "title": "Climate change",
+                    "description": "00008 & 00009 are 1 video cut in 2"
+                  }
+                ]
+              },
+              {
+                "id": "part-1790663918677",
+                "title": "Part 2:",
+                "videos": [
+                  {
+                    "id": "vid-1790663978334",
+                    "cameraCode": "00005",
+                    "title": "Green house gas .....",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1790663993695",
+                "title": "Part 3: Topic Name",
+                "videos": [
+                  {
+                    "id": "vid-1790664047299",
+                    "cameraCode": "00006",
+                    "title": "Climate change m....",
+                    "description": ""
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "unit-1790080336387",
+            "title": "Unit 3: Management of Conflict Over Resources",
+            "parts": [
+              {
+                "id": "part-1790665434432",
+                "title": "Part 1:",
+                "videos": [
+                  {
+                    "id": "vid-1790665504056",
+                    "cameraCode": "C0163",
+                    "title": "Management of conflicts over resources",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1790665510913",
+                "title": "Part 2: Topic Name",
+                "videos": [
+                  {
+                    "id": "vid-1790665667241",
+                    "cameraCode": "C0164 & C0165",
+                    "title": "Ethiopia 10 year devel......",
+                    "description": "C0164 and C0165 1 video cut cause of technical issue"
+                  }
+                ]
+              },
+              {
+                "id": "part-1790791322657",
+                "title": "Part 3:",
+                "videos": [
+                  {
+                    "id": "vid-1790791424114",
+                    "cameraCode": "C0208 & C0209",
+                    "title": "Four types of Transboundary",
+                    "description": "Technical problem with camera cut 1 video in 2"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "unit-1790080383048",
+            "title": "Unit 4: Population Policies, Programs and the Environment",
+            "parts": []
+          },
+          {
+            "id": "unit-1790080407520",
+            "title": "Unit 5: Challenges of Economic Development",
+            "parts": []
+          },
+          {
+            "id": "unit-1790080424756",
+            "title": "Unit 6: Solutions to Environmental and Sustainability Problems",
+            "parts": []
+          },
+          {
+            "id": "unit-1790080448891",
+            "title": "Unit 7: Contemporary Global Geographic Issues and Public Concerns",
+            "parts": []
+          },
+          {
+            "id": "unit-1790080474385",
+            "title": "Unit 8: Geographical Enquiry and Map Making",
+            "parts": []
+          }
+        ]
+      },
+      {
+        "id": "g12-econ",
+        "name": "Economics",
+        "units": [
+          {
+            "id": "unit-1790081623921",
+            "title": "Unit 1: The Fundamental Concepts Of Macroeconomics",
+            "parts": []
+          },
+          {
+            "id": "unit-1790081640168",
+            "title": "Unit 2: Aggregate Demand And Aggregate Supply Analysis",
+            "parts": [
+              {
+                "id": "part-1790104609983",
+                "title": "Part 2 Factor affecting",
+                "videos": [
+                  {
+                    "id": "vid-1790108874858",
+                    "cameraCode": "00018 & 00019 & 00020 & 00021",
+                    "title": "Interest rate effect",
+                    "description": "00018 and 00019 are one video\n00020 and 00021 are one video"
+                  }
+                ]
+              },
+              {
+                "id": "part-1790317421581",
+                "title": "Part 3:",
+                "videos": [
+                  {
+                    "id": "vid-1790317442425",
+                    "cameraCode": "00020 & 00021",
+                    "title": "Change in ......",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1790317462803",
+                "title": "Part 4:",
+                "videos": [
+                  {
+                    "id": "vid-1790317782420",
+                    "cameraCode": "00026 & 00027",
+                    "title": "FACTORS AFFECTING INVESTMENT",
+                    "description": "00026 & 00027 ARE 1 VIDEO CUT IN 2"
+                  },
+                  {
+                    "id": "vid-1790317889360",
+                    "cameraCode": "00028 & 00029",
+                    "title": "FACTORS AFFECTING GOVERNMENT SPENDING",
+                    "description": "00028 AND 00029 ARE 1 VIDEO CUT IN 2"
+                  }
+                ]
+              },
+              {
+                "id": "part-1790317944677",
+                "title": "Part 5:",
+                "videos": [
+                  {
+                    "id": "vid-1790318074806",
+                    "cameraCode": "00030 & 00031",
+                    "title": "AGGREGATE SUPPLY",
+                    "description": "00030 AND 00031 ARE 1 VIDEO CUT IN 2"
+                  },
+                  {
+                    "id": "vid-1790318127082",
+                    "cameraCode": "00032 & 00033",
+                    "title": "STICK WAGES",
+                    "description": "00032 & 00033 ARE 1 VIDEO CUT IN 2"
+                  }
+                ]
+              },
+              {
+                "id": "part-1791398852645",
+                "title": "Part 6:",
+                "videos": [
+                  {
+                    "id": "vid-1791398981064",
+                    "cameraCode": "C0031",
+                    "title": "Worker Misperception",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1791399479706",
+                "title": "Part 7:",
+                "videos": [
+                  {
+                    "id": "vid-1791399665821",
+                    "cameraCode": "C0032",
+                    "title": "Section III: Equilibrium ......",
+                    "description": ""
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "unit-1790081656348",
+            "title": "Unit 3: Market Failure And Consumer Protection",
+            "parts": [
+              {
+                "id": "part-1791399604111",
+                "title": "Part 1:",
+                "videos": [
+                  {
+                    "id": "vid-1791399740691",
+                    "cameraCode": "C0033",
+                    "title": "Market failure and .......",
+                    "description": ""
+                  }
+                ]
+              },
+              {
+                "id": "part-1791399609496",
+                "title": "Part 2: Topic Name",
+                "videos": [
+                  {
+                    "id": "vid-1791399769717",
+                    "cameraCode": "C0034",
+                    "title": "Classification of goods .........",
+                    "description": ""
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "unit-1790081678304",
+            "title": "Unit 4: Macroeconomic Policy Instruments",
+            "parts": []
+          },
+          {
+            "id": "unit-1790081691176",
+            "title": "Unit 5: Tax Theory And Practice",
+            "parts": []
+          },
+          {
+            "id": "unit-1790081703723",
+            "title": "Unit 6: Poverty And Inequality",
+            "parts": []
+          },
+          {
+            "id": "unit-1790081714150",
+            "title": "Unit 7: Macroeconomic Reforms In Ethiopia",
+            "parts": []
+          },
+          {
+            "id": "unit-1790081719272",
+            "title": "Unit 8: Economy, Environment And Climate Change",
+            "parts": []
+          }
+        ]
+      }
+    ]
+  }
+}

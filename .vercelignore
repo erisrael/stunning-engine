@@ -1,0 +1,10 @@
+# Never upload local data, backups or the control panel to Vercel.
+/data
+/backups
+/control-panel
+/.next
+/node_modules
+.env*
+*.db
+*.db-shm
+*.db-wal

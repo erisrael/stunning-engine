@@ -1,0 +1,82 @@
+"use client";
+
+import { useActionState, useState } from "react";
+import { EyeIcon, EyeOffIcon, LoaderIcon } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { loginAction } from "@/app/actions/auth";
+
+export function LoginForm({ next }: { next?: string }) {
+  const [state, action, pending] = useActionState(loginAction, undefined);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [show, setShow] = useState(false);
+  return (
+    <div className="space-y-5">
+      <form action={action} className="space-y-4">
+        <input type="hidden" name="next" value={next ?? "/dashboard"} />
+        <div className="space-y-1.5">
+          <Label htmlFor="email" className="text-xs font-semibold">
+            Email
+          </Label>
+          <Input
+            id="email"
+            name="email"
+            type="email"
+            autoComplete="username"
+            autoFocus
+            required
+            placeholder="name@company.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="h-11 rounded-lg"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="password" className="text-xs font-semibold">
+            Password
+          </Label>
+          <div className="relative">
+            <Input
+              id="password"
+              name="password"
+              type={show ? "text" : "password"}
+              autoComplete="current-password"
+              required
+              placeholder="Enter your password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="h-11 rounded-lg pr-10"
+            />
+            <button
+              type="button"
+              onClick={() => setShow((s) => !s)}
+              className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+              aria-label={show ? "Hide password" : "Show password"}
+            >
+              {show ? <EyeOffIcon className="size-4" /> : <EyeIcon className="size-4" />}
+            </button>
+          </div>
+        </div>
+        {state?.error && (
+          <Alert variant="destructive" className="py-2">
+            <AlertDescription>{state.error}</AlertDescription>
+          </Alert>
+        )}
+        <Button type="submit" className="h-11 w-full rounded-lg text-sm font-semibold" disabled={pending}>
+          {pending ? (
+            <>
+              <LoaderIcon className="animate-spin" /> Signing in
+            </>
+          ) : (
+            "Log in"
+          )}
+        </Button>
+        <p className="text-center text-xs text-muted-foreground">Forgot your password? Ask your admin to reset it.</p>
+      </form>
+
+    </div>
+  );
+}
