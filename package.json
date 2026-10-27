@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start -p 3020",
+    "start": "next start",
     "templates": "tsx scripts/generate-templates.ts",
     "checks": "tsx scripts/run-checks.ts",
     "typecheck": "tsc --noEmit",
