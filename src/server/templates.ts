@@ -2,17 +2,18 @@ import { loadLookups, TEMPLATES, type TemplateDef, type TemplateKey } from "./im
 import { getSettings } from "./settings";
 import { csvEscape } from "./exporter";
 
-export function templateCsv(key: TemplateKey) {
+// `rows` replaces the example rows, for a pre-filled "My parts" file.
+export function templateCsv(key: TemplateKey, rows?: Record<string, string>[]) {
   const t = TEMPLATES[key];
   const lines = [t.fields.map((f) => f.key).join(",")];
-  for (const ex of t.examples()) lines.push(t.fields.map((f) => csvEscape(ex[f.key] ?? "")).join(","));
+  for (const ex of rows ?? t.examples()) lines.push(t.fields.map((f) => csvEscape(ex[f.key] ?? "")).join(","));
   return "﻿" + lines.join("\r\n") + "\r\n";
 }
 
 const GREEN = "FF074924";
 const IVORY = "FFF8FAF4";
 
-export async function templateXlsx(key: TemplateKey): Promise<Buffer> {
+export async function templateXlsx(key: TemplateKey, rows?: Record<string, string>[]): Promise<Buffer> {
   await loadLookups();
   const ExcelJS = (await import("exceljs")).default;
   const t: TemplateDef = TEMPLATES[key];
@@ -33,13 +34,16 @@ export async function templateXlsx(key: TemplateKey): Promise<Buffer> {
     const req = f.required === true ? "Required" : f.required ? `Required in ${f.required} mode` : "Optional";
     cell.note = `${f.label}\n${req}\n${f.description}`;
   });
-  for (const ex of t.examples()) sheet.addRow(t.fields.map((f) => ex[f.key] ?? ""));
-  for (let i = 2; i <= t.examples().length + 1; i++) {
-    const r = sheet.getRow(i);
-    r.font = { italic: true, color: { argb: "FF4B5563" } };
-  }
+  const data = rows ?? t.examples();
+  for (const ex of data) sheet.addRow(t.fields.map((f) => ex[f.key] ?? ""));
+  if (!rows)
+    for (let i = 2; i <= data.length + 1; i++) {
+      const r = sheet.getRow(i);
+      r.font = { italic: true, color: { argb: "FF4B5563" } };
+    }
 
-  // Allowed values live on a Lists sheet and drive dropdown validation on 500 rows.
+  // Allowed values live on a Lists sheet and drive dropdown validation (500 rows, or the pre-filled rows plus room to add).
+  const lastRow = Math.max(501, data.length + 201);
   const lists = wb.addWorksheet("Lists");
   let col = 1;
   t.fields.forEach((f, i) => {
@@ -52,7 +56,7 @@ export async function templateXlsx(key: TemplateKey): Promise<Buffer> {
     if (f.type === "enum" || f.type === "bool") {
       const letter = lists.getColumn(col).letter;
       const range = `Lists!$${letter}$2:$${letter}$${opts.length + 1}`;
-      for (let r = 2; r <= 501; r++) {
+      for (let r = 2; r <= lastRow; r++) {
         sheet.getCell(r, i + 1).dataValidation = {
           type: "list",
           allowBlank: f.required !== true,
@@ -92,7 +96,11 @@ export async function templateXlsx(key: TemplateKey): Promise<Buffer> {
   info.addRow({ key: t.summary });
   info.addRow({ key: `Supported modes: ${t.modes.join(", ")}. Timezone: ${s.workspace.timezone}.` });
   for (const n of t.notes) info.addRow({ key: `- ${n}` });
-  info.addRow({ key: "Delete the example rows before importing. Header names must stay unchanged, or map them in the import wizard." });
+  info.addRow({
+    key: rows
+      ? "The Template sheet lists your parts. Fill in status, date and links, delete rows you are not reporting, then import. Header names must stay unchanged, or map them in the import wizard."
+      : "Delete the example rows before importing. Header names must stay unchanged, or map them in the import wizard.",
+  });
   info.eachRow((r, n) => {
     if (n > 1) r.alignment = { wrapText: true, vertical: "top" };
   });

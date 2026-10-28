@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { CheckCircle2Icon, CircleAlertIcon, CircleMinusIcon, FileUpIcon, Loader2Icon, RefreshCwIcon, TriangleAlertIcon } from "lucide-react";
+import { CheckCircle2Icon, CircleAlertIcon, CircleMinusIcon, DownloadIcon, FileUpIcon, Loader2Icon, RefreshCwIcon, TriangleAlertIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -13,11 +13,20 @@ import { parseImportFileAction, runImportAction } from "@/app/actions/imports";
 import type { ImportMode, ImportResult, ParsedSheet, TemplateKey } from "@/server/importer";
 import { cn } from "@/lib/utils";
 
-type TemplateInfo = { key: TemplateKey; title: string; summary: string; modes: ImportMode[]; fields: { key: string; label: string; required: boolean | string; description: string }[] };
+export type TemplateInfo = {
+  key: TemplateKey;
+  title: string;
+  summary: string;
+  modes: ImportMode[];
+  notes?: string[];
+  stage?: string;
+  fields: { key: string; label: string; required: boolean | string; description: string }[];
+};
 
 const STEPS = ["Template", "Upload", "Map columns", "Preview", "Result"];
 
-export function ImportWizard({ templates, initial }: { templates: TemplateInfo[]; initial?: string }) {
+// `className` lets a dashboard dialog drop the card frame.
+export function ImportWizard({ templates, initial, className, title = "Import wizard" }: { templates: TemplateInfo[]; initial?: string; className?: string; title?: string }) {
   const router = useRouter();
   const [step, setStep] = React.useState(0);
   const [tpl, setTpl] = React.useState<TemplateKey>((templates.find((t) => t.key === initial)?.key ?? templates[0]?.key) as TemplateKey);
@@ -89,9 +98,9 @@ export function ImportWizard({ templates, initial }: { templates: TemplateInfo[]
   const required = t?.fields.filter((f) => f.required === true || f.required === mode || (f.required === "create" && mode === "upsert")) ?? [];
 
   return (
-    <Card>
+    <Card className={className}>
       <CardHeader>
-        <CardTitle>Import wizard</CardTitle>
+        <CardTitle>{title}</CardTitle>
         <CardDescription>Choose a template, upload, map columns, review every row, then confirm. Nothing changes until you confirm, and a retried file never duplicates records.</CardDescription>
         <ol className="mt-2 flex flex-wrap gap-1.5" aria-label="Import steps">
           {STEPS.map((s, i) => (
@@ -104,17 +113,50 @@ export function ImportWizard({ templates, initial }: { templates: TemplateInfo[]
       <CardContent className="space-y-4">
         {step === 0 && (
           <div className="space-y-4">
-            <RadioGroup value={tpl} onValueChange={(v) => setTpl(v as TemplateKey)} className="grid gap-2 md:grid-cols-2">
-              {templates.map((x) => (
-                <label key={x.key} className={cn("flex cursor-pointer gap-3 rounded-lg border p-3", tpl === x.key && "border-primary bg-accent/40")}>
-                  <RadioGroupItem value={x.key} className="mt-1" />
-                  <span>
-                    <span className="block text-sm font-medium">{x.title}</span>
-                    <span className="block text-xs text-muted-foreground">{x.summary}</span>
-                  </span>
-                </label>
-              ))}
-            </RadioGroup>
+            {templates.length > 1 ? (
+              <RadioGroup value={tpl} onValueChange={(v) => setTpl(v as TemplateKey)} className="grid gap-2 md:grid-cols-2">
+                {templates.map((x) => (
+                  <label key={x.key} className={cn("flex cursor-pointer gap-3 rounded-lg border p-3", tpl === x.key && "border-primary bg-accent/40")}>
+                    <RadioGroupItem value={x.key} className="mt-1" />
+                    <span>
+                      <span className="block text-sm font-medium">{x.title}</span>
+                      <span className="block text-xs text-muted-foreground">{x.summary}</span>
+                    </span>
+                  </label>
+                ))}
+              </RadioGroup>
+            ) : (
+              <div className="rounded-lg border bg-muted/30 p-3">
+                <p className="text-sm font-medium">{t.title}</p>
+                <p className="text-xs text-muted-foreground">{t.summary}</p>
+                {!!t.notes?.length && (
+                  <ul className="mt-2 list-inside list-disc space-y-0.5 text-xs text-muted-foreground">
+                    {t.notes.map((n) => (
+                      <li key={n}>{n}</li>
+                    ))}
+                  </ul>
+                )}
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Columns: <span className="font-mono">{t.fields.map((f) => f.key).join(", ")}</span>
+                </p>
+              </div>
+            )}
+            {t?.stage && (
+              <div className="flex flex-wrap items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 p-3">
+                <span className="mr-auto text-xs">
+                  <span className="block font-medium text-foreground">My parts, pre-filled</span>
+                  <span className="text-muted-foreground">Every part waiting for your team, already listed. Fill in status, date and links, then upload it here.</span>
+                </span>
+                <Button size="sm" asChild>
+                  <a href={`/api/templates/${tpl}?format=xlsx&prefill=1`}>
+                    <DownloadIcon /> My parts (Excel)
+                  </a>
+                </Button>
+                <Button size="sm" variant="outline" asChild>
+                  <a href={`/api/templates/${tpl}?format=csv&prefill=1`}>CSV</a>
+                </Button>
+              </div>
+            )}
             {t && t.modes.length > 1 && (
               <div className="space-y-1.5">
                 <Label>Mode</Label>
@@ -137,6 +179,9 @@ export function ImportWizard({ templates, initial }: { templates: TemplateInfo[]
               </Button>
               <Button variant="ghost" asChild>
                 <a href={`/api/templates/${tpl}?format=csv`}>CSV template</a>
+              </Button>
+              <Button variant="ghost" asChild>
+                <a href={`/api/templates/${tpl}?format=json`}>JSON template</a>
               </Button>
             </div>
           </div>

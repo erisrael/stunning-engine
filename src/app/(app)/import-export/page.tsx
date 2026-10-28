@@ -12,6 +12,8 @@ import { PageHeader } from "@/components/app/primitives";
 import { StatusPill } from "@/components/app/status-pill";
 import { ImportWizard } from "./import-wizard";
 import { TrackerImport } from "./tracker-import";
+import { VideoTrackerImport } from "./video-tracker-import";
+import { canImportVideoTracker } from "@/server/video-tracker";
 import { ExportMenu } from "@/components/app/bulk-and-export";
 import { DEFAULT_CONTENT_COLUMNS } from "@/lib/columns";
 import { can } from "@/server/users";
@@ -26,6 +28,7 @@ export default async function ImportExportPage({ searchParams }: { searchParams:
   const sp = await searchParams;
   const allJobs = can(viewer, "import.run") || can(viewer, "data.manage");
   const canTracker = can(viewer, "import.tracker");
+  const canVideoTracker = canImportVideoTracker(viewer);
   const canExport = can(viewer, "export.run") || can(viewer, "export.report") || can(viewer, "export.tracker") || can(viewer, "export.audit");
   const total = await countItems(viewer, emptyFilters(), nowIso());
   const tz = (await getSettings()).workspace.timezone;
@@ -35,8 +38,11 @@ export default async function ImportExportPage({ searchParams }: { searchParams:
     summary: t.summary,
     modes: t.modes,
     notes: t.notes,
+    stage: t.stage,
     fields: t.fields.map((f) => ({ key: f.key, label: f.label, required: f.required, description: f.description })),
   }));
+  // Team members start on their own team's template.
+  const ownTemplate = templates.find((t) => t.stage && t.stage === viewer.activeRole)?.key;
   const jobs = await all<{ id: string; kind: string; template: string | null; mode: string | null; file_name: string | null; status: string; total_rows: number; created_count: number; updated_count: number; skipped_count: number; error_count: number; actor_id: string | null; created_at: string; finished_at: string | null }>(
       `SELECT * FROM jobs ${allJobs ? "" : "WHERE actor_id = ?"} ORDER BY created_at DESC LIMIT 40`,
       ...(allJobs ? [] : [viewer.id]),
@@ -50,7 +56,7 @@ export default async function ImportExportPage({ searchParams }: { searchParams:
       />
       <div className="grid gap-4 xl:grid-cols-3">
         <div className="space-y-4 xl:col-span-2">
-          {templates.length > 0 && <ImportWizard templates={templates} initial={sp.template ?? (templates.some((t) => t.key === "progress") ? "progress" : undefined)} />}
+          {templates.length > 0 && <ImportWizard templates={templates} initial={sp.template ?? ownTemplate ?? (templates.some((t) => t.key === "progress") ? "progress" : undefined)} />}
           <Card>
             <CardHeader>
               <CardTitle>Job history</CardTitle>
@@ -142,6 +148,11 @@ export default async function ImportExportPage({ searchParams }: { searchParams:
                     <Button size="xs" variant="outline" asChild>
                       <a href={`/api/templates/${t.key}?format=json`}>JSON</a>
                     </Button>
+                    {t.stage && (
+                      <Button size="xs" variant="outline" asChild>
+                        <a href={`/api/templates/${t.key}?format=xlsx&prefill=1`}>My parts</a>
+                      </Button>
+                    )}
                     <Button size="xs" variant="ghost" asChild>
                       <Link href={`/import-export?template=${t.key}`}>Use in wizard</Link>
                     </Button>
@@ -181,6 +192,21 @@ export default async function ImportExportPage({ searchParams }: { searchParams:
                   <li>PDF report: a printable summary; choose grouping, filters and page size, then Save as PDF.</li>
                 </ul>
                 <p className="text-xs text-muted-foreground">Cells that start with =, +, - or @ are escaped so spreadsheets never run them as formulas. Media files are never exported, only their links and camera codes.</p>
+              </CardContent>
+            </Card>
+          )}
+          {canVideoTracker && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Upload team&apos;s video tracker CSV</CardTitle>
+                <CardDescription>
+                  A row means the edited file reached Uploading, so Recording and Editing are done. Not Started waits in Uploading, Completed means uploaded,
+                  Verified means published and Missing means the file has not arrived. Duplicate rows count once. Import the curriculum tracker JSON first; parts it
+                  does not list are added from here. Preview the trace before applying; running it again is safe.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <VideoTrackerImport />
               </CardContent>
             </Card>
           )}

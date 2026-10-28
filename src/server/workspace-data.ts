@@ -1,4 +1,4 @@
-import { all, get, nowIso, run, tx, uid } from "./db";
+import { all, get, nowIso, placeholders, run, tx, uid } from "./db";
 import { TABLES } from "./schema";
 import { getSettings } from "./settings";
 import { hashPassword } from "./passwords";
@@ -217,7 +217,7 @@ const SUBJECT_CODES: Record<string, string> = {
 // Typos in the source names are corrected for display; the code stays stable.
 const SUBJECT_NAMES: Record<string, string> = { ENVS: "Environmental Science" };
 
-function subjectCode(name: string) {
+export function subjectCode(name: string) {
   const key = name.trim().toLowerCase().replace(/\s+/g, " ");
   return (
     SUBJECT_CODES[key] ??
@@ -248,6 +248,40 @@ function cleanTitle(raw: string, words: string[], fallback: string) {
   ];
   const re = patterns.find((p) => p.test(t));
   return (re ? t.replace(re, "") : t).trim() || fallback;
+}
+
+const UNIT_WORDS = /^(?:\S\s+)?(?:unit|ምዕራፍ|chapter)\s*(\d+)|^(\d+)\s*[:.\-–]/i;
+const PART_WORDS = /^(?:part|par|ክፍል)\s*(\d+)/i;
+
+// Numbers for one unit's parts (or one subject's units) from a tracker file: the number in the title when it is
+// unique, otherwise the position, otherwise the next free number. Rows from other sources keep their numbers.
+// This file's existing rows are parked on temporary numbers first so they can be renumbered without clashing.
+async function planNumbers(table: "units" | "lessons", where: string, params: string[], rows: { id: string; title: string }[], words: RegExp) {
+  if (!rows.length) return [];
+  const existing = await all<{ number: number; source_ref: string | null }>(`SELECT number, source_ref FROM ${table} WHERE ${where}`, ...params);
+  const mine = new Set(rows.map((r) => r.id));
+  const used = new Set(existing.filter((e) => !e.source_ref || !mine.has(e.source_ref)).map((e) => e.number));
+  const out: number[] = [];
+  rows.forEach((r, i) => {
+    const m = words.exec(r.title.trim());
+    const n = m ? Number(m[1] ?? m[2]) : 0;
+    if (n > 0 && !used.has(n)) {
+      out[i] = n;
+      used.add(n);
+    }
+  });
+  rows.forEach((_, i) => {
+    if (out[i]) return;
+    const n = used.has(i + 1) ? Math.max(0, ...used) + 1 : i + 1;
+    out[i] = n;
+    used.add(n);
+  });
+  await run(
+    `UPDATE ${table} SET number = number + 100000 WHERE ${where} AND source_ref IN (${placeholders(rows.length)})`,
+    ...params,
+    ...rows.map((r) => r.id),
+  );
+  return out;
 }
 
 export function isCurriculumBackup(data: unknown): data is CurriculumBackup {
@@ -323,20 +357,26 @@ export async function importCurriculumBackup(
         const subject = (await get<{ id: string }>("SELECT id FROM subjects WHERE code = ?", sCode))!;
         await run("INSERT INTO grade_subjects (grade_id, subject_id) VALUES (?, ?) ON CONFLICT DO NOTHING", grade.id, subject.id);
 
+        // Units and parts keep the number in their title ("Part 4:" is part 4), so other teams' files match them.
+        const unitNos = await planNumbers(
+          "units",
+          "grade_id = ? AND subject_id = ?",
+          [grade.id, subject.id],
+          s.units.map((u) => ({ id: u.id, title: u.title })),
+          UNIT_WORDS,
+        );
         let unitNo = 0;
         for (const u of s.units) {
           unitNo++;
-          const title = cleanTitle(u.title, ["unit", "ምዕራፍ", "chapter"], `Unit ${unitNo}`);
+          const number = unitNos[unitNo - 1];
+          const title = cleanTitle(u.title, ["unit", "ምዕራፍ", "chapter"], `Unit ${number}`);
           const am = ETHIOPIC.test(u.title);
           let unit = await get<{ id: string; number: number }>("SELECT id, number FROM units WHERE source_ref = ?", u.id);
           if (unit) {
-            await run("UPDATE units SET title = ?, title_am = ? WHERE id = ?", title, am ? title : null, unit.id);
+            await run("UPDATE units SET title = ?, title_am = ?, number = ? WHERE id = ?", title, am ? title : null, number, unit.id);
+            unit = { id: unit.id, number };
             summary.units.updated++;
           } else {
-            const taken = await get("SELECT 1 AS x FROM units WHERE grade_id = ? AND subject_id = ? AND number = ?", grade.id, subject.id, unitNo);
-            const number = taken
-              ? ((await get<{ n: number }>("SELECT MAX(number) AS n FROM units WHERE grade_id = ? AND subject_id = ?", grade.id, subject.id))?.n ?? 0) + 1
-              : unitNo;
             const id = uid("unt_");
             await run(
               "INSERT INTO units (id, curriculum_id, grade_id, subject_id, number, title, title_am, source_ref) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -353,20 +393,19 @@ export async function importCurriculumBackup(
             summary.units.created++;
           }
 
+          const partNos = await planNumbers("lessons", "unit_id = ?", [unit.id], u.parts.map((p) => ({ id: p.id, title: p.title })), PART_WORDS);
           let partNo = 0;
           for (const p of u.parts) {
             partNo++;
-            const pTitle = cleanTitle(p.title, ["part", "ክፍል"], `Part ${partNo}`);
+            const number = partNos[partNo - 1];
+            const pTitle = cleanTitle(p.title, ["part", "ክፍል"], `Part ${number}`);
             const language = ETHIOPIC.test(p.title) || am ? "am" : "en";
             let lesson = await get<{ id: string; number: number }>("SELECT id, number FROM lessons WHERE source_ref = ?", p.id);
             if (lesson) {
-              await run("UPDATE lessons SET title = ?, language = ? WHERE id = ?", pTitle, language, lesson.id);
+              await run("UPDATE lessons SET title = ?, language = ?, number = ?, unit_id = ? WHERE id = ?", pTitle, language, number, unit.id, lesson.id);
+              lesson = { id: lesson.id, number };
               summary.parts.updated++;
             } else {
-              const taken = await get("SELECT 1 AS x FROM lessons WHERE unit_id = ? AND number = ?", unit.id, partNo);
-              const number = taken
-                ? ((await get<{ n: number }>("SELECT MAX(number) AS n FROM lessons WHERE unit_id = ?", unit.id))?.n ?? 0) + 1
-                : partNo;
               const id = uid("les_");
               await run(
                 "INSERT INTO lessons (id, unit_id, number, title, language, planned_deliverables, source_ref, created_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?)",

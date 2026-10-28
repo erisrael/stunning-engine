@@ -46,13 +46,13 @@ export async function downloadExport(input: { format: "csv" | "xlsx" | "json" | 
 }
 
 type ExportFormat = "csv" | "xlsx" | "json" | "tracker" | "pdf" | "audit";
-type ExportPrefs = { format: ExportFormat; scope: "page" | "selected" | "all"; grouping: "grade" | "subject" | "none"; includeDates: boolean; columnSet: "view" | "overview" | "all"; orientation: "landscape" | "portrait" };
+type ExportPrefs = { format: ExportFormat; scope: "page" | "selected" | "all"; grouping: "grade" | "subject" | "none"; includeDates: boolean; columnSet: "view" | "overview" | "all"; orientation: "landscape" | "portrait"; pageBreaks: boolean };
 
 // Each format needs its own permission (Admin, Roles and permissions, Import and export).
 const FORMATS: { key: ExportFormat; label: string; hint: string; cap: Capability }[] = [
   { key: "xlsx", label: "Excel", hint: "A workbook with your rows (grade, subject and unit cells merged), progress by stage, and an About sheet.", cap: "export.run" },
   { key: "csv", label: "CSV", hint: "Plain rows for any spreadsheet or tool.", cap: "export.run" },
-  { key: "pdf", label: "PDF report", hint: "A printable status report with a summary per stage. Opens a preview; choose Save as PDF.", cap: "export.report" },
+  { key: "pdf", label: "PDF report (A4)", hint: "A print-ready A4 status report, landscape or portrait, with a summary per stage and per grade. Opens a preview; choose Save as PDF.", cap: "export.report" },
   { key: "json", label: "JSON (data)", hint: "The same rows as records, for other systems.", cap: "export.run" },
   { key: "tracker", label: "Curriculum tracker JSON", hint: "Grade, subjects, units, parts and videos in the tracker's own format, with each stage's progress added. Import it back any time.", cap: "export.tracker" },
   { key: "audit", label: "Metadata and audit JSON", hint: "Items with their full history and file manifest.", cap: "export.audit" },
@@ -65,7 +65,7 @@ export function ExportMenu({ columns, query, selected, pageCount, total, perms }
   const formats = FORMATS.filter((f) => perms.includes(f.cap));
   const [open, setOpen] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
-  const [p, setP] = React.useState<ExportPrefs>({ format: "xlsx", scope: "all", grouping: "grade", includeDates: true, columnSet: "view", orientation: "landscape" });
+  const [p, setP] = React.useState<ExportPrefs>({ format: "xlsx", scope: "all", grouping: "grade", includeDates: true, columnSet: "view", orientation: "landscape", pageBreaks: false });
   // Remembered per browser so the dialog opens with your usual choices.
   React.useEffect(() => {
     try {
@@ -93,7 +93,7 @@ export function ExportMenu({ columns, query, selected, pageCount, total, perms }
       /* storage blocked */
     }
     if (format === "pdf") {
-      const r = new URLSearchParams({ mode: p.grouping === "subject" ? "subject" : "grade", dates: p.includeDates ? "1" : "0", orientation: p.orientation });
+      const r = new URLSearchParams({ mode: p.grouping === "subject" ? "subject" : "grade", dates: p.includeDates ? "1" : "0", orientation: p.orientation, breaks: p.pageBreaks ? "1" : "0" });
       const g = params.get("g");
       const s = params.get("s");
       if (g && !g.includes(",")) r.set("grade", g);
@@ -211,6 +211,12 @@ export function ExportMenu({ columns, query, selected, pageCount, total, perms }
               <label className="flex items-center gap-2 text-sm">
                 <input type="checkbox" className="size-4 accent-[var(--primary)]" checked={p.includeDates} onChange={(e) => set("includeDates", e.target.checked)} />
                 Include recorded, edited, uploaded and publication dates
+              </label>
+            )}
+            {format === "pdf" && (
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" className="size-4 accent-[var(--primary)]" checked={p.pageBreaks} onChange={(e) => set("pageBreaks", e.target.checked)} />
+                Start each {p.grouping === "subject" ? "subject" : "grade"} on a new page
               </label>
             )}
             <p className="rounded-lg bg-muted/60 p-2.5 text-xs text-muted-foreground">

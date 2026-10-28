@@ -1,5 +1,6 @@
 "use client";
 
+import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeftIcon, PrinterIcon } from "lucide-react";
@@ -9,9 +10,13 @@ import { SIMPLE_STATUS_LABELS, STAGE_LABELS, STAGES } from "@/lib/domain";
 
 type Opt = { id: string; name: string };
 
-// Report settings (not printed): grouping, filters, columns and page orientation.
-export function ReportToolbar({ grades, subjects }: { grades: Opt[]; subjects: Opt[] }) {
+// Report settings (not printed): grouping, filters, columns, A4 orientation and page breaks.
+export function ReportToolbar({ grades, subjects, fileTitle, paper }: { grades: Opt[]; subjects: Opt[]; fileTitle: string; paper: string }) {
   const router = useRouter();
+  // The browser uses the document title as the suggested PDF file name.
+  React.useEffect(() => {
+    document.title = fileTitle;
+  }, [fileTitle]);
   const pathname = usePathname();
   const params = useSearchParams();
   const set = (k: string, v: string) => {
@@ -36,7 +41,7 @@ export function ReportToolbar({ grades, subjects }: { grades: Opt[]; subjects: O
   );
   const stageStatus = params.get("stage") && params.get("status") ? `${params.get("stage")}:${params.get("status")}` : "all";
   return (
-    <div className="no-print mb-4 flex flex-wrap items-center gap-2 rounded-xl border bg-muted/40 p-3">
+    <div className="no-print flex flex-wrap items-center gap-2 rounded-xl border bg-white p-3 text-[#292d34] shadow-sm">
       <Button variant="ghost" size="sm" asChild>
         <Link href="/dashboard">
           <ArrowLeftIcon /> Back
@@ -89,7 +94,12 @@ export function ReportToolbar({ grades, subjects }: { grades: Opt[]; subjects: O
         ["landscape", "Landscape"],
         ["portrait", "Portrait"],
       ], "w-32")}
-      <Button size="sm" className="ml-auto" onClick={() => window.print()}>
+      {sel("breaks", "Page breaks", params.get("breaks") ?? "0", [
+        ["0", "Continuous pages"],
+        ["1", `New page per ${params.get("mode") === "subject" ? "subject" : "grade"}`],
+      ], "w-44")}
+      <span className="ml-auto text-xs text-[#656f7d]">{paper}. In the print dialog choose Save as PDF; margins Default, Background graphics on.</span>
+      <Button size="sm" onClick={() => window.print()}>
         <PrinterIcon /> Save as PDF
       </Button>
     </div>

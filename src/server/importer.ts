@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import { all, get, nowIso, run, tx, uid } from "./db";
 import { getSettings } from "./settings";
 import { hashPassword } from "./passwords";
-import { can, canViewItem, isManager, type AppUser } from "./users";
+import { can, canViewItem, isManager, scopeSql, type AppUser } from "./users";
 import { notify } from "./notifications";
 import {
   addAsset,
@@ -34,7 +34,17 @@ export type TemplateField = {
   options?: () => string[];
 };
 
-export type TemplateKey = "progress" | "curriculum" | "items" | "users" | "recording_sessions" | "historical";
+export type TemplateKey =
+  | "progress"
+  | "recording_progress"
+  | "editing_progress"
+  | "uploading_progress"
+  | "publication_progress"
+  | "curriculum"
+  | "items"
+  | "users"
+  | "recording_sessions"
+  | "historical";
 export type ImportMode = "create" | "update" | "upsert";
 
 export type TemplateDef = {
@@ -44,6 +54,10 @@ export type TemplateDef = {
   managerOnly: boolean;
   // Templates open to stage roles; each row is still checked against the person's own stage.
   stageImport?: boolean;
+  // One team's own progress template: every row is for this stage.
+  stage?: Stage;
+  // Team-specific column names mapped onto the shared progress columns (recorded_date -> done_date).
+  aliases?: Record<string, string>;
   modes: ImportMode[];
   fields: TemplateField[];
   examples: () => Record<string, string>[];
@@ -69,6 +83,95 @@ const contentKeys = () => LK.contents;
 const languageCodes = () => LK.languages;
 const destinationKeys = () => LK.destinations;
 const yesNo = () => ["yes", "no"];
+
+// Per-team progress templates: the same rules as Stage progress, with only that team's columns and wording.
+const STAGE_TEMPLATE_COPY: Record<Stage, { did: string; date: string; dateLabel: string; by: string; link?: { key: string; label: string; description: string }; summary: string }> = {
+  recording: {
+    did: "recorded",
+    date: "recorded_date",
+    dateLabel: "Date recorded",
+    by: "recorded_by",
+    summary: "Parts you have already recorded, with the date and camera codes. Done parts move on to Editing.",
+  },
+  editing: {
+    did: "edited",
+    date: "edited_date",
+    dateLabel: "Date edited",
+    by: "edited_by",
+    link: { key: "master_link", label: "Edited master link", description: "Link to the final edited file (Drive, Dropbox, server path)." },
+    summary: "Parts you have already edited, with the date and the master file link. Done parts move on to Uploading.",
+  },
+  uploading: {
+    did: "uploaded",
+    date: "uploaded_date",
+    dateLabel: "Date uploaded",
+    by: "uploaded_by",
+    link: { key: "uploaded_link", label: "Uploaded link", description: "Link to the uploaded video. Marks the required destinations as uploaded." },
+    summary: "Parts you have already uploaded, with the date and the uploaded link. Done parts move on to Publication.",
+  },
+  publication: {
+    did: "published",
+    date: "published_date",
+    dateLabel: "Date published",
+    by: "published_by",
+    link: { key: "live_link", label: "Live link", description: "Public link where the lesson is live." },
+    summary: "Parts you have already published, with the date and the live link. Done parts are marked Published.",
+  },
+};
+
+function stageTemplate(stage: Stage): TemplateDef {
+  const c = STAGE_TEMPLATE_COPY[stage];
+  const label = stage[0].toUpperCase() + stage.slice(1);
+  const evidence: TemplateField[] =
+    stage === "recording"
+      ? [
+          { key: "camera_codes", label: "Camera codes", required: false, type: "string", description: "Camera file codes for this part. Separate several videos with ;." },
+          { key: "video_title", label: "Video title", required: false, type: "string", description: "Title for the camera codes." },
+        ]
+      : [{ key: c.link!.key, label: c.link!.label, required: false, type: "url", description: c.link!.description }];
+  const fields: TemplateField[] = [
+    { key: "item_code", label: "Item code", required: false, type: "string", description: "Existing item code, for example MY-G05-MATH-U01-L01. Or use grade, subject, unit and part." },
+    { key: "grade_code", label: "Grade code", required: false, type: "enum", options: gradeCodes, description: "For example G05." },
+    { key: "subject_code", label: "Subject code", required: false, type: "enum", options: subjectCodes, description: "For example MATH." },
+    { key: "unit_number", label: "Unit number", required: false, type: "int", description: "Unit number within the grade and subject." },
+    { key: "part_number", label: "Part number", required: false, type: "int", description: "Part number within the unit." },
+    { key: "part_title", label: "Part title (reference)", required: false, type: "string", description: "For your reference only. Not imported." },
+    { key: "status", label: "Status", required: false, type: "enum", options: () => ["done", "in_process"], description: `done (already ${c.did}) or in_process. Blank means done.` },
+    { key: c.date, label: c.dateLabel, required: false, type: "date", description: `YYYY-MM-DD, the day it was ${c.did}. Defaults to today for done rows.` },
+    ...evidence,
+    { key: c.by, label: `${label} by (email)`, required: false, type: "email", description: `Team member who ${c.did} it. Blank keeps the current owner.` },
+    { key: "notes", label: "Notes", required: false, type: "string", description: "Saved on the stage." },
+  ];
+  const example = (unit: string, part: string, title: string, date: string): Record<string, string> => ({
+    grade_code: "G05",
+    subject_code: "MATH",
+    unit_number: unit,
+    part_number: part,
+    part_title: title,
+    status: "done",
+    [c.date]: date,
+    ...(c.link ? { [c.link.key]: `https://drive.example.com/${stage}/g05-math-u${unit}-p${part}.mp4` } : { camera_codes: "C0276; C0277", video_title: title }),
+  });
+  return {
+    key: `${stage}_progress` as TemplateKey,
+    title: `${label} progress`,
+    summary: c.summary,
+    managerOnly: false,
+    stageImport: true,
+    stage,
+    aliases: { [c.date]: "done_date", [c.by]: "assign_to", ...(c.link ? { [c.link.key]: "link" } : {}) },
+    modes: ["update"],
+    notes: [
+      `For the ${label} team. Every row is ${stage} progress, so there is no stage column.`,
+      "Find the part by item_code, or by grade_code, subject_code, unit_number and part_number. Download My parts for a file that already lists the parts waiting for you.",
+      `status done (or blank) marks it ${c.did} on ${c.date} and sends it to the next team. in_process only saves the evidence, notes or owner.`,
+      `A part can only be ${c.did} after the stages before it are done. Rows for parts already past ${label} just correct the date.`,
+      "Files can be CSV, Excel or JSON (an array of rows with these column names).",
+    ],
+    fields,
+    examples: () => [example("1", "1", "Counting to 100", "2026-10-20"), example("1", "2", "Place value", "2026-10-21")],
+  };
+}
 
 export const TEMPLATES: Record<TemplateKey, TemplateDef> = {
   progress: {
@@ -106,6 +209,10 @@ export const TEMPLATES: Record<TemplateKey, TemplateDef> = {
       { item_code: "", grade_code: "G07", subject_code: "MATH", unit_number: "1", part_number: "1", stage: "recording", status: "done", done_date: "2026-10-18", camera_codes: "C0276; C0277", video_title: "Basic concepts of sets", link: "", assign_to: "", notes: "" },
     ],
   },
+  recording_progress: stageTemplate("recording"),
+  editing_progress: stageTemplate("editing"),
+  uploading_progress: stageTemplate("uploading"),
+  publication_progress: stageTemplate("publication"),
   curriculum: {
     key: "curriculum",
     title: "Curriculum inventory",
@@ -348,8 +455,44 @@ export const TEMPLATES: Record<TemplateKey, TemplateDef> = {
   },
 };
 
+// Who can record progress for a stage: its team, its lead, or managers who override owners.
+export function runsStage(user: AppUser, stage: Stage) {
+  return isManager(user) || user.leads.includes(stage) || user.roles.includes(stage);
+}
+
 export function templateList(user: AppUser) {
-  return Object.values(TEMPLATES).filter((t) => (t.stageImport ? can(user, "import.stage") || can(user, "import.run") : !t.managerOnly || can(user, "import.run")));
+  return Object.values(TEMPLATES).filter((t) => {
+    if (t.stageImport && !can(user, "import.stage") && !can(user, "import.run")) return false;
+    if (t.stage) return runsStage(user, t.stage);
+    return t.stageImport || !t.managerOnly || can(user, "import.run");
+  });
+}
+
+// "My parts" file for a team template: the parts in the person's access waiting at that stage, ready to fill in.
+export async function stagePrefillRows(user: AppUser, stage: Stage): Promise<Record<string, string>[]> {
+  const sc = scopeSql(user, "i");
+  const rows = await all<{ code: string; grade_code: string | null; subject_code: string | null; unit_number: number | null; part_number: number | null; title: string }>(
+    `SELECT i.code, g.code AS grade_code, s.code AS subject_code, u.number AS unit_number, l.number AS part_number, i.title
+       FROM items i
+       LEFT JOIN lessons l ON l.id = i.lesson_id
+       LEFT JOIN units u ON u.id = l.unit_id
+       LEFT JOIN grades g ON g.id = u.grade_id
+       LEFT JOIN subjects s ON s.id = u.subject_id
+      WHERE ((i.lifecycle = 'in_production' AND i.stage = ?) OR (? = 'recording' AND i.lifecycle = 'draft')) AND ${sc.sql}
+      ORDER BY g.sort, s.sort, u.number, l.number, i.code
+      LIMIT 5000`,
+    stage,
+    stage,
+    ...sc.params,
+  );
+  return rows.map((r) => ({
+    item_code: r.code,
+    grade_code: r.grade_code ?? "",
+    subject_code: r.subject_code ?? "",
+    unit_number: r.unit_number === null ? "" : String(r.unit_number),
+    part_number: r.part_number === null ? "" : String(r.part_number),
+    part_title: r.title,
+  }));
 }
 
 // ---------------------------------------------------------------------------
@@ -559,7 +702,12 @@ async function planRow(template: TemplateDef, rec: Row, rowNo: number, mode: Imp
     warnings,
   });
 
-  if (template.key === "progress") {
+  if (template.key === "progress" || template.stage) {
+    if (template.stage) {
+      for (const [from, to] of Object.entries(template.aliases ?? {})) rec[to] = rec[from] ?? "";
+      rec.stage = template.stage;
+      rec.status ||= "done";
+    }
     const stage = rec.stage?.toLowerCase() as Stage;
     let item: { id: string; code: string; lifecycle: string; stage: Stage | null } | undefined;
     if (rec.item_code) {
