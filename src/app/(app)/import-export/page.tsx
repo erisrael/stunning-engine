@@ -3,7 +3,7 @@ import { DownloadIcon, FileSpreadsheetIcon } from "lucide-react";
 import { requireViewer } from "@/server/auth";
 import { all } from "@/server/db";
 import { getSettings } from "@/server/settings";
-import { templateList } from "@/server/importer";
+import { templateInfo, templateList } from "@/server/importer";
 import { userNames } from "@/server/rows";
 import { fmtDateTime } from "@/lib/format";
 import { Button } from "@/components/ui/button";
@@ -32,15 +32,7 @@ export default async function ImportExportPage({ searchParams }: { searchParams:
   const canExport = can(viewer, "export.run") || can(viewer, "export.report") || can(viewer, "export.tracker") || can(viewer, "export.audit");
   const total = await countItems(viewer, emptyFilters(), nowIso());
   const tz = (await getSettings()).workspace.timezone;
-  const templates = templateList(viewer).map((t) => ({
-    key: t.key,
-    title: t.title,
-    summary: t.summary,
-    modes: t.modes,
-    notes: t.notes,
-    stage: t.stage,
-    fields: t.fields.map((f) => ({ key: f.key, label: f.label, required: f.required, description: f.description })),
-  }));
+  const templates = templateList(viewer).map(templateInfo);
   // Team members start on their own team's template.
   const ownTemplate = templates.find((t) => t.stage && t.stage === viewer.activeRole)?.key;
   const jobs = await all<{ id: string; kind: string; template: string | null; mode: string | null; file_name: string | null; status: string; total_rows: number; created_count: number; updated_count: number; skipped_count: number; error_count: number; actor_id: string | null; created_at: string; finished_at: string | null }>(
@@ -148,9 +140,9 @@ export default async function ImportExportPage({ searchParams }: { searchParams:
                     <Button size="xs" variant="outline" asChild>
                       <a href={`/api/templates/${t.key}?format=json`}>JSON</a>
                     </Button>
-                    {t.stage && (
+                    {t.prefill && (
                       <Button size="xs" variant="outline" asChild>
-                        <a href={`/api/templates/${t.key}?format=xlsx&prefill=1`}>My parts</a>
+                        <a href={`/api/templates/${t.key}?format=xlsx&prefill=1`}>{t.stage ? "My parts" : "Current data"}</a>
                       </Button>
                     )}
                     <Button size="xs" variant="ghost" asChild>

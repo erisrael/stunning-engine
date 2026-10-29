@@ -1,5 +1,5 @@
 import { getViewer } from "@/server/auth";
-import { loadLookups, stagePrefillRows, TEMPLATES, templateList, type TemplateKey } from "@/server/importer";
+import { loadLookups, TEMPLATES, templateList, type TemplateKey } from "@/server/importer";
 import { templateCsv, templateXlsx } from "@/server/templates";
 
 export async function GET(request: Request, { params }: { params: Promise<{ key: string }> }) {
@@ -12,9 +12,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ key:
   const url = new URL(request.url);
   const requested = url.searchParams.get("format");
   const format = requested === "csv" ? "csv" : requested === "json" ? "json" : "xlsx";
-  // Team templates can come pre-filled with the parts waiting for that team ("My parts").
-  const prefill = t.stage && url.searchParams.get("prefill") === "1" ? await stagePrefillRows(viewer, t.stage) : undefined;
-  const name = `myseed-${key.replace(/_/g, "-")}-${prefill ? "my-parts" : "template"}.${format}`;
+  // Templates with a pre-fill come with current data ready to edit: a team's waiting parts, or today's curriculum.
+  const prefill = t.prefill && url.searchParams.get("prefill") === "1" ? await t.prefill.rows(viewer) : undefined;
+  const name = `myseed-${key.replace(/_/g, "-")}-${prefill ? (t.stage ? "my-parts" : "current") : "template"}.${format}`;
   if (format === "json") {
     // Same columns as the spreadsheet templates, as an array of example rows.
     await loadLookups();

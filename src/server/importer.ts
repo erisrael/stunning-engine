@@ -16,7 +16,8 @@ import {
   WorkflowError,
   type Ctx,
 } from "./workflow";
-import { COMPLEXITIES, PRIORITIES, ROLES, STAGES, type Role, type Stage } from "@/lib/domain";
+import { COMPLEXITIES, PRIORITIES, ROLES, STAGES, type Capability, type Role, type Stage } from "@/lib/domain";
+import { planTaxonomyRow, TAXONOMY_KEYS, taxonomyPrefillRows, type TaxonomyKey } from "./taxonomy-import";
 import { endOfLocalDayIso, localInputToIso } from "@/lib/format";
 
 // ---------------------------------------------------------------------------
@@ -44,7 +45,8 @@ export type TemplateKey =
   | "items"
   | "users"
   | "recording_sessions"
-  | "historical";
+  | "historical"
+  | TaxonomyKey;
 export type ImportMode = "create" | "update" | "upsert";
 
 export type TemplateDef = {
@@ -58,6 +60,10 @@ export type TemplateDef = {
   stage?: Stage;
   // Team-specific column names mapped onto the shared progress columns (recorded_date -> done_date).
   aliases?: Record<string, string>;
+  // Any of these capabilities opens the template (instead of the managerOnly / stage rules).
+  cap?: Capability[];
+  // A download of current data in this template's columns, ready to edit and import back.
+  prefill?: { label: string; hint: string; rows: (user: AppUser) => Promise<Record<string, string>[]> };
   modes: ImportMode[];
   fields: TemplateField[];
   examples: () => Record<string, string>[];
@@ -160,6 +166,11 @@ function stageTemplate(stage: Stage): TemplateDef {
     stageImport: true,
     stage,
     aliases: { [c.date]: "done_date", [c.by]: "assign_to", ...(c.link ? { [c.link.key]: "link" } : {}) },
+    prefill: {
+      label: "My parts, pre-filled",
+      hint: "Every part waiting for your team, already listed. Fill in status, date and links, then upload it here.",
+      rows: (user) => stagePrefillRows(user, stage),
+    },
     modes: ["update"],
     notes: [
       `For the ${label} team. Every row is ${stage} progress, so there is no stage column.`,
@@ -173,7 +184,131 @@ function stageTemplate(stage: Stage): TemplateDef {
   };
 }
 
+// Curriculum structure for Settings: each kind on its own, or everything together in one row per part.
+const TAXONOMY_COMMON_NOTES = [
+  "Rows add what is missing and update what exists. A blank cell keeps the stored value, so nothing is cleared by accident.",
+  "Download Current curriculum to get today's data in these columns, edit it, and import it back.",
+  "Files can be CSV, Excel or JSON (an array of rows with these column names).",
+];
+const TAXONOMY_CAP: Capability[] = ["settings.manage", "import.run"];
+const createItemField: TemplateField = { key: "create_item", label: "Create production item", required: false, type: "bool", options: yesNo, description: "yes (default) adds the part to production tracking as a draft item." };
+const taxonomyBase = (key: TaxonomyKey, title: string, summary: string, notes: string[], fields: TemplateField[], examples: () => Record<string, string>[]): TemplateDef => ({
+  key,
+  title,
+  summary,
+  managerOnly: false,
+  cap: TAXONOMY_CAP,
+  modes: ["upsert"],
+  notes: [...notes, ...TAXONOMY_COMMON_NOTES],
+  fields,
+  examples,
+  prefill: { label: "Current curriculum", hint: "Today's data in these columns. Edit it and import it back.", rows: () => taxonomyPrefillRows(key) },
+});
+
+const TAXONOMY_TEMPLATES: Record<TaxonomyKey, TemplateDef> = {
+  structure: taxonomyBase(
+    "structure",
+    "Curriculum structure (all together)",
+    "Grades, subjects, units and parts in one file, one row per part. Anything missing is added.",
+    ["One row per part. Leave part_number blank for a unit that has no parts yet.", "grade_code can be G05, 5 or Grade 5. subject_code can be left blank when subject_name is given."],
+    [
+      { key: "grade_code", label: "Grade code", required: true, type: "string", options: gradeCodes, description: "G05, 5 or Grade 5. New grades are added." },
+      { key: "grade_name", label: "Grade name", required: false, type: "string", description: "For example Grade 5. Used when the grade is new." },
+      { key: "grade_level", label: "Grade level", required: false, type: "string", description: "For example Middle School." },
+      { key: "subject_code", label: "Subject code", required: false, type: "string", options: subjectCodes, description: "For example MATH. New subjects are added." },
+      { key: "subject_name", label: "Subject name", required: false, type: "string", description: "For example Mathematics. Required for a new subject without a code." },
+      { key: "unit_number", label: "Unit number", required: true, type: "int", description: "Whole number, 1 or higher." },
+      { key: "unit_title", label: "Unit title", required: false, type: "string", description: "Unit or chapter title." },
+      { key: "unit_title_am", label: "Unit title (Amharic)", required: false, type: "string", description: "Optional." },
+      { key: "term", label: "Term", required: false, type: "enum", options: () => LK.terms, description: "Optional academic term." },
+      { key: "part_number", label: "Part number", required: false, type: "int", description: "Part within the unit. Blank for a unit-only row." },
+      { key: "part_title", label: "Part title", required: false, type: "string", description: "Part or lesson title." },
+      { key: "part_title_am", label: "Part title (Amharic)", required: false, type: "string", description: "Optional." },
+      { key: "language", label: "Language", required: false, type: "enum", options: languageCodes, description: "Delivery language code. Defaults to en." },
+      createItemField,
+    ],
+    () => [
+      { grade_code: "G05", grade_name: "Grade 5", grade_level: "Middle School", subject_code: "MATH", subject_name: "Mathematics", unit_number: "1", unit_title: "Measurement", part_number: "1", part_title: "Area and volume", language: "en", create_item: "yes" },
+      { grade_code: "G05", grade_name: "Grade 5", grade_level: "Middle School", subject_code: "MATH", subject_name: "Mathematics", unit_number: "2", unit_title: "Fractions", part_number: "", part_title: "", language: "", create_item: "" },
+    ],
+  ),
+  grades: taxonomyBase(
+    "grades",
+    "Grades",
+    "Add or rename grades, set their level and order, or turn one off.",
+    ["grade_code can be G05, 5 or Grade 5; it is stored as G05."],
+    [
+      { key: "grade_code", label: "Grade code", required: true, type: "string", options: gradeCodes, description: "G05, 5 or Grade 5." },
+      { key: "name", label: "Name", required: false, type: "string", description: "Shown name. Defaults to Grade 5." },
+      { key: "level", label: "Level", required: false, type: "string", description: "For example Middle School or Secondary School." },
+      { key: "sort", label: "Order", required: false, type: "int", description: "Sort position. Defaults to the grade number." },
+      { key: "active", label: "Active", required: false, type: "bool", options: yesNo, description: "no hides the grade without deleting anything." },
+    ],
+    () => [
+      { grade_code: "G05", name: "Grade 5", level: "Middle School", sort: "5", active: "yes" },
+      { grade_code: "G09", name: "Grade 9", level: "Secondary School", sort: "9", active: "yes" },
+    ],
+  ),
+  subjects: taxonomyBase(
+    "subjects",
+    "Subjects",
+    "Add or rename subjects and choose which grades offer them.",
+    ["grades lists the grades that offer the subject, separated by ;. It only adds offerings; remove one in Settings.", "Import grades first if a grade is new."],
+    [
+      { key: "subject_code", label: "Subject code", required: true, type: "string", options: subjectCodes, description: "Short code such as MATH or PHYS." },
+      { key: "name", label: "Name", required: true, type: "string", description: "For example Mathematics." },
+      { key: "name_am", label: "Name (Amharic)", required: false, type: "string", description: "Optional." },
+      { key: "grades", label: "Offered in grades", required: false, type: "list", options: gradeCodes, description: "Grade codes separated by ;, for example G09; G10." },
+      { key: "sort", label: "Order", required: false, type: "int", description: "Sort position. New subjects go last." },
+      { key: "active", label: "Active", required: false, type: "bool", options: yesNo, description: "no hides the subject without deleting anything." },
+    ],
+    () => [
+      { subject_code: "MATH", name: "Mathematics", name_am: "ሂሳብ", grades: "G05; G06; G07", sort: "1", active: "yes" },
+      { subject_code: "PHYS", name: "Physics", name_am: "", grades: "G09; G10", sort: "", active: "yes" },
+    ],
+  ),
+  units: taxonomyBase(
+    "units",
+    "Units",
+    "Add or rename the units (chapters) of a subject in a grade.",
+    ["The grade and subject must exist. The subject is offered in the grade automatically."],
+    [
+      { key: "grade_code", label: "Grade code", required: true, type: "enum", options: gradeCodes, description: "For example G09." },
+      { key: "subject_code", label: "Subject code", required: true, type: "enum", options: subjectCodes, description: "For example PHYS." },
+      { key: "unit_number", label: "Unit number", required: true, type: "int", description: "Whole number, 1 or higher." },
+      { key: "unit_title", label: "Unit title", required: true, type: "string", description: "Unit or chapter title." },
+      { key: "unit_title_am", label: "Unit title (Amharic)", required: false, type: "string", description: "Optional." },
+      { key: "term", label: "Term", required: false, type: "enum", options: () => LK.terms, description: "Optional academic term." },
+    ],
+    () => [
+      { grade_code: "G09", subject_code: "PHYS", unit_number: "1", unit_title: "Physics and Human Society", term: "" },
+      { grade_code: "G09", subject_code: "PHYS", unit_number: "2", unit_title: "Physical Quantities", term: "" },
+    ],
+  ),
+  parts: taxonomyBase(
+    "parts",
+    "Parts",
+    "Add or rename the parts (lessons) of a unit, each with its production item.",
+    ["The grade and subject must exist. A missing unit is added as Unit N; rename it later or import units first."],
+    [
+      { key: "grade_code", label: "Grade code", required: true, type: "enum", options: gradeCodes, description: "For example G09." },
+      { key: "subject_code", label: "Subject code", required: true, type: "enum", options: subjectCodes, description: "For example PHYS." },
+      { key: "unit_number", label: "Unit number", required: true, type: "int", description: "Unit the part belongs to." },
+      { key: "part_number", label: "Part number", required: true, type: "int", description: "Part within the unit." },
+      { key: "part_title", label: "Part title", required: true, type: "string", description: "Part or lesson title." },
+      { key: "part_title_am", label: "Part title (Amharic)", required: false, type: "string", description: "Optional." },
+      { key: "language", label: "Language", required: false, type: "enum", options: languageCodes, description: "Defaults to en." },
+      createItemField,
+    ],
+    () => [
+      { grade_code: "G09", subject_code: "PHYS", unit_number: "2", part_number: "1", part_title: "Physical quantities", language: "en", create_item: "yes" },
+      { grade_code: "G09", subject_code: "PHYS", unit_number: "2", part_number: "2", part_title: "Measurement scales", language: "en", create_item: "yes" },
+    ],
+  ),
+};
+
 export const TEMPLATES: Record<TemplateKey, TemplateDef> = {
+  ...TAXONOMY_TEMPLATES,
   progress: {
     key: "progress",
     title: "Stage progress",
@@ -460,12 +595,29 @@ export function runsStage(user: AppUser, stage: Stage) {
   return isManager(user) || user.leads.includes(stage) || user.roles.includes(stage);
 }
 
+export function canUseTemplate(user: AppUser, t: TemplateDef) {
+  if (t.cap) return t.cap.some((c) => can(user, c));
+  if (t.stageImport && !can(user, "import.stage") && !can(user, "import.run")) return false;
+  if (t.stage) return runsStage(user, t.stage);
+  return t.stageImport || !t.managerOnly || can(user, "import.run");
+}
+
 export function templateList(user: AppUser) {
-  return Object.values(TEMPLATES).filter((t) => {
-    if (t.stageImport && !can(user, "import.stage") && !can(user, "import.run")) return false;
-    if (t.stage) return runsStage(user, t.stage);
-    return t.stageImport || !t.managerOnly || can(user, "import.run");
-  });
+  return Object.values(TEMPLATES).filter((t) => canUseTemplate(user, t));
+}
+
+// What the import wizard needs from a template (plain data, safe to pass to the browser).
+export function templateInfo(t: TemplateDef) {
+  return {
+    key: t.key,
+    title: t.title,
+    summary: t.summary,
+    modes: t.modes,
+    notes: t.notes,
+    stage: t.stage,
+    prefill: t.prefill ? { label: t.prefill.label, hint: t.prefill.hint } : undefined,
+    fields: t.fields.map((f) => ({ key: f.key, label: f.label, required: f.required, description: f.description })),
+  };
 }
 
 // "My parts" file for a team template: the parts in the person's access waiting at that stage, ready to fill in.
@@ -701,6 +853,12 @@ async function planRow(template: TemplateDef, rec: Row, rowNo: number, mode: Imp
     errors,
     warnings,
   });
+
+  if ((TAXONOMY_KEYS as readonly string[]).includes(template.key)) {
+    const plan = await planTaxonomyRow(template.key as TaxonomyKey, rec, user, errors, warnings, seenKeys);
+    if (!plan || errors.length) return { outcome: out("error", plan?.key ?? `row ${rowNo}`, "") };
+    return { outcome: out(plan.action, plan.key, plan.summary), apply: plan.apply };
+  }
 
   if (template.key === "progress" || template.stage) {
     if (template.stage) {
@@ -1177,8 +1335,7 @@ export async function runImport(
   await loadLookups();
   const template = TEMPLATES[input.template];
   if (!template) throw new WorkflowError("VALIDATION", "Unknown template.");
-  if (template.managerOnly && !can(user, "import.run")) throw new WorkflowError("FORBIDDEN", "You do not have permission to run this import.");
-  if (template.stageImport && !can(user, "import.stage") && !can(user, "import.run")) throw new WorkflowError("FORBIDDEN", "You do not have permission to import stage progress.");
+  if (!canUseTemplate(user, template)) throw new WorkflowError("FORBIDDEN", `You do not have permission to run the ${template.title} import.`);
   if (!template.modes.includes(input.mode)) throw new WorkflowError("VALIDATION", `${template.title} does not support ${input.mode} mode.`);
   if (input.sheet.rows.length > 5000) throw new WorkflowError("VALIDATION", "Split files larger than 5,000 rows into several imports.");
   const required = template.fields.filter((f) => f.required === true || f.required === input.mode || (f.required === "create" && input.mode === "upsert"));

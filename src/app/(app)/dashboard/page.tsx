@@ -19,8 +19,7 @@ import { BarsChart, ChartFrame } from "@/components/app/charts";
 import { CAT, SEQ } from "@/lib/chart-colors";
 import { AttentionList, CustomizeDashboard, SessionBanner } from "./widgets";
 import { ManagerHome } from "./manager-home";
-import { StageImport } from "./stage-import";
-import { templateList } from "@/server/importer";
+import { PageImport } from "@/components/app/page-import";
 import { DASHBOARD_PANELS as PANELS } from "@/lib/panels";
 
 export const metadata = { title: "Dashboard" };
@@ -100,17 +99,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     : [];
 
   const stage = role === "manager" ? null : (role as Stage);
-  // The team's own progress template, when this person may import it.
-  const stageTpl = stage ? templateList(viewer).find((t) => t.stage === stage) : undefined;
-  const stageTemplate = stageTpl && {
-    key: stageTpl.key,
-    title: stageTpl.title,
-    summary: stageTpl.summary,
-    modes: stageTpl.modes,
-    notes: stageTpl.notes,
-    stage: stageTpl.stage,
-    fields: stageTpl.fields.map((f) => ({ key: f.key, label: f.label, required: f.required, description: f.description })),
-  };
   const firstName = viewer.name.split(" ")[0];
   const hour = Number(new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", hourCycle: "h23" }).format(new Date()));
   const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
@@ -138,7 +126,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                 </Button>
               </>
             )}
-            {stageTemplate && stage && <StageImport template={stageTemplate} stageLabel={STAGE_LABELS[stage]} />}
+            {stage && <PageImport viewer={viewer} page="work" label="Import my work" only={[`${stage}_progress`]} />}
             {stage && (
               <Button size="sm" variant="outline" asChild>
                 <Link href={`/sheet?preset=${stage}`}>Open {STAGE_LABELS[stage]} sheet</Link>

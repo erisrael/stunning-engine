@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/app/primitives";
 import { FilterBar } from "@/components/app/filter-bar";
 import { cn } from "@/lib/utils";
+import { PageImport } from "@/components/app/page-import";
 
 export const metadata = { title: "Calendar" };
 
@@ -90,7 +91,7 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
 
   return (
     <div className="space-y-4">
-      <PageHeader title="Calendar" description={`Recording sessions, scheduled releases, publications and due dates. ${tzLabel(tz)}.`} />
+      <PageHeader title="Calendar" description={`Recording sessions, scheduled releases, publications and due dates. ${tzLabel(tz)}.`} actions={<PageImport viewer={viewer} page="calendar" />} />
       <FilterBar options={await filterOptions(viewer, "/calendar")} total={monthEvents.length} totalLabel={`events in ${monthLabel}`} />
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex items-center gap-1">

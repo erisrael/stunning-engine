@@ -20,6 +20,7 @@ export type TemplateInfo = {
   modes: ImportMode[];
   notes?: string[];
   stage?: string;
+  prefill?: { label: string; hint: string };
   fields: { key: string; label: string; required: boolean | string; description: string }[];
 };
 
@@ -141,19 +142,22 @@ export function ImportWizard({ templates, initial, className, title = "Import wi
                 </p>
               </div>
             )}
-            {t?.stage && (
+            {t?.prefill && (
               <div className="flex flex-wrap items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 p-3">
                 <span className="mr-auto text-xs">
-                  <span className="block font-medium text-foreground">My parts, pre-filled</span>
-                  <span className="text-muted-foreground">Every part waiting for your team, already listed. Fill in status, date and links, then upload it here.</span>
+                  <span className="block font-medium text-foreground">{t.prefill.label}</span>
+                  <span className="text-muted-foreground">{t.prefill.hint}</span>
                 </span>
                 <Button size="sm" asChild>
                   <a href={`/api/templates/${tpl}?format=xlsx&prefill=1`}>
-                    <DownloadIcon /> My parts (Excel)
+                    <DownloadIcon /> Excel
                   </a>
                 </Button>
                 <Button size="sm" variant="outline" asChild>
                   <a href={`/api/templates/${tpl}?format=csv&prefill=1`}>CSV</a>
+                </Button>
+                <Button size="sm" variant="outline" asChild>
+                  <a href={`/api/templates/${tpl}?format=json&prefill=1`}>JSON</a>
                 </Button>
               </div>
             )}

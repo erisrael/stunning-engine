@@ -9,6 +9,7 @@ import { MetricCard, PageHeader } from "@/components/app/primitives";
 import { StructureReport } from "@/components/app/structure-report";
 import { cn } from "@/lib/utils";
 import { STAGE_LABELS, STAGES, type Stage } from "@/lib/domain";
+import { PageImport } from "@/components/app/page-import";
 
 export const metadata = { title: "Curriculum coverage" };
 
@@ -65,7 +66,11 @@ export default async function CoveragePage({ searchParams }: { searchParams: Pro
 
   return (
     <div className="space-y-4">
-      <PageHeader title="Curriculum coverage" description="Every unit and part of the curriculum against production. A part counts as recorded once its Recording stage is done, and published once it is live." />
+      <PageHeader
+        title="Curriculum coverage"
+        description="Every unit and part of the curriculum against production. A part counts as recorded once its Recording stage is done, and published once it is live."
+        actions={<PageImport viewer={viewer} page="curriculum" label="Import curriculum" />}
+      />
       <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
         <MetricCard label="Units" value={total.units.toLocaleString()} definition={{ definition: "Units in the curriculum for the grades and subjects in your access." }} />
         <MetricCard label="Parts" value={total.parts.toLocaleString()} definition={{ definition: "Planned parts (lessons) across those units." }} />

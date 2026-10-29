@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/app/primitives";
 import { FilterBar } from "@/components/app/filter-bar";
 import { ContentTable } from "./content-table";
+import { PageImport } from "@/components/app/page-import";
 
 export const metadata = { title: "All content" };
 
@@ -41,13 +42,16 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
         title="List"
         description="Every part in your access, grouped by grade and subject like the Overview. Click a row to open it; right-click for actions."
         actions={
-          canCreate && (
-            <Button size="sm" asChild>
-              <Link href="/items/new">
-                <FilePlus2Icon /> New item
-              </Link>
-            </Button>
-          )
+          <>
+            <PageImport viewer={viewer} page="work" />
+            {canCreate && (
+              <Button size="sm" asChild>
+                <Link href="/items/new">
+                  <FilePlus2Icon /> New item
+                </Link>
+              </Button>
+            )}
+          </>
         }
       />
       <FilterBar options={await filterOptions(viewer, "/content")} total={total} note={`Dates in ${tzLabel(s.workspace.timezone)}`} />

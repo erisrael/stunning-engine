@@ -3,6 +3,7 @@ import { taxonomy } from "@/server/queries";
 import { structureRows } from "@/server/structure";
 import { PageHeader } from "@/components/app/primitives";
 import { StructureReport } from "@/components/app/structure-report";
+import { PageImport } from "@/components/app/page-import";
 
 export const metadata = { title: "Overview" };
 
@@ -18,6 +19,12 @@ export default async function OverviewPage() {
       <PageHeader
         title="Overview"
         description="Where every unit and part stands in Recording, Editing, Uploading and Publication. Switch between grade-first and subject-first, and between a table and a hierarchy."
+        actions={
+          <>
+            <PageImport viewer={viewer} page="curriculum" label="Import curriculum" />
+            <PageImport viewer={viewer} page="work" label="Import progress" />
+          </>
+        }
       />
       <StructureReport rows={rows} grades={grades} subjects={subjects} defaultMode="grade" defaultView="table" />
     </div>

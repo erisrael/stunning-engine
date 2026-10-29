@@ -11,6 +11,7 @@ import { PageHeader } from "@/components/app/primitives";
 import { FilterBar } from "@/components/app/filter-bar";
 import { cn } from "@/lib/utils";
 import { Board, type Col } from "./board";
+import { PageImport } from "@/components/app/page-import";
 
 export const metadata = { title: "Board" };
 
@@ -62,7 +63,9 @@ export default async function PipelinePage({ searchParams }: { searchParams: Pro
             : "Drag a card to the next stage when it is ready; that team's lead is notified. You can only move items in your own stage. Right-click any card for actions."
         }
         actions={
-          myStages.length > 0 && (
+          <>
+          <PageImport viewer={viewer} page="work" />
+          {myStages.length > 0 && (
             <div className="flex rounded-lg border p-0.5 text-xs">
               {(["team", "mine"] as const).map((k) => (
                 <Link key={k} href={`/pipeline?board=${k}`} className={cn("rounded-md px-2.5 py-1 font-medium", mode === k ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground")}>
@@ -70,7 +73,8 @@ export default async function PipelinePage({ searchParams }: { searchParams: Pro
                 </Link>
               ))}
             </div>
-          )
+          )}
+          </>
         }
       />
       <FilterBar options={await filterOptions(viewer, "/pipeline")} total={total} hideKeys={["stage"]} />

@@ -11,6 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Meter, MetricCard, PageHeader, UserAvatar } from "@/components/app/primitives";
 import { Corrections, LeaveManager, ScenarioPlanner } from "./team-client";
+import { PageImport } from "@/components/app/page-import";
 
 export const metadata = { title: "Team and capacity" };
 
@@ -38,6 +39,7 @@ export default async function TeamPage({ searchParams }: { searchParams: Promise
             ? "Assigned work against available production hours, a demand scenario per stage, leave and timer corrections. No staff rankings are shown."
             : "Your logged work sessions, your open work and your leave. Only you and managers see your effort."
         }
+        actions={<PageImport viewer={viewer} page="people" />}
       />
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         {STAGES.map((st) => {
