@@ -106,8 +106,8 @@ export async function purgeTrashAction(ids: string[]) {
   return wrap(async () => purgeTrash(await ctx(), ids));
 }
 
-export async function fixHealthAction(key: string, ids: string[]) {
-  return wrap(async () => fixHealthIssue(await ctx(), key, ids));
+export async function fixHealthAction(key: string, ids: string[], mode: "fix" | "trash" = "fix") {
+  return wrap(async () => fixHealthIssue(await ctx(), key, ids, mode === "trash" ? "trash" : "fix"));
 }
 
 export async function lessonsForUnitAction(unitId: string) {

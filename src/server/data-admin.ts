@@ -344,7 +344,7 @@ export async function mergeRecords(ctx: Ctx, entity: "grades" | "subjects", sour
 // ---------------------------------------------------------------------------
 
 export type HealthRow = { id: string; label: string; detail: string; link?: string };
-export type HealthIssue = { key: string; title: string; description: string; severity: "error" | "warning" | "info"; fix: string | null; rows: HealthRow[]; total: number };
+export type HealthIssue = { key: string; title: string; description: string; severity: "error" | "warning" | "info"; fix: string | null; trash: string | null; rows: HealthRow[]; total: number };
 
 const SHOW = 200;
 
@@ -370,6 +370,7 @@ export async function healthReport(): Promise<HealthIssue[]> {
       description: "The item's grade, subject or unit differs from the unit its part belongs to, usually from an import with the wrong subject.",
       severity: "error",
       fix: "Set placement from the part",
+      trash: "Move items to trash",
     },
     mismatch.map((r) => ({ id: r.id, label: `${r.code} ${r.title}`, detail: `${r.got ?? "No placement"} → ${r.want}`, link: `/items/${r.id}` })),
   );
@@ -378,7 +379,7 @@ export async function healthReport(): Promise<HealthIssue[]> {
     "SELECT i.id, i.code, i.title FROM items i WHERE i.lesson_id IS NULL AND NOT EXISTS (SELECT 1 FROM item_memberships m WHERE m.item_id = i.id AND m.is_primary = 1) ORDER BY i.code",
   );
   push(
-    { key: "unplaced", title: "Items with no grade or subject", description: "No part and no primary placement. Select them in Records (Unplaced) and use Move.", severity: "error", fix: null },
+    { key: "unplaced", title: "Items with no grade or subject", description: "No part and no primary placement. Select them in Records (Unplaced) and use Move.", severity: "error", fix: null, trash: "Move items to trash" },
     unplaced.map((r) => ({ id: r.id, label: `${r.code} ${r.title}`, detail: "No placement", link: `/items/${r.id}` })),
   );
 
@@ -388,8 +389,8 @@ export async function healthReport(): Promise<HealthIssue[]> {
      UNION ALL SELECT id, 'unit', title FROM units WHERE lower(trim(title)) IN ('', 'undefined', 'null', 'untitled', 'n/a', '-', 'tbd')`,
   );
   push(
-    { key: "placeholder_names", title: "Placeholder names", description: "Names such as undefined, null or Untitled. Rename them in Records.", severity: "warning", fix: null },
-    placeholder.map((r) => ({ id: r.id, label: r.label, detail: r.kind, link: r.kind === "item" ? `/items/${r.id}` : undefined })),
+    { key: "placeholder_names", title: "Placeholder names", description: "Names such as undefined, null or Untitled. Rename them in Records.", severity: "warning", fix: null, trash: "Move to trash" },
+    placeholder.map((r) => ({ id: `${r.kind}:${r.id}`, label: r.label, detail: r.kind, link: r.kind === "item" ? `/items/${r.id}` : undefined })),
   );
 
   const spacing = await all<{ id: string; kind: string; label: string }>(
@@ -400,7 +401,7 @@ export async function healthReport(): Promise<HealthIssue[]> {
      UNION ALL SELECT id, 'grades', name FROM grades WHERE name <> btrim(regexp_replace(name, '\\s+', ' ', 'g'))`,
   );
   push(
-    { key: "spacing", title: "Extra spaces in names", description: "Leading, trailing or repeated spaces, which break sorting and matching on re-import.", severity: "warning", fix: "Clean up spaces" },
+    { key: "spacing", title: "Extra spaces in names", description: "Leading, trailing or repeated spaces, which break sorting and matching on re-import.", severity: "warning", fix: "Clean up spaces", trash: null },
     spacing.map((r) => ({ id: `${r.kind}:${r.id}`, label: JSON.stringify(r.label), detail: r.kind })),
   );
 
@@ -420,6 +421,7 @@ export async function healthReport(): Promise<HealthIssue[]> {
       description: "More than one open item of the same deliverable type for one part. The oldest is kept; the listed newer copies can be moved to the trash.",
       severity: "warning",
       fix: "Move newer copies to trash",
+      trash: null,
     },
     dupes.map((r) => ({ id: r.id, label: `${r.code} ${r.title}`, detail: `Same part as ${r.first_code} (${r.lesson})`, link: `/items/${r.id}` })),
   );
@@ -430,7 +432,7 @@ export async function healthReport(): Promise<HealthIssue[]> {
      GROUP BY u.grade_id, u.subject_id, g.name, s.name`,
   );
   push(
-    { key: "offering", title: "Subjects not offered in their grade", description: "Units exist for a grade and subject that is not switched on, so they are hidden from some lists.", severity: "warning", fix: "Offer the subject" },
+    { key: "offering", title: "Subjects not offered in their grade", description: "Units exist for a grade and subject that is not switched on, so they are hidden from some lists. Offer the subject if it belongs there, or move its units (with their parts and items) to the trash if they were imported by mistake.", severity: "warning", fix: "Offer the subject", trash: "Move units to trash" },
     offering.map((r) => ({ id: `${r.grade_id}|${r.subject_id}`, label: `${r.g} / ${r.s}`, detail: `${r.n} units` })),
   );
 
@@ -438,7 +440,7 @@ export async function healthReport(): Promise<HealthIssue[]> {
     `SELECT u.id, 'Unit ' || u.number || ': ' || u.title AS label, g.name || ' / ' || s.name AS detail FROM units u JOIN grades g ON g.id = u.grade_id JOIN subjects s ON s.id = u.subject_id
      WHERE NOT EXISTS (SELECT 1 FROM lessons l WHERE l.unit_id = u.id) AND NOT EXISTS (SELECT 1 FROM item_memberships m WHERE m.unit_id = u.id)`,
   );
-  push({ key: "empty_units", title: "Empty units", description: "Units with no parts and no items. Many are planned units not yet split into parts; only trash the ones a mistaken import left behind.", severity: "info", fix: "Move empty units to trash" }, empty);
+  push({ key: "empty_units", title: "Empty units", description: "Units with no parts and no items. Many are planned units not yet split into parts; only trash the ones a mistaken import left behind.", severity: "info", fix: "Move empty units to trash", trash: null }, empty);
 
   const orphanParts = await all<{ id: string; label: string; detail: string }>(
     `SELECT l.id, 'Part ' || l.number || ': ' || l.title AS label, g.name || ' / ' || s.name || ' / Unit ' || u.number AS detail
@@ -453,6 +455,7 @@ export async function healthReport(): Promise<HealthIssue[]> {
       description: "Parts that show as missing in Overview and Coverage because no item exists for them, often left behind when an item was deleted. Trash the ones that should not be there.",
       severity: "info",
       fix: "Move parts to trash",
+      trash: null,
     },
     orphanParts,
   );
@@ -463,14 +466,14 @@ export async function healthReport(): Promise<HealthIssue[]> {
      WHERE (g.active = 0 OR s.active = 0) AND i.lifecycle IN ('draft','in_production')`,
   );
   push(
-    { key: "inactive", title: "Open items in inactive grades or subjects", description: "Work is still open where the grade or subject is switched off. Move the items or reactivate it.", severity: "info", fix: null },
+    { key: "inactive", title: "Open items in inactive grades or subjects", description: "Work is still open where the grade or subject is switched off. Move the items or reactivate it.", severity: "info", fix: null, trash: "Move items to trash" },
     inactive.map((r) => ({ id: r.id, label: `${r.code} ${r.title}`, detail: r.what, link: `/items/${r.id}` })),
   );
 
   return issues;
 }
 
-export async function fixHealthIssue(ctx: Ctx, key: string, ids: string[]) {
+export async function fixHealthIssue(ctx: Ctx, key: string, ids: string[], mode: "fix" | "trash" = "fix") {
   let fixed = 0;
   const errors: string[] = [];
   const each = async (id: string, fn: () => Promise<unknown>) => {
@@ -481,6 +484,23 @@ export async function fixHealthIssue(ctx: Ctx, key: string, ids: string[]) {
       errors.push(`${id}: ${err instanceof Error ? err.message : String(err)}`);
     }
   };
+  if (mode === "trash") {
+    const reason = "Removed from the data health check";
+    for (const ref of ids)
+      await each(ref, async () => {
+        if (key === "offering") {
+          // Every unit of the grade and subject, with its parts and items.
+          const [g, sub] = ref.split("|");
+          for (const u of await all<{ id: string }>("SELECT id FROM units WHERE grade_id = ? AND subject_id = ?", g, sub)) await moveToTrash(ctx, "unit", u.id, reason);
+        } else if (key === "placeholder_names") {
+          const [kind, id] = ref.split(":");
+          await moveToTrash(ctx, kind === "part" ? "lesson" : kind === "unit" ? "unit" : "item", id, reason, { withParts: true });
+        } else if (["placement_mismatch", "unplaced", "inactive"].includes(key)) await moveToTrash(ctx, "item", ref, reason, { withParts: true });
+        else throw new WorkflowError("VALIDATION", "These rows cannot be moved to the trash from here.");
+      });
+    await audit(ctx, { action: "data.repaired", summary: `${ctx.actor?.name} moved ${fixed} "${key.replace(/_/g, " ")}" rows to trash` });
+    return { fixed, errors };
+  }
   switch (key) {
     case "placement_mismatch":
       for (const id of ids)

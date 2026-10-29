@@ -661,16 +661,20 @@ function HealthCard({ issue }: { issue: HealthIssue }) {
   const [open, setOpen] = React.useState(issue.severity === "error");
   // Only clear breakage starts selected; warnings and tidy-ups are picked by hand.
   const [picked, setPicked] = React.useState<Set<string>>(new Set(issue.severity === "error" ? issue.rows.map((r) => r.id) : []));
-  const [busy, setBusy] = React.useState(false);
+  const [busy, setBusy] = React.useState<"fix" | "trash" | null>(null);
+  const [confirmTrash, setConfirmTrash] = React.useState(false);
   const S = SEVERITY[issue.severity];
-  const fix = async () => {
-    setBusy(true);
-    const res = await fixHealthAction(issue.key, [...picked]);
-    setBusy(false);
+  const selectable = !!(issue.fix || issue.trash);
+  const fix = async (mode: "fix" | "trash") => {
+    setBusy(mode);
+    const res = await fixHealthAction(issue.key, [...picked], mode);
+    setBusy(null);
+    setConfirmTrash(false);
     if (!res.ok) return toast.error(res.error);
     const { fixed, errors } = res.data as { fixed: number; errors: string[] };
-    if (errors.length) toast.warning(`${fixed} fixed, ${errors.length} failed`, { description: errors.slice(0, 3).join("\n") });
-    else toast.success(`${fixed} fixed`);
+    const verb = mode === "trash" ? "moved to trash" : "fixed";
+    if (errors.length) toast.warning(`${fixed} ${verb}, ${errors.length} failed`, { description: errors.slice(0, 3).join("\n") });
+    else toast.success(`${fixed} ${verb}`);
     router.refresh();
   };
   return (
@@ -691,8 +695,13 @@ function HealthCard({ issue }: { issue: HealthIssue }) {
               {open ? "Hide" : "Show"}
             </Button>
             {issue.fix && (
-              <Button size="sm" disabled={busy || !picked.size} onClick={fix}>
-                {busy ? <Loader2Icon className="animate-spin" /> : <WandSparklesIcon />} {issue.fix} ({picked.size})
+              <Button size="sm" disabled={!!busy || !picked.size} onClick={() => fix("fix")}>
+                {busy === "fix" ? <Loader2Icon className="animate-spin" /> : <WandSparklesIcon />} {issue.fix} ({picked.size})
+              </Button>
+            )}
+            {issue.trash && (
+              <Button size="sm" variant="outline" className="text-destructive" disabled={!!busy || !picked.size} onClick={() => (setOpen(true), setConfirmTrash(true))}>
+                <Trash2Icon /> {issue.trash} ({picked.size})
               </Button>
             )}
           </div>
@@ -704,7 +713,7 @@ function HealthCard({ issue }: { issue: HealthIssue }) {
             <table className="w-full text-xs">
               <thead className="sticky top-0 bg-muted/80 text-left text-muted-foreground backdrop-blur">
                 <tr>
-                  {issue.fix && (
+                  {selectable && (
                     <th className="w-8 p-1.5">
                       <Checkbox
                         checked={picked.size === issue.rows.length ? true : picked.size ? "indeterminate" : false}
@@ -719,7 +728,7 @@ function HealthCard({ issue }: { issue: HealthIssue }) {
               <tbody>
                 {issue.rows.map((r) => (
                   <tr key={r.id} className="border-t">
-                    {issue.fix && (
+                    {selectable && (
                       <td className="p-1.5">
                         <Checkbox checked={picked.has(r.id)} onCheckedChange={(v) => setPicked((s) => (v ? new Set(s.add(r.id)) : (s.delete(r.id), new Set(s))))} />
                       </td>
@@ -742,6 +751,29 @@ function HealthCard({ issue }: { issue: HealthIssue }) {
           {issue.total > issue.rows.length && <p className="mt-1.5 text-xs text-muted-foreground">Showing the first {issue.rows.length}. Fix these and refresh to see more.</p>}
         </CardContent>
       )}
+      <Dialog open={confirmTrash} onOpenChange={setConfirmTrash}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {issue.trash} ({picked.size})?
+            </DialogTitle>
+            <DialogDescription>
+              {issue.key === "offering"
+                ? "Every unit of each selected grade and subject goes to the trash, with its parts and items."
+                : "Items go with their parts when no other item uses them."}{" "}
+              Everything can be restored from Trash.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmTrash(false)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" disabled={!!busy} onClick={() => fix("trash")}>
+              {busy === "trash" && <Loader2Icon className="animate-spin" />} Move to trash
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }
