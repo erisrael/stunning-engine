@@ -25,6 +25,7 @@ import { endOfLocalDayIso } from "@/lib/format";
 import { ITEM_COLUMNS } from "@/lib/columns";
 import { FILL_FIELDS } from "@/lib/data-fields";
 import { FillDialog, RenameDialog, StatusDialog, TrashDialog, type RecordLike } from "@/components/app/record-dialogs";
+import { HandoverDialog } from "@/components/app/handover-dialog";
 import type { ItemListRow } from "@/server/queries";
 
 const ALL_EXPORT_COLUMNS = ITEM_COLUMNS.map((c) => c.key);
@@ -279,7 +280,7 @@ export function BulkBar({
 }) {
   const router = useRouter();
   const [kind, setKind] = React.useState<BulkKind | null>(null);
-  const [edit, setEdit] = React.useState<"rename" | "fill" | "trash" | "status" | null>(null);
+  const [edit, setEdit] = React.useState<"rename" | "fill" | "trash" | "status" | "handover" | null>(null);
   // Stages whose status this person may set in bulk: all for managers and admins, their own for team leads.
   const statusStages: Stage[] = perms.includes("work.override") || perms.includes("data.manage") ? [...STAGES] : STAGES.filter((s) => leads.includes(s));
   const picked = rows.filter((r) => selected.includes(r.id)).map(toRecord);
@@ -356,6 +357,7 @@ export function BulkBar({
         {perms.includes("items.create") && <Button size="xs" variant="outline" onClick={() => openKind("release")}>Queue for Recording</Button>}
         <Button size="xs" variant="outline" onClick={() => openKind("accept")}>Accept handoffs</Button>
         <Button size="xs" variant="outline" onClick={() => openKind("submit")}>Submit handoffs</Button>
+        {perms.includes("nav.handovers") && <Button size="xs" variant="outline" onClick={() => setEdit("handover")}>Hand over</Button>}
         {(perms.includes("items.plan") || perms.includes("data.manage")) && picked.length > 0 && (
           <>
             <Button size="xs" variant="outline" onClick={() => setEdit("rename")}>Rename</Button>
@@ -377,6 +379,7 @@ export function BulkBar({
       </div>
       {edit === "rename" && <RenameDialog entity="items" rows={picked} onClose={() => setEdit(null)} onDone={editDone} />}
       {edit === "fill" && <FillDialog entity="items" rows={picked} fields={FILL_FIELDS.items} onClose={() => setEdit(null)} onDone={editDone} />}
+      {edit === "handover" && <HandoverDialog preselected={selected} onClose={() => setEdit(null)} />}
       {edit === "status" && <StatusDialog ids={selected} stages={statusStages} onClose={() => setEdit(null)} onDone={editDone} />}
       {edit === "trash" && <TrashDialog entity="items" rows={picked} onClose={() => setEdit(null)} onDone={editDone} />}
       <Dialog open={!!kind} onOpenChange={(o) => !o && setKind(null)}>

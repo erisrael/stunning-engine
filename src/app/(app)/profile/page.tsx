@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader, UserAvatar } from "@/components/app/primitives";
 import { PasswordForm, PrefsForm } from "./profile-client";
+import { PushToggle } from "@/components/app/push-toggle";
 
 export const metadata = { title: "Profile" };
 
@@ -62,6 +63,18 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
           </CardHeader>
           <CardContent>
             <PrefsForm density={viewer.prefs.density ?? "comfortable"} landing={viewer.prefs.defaultLanding ?? "/dashboard"} />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Push notifications</CardTitle>
+            <CardDescription>
+              Get work alerts and chat messages on this device even when the app is closed. Turn it on separately on each browser or phone. On iPhone and iPad, first use Share,
+              Add to Home Screen, then open the app from there.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <PushToggle />
           </CardContent>
         </Card>
       </div>

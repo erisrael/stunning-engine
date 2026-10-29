@@ -7,6 +7,10 @@ import { toast } from "sonner";
 import {
   ArchiveIcon,
   ArrowLeftIcon,
+  BarChart3Icon,
+  CheckCircle2Icon,
+  CompassIcon,
+  MegaphoneIcon,
   BellOffIcon,
   BellIcon,
   CornerUpLeftIcon,
@@ -40,10 +44,7 @@ import { MultiSelect } from "@/components/app/multi-select";
 import { UserAvatar } from "@/components/app/primitives";
 import {
   createGroupAction,
-  myChatKeysAction,
   openDirectAction,
-  peerKeyAction,
-  saveChatKeysAction,
   deleteMessageAction,
   editMessageAction,
   groupInfoAction,
@@ -61,7 +62,28 @@ import {
 import type { ChatGroupSummary, ChatMember, ChatMessage } from "@/server/chat";
 import { ROLE_LABELS, type Role } from "@/lib/domain";
 import { initials } from "@/lib/format";
-import { cacheKey, cachedKey, conversationKey, createKeys, decryptText, encryptText, forgetKey, isEnvelope, unlockKeys } from "@/lib/e2e";
+import { decryptText, encryptText, isEnvelope } from "@/lib/e2e";
+import { answerQuestionAction } from "@/app/actions/collab";
+import { PushToggle } from "@/components/app/push-toggle";
+import {
+  AttachButton,
+  Attachment,
+  CallButton,
+  CallCard,
+  DiscoverChannelsDialog,
+  EmojiPicker,
+  InviteSection,
+  NewChannelDialog,
+  PollCard,
+  PollDialog,
+  QuickReact,
+  ReactionBar,
+  VoiceRecorder,
+  fileText,
+  gifUrl,
+  isJumbo,
+} from "./chat-extras";
+import { SecureGate, useSecureChat } from "./secure";
 import { cn } from "@/lib/utils";
 
 type Person = { id: string; name: string; handle: string; roles: Role[] };
@@ -129,6 +151,7 @@ function Body({ text, mine }: { text: string; mine: boolean }) {
 export function ChatClient({
   viewer,
   canManage,
+  canCreateChannel,
   groups: initialGroups,
   activeId,
   initialMessages,
@@ -137,6 +160,7 @@ export function ChatClient({
 }: {
   viewer: { id: string; name: string; handle: string };
   canManage: boolean;
+  canCreateChannel: boolean;
   groups: ChatGroupSummary[];
   activeId: string | null;
   initialMessages: ChatMessage[];
@@ -148,6 +172,9 @@ export function ChatClient({
   const [q, setQ] = React.useState("");
   const [creating, setCreating] = React.useState(false);
   const [directOpen, setDirectOpen] = React.useState(false);
+  const [channelOpen, setChannelOpen] = React.useState(false);
+  const [discoverOpen, setDiscoverOpen] = React.useState(false);
+  const names = React.useMemo(() => Object.fromEntries(directory.map((p) => [p.id, p.name])), [directory]);
   React.useEffect(() => setGroups(initialGroups), [initialGroups]);
   const active = groups.find((g) => g.id === activeId) ?? null;
   const shown = groups.filter((g) => !q || g.name.toLowerCase().includes(q.toLowerCase()) || g.lastMessage?.body.toLowerCase().includes(q.toLowerCase()));
@@ -170,11 +197,29 @@ export function ChatClient({
           <Button size="icon" variant="ghost" className="rounded-full" onClick={() => setDirectOpen(true)} aria-label="New direct message" title="New direct message (end-to-end encrypted)">
             <SquarePenIcon />
           </Button>
-          {canManage && (
-            <Button size="icon" variant="ghost" className="rounded-full" onClick={() => setCreating(true)} aria-label="New group" title="New group">
-              <PlusIcon />
-            </Button>
-          )}
+          <PushToggle compact />
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="icon" variant="ghost" className="rounded-full" aria-label="New group or channel" title="New group or channel">
+                <PlusIcon />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {canManage && (
+                <DropdownMenuItem onClick={() => setCreating(true)}>
+                  <UsersIcon /> New group
+                </DropdownMenuItem>
+              )}
+              {canCreateChannel && (
+                <DropdownMenuItem onClick={() => setChannelOpen(true)}>
+                  <MegaphoneIcon /> New channel
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuItem onClick={() => setDiscoverOpen(true)}>
+                <CompassIcon /> Find channels
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
         <ul className="flex-1 overflow-y-auto">
           {shown.map((g) => (
@@ -188,6 +233,11 @@ export function ChatClient({
                   <span className="relative shrink-0">
                     <UserAvatar name={g.name} size="md" className="size-11 text-sm" />
                     <LockIcon className="absolute -right-0.5 -bottom-0.5 size-4 rounded-full bg-card p-0.5 text-[var(--st-done-fg)]" />
+                  </span>
+                ) : g.kind === "channel" ? (
+                  <span className="relative shrink-0">
+                    <GroupAvatar name={g.name} color={g.color} />
+                    <MegaphoneIcon className="absolute -right-0.5 -bottom-0.5 size-4 rounded-full bg-card p-0.5 text-primary" />
                   </span>
                 ) : (
                   <GroupAvatar name={g.name} color={g.color} />
@@ -231,7 +281,16 @@ export function ChatClient({
       {/* Conversation */}
       <section className={cn("min-w-0 flex-1 flex-col", active ? "flex" : "hidden md:flex")}>
         {active ? (
-          <Conversation key={active.id} group={active} viewer={viewer} initialMessages={initialMessages} canManage={active.kind !== "direct" && (canManage || active.myRole === "admin")} directory={directory} timezone={timezone} />
+          <Conversation
+            key={active.id}
+            group={active}
+            viewer={viewer}
+            initialMessages={initialMessages}
+            canManage={active.kind !== "direct" && (canManage || active.myRole === "admin")}
+            directory={directory}
+            names={names}
+            timezone={timezone}
+          />
         ) : (
           <div className="chat-wallpaper flex flex-1 flex-col items-center justify-center gap-2 text-center text-muted-foreground">
             <MessagesSquareIcon className="size-10 opacity-40" />
@@ -241,6 +300,8 @@ export function ChatClient({
       </section>
 
       {creating && <NewGroupDialog directory={directory} viewerId={viewer.id} onClose={() => setCreating(false)} onCreated={(id) => router.push(`/chat?g=${id}`)} />}
+      {channelOpen && <NewChannelDialog directory={directory} viewerId={viewer.id} onClose={() => setChannelOpen(false)} onCreated={(id) => router.push(`/chat?g=${id}`)} />}
+      {discoverOpen && <DiscoverChannelsDialog onClose={() => setDiscoverOpen(false)} />}
       {directOpen && <NewDirectDialog directory={directory} viewerId={viewer.id} onClose={() => setDirectOpen(false)} onOpen={(id) => router.push(`/chat?g=${id}`)} />}
     </div>
   );
@@ -252,6 +313,7 @@ function Conversation({
   initialMessages,
   canManage,
   directory,
+  names,
   timezone,
 }: {
   group: ChatGroupSummary;
@@ -259,10 +321,13 @@ function Conversation({
   initialMessages: ChatMessage[];
   canManage: boolean;
   directory: Person[];
+  names: Record<string, string>;
   timezone: string;
 }) {
   const router = useRouter();
   const [messages, setMessages] = React.useState(initialMessages);
+  const [pollOpen, setPollOpen] = React.useState(false);
+  const [recording, setRecording] = React.useState(false);
   const [text, setText] = React.useState("");
   const [replyTo, setReplyTo] = React.useState<ChatMessage | null>(null);
   const [editing, setEditing] = React.useState<ChatMessage | null>(null);
@@ -360,6 +425,21 @@ function Conversation({
     input.current?.focus();
   }
 
+  // Stickers, GIFs and other one-tap messages (encrypted in direct chats).
+  async function sendRaw(raw: string) {
+    const wire = group.kind === "direct" ? (secure.key ? await encryptText(secure.key, raw) : null) : raw;
+    if (!wire) return toast.error("Unlock secure chat first.");
+    const r = await sendMessageAction({ groupId: group.id, body: wire, replyToId: replyTo?.id ?? null, encrypted: group.kind === "direct" });
+    if (!r.ok) return toast.error(r.error);
+    setReplyTo(null);
+    stick.current = true;
+    await poll();
+  }
+  const sent = React.useCallback(() => {
+    stick.current = true;
+    void poll();
+  }, [poll]);
+
   async function loadOlder() {
     const first = messages[0];
     if (!first) return;
@@ -394,6 +474,11 @@ function Conversation({
                 <span className="inline-flex items-center gap-1 text-[var(--st-done-fg)]">
                   <LockIcon className="size-3" /> End-to-end encrypted · @{group.peer?.handle}
                 </span>
+              ) : group.kind === "channel" ? (
+                <>
+                  Channel · {group.memberCount} member{group.memberCount === 1 ? "" : "s"}
+                  {group.description ? ` · ${group.description}` : ""}
+                </>
               ) : (
                 <>
                   {group.memberCount} member{group.memberCount === 1 ? "" : "s"}
@@ -403,6 +488,7 @@ function Conversation({
             </span>
           </span>
         </button>
+        {member && group.canPost && (group.kind !== "direct" || secure.state === "ready") && <CallButton group={group} cryptoKey={secure.key} onSent={sent} />}
         {member && (
           <Button
             size="icon"
@@ -469,7 +555,26 @@ function Conversation({
                     mine={m.authorId === viewer.id}
                     grouped={!!grouped}
                     canManage={canManage}
+                    canPin={group.kind === "direct" ? member : canManage}
+                    canReact={member}
+                    viewerId={viewer.id}
+                    names={names}
+                    cryptoKey={secure.key}
                     timezone={timezone}
+                    onAnswer={async (questionId, answer) => {
+                      const r = await answerQuestionAction(questionId, answer);
+                      if (!r.ok) {
+                        toast.error(r.error);
+                        return;
+                      }
+                      setReplyTo(m);
+                      const body = `Answer: ${answer}`;
+                      const wire = group.kind === "direct" ? (secure.key ? await encryptText(secure.key, body) : null) : body;
+                      if (wire) await sendMessageAction({ groupId: group.id, body: wire, replyToId: m.id, encrypted: group.kind === "direct" });
+                      setReplyTo(null);
+                      toast.success("Answered");
+                      await poll();
+                    }}
                     onReply={() => {
                       setReplyTo(m);
                       setEditing(null);
@@ -493,6 +598,10 @@ function Conversation({
 
       {group.kind === "direct" && secure.state !== "ready" ? (
         <SecureGate secure={secure} peerName={group.peer?.name ?? "this person"} />
+      ) : member && !group.canPost ? (
+        <footer className="flex items-center justify-center gap-2 border-t p-3 text-sm text-muted-foreground">
+          <MegaphoneIcon className="size-4" /> Only channel admins post here. React to posts with the smile button.
+        </footer>
       ) : member ? (
         <footer className="border-t bg-card px-2 py-2 sm:px-4">
           {(replyTo || editing) && (
@@ -516,7 +625,26 @@ function Conversation({
               </Button>
             </div>
           )}
-          <div className="mx-auto flex max-w-3xl items-end gap-2">
+          <div className="mx-auto flex max-w-3xl items-end gap-1">
+            {!recording && !editing && (
+              <>
+                <AttachButton group={group} cryptoKey={secure.key} onSent={sent} />
+                <EmojiPicker
+                  onEmoji={(e) => {
+                    setText((t) => t + e);
+                    input.current?.focus();
+                  }}
+                  onSticker={(e) => void sendRaw(e)}
+                  onGif={(g) => void sendRaw(g.url)}
+                />
+                {group.kind !== "direct" && (
+                  <Button size="icon" variant="ghost" className="size-10 shrink-0 rounded-full" onClick={() => setPollOpen(true)} aria-label="New poll" title="New poll">
+                    <BarChart3Icon />
+                  </Button>
+                )}
+              </>
+            )}
+            {!recording && (
             <Textarea
               ref={input}
               rows={1}
@@ -535,9 +663,14 @@ function Conversation({
               placeholder="Message (Enter to send, Shift+Enter for a new line, @name to mention)"
               className="max-h-40 min-h-10 resize-none rounded-2xl bg-muted/50 py-2.5"
             />
-            <Button size="icon" className="size-10 shrink-0 rounded-full" disabled={!text.trim() || sending} onClick={send} aria-label="Send">
-              <SendHorizontalIcon />
-            </Button>
+            )}
+            {text.trim() || editing ? (
+              <Button size="icon" className="size-10 shrink-0 rounded-full" disabled={!text.trim() || sending} onClick={send} aria-label="Send">
+                <SendHorizontalIcon />
+              </Button>
+            ) : (
+              <VoiceRecorder group={group} cryptoKey={secure.key} onSent={sent} onRecording={setRecording} />
+            )}
           </div>
         </footer>
       ) : (
@@ -556,6 +689,7 @@ function Conversation({
         </footer>
       )}
 
+      {pollOpen && <PollDialog groupId={group.id} onClose={() => setPollOpen(false)} onSent={sent} />}
       {group.kind !== "direct" && <GroupInfo open={infoOpen} onOpenChange={setInfoOpen} group={group} canManage={canManage} directory={directory} viewerId={viewer.id} timezone={timezone} />}
     </>
   );
@@ -566,117 +700,198 @@ function Bubble({
   mine,
   grouped,
   canManage,
+  canPin,
+  canReact,
+  viewerId,
+  names,
+  cryptoKey,
   timezone,
   onReply,
   onEdit,
   onChanged,
+  onAnswer,
 }: {
   m: ChatMessage;
   mine: boolean;
   grouped: boolean;
   canManage: boolean;
+  canPin: boolean;
+  canReact: boolean;
+  viewerId: string;
+  names: Record<string, string>;
+  cryptoKey: CryptoKey | null;
   timezone: string;
   onReply: () => void;
   onEdit: () => void;
   onChanged: (patch: Partial<ChatMessage>) => void;
+  onAnswer: (questionId: string, answer: string) => Promise<void>;
 }) {
   const time = new Date(m.createdAt).toLocaleTimeString("en-GB", { timeZone: timezone, hour: "2-digit", minute: "2-digit" });
+  const [answering, setAnswering] = React.useState(false);
+  const [answer, setAnswer] = React.useState("");
+  const gif = !m.deletedAt && m.kind === "text" ? gifUrl(m.body) : null;
+  const sticker = !m.deletedAt && m.kind === "text" && !m.replyTo && isJumbo(m.body);
+  const caption = m.kind === "file" || m.kind === "voice" ? fileText(m).caption : m.body;
+  const q = m.kind === "question" ? (m.meta as { questionId?: string; questionStatus?: string; questionOwnerId?: string; questionAnswer?: string | null } | null) : null;
+  const editable = mine && (m.kind === "text" || m.kind === "file") && !gif && !m.file?.encrypted;
+
   return (
-    <div id={`m-${m.id}`} className={cn("group flex items-end gap-2", mine ? "justify-end" : "justify-start", !grouped && "mt-2")}>
-      {!mine && <span className="w-8 shrink-0">{!grouped && <UserAvatar name={m.authorName} />}</span>}
-      <div className={cn("relative max-w-[82%] rounded-2xl px-3 py-1.5 text-sm shadow-xs sm:max-w-[70%]", mine ? "rounded-br-md bg-primary text-primary-foreground" : "rounded-bl-md bg-card")}>
-        {!mine && !grouped && (
-          <p className="text-xs font-semibold" style={{ color: nameColor(m.authorId) }}>
-            {m.authorName}
-          </p>
-        )}
-        {m.replyTo && (
-          <button
-            className={cn("my-1 block w-full border-l-2 py-0.5 pl-2 text-left text-xs", mine ? "border-white/60 bg-white/10" : "border-primary bg-primary/5")}
-            onClick={() => document.getElementById(`m-${m.replyTo!.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" })}
-          >
-            <span className={cn("block font-medium", mine ? "text-white" : "text-primary")}>{m.replyTo.authorName}</span>
-            <span className={cn("block truncate", mine ? "text-white/80" : "text-muted-foreground")}>{m.replyTo.body}</span>
-          </button>
-        )}
-        {m.kind === "request" || m.kind === "question" ? (
-          <span className={cn("mb-1 flex items-center gap-1 text-[11px] font-semibold tracking-wide uppercase", mine ? "text-white/80" : "text-primary")}>
-            {m.kind === "request" ? <RotateCcwIcon className="size-3" /> : <HelpCircleIcon className="size-3" />}
-            {m.kind === "request" ? `Redo request${m.meta?.label ? `: ${String(m.meta.label)}` : ""}` : "Question"}
-          </span>
-        ) : null}
-        {m.deletedAt ? (
-          <span className={cn("italic", mine ? "text-white/70" : "text-muted-foreground")}>Message deleted</span>
+    <div id={`m-${m.id}`} className={cn("flex flex-col", !grouped && "mt-2")}>
+      <div className={cn("group flex items-end gap-2", mine ? "justify-end" : "justify-start")}>
+        {!mine && <span className="w-8 shrink-0">{!grouped && <UserAvatar name={m.authorName} />}</span>}
+        {sticker ? (
+          <div className="relative px-1 text-5xl leading-tight" title={time}>
+            {m.body}
+            <span className="ml-1 align-bottom text-[10px] text-muted-foreground">{time}</span>
+          </div>
         ) : (
-          <Body text={m.body} mine={mine} />
-        )}
-        {m.item && !m.deletedAt && (
-          <Link
-            href={`/items/${m.item.id}`}
-            className={cn("mt-1 flex items-center gap-2 rounded-lg px-2 py-1 text-xs", mine ? "bg-white/15 hover:bg-white/25" : "bg-muted hover:bg-muted/70")}
-          >
-            <span className="font-mono font-medium">{m.item.code}</span>
-            <span className="truncate opacity-80">{m.item.title}</span>
-          </Link>
-        )}
-        <span className={cn("float-right mt-1 ml-2 flex items-center gap-1 text-[10px] leading-none", mine ? "text-white/70" : "text-muted-foreground")}>
-          {m.pinned && <PinIcon className="size-2.5" />}
-          {m.editedAt && !m.deletedAt && "edited"} {time}
-        </span>
-      </div>
-      {!m.deletedAt && (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button size="icon" variant="ghost" className={cn("size-7 shrink-0 opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100", mine && "order-first")} aria-label="Message actions">
-              <span className="text-lg leading-none">⋯</span>
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align={mine ? "end" : "start"}>
-            <DropdownMenuItem onClick={onReply}>
-              <CornerUpLeftIcon /> Reply
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={() => {
-                navigator.clipboard?.writeText(m.body);
-                toast.success("Copied");
-              }}
-            >
-              Copy text
-            </DropdownMenuItem>
-            {mine && (
-              <DropdownMenuItem onClick={onEdit}>
-                <PencilIcon /> Edit
-              </DropdownMenuItem>
+          <div className={cn("relative max-w-[82%] rounded-2xl px-3 py-1.5 text-sm shadow-xs sm:max-w-[70%]", mine ? "rounded-br-md bg-primary text-primary-foreground" : "rounded-bl-md bg-card")}>
+            {!mine && !grouped && (
+              <p className="text-xs font-semibold" style={{ color: nameColor(m.authorId) }}>
+                {m.authorName}
+              </p>
             )}
-            {canManage && (
-              <DropdownMenuItem
-                onClick={async () => {
-                  const r = await pinMessageAction(m.id, !m.pinned);
-                  if (!r.ok) return toast.error(r.error);
-                  onChanged({ pinned: !m.pinned });
-                }}
+            {m.replyTo && (
+              <button
+                className={cn("my-1 block w-full border-l-2 py-0.5 pl-2 text-left text-xs", mine ? "border-white/60 bg-white/10" : "border-primary bg-primary/5")}
+                onClick={() => document.getElementById(`m-${m.replyTo!.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" })}
               >
-                {m.pinned ? <PinOffIcon /> : <PinIcon />} {m.pinned ? "Unpin" : "Pin"}
-              </DropdownMenuItem>
+                <span className={cn("block font-medium", mine ? "text-white" : "text-primary")}>{m.replyTo.authorName}</span>
+                <span className={cn("block truncate", mine ? "text-white/80" : "text-muted-foreground")}>{m.replyTo.body}</span>
+              </button>
             )}
-            {(mine || canManage) && (
+            {m.kind === "request" || m.kind === "question" ? (
+              <span className={cn("mb-1 flex items-center gap-1 text-[11px] font-semibold tracking-wide uppercase", mine ? "text-white/80" : "text-primary")}>
+                {m.kind === "request" ? <RotateCcwIcon className="size-3" /> : <HelpCircleIcon className="size-3" />}
+                {m.kind === "request" ? `Redo request${m.meta?.label ? `: ${String(m.meta.label)}` : ""}` : "Question"}
+              </span>
+            ) : null}
+            {m.deletedAt ? (
+              <span className={cn("italic", mine ? "text-white/70" : "text-muted-foreground")}>Message deleted</span>
+            ) : m.kind === "poll" && m.poll ? (
+              <PollCard m={m} mine={mine} names={names} canClose={mine || canManage} onChanged={onChanged} />
+            ) : m.kind === "call" ? (
+              <CallCard url={m.body} mine={mine} provider={String(m.meta?.provider ?? "jitsi")} />
+            ) : gif ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={gif} alt="GIF" className="mb-1 max-h-60 max-w-full rounded-lg" loading="lazy" />
+            ) : (
               <>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  variant="destructive"
-                  onClick={async () => {
-                    const r = await deleteMessageAction(m.id);
-                    if (!r.ok) return toast.error(r.error);
-                    onChanged({ deletedAt: new Date().toISOString(), pinned: false });
-                  }}
-                >
-                  <Trash2Icon /> Delete
-                </DropdownMenuItem>
+                {m.file && <Attachment m={m} mine={mine} viewerId={viewerId} cryptoKey={cryptoKey} onChanged={onChanged} />}
+                {caption && <Body text={caption} mine={mine} />}
               </>
             )}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      )}
+            {q?.questionId && !m.deletedAt && (
+              <div className={cn("mt-1.5 rounded-lg px-2 py-1 text-xs", mine ? "bg-white/15" : "bg-muted")}>
+                {q.questionStatus && q.questionStatus !== "open" ? (
+                  <span className="flex items-start gap-1">
+                    <CheckCircle2Icon className="mt-0.5 size-3 shrink-0" /> <span>{q.questionAnswer ? `Answered: ${q.questionAnswer}` : "Answered"}</span>
+                  </span>
+                ) : q.questionOwnerId === viewerId ? (
+                  answering ? (
+                    <form
+                      className="flex flex-col gap-1"
+                      onSubmit={async (e) => {
+                        e.preventDefault();
+                        if (!answer.trim()) return;
+                        await onAnswer(q.questionId!, answer.trim());
+                        setAnswering(false);
+                        setAnswer("");
+                      }}
+                    >
+                      <Textarea autoFocus rows={2} value={answer} onChange={(e) => setAnswer(e.target.value)} className="bg-background text-foreground" placeholder="Your answer" />
+                      <div className="flex justify-end gap-1">
+                        <Button type="button" size="xs" variant="ghost" onClick={() => setAnswering(false)}>
+                          Cancel
+                        </Button>
+                        <Button type="submit" size="xs" disabled={!answer.trim()}>
+                          Send answer
+                        </Button>
+                      </div>
+                    </form>
+                  ) : (
+                    <Button size="xs" variant={mine ? "secondary" : "default"} onClick={() => setAnswering(true)}>
+                      Answer
+                    </Button>
+                  )
+                ) : (
+                  <span className="opacity-80">Waiting for an answer</span>
+                )}
+              </div>
+            )}
+            {m.item && !m.deletedAt && (
+              <Link
+                href={`/items/${m.item.id}`}
+                className={cn("mt-1 flex items-center gap-2 rounded-lg px-2 py-1 text-xs", mine ? "bg-white/15 hover:bg-white/25" : "bg-muted hover:bg-muted/70")}
+              >
+                <span className="font-mono font-medium">{m.item.code}</span>
+                <span className="truncate opacity-80">{m.item.title}</span>
+              </Link>
+            )}
+            <span className={cn("float-right mt-1 ml-2 flex items-center gap-1 text-[10px] leading-none", mine ? "text-white/70" : "text-muted-foreground")}>
+              {m.pinned && <PinIcon className="size-2.5" />}
+              {m.editedAt && !m.deletedAt && "edited"} {time}
+            </span>
+          </div>
+        )}
+        {!m.deletedAt && canReact && <QuickReact m={m} viewerId={viewerId} mine={mine} onChanged={onChanged} />}
+        {!m.deletedAt && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="icon" variant="ghost" className={cn("size-7 shrink-0 opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100", mine && "order-first")} aria-label="Message actions">
+                <span className="text-lg leading-none">⋯</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align={mine ? "end" : "start"}>
+              <DropdownMenuItem onClick={onReply}>
+                <CornerUpLeftIcon /> Reply
+              </DropdownMenuItem>
+              {(m.kind === "text" || caption) && !gif && (
+                <DropdownMenuItem
+                  onClick={() => {
+                    navigator.clipboard?.writeText(caption);
+                    toast.success("Copied");
+                  }}
+                >
+                  Copy text
+                </DropdownMenuItem>
+              )}
+              {editable && (
+                <DropdownMenuItem onClick={onEdit}>
+                  <PencilIcon /> Edit
+                </DropdownMenuItem>
+              )}
+              {canPin && (
+                <DropdownMenuItem
+                  onClick={async () => {
+                    const r = await pinMessageAction(m.id, !m.pinned);
+                    if (!r.ok) return toast.error(r.error);
+                    onChanged({ pinned: !m.pinned });
+                  }}
+                >
+                  {m.pinned ? <PinOffIcon /> : <PinIcon />} {m.pinned ? "Unpin" : "Pin"}
+                </DropdownMenuItem>
+              )}
+              {(mine || canManage) && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    variant="destructive"
+                    onClick={async () => {
+                      const r = await deleteMessageAction(m.id);
+                      if (!r.ok) return toast.error(r.error);
+                      onChanged({ deletedAt: new Date().toISOString(), pinned: false });
+                    }}
+                  >
+                    <Trash2Icon /> Delete
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+      </div>
+      {!m.deletedAt && <ReactionBar m={m} viewerId={viewerId} names={names} mine={mine} onChanged={onChanged} />}
     </div>
   );
 }
@@ -705,12 +920,15 @@ function GroupInfo({
   const [name, setName] = React.useState(group.name);
   const [description, setDescription] = React.useState(group.description ?? "");
   const [color, setColor] = React.useState(group.color ?? COLORS[0]);
+  const [invite, setInvite] = React.useState<{ token: string | null; visibility: string }>({ token: null, visibility: group.visibility });
+  const noun = group.kind === "channel" ? "channel" : "group";
 
   const load = React.useCallback(async () => {
     const r = await groupInfoAction(group.id);
     if (r.ok && r.data) {
       setMembers(r.data.members);
       setPinned(r.data.pinned);
+      setInvite({ token: r.data.inviteToken, visibility: r.data.visibility });
     }
   }, [group.id]);
   React.useEffect(() => {
@@ -736,7 +954,7 @@ function GroupInfo({
         <div className="space-y-5 px-4 pb-6">
           {canManage && (
             <section className="space-y-2 rounded-lg border p-3">
-              <h3 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">Group settings</h3>
+              <h3 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{noun === "channel" ? "Channel" : "Group"} settings</h3>
               <div className="space-y-1.5">
                 <Label>Name</Label>
                 <Input value={name} onChange={(e) => setName(e.target.value)} />
@@ -751,7 +969,7 @@ function GroupInfo({
                 ))}
               </div>
               <div className="flex gap-2">
-                <Button size="sm" onClick={async () => done(await updateGroupAction(group.id, { name, description, color }), "Group saved")}>
+                <Button size="sm" onClick={async () => done(await updateGroupAction(group.id, { name, description, color }), noun === "channel" ? "Channel saved" : "Group saved")}>
                   Save
                 </Button>
                 <Button size="sm" variant="outline" onClick={async () => done(await updateGroupAction(group.id, { archived: !group.archived }), group.archived ? "Group restored" : "Group archived")}>
@@ -760,6 +978,7 @@ function GroupInfo({
               </div>
             </section>
           )}
+          {canManage && <InviteSection group={group} inviteToken={invite.token} visibility={invite.visibility} onChanged={() => void load().then(() => router.refresh())} />}
 
           {pinned.length > 0 && (
             <section className="space-y-1.5">
@@ -813,7 +1032,7 @@ function GroupInfo({
                       @{m.handle} · {m.roles.map((r) => ROLE_LABELS[r as Role] ?? r).join(", ")}
                     </span>
                   </span>
-                  {m.role === "admin" && <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">group admin</span>}
+                  {m.role === "admin" && <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">{noun} admin</span>}
                   {canManage && m.userId !== viewerId && (
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -823,7 +1042,7 @@ function GroupInfo({
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem onClick={async () => done(await setMemberRoleAction(group.id, m.userId, m.role === "admin" ? "member" : "admin"))}>
-                          <ShieldIcon /> {m.role === "admin" ? "Remove group admin" : "Make group admin"}
+                          <ShieldIcon /> {m.role === "admin" ? `Remove ${noun} admin` : `Make ${noun} admin${noun === "channel" ? " (can post)" : ""}`}
                         </DropdownMenuItem>
                         <DropdownMenuItem variant="destructive" onClick={async () => done(await setMembersAction(group.id, { remove: [m.userId] }), `${m.name} removed`)}>
                           <UserMinusIcon /> Remove from group
@@ -849,7 +1068,7 @@ function GroupInfo({
                 router.refresh();
               }}
             >
-              <LogOutIcon /> Leave group
+              <LogOutIcon /> Leave {noun}
             </Button>
           )}
         </div>
@@ -926,125 +1145,6 @@ function NewGroupDialog({ directory, viewerId, onClose, onCreated }: { directory
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// End-to-end encryption for direct chats
-// ---------------------------------------------------------------------------
-
-type Secure = {
-  state: "loading" | "setup" | "locked" | "ready" | "no-peer-key" | "off";
-  key: CryptoKey | null;
-  setup: (passphrase: string) => Promise<void>;
-  unlock: (passphrase: string) => Promise<void>;
-  lock: () => Promise<void>;
-};
-
-function useSecureChat(viewerId: string | null, peerId: string | null): Secure {
-  const [state, setState] = React.useState<Secure["state"]>(viewerId ? "loading" : "off");
-  const [key, setKey] = React.useState<CryptoKey | null>(null);
-  const [mine, setMine] = React.useState<{ publicKey: string | null; privateEnc: string | null } | null>(null);
-  const finish = React.useCallback(
-    async (privateKey: CryptoKey) => {
-      const peer = peerId ? await peerKeyAction(peerId) : null;
-      if (!peer?.ok || !peer.data) {
-        setState("no-peer-key");
-        return;
-      }
-      setKey(await conversationKey(privateKey, peer.data as string));
-      setState("ready");
-    },
-    [peerId],
-  );
-  React.useEffect(() => {
-    if (!viewerId) return;
-    let live = true;
-    void (async () => {
-      const r = await myChatKeysAction();
-      if (!live || !r.ok) return;
-      const k = r.data as { publicKey: string | null; privateEnc: string | null };
-      setMine(k);
-      if (!k.publicKey || !k.privateEnc) return setState("setup");
-      const cached = await cachedKey(viewerId);
-      if (cached) await finish(cached);
-      else setState("locked");
-    })();
-    return () => {
-      live = false;
-    };
-  }, [viewerId, finish]);
-  return {
-    state,
-    key,
-    setup: async (passphrase) => {
-      const k = await createKeys(passphrase);
-      const r = await saveChatKeysAction({ publicKey: k.publicKey, privateEnc: k.privateEnc });
-      if (!r.ok) throw new Error(r.error);
-      await cacheKey(viewerId!, k.privateKey);
-      setMine({ publicKey: k.publicKey, privateEnc: k.privateEnc });
-      await finish(k.privateKey);
-    },
-    unlock: async (passphrase) => {
-      const privateKey = await unlockKeys(mine!.privateEnc!, passphrase);
-      await cacheKey(viewerId!, privateKey);
-      await finish(privateKey);
-    },
-    lock: async () => {
-      await forgetKey(viewerId!);
-      setKey(null);
-      setState("locked");
-    },
-  };
-}
-
-function SecureGate({ secure, peerName }: { secure: Secure; peerName: string }) {
-  const [pass, setPass] = React.useState("");
-  const [pass2, setPass2] = React.useState("");
-  const [busy, setBusy] = React.useState(false);
-  if (secure.state === "loading") return <footer className="border-t p-4 text-center text-sm text-muted-foreground">Preparing secure chat...</footer>;
-  if (secure.state === "no-peer-key")
-    return (
-      <footer className="flex items-center justify-center gap-2 border-t p-4 text-center text-sm text-muted-foreground">
-        <LockIcon className="size-4" /> {peerName} has not set up secure chat yet. They need to open Chat once and choose a passphrase.
-      </footer>
-    );
-  const setup = secure.state === "setup";
-  return (
-    <footer className="border-t bg-card p-4">
-      <form
-        className="mx-auto flex max-w-md flex-col gap-2"
-        onSubmit={async (e) => {
-          e.preventDefault();
-          if (setup && pass.length < 8) return toast.error("Use at least 8 characters.");
-          if (setup && pass !== pass2) return toast.error("The passphrases do not match.");
-          setBusy(true);
-          try {
-            if (setup) await secure.setup(pass);
-            else await secure.unlock(pass);
-          } catch {
-            toast.error(setup ? "Could not create your keys." : "That passphrase is not correct.");
-          } finally {
-            setBusy(false);
-          }
-        }}
-      >
-        <p className="flex items-center gap-1.5 text-sm font-medium">
-          <LockIcon className="size-4 text-[var(--st-done-fg)]" />
-          {setup ? "Set up end-to-end encrypted chat" : "Unlock secure chat on this device"}
-        </p>
-        <p className="text-xs text-muted-foreground">
-          {setup
-            ? "Choose a chat passphrase. It protects your private key; nobody, including administrators, can read your direct messages without it. It cannot be recovered, so keep it safe."
-            : "Enter your chat passphrase. It is checked on this device only."}
-        </p>
-        <Input type="password" autoComplete={setup ? "new-password" : "current-password"} placeholder="Chat passphrase" value={pass} onChange={(e) => setPass(e.target.value)} />
-        {setup && <Input type="password" autoComplete="new-password" placeholder="Repeat passphrase" value={pass2} onChange={(e) => setPass2(e.target.value)} />}
-        <Button type="submit" disabled={busy || !pass}>
-          {busy ? "Working..." : setup ? "Create secure keys" : "Unlock"}
-        </Button>
-      </form>
-    </footer>
   );
 }
 

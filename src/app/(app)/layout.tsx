@@ -10,6 +10,7 @@ import { AppSidebar } from "@/components/app/app-sidebar";
 import { Topbar } from "@/components/app/topbar";
 import { ActionCenter } from "@/components/app/action-center";
 import { isManager, userDirectory } from "@/server/users";
+import { ChatKeyBootstrap } from "./chat/secure";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const viewer = await requireViewer();
@@ -38,6 +39,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           </div>
         )}
         <main className="mx-auto w-full max-w-[1600px] min-w-0 flex-1 px-3 py-4 sm:px-6 sm:py-6">{children}</main>
+        <ChatKeyBootstrap viewerId={viewer.id} />
       </SidebarInset>
     </SidebarProvider>
     </ActionCenter>

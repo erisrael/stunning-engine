@@ -1060,11 +1060,15 @@ export async function setChecklist(ctx: Ctx, itemId: string, key: string, checke
       await requireView(ctx, itemId);
       const attempt = await requireAttempt(itemId);
       await requireWork(ctx, attempt);
-      const def = (await getSettings()).checklists[attempt.stage].find((c) => c.key === key);
+      const def = key.startsWith("wc:")
+        ? (await workChecklistItems(itemId, attempt.stage)).find((c) => `wc:${c.key}` === key)
+        : (await getSettings()).checklists[attempt.stage].find((c) => c.key === key);
       if (!def) throw new WorkflowError("VALIDATION", "Unknown checklist item.");
+      // Changing a checked line clears any lead verification of it.
       await run(
               `INSERT INTO checklist_results (attempt_id, key, checked, checked_by, checked_at) VALUES (?, ?, ?, ?, ?)
-       ON CONFLICT(attempt_id, key) DO UPDATE SET checked = excluded.checked, checked_by = excluded.checked_by, checked_at = excluded.checked_at`,
+       ON CONFLICT(attempt_id, key) DO UPDATE SET checked = excluded.checked, checked_by = excluded.checked_by, checked_at = excluded.checked_at,
+         verified_by = NULL, verified_at = NULL`,
               attempt.id,
               key,
               checked ? 1 : 0,
@@ -1172,8 +1176,9 @@ export async function evaluateRequirements(itemId: string, attempt?: AttemptRow 
   const s = await getSettings();
   const item = await getItem(itemId);
   const reqs: Requirement[] = [];
-  const checks = await all<{ key: string; checked: number }>("SELECT key, checked FROM checklist_results WHERE attempt_id = ?", a.id);
+  const checks = await all<{ key: string; checked: number; verified_at: string | null }>("SELECT key, checked, verified_at FROM checklist_results WHERE attempt_id = ?", a.id);
   const checked = new Set(checks.filter((c) => c.checked).map((c) => c.key));
+  const verified = new Set(checks.filter((c) => c.checked && c.verified_at).map((c) => c.key));
   if (a.stage === "recording") {
     const rawCount = (await get<{ c: number }>("SELECT COUNT(*) AS c FROM assets WHERE item_id = ? AND kind = 'raw' AND attempt_id = ?", itemId, a.id))?.c ?? 0;
     reqs.push({ key: "raw", label: "At least one recording logged (camera code or link)", met: rawCount > 0 });
@@ -1219,7 +1224,20 @@ export async function evaluateRequirements(itemId: string, attempt?: AttemptRow 
   for (const c of s.checklists[a.stage]) {
     if (c.required) reqs.push({ key: `check:${c.key}`, label: c.label, met: checked.has(c.key) });
   }
+  // The checklist chosen for this person when the work was assigned (keys stored as "wc:<key>").
+  for (const c of await workChecklistItems(itemId, a.stage)) {
+    const k = `wc:${c.key}`;
+    if (c.required) reqs.push({ key: k, label: c.label, met: checked.has(k) });
+    if (c.verify) reqs.push({ key: `verify:${c.key}`, label: `${c.label}: verified by the team lead`, met: verified.has(k) });
+  }
   return reqs;
+}
+
+export type WorkChecklistItem = { key: string; label: string; required: boolean; verify: boolean; hint?: string | null };
+
+export async function workChecklistItems(itemId: string, stage: Stage): Promise<WorkChecklistItem[]> {
+  const row = await get<{ items: string }>("SELECT items FROM work_checklists WHERE item_id = ? AND stage = ?", itemId, stage);
+  return row ? parseJson<WorkChecklistItem[]>(row.items, []) : [];
 }
 
 export async function missingRequirements(itemId: string, attempt?: AttemptRow | null) {

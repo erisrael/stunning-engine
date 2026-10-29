@@ -119,3 +119,123 @@ export async function forgetKey(userId: string) {
     /* nothing cached */
   }
 }
+
+// ---------------------------------------------------------------------------
+// Automatic keys: protected by the login password instead of a separate chat passphrase.
+//
+// At sign-in the browser derives a wrapping key from the email and password (PBKDF2, the same rounds as above)
+// and keeps only that derived, non-extractable key on the device. The password itself is never stored, and
+// the server only ever sees the private key wrapped by it. Changing the password re-wraps the same key pair.
+// ---------------------------------------------------------------------------
+
+async function loginSalt(email: string) {
+  return new Uint8Array(await crypto.subtle.digest("SHA-256", enc.encode(`myseed-e2e-login:${email.trim().toLowerCase()}`)));
+}
+
+export async function loginWrapKey(email: string, password: string) {
+  return passphraseKey(password, await loginSalt(email));
+}
+
+async function storeGet<T>(id: string): Promise<T | null> {
+  try {
+    const db = await openDb();
+    return await new Promise((resolve) => {
+      const req = db.transaction("keys").objectStore("keys").get(id);
+      req.onsuccess = () => resolve((req.result as T) ?? null);
+      req.onerror = () => resolve(null);
+    });
+  } catch {
+    return null;
+  }
+}
+
+async function storePut(id: string, value: unknown) {
+  try {
+    const db = await openDb();
+    await new Promise<void>((resolve, reject) => {
+      const t = db.transaction("keys", "readwrite");
+      t.objectStore("keys").put(value, id);
+      t.oncomplete = () => resolve();
+      t.onerror = () => reject(t.error);
+    });
+  } catch {
+    /* private mode: the key is derived again at the next sign-in */
+  }
+}
+
+// Called by the sign-in form, so secure chat opens without asking for anything.
+export async function rememberLogin(email: string, password: string) {
+  await storePut(`login:${email.trim().toLowerCase()}`, { key: await loginWrapKey(email, password) });
+}
+
+export async function rememberedLogin(email: string): Promise<CryptoKey | null> {
+  return (await storeGet<{ key: CryptoKey }>(`login:${email.trim().toLowerCase()}`))?.key ?? null;
+}
+
+export async function forgetLogin(email: string) {
+  await storePut(`login:${email.trim().toLowerCase()}`, null);
+}
+
+async function wrapJwk(jwk: JsonWebKey, wrap: CryptoKey) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, wrap, enc.encode(JSON.stringify(jwk)));
+  return JSON.stringify({ kdf: "login", iv: b64(iv), ct: b64(ct) });
+}
+
+async function unwrapJwk(privateEnc: string, wrap: CryptoKey): Promise<JsonWebKey> {
+  const { iv, ct } = JSON.parse(privateEnc) as { iv: string; ct: string };
+  const raw = await crypto.subtle.decrypt({ name: "AES-GCM", iv: unb64(iv) as BufferSource }, wrap, unb64(ct) as BufferSource);
+  return JSON.parse(dec.decode(raw)) as JsonWebKey;
+}
+
+const importPrivate = (jwk: JsonWebKey) => crypto.subtle.importKey("jwk", jwk, { name: "ECDH", namedCurve: "P-256" }, false, ["deriveKey"]);
+
+export async function createKeysWith(wrap: CryptoKey) {
+  const pair = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveKey"]);
+  const publicJwk = await crypto.subtle.exportKey("jwk", pair.publicKey);
+  const privateJwk = await crypto.subtle.exportKey("jwk", pair.privateKey);
+  return {
+    publicKey: JSON.stringify({ kty: publicJwk.kty, crv: publicJwk.crv, x: publicJwk.x, y: publicJwk.y }),
+    privateEnc: await wrapJwk(privateJwk, wrap),
+    privateKey: await importPrivate(privateJwk),
+  };
+}
+
+export async function unlockWith(privateEnc: string, wrap: CryptoKey) {
+  return importPrivate(await unwrapJwk(privateEnc, wrap));
+}
+
+// Moves keys protected by the old chat passphrase to the login password (one time, same key pair).
+export async function migratePassphrase(privateEnc: string, passphrase: string, wrap: CryptoKey) {
+  const { salt, iv, ct } = JSON.parse(privateEnc) as { salt: string; iv: string; ct: string };
+  const old = await passphraseKey(passphrase, unb64(salt));
+  const raw = await crypto.subtle.decrypt({ name: "AES-GCM", iv: unb64(iv) as BufferSource }, old, unb64(ct) as BufferSource);
+  const jwk = JSON.parse(dec.decode(raw)) as JsonWebKey;
+  return { privateEnc: await wrapJwk(jwk, wrap), privateKey: await importPrivate(jwk) };
+}
+
+// After a password change: the same private key, wrapped with the new password.
+export async function rewrapForPassword(privateEnc: string, email: string, oldPassword: string, newPassword: string) {
+  const jwk = await unwrapJwk(privateEnc, await loginWrapKey(email, oldPassword));
+  const next = await loginWrapKey(email, newPassword);
+  return { privateEnc: await wrapJwk(jwk, next), wrap: next };
+}
+
+export async function rememberWrap(email: string, wrap: CryptoKey) {
+  await storePut(`login:${email.trim().toLowerCase()}`, { key: wrap });
+}
+
+// Files and voice messages in direct chats: 12-byte IV followed by the AES-GCM ciphertext.
+export async function encryptBytes(key: CryptoKey, data: ArrayBuffer): Promise<Uint8Array> {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, data));
+  const out = new Uint8Array(12 + ct.length);
+  out.set(iv);
+  out.set(ct, 12);
+  return out;
+}
+
+export async function decryptBytes(key: CryptoKey, data: ArrayBuffer): Promise<ArrayBuffer> {
+  const all = new Uint8Array(data);
+  return crypto.subtle.decrypt({ name: "AES-GCM", iv: all.slice(0, 12) as BufferSource }, key, all.slice(12) as BufferSource);
+}

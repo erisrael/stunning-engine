@@ -1,5 +1,6 @@
 import { all, get, parseJson, run, uid } from "./db";
 import { ESSENTIAL_NOTIFICATION_TYPES, type NotificationType, type Role } from "@/lib/domain";
+import { sendPush } from "./push";
 
 export type NotifyInput = {
   type: NotificationType;
@@ -21,6 +22,7 @@ async function mutedTypes(userId: string): Promise<string[]> {
 export async function notify(userIds: (string | null | undefined)[], input: NotifyInput, now: string, exceptUserId?: string) {
   const essential = ESSENTIAL_NOTIFICATION_TYPES.includes(input.type);
   const unique = [...new Set(userIds.filter((u): u is string => !!u && u !== exceptUserId))];
+  const delivered: string[] = [];
   for (const userId of unique) {
     if (!essential && (await mutedTypes(userId)).includes(input.type)) continue;
     if (input.dedupeKey) {
@@ -42,6 +44,7 @@ export async function notify(userIds: (string | null | undefined)[], input: Noti
                     now,
                     open.id,
                   );
+        delivered.push(userId);
         continue;
       }
     }
@@ -61,7 +64,10 @@ export async function notify(userIds: (string | null | undefined)[], input: Noti
             now,
             now,
           );
+    delivered.push(userId);
   }
+  // The same notice also goes to the person's browsers and phones that turned on push.
+  if (delivered.length) await sendPush(delivered, { title: input.title, body: input.body, link: input.link, tag: input.groupKey ?? input.dedupeKey });
 }
 
 export async function usersWithRole(role: Role): Promise<string[]> {

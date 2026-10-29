@@ -1,12 +1,13 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { startTransition, useActionState, useState } from "react";
 import { EyeIcon, EyeOffIcon, LoaderIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { loginAction } from "@/app/actions/auth";
+import { rememberLogin } from "@/lib/e2e";
 
 export function LoginForm({ next }: { next?: string }) {
   const [state, action, pending] = useActionState(loginAction, undefined);
@@ -15,7 +16,14 @@ export function LoginForm({ next }: { next?: string }) {
   const [show, setShow] = useState(false);
   return (
     <div className="space-y-5">
-      <form action={action} className="space-y-4">
+      <form
+        action={async (fd: FormData) => {
+          // Prepares secure chat on this device from the password (only a derived key is kept, never the password).
+          await rememberLogin(String(fd.get("email") ?? ""), String(fd.get("password") ?? "")).catch(() => undefined);
+          startTransition(() => action(fd));
+        }}
+        className="space-y-4"
+      >
         <input type="hidden" name="next" value={next ?? "/dashboard"} />
         <div className="space-y-1.5">
           <Label htmlFor="email" className="text-xs font-semibold">

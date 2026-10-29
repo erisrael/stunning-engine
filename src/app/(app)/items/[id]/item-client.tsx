@@ -17,6 +17,7 @@ import { StatusPill } from "@/components/app/status-pill";
 import { useActions, type ItemRef } from "@/components/app/action-center";
 import { itemAction } from "@/app/actions/items";
 import { answerQuestionAction, askQuestionAction, escalateQuestionAction, resolveQuestionAction } from "@/app/actions/collab";
+import { setItemChecklistAction, verifyChecklistAction } from "@/app/actions/editorial";
 import { COMPLEXITY_LABELS, PRIORITY_LABELS, STAGE_LABELS, STAGES, type Role, type Stage } from "@/lib/domain";
 import { fmtDateTime, fmtRelative, isoToLocalInput, localInputToIso, endOfLocalDayIso } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -82,6 +83,110 @@ export function ChecklistEditor({
         </li>
       ))}
     </ul>
+  );
+}
+
+type WorkLine = { key: string; label: string; required: boolean; verify: boolean; checked: boolean; by: string | null; at: string | null; verifiedBy: string | null; verifiedAt: string | null };
+
+// The checklist picked for this person when the work was assigned. Lines marked Verify need the team lead.
+export function WorkChecklist({
+  item,
+  name,
+  templateId,
+  lines,
+  canEdit,
+  canVerify,
+  templates,
+}: {
+  item: ItemRef;
+  name: string | null;
+  templateId: string | null;
+  lines: WorkLine[];
+  canEdit: boolean;
+  canVerify: boolean;
+  templates: { id: string; name: string }[] | null;
+}) {
+  const { run } = useActions();
+  const router = useRouter();
+  const [pending, setPending] = React.useState<string | null>(null);
+  const toVerify = lines.filter((l) => l.verify && l.checked && !l.verifiedBy).length;
+  const verify = async (key: string, on: boolean) => {
+    setPending(`v:${key}`);
+    const r = await verifyChecklistAction(item.id, key, on);
+    setPending(null);
+    if (!r.ok) return toast.error(r.error);
+    router.refresh();
+  };
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs font-medium">
+          {name ? `Assigned checklist: ${name}` : "Assigned checklist"}
+          {canVerify && toVerify > 0 && <span className="ml-1.5 rounded bg-[var(--st-paused-bg)] px-1.5 py-0.5 text-[10px] text-[var(--st-paused-fg)]">{toVerify} to verify</span>}
+        </p>
+        {templates && (
+          <Select
+            value={templateId ?? "none"}
+            onValueChange={async (v) => {
+              const r = await setItemChecklistAction(item.id, v === "none" ? null : v);
+              if (!r.ok) return toast.error(r.error);
+              toast.success(v === "none" ? "Checklist removed" : "Checklist changed");
+              router.refresh();
+            }}
+          >
+            <SelectTrigger size="sm" className="h-7 w-44 text-xs" aria-label="Change checklist">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">No extra checklist</SelectItem>
+              {templates.map((t) => (
+                <SelectItem key={t.id} value={t.id}>
+                  {t.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+      </div>
+      {lines.length > 0 && (
+        <ul className="space-y-1.5">
+          {lines.map((c) => (
+            <li key={c.key} className="flex items-start gap-2">
+              <Checkbox
+                id={`chk-${c.key}`}
+                checked={c.checked}
+                disabled={!canEdit || pending === c.key}
+                onCheckedChange={async (v) => {
+                  setPending(c.key);
+                  await run(item, { action: "checklist", key: c.key, checked: !!v }, { silent: true });
+                  setPending(null);
+                }}
+                className="mt-0.5"
+              />
+              <label htmlFor={`chk-${c.key}`} className="min-w-0 flex-1 text-sm">
+                {c.label}
+                {c.required && <span className="ml-1 text-xs text-muted-foreground">required</span>}
+                {c.checked && c.by && (
+                  <span className="block text-[11px] text-muted-foreground">
+                    {c.by}, {c.at}
+                  </span>
+                )}
+                {c.verify && (
+                  <span className={cn("block text-[11px]", c.verifiedBy ? "text-[var(--st-done-fg)]" : "text-muted-foreground")}>
+                    {c.verifiedBy ? `Verified by ${c.verifiedBy}, ${c.verifiedAt}` : "Needs the team lead's verification"}
+                  </span>
+                )}
+              </label>
+              {c.verify && canVerify && c.checked && (
+                <Button size="xs" variant={c.verifiedBy ? "ghost" : "outline"} disabled={pending === `v:${c.key}`} onClick={() => verify(c.key, !c.verifiedBy)}>
+                  {c.verifiedBy ? "Undo" : "Verify"}
+                </Button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 

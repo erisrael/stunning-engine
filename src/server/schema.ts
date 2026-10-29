@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 6;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -573,6 +573,121 @@ CREATE TABLE IF NOT EXISTS trash (
   deleted_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_trash_time ON trash(deleted_at);
+
+-- v5: editorial workflow. Checklist templates chosen per person when work is assigned, lead verification of
+-- checklist items, and handover batches that the receiving team accepts or marks missing item by item.
+CREATE TABLE IF NOT EXISTS checklist_templates (
+  id TEXT PRIMARY KEY,
+  stage TEXT NOT NULL,
+  name TEXT NOT NULL,
+  description TEXT,
+  items TEXT NOT NULL DEFAULT '[]',
+  active INTEGER NOT NULL DEFAULT 1,
+  created_by TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS work_checklists (
+  item_id TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+  stage TEXT NOT NULL,
+  template_id TEXT,
+  name TEXT NOT NULL,
+  items TEXT NOT NULL DEFAULT '[]',
+  assigned_to TEXT,
+  assigned_by TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (item_id, stage)
+);
+
+ALTER TABLE checklist_results ADD COLUMN IF NOT EXISTS verified_by TEXT;
+ALTER TABLE checklist_results ADD COLUMN IF NOT EXISTS verified_at TEXT;
+
+CREATE TABLE IF NOT EXISTS handovers (
+  id TEXT PRIMARY KEY,
+  code TEXT NOT NULL UNIQUE,
+  from_stage TEXT NOT NULL,
+  to_stage TEXT NOT NULL,
+  from_user TEXT,
+  to_user TEXT,
+  status TEXT NOT NULL DEFAULT 'open',
+  note TEXT,
+  created_by TEXT,
+  created_at TEXT NOT NULL,
+  closed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_handovers_stage ON handovers(to_stage, status);
+
+CREATE TABLE IF NOT EXISTS handover_items (
+  handover_id TEXT NOT NULL REFERENCES handovers(id) ON DELETE CASCADE,
+  item_id TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'pending',
+  note TEXT,
+  decided_by TEXT,
+  decided_at TEXT,
+  PRIMARY KEY (handover_id, item_id)
+);
+CREATE INDEX IF NOT EXISTS idx_handover_items_item ON handover_items(item_id);
+
+-- v6: chat. Reactions, polls, files and voice messages (voice is deleted 10 minutes after it is first played),
+-- channels (only their admins post), automatic end-to-end keys, and browser push subscriptions.
+ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS updated_at TEXT;
+ALTER TABLE chat_groups ADD COLUMN IF NOT EXISTS visibility TEXT NOT NULL DEFAULT 'private';
+ALTER TABLE chat_groups ADD COLUMN IF NOT EXISTS invite_token TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS e2e_kdf TEXT;
+
+CREATE TABLE IF NOT EXISTS chat_reactions (
+  message_id TEXT NOT NULL REFERENCES chat_messages(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  emoji TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (message_id, user_id, emoji)
+);
+
+CREATE TABLE IF NOT EXISTS chat_poll_votes (
+  message_id TEXT NOT NULL REFERENCES chat_messages(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  option_id TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (message_id, user_id, option_id)
+);
+
+CREATE TABLE IF NOT EXISTS chat_files (
+  id TEXT PRIMARY KEY,
+  group_id TEXT NOT NULL REFERENCES chat_groups(id) ON DELETE CASCADE,
+  message_id TEXT,
+  uploader_id TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'file',
+  name TEXT,
+  mime TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  storage TEXT NOT NULL,
+  path TEXT NOT NULL,
+  encrypted INTEGER NOT NULL DEFAULT 0,
+  duration_sec DOUBLE PRECISION,
+  first_played_at TEXT,
+  expires_at TEXT,
+  deleted_at TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_chat_files_expiry ON chat_files(expires_at);
+
+CREATE TABLE IF NOT EXISTS chat_blobs (
+  file_id TEXT PRIMARY KEY REFERENCES chat_files(id) ON DELETE CASCADE,
+  data TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  endpoint TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  p256dh TEXT NOT NULL,
+  auth TEXT NOT NULL,
+  user_agent TEXT,
+  created_at TEXT NOT NULL,
+  last_used_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_push_user ON push_subscriptions(user_id);
 `;
 
 // Tables in dependency order; used to empty the workspace and to export or restore backups.
@@ -618,4 +733,13 @@ export const TABLES = [
   "recording_sessions",
   "jobs",
   "trash",
+  "checklist_templates",
+  "work_checklists",
+  "handovers",
+  "handover_items",
+  "chat_reactions",
+  "chat_poll_votes",
+  "chat_files",
+  "chat_blobs",
+  "push_subscriptions",
 ] as const;

@@ -2,6 +2,7 @@ import { all, get, nowIso, run } from "./db";
 import {
   DEFAULT_LEAD_PERMISSIONS,
   DEFAULT_PERMISSIONS,
+  EDITORIAL_CAPABILITIES,
   NAV_CAPABILITIES,
   ROLES,
   STAGES,
@@ -209,7 +210,7 @@ export async function setMeta(key: string, value: string) {
 }
 
 // Role and team-lead permission matrix (Admin, Roles and permissions). Missing entries fall back to defaults.
-const MATRIX_VERSION = 2;
+const MATRIX_VERSION = 4;
 // Version 2 made managers view-only, moved item creation to Admin and the Recording lead, and added sidebar switches.
 const V2_MANAGER_REMOVED: Capability[] = ["items.create", "items.plan", "items.close", "work.override", "release.emergency", "import.run", "import.stage"];
 const V2_ADMIN_ADDED: Capability[] = ["items.create", "items.plan", "items.close", "import.tracker"];
@@ -225,6 +226,24 @@ function migrateMatrix(stored: Partial<Record<Role, Capability[]>>): Partial<Rec
     if (r === "admin") next.push(...V2_ADMIN_ADDED);
     out[r] = [...new Set(next)];
   }
+  return out;
+}
+
+// Version 3 added the Handovers page for everyone and the editorial tools for Admin and team leads.
+function migrateV3(stored: Partial<PermissionMatrix>): Partial<PermissionMatrix> {
+  const out: Partial<PermissionMatrix> = { ...stored };
+  for (const r of ROLES) if (out[r]) out[r] = [...new Set([...out[r]!, "nav.handovers" as Capability, ...(r === "admin" ? EDITORIAL_CAPABILITIES : [])])];
+  for (const st of STAGES) {
+    const k = leadKey(st);
+    if (out[k]) out[k] = [...new Set([...out[k]!, ...EDITORIAL_CAPABILITIES])];
+  }
+  return out;
+}
+
+// Version 4 added channel creation for Admin, Managers and team leads.
+function migrateV4(stored: Partial<PermissionMatrix>): Partial<PermissionMatrix> {
+  const out: Partial<PermissionMatrix> = { ...stored };
+  for (const k of ["admin", "manager", ...STAGES.map(leadKey)] as (keyof PermissionMatrix)[]) if (out[k]) out[k] = [...new Set([...out[k]!, "chat.channels" as Capability])];
   return out;
 }
 
@@ -247,7 +266,10 @@ async function loadPermissionMatrix(): Promise<PermissionMatrix> {
   } catch {
     stored = {};
   }
-  if ((stored._v ?? 1) < MATRIX_VERSION) stored = migrateMatrix(stored);
+  const version = stored._v ?? 1;
+  if (version < 2) stored = migrateMatrix(stored);
+  if (version < 3) stored = migrateV3(stored);
+  if (version < 4) stored = migrateV4(stored);
   const keys = [...ROLES, ...STAGES.map(leadKey)] as (keyof PermissionMatrix)[];
   const defaults: PermissionMatrix = { ...DEFAULT_PERMISSIONS, ...DEFAULT_LEAD_PERMISSIONS };
   return Object.fromEntries(keys.map((k) => [k, stored[k] ?? defaults[k]])) as PermissionMatrix;

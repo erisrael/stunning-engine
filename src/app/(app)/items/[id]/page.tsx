@@ -5,7 +5,9 @@ import { ExternalLinkIcon, FileTextIcon } from "lucide-react";
 import { requireViewer } from "@/server/auth";
 import { itemDetail, taxonomy } from "@/server/queries";
 import { can, canViewItem, userDirectory } from "@/server/users";
-import { evaluateRequirements, type AttemptRow } from "@/server/workflow";
+import { evaluateRequirements, workChecklistItems, type AttemptRow } from "@/server/workflow";
+import { canAssign, canVerify, listTemplates } from "@/server/editorial";
+import { get as dbGet } from "@/server/db";
 import { attemptTimings, activeProcessingMs } from "@/server/metrics";
 import { getSettings } from "@/server/settings";
 import { nowIso } from "@/server/db";
@@ -36,6 +38,7 @@ import {
   AddAssetButton,
   AssignmentEditor,
   ChecklistEditor,
+  WorkChecklist,
   CorrectionButton,
   DestinationsEditor,
   DurationEditor,
@@ -94,6 +97,27 @@ export default async function ItemPage({ params, searchParams }: { params: Promi
     const r = d.checklist.find((x) => x.attempt_id === current!.id && x.key === c.key);
     return { ...c, checked: !!r?.checked, by: r?.checked_by ? names[r.checked_by] : null, at: r?.checked_at ? fmtDateTime(r.checked_at, tz) : null };
   });
+  // The checklist chosen for this person when the work was assigned, with the lead's verification.
+  const work = current ? await dbGet<{ name: string; template_id: string | null }>("SELECT name, template_id FROM work_checklists WHERE item_id = ? AND stage = ?", id, current.stage) : undefined;
+  const workLines = current
+    ? (await workChecklistItems(id, current.stage)).map((c) => {
+        const r = d.checklist.find((x) => x.attempt_id === current!.id && x.key === `wc:${c.key}`) as ({ checked: number; checked_by: string | null; checked_at: string | null; verified_by?: string | null; verified_at?: string | null } | undefined);
+        return {
+          key: `wc:${c.key}`,
+          label: c.label,
+          required: c.required,
+          verify: c.verify,
+          checked: !!r?.checked,
+          by: r?.checked_by ? names[r.checked_by] : null,
+          at: r?.checked_at ? fmtDateTime(r.checked_at, tz) : null,
+          verifiedBy: r?.verified_by ? names[r.verified_by] : null,
+          verifiedAt: r?.verified_at ? fmtDateTime(r.verified_at, tz) : null,
+        };
+      })
+    : [];
+  const mayVerify = !!current && canVerify(viewer, current.stage);
+  const mayPick = !!current && canAssign(viewer, current.stage);
+  const stageTemplates = mayPick ? (await listTemplates({ stage: current!.stage, active: "active", sort: "name" })).map((t) => ({ id: t.id, name: t.name })) : [];
   const currentMaster = d.assets.find((a) => a.kind === "master" && a.status === "current");
   const targets = d.targets.map((t) => ({
     platform: t.platform,
@@ -271,6 +295,17 @@ export default async function ItemPage({ params, searchParams }: { params: Promi
                       <p className="mb-2 text-xs font-medium">Checklist</p>
                       <ChecklistEditor item={ref} checklist={checklist} canEdit={canWork} />
                     </div>
+                    {(workLines.length > 0 || mayPick) && (
+                      <WorkChecklist
+                        item={ref}
+                        name={work?.name ?? null}
+                        templateId={work?.template_id ?? null}
+                        lines={workLines}
+                        canEdit={canWork}
+                        canVerify={mayVerify}
+                        templates={mayPick ? stageTemplates : null}
+                      />
+                    )}
                     <DurationEditor item={ref} stage={current.stage} raw={current.raw_duration_min} final={it.actual_duration_min as number | null} canEdit={canWork} />
                   </div>
                   {(current.stage === "uploading" || current.stage === "publication") && (

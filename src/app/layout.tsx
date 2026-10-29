@@ -14,6 +14,9 @@ export const metadata: Metadata = {
   title: { default: "Myseed Content Manager", template: "%s - Myseed Content Manager" },
   description: "Production workflow for Myseed educational content: recording, editing, uploading and publication.",
   applicationName: "Myseed Content Manager",
+  // Installable app (Add to Home Screen), needed for push notifications on iPhone and iPad.
+  manifest: "/manifest.webmanifest",
+  appleWebApp: { capable: true, title: "Myseed", statusBarStyle: "default" },
 };
 
 export const viewport: Viewport = {

@@ -12,6 +12,9 @@ import {
   GridIcon,
   HomeIcon,
   KanbanIcon,
+  ListChecksIcon,
+  PackageCheckIcon,
+  UserPlusIcon,
   ListTreeIcon,
   MessageCircleQuestionIcon,
   SettingsIcon,
@@ -68,6 +71,7 @@ export function AppSidebar({
         { href: "/dashboard", label: "Home", icon: HomeIcon, badge: counts.myWork },
         { href: "/overview", label: "Overview", icon: ListTreeIcon, keepFilters: true, cap: "nav.overview" },
         { href: "/questions", label: "Questions", icon: MessageCircleQuestionIcon, badge: counts.questions, cap: "nav.questions" },
+        { href: "/handovers", label: "Handovers", icon: PackageCheckIcon, cap: "nav.handovers" },
       ],
     },
     {
@@ -91,6 +95,8 @@ export function AppSidebar({
       label: "Manage",
       items: [
         { href: "/items/new", label: "New item", icon: FilePlus2Icon, cap: "items.create" },
+        { href: "/assign", label: "Assign work", icon: UserPlusIcon, cap: "assign.bulk" },
+        { href: "/checklists", label: "Checklists", icon: ListChecksIcon, cap: "checklists.manage" },
         { href: "/import-export", label: "Import and export", icon: ArrowLeftRightIcon, cap: ["import.run", "import.stage", "import.tracker", "export.run", "export.report", "export.tracker", "export.audit"] },
         { href: "/settings", label: "Settings", icon: SettingsIcon, cap: "settings.manage" },
         { href: "/admin", label: "Admin", icon: UserCogIcon, cap: ["users.manage", "data.manage"] },

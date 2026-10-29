@@ -19,6 +19,7 @@ import {
 import { COMPLEXITIES, PRIORITIES, ROLES, STAGES, type Capability, type Role, type Stage } from "@/lib/domain";
 import { planTaxonomyRow, TAXONOMY_KEYS, taxonomyPrefillRows, type TaxonomyKey } from "./taxonomy-import";
 import { endOfLocalDayIso, localInputToIso } from "@/lib/format";
+import { notifyStageImport } from "./editorial";
 
 // ---------------------------------------------------------------------------
 // Template definitions
@@ -1414,5 +1415,15 @@ export async function runImport(
         },
         nowIso(),
       );
+  // Stage progress imports tell the next team, the leads and the managers that work moved.
+  if (template.stage || template.key === "progress") {
+    const stages = new Set<Stage>();
+    plans.forEach((p, i) => {
+      if (p.outcome.action !== "create" && p.outcome.action !== "update") return;
+      const st = (template.stage ?? records[i]?.stage?.toLowerCase()) as Stage;
+      if ((STAGES as readonly string[]).includes(st)) stages.add(st);
+    });
+    if (stages.size) await notifyStageImport(user, [...stages], final, jobId);
+  }
   return { jobId, dryRun: false, outcomes, counts: final, secrets: secrets.length ? secrets : undefined };
 }

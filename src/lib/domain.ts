@@ -43,10 +43,15 @@ export const CAPABILITIES = [
   { key: "nav.calendar", label: "Calendar", group: "Sidebar" },
   { key: "nav.coverage", label: "Coverage", group: "Sidebar" },
   { key: "nav.team", label: "Team or My effort", group: "Sidebar" },
+  { key: "nav.handovers", label: "Handovers", group: "Sidebar" },
+  { key: "assign.bulk", label: "Assign work in bulk (Assign page)", group: "Editorial workflow" },
+  { key: "checklists.manage", label: "Create and edit checklist templates", group: "Editorial workflow" },
+  { key: "checklists.verify", label: "Verify checklist items done by others", group: "Editorial workflow" },
   { key: "reports.view", label: "View reports", group: "Insights" },
   { key: "team.view", label: "View team workload and capacity", group: "Insights" },
   { key: "corrections.approve", label: "Approve timer corrections", group: "Insights" },
   { key: "chat.manage", label: "Create chat groups and manage members", group: "Collaboration" },
+  { key: "chat.channels", label: "Create channels (only channel admins post)", group: "Collaboration" },
   { key: "questions.ask", label: "Ask tracked questions", group: "Collaboration" },
   { key: "settings.manage", label: "Change workflow settings", group: "Administration" },
   { key: "users.manage", label: "Manage users, roles, permissions and access", group: "Administration" },
@@ -55,7 +60,9 @@ export const CAPABILITIES = [
 export type Capability = (typeof CAPABILITIES)[number]["key"];
 
 // Sidebar pages everyone sees unless Admin turns them off for a role.
-export const NAV_CAPABILITIES: Capability[] = ["nav.overview", "nav.questions", "nav.list", "nav.sheet", "nav.board", "nav.calendar", "nav.coverage", "nav.team"];
+export const NAV_CAPABILITIES: Capability[] = ["nav.overview", "nav.questions", "nav.list", "nav.sheet", "nav.board", "nav.calendar", "nav.coverage", "nav.team", "nav.handovers"];
+// Editorial workflow tools; team leads get them for their own stage, Admin for every stage.
+export const EDITORIAL_CAPABILITIES: Capability[] = ["assign.bulk", "checklists.manage", "checklists.verify"];
 const STAFF: Capability[] = [...NAV_CAPABILITIES, "export.run", "export.report", "export.tracker", "import.stage"];
 
 export const DEFAULT_PERMISSIONS: Record<Role, Capability[]> = {
@@ -64,7 +71,7 @@ export const DEFAULT_PERMISSIONS: Record<Role, Capability[]> = {
   uploading: STAFF,
   publication: STAFF,
   // Managers follow delivery: they view everything but do not edit item data.
-  manager: [...NAV_CAPABILITIES, "export.run", "export.report", "export.tracker", "export.audit", "reports.view", "team.view", "corrections.approve", "chat.manage", "questions.ask", "settings.manage"],
+  manager: [...NAV_CAPABILITIES, "export.run", "export.report", "export.tracker", "export.audit", "reports.view", "team.view", "corrections.approve", "chat.manage", "chat.channels", "questions.ask", "settings.manage"],
   admin: [
     ...NAV_CAPABILITIES,
     "items.create",
@@ -83,13 +90,15 @@ export const DEFAULT_PERMISSIONS: Record<Role, Capability[]> = {
     "export.audit",
     "reports.view",
     "team.view",
+    "chat.channels",
+    ...EDITORIAL_CAPABILITIES,
   ],
 };
 
 // Team leads (Admin, Teams) get these on top of their roles; Admin can change them per team.
 export type LeadKey = `lead.${Stage}`;
 export const leadKey = (stage: Stage): LeadKey => `lead.${stage}`;
-const LEAD_BASE: Capability[] = ["reports.view", "team.view", "questions.ask", "export.run", "export.report", "export.tracker", "import.stage"];
+const LEAD_BASE: Capability[] = ["reports.view", "team.view", "questions.ask", "export.run", "export.report", "export.tracker", "import.stage", "chat.channels", ...EDITORIAL_CAPABILITIES];
 export const DEFAULT_LEAD_PERMISSIONS: Record<LeadKey, Capability[]> = {
   "lead.recording": [...LEAD_BASE, "items.create", "items.plan", "import.tracker"],
   "lead.editing": LEAD_BASE,

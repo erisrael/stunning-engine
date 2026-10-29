@@ -36,6 +36,8 @@ const ITEM_DEPENDENTS: [string, (ph: string) => string][] = [
   ["deadline_revisions", (ph) => `item_id IN (${ph})`],
   ["publication_targets", (ph) => `item_id IN (${ph})`],
   ["recording_sessions", (ph) => `item_id IN (${ph})`],
+  ["work_checklists", (ph) => `item_id IN (${ph})`],
+  ["handover_items", (ph) => `item_id IN (${ph})`],
 ];
 
 function add(snap: Snapshot, table: string, rows: Row[]) {

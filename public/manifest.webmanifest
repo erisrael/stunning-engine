@@ -1,0 +1,11 @@
+{
+  "name": "Myseed Content Manager",
+  "short_name": "Myseed",
+  "description": "Production, editorial workflow and team chat.",
+  "start_url": "/dashboard",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#16a34a",
+  "icons": [{ "src": "/brand/myseed-logo.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

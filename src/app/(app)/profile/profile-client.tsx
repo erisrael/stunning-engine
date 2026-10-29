@@ -8,6 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { changePasswordAction } from "@/app/actions/auth";
+import { myChatKeysAction, saveChatKeysAction } from "@/app/actions/chat";
+import { rememberWrap, rewrapForPassword } from "@/lib/e2e";
 import { savePrefsAction } from "@/app/actions/admin";
 
 export function PasswordForm({ force }: { force: boolean }) {
@@ -24,6 +26,17 @@ export function PasswordForm({ force }: { force: boolean }) {
         const r = await changePasswordAction({ current: f.current, next: f.next });
         setBusy(false);
         if (!r.ok) return toast.error(r.error);
+        // Secure chat keys protected by the old password are re-protected with the new one (same keys).
+        const keys = await myChatKeysAction();
+        if (keys.ok && keys.data?.privateEnc && keys.data.publicKey && keys.data.kdf === "login") {
+          try {
+            const next = await rewrapForPassword(keys.data.privateEnc, keys.data.email, f.current, f.next);
+            const saved = await saveChatKeysAction({ publicKey: keys.data.publicKey, privateEnc: next.privateEnc, kdf: "login", rewrap: true });
+            if (saved.ok) await rememberWrap(keys.data.email, next.wrap);
+          } catch {
+            toast.warning("Secure chat keys could not be re-protected. Open Chat to set them up again.");
+          }
+        }
         toast.success("Password changed. Other sessions were signed out.");
         setF({ current: "", next: "", confirm: "" });
         if (force) router.push("/dashboard");
