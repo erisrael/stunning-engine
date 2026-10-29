@@ -413,7 +413,7 @@ function AssignPanel({ stage, chosen, people, templates, tz, onDone }: { stage: 
         </div>
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
-            <Label>Checklist</Label>
+            <Label>Extra checklist</Label>
             <Link href={`/checklists?stage=${stage}`} className="text-xs text-primary hover:underline">
               Manage
             </Link>
@@ -423,8 +423,8 @@ function AssignPanel({ stage, chosen, people, templates, tz, onDone }: { stage: 
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="keep">Keep the current checklist</SelectItem>
-              <SelectItem value="none">No extra checklist</SelectItem>
+              <SelectItem value="keep">Keep what each item has</SelectItem>
+              <SelectItem value="none">Standard checklist only</SelectItem>
               {templates.map((t) => (
                 <SelectItem key={t.id} value={t.id}>
                   {t.name} ({t.lines} lines{t.verify ? `, ${t.verify} verified` : ""})
@@ -432,7 +432,7 @@ function AssignPanel({ stage, chosen, people, templates, tz, onDone }: { stage: 
               ))}
             </SelectContent>
           </Select>
-          {!templates.length && <p className="text-xs text-muted-foreground">No {STAGE_LABELS[stage]} checklists yet.</p>}
+          <p className="text-xs text-muted-foreground">The {STAGE_LABELS[stage]} standard checklist always applies; an extra checklist adds lines on top.{!templates.length && " No extra checklists yet."}</p>
         </div>
         {team.length > 0 && (
           <div className="space-y-1.5 rounded-lg border p-2">
@@ -451,8 +451,8 @@ function AssignPanel({ stage, chosen, people, templates, tz, onDone }: { stage: 
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="same">Same checklist</SelectItem>
-                      <SelectItem value="none">No checklist</SelectItem>
+                      <SelectItem value="same">Same as above</SelectItem>
+                      <SelectItem value="none">Standard only</SelectItem>
                       {templates.map((t) => (
                         <SelectItem key={t.id} value={t.id}>
                           {t.name}

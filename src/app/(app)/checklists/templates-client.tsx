@@ -35,6 +35,7 @@ import {
   exportTemplatesAction,
   importTemplatesAction,
   saveTemplateAction,
+  saveStandardChecklistAction,
   setTemplatesActiveAction,
   standardLinesAction,
 } from "@/app/actions/editorial";
@@ -52,13 +53,14 @@ function download(name: string, data: unknown) {
   URL.revokeObjectURL(a.href);
 }
 
-export function ChecklistTemplates({ templates, stages, filter }: { templates: ChecklistTemplate[]; stages: Stage[]; filter: TemplateFilter }) {
+export function ChecklistTemplates({ templates, stages, filter, standard }: { templates: ChecklistTemplate[]; stages: Stage[]; filter: TemplateFilter; standard: Partial<Record<Stage, WorkChecklistItem[]>> }) {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
   const [q, setQ] = React.useState(filter.q ?? "");
   const [picked, setPicked] = React.useState<Set<string>>(new Set());
   const [editing, setEditing] = React.useState<ChecklistTemplate | "new" | null>(null);
+  const [editingStandard, setEditingStandard] = React.useState<Stage | null>(null);
   const [confirmDelete, setConfirmDelete] = React.useState<string[] | null>(null);
   const fileRef = React.useRef<HTMLInputElement>(null);
   const go = (patch: Record<string, string | null>) => {
@@ -99,7 +101,47 @@ export function ChecklistTemplates({ templates, stages, filter }: { templates: C
   };
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-6">
+      <section className="space-y-2">
+        <div>
+          <h2 className="text-base font-semibold">Standard checklists</h2>
+          <p className="text-sm text-muted-foreground">Apply to every item in the stage. Required lines gate the handoff; changes apply to open and future work, and finished work keeps its recorded results.</p>
+        </div>
+        <div className="grid gap-3 lg:grid-cols-2">
+          {stages.map((st) => (
+            <div key={st} className="space-y-2 rounded-lg border bg-card p-3">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-semibold">{STAGE_LABELS[st]}</p>
+                <Button size="xs" variant="outline" onClick={() => setEditingStandard(st)}>
+                  <PencilIcon /> Edit
+                </Button>
+              </div>
+              <ul className="space-y-1">
+                {(standard[st] ?? []).map((c) => (
+                  <li key={c.key} className="flex items-center gap-2 rounded-md bg-muted/40 px-2 py-1.5 text-sm">
+                    <span className="min-w-0 flex-1">{c.label}</span>
+                    {c.required && <Badge variant="secondary">Required</Badge>}
+                    {c.verify && (
+                      <Badge variant="outline" className="gap-1">
+                        <ShieldCheckIcon className="size-3" /> Lead verifies
+                      </Badge>
+                    )}
+                  </li>
+                ))}
+                {!(standard[st] ?? []).length && <li className="text-xs text-muted-foreground">No standard lines.</li>}
+              </ul>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="space-y-3">
+      <div>
+        <h2 className="text-base font-semibold">Extra checklists</h2>
+        <p className="text-sm text-muted-foreground">
+          Added on top of the standard checklist for particular work, for example a lab demonstration. Picked per person when assigning work, or changed on the item page. Work keeps its own copy, so editing one never changes work already assigned.
+        </p>
+      </div>
       <div className="flex flex-wrap items-center gap-2">
         <Select value={filter.stage ?? "all"} onValueChange={(v) => go({ stage: v === "all" ? null : v })}>
           <SelectTrigger size="sm" className="h-8 w-40 text-xs" aria-label="Stage">
@@ -143,7 +185,7 @@ export function ChecklistTemplates({ templates, stages, filter }: { templates: C
             <DownloadIcon /> Export
           </Button>
           <Button size="sm" onClick={() => setEditing("new")}>
-            <PlusIcon /> New checklist
+            <PlusIcon /> New extra checklist
           </Button>
         </div>
       </div>
@@ -151,8 +193,8 @@ export function ChecklistTemplates({ templates, stages, filter }: { templates: C
       {!templates.length ? (
         <EmptyState
           icon={<ListPlusIcon className="size-5" />}
-          title="No checklists yet"
-          description="Create one per kind of work, for example 'Editing: standard lesson' and 'Editing: lab demo'. Start from the workspace's standard checklist or import a JSON file."
+          title="No extra checklists yet"
+          description="Create one per kind of work, for example 'Editing: lab demo'. The standard checklist above already applies to everything."
           action={
             <Button size="sm" onClick={() => setEditing("new")}>
               <PlusIcon /> New checklist
@@ -271,7 +313,19 @@ export function ChecklistTemplates({ templates, stages, filter }: { templates: C
         </div>
       )}
 
+      </section>
+
       {editing && <TemplateEditor template={editing === "new" ? null : editing} stages={stages} defaultStage={filter.stage ?? stages[0]} onClose={() => setEditing(null)} onSaved={() => (setEditing(null), refresh())} />}
+      {editingStandard && (
+        <TemplateEditor
+          template={null}
+          standard={{ stage: editingStandard, lines: standard[editingStandard] ?? [] }}
+          stages={stages}
+          defaultStage={editingStandard}
+          onClose={() => setEditingStandard(null)}
+          onSaved={() => (setEditingStandard(null), refresh())}
+        />
+      )}
 
       <Dialog open={!!confirmDelete} onOpenChange={(o) => !o && setConfirmDelete(null)}>
         <DialogContent>
@@ -306,12 +360,26 @@ type Line = WorkChecklistItem & { _id: string };
 let lineSeq = 0;
 const toLine = (i: Partial<WorkChecklistItem>): Line => ({ key: i.key ?? "", label: i.label ?? "", required: i.required !== false, verify: !!i.verify, hint: i.hint ?? null, _id: `l${++lineSeq}` });
 
-function TemplateEditor({ template, stages, defaultStage, onClose, onSaved }: { template: ChecklistTemplate | null; stages: Stage[]; defaultStage: Stage; onClose: () => void; onSaved: () => void }) {
+function TemplateEditor({
+  template,
+  standard,
+  stages,
+  defaultStage,
+  onClose,
+  onSaved,
+}: {
+  template: ChecklistTemplate | null;
+  standard?: { stage: Stage; lines: WorkChecklistItem[] };
+  stages: Stage[];
+  defaultStage: Stage;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
   const [stage, setStage] = React.useState<Stage>(template?.stage ?? defaultStage);
   const [name, setName] = React.useState(template?.name ?? "");
   const [description, setDescription] = React.useState(template?.description ?? "");
   const [active, setActive] = React.useState(template?.active ?? true);
-  const [lines, setLines] = React.useState<Line[]>(template?.items.map(toLine) ?? [toLine({})]);
+  const [lines, setLines] = React.useState<Line[]>(standard ? standard.lines.map(toLine) : (template?.items.map(toLine) ?? [toLine({})]));
   const [bulk, setBulk] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
   const patch = (id: string, p: Partial<Line>) => setLines((ls) => ls.map((l) => (l._id === id ? { ...l, ...p } : l)));
@@ -327,10 +395,11 @@ function TemplateEditor({ template, stages, defaultStage, onClose, onSaved }: { 
 
   const save = async () => {
     setBusy(true);
-    const r = await saveTemplateAction({ id: template?.id, stage, name, description, active, items: filled.map(({ _id, ...l }) => (void _id, l)) });
+    const items = filled.map(({ _id, ...l }) => (void _id, l));
+    const r = standard ? await saveStandardChecklistAction(standard.stage, items) : await saveTemplateAction({ id: template?.id, stage, name, description, active, items });
     setBusy(false);
     if (!r.ok) return toast.error(r.error);
-    toast.success(template ? "Saved" : "Created");
+    toast.success(template || standard ? "Saved" : "Created");
     onSaved();
   };
 
@@ -338,9 +407,12 @@ function TemplateEditor({ template, stages, defaultStage, onClose, onSaved }: { 
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>{template ? "Edit checklist" : "New checklist"}</DialogTitle>
-          <DialogDescription>Required lines must be ticked before the handoff. Lines marked Verify also need the team lead's verification.</DialogDescription>
+          <DialogTitle>{standard ? `${STAGE_LABELS[standard.stage]} standard checklist` : template ? "Edit extra checklist" : "New extra checklist"}</DialogTitle>
+          <DialogDescription>
+            {standard ? "Applies to every item in this stage. " : ""}Required lines must be ticked before the handoff. Lines marked Verify also need the team lead&apos;s verification.
+          </DialogDescription>
         </DialogHeader>
+        {!standard && (
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-1.5">
             <Label>Name</Label>
@@ -369,6 +441,7 @@ function TemplateEditor({ template, stages, defaultStage, onClose, onSaved }: { 
             <Switch checked={active} onCheckedChange={setActive} /> Active (offered when assigning)
           </label>
         </div>
+        )}
 
         <div className="space-y-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -377,6 +450,7 @@ function TemplateEditor({ template, stages, defaultStage, onClose, onSaved }: { 
               <Button size="xs" variant="outline" onClick={() => setBulk("")}>
                 Add several
               </Button>
+              {!standard && (
               <Button
                 size="xs"
                 variant="outline"
@@ -388,8 +462,9 @@ function TemplateEditor({ template, stages, defaultStage, onClose, onSaved }: { 
                   toast.success(`${add.length} standard lines added`);
                 }}
               >
-                Add the standard {STAGE_LABELS[stage]} lines
+                Copy the standard {STAGE_LABELS[stage]} lines
               </Button>
+              )}
             </div>
           </div>
           <div className="space-y-1.5 rounded-lg border p-2">
@@ -450,7 +525,7 @@ function TemplateEditor({ template, stages, defaultStage, onClose, onSaved }: { 
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button disabled={busy || !name.trim() || !filled.length} onClick={save}>
+          <Button disabled={busy || (!standard && (!name.trim() || !filled.length))} onClick={save}>
             {busy && <Loader2Icon className="animate-spin" />} {template ? "Save" : "Create"}
           </Button>
         </DialogFooter>

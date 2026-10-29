@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -688,6 +688,64 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
   last_used_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_push_user ON push_subscriptions(user_id);
+
+-- v7: email. Sender addresses (each employee's mailbox, created at the email provider), templates, and a log of
+-- every email sent with the outcome per recipient. SMTP settings live in settings (cfg.smtp), password encrypted.
+CREATE TABLE IF NOT EXISTS email_senders (
+  id TEXT PRIMARY KEY,
+  address TEXT NOT NULL UNIQUE,
+  display_name TEXT,
+  user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+  smtp_user TEXT,
+  smtp_pass_enc TEXT,
+  is_default INTEGER NOT NULL DEFAULT 0,
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS email_templates (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  body TEXT NOT NULL,
+  shared INTEGER NOT NULL DEFAULT 1,
+  created_by TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS email_log (
+  id TEXT PRIMARY KEY,
+  sender_id TEXT,
+  from_address TEXT NOT NULL,
+  sent_by TEXT,
+  subject TEXT NOT NULL,
+  body TEXT NOT NULL,
+  mode TEXT NOT NULL,
+  attachments TEXT NOT NULL DEFAULT '[]',
+  recipient_count INTEGER NOT NULL DEFAULT 0,
+  sent_count INTEGER NOT NULL DEFAULT 0,
+  failed_count INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'sending',
+  error TEXT,
+  created_at TEXT NOT NULL,
+  finished_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_email_log_time ON email_log(created_at);
+
+CREATE TABLE IF NOT EXISTS email_log_recipients (
+  log_id TEXT NOT NULL REFERENCES email_log(id) ON DELETE CASCADE,
+  address TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'to',
+  name TEXT,
+  user_id TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  error TEXT,
+  message_id TEXT,
+  sent_at TEXT,
+  PRIMARY KEY (log_id, address, kind)
+);
 `;
 
 // Tables in dependency order; used to empty the workspace and to export or restore backups.
@@ -742,4 +800,8 @@ export const TABLES = [
   "chat_files",
   "chat_blobs",
   "push_subscriptions",
+  "email_senders",
+  "email_templates",
+  "email_log",
+  "email_log_recipients",
 ] as const;

@@ -42,11 +42,15 @@ How new work is added without disturbing what already runs:
 - [x] Calls: one-click Jitsi video call, or share a Google Meet link (both open in a new tab)
 - [ ] In-app 1:1 calls (WebRTC) and connecting a Google account to create Meet links automatically
 
-## Phase 4: Email
+## Phase 4: Email (done)
 
-- SMTP settings (works with a Gmail app password, Google Workspace, Zoho)
-- Send permission (`email.send`) Admin can give to anyone; composer, templates, recipients by person, role or department, sent log
-- Per-employee sender addresses (mailboxes are created at the email provider)
+- [x] Email account (SMTP) in Email, Settings, with presets for Gmail (app password), Google Workspace, Zoho and Microsoft 365; or SMTP_HOST, SMTP_PORT, SMTP_SECURE, SMTP_USER, SMTP_PASS, SMTP_FROM in the hosting settings. Passwords stored encrypted (key from APP_SECRET, or generated once). Test button
+- [x] Sender addresses per employee: the mailbox is created at the provider, then registered here with its own sign-in or as an alias of the main account; one default address for everyone else
+- [x] Compose (`/email`): recipients by person, role, team leads, chat group members and outside addresses; check recipients before sending; one email each (personal placeholders), hidden list (BCC) or together with CC and BCC; Markdown message (raw HTML removed); attachments up to 10 MB; preview; send a test to yourself
+- [x] Templates: create, edit, delete, search; shared or private; placeholders {{first_name}}, {{name}}, {{email}}, {{role}}, {{sender_name}}, {{date}}
+- [x] Sent log with the result per recipient; search, filters (status, sender, dates, only mine), sorting, CSV export; resend to failed recipients
+- [x] Permissions: Send email (Admin and Managers by default; can be given to any role) and Manage email settings (Admin)
+- [ ] Email copies of important notifications (per person, by type) and scheduled sending
 
 ## Phase 5: Departments and new modules
 

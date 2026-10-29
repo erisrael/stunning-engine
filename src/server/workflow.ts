@@ -1223,6 +1223,7 @@ export async function evaluateRequirements(itemId: string, attempt?: AttemptRow 
   }
   for (const c of s.checklists[a.stage]) {
     if (c.required) reqs.push({ key: `check:${c.key}`, label: c.label, met: checked.has(c.key) });
+    if (c.verify) reqs.push({ key: `verify:${c.key}`, label: `${c.label}: verified by the team lead`, met: verified.has(c.key) });
   }
   // The checklist chosen for this person when the work was assigned (keys stored as "wc:<key>").
   for (const c of await workChecklistItems(itemId, a.stage)) {

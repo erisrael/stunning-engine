@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ArrowDownIcon, ArrowUpIcon, PlusIcon, Trash2Icon } from "lucide-react";
@@ -160,7 +161,10 @@ export function WorkflowSettings({ settings }: { settings: Settings }) {
       <Card>
         <CardHeader>
           <CardTitle>Stage checklists</CardTitle>
-          <CardDescription>Required items gate the handoff. Changing a checklist affects open and future attempts; completed attempts keep their recorded results.</CardDescription>
+          <CardDescription>
+            Required items gate the handoff. Changing a checklist affects open and future attempts; completed attempts keep their recorded results. Standard and extra checklists, and lines the team lead
+            verifies, are managed together on the <Link href="/checklists" className="text-primary hover:underline">Checklists</Link> page.
+          </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 lg:grid-cols-2">
           {STAGES.map((st) => (
@@ -182,7 +186,12 @@ export function WorkflowSettings({ settings }: { settings: Settings }) {
               </Button>
             </div>
           ))}
-          <div className="lg:col-span-2"><Button onClick={() => saveC(c, "Checklists saved")}>Save checklists</Button></div>
+          <div className="flex flex-wrap gap-2 lg:col-span-2">
+            <Button onClick={() => saveC(c, "Checklists saved")}>Save checklists</Button>
+            <Button variant="outline" asChild>
+              <Link href="/checklists">Open Checklists (extra checklists and lead verification)</Link>
+            </Button>
+          </div>
         </CardContent>
       </Card>
     </div>

@@ -13,7 +13,8 @@ import {
   type Stage,
 } from "@/lib/domain";
 
-export type ChecklistItem = { key: string; label: string; required: boolean };
+// verify: the team lead must also verify the line before the handoff.
+export type ChecklistItem = { key: string; label: string; required: boolean; verify?: boolean };
 
 export type Settings = {
   workspace: {
@@ -210,7 +211,7 @@ export async function setMeta(key: string, value: string) {
 }
 
 // Role and team-lead permission matrix (Admin, Roles and permissions). Missing entries fall back to defaults.
-const MATRIX_VERSION = 4;
+const MATRIX_VERSION = 5;
 // Version 2 made managers view-only, moved item creation to Admin and the Recording lead, and added sidebar switches.
 const V2_MANAGER_REMOVED: Capability[] = ["items.create", "items.plan", "items.close", "work.override", "release.emergency", "import.run", "import.stage"];
 const V2_ADMIN_ADDED: Capability[] = ["items.create", "items.plan", "items.close", "import.tracker"];
@@ -247,6 +248,14 @@ function migrateV4(stored: Partial<PermissionMatrix>): Partial<PermissionMatrix>
   return out;
 }
 
+// Version 5 added email: Admin sends and manages email, Managers send.
+function migrateV5(stored: Partial<PermissionMatrix>): Partial<PermissionMatrix> {
+  const out: Partial<PermissionMatrix> = { ...stored };
+  if (out.admin) out.admin = [...new Set([...out.admin, "email.send", "email.manage"] as Capability[])];
+  if (out.manager) out.manager = [...new Set([...out.manager, "email.send"] as Capability[])];
+  return out;
+}
+
 // Read on every request (signed-in user's permissions), so cached briefly; concurrent callers share one query.
 let matrixCache: { at: number; value: Promise<PermissionMatrix> } | null = null;
 
@@ -270,6 +279,7 @@ async function loadPermissionMatrix(): Promise<PermissionMatrix> {
   if (version < 2) stored = migrateMatrix(stored);
   if (version < 3) stored = migrateV3(stored);
   if (version < 4) stored = migrateV4(stored);
+  if (version < 5) stored = migrateV5(stored);
   const keys = [...ROLES, ...STAGES.map(leadKey)] as (keyof PermissionMatrix)[];
   const defaults: PermissionMatrix = { ...DEFAULT_PERMISSIONS, ...DEFAULT_LEAD_PERMISSIONS };
   return Object.fromEntries(keys.map((k) => [k, stored[k] ?? defaults[k]])) as PermissionMatrix;

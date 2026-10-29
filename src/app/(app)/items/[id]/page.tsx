@@ -37,7 +37,6 @@ import { CommentThread } from "@/components/app/comment-thread";
 import {
   AddAssetButton,
   AssignmentEditor,
-  ChecklistEditor,
   WorkChecklist,
   CorrectionButton,
   DestinationsEditor,
@@ -94,8 +93,21 @@ export default async function ItemPage({ params, searchParams }: { params: Promi
   const requirements = current ? await evaluateRequirements(id, current as unknown as AttemptRow) : [];
   const checklistDefs = current ? s.checklists[current.stage] : [];
   const checklist = checklistDefs.map((c) => {
-    const r = d.checklist.find((x) => x.attempt_id === current!.id && x.key === c.key);
-    return { ...c, checked: !!r?.checked, by: r?.checked_by ? names[r.checked_by] : null, at: r?.checked_at ? fmtDateTime(r.checked_at, tz) : null };
+    const r = d.checklist.find((x) => x.attempt_id === current!.id && x.key === c.key) as
+      | { checked: number; checked_by: string | null; checked_at: string | null; verified_by?: string | null; verified_at?: string | null }
+      | undefined;
+    return {
+      key: c.key,
+      label: c.label,
+      required: c.required,
+      verify: !!c.verify,
+      group: "Standard",
+      checked: !!r?.checked,
+      by: r?.checked_by ? names[r.checked_by] : null,
+      at: r?.checked_at ? fmtDateTime(r.checked_at, tz) : null,
+      verifiedBy: r?.verified_by ? names[r.verified_by] : null,
+      verifiedAt: r?.verified_at ? fmtDateTime(r.verified_at, tz) : null,
+    };
   });
   // The checklist chosen for this person when the work was assigned, with the lead's verification.
   const work = current ? await dbGet<{ name: string; template_id: string | null }>("SELECT name, template_id FROM work_checklists WHERE item_id = ? AND stage = ?", id, current.stage) : undefined;
@@ -107,6 +119,7 @@ export default async function ItemPage({ params, searchParams }: { params: Promi
           label: c.label,
           required: c.required,
           verify: c.verify,
+          group: work?.name ?? "Extra",
           checked: !!r?.checked,
           by: r?.checked_by ? names[r.checked_by] : null,
           at: r?.checked_at ? fmtDateTime(r.checked_at, tz) : null,
@@ -291,21 +304,15 @@ export default async function ItemPage({ params, searchParams }: { params: Promi
                 <CardContent className="grid gap-6 md:grid-cols-2">
                   <RequirementPanel requirements={requirements} />
                   <div className="space-y-4">
-                    <div>
-                      <p className="mb-2 text-xs font-medium">Checklist</p>
-                      <ChecklistEditor item={ref} checklist={checklist} canEdit={canWork} />
-                    </div>
-                    {(workLines.length > 0 || mayPick) && (
-                      <WorkChecklist
-                        item={ref}
-                        name={work?.name ?? null}
-                        templateId={work?.template_id ?? null}
-                        lines={workLines}
-                        canEdit={canWork}
-                        canVerify={mayVerify}
-                        templates={mayPick ? stageTemplates : null}
-                      />
-                    )}
+                    <WorkChecklist
+                      item={ref}
+                      name={work?.name ?? null}
+                      templateId={work?.template_id ?? null}
+                      lines={[...checklist, ...workLines]}
+                      canEdit={canWork}
+                      canVerify={mayVerify}
+                      templates={mayPick ? stageTemplates : null}
+                    />
                     <DurationEditor item={ref} stage={current.stage} raw={current.raw_duration_min} final={it.actual_duration_min as number | null} canEdit={canWork} />
                   </div>
                   {(current.stage === "uploading" || current.stage === "publication") && (

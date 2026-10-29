@@ -18,7 +18,7 @@ import {
 } from "./workflow";
 import { managers, notify, teamLeads, usersWithRole } from "./notifications";
 import { can, canViewItem, hasRole, isLeadOf, scopeSql, type AppUser } from "./users";
-import { getSettings } from "./settings";
+import { getSettings, saveSetting, type ChecklistItem } from "./settings";
 import { NEXT_STAGE, STAGE_LABELS, STAGES, stageIndex, type Stage } from "@/lib/domain";
 
 type Raw = Record<string, unknown>;
@@ -256,7 +256,19 @@ export async function importTemplates(user: AppUser, data: unknown) {
 
 // The workspace's standard checklist for a stage, as template lines (to start a new template from).
 export async function standardLines(stage: Stage): Promise<WorkChecklistItem[]> {
-  return (await getSettings()).checklists[stage].map((c) => ({ key: c.key, label: c.label, required: c.required, verify: false }));
+  return (await getSettings()).checklists[stage].map((c) => ({ key: c.key, label: c.label, required: c.required, verify: !!c.verify }));
+}
+
+// The standard checklist of a stage applies to every item in it (stored in workspace settings). Team leads edit
+// their own stage's; Admin and settings managers edit all. Existing keys are kept, so recorded results stay.
+export async function saveStandardChecklist(user: AppUser, stage: Stage, items: Partial<WorkChecklistItem>[]) {
+  if (!STAGES.includes(stage)) throw new WorkflowError("VALIDATION", "Choose a stage.");
+  if (!canManageTemplates(user, stage) && !can(user, "settings.manage")) throw new WorkflowError("FORBIDDEN", `You cannot change the ${STAGE_LABELS[stage]} standard checklist.`);
+  const s = await getSettings();
+  const before = s.checklists[stage];
+  const lines: ChecklistItem[] = normalizeItems(items).map((c) => ({ key: c.key, label: c.label, required: c.required, ...(c.verify ? { verify: true } : {}) }));
+  await saveSetting("checklists", { ...s.checklists, [stage]: lines }, user.id);
+  await audit({ actor: user }, { action: "settings.changed", summary: `${user.name} changed the ${STAGE_LABELS[stage]} standard checklist`, oldValue: before, newValue: lines });
 }
 
 // ---------------------------------------------------------------------------
@@ -303,10 +315,9 @@ export async function verifyChecklistItem(user: AppUser, itemId: string, key: st
     if (verified && !row?.checked) throw new WorkflowError("INVALID_STATE", "Only checked lines can be verified.");
     const now = nowIso();
     await run("UPDATE checklist_results SET verified_by = ?, verified_at = ? WHERE attempt_id = ? AND key = ?", verified ? user.id : null, verified ? now : null, attempt.id, key);
-    const label = key.startsWith("wc:")
-      ? ((await get<{ items: string }>("SELECT items FROM work_checklists WHERE item_id = ? AND stage = ?", itemId, attempt.stage))?.items ?? "[]")
-      : null;
-    const line = label ? parseJson<WorkChecklistItem[]>(label, []).find((c) => `wc:${c.key}` === key)?.label : key;
+    const line = key.startsWith("wc:")
+      ? parseJson<WorkChecklistItem[]>((await get<{ items: string }>("SELECT items FROM work_checklists WHERE item_id = ? AND stage = ?", itemId, attempt.stage))?.items ?? "[]", []).find((c) => `wc:${c.key}` === key)?.label
+      : (await getSettings()).checklists[attempt.stage].find((c) => c.key === key)?.label;
     await audit({ actor: user }, { itemId, attemptId: attempt.id, stage: attempt.stage, action: verified ? "checklist.verified" : "checklist.unverified", summary: `${user.name} ${verified ? "verified" : "removed verification of"} "${line ?? key}"` });
     if (verified && row?.checked_by && row.checked_by !== user.id) {
       const code = (await get<{ code: string }>("SELECT code FROM items WHERE id = ?", itemId))?.code;

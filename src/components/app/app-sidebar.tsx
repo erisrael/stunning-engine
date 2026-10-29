@@ -13,6 +13,7 @@ import {
   HomeIcon,
   KanbanIcon,
   ListChecksIcon,
+  MailIcon,
   PackageCheckIcon,
   UserPlusIcon,
   ListTreeIcon,
@@ -72,6 +73,7 @@ export function AppSidebar({
         { href: "/overview", label: "Overview", icon: ListTreeIcon, keepFilters: true, cap: "nav.overview" },
         { href: "/questions", label: "Questions", icon: MessageCircleQuestionIcon, badge: counts.questions, cap: "nav.questions" },
         { href: "/handovers", label: "Handovers", icon: PackageCheckIcon, cap: "nav.handovers" },
+        { href: "/email", label: "Email", icon: MailIcon, cap: ["email.send", "email.manage"] },
       ],
     },
     {

@@ -86,9 +86,10 @@ export function ChecklistEditor({
   );
 }
 
-type WorkLine = { key: string; label: string; required: boolean; verify: boolean; checked: boolean; by: string | null; at: string | null; verifiedBy: string | null; verifiedAt: string | null };
+type WorkLine = { key: string; label: string; required: boolean; verify: boolean; group?: string; checked: boolean; by: string | null; at: string | null; verifiedBy: string | null; verifiedAt: string | null };
 
-// The checklist picked for this person when the work was assigned. Lines marked Verify need the team lead.
+// The stage checklist: the standard lines for everyone, then the extra checklist picked for this work when it was
+// assigned. Lines marked Verify also need the team lead.
 export function WorkChecklist({
   item,
   name,
@@ -121,7 +122,7 @@ export function WorkChecklist({
     <div className="space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs font-medium">
-          {name ? `Assigned checklist: ${name}` : "Assigned checklist"}
+          Checklist
           {canVerify && toVerify > 0 && <span className="ml-1.5 rounded bg-[var(--st-paused-bg)] px-1.5 py-0.5 text-[10px] text-[var(--st-paused-fg)]">{toVerify} to verify</span>}
         </p>
         {templates && (
@@ -130,15 +131,15 @@ export function WorkChecklist({
             onValueChange={async (v) => {
               const r = await setItemChecklistAction(item.id, v === "none" ? null : v);
               if (!r.ok) return toast.error(r.error);
-              toast.success(v === "none" ? "Checklist removed" : "Checklist changed");
+              toast.success(v === "none" ? "Extra checklist removed" : "Extra checklist added");
               router.refresh();
             }}
           >
-            <SelectTrigger size="sm" className="h-7 w-44 text-xs" aria-label="Change checklist">
+            <SelectTrigger size="sm" className="h-7 w-48 text-xs" aria-label="Extra checklist">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="none">No extra checklist</SelectItem>
+              <SelectItem value="none">Standard only</SelectItem>
               {templates.map((t) => (
                 <SelectItem key={t.id} value={t.id}>
                   {t.name}
@@ -150,8 +151,12 @@ export function WorkChecklist({
       </div>
       {lines.length > 0 && (
         <ul className="space-y-1.5">
-          {lines.map((c) => (
-            <li key={c.key} className="flex items-start gap-2">
+          {lines.map((c, i) => (
+            <React.Fragment key={c.key}>
+            {c.group && c.group !== lines[i - 1]?.group && (lines.some((l) => l.group !== c.group) || c.group !== "Standard") && (
+              <li className="pt-1 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">{c.group}</li>
+            )}
+            <li className="flex items-start gap-2">
               <Checkbox
                 id={`chk-${c.key}`}
                 checked={c.checked}
@@ -183,6 +188,7 @@ export function WorkChecklist({
                 </Button>
               )}
             </li>
+            </React.Fragment>
           ))}
         </ul>
       )}

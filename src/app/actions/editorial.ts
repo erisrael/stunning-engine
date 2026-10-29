@@ -12,6 +12,7 @@ import {
   duplicateTemplate,
   importTemplates,
   listTemplates,
+  saveStandardChecklist,
   saveTemplate,
   setTemplatesActive,
   setWorkChecklist,
@@ -32,6 +33,10 @@ import { userDirectory } from "@/server/users";
 
 export async function saveTemplateAction(input: TemplateInput) {
   return wrap(async () => saveTemplate(await requireViewer(), input));
+}
+
+export async function saveStandardChecklistAction(stage: Stage, items: TemplateInput["items"]) {
+  return wrap(async () => saveStandardChecklist(await requireViewer(), stage, items));
 }
 
 export async function deleteTemplatesAction(ids: string[]) {

@@ -53,6 +53,8 @@ export const CAPABILITIES = [
   { key: "chat.manage", label: "Create chat groups and manage members", group: "Collaboration" },
   { key: "chat.channels", label: "Create channels (only channel admins post)", group: "Collaboration" },
   { key: "questions.ask", label: "Ask tracked questions", group: "Collaboration" },
+  { key: "email.send", label: "Send email from the app", group: "Email" },
+  { key: "email.manage", label: "Manage email settings, sender addresses and the full sent log", group: "Email" },
   { key: "settings.manage", label: "Change workflow settings", group: "Administration" },
   { key: "users.manage", label: "Manage users, roles, permissions and access", group: "Administration" },
   { key: "data.manage", label: "Empty, import and back up workspace data", group: "Administration" },
@@ -71,7 +73,7 @@ export const DEFAULT_PERMISSIONS: Record<Role, Capability[]> = {
   uploading: STAFF,
   publication: STAFF,
   // Managers follow delivery: they view everything but do not edit item data.
-  manager: [...NAV_CAPABILITIES, "export.run", "export.report", "export.tracker", "export.audit", "reports.view", "team.view", "corrections.approve", "chat.manage", "chat.channels", "questions.ask", "settings.manage"],
+  manager: [...NAV_CAPABILITIES, "export.run", "export.report", "export.tracker", "export.audit", "reports.view", "team.view", "corrections.approve", "chat.manage", "chat.channels", "email.send", "questions.ask", "settings.manage"],
   admin: [
     ...NAV_CAPABILITIES,
     "items.create",
@@ -91,6 +93,8 @@ export const DEFAULT_PERMISSIONS: Record<Role, Capability[]> = {
     "reports.view",
     "team.view",
     "chat.channels",
+    "email.send",
+    "email.manage",
     ...EDITORIAL_CAPABILITIES,
   ],
 };
