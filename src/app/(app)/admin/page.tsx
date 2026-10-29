@@ -1,4 +1,7 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
+import { DatabaseIcon } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { requireViewer } from "@/server/auth";
 import { all, databaseLabel } from "@/server/db";
 import { getPermissionMatrix } from "@/server/settings";
@@ -9,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/app/primitives";
 import { ROLES, STAGES, type Role, type Stage } from "@/lib/domain";
 import { AccessAdmin, DataAdmin, PeopleAdmin, PermissionsAdmin, TeamsAdmin, type AdminUser, type TeamPerson } from "./admin-client";
+import { PageImport } from "@/components/app/page-import";
 
 export const metadata = { title: "Admin" };
 
@@ -67,7 +71,19 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
 
   return (
     <div className="space-y-4">
-      <PageHeader title="Admin" description="People, roles, permissions, access and workspace data. Every change is kept in the audit log." />
+      <PageHeader title="Admin" description="People, roles, permissions, access and workspace data. Every change is kept in the audit log." actions={
+          <>
+            {manageData && (
+              <Button asChild variant="outline" size="sm">
+                <Link href="/admin/data">
+                  <DatabaseIcon /> Data manager
+                </Link>
+              </Button>
+            )}
+            <PageImport viewer={viewer} page="admin" />
+          </>
+        }
+      />
       <Tabs defaultValue={tab} className="gap-4">
         <TabsList className="w-full justify-start overflow-x-auto sm:w-fit">
           {manageUsers && <TabsTrigger value="people">People ({users.filter((u) => u.active).length})</TabsTrigger>}

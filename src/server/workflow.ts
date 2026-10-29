@@ -175,7 +175,7 @@ export async function currentAttempt(itemId: string): Promise<AttemptRow | null>
   );
 }
 
-async function requireAttempt(itemId: string, stage?: Stage): Promise<AttemptRow> {
+export async function requireAttempt(itemId: string, stage?: Stage): Promise<AttemptRow> {
   const attempt = await currentAttempt(itemId);
   if (!attempt) throw new WorkflowError("INVALID_STATE", "This item has no open stage.");
   if (stage && attempt.stage !== stage)
@@ -260,7 +260,7 @@ async function openInterval(attemptId: string, state: string, now: string, reaso
       );
 }
 
-async function setAttemptStatus(attempt: AttemptRow, status: AttemptStatus, now: string, reason?: string | null) {
+export async function setAttemptStatus(attempt: AttemptRow, status: AttemptStatus, now: string, reason?: string | null) {
   if (attempt.status === status) return;
   await closeInterval(attempt.id, now);
   const state = INTERVAL_FOR[status];
@@ -282,7 +282,7 @@ async function openSessions(attemptId: string) {
     );
 }
 
-async function endSessions(attemptId: string, now: string, reason: string, userId?: string) {
+export async function endSessions(attemptId: string, now: string, reason: string, userId?: string) {
   if (userId)
     await run(
             "UPDATE work_sessions SET ended_at = ?, end_reason = ? WHERE attempt_id = ? AND user_id = ? AND ended_at IS NULL",

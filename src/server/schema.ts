@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -557,6 +557,22 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_groups_dm ON chat_groups(dm_key);
 ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'text';
 ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS meta TEXT;
 ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS encrypted INTEGER NOT NULL DEFAULT 0;
+
+-- v4: trash. Deleted records are kept as a JSON snapshot of their rows (and dependent rows) so they can be
+-- restored exactly; live tables keep no soft-delete flags, so existing queries are unaffected.
+CREATE TABLE IF NOT EXISTS trash (
+  id TEXT PRIMARY KEY,
+  entity TEXT NOT NULL,
+  entity_id TEXT NOT NULL,
+  label TEXT NOT NULL,
+  detail TEXT,
+  snapshot TEXT NOT NULL,
+  row_count INTEGER NOT NULL DEFAULT 0,
+  reason TEXT,
+  deleted_by TEXT,
+  deleted_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_trash_time ON trash(deleted_at);
 `;
 
 // Tables in dependency order; used to empty the workspace and to export or restore backups.
@@ -601,4 +617,5 @@ export const TABLES = [
   "saved_views",
   "recording_sessions",
   "jobs",
+  "trash",
 ] as const;

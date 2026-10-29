@@ -1,6 +1,7 @@
 import { all, get, nowIso, run } from "./db";
 import { getMeta, getSettings, setMeta } from "./settings";
 import { managers, notify } from "./notifications";
+import { purgeTrash } from "./trash";
 import { BLOCKER_CAUSE_LABELS, STAGE_LABELS, type Stage } from "@/lib/domain";
 import { localDate } from "@/lib/format";
 
@@ -127,6 +128,8 @@ export async function runScheduledChecks(now = nowIso()) {
           );
     counts.questions++;
   }
+  // Trash entries are kept for a fixed period, then removed for good.
+  await purgeTrash({ actor: null, source: "system" }, "expired");
   await setMeta("lastChecksAt", now);
   return counts;
 }

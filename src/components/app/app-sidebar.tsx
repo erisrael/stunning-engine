@@ -5,6 +5,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 import {
   ArrowLeftRightIcon,
   CalendarDaysIcon,
+  DatabaseIcon,
   ChartColumnIcon,
   FilePlus2Icon,
   FileSpreadsheetIcon,
@@ -93,6 +94,7 @@ export function AppSidebar({
         { href: "/import-export", label: "Import and export", icon: ArrowLeftRightIcon, cap: ["import.run", "import.stage", "import.tracker", "export.run", "export.report", "export.tracker", "export.audit"] },
         { href: "/settings", label: "Settings", icon: SettingsIcon, cap: "settings.manage" },
         { href: "/admin", label: "Admin", icon: UserCogIcon, cap: ["users.manage", "data.manage"] },
+        { href: "/admin/data", label: "Data manager", icon: DatabaseIcon, cap: "data.manage" },
         { href: "/audit", label: "Audit log", icon: ShieldCheckIcon, cap: ["users.manage", "items.plan"] },
       ],
     },
@@ -130,7 +132,7 @@ export function AppSidebar({
               <SidebarGroupContent>
                 <SidebarMenu className="gap-0.5">
                   {items.map((item) => {
-                    const active = pathname === item.href || (item.href !== "/dashboard" && item.href !== "/items/new" && pathname.startsWith(item.href + "/"));
+                    const active = pathname === item.href || (item.href !== "/dashboard" && item.href !== "/items/new" && item.href !== "/admin" && pathname.startsWith(item.href + "/"));
                     const href = item.keepFilters ? item.href + scopeQueryString(search) : item.href;
                     return (
                       <SidebarMenuItem key={item.href}>

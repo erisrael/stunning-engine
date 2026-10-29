@@ -23,6 +23,9 @@ import { bulkAction, type BulkInput } from "@/app/actions/items";
 import { PRIORITY_LABELS, STAGE_LABELS, STAGES, type Capability, type Role, type Stage } from "@/lib/domain";
 import { endOfLocalDayIso } from "@/lib/format";
 import { ITEM_COLUMNS } from "@/lib/columns";
+import { FILL_FIELDS } from "@/lib/data-fields";
+import { FillDialog, RenameDialog, StatusDialog, TrashDialog, type RecordLike } from "@/components/app/record-dialogs";
+import type { ItemListRow } from "@/server/queries";
 
 const ALL_EXPORT_COLUMNS = ITEM_COLUMNS.map((c) => c.key);
 
@@ -241,9 +244,50 @@ export function ExportMenu({ columns, query, selected, pageCount, total, perms }
 type BulkKind = "assign" | "priority" | "deadline" | "release" | "accept" | "submit" | "tags";
 type BulkResult = { id: string; code: string; ok: boolean; error?: string; missing?: string[] };
 
-export function BulkBar({ selected, onClear, users, perms, tz }: { selected: string[]; onClear: () => void; users: { id: string; name: string; roles: Role[] }[]; perms: Capability[]; tz: string }) {
+function toRecord(r: ItemListRow): RecordLike {
+  return {
+    id: r.id,
+    code: r.code,
+    title: r.title,
+    title_am: r.title_am,
+    grade: r.grade_name,
+    subject: r.subject_name,
+    unit_number: r.unit_number,
+    unit_title: r.unit_title,
+    lesson_number: r.lesson_number,
+    lesson_title: r.lesson_title,
+    extra: { teacher: r.teacher, language: r.language, content_type: r.content_type, deliverable_type: r.deliverable_type, priority: r.priority, complexity: r.complexity, target_duration_min: r.target_duration_min },
+  };
+}
+
+export function BulkBar({
+  selected,
+  onClear,
+  users,
+  perms,
+  tz,
+  rows = [],
+  leads = [],
+}: {
+  selected: string[];
+  onClear: () => void;
+  users: { id: string; name: string; roles: Role[] }[];
+  perms: Capability[];
+  tz: string;
+  rows?: ItemListRow[];
+  leads?: Stage[];
+}) {
   const router = useRouter();
   const [kind, setKind] = React.useState<BulkKind | null>(null);
+  const [edit, setEdit] = React.useState<"rename" | "fill" | "trash" | "status" | null>(null);
+  // Stages whose status this person may set in bulk: all for managers and admins, their own for team leads.
+  const statusStages: Stage[] = perms.includes("work.override") || perms.includes("data.manage") ? [...STAGES] : STAGES.filter((s) => leads.includes(s));
+  const picked = rows.filter((r) => selected.includes(r.id)).map(toRecord);
+  const editDone = () => {
+    setEdit(null);
+    onClear();
+    router.refresh();
+  };
   const [form, setForm] = React.useState<Record<string, string>>({});
   const [preview, setPreview] = React.useState<BulkResult[] | null>(null);
   const [busy, setBusy] = React.useState(false);
@@ -312,8 +356,29 @@ export function BulkBar({ selected, onClear, users, perms, tz }: { selected: str
         {perms.includes("items.create") && <Button size="xs" variant="outline" onClick={() => openKind("release")}>Queue for Recording</Button>}
         <Button size="xs" variant="outline" onClick={() => openKind("accept")}>Accept handoffs</Button>
         <Button size="xs" variant="outline" onClick={() => openKind("submit")}>Submit handoffs</Button>
+        {(perms.includes("items.plan") || perms.includes("data.manage")) && picked.length > 0 && (
+          <>
+            <Button size="xs" variant="outline" onClick={() => setEdit("rename")}>Rename</Button>
+            <Button size="xs" variant="outline" onClick={() => setEdit("fill")}>Fill field</Button>
+          </>
+        )}
+        {statusStages.length > 0 && (
+          <Button size="xs" variant="outline" onClick={() => setEdit("status")}>Set status</Button>
+        )}
+        {perms.includes("export.run") && (
+          <Button size="xs" variant="outline" onClick={() => downloadExport({ format: "xlsx", scope: "selected", ids: selected, columns: ALL_EXPORT_COLUMNS, query: "", grouping: "grade" })}>
+            <DownloadIcon /> Export
+          </Button>
+        )}
+        {perms.includes("data.manage") && picked.length > 0 && (
+          <Button size="xs" variant="outline" className="text-destructive" onClick={() => setEdit("trash")}>Move to trash</Button>
+        )}
         <Button size="xs" variant="ghost" onClick={onClear}>Clear</Button>
       </div>
+      {edit === "rename" && <RenameDialog entity="items" rows={picked} onClose={() => setEdit(null)} onDone={editDone} />}
+      {edit === "fill" && <FillDialog entity="items" rows={picked} fields={FILL_FIELDS.items} onClose={() => setEdit(null)} onDone={editDone} />}
+      {edit === "status" && <StatusDialog ids={selected} stages={statusStages} onClose={() => setEdit(null)} onDone={editDone} />}
+      {edit === "trash" && <TrashDialog entity="items" rows={picked} onClose={() => setEdit(null)} onDone={editDone} />}
       <Dialog open={!!kind} onOpenChange={(o) => !o && setKind(null)}>
         <DialogContent className="max-h-[90vh] overflow-y-auto">
           <DialogHeader>
