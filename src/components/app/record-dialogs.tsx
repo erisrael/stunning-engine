@@ -395,10 +395,13 @@ export function TrashDialog({ entity, rows, onClose, onDone }: { entity: RecordE
   const [reason, setReason] = React.useState("");
   const [counts, setCounts] = React.useState<Record<string, number> | null>(null);
   const { busy, results, apply } = useApply(onDone);
-  React.useEffect(() => {
-    if (rows.length === 1) void previewTrashAction(entity, rows[0].id).then((r) => r.ok && setCounts((r.data as { counts: Record<string, number> }).counts));
-  }, [entity, rows]);
   const deep = entity !== "items" && entity !== "batch";
+  // Overview and Coverage list parts, so a part left without any item would still show there as missing.
+  const [withParts, setWithParts] = React.useState(true);
+  React.useEffect(() => {
+    if (rows.length === 1)
+      void previewTrashAction(entity, rows[0].id, { withParts: !deep && withParts }).then((r) => r.ok && setCounts((r.data as { counts: Record<string, number> }).counts));
+  }, [entity, rows, deep, withParts]);
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
@@ -429,6 +432,15 @@ export function TrashDialog({ entity, rows, onClose, onDone }: { entity: RecordE
             <AlertTriangleIcon className="mt-0.5 size-3.5 shrink-0" /> Each selected record is deleted with everything under it.
           </p>
         )}
+        {!deep && (
+          <label className="flex items-start gap-2 text-sm">
+            <Checkbox className="mt-0.5" checked={withParts} onCheckedChange={(v) => setWithParts(!!v)} />
+            <span>
+              Also delete the part when no other item uses it
+              <span className="block text-xs text-muted-foreground">Otherwise the part stays in Overview and Coverage, shown as missing.</span>
+            </span>
+          </label>
+        )}
         <div className="space-y-1.5">
           <Label>Reason (optional)</Label>
           <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Wrong subject in import" />
@@ -438,7 +450,7 @@ export function TrashDialog({ entity, rows, onClose, onDone }: { entity: RecordE
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="destructive" disabled={busy} onClick={() => apply(() => trashRecordsAction(entity, rows.map((r) => r.id), reason), "moved to trash")}>
+          <Button variant="destructive" disabled={busy} onClick={() => apply(() => trashRecordsAction(entity, rows.map((r) => r.id), reason, { withParts: !deep && withParts }), "moved to trash")}>
             {busy && <Loader2Icon className="animate-spin" />} Move to trash
           </Button>
         </DialogFooter>

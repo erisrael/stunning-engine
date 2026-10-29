@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { MultiSelect } from "@/components/app/multi-select";
 import type { StructureRow } from "@/server/structure";
 import { SIMPLE_STATUS_LABELS, STAGE_LABELS, STAGES, type SimpleStatus, type Stage } from "@/lib/domain";
 import { cn } from "@/lib/utils";
@@ -106,8 +107,15 @@ export function StructureReport({
     if (window.matchMedia("(max-width: 640px)").matches) setFallbackView("tree");
   }, []);
   const view = (params.get("view") as ReportView) || fallbackView;
-  const grade = params.get("grade") ?? "all";
-  const subject = params.get("subject") ?? "all";
+  // Several grades and subjects can be chosen (comma separated in the address). The second filter only
+  // offers what exists in the first: subjects of the chosen grades, or grades of the chosen subjects.
+  const list = (k: string) => (params.get(k) ?? "").split(",").filter((x) => x && x !== "all");
+  const pickedGrades = list("grade");
+  const pickedSubjects = list("subject");
+  const gradeOptions = mode === "subject" && pickedSubjects.length ? grades.filter((g) => rows.some((r) => r.gradeId === g.id && pickedSubjects.includes(r.subjectId))) : grades;
+  const subjectOptions = mode === "grade" && pickedGrades.length ? subjects.filter((x) => rows.some((r) => r.subjectId === x.id && pickedGrades.includes(r.gradeId))) : subjects;
+  const gradeSet = pickedGrades.filter((g) => gradeOptions.some((o) => o.id === g));
+  const subjectSet = pickedSubjects.filter((x) => subjectOptions.some((o) => o.id === x));
   const status = params.get("status") ?? "all";
   const [q, setQ] = React.useState(params.get("q") ?? "");
 
@@ -115,8 +123,8 @@ export function StructureReport({
     const needle = q.trim().toLowerCase();
     return sortRows(
       rows.filter((r) => {
-        if (grade !== "all" && r.gradeId !== grade) return false;
-        if (subject !== "all" && r.subjectId !== subject) return false;
+        if (gradeSet.length && !gradeSet.includes(r.gradeId)) return false;
+        if (subjectSet.length && !subjectSet.includes(r.subjectId)) return false;
         if (status !== "all") {
           const [st, v] = status.split(":") as [Stage | "any", SimpleStatus];
           if (st === "any" ? !STAGES.some((s) => r.stages[s] === v) : r.stages[st] !== v) return false;
@@ -126,7 +134,8 @@ export function StructureReport({
       }),
       mode,
     );
-  }, [rows, grade, subject, status, q, mode]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the sets derive from the address
+  }, [rows, gradeSet.join(), subjectSet.join(), status, q, mode]);
 
   const totals = tally(filtered.filter((r) => r.partId));
   const parts = filtered.filter((r) => r.partId).length;
@@ -171,33 +180,25 @@ export function StructureReport({
         <div className="ml-auto flex flex-wrap items-center gap-2">
           {(mode === "grade" ? ["grade", "subject"] : ["subject", "grade"]).map((k) =>
             k === "grade" ? (
-              <Select key={k} value={grade} onValueChange={(v) => set({ grade: v })}>
-                <SelectTrigger size="sm" className="h-8 w-36 text-xs" aria-label="Grade">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All grades</SelectItem>
-                  {grades.map((g) => (
-                    <SelectItem key={g.id} value={g.id}>
-                      {g.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <MultiSelect
+                key={k}
+                label="Grade"
+                placeholder="All grades"
+                options={gradeOptions.map((g) => ({ value: g.id, label: g.name }))}
+                value={gradeSet}
+                onChange={(v) => set({ grade: v.join(",") })}
+                align="end"
+              />
             ) : (
-              <Select key={k} value={subject} onValueChange={(v) => set({ subject: v })}>
-                <SelectTrigger size="sm" className="h-8 w-44 text-xs" aria-label="Subject">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All subjects</SelectItem>
-                  {subjects.map((s) => (
-                    <SelectItem key={s.id} value={s.id}>
-                      {s.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <MultiSelect
+                key={k}
+                label="Subject"
+                placeholder="All subjects"
+                options={subjectOptions.map((x) => ({ value: x.id, label: x.name }))}
+                value={subjectSet}
+                onChange={(v) => set({ subject: v.join(",") })}
+                align="end"
+              />
             ),
           )}
           <Select value={status} onValueChange={(v) => set({ status: v })}>

@@ -62,21 +62,21 @@ export async function recodeItemsAction(ids: string[]) {
   });
 }
 
-export async function previewTrashAction(entity: RecordEntity | "batch", id: string) {
+export async function previewTrashAction(entity: RecordEntity | "batch", id: string, opts: { withParts?: boolean } = {}) {
   return wrap(async () => {
     await ctx();
-    return previewTrash(entity === "batch" ? "batch" : SINGULAR[entityOf(entity)], id);
+    return previewTrash(entity === "batch" ? "batch" : SINGULAR[entityOf(entity)], id, opts);
   }, { revalidate: false });
 }
 
-export async function trashRecordsAction(entity: RecordEntity | "batch", ids: string[], reason?: string) {
+export async function trashRecordsAction(entity: RecordEntity | "batch", ids: string[], reason?: string, opts: { withParts?: boolean } = {}) {
   return wrap(async () => {
     const c = await ctx();
     const kind: TrashEntity = entity === "batch" ? "batch" : SINGULAR[entityOf(entity)];
     const results: { id: string; ok: boolean; error?: string }[] = [];
     for (const id of ids.slice(0, 2000)) {
       try {
-        await moveToTrash(c, kind, id, reason);
+        await moveToTrash(c, kind, id, reason, opts);
         results.push({ id, ok: true });
       } catch (err) {
         results.push({ id, ok: false, error: err instanceof Error ? err.message : String(err) });

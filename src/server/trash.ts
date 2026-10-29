@@ -76,10 +76,25 @@ async function itemsUnder(where: { gradeId?: string; subjectId?: string; unitIds
   return [...out];
 }
 
-async function collect(entity: TrashEntity, id: string, extraItemIds: string[] = []): Promise<Snapshot> {
+// Parts used only by the given items; they go with the items so Overview and Coverage do not keep
+// listing a part whose only video was deleted.
+async function partsOnlyUsedBy(itemIds: string[]) {
+  if (!itemIds.length) return [];
+  const ph = placeholders(itemIds.length);
+  return await all(
+    `SELECT l.* FROM lessons l WHERE l.id IN (SELECT lesson_id FROM items WHERE id IN (${ph}) AND lesson_id IS NOT NULL)
+     AND NOT EXISTS (SELECT 1 FROM items x WHERE x.lesson_id = l.id AND x.id NOT IN (${ph}))`,
+    ...itemIds,
+    ...itemIds,
+  );
+}
+
+async function collect(entity: TrashEntity, id: string, extraItemIds: string[] = [], opts: { withParts?: boolean } = {}): Promise<Snapshot> {
   const snap: Snapshot = { tables: {} };
   if (entity === "item" || entity === "batch") {
-    await collectItems(snap, entity === "item" ? [id] : extraItemIds);
+    const ids = entity === "item" ? [id] : extraItemIds;
+    await collectItems(snap, ids);
+    if (opts.withParts) add(snap, "lessons", await partsOnlyUsedBy(ids));
     return snap;
   }
   if (entity === "lesson") {
@@ -180,8 +195,8 @@ async function describe(entity: TrashEntity, id: string): Promise<{ label: strin
   }
 }
 
-export async function previewTrash(entity: TrashEntity, id: string): Promise<TrashPreview> {
-  const snap = await collect(entity, id, entity === "batch" ? await batchItemIds(id) : []);
+export async function previewTrash(entity: TrashEntity, id: string, opts: { withParts?: boolean } = {}): Promise<TrashPreview> {
+  const snap = await collect(entity, id, entity === "batch" ? await batchItemIds(id) : [], opts);
   const { label } = await describe(entity, id);
   return { entity, id, label, counts: Object.fromEntries(Object.entries(snap.tables).map(([t, r]) => [t, r.length])) };
 }
@@ -190,10 +205,13 @@ async function batchItemIds(jobId: string) {
   return (await all<{ id: string }>("SELECT id FROM items WHERE import_batch_id = ?", jobId)).map((r) => r.id);
 }
 
-export async function moveToTrash(ctx: Ctx, entity: TrashEntity, id: string, reason?: string | null) {
+export async function moveToTrash(ctx: Ctx, entity: TrashEntity, id: string, reason?: string | null, opts: { withParts?: boolean } = {}) {
   return await tx(async () => {
-    const { label, detail } = await describe(entity, id);
-    const snap = await collect(entity, id, entity === "batch" ? await batchItemIds(id) : []);
+    const described = await describe(entity, id);
+    const snap = await collect(entity, id, entity === "batch" ? await batchItemIds(id) : [], opts);
+    const parts = (entity === "item" || entity === "batch") && snap.tables.lessons?.length;
+    const label = described.label;
+    const detail = parts ? `${described.detail ?? ""}${described.detail ? ", " : ""}with ${parts === 1 ? "its part" : `${parts} parts`}` : described.detail;
     const rows = countRows(snap);
     if (!rows) throw new WorkflowError("NOT_FOUND", `${label} has nothing to delete.`);
     await removeRows(snap);

@@ -440,6 +440,23 @@ export async function healthReport(): Promise<HealthIssue[]> {
   );
   push({ key: "empty_units", title: "Empty units", description: "Units with no parts and no items. Many are planned units not yet split into parts; only trash the ones a mistaken import left behind.", severity: "info", fix: "Move empty units to trash" }, empty);
 
+  const orphanParts = await all<{ id: string; label: string; detail: string }>(
+    `SELECT l.id, 'Part ' || l.number || ': ' || l.title AS label, g.name || ' / ' || s.name || ' / Unit ' || u.number AS detail
+     FROM lessons l JOIN units u ON u.id = l.unit_id JOIN grades g ON g.id = u.grade_id JOIN subjects s ON s.id = u.subject_id
+     WHERE NOT EXISTS (SELECT 1 FROM items i WHERE i.lesson_id = l.id)
+     ORDER BY g.sort, s.sort, u.number, l.number`,
+  );
+  push(
+    {
+      key: "orphan_parts",
+      title: "Parts with no item",
+      description: "Parts that show as missing in Overview and Coverage because no item exists for them, often left behind when an item was deleted. Trash the ones that should not be there.",
+      severity: "info",
+      fix: "Move parts to trash",
+    },
+    orphanParts,
+  );
+
   const inactive = await all<{ id: string; code: string; title: string; what: string }>(
     `SELECT i.id, i.code, i.title, CASE WHEN g.active = 0 THEN 'Inactive grade ' || g.name ELSE 'Inactive subject ' || s.name END AS what
      FROM items i JOIN item_memberships m ON m.item_id = i.id AND m.is_primary = 1 JOIN grades g ON g.id = m.grade_id JOIN subjects s ON s.id = m.subject_id
@@ -497,6 +514,9 @@ export async function fixHealthIssue(ctx: Ctx, key: string, ids: string[]) {
           const [g, s] = ref.split("|");
           await ensureOffering(g, s);
         });
+      break;
+    case "orphan_parts":
+      for (const id of ids) await each(id, () => moveToTrash(ctx, "lesson", id, "Part with no item, found by the data health check"));
       break;
     case "empty_units":
       for (const id of ids) await each(id, () => moveToTrash(ctx, "unit", id, "Empty unit found by the data health check"));
