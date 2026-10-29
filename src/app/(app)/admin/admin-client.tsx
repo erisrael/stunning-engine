@@ -68,6 +68,10 @@ const ROLE_TONE: Record<Role, string> = {
   editing: "bg-[var(--stage-editing-bg)] text-[var(--stage-editing)]",
   uploading: "bg-[var(--stage-uploading-bg)] text-[var(--stage-uploading)]",
   publication: "bg-[var(--stage-publication-bg)] text-[var(--stage-publication)]",
+  owner: "bg-amber-500/15 text-amber-700 dark:text-amber-300",
+  developer: "bg-sky-500/15 text-sky-700 dark:text-sky-300",
+  content: "bg-violet-500/15 text-violet-700 dark:text-violet-300",
+  marketing: "bg-pink-500/15 text-pink-700 dark:text-pink-300",
 };
 
 export function RoleBadge({ role }: { role: Role }) {

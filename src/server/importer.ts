@@ -488,7 +488,7 @@ export const TEMPLATES: Record<TemplateKey, TemplateDef> = {
       { key: "name", label: "Full name", required: true, type: "string", description: "Display name." },
       { key: "email", label: "Email", required: true, type: "email", description: "Sign-in email. Used to match existing users." },
       { key: "title", label: "Job title", required: false, type: "string", description: "Optional." },
-      { key: "roles", label: "Roles", required: true, type: "list", options: () => [...ROLES], description: "Semicolon list of recording, editing, uploading, publication, manager." },
+      { key: "roles", label: "Roles", required: true, type: "list", options: () => [...ROLES], description: "Semicolon list of recording, editing, uploading, publication, manager, admin, owner, developer, content, marketing." },
       { key: "grade_scope", label: "Grade scope", required: false, type: "list", options: gradeCodes, description: "Semicolon list of grade codes. Blank means all grades." },
       { key: "subject_scope", label: "Subject scope", required: false, type: "list", options: subjectCodes, description: "Semicolon list of subject codes. Blank means all subjects." },
       { key: "capacity_hours", label: "Production hours per week", required: false, type: "string", description: "Realistic production hours after meetings and other duties." },
@@ -1115,7 +1115,7 @@ async function planRow(template: TemplateDef, rec: Row, rowNo: number, mode: Imp
       if (x) subjects.push(x.id);
     }
     const cap: Partial<Record<Stage, number>> = {};
-    const stageRoles = roles.filter((r) => r !== "manager") as Stage[];
+    const stageRoles = roles.filter((r) => (STAGES as readonly string[]).includes(r)) as Stage[];
     if (rec.capacity_hours) {
       if (/^\d+(\.\d+)?$/.test(rec.capacity_hours)) {
         for (const st of stageRoles) cap[st] = Number(rec.capacity_hours) / Math.max(1, stageRoles.length);

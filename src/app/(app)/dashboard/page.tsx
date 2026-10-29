@@ -21,6 +21,8 @@ import { AttentionList, CustomizeDashboard, SessionBanner } from "./widgets";
 import { ManagerHome } from "./manager-home";
 import { PageImport } from "@/components/app/page-import";
 import { DASHBOARD_PANELS as PANELS } from "@/lib/panels";
+import { redirect } from "next/navigation";
+import { can } from "@/server/users";
 
 export const metadata = { title: "Dashboard" };
 
@@ -37,6 +39,11 @@ const managerView = (role: string): boolean => role === "manager";
 
 export default async function DashboardPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const viewer = await requireViewer();
+  // People only in Dev, Studio or Marketing (or owners only) start in their own section, not the production home.
+  if (!viewer.roles.some((r) => ["recording", "editing", "uploading", "publication", "manager", "admin"].includes(r))) {
+    const home = can(viewer, "owners.view") ? "/owners" : can(viewer, "dev.access") ? "/dev" : can(viewer, "studio.access") ? "/studio" : can(viewer, "marketing.access") ? "/marketing" : null;
+    if (home) redirect(home);
+  }
   const sp = await searchParams;
   const filters = parseFilters(sp);
   const now = nowIso();

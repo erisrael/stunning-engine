@@ -52,14 +52,17 @@ How new work is added without disturbing what already runs:
 - [x] Permissions: Send email (Admin and Managers by default; can be given to any role) and Manage email settings (Admin)
 - [ ] Email copies of important notifications (per person, by type) and scheduled sending
 
-## Phase 5: Departments and new modules
+## Phase 5: Departments and new modules (done)
 
-- Departments with Head, Lead and Member; each department sees only its own area, members see only their own work
-- Dev team (`/dev`): projects, milestones, tasks board, progress, task assigner
-- Studio (`/studio`, content manager): notes, exams with question bank, flash cards, linked to grade, subject, unit and part
-- Marketing (`/marketing`): campaigns, content calendar, tasks, KPIs
-- Owners (`/owners`): read-only stats across departments, product counts, department reports
-- Chat directory rules: owners hidden from members and leads unless allowed; managers and admins can contact owners; owners can contact anyone
+- [x] New roles: Owner, Developer, Content (Studio), Marketing; each department sees only its own section by default (permissions adjustable per role in Admin)
+- [x] Departments (Admin, Departments): people come from the department's roles; positions Head, Lead, Member. Heads and leads see and assign all the department's work; members see their own; Admin sees everything; owners read everything
+- [x] Dev team (`/dev`) and Marketing (`/marketing`), one shared engine: projects (campaigns) with keys, status, lead, dates, budget and milestones; tasks with codes (WEB-12), type, status, priority, assignee, estimate and spent hours, progress, dates, labels and comments; Board (drag and drop), List (filters, search, sorting, bulk status/priority/assignee/project/due date, delete, export selected), Calendar; CSV import and export; assignment and comment notifications
+- [x] Marketing KPIs: targets per campaign and dated KPI entries (reach, impressions, clicks, leads, sign-ups, spend) with progress against target
+- [x] Studio (`/studio`): notes (Markdown), exams (from the question bank, points, time, pass mark, printable with answer key), flash card decks (paste, CSV import/export, study preview), placed on grade, subject, unit and part; review flow draft, in review, approved, published (editing published work starts a new version); question bank with single/several-answer, true/false, short and essay questions, difficulty, tags, approval, CSV import/export
+- [x] Owners (`/owners`): products (videos, notes, exams, decks, questions), production health, published per week, work per stage, curriculum coverage per grade, people per department, Dev and Marketing progress per project, monthly marketing KPIs
+- [x] Department reports: heads and leads (and production managers) write periodic reports with the period's numbers filled in; owners are notified and read them
+- [x] Chat: owners are hidden from people without "Start direct chats with owners" (Admin, Managers and owners have it); owners can message anyone, and those people can reply
+- [ ] Dev integrations (GitHub issues and pull requests), time tracking per task
 
 ## Phase 6: Overview visualizer, help and onboarding
 

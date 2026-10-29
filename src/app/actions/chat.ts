@@ -11,6 +11,7 @@ import {
   changedMessages,
   cleanupChatFiles,
   directGroup,
+  dmKey,
   groupMembers,
   groupMessages,
   membership,
@@ -21,6 +22,7 @@ import {
   VOICE_UNPLAYED_TTL_MS,
 } from "@/server/chat";
 import { can, canViewItem } from "@/server/users";
+import { canContactOwners, ownerIds } from "@/server/departments";
 import { maxUploadBytes, objectExists, signedUploadUrl, storageKind } from "@/server/storage";
 import { removeSubscription, saveSubscription, sendPush, subscriptionCount, vapidKeys } from "@/server/push";
 import { verifyPassword } from "@/server/passwords";
@@ -304,6 +306,10 @@ export async function updateGroupAction(groupId: string, patch: { name?: string;
 export async function setMembersAction(groupId: string, input: { add?: string[]; remove?: string[] }) {
   return wrap(async () => {
     const viewer = await requireManage(groupId);
+    if (input.add?.length && !canContactOwners(viewer)) {
+      const owners = await ownerIds();
+      if (input.add.some((u) => owners.has(u))) throw new WorkflowError("FORBIDDEN", "Only managers and admins add owners to groups.");
+    }
     const now = nowIso();
     const names = async (ids: string[]) =>
       ids.length ? (await all<{ name: string }>(`SELECT name FROM users WHERE id IN (${ids.map(() => "?").join(",")})`, ...ids)).map((u) => u.name).join(", ") : "";
@@ -355,6 +361,9 @@ export async function openDirectAction(userId: string) {
     if (userId === viewer.id) throw new WorkflowError("VALIDATION", "Choose someone else.");
     const other = await get<{ id: string }>("SELECT id FROM users WHERE id = ? AND active = 1", userId);
     if (!other) throw new WorkflowError("NOT_FOUND", "That person is not active.");
+    // Owners are contacted directly only by people allowed to, unless the owner already started the conversation.
+    if (!canContactOwners(viewer) && (await ownerIds()).has(userId) && !(await get("SELECT 1 AS x FROM chat_groups WHERE dm_key = ?", dmKey(viewer.id, userId))))
+      throw new WorkflowError("FORBIDDEN", "Owners are contacted through your manager. An owner can start a chat with you.");
     return await directGroup(viewer.id, userId);
   });
 }

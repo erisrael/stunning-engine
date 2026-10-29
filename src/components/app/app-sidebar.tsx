@@ -4,6 +4,11 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import {
   ArrowLeftRightIcon,
+  BookOpenIcon,
+  CodeIcon,
+  CrownIcon,
+  FileTextIcon,
+  MegaphoneIcon,
   CalendarDaysIcon,
   DatabaseIcon,
   ChartColumnIcon,
@@ -57,8 +62,10 @@ export function AppSidebar({
   activeRole,
   counts,
   workspaceName,
+  reportsLink = false,
 }: {
   perms: Capability[];
+  reportsLink?: boolean;
   activeRole: Role;
   counts: { myWork: number; notifications: number; questions: number; handoffs: number; corrections: number };
   workspaceName: string;
@@ -91,6 +98,16 @@ export function AppSidebar({
         { href: "/coverage", label: "Coverage", icon: GridIcon, keepFilters: true, cap: "nav.coverage" },
         { href: "/reports", label: "Reports", icon: ChartColumnIcon, keepFilters: true, cap: "reports.view" },
         { href: "/team", label: perms.includes("team.view") ? "Team" : "My effort", icon: UsersIcon, badge: perms.includes("corrections.approve") ? counts.corrections : 0, cap: "nav.team" },
+      ],
+    },
+    {
+      label: "Departments",
+      items: [
+        { href: "/dev", label: "Dev team", icon: CodeIcon, cap: ["dev.access", "owners.view"] },
+        { href: "/studio", label: "Studio", icon: BookOpenIcon, cap: ["studio.access", "owners.view"] },
+        { href: "/marketing", label: "Marketing", icon: MegaphoneIcon, cap: ["marketing.access", "owners.view"] },
+        { href: "/owners", label: "Owners", icon: CrownIcon, cap: "owners.view" },
+        ...(reportsLink ? [{ href: "/owners?tab=reports", label: "Department reports", icon: FileTextIcon }] : []),
       ],
     },
     {

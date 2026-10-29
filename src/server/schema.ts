@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 7;
+export const SCHEMA_VERSION = 8;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -746,6 +746,168 @@ CREATE TABLE IF NOT EXISTS email_log_recipients (
   sent_at TEXT,
   PRIMARY KEY (log_id, address, kind)
 );
+
+-- v8: departments. Positions (head, lead) per department; members are the people holding its roles.
+-- Dev and Marketing share projects (campaigns in Marketing), milestones, tasks, comments and KPI entries.
+-- Studio keeps notes, exams, a question bank and flash card decks, linked to the curriculum.
+-- Department heads and leads write periodic reports that owners read.
+CREATE TABLE IF NOT EXISTS department_positions (
+  department TEXT NOT NULL,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  position TEXT NOT NULL,
+  PRIMARY KEY (department, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS dept_projects (
+  id TEXT PRIMARY KEY,
+  dept TEXT NOT NULL,
+  key TEXT NOT NULL,
+  name TEXT NOT NULL,
+  description TEXT,
+  status TEXT NOT NULL DEFAULT 'active',
+  lead_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+  start_date TEXT,
+  due_date TEXT,
+  color TEXT,
+  budget DOUBLE PRECISION,
+  meta TEXT NOT NULL DEFAULT '{}',
+  next_number INTEGER NOT NULL DEFAULT 1,
+  archived INTEGER NOT NULL DEFAULT 0,
+  created_by TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (dept, key)
+);
+
+CREATE TABLE IF NOT EXISTS dept_milestones (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES dept_projects(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  due_date TEXT,
+  status TEXT NOT NULL DEFAULT 'open',
+  sort INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS dept_tasks (
+  id TEXT PRIMARY KEY,
+  dept TEXT NOT NULL,
+  project_id TEXT REFERENCES dept_projects(id) ON DELETE SET NULL,
+  milestone_id TEXT REFERENCES dept_milestones(id) ON DELETE SET NULL,
+  code TEXT NOT NULL,
+  title TEXT NOT NULL,
+  description TEXT,
+  type TEXT NOT NULL DEFAULT 'task',
+  status TEXT NOT NULL DEFAULT 'todo',
+  priority TEXT NOT NULL DEFAULT 'normal',
+  assignee_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+  reporter_id TEXT,
+  estimate_hours DOUBLE PRECISION,
+  spent_hours DOUBLE PRECISION,
+  progress INTEGER NOT NULL DEFAULT 0,
+  start_date TEXT,
+  due_date TEXT,
+  labels TEXT NOT NULL DEFAULT '[]',
+  sort DOUBLE PRECISION NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  completed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_dept_tasks ON dept_tasks(dept, status);
+CREATE INDEX IF NOT EXISTS idx_dept_tasks_assignee ON dept_tasks(assignee_id);
+
+CREATE TABLE IF NOT EXISTS dept_task_comments (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL REFERENCES dept_tasks(id) ON DELETE CASCADE,
+  author_id TEXT NOT NULL,
+  body TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS dept_metrics (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES dept_projects(id) ON DELETE CASCADE,
+  metric TEXT NOT NULL,
+  value DOUBLE PRECISION NOT NULL,
+  recorded_on TEXT NOT NULL,
+  note TEXT,
+  created_by TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS dept_reports (
+  id TEXT PRIMARY KEY,
+  department TEXT NOT NULL,
+  period_start TEXT NOT NULL,
+  period_end TEXT NOT NULL,
+  title TEXT NOT NULL,
+  summary TEXT NOT NULL,
+  highlights TEXT,
+  risks TEXT,
+  next_steps TEXT,
+  status TEXT NOT NULL DEFAULT 'draft',
+  author_id TEXT,
+  submitted_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS studio_resources (
+  id TEXT PRIMARY KEY,
+  type TEXT NOT NULL,
+  title TEXT NOT NULL,
+  grade_id TEXT REFERENCES grades(id) ON DELETE SET NULL,
+  subject_id TEXT REFERENCES subjects(id) ON DELETE SET NULL,
+  unit_id TEXT REFERENCES units(id) ON DELETE SET NULL,
+  lesson_id TEXT REFERENCES lessons(id) ON DELETE SET NULL,
+  language TEXT NOT NULL DEFAULT 'en',
+  status TEXT NOT NULL DEFAULT 'draft',
+  body TEXT NOT NULL DEFAULT '',
+  meta TEXT NOT NULL DEFAULT '{}',
+  author_id TEXT,
+  reviewer_id TEXT,
+  review_note TEXT,
+  version INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  published_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_studio_resources ON studio_resources(type, status);
+
+CREATE TABLE IF NOT EXISTS studio_questions (
+  id TEXT PRIMARY KEY,
+  grade_id TEXT REFERENCES grades(id) ON DELETE SET NULL,
+  subject_id TEXT REFERENCES subjects(id) ON DELETE SET NULL,
+  unit_id TEXT REFERENCES units(id) ON DELETE SET NULL,
+  lesson_id TEXT REFERENCES lessons(id) ON DELETE SET NULL,
+  type TEXT NOT NULL,
+  stem TEXT NOT NULL,
+  options TEXT NOT NULL DEFAULT '[]',
+  answer TEXT,
+  explanation TEXT,
+  difficulty TEXT NOT NULL DEFAULT 'medium',
+  tags TEXT NOT NULL DEFAULT '[]',
+  status TEXT NOT NULL DEFAULT 'draft',
+  author_id TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS studio_exam_questions (
+  resource_id TEXT NOT NULL REFERENCES studio_resources(id) ON DELETE CASCADE,
+  question_id TEXT NOT NULL REFERENCES studio_questions(id) ON DELETE CASCADE,
+  sort INTEGER NOT NULL DEFAULT 0,
+  points DOUBLE PRECISION NOT NULL DEFAULT 1,
+  PRIMARY KEY (resource_id, question_id)
+);
+
+CREATE TABLE IF NOT EXISTS studio_cards (
+  id TEXT PRIMARY KEY,
+  resource_id TEXT NOT NULL REFERENCES studio_resources(id) ON DELETE CASCADE,
+  front TEXT NOT NULL,
+  back TEXT NOT NULL,
+  sort INTEGER NOT NULL DEFAULT 0
+);
 `;
 
 // Tables in dependency order; used to empty the workspace and to export or restore backups.
@@ -804,4 +966,15 @@ export const TABLES = [
   "email_templates",
   "email_log",
   "email_log_recipients",
+  "department_positions",
+  "dept_projects",
+  "dept_milestones",
+  "dept_tasks",
+  "dept_task_comments",
+  "dept_metrics",
+  "dept_reports",
+  "studio_resources",
+  "studio_questions",
+  "studio_exam_questions",
+  "studio_cards",
 ] as const;

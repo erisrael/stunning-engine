@@ -1,6 +1,7 @@
 // Shared domain vocabulary used by both the server and the client.
 
-export const ROLES = ["recording", "editing", "uploading", "publication", "manager", "admin"] as const;
+// Production roles first, then the department roles (Phase 5). Department positions (head, lead, member) are set in Admin.
+export const ROLES = ["recording", "editing", "uploading", "publication", "manager", "admin", "owner", "developer", "content", "marketing"] as const;
 export type Role = (typeof ROLES)[number];
 
 export const ROLE_LABELS: Record<Role, string> = {
@@ -10,6 +11,10 @@ export const ROLE_LABELS: Record<Role, string> = {
   publication: "Publication",
   manager: "Manager",
   admin: "Admin",
+  owner: "Owner",
+  developer: "Developer",
+  content: "Content (Studio)",
+  marketing: "Marketing",
 };
 
 export const ROLE_DESCRIPTIONS: Record<Role, string> = {
@@ -19,6 +24,10 @@ export const ROLE_DESCRIPTIONS: Record<Role, string> = {
   publication: "Reviews, schedules and confirms releases.",
   manager: "Plans work, assigns owners, sets deadlines and follows delivery.",
   admin: "Manages people, roles, permissions, access and workspace data.",
+  owner: "Company owner: sees stats and reports from every department.",
+  developer: "Dev team: projects, milestones and tasks in Dev.",
+  content: "Studio: notes, exams, question bank and flash cards.",
+  marketing: "Marketing: campaigns, content calendar, tasks and KPIs.",
 };
 
 // Capabilities that can be granted per role in Admin, Roles and permissions.
@@ -55,6 +64,11 @@ export const CAPABILITIES = [
   { key: "questions.ask", label: "Ask tracked questions", group: "Collaboration" },
   { key: "email.send", label: "Send email from the app", group: "Email" },
   { key: "email.manage", label: "Manage email settings, sender addresses and the full sent log", group: "Email" },
+  { key: "dev.access", label: "Dev team section", group: "Departments" },
+  { key: "studio.access", label: "Studio section (notes, exams, flash cards)", group: "Departments" },
+  { key: "marketing.access", label: "Marketing section", group: "Departments" },
+  { key: "owners.view", label: "Owners dashboard (stats and reports from every department, read only)", group: "Departments" },
+  { key: "chat.contact_owners", label: "Start direct chats with owners", group: "Collaboration" },
   { key: "settings.manage", label: "Change workflow settings", group: "Administration" },
   { key: "users.manage", label: "Manage users, roles, permissions and access", group: "Administration" },
   { key: "data.manage", label: "Empty, import and back up workspace data", group: "Administration" },
@@ -73,7 +87,12 @@ export const DEFAULT_PERMISSIONS: Record<Role, Capability[]> = {
   uploading: STAFF,
   publication: STAFF,
   // Managers follow delivery: they view everything but do not edit item data.
-  manager: [...NAV_CAPABILITIES, "export.run", "export.report", "export.tracker", "export.audit", "reports.view", "team.view", "corrections.approve", "chat.manage", "chat.channels", "email.send", "questions.ask", "settings.manage"],
+  manager: [...NAV_CAPABILITIES, "export.run", "export.report", "export.tracker", "export.audit", "reports.view", "team.view", "corrections.approve", "chat.manage", "chat.channels", "chat.contact_owners", "email.send", "questions.ask", "settings.manage"],
+  // Department roles see their own section only; Admin can widen this in Roles and permissions.
+  owner: ["owners.view", "nav.overview", "nav.coverage", "reports.view", "team.view", "export.run", "export.report", "chat.channels", "chat.contact_owners", "email.send"],
+  developer: ["dev.access"],
+  content: ["studio.access"],
+  marketing: ["marketing.access", "email.send"],
   admin: [
     ...NAV_CAPABILITIES,
     "items.create",
@@ -93,11 +112,31 @@ export const DEFAULT_PERMISSIONS: Record<Role, Capability[]> = {
     "reports.view",
     "team.view",
     "chat.channels",
+    "chat.contact_owners",
     "email.send",
     "email.manage",
+    "dev.access",
+    "studio.access",
+    "marketing.access",
+    "owners.view",
     ...EDITORIAL_CAPABILITIES,
   ],
 };
+
+// Departments group people by role. Heads and leads (Admin, Departments) see and assign the whole department's
+// work; members see their own. Production keeps its stage team leads.
+export const DEPARTMENTS = ["production", "dev", "studio", "marketing"] as const;
+export type Department = (typeof DEPARTMENTS)[number];
+export const DEPARTMENT_LABELS: Record<Department, string> = { production: "Production", dev: "Dev team", studio: "Studio", marketing: "Marketing" };
+export const DEPARTMENT_ROLES: Record<Department, Role[]> = {
+  production: ["recording", "editing", "uploading", "publication", "manager"],
+  dev: ["developer"],
+  studio: ["content"],
+  marketing: ["marketing"],
+};
+export const POSITIONS = ["head", "lead", "member"] as const;
+export type Position = (typeof POSITIONS)[number];
+export const POSITION_LABELS: Record<Position, string> = { head: "Head", lead: "Lead", member: "Member" };
 
 // Team leads (Admin, Teams) get these on top of their roles; Admin can change them per team.
 export type LeadKey = `lead.${Stage}`;

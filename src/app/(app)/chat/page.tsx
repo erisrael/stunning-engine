@@ -4,6 +4,7 @@ import { canManageChat, groupMessages, listGroups, membership } from "@/server/c
 import { getSettings } from "@/server/settings";
 import { can, userDirectory } from "@/server/users";
 import { ChatClient } from "./chat-client";
+import { canContactOwners, ownerIds } from "@/server/departments";
 
 export const metadata = { title: "Chat" };
 
@@ -27,7 +28,11 @@ export default async function ChatPage({ searchParams }: { searchParams: Promise
       groups={groups}
       activeId={active?.id ?? null}
       initialMessages={messages}
-      directory={(await userDirectory()).map((u) => ({ id: u.id, name: u.name, handle: u.handle, roles: u.roles }))}
+      directory={await (async () => {
+        // Owners are listed only for people allowed to contact them (an owner can still start a chat with anyone).
+        const owners = canContactOwners(viewer) ? new Set<string>() : await ownerIds();
+        return (await userDirectory()).filter((u) => !owners.has(u.id)).map((u) => ({ id: u.id, name: u.name, handle: u.handle, roles: u.roles }));
+      })()}
       timezone={settings.workspace.timezone}
     />
   );
