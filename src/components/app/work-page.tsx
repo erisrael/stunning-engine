@@ -8,8 +8,9 @@ import { POSITION_LABELS } from "@/lib/domain";
 import type { WorkDept } from "@/lib/work";
 import { WorkClient } from "./work-client";
 import { DeptConfigure } from "./dept-configure";
+import { DeptDashboardView } from "./dept-dashboard-view";
 
-const TABS = ["board", "list", "projects", "calendar", "configure"] as const;
+const TABS = ["dashboard", "board", "list", "projects", "calendar", "configure"] as const;
 const SORTS = ["updated", "due", "priority", "code", "title", "status"] as const;
 
 // The Dev and Marketing sections share this page; their vocabulary, workflow and rights come from the configuration.
@@ -19,7 +20,8 @@ export async function WorkPage({ dept, searchParams }: { dept: WorkDept; searchP
   if (!access) redirect("/dashboard?denied=permission");
   const cfg = access.config;
   const sp = await searchParams;
-  let tab = (TABS as readonly string[]).includes(sp.tab ?? "") ? (sp.tab as (typeof TABS)[number]) : "board";
+  // The dashboard is the landing tab; a link to a task opens the board with it.
+  let tab = (TABS as readonly string[]).includes(sp.tab ?? "") ? (sp.tab as (typeof TABS)[number]) : sp.task ? "board" : "dashboard";
   if (tab === "configure" && !access.rights.configure) tab = "board";
   const header = (
     <PageHeader
@@ -34,6 +36,28 @@ export async function WorkPage({ dept, searchParams }: { dept: WorkDept; searchP
         <DeptConfigure dept={dept} config={cfg} version={cfg.version} />
       </div>
     );
+  if (tab === "dashboard") {
+    const [projects, people] = await Promise.all([listProjects(viewer, dept), deptPeople(dept)]);
+    return (
+      <div className="space-y-4">
+        {header}
+        <WorkClient
+          dept={dept}
+          tab="dashboard"
+          filter={{}}
+          tasks={[]}
+          projects={projects}
+          people={people.map((p) => ({ id: p.id, name: p.name, position: p.position }))}
+          access={{ rights: access.rights, readOnly: access.readOnly }}
+          config={cfg}
+          viewerId={viewer.id}
+          openTaskId={null}
+          showArchived={false}
+          dashboard={<DeptDashboardView viewer={viewer} dept={dept} sp={sp} />}
+        />
+      </div>
+    );
+  }
   const statuses = sp.status ? sp.status.split(",").filter((s) => cfg.statuses.some((x) => x.key === s)) : [];
   const filter: TaskFilter = {
     q: sp.q ?? null,

@@ -28,6 +28,7 @@ export function OwnersClient({
   viewerId,
   filter,
   openId,
+  overview,
 }: {
   tab: "overview" | "reports";
   isOwner: boolean;
@@ -37,6 +38,8 @@ export function OwnersClient({
   viewerId: string;
   filter: { department: Department | null; status: string | null; q: string | null };
   openId: string | null;
+  // The Company overview, rendered on the server, when the viewer may see it.
+  overview?: React.ReactNode;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -56,7 +59,7 @@ export function OwnersClient({
           </TabsList>
         </Tabs>
       )}
-      {tab === "overview" && stats && <Overview s={stats} />}
+      {tab === "overview" && (overview ?? (stats && <Overview s={stats} />))}
       {tab === "reports" && <Reports reports={reports} writeFor={writeFor} viewerId={viewerId} filter={filter} openId={openId} go={go} />}
     </div>
   );
@@ -64,15 +67,13 @@ export function OwnersClient({
 
 const fmt = (n: number) => n.toLocaleString("en-US");
 
-function Overview({ s }: { s: OwnerStats }) {
-  const p = s.production;
-  const coverage = p.grades.reduce((a, g) => ({ total: a.total + g.total, done: a.done + g.done }), { total: 0, done: 0 });
+export function Overview({ s }: { s: OwnerStats }) {
   return (
     <div className="space-y-6">
       <section className="space-y-2">
         <h2 className="text-sm font-semibold text-muted-foreground">Products</h2>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-          <MetricCard label="Published videos" value={fmt(s.products.videos)} hint={`${fmt(p.publishedThisMonth)} this month`} />
+          <MetricCard label="Published videos" value={fmt(s.products.videos)} hint={`${fmt(s.production.publishedThisMonth)} this month`} />
           <MetricCard label="Published notes" value={fmt(s.products.notes)} />
           <MetricCard label="Published exams" value={fmt(s.products.exams)} />
           <MetricCard label="Flash card decks" value={fmt(s.products.decks)} hint={`${fmt(s.products.cards)} cards`} />
@@ -81,39 +82,7 @@ function Overview({ s }: { s: OwnerStats }) {
         </div>
       </section>
 
-      <section className="space-y-2">
-        <h2 className="text-sm font-semibold text-muted-foreground">Production</h2>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <MetricCard label="In production" value={fmt(p.inProduction)} hint={`${fmt(p.draft)} not started`} />
-          <MetricCard label="Overdue" value={fmt(p.overdue)} tone={p.overdue ? "warning" : "default"} />
-          <MetricCard label="Curriculum covered" value={`${coverage.total ? Math.round((coverage.done / coverage.total) * 100) : 0}%`} hint={`${fmt(coverage.done)} of ${fmt(coverage.total)} parts published`} />
-          <MetricCard label="People active this week" value={fmt(s.users.activeWeek)} hint={`of ${fmt(s.users.total)} accounts`} />
-        </div>
-        <div className="grid gap-3 lg:grid-cols-2">
-          <ChartFrame title="Published per week" description="Last 8 weeks" table={{ columns: ["Week ending", "Published"], rows: p.weekly.map((w) => [w.week, w.published]) }}>
-            <BarsChart data={p.weekly.map((w) => ({ week: w.week.slice(5), published: w.published }))} xKey="week" series={[{ key: "published", label: "Published", color: CAT[0] }]} />
-          </ChartFrame>
-          <ChartFrame title="Work in each stage now" table={{ columns: ["Stage", "Items"], rows: p.byStage.map((b) => [STAGE_LABELS[b.stage], b.count]) }}>
-            <BarsChart data={p.byStage.map((b) => ({ stage: STAGE_LABELS[b.stage], items: b.count }))} xKey="stage" series={[{ key: "items", label: "Items", color: CAT[0] }]} />
-          </ChartFrame>
-        </div>
-        {p.grades.length > 0 && (
-          <div className="rounded-xl border bg-card p-4">
-            <h3 className="mb-3 text-sm font-semibold">Curriculum covered by grade</h3>
-            <div className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
-              {p.grades.map((g) => (
-                <div key={g.grade} className="flex items-center gap-3 text-sm">
-                  <span className="w-24 shrink-0">{g.grade}</span>
-                  <Meter value={g.done} max={Math.max(1, g.total)} className="flex-1" />
-                  <span className="w-28 shrink-0 text-right text-xs text-muted-foreground tabular">
-                    {fmt(g.done)}/{fmt(g.total)} ({g.total ? Math.round((g.done / g.total) * 100) : 0}%)
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </section>
+      <ProductionSection s={s} />
 
       <section className="space-y-2">
         <h2 className="text-sm font-semibold text-muted-foreground">Departments</h2>
@@ -160,6 +129,47 @@ function Overview({ s }: { s: OwnerStats }) {
         )}
       </section>
     </div>
+  );
+}
+
+// Production numbers, charts and curriculum coverage (also the Production view of the Company overview).
+export function ProductionSection({ s }: { s: OwnerStats }) {
+  const p = s.production;
+  const coverage = p.grades.reduce((a, g) => ({ total: a.total + g.total, done: a.done + g.done }), { total: 0, done: 0 });
+  return (
+  <section className="space-y-2">
+    <h2 className="text-sm font-semibold text-muted-foreground">Production</h2>
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <MetricCard label="In production" value={fmt(p.inProduction)} hint={`${fmt(p.draft)} not started`} />
+      <MetricCard label="Overdue" value={fmt(p.overdue)} tone={p.overdue ? "warning" : "default"} />
+      <MetricCard label="Curriculum covered" value={`${coverage.total ? Math.round((coverage.done / coverage.total) * 100) : 0}%`} hint={`${fmt(coverage.done)} of ${fmt(coverage.total)} parts published`} />
+      <MetricCard label="People active this week" value={fmt(s.users.activeWeek)} hint={`of ${fmt(s.users.total)} accounts`} />
+    </div>
+    <div className="grid gap-3 lg:grid-cols-2">
+      <ChartFrame title="Published per week" description="Last 8 weeks" table={{ columns: ["Week ending", "Published"], rows: p.weekly.map((w) => [w.week, w.published]) }}>
+        <BarsChart data={p.weekly.map((w) => ({ week: w.week.slice(5), published: w.published }))} xKey="week" series={[{ key: "published", label: "Published", color: CAT[0] }]} />
+      </ChartFrame>
+      <ChartFrame title="Work in each stage now" table={{ columns: ["Stage", "Items"], rows: p.byStage.map((b) => [STAGE_LABELS[b.stage], b.count]) }}>
+        <BarsChart data={p.byStage.map((b) => ({ stage: STAGE_LABELS[b.stage], items: b.count }))} xKey="stage" series={[{ key: "items", label: "Items", color: CAT[0] }]} />
+      </ChartFrame>
+    </div>
+    {p.grades.length > 0 && (
+      <div className="rounded-xl border bg-card p-4">
+        <h3 className="mb-3 text-sm font-semibold">Curriculum covered by grade</h3>
+        <div className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
+          {p.grades.map((g) => (
+            <div key={g.grade} className="flex items-center gap-3 text-sm">
+              <span className="w-24 shrink-0">{g.grade}</span>
+              <Meter value={g.done} max={Math.max(1, g.total)} className="flex-1" />
+              <span className="w-28 shrink-0 text-right text-xs text-muted-foreground tabular">
+                {fmt(g.done)}/{fmt(g.total)} ({g.total ? Math.round((g.done / g.total) * 100) : 0}%)
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    )}
+  </section>
   );
 }
 

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import {
   ArrowLeftRightIcon,
+  Building2Icon,
   CalendarDaysIcon,
   FilePlus2Icon,
   FileTextIcon,
@@ -27,6 +28,7 @@ export async function ManagerHome({ viewer, timezone, greeting }: { viewer: View
     { href: "/items/new", label: "New item", hint: "Plan a part", icon: FilePlus2Icon, show: can(viewer, "items.create") },
     { href: "/import-export", label: "Import data", hint: "CSV, Excel or JSON", icon: ArrowLeftRightIcon, show: can(viewer, "import.run") || can(viewer, "import.stage") },
     { href: "/export/report", label: "PDF report", hint: "Printable status report", icon: FileTextIcon, show: can(viewer, "export.run") },
+    { href: "/company", label: "Company", hint: "Every department, progress and money", icon: Building2Icon, show: can(viewer, "company.view") },
     { href: "/overview", label: "Overview", hint: "Every unit and part", icon: ListTreeIcon, show: true },
     { href: "/pipeline", label: "Board", hint: `${waiting} waiting for the next team`, icon: KanbanIcon, show: true },
     { href: "/sheet?preset=manager", label: "Assign work", hint: `${unassigned} without an owner`, icon: UsersIcon, show: can(viewer, "items.plan") },
@@ -37,7 +39,7 @@ export async function ManagerHome({ viewer, timezone, greeting }: { viewer: View
   return (
     <div className="space-y-5">
       <PageHeader eyebrow="Home" title={`${greeting}, ${viewer.name.split(" ")[0]}`} description="How much has been done in each stage, and the shortcuts you use most." />
-      <section aria-label="Quick actions" className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-9">
+      <section aria-label="Quick actions" className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-10">
         {actions.map((a) => (
           <Link
             key={a.href}

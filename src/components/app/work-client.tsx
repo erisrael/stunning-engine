@@ -14,6 +14,7 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   DownloadIcon,
+  LayoutDashboardIcon,
   FolderKanbanIcon,
   KanbanIcon,
   ListIcon,
@@ -104,9 +105,10 @@ export function WorkClient({
   viewerId,
   openTaskId,
   showArchived,
+  dashboard,
 }: {
   dept: WorkDept;
-  tab: "board" | "list" | "projects" | "calendar";
+  tab: "dashboard" | "board" | "list" | "projects" | "calendar";
   filter: TaskFilter;
   tasks: Task[];
   projects: Project[];
@@ -116,6 +118,7 @@ export function WorkClient({
   viewerId: string;
   openTaskId: string | null;
   showArchived: boolean;
+  dashboard?: React.ReactNode;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -182,8 +185,11 @@ export function WorkClient({
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <Tabs value={tab} onValueChange={(v) => go({ tab: v === "board" ? null : v })}>
+        <Tabs value={tab} onValueChange={(v) => (v === "dashboard" ? router.push(pathname) : go({ tab: v, task: null }))}>
           <TabsList>
+            <TabsTrigger value="dashboard">
+              <LayoutDashboardIcon className="size-3.5" /> Dashboard
+            </TabsTrigger>
             <TabsTrigger value="board">
               <KanbanIcon className="size-3.5" /> Board
             </TabsTrigger>
@@ -212,9 +218,11 @@ export function WorkClient({
               </Button>
             </>
           )}
-          <Button size="sm" variant="outline" onClick={() => exportCsv(tasks)} disabled={!tasks.length}>
-            <DownloadIcon /> Export
-          </Button>
+          {tab !== "dashboard" && (
+            <Button size="sm" variant="outline" onClick={() => exportCsv(tasks)} disabled={!tasks.length}>
+              <DownloadIcon /> Export
+            </Button>
+          )}
           {writable && access.rights.projects && (
             <Button size="sm" variant="outline" onClick={() => setProjectDialog("new")}>
               <PlusIcon /> New {names.project.toLowerCase()}
@@ -228,7 +236,7 @@ export function WorkClient({
         </div>
       </div>
 
-      {tab !== "projects" && (
+      {tab !== "projects" && tab !== "dashboard" && (
         <div className="flex flex-wrap items-center gap-2">
           <form
             className="relative"
@@ -261,6 +269,7 @@ export function WorkClient({
         </div>
       )}
 
+      {tab === "dashboard" && dashboard}
       {tab === "board" && <Board dept={dept} config={cfg} people={people} tasks={tasks} viewerId={viewerId} access={access} onOpen={setEditing} onAdd={(status) => setEditing({ status })} />}
       {tab === "list" && <TaskList dept={dept} config={cfg} tasks={tasks} filter={filter} people={people} projects={projects} access={access} viewerId={viewerId} go={go} onOpen={setEditing} onExport={exportCsv} />}
       {tab === "projects" && <Projects dept={dept} config={cfg} projects={projects} access={access} showArchived={showArchived} go={go} onEdit={setProjectDialog} />}

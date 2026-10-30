@@ -58,6 +58,15 @@ const TITLES: Record<string, string> = {
   audit: "Audit log",
   print: "Printable summary",
   form: "Page view",
+  company: "Company overview",
+  dev: "Dev team",
+  studio: "Studio",
+  marketing: "Marketing",
+  owners: "Owners",
+  email: "Email",
+  handovers: "Handovers",
+  assign: "Assign work",
+  checklists: "Checklists",
 };
 
 export function Topbar({ user, activeRole, unread, chatUnread }: { user: { name: string; email: string; roles: Role[] }; activeRole: Role; unread: number; chatUnread: number }) {

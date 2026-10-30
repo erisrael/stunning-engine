@@ -238,7 +238,19 @@ Studio keeps its content types (notes, exams, flash cards, question bank) and ga
    - KPIs with units, rights per position, form features and notifications.
 
    Changes are saved together as a version, with a history and restore. Keys in use can be switched off but not removed, and the configuration can be exported and imported as JSON. Tasks store their status category, so Owners and reports count correctly after renames. Board, List, Calendar, the task and project forms, CSV import and export, and the Owners dashboard all read the configuration.
-2. **Department dashboard**: widget library, layouts, filters, and the Owners selection.
+2. **Department dashboard** (done): Dev, Marketing and Studio open on their own Dashboard tab.
+   - Widgets for Dev and Marketing:
+     - Numbers: not finished, in progress, in review, overdue, due this week, done in the period, unassigned, my open work.
+     - Charts: done and created per week, days to finish, work by status, type or priority, workload per person, KPIs against target, budget and spend, money fields.
+     - Lists: my work, overdue, waiting for review, recently changed, upcoming milestones, projects at risk.
+     - Also the next two weeks and the activity feed.
+   - Widgets for Studio: drafts, review, approved and published; published per week; work by type and status; published by grade; question bank by difficulty; review queue, my work, recent and activity.
+   - Customize: add, remove, reorder and resize widgets. Save for yourself, or (heads) as the default for heads, leads or members. Members start with their own work, heads and leads with team health.
+   - Filters: period, project, type and person. People who can't see everyone's work get only their own numbers.
+   - **Company overview** (`/company`, also the Owners page Overview) for owners, managers and Admin (new permission "Company overview"):
+     - A switcher between Overall, Production, Dev, Studio and Marketing. Each department shows its own dashboard, read only.
+     - Overall shows progress per department, finished work per week across the company, and money: budgets on live projects, spend recorded as a Spend or Cost KPI, and money fields.
+     - Revenue, expenses and payroll have a slot that Finance (Phase 8) fills.
 3. **Views**:
    - List columns and grouping, board swimlanes and limits, saved views.
    - Then the Sheet and the Overview tree.
@@ -285,6 +297,7 @@ A Finance module (`/finance`) with Finance Manager and Accountant roles, separat
 - **Purchasing**: purchase requests, approvals, purchase orders, vendor list, goods received, invoice matching
 - **Payables and receivables**: bills, invoices, payments, recurring costs, bank and cash accounts, petty cash
 - **Revenue**: income by product and channel, feeding the Owners dashboard
+- **Company overview link-up**: `financeSummary()` in `src/server/company.ts` returns revenue, expenses, payroll and the monthly series for the period, so the Overall view's Money section shows them beside each department's progress. It also adds a Finance view to the switcher, with spend per department compared with the departments' budgets.
 - **Reports**: profit and loss by department, cost per published video (hours from timers and attendance multiplied by cost rates), payroll summary, tax and pension reports; Excel export for the accountant or accounting software
 
 ## Phase 9: Attendance

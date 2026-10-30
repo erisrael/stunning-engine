@@ -5,6 +5,7 @@ import { wrap } from "@/server/action-result";
 import { setPosition } from "@/server/departments";
 import * as work from "@/server/work";
 import * as cfg from "@/server/dept-config";
+import * as dash from "@/server/dashboards";
 import * as studio from "@/server/studio";
 import { deleteReport, reportFacts, saveReport, type ReportInput } from "@/server/owners";
 import type { Department, Position } from "@/lib/domain";
@@ -29,6 +30,13 @@ export async function restoreDeptConfigAction(dept: string, version: number) {
 }
 export async function deptConfigUsageAction(dept: string) {
   return wrap(async () => cfg.configUsage(await requireViewer(), dept), { revalidate: false });
+}
+
+export async function saveDashboardLayoutAction(dept: dash.DashDept, target: "mine" | Position, layout: unknown) {
+  return wrap(async () => dash.saveDashboardLayout(await requireViewer(), dept, target, layout));
+}
+export async function resetDashboardLayoutAction(dept: dash.DashDept, target: "mine" | Position) {
+  return wrap(async () => dash.resetDashboardLayout(await requireViewer(), dept, target));
 }
 
 export async function saveProjectAction(dept: string, input: work.ProjectInput) {

@@ -68,6 +68,7 @@ export const CAPABILITIES = [
   { key: "studio.access", label: "Studio section (notes, exams, flash cards)", group: "Departments" },
   { key: "marketing.access", label: "Marketing section", group: "Departments" },
   { key: "owners.view", label: "Owners dashboard (stats and reports from every department, read only)", group: "Departments" },
+  { key: "company.view", label: "Company overview: every department's dashboard, overall progress and money (read only)", group: "Departments" },
   { key: "chat.contact_owners", label: "Start direct chats with owners", group: "Collaboration" },
   { key: "settings.manage", label: "Change workflow settings", group: "Administration" },
   { key: "users.manage", label: "Manage users, roles, permissions and access", group: "Administration" },
@@ -87,9 +88,9 @@ export const DEFAULT_PERMISSIONS: Record<Role, Capability[]> = {
   uploading: STAFF,
   publication: STAFF,
   // Managers follow delivery: they view everything but do not edit item data.
-  manager: [...NAV_CAPABILITIES, "export.run", "export.report", "export.tracker", "export.audit", "reports.view", "team.view", "corrections.approve", "chat.manage", "chat.channels", "chat.contact_owners", "email.send", "questions.ask", "settings.manage"],
+  manager: [...NAV_CAPABILITIES, "export.run", "export.report", "export.tracker", "export.audit", "reports.view", "team.view", "corrections.approve", "chat.manage", "chat.channels", "chat.contact_owners", "email.send", "questions.ask", "settings.manage", "company.view"],
   // Department roles see their own section only; Admin can widen this in Roles and permissions.
-  owner: ["owners.view", "nav.overview", "nav.coverage", "reports.view", "team.view", "export.run", "export.report", "chat.channels", "chat.contact_owners", "email.send"],
+  owner: ["owners.view", "company.view", "nav.overview", "nav.coverage", "reports.view", "team.view", "export.run", "export.report", "chat.channels", "chat.contact_owners", "email.send"],
   developer: ["dev.access"],
   content: ["studio.access"],
   marketing: ["marketing.access", "email.send"],
@@ -119,6 +120,7 @@ export const DEFAULT_PERMISSIONS: Record<Role, Capability[]> = {
     "studio.access",
     "marketing.access",
     "owners.view",
+    "company.view",
     ...EDITORIAL_CAPABILITIES,
   ],
 };

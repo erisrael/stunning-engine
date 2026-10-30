@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 10;
+export const SCHEMA_VERSION = 11;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -965,6 +965,17 @@ CREATE TABLE IF NOT EXISTS dept_config_versions (
 ALTER TABLE dept_tasks ADD COLUMN IF NOT EXISTS status_category TEXT NOT NULL DEFAULT 'open';
 ALTER TABLE dept_tasks ADD COLUMN IF NOT EXISTS fields TEXT NOT NULL DEFAULT '{}';
 CREATE INDEX IF NOT EXISTS idx_dept_tasks_category ON dept_tasks(dept, status_category);
+
+-- v11: department dashboard layouts. scope is 'position:head' (lead, member) for the defaults a head sets, or
+-- 'user:<id>' for a person's own arrangement.
+CREATE TABLE IF NOT EXISTS dept_dashboards (
+  dept TEXT NOT NULL,
+  scope TEXT NOT NULL,
+  layout TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  updated_by TEXT,
+  PRIMARY KEY (dept, scope)
+);
 `;
 
 // Tables in dependency order; used to empty the workspace and to export or restore backups.
@@ -1038,4 +1049,5 @@ export const TABLES = [
   "call_signals",
   "dept_config",
   "dept_config_versions",
+  "dept_dashboards",
 ] as const;

@@ -88,7 +88,7 @@ const placeLabel = (r: { grade?: string | null; subject?: string | null; unit_nu
   [r.grade, r.subject, r.unit_number != null ? `U${r.unit_number}` : null, r.lesson_number != null ? `P${r.lesson_number}` : null].filter(Boolean).join(" / ") || "Not placed";
 
 export function StudioClient({
-  tab,
+  tab: current,
   filter,
   resources,
   questions,
@@ -96,8 +96,9 @@ export function StudioClient({
   viewerId,
   openId,
   taxonomy,
+  dashboard,
 }: {
-  tab: ResourceType | "questions";
+  tab: ResourceType | "questions" | "dashboard";
   filter: Filter;
   resources: Resource[];
   questions: Question[];
@@ -105,6 +106,7 @@ export function StudioClient({
   viewerId: string;
   openId: string | null;
   taxonomy: Tax;
+  dashboard?: React.ReactNode;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -120,18 +122,30 @@ export function StudioClient({
   React.useEffect(() => setOpen(openId), [openId]);
   const units = taxonomy.units.filter((u) => (!filter.gradeId || u.gradeId === filter.gradeId) && (!filter.subjectId || u.subjectId === filter.subjectId));
   const writable = !access.readOnly;
+  const nav = (
+    <Tabs value={current} onValueChange={(v) => (v === "dashboard" ? router.push(pathname) : go({ tab: v, status: null, sort: null, type: null, difficulty: null, period: null, person: null, grade: null }))}>
+      <TabsList>
+        <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
+        <TabsTrigger value="note">Notes</TabsTrigger>
+        <TabsTrigger value="exam">Exams</TabsTrigger>
+        <TabsTrigger value="flashcards">Flash cards</TabsTrigger>
+        <TabsTrigger value="questions">Question bank</TabsTrigger>
+      </TabsList>
+    </Tabs>
+  );
+  if (current === "dashboard")
+    return (
+      <div className="space-y-3">
+        {nav}
+        {dashboard}
+      </div>
+    );
+  const tab = current;
 
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <Tabs value={tab} onValueChange={(v) => go({ tab: v === "note" ? null : v, status: null, sort: null, type: null, difficulty: null })}>
-          <TabsList>
-            <TabsTrigger value="note">Notes</TabsTrigger>
-            <TabsTrigger value="exam">Exams</TabsTrigger>
-            <TabsTrigger value="flashcards">Flash cards</TabsTrigger>
-            <TabsTrigger value="questions">Question bank</TabsTrigger>
-          </TabsList>
-        </Tabs>
+        {nav}
         {writable && (
           <Button size="sm" className="ml-auto" onClick={() => (tab === "questions" ? setQuestionDialog("new") : setOpen("new"))}>
             <PlusIcon /> New {tab === "questions" ? "question" : RESOURCE_TYPE_LABELS[tab].one}

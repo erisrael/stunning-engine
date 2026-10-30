@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import {
   ArrowLeftRightIcon,
+  Building2Icon,
   BookOpenIcon,
   CodeIcon,
   CrownIcon,
@@ -103,6 +104,7 @@ export function AppSidebar({
     {
       label: "Departments",
       items: [
+        { href: "/company", label: "Company overview", icon: Building2Icon, cap: "company.view" },
         { href: "/dev", label: "Dev team", icon: CodeIcon, cap: ["dev.access", "owners.view"] },
         { href: "/studio", label: "Studio", icon: BookOpenIcon, cap: ["studio.access", "owners.view"] },
         { href: "/marketing", label: "Marketing", icon: MegaphoneIcon, cap: ["marketing.access", "owners.view"] },

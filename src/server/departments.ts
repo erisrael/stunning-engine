@@ -36,7 +36,8 @@ export async function deptAccess(user: AppUser, dept: Department): Promise<DeptA
   const member = DEPARTMENT_ROLES[dept].some((r) => user.roles.includes(r));
   const admin = can(user, "users.manage");
   const allowed = can(user, DEPARTMENT_ACCESS[dept]);
-  const owner = can(user, "owners.view");
+  // Owners and anyone with the Company overview read every department.
+  const owner = can(user, "owners.view") || can(user, "company.view");
   const manage = admin || (allowed && (position === "head" || position === "lead"));
   return {
     dept,
