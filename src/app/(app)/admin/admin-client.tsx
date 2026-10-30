@@ -74,6 +74,8 @@ const ROLE_TONE: Record<Role, string> = {
   marketing: "bg-pink-500/15 text-pink-700 dark:text-pink-300",
   hr_manager: "bg-teal-500/15 text-teal-700 dark:text-teal-300",
   hr_officer: "bg-teal-500/10 text-teal-700 dark:text-teal-300",
+  finance_manager: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
+  accountant: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
 };
 
 export function RoleBadge({ role }: { role: Role }) {

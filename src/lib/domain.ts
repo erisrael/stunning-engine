@@ -1,7 +1,7 @@
 // Shared domain vocabulary used by both the server and the client.
 
 // Production roles first, then the department roles (Phase 5). Department positions (head, lead, member) are set in Admin.
-export const ROLES = ["recording", "editing", "uploading", "publication", "manager", "admin", "owner", "developer", "content", "marketing", "hr_manager", "hr_officer"] as const;
+export const ROLES = ["recording", "editing", "uploading", "publication", "manager", "admin", "owner", "developer", "content", "marketing", "hr_manager", "hr_officer", "finance_manager", "accountant"] as const;
 export type Role = (typeof ROLES)[number];
 
 export const ROLE_LABELS: Record<Role, string> = {
@@ -17,6 +17,8 @@ export const ROLE_LABELS: Record<Role, string> = {
   marketing: "Marketing",
   hr_manager: "HR Manager",
   hr_officer: "HR Officer",
+  finance_manager: "Finance Manager",
+  accountant: "Accountant",
 };
 
 export const ROLE_DESCRIPTIONS: Record<Role, string> = {
@@ -32,6 +34,8 @@ export const ROLE_DESCRIPTIONS: Record<Role, string> = {
   marketing: "Marketing: campaigns, content calendar, tasks and KPIs.",
   hr_manager: "HR: employee records including salary and ID details, approvals, cases and HR settings.",
   hr_officer: "HR: employee records, documents, equipment and day-to-day people operations.",
+  finance_manager: "Finance: approves payments, payroll checks, budgets, and closes periods.",
+  accountant: "Finance: records bills, invoices, payments and claims, and prepares reports.",
 };
 
 // Capabilities that can be granted per role in Admin, Roles and permissions.
@@ -79,6 +83,11 @@ export const CAPABILITIES = [
   { key: "hr.manage", label: "HR decisions: end employment, remove records, HR settings", group: "HR" },
   { key: "hr.sensitive", label: "See and edit salary grade, ID, tax and bank details", group: "HR" },
   { key: "hr.cases", label: "Confidential disciplinary and grievance cases", group: "HR" },
+  { key: "finance.access", label: "Finance section: record bills, invoices, payments, claims and purchases", group: "Finance" },
+  { key: "finance.approve", label: "Approve payments, claims, purchases and payroll checks; close periods", group: "Finance" },
+  { key: "finance.payroll", label: "Prepare payroll (salaries, allowances, deductions)", group: "Finance" },
+  { key: "finance.view", label: "Read finance reports and dashboards", group: "Finance" },
+  { key: "finance.owner_approve", label: "Give the final approval to payroll runs", group: "Finance" },
   { key: "settings.manage", label: "Change workflow settings", group: "Administration" },
   { key: "users.manage", label: "Manage users, roles, permissions and access", group: "Administration" },
   { key: "data.manage", label: "Empty, import and back up workspace data", group: "Administration" },
@@ -103,12 +112,14 @@ export const DEFAULT_PERMISSIONS: Record<Role, Capability[]> = {
   // Managers follow delivery: they view everything but do not edit item data.
   manager: [...FULL_VIEW, "export.run", "export.report", "export.tracker", "export.audit", "reports.view", "team.view", "corrections.approve", "chat.manage", "chat.channels", "chat.contact_owners", "email.send", "questions.ask", "settings.manage", "company.view"],
   // Department roles see their own section only; Admin can widen this in Roles and permissions.
-  owner: ["owners.view", "company.view", "items.detail", "nav.overview", "nav.coverage", "reports.view", "team.view", "export.run", "export.report", "chat.channels", "chat.contact_owners", "email.send"],
+  owner: ["owners.view", "company.view", "finance.view", "finance.owner_approve", "items.detail", "nav.overview", "nav.coverage", "reports.view", "team.view", "export.run", "export.report", "chat.channels", "chat.contact_owners", "email.send"],
   developer: ["dev.access"],
   content: ["studio.access"],
   marketing: ["marketing.access", "email.send"],
-  hr_manager: ["hr.access", "hr.manage", "hr.sensitive", "hr.cases", "nav.questions", "email.send", "chat.channels"],
+  hr_manager: ["hr.access", "hr.manage", "hr.sensitive", "hr.cases", "finance.payroll", "nav.questions", "email.send", "chat.channels"],
   hr_officer: ["hr.access", "nav.questions", "email.send"],
+  finance_manager: ["finance.access", "finance.approve", "finance.payroll", "finance.view", "nav.questions", "email.send", "chat.channels", "company.view"],
+  accountant: ["finance.access", "finance.view", "nav.questions", "email.send"],
   admin: [
     ...FULL_VIEW,
     "items.create",

@@ -3,7 +3,7 @@
 import type { Role, Stage } from "@/lib/domain";
 import type { ExplainerKey } from "@/components/app/explainers";
 
-export type Audience = "member" | "lead" | "publication" | "manager" | "owner" | "department" | "hr";
+export type Audience = "member" | "lead" | "publication" | "manager" | "owner" | "department" | "hr" | "finance";
 
 export const AUDIENCE_LABELS: Record<Audience, string> = {
   member: "Team member",
@@ -13,12 +13,14 @@ export const AUDIENCE_LABELS: Record<Audience, string> = {
   owner: "Owner",
   department: "Department",
   hr: "HR",
+  finance: "Finance",
 };
 
 // Which tour and first steps a person sees, from the role they are viewing as.
 export function audienceFor(activeRole: Role, leads: Stage[]): Audience {
   if (activeRole === "owner") return "owner";
   if (activeRole === "hr_manager" || activeRole === "hr_officer") return "hr";
+  if (activeRole === "finance_manager" || activeRole === "accountant") return "finance";
   if (activeRole === "manager" || activeRole === "admin") return "manager";
   if (activeRole === "developer" || activeRole === "content" || activeRole === "marketing") return "department";
   if (activeRole === "publication") return leads.includes("publication") ? "lead" : "publication";
@@ -348,6 +350,33 @@ export const CHAPTERS: Chapter[] = [
     ],
   },
   {
+    key: "finance-me",
+    title: "Claims, purchases and payslips",
+    audiences: "all",
+    summary: "Get your money back for work costs, ask to buy things, and read your payslips.",
+    sections: [
+      { title: "Expense claims", steps: ["Open Claims and pay in the sidebar, then New claim.", "Enter the date, amount and what it was for, and attach a photo of the receipt.", "Your line manager approves, then Finance checks and pays you. You are told at each step."] },
+      { title: "Purchase requests", steps: ["Purchase requests, New request: what you need, the items and rough prices.", "Finance approves and orders it.", "When it arrives, press It arrived."] },
+      { title: "Payslips", text: "Payslips appear when salaries are paid. Open one to see gross pay, income tax, pension and net pay, and print it or save it as PDF." },
+      { title: "For line managers", text: "Claims from your team appear under To approve. Approve, or say why not." },
+    ],
+  },
+  {
+    key: "finance",
+    title: "Finance: books, payroll and reports",
+    audiences: ["finance", "manager", "owner"],
+    summary: "Accounts, bills and invoices, claims and purchasing, budgets, payroll, closing months and reports.",
+    sections: [
+      { title: "Setting up", steps: ["Accounts: add each bank account, cash box, petty cash and mobile money with its opening balance.", "Settings: check the currency, VAT, pension rates and the income tax brackets against the current law; set the approval limit.", "Vendors and customers: add the people you pay and invoice.", "Budgets: set this year's budget per department, project or campaign."] },
+      { title: "Money out", text: "Record a bill when it arrives (attach their invoice). Someone other than the person who recorded it approves; above the approval limit, the Finance Manager. Then Pay it from an account. Rent and internet can come back every month by themselves." },
+      { title: "Money in", text: "Write an invoice (with VAT if needed), mark it sent, and record the payment when it arrives. Payments count as revenue by product and channel, which feeds the Company overview." },
+      { title: "Claims and purchases", text: "Claims approved by the line manager and purchase requests arrive here. Approve, order, confirm delivery and record the bill; a bill far from the approved amount is flagged." },
+      { title: "Payroll", steps: ["Payroll, Salaries: set each person's basic salary, allowances (taxable or not) and regular deductions.", "New payroll run for the month. Enter overtime hours and unpaid days; tax, pension and net pay are calculated.", "The Finance Manager checks it (not the person who prepared it), and the owner approves it.", "Pay it from an account: net salaries, income tax and pension are recorded, and everyone gets their payslip.", "Download the bank file for the bulk transfer and the tax and pension report for ERCA and POESSA, then Close month."] },
+      { title: "Reports", text: "Reports show revenue, spending and net, profit and loss by department and by ledger account, and the cost per published video. Everything downloads to Excel; Admin, Integrations has Power BI feeds; a Finance department can export to Sage 50 (Peachtree)." },
+      { title: "Closing months", text: "A closed month cannot be changed. Closing a payroll run closes its month; the Finance Manager can reopen one if a correction is needed." },
+    ],
+  },
+  {
     key: "account",
     title: "Your profile, sign-in and devices",
     audiences: "all",
@@ -559,6 +588,14 @@ export const TOURS: Record<Audience, TourStep[]> = {
     { title: "Present in meetings", text: "Overview's Present button runs a full-screen summary that updates by itself, reads aloud, and exports to PowerPoint.", explainer: "present" },
     HELP_STEP,
   ],
+  finance: [
+    { title: "Welcome to Finance", text: "This short tour shows where money lives in the app. You can replay it from Help." },
+    { title: "Money in and out", text: "Bills from vendors and invoices to customers become payments from your bank, cash or petty cash accounts.", flow: ["Bill or invoice", "Approve", "Pay", "Report"] },
+    { title: "Claims and purchases", text: "People claim expenses and ask to buy things; their lead approves, then Finance.", flow: ["Request", "Lead", "Finance", "Paid"] },
+    { title: "Payroll", text: "HR prepares, Finance checks, the owner approves, Finance pays and locks the month.", flow: ["Prepare", "Check", "Approve", "Pay", "Lock"] },
+    { title: "Budgets and reports", text: "Set budgets per department, project and campaign; reports show profit and loss, cost per video, tax and pension." },
+    HELP_STEP,
+  ],
   department: [
     { title: "Welcome", text: "This short tour shows your department's workspace. You can replay it from Help." },
     { title: "Projects and tasks", text: "Tasks move across your board as they progress.", flow: ["To do", "In progress", "Review", "Done"] },
@@ -634,6 +671,13 @@ export const FIRST_STEPS: Record<Audience, FirstStep[]> = {
     { key: "holidays", label: "Check this year's public holidays", href: "/hr?tab=leave" },
     { key: "manual", label: "Read the HR chapter", href: "/profile/help#hr" },
   ],
+  finance: [
+    { key: "password", label: "Set your own password", href: "/profile" },
+    { key: "accounts", label: "Add your bank and cash accounts", href: "/finance?tab=accounts" },
+    { key: "settings", label: "Check tax brackets and pension rates", href: "/finance?tab=settings" },
+    { key: "budgets", label: "Set this year's budgets", href: "/finance?tab=budgets" },
+    { key: "manual", label: "Read the Finance chapter", href: "/profile/help#finance" },
+  ],
   department: [
     { key: "password", label: "Set your own password", href: "/profile" },
     { key: "push", label: "Turn on push notifications", href: "/profile" },
@@ -662,6 +706,8 @@ export const NAV_TIPS: Record<string, string> = {
   "/marketing": "Campaigns, the content calendar, tasks and KPIs.",
   "/hr": "People records, leave, hiring, joiners and leavers, performance, training and reports.",
   "/requests": "Ask another department for something, and follow what happens to it.",
+  "/pay": "Claim expenses, ask to buy things, read your payslips, and approve your team's claims.",
+  "/finance": "Money accounts, bills, invoices, claims, purchasing, budgets, payroll and reports.",
   "/feedback": "Your feedback to Admin and their replies.",
   "/safety": "The safety policy, and reporting a problem.",
   "/people": "Everyone in the workspace: find colleagues by name, job or skill and open their profiles.",

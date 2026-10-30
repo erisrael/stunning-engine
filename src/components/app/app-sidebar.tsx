@@ -37,6 +37,8 @@ import {
   UserPlusIcon,
   UsersIcon,
   UsersRoundIcon,
+  WalletIcon,
+  LandmarkIcon,
 } from "lucide-react";
 import {
   Sidebar,
@@ -136,6 +138,7 @@ export function AppSidebar({
         { href: "/dashboard", label: staff ? "My work" : "Home", icon: HomeIcon, badge: counts.myWork, locked: true },
         { href: "/me", label: "My record", icon: IdCardIcon },
         { href: "/leave", label: "Leave", icon: PlaneIcon },
+        { href: "/pay", label: "Claims and pay", icon: WalletIcon },
         ...(!lead ? [{ href: "/team", label: "My effort", icon: UsersIcon, cap: "nav.team" as Capability }] : []),
         { href: "/questions", label: "Questions", icon: MessageCircleQuestionIcon, badge: counts.questions, cap: "nav.questions" },
       ],
@@ -173,6 +176,20 @@ export function AppSidebar({
             { label: "Hiring", href: "/hr?tab=hiring" },
             { label: "Performance", href: "/hr?tab=performance" },
             { label: "Reports", href: "/hr?tab=reports" },
+          ],
+        },
+        {
+          href: "/finance",
+          label: "Finance",
+          icon: LandmarkIcon,
+          cap: ["finance.access", "finance.view", "finance.payroll", "finance.owner_approve"],
+          sub: [
+            { label: "Overview", href: "/finance" },
+            { label: "Bills", href: "/finance?tab=bills" },
+            { label: "Invoices", href: "/finance?tab=invoices" },
+            { label: "Payroll", href: "/finance?tab=payroll" },
+            { label: "Budgets", href: "/finance?tab=budgets" },
+            { label: "Reports", href: "/finance?tab=reports" },
           ],
         },
         { href: "/people", label: "People", icon: UsersRoundIcon },

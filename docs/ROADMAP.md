@@ -341,18 +341,29 @@ What HR does in the app, as its own module (`/hr`) with HR Manager and HR Office
 - [x] Profiles: photo, cover, headline, skills with levels, education and study status, experience, languages, links, files (CV, certificates) seen by the person, their lead or manager, HR and Admin, and sections each person can hide; People directory searchable by skill
 - [x] Forgotten passwords: reset with Google (Gmail) or an emailed link (Admin, Sign-in)
 
-## Phase 8: Finance
+## Phase 7c: Chat upgrades, feedback and safety (done)
+
+- [x] Admin, Chat: file size, total and per-person storage, voice auto-delete on or off and its timing, file and message retention, GIFs; storage use; delete any chat
+- [x] Team leads and department heads create and manage groups
+- [x] Online status and last seen; sent and seen ticks; Seen by with the time each person saw a message
+- [x] Search (words, names, #tags, @mentions, dates; direct chats on the device), Go to a date, shared media (photos and videos, files, voice, links)
+- [x] @mention picker, clickable #tags, forwarding to many people, groups and channels at once
+- [x] Contact cards when tapping a person, with contact details each person shares by choice (Profile, Contact details)
+- [x] Feedback to Admin from any page; safety policy; reports on messages, people and chats, handled in Admin, Safety reports
+
+## Phase 8: Finance (done)
 
 A Finance module (`/finance`) with Finance Manager and Accountant roles, separation between preparing and approving, and every change in the audit log.
 
-- **Payroll**: salary structures, allowances, deductions, configurable Ethiopian income tax brackets and pension (employee 7%, employer 11%), overtime and unpaid absence taken from Attendance, payroll runs (HR prepares, Finance checks, owner approves), payslips as PDF in self-service, bank transfer file export, period locking
-- **Expenses and reimbursements**: claims with receipt upload, approval by the team lead then Finance, paid status
-- **Budgets**: per department, dev project, marketing campaign and production line; actual against budget with alerts when nearing the limit
-- **Purchasing**: purchase requests, approvals, purchase orders, vendor list, goods received, invoice matching
-- **Payables and receivables**: bills, invoices, payments, recurring costs, bank and cash accounts, petty cash
-- **Revenue**: income by product and channel, feeding the Owners dashboard
-- **Company overview link-up**: `financeSummary()` in `src/server/company.ts` returns revenue, expenses, payroll and the monthly series for the period, so the Overall view's Money section shows them beside each department's progress. It also adds a Finance view to the switcher, with spend per department compared with the departments' budgets.
-- **Reports**: profit and loss by department, cost per published video (hours from timers and attendance multiplied by cost rates), payroll summary, tax and pension reports; Excel export for the accountant or accounting software
+- [x] **Accounts and journal**: bank, cash, petty cash and mobile money accounts with balances; money in, payments and transfers; a Sage-style chart of accounts; closed months that cannot change
+- [x] **Payroll**: salary structures (basic, taxable and tax-free allowances, deductions), configurable Ethiopian income tax brackets (Proclamation 979/2016 by default) and pension (7% and 11%), overtime and unpaid days entered per run (from Attendance once Phase 9 exists); HR or Finance prepares, the Finance Manager checks, the owner approves, Finance pays; payslips (print or PDF) in Claims and pay; bank transfer file; tax and pension report; closing the month
+- [x] **Expense claims**: with receipts, line manager (or team lead) then Finance, paid status
+- [x] **Budgets**: per department, project, campaign and production line; spend including payroll; alerts at the chosen level and at 100% to Finance and department heads
+- [x] **Purchasing**: requests, approval (above the limit, the Finance Manager), ordering from a vendor, delivery, billing with a flag when the bill differs from the approved amount
+- [x] **Payables and receivables**: bills with attachments and monthly repeats; invoices with VAT and numbering; vendors and customers
+- [x] **Revenue**: money in by product and channel, feeding the Company overview's Money section
+- [x] **Reports**: revenue, spending and net; profit and loss by department and ledger account; cost per published video (spending and payroll per video, and logged hours at the average hourly cost); payroll and tax and pension reports; Excel downloads
+- [ ] Finance view in the Company overview switcher with spend against each department's budget
 
 ## Phase 9: Attendance
 

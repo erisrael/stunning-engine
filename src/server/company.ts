@@ -17,7 +17,7 @@ export function canSeeCompany(user: AppUser) {
   return can(user, "company.view") || can(user, "owners.view");
 }
 
-// What Finance will report here. Until that module exists this is null and the overview says so.
+// Revenue, spending and payroll from Finance; null until Finance has recorded anything.
 export type FinanceSummary = {
   currency: string;
   revenue: number;
@@ -25,8 +25,13 @@ export type FinanceSummary = {
   payroll: number;
   byMonth: { month: string; revenue: number; expenses: number }[];
 };
-async function financeSummary(_range: { from: string; to: string }): Promise<FinanceSummary | null> {
-  return null;
+async function financeSummary(range: { from: string; to: string }): Promise<FinanceSummary | null> {
+  const { summary, financeSettings } = await import("./finance");
+  const { get } = await import("./db");
+  const any = await get("SELECT 1 AS x FROM fin_transactions UNION ALL SELECT 1 FROM fin_payroll_runs LIMIT 1");
+  if (!any) return null;
+  const s = await summary({ from: range.from.slice(0, 10), to: range.to.slice(0, 10) });
+  return { currency: (await financeSettings()).currency, ...s };
 }
 
 function weekOf(iso: string) {

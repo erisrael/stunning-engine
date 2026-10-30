@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 17;
+export const SCHEMA_VERSION = 18;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -1500,6 +1500,203 @@ CREATE TABLE IF NOT EXISTS reports (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
+
+-- v18: Finance. Money accounts, vendors and customers, ledger codes, the transaction journal, bills (payables),
+-- invoices (receivables), expense claims, purchase requests, budgets, salary structures, payroll runs and payslips,
+-- and locked periods.
+CREATE TABLE IF NOT EXISTS fin_accounts (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'bank',
+  number TEXT,
+  ledger_code TEXT,
+  opening_balance DOUBLE PRECISION NOT NULL DEFAULT 0,
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS fin_parties (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  name TEXT NOT NULL,
+  tin TEXT,
+  phone TEXT,
+  email TEXT,
+  bank TEXT,
+  bank_account TEXT,
+  ledger_id TEXT,
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS fin_ledger (
+  code TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  type TEXT NOT NULL,
+  active INTEGER NOT NULL DEFAULT 1
+);
+CREATE TABLE IF NOT EXISTS fin_transactions (
+  id TEXT PRIMARY KEY,
+  date TEXT NOT NULL,
+  direction TEXT NOT NULL,
+  amount DOUBLE PRECISION NOT NULL,
+  account_id TEXT REFERENCES fin_accounts(id),
+  ledger_code TEXT,
+  party_id TEXT,
+  department TEXT,
+  project TEXT,
+  product TEXT,
+  channel TEXT,
+  description TEXT,
+  reference TEXT,
+  source TEXT NOT NULL DEFAULT 'manual',
+  source_id TEXT,
+  transfer_id TEXT,
+  status TEXT NOT NULL DEFAULT 'posted',
+  created_by TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_fin_tx_date ON fin_transactions(date);
+CREATE INDEX IF NOT EXISTS idx_fin_tx_source ON fin_transactions(source, source_id);
+CREATE TABLE IF NOT EXISTS fin_bills (
+  id TEXT PRIMARY KEY,
+  vendor_id TEXT REFERENCES fin_parties(id),
+  number TEXT,
+  date TEXT NOT NULL,
+  due_date TEXT,
+  amount DOUBLE PRECISION NOT NULL,
+  ledger_code TEXT,
+  department TEXT,
+  project TEXT,
+  description TEXT,
+  status TEXT NOT NULL DEFAULT 'awaiting_approval',
+  recurring TEXT,
+  purchase_id TEXT,
+  file_name TEXT,
+  file_mime TEXT,
+  file_data TEXT,
+  created_by TEXT,
+  approved_by TEXT,
+  paid_tx_id TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS fin_invoices (
+  id TEXT PRIMARY KEY,
+  number TEXT NOT NULL UNIQUE,
+  customer_id TEXT REFERENCES fin_parties(id),
+  date TEXT NOT NULL,
+  due_date TEXT,
+  lines TEXT NOT NULL DEFAULT '[]',
+  amount DOUBLE PRECISION NOT NULL,
+  vat DOUBLE PRECISION NOT NULL DEFAULT 0,
+  product TEXT,
+  channel TEXT,
+  department TEXT,
+  status TEXT NOT NULL DEFAULT 'draft',
+  paid_tx_id TEXT,
+  created_by TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS fin_claims (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  date TEXT NOT NULL,
+  amount DOUBLE PRECISION NOT NULL,
+  ledger_code TEXT,
+  department TEXT,
+  project TEXT,
+  description TEXT NOT NULL,
+  receipt_name TEXT,
+  receipt_mime TEXT,
+  receipt_data TEXT,
+  status TEXT NOT NULL DEFAULT 'submitted',
+  approver_id TEXT,
+  lead_by TEXT,
+  lead_at TEXT,
+  finance_by TEXT,
+  finance_at TEXT,
+  note TEXT,
+  paid_tx_id TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS fin_purchases (
+  id TEXT PRIMARY KEY,
+  number TEXT NOT NULL UNIQUE,
+  requester_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+  department TEXT,
+  project TEXT,
+  title TEXT NOT NULL,
+  lines TEXT NOT NULL DEFAULT '[]',
+  estimate DOUBLE PRECISION NOT NULL,
+  vendor_id TEXT REFERENCES fin_parties(id),
+  status TEXT NOT NULL DEFAULT 'submitted',
+  approved_by TEXT,
+  ordered_at TEXT,
+  received_at TEXT,
+  received_note TEXT,
+  bill_id TEXT,
+  note TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS fin_budgets (
+  id TEXT PRIMARY KEY,
+  scope_type TEXT NOT NULL,
+  scope_key TEXT NOT NULL,
+  scope_label TEXT NOT NULL,
+  year INTEGER NOT NULL,
+  amount DOUBLE PRECISION NOT NULL,
+  alert_pct INTEGER NOT NULL DEFAULT 80,
+  alerted_pct INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  UNIQUE (scope_type, scope_key, year)
+);
+CREATE TABLE IF NOT EXISTS fin_pay_structures (
+  employee_id TEXT PRIMARY KEY REFERENCES employees(id) ON DELETE CASCADE,
+  basic DOUBLE PRECISION NOT NULL,
+  allowances TEXT NOT NULL DEFAULT '[]',
+  deductions TEXT NOT NULL DEFAULT '[]',
+  updated_by TEXT,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS fin_payroll_runs (
+  id TEXT PRIMARY KEY,
+  period TEXT NOT NULL UNIQUE,
+  status TEXT NOT NULL DEFAULT 'draft',
+  prepared_by TEXT,
+  checked_by TEXT,
+  approved_by TEXT,
+  paid_by TEXT,
+  account_id TEXT,
+  note TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS fin_payslips (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL REFERENCES fin_payroll_runs(id) ON DELETE CASCADE,
+  employee_id TEXT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  basic DOUBLE PRECISION NOT NULL,
+  allowances TEXT NOT NULL DEFAULT '[]',
+  deductions TEXT NOT NULL DEFAULT '[]',
+  overtime_hours DOUBLE PRECISION NOT NULL DEFAULT 0,
+  overtime_rate DOUBLE PRECISION NOT NULL DEFAULT 1.5,
+  unpaid_days DOUBLE PRECISION NOT NULL DEFAULT 0,
+  gross DOUBLE PRECISION NOT NULL DEFAULT 0,
+  taxable DOUBLE PRECISION NOT NULL DEFAULT 0,
+  income_tax DOUBLE PRECISION NOT NULL DEFAULT 0,
+  pension_employee DOUBLE PRECISION NOT NULL DEFAULT 0,
+  pension_employer DOUBLE PRECISION NOT NULL DEFAULT 0,
+  other_deductions DOUBLE PRECISION NOT NULL DEFAULT 0,
+  net DOUBLE PRECISION NOT NULL DEFAULT 0,
+  UNIQUE (run_id, employee_id)
+);
+CREATE TABLE IF NOT EXISTS fin_periods (
+  period TEXT PRIMARY KEY,
+  locked_by TEXT,
+  locked_at TEXT NOT NULL
+);
 `;
 
 // Tables in dependency order; used to empty the workspace and to export or restore backups.
@@ -1612,4 +1809,17 @@ export const TABLES = [
   "chat_receipts",
   "feedback",
   "reports",
+  "fin_accounts",
+  "fin_parties",
+  "fin_ledger",
+  "fin_transactions",
+  "fin_bills",
+  "fin_invoices",
+  "fin_claims",
+  "fin_purchases",
+  "fin_budgets",
+  "fin_pay_structures",
+  "fin_payroll_runs",
+  "fin_payslips",
+  "fin_periods",
 ] as const;

@@ -54,7 +54,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   // Admins see the organization overview.
   const role = viewer.activeRole === "admin" ? "manager" : viewer.activeRole;
   // Someone viewing as a department role (or as an owner) starts in that section; Home is the production dashboard.
-  const SECTION: Partial<Record<string, string>> = { owner: "/company", developer: "/dev", content: "/studio", marketing: "/marketing", hr_manager: "/hr", hr_officer: "/hr" };
+  const SECTION: Partial<Record<string, string>> = { owner: "/company", developer: "/dev", content: "/studio", marketing: "/marketing", hr_manager: "/hr", hr_officer: "/hr", finance_manager: "/finance", accountant: "/finance" };
   if (!ROLE_COPY[role] && SECTION[role]) redirect(SECTION[role]!);
   if (managerView(role)) {
     const hour = Number(new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", hourCycle: "h23" }).format(new Date()));
