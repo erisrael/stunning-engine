@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 15;
+export const SCHEMA_VERSION = 16;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -1384,6 +1384,79 @@ CREATE TABLE IF NOT EXISTS hr_case_notes (
   actor_id TEXT,
   at TEXT NOT NULL
 );
+
+-- v16: integrations (GitHub cache, API keys for Power BI and other tools), devices and sessions (IP, last seen,
+-- blocked devices), profiles (photo, skills, education, files) and password resets (email link or Google).
+CREATE TABLE IF NOT EXISTS integration_cache (
+  key TEXT PRIMARY KEY,
+  data TEXT NOT NULL,
+  fetched_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS api_tokens (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  token_hash TEXT NOT NULL UNIQUE,
+  prefix TEXT NOT NULL,
+  datasets TEXT NOT NULL DEFAULT '[]',
+  created_by TEXT,
+  created_at TEXT NOT NULL,
+  last_used_at TEXT,
+  revoked_at TEXT
+);
+
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS ip TEXT;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS device_id TEXT;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS last_seen_at TEXT;
+CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
+
+CREATE TABLE IF NOT EXISTS blocked_devices (
+  device_id TEXT PRIMARY KEY,
+  label TEXT,
+  user_id TEXT,
+  reason TEXT,
+  blocked_by TEXT,
+  blocked_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS profiles (
+  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  headline TEXT,
+  about TEXT,
+  location TEXT,
+  avatar TEXT,
+  cover TEXT NOT NULL DEFAULT 'emerald',
+  skills TEXT NOT NULL DEFAULT '[]',
+  education TEXT NOT NULL DEFAULT '[]',
+  experience TEXT NOT NULL DEFAULT '[]',
+  languages TEXT NOT NULL DEFAULT '[]',
+  links TEXT NOT NULL DEFAULT '[]',
+  study_status TEXT,
+  hidden_sections TEXT NOT NULL DEFAULT '[]',
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS profile_files (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,
+  title TEXT NOT NULL,
+  name TEXT NOT NULL,
+  mime TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  data TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_profile_files ON profile_files(user_id);
+
+CREATE TABLE IF NOT EXISTS password_resets (
+  token_hash TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  via TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  used_at TEXT,
+  created_at TEXT NOT NULL
+);
 `;
 
 // Tables in dependency order; used to empty the workspace and to export or restore backups.
@@ -1487,4 +1560,10 @@ export const TABLES = [
   "trainings",
   "hr_cases",
   "hr_case_notes",
+  "integration_cache",
+  "api_tokens",
+  "blocked_devices",
+  "profiles",
+  "profile_files",
+  "password_resets",
 ] as const;

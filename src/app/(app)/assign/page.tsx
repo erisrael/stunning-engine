@@ -32,7 +32,7 @@ export default async function AssignPage({ searchParams }: { searchParams: Promi
   return (
     <div className="space-y-4">
       <PageHeader
-        help="manager" title="Assign work"
+        help="manager" explainer="assign" title="Assign work"
         description="Choose a grade and subject (or a subject, then grades), select the parts, and assign them to one or several people at once, with a due date and a checklist for each person."
       />
       <AssignWizard

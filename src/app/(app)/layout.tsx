@@ -17,6 +17,7 @@ import { myCustomDepartments } from "@/server/departments";
 import { can } from "@/server/users";
 import { GetStarted } from "@/components/app/get-started";
 import { audienceFor } from "@/lib/help";
+import { sidebarDefaults } from "@/server/ui-prefs";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const viewer = await requireViewer();
@@ -33,7 +34,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     >
     <CallLayer>
     <SidebarProvider defaultOpen={sidebarCookie !== "false"}>
-      <AppSidebar reportsLink={!can(viewer, "owners.view") && (await reportDepartments(viewer)).length > 0} customDepts={await myCustomDepartments(viewer)} perms={viewer.perms} activeRole={viewer.activeRole} counts={counts} workspaceName={settings.workspace.name} />
+      <AppSidebar reportsLink={!can(viewer, "owners.view") && (await reportDepartments(viewer)).length > 0} customDepts={await myCustomDepartments(viewer)} userHidden={viewer.prefs.sidebarHidden ?? []} roleHidden={(await sidebarDefaults())[viewer.activeRole] ?? []} perms={viewer.perms} activeRole={viewer.activeRole} counts={counts} workspaceName={settings.workspace.name} />
       <SidebarInset className="min-w-0">
         <Topbar user={{ name: viewer.name, email: viewer.email, roles: viewer.roles }} activeRole={viewer.activeRole} unread={counts.notifications} chatUnread={counts.chat} />
         {viewer.mustChangePassword && (

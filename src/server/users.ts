@@ -17,6 +17,8 @@ export type UserPrefs = {
   exportSettings?: { format?: string; scope?: string; grouping?: string; includeDates?: boolean; columns?: string[]; orientation?: string };
   // Get-started tour: which role audiences have seen it, and which first steps are ticked.
   tour?: { seen?: Audience[]; steps?: string[] };
+  // Sidebar entries this person hid (by link).
+  sidebarHidden?: string[];
 };
 
 export type AppUser = {

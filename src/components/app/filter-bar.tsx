@@ -236,7 +236,7 @@ export function FilterBar({
           {note && <span className="text-xs text-muted-foreground">{note}</span>}
           {showViews && (
             <nav className="ml-auto flex items-center gap-0.5 rounded-lg border bg-muted/40 p-0.5" aria-label="Views of the same records">
-              {VIEWS.map((v) => {
+              {VIEWS.filter((v) => options.allowedViews.includes(v.href) || pathname === v.href).map((v) => {
                 const active = pathname === v.href;
                 return (
                   <Link

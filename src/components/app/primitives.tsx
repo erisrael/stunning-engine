@@ -5,6 +5,8 @@ import { CircleHelpIcon, InfoIcon, InboxIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { ShowMeHow, type ExplainerKey } from "@/components/app/explainers";
 import { initials } from "@/lib/format";
 
 export function PageHeader({
@@ -14,6 +16,7 @@ export function PageHeader({
   children,
   eyebrow,
   help,
+  explainer,
 }: {
   title: React.ReactNode;
   description?: React.ReactNode;
@@ -22,6 +25,8 @@ export function PageHeader({
   eyebrow?: React.ReactNode;
   // Help chapter key: shows a link to that chapter of the manual next to the title.
   help?: string;
+  // A short animated clip of how the page works.
+  explainer?: ExplainerKey;
 }) {
   return (
     <div className="flex flex-col gap-3 pb-4">
@@ -35,6 +40,7 @@ export function PageHeader({
                 <CircleHelpIcon className="size-4" />
               </Link>
             )}
+            {explainer && <ShowMeHow id={explainer} />}
           </h1>
           {description && <p className="mt-1 max-w-3xl text-sm text-muted-foreground">{description}</p>}
         </div>
@@ -208,5 +214,19 @@ export function Meter({ value, max, tone = "primary", className }: { value: numb
     <div className={cn("h-1.5 w-full overflow-hidden rounded-full bg-muted", className)} role="meter" aria-valuenow={value} aria-valuemax={max} aria-valuemin={0}>
       <div className={cn("h-full rounded-full", color)} style={{ width: `${pct}%` }} />
     </div>
+  );
+}
+
+// A short explanation on hover or focus for any control: <Hint tip="...">{button}</Hint>.
+export function Hint({ tip, title, side = "bottom", children }: { tip?: string; title?: string; side?: "top" | "bottom" | "left" | "right"; children: React.ReactElement }) {
+  if (!tip) return children;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent side={side} className="max-w-64">
+        {title && <p className="font-semibold">{title}</p>}
+        <p>{tip}</p>
+      </TooltipContent>
+    </Tooltip>
   );
 }

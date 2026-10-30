@@ -1,6 +1,7 @@
 // Help content written once: the training manual, workflow guides, tooltips and the get-started tours.
 // Pages link here with a chapter key (PageHeader help="..."); tooltips read TIPS so wording stays the same everywhere.
 import type { Role, Stage } from "@/lib/domain";
+import type { ExplainerKey } from "@/components/app/explainers";
 
 export type Audience = "member" | "lead" | "publication" | "manager" | "owner" | "department" | "hr";
 
@@ -451,47 +452,93 @@ export const TIPS: Record<string, string> = {
 export const tip = (key: string): string | undefined => TIPS[key];
 
 // The get-started tour: a few steps per audience, each with an optional animated flow.
-export type TourStep = { title: string; text: string; flow?: string[] };
+export type TourStep = { title: string; text: string; flow?: string[]; explainer?: ExplainerKey };
+
+// The get-started tour: a few steps per audience, each with a short animation of the real screen or the flow.
+const SIDEBAR_STEP: TourStep = {
+  title: "Your sidebar",
+  text: "My space at the top holds your own work, record and leave. Hover any entry to see what it is for, and press the gear at the bottom to hide what you do not use.",
+  explainer: "sidebar",
+};
+const HELP_STEP: TourStep = {
+  title: "Help is always one click away",
+  text: "The question mark next to a page title opens its chapter of the manual; Show me how plays a short clip. Help and training is in the account menu, top right.",
+};
+const PROFILE_STEP: TourStep = { title: "Your profile", text: "Add a photo, your skills, education and certificates. Colleagues see your profile; your files stay private to you, your lead and HR.", explainer: "profile" };
 
 export const TOURS: Record<Audience, TourStep[]> = {
   member: [
     { title: "Welcome", text: "This short tour shows how your day works. It takes a minute, and you can replay it from Help." },
-    { title: "Your work, on one board", text: "Home shows only your work. Cards move from left to right as you go.", flow: ["To do", "In progress", "Done, not sent", "With team lead"] },
+    { title: "Your work, on one board", text: "Home shows only your work. Cards move from left to right as you go.", explainer: "my-board" },
     { title: "Everything on the card", text: "Tap a card to tick the checklist and fill in links and lengths. No other page needed." },
     { title: "Send when you are ready", text: "Mark work done whenever it is finished, then send it to your team lead one at a time or all at the end of the day. Your lead approves it and hands it to the next team.", flow: ["You: Done", "Send to team lead", "Lead approves", "Next team"] },
+    { title: "Leave", text: "Ask for leave from Leave in the sidebar. Your line manager approves first, then HR.", explainer: "ask-leave" },
+    SIDEBAR_STEP,
+    PROFILE_STEP,
+    HELP_STEP,
   ],
   lead: [
     { title: "Welcome, team lead", text: "This short tour shows your lead desk. You can replay it from Help." },
-    { title: "Your team's flow", text: "Your team sends you finished work. You approve or return it, then hand it over to the next team's lead.", flow: ["Team sends", "You approve", "Ready", "Hand over"] },
-    { title: "Arriving work", text: "Work handed to your team arrives on your desk. Accept it, then assign it to someone.", flow: ["Arriving", "Accept", "Assign", "Their board"] },
-    { title: "The whole workflow", text: "You also see Overview, Board, Coverage and Reports for everything from recording to published." },
+    { title: "The whole workflow at a glance", text: "The top of Home shows every stage from drafts to published, with your own stage highlighted.", flow: ["Drafts", "Recording", "Editing", "Uploading", "Publication", "Published"] },
+    { title: "Approve and hand over", text: "Your team sends you finished work. Approve or return it, then hand it over to the next team's lead.", explainer: "lead-desk" },
+    { title: "Accept and assign", text: "Work handed to your team arrives on your desk. Accept it, then assign it to someone.", explainer: "assign" },
+    { title: "The whole workflow", text: "You also see Overview, Work views, Coverage, Reports and your Team. Overview's Present mode runs on a wall screen.", explainer: "present" },
+    { title: "Your team's leave", text: "Leave requests from your team come to you first, then go to HR.", explainer: "ask-leave" },
+    SIDEBAR_STEP,
+    HELP_STEP,
   ],
   publication: [
     { title: "Welcome", text: "This short tour shows how releases work. You can replay it from Help." },
     { title: "Review and release", text: "Uploaded work comes to you for review. Approve it, schedule it, and confirm it is live.", flow: ["Uploaded", "Review", "Schedule", "Live"] },
     { title: "Calendar", text: "The Calendar shows what is scheduled and when." },
+    SIDEBAR_STEP,
+    HELP_STEP,
   ],
   manager: [
     { title: "Welcome", text: "This short tour shows where to plan and follow work. You can replay it from Help." },
     { title: "How work moves", text: "Each stage's team works on its own board. Team leads approve and hand work over to the next team's lead.", flow: ["Recording", "Editing", "Uploading", "Publication"] },
-    { title: "Plan and assign", text: "Assign work in bulk from Assign work, and keep stage checklists current in Checklists." },
-    { title: "Follow progress", text: "Home shows alerts and workload. Overview shows where everything stands; press Present to show it on a wall screen." },
+    { title: "Plan and assign", text: "Assign work in bulk from Assign work, and keep stage checklists current in Checklists.", explainer: "assign" },
+    { title: "Present and analyse", text: "Overview's Present mode cycles through progress, explains the numbers aloud, compares periods and exports to PowerPoint or video.", explainer: "present" },
+    { title: "See what others see", text: "Admin, View as shows the app exactly as a role, department, lead or person sees it, without changing anything.", explainer: "view-as" },
+    SIDEBAR_STEP,
+    HELP_STEP,
   ],
   owner: [
     { title: "Welcome", text: "This short tour shows where to see the company at a glance. You can replay it from Help." },
     { title: "Company overview", text: "Switch between the overall view and each department.", flow: ["Overall", "Departments", "Reports"] },
-    { title: "Present in meetings", text: "Overview's Present button runs a full-screen summary that updates by itself." },
-  ],
-  hr: [
-    { title: "Welcome to HR", text: "This short tour shows where people records live. You can replay it from Help." },
-    { title: "People", text: "Every employee has a record with job, line manager, dates and documents.", flow: ["Add", "Fill in", "Documents", "Reminders"] },
-    { title: "Equipment", text: "Issue equipment to people and take it back, so you always know who holds what.", flow: ["Register", "Issue", "Return"] },
+    { title: "Present in meetings", text: "Overview's Present button runs a full-screen summary that updates by itself, reads aloud, and exports to PowerPoint.", explainer: "present" },
+    HELP_STEP,
   ],
   department: [
     { title: "Welcome", text: "This short tour shows your department's workspace. You can replay it from Help." },
     { title: "Projects and tasks", text: "Tasks move across your board as they progress.", flow: ["To do", "In progress", "Review", "Done"] },
-    { title: "Views and requests", text: "Switch views at the top of the department page, and handle requests from other teams in Requests." },
+    { title: "Views and requests", text: "Your department's views are listed under it in the sidebar. Requests from other teams arrive in Requests." },
+    { title: "Leave", text: "Ask for leave from Leave in the sidebar.", explainer: "ask-leave" },
+    SIDEBAR_STEP,
+    PROFILE_STEP,
+    HELP_STEP,
   ],
+  hr: [
+    { title: "Welcome to HR", text: "This short tour shows where people records live. You can replay it from Help." },
+    { title: "People", text: "Every employee has a record with job, line manager, dates and documents.", flow: ["Add", "Fill in", "Documents", "Reminders"] },
+    { title: "Leave", text: "Requests come to HR after the line manager. Balances, holidays and leave types are in the Leave tab.", explainer: "ask-leave" },
+    { title: "Hiring to leaving", text: "Open positions, interview, hire into an account, then onboarding; offboarding at the end.", flow: ["Opening", "Interview", "Hire", "Onboard", "Offboard"] },
+    { title: "Equipment", text: "Issue equipment to people and take it back, so you always know who holds what.", flow: ["Register", "Issue", "Return"] },
+    SIDEBAR_STEP,
+    HELP_STEP,
+  ],
+};
+
+// Short clips that belong with each manual chapter.
+export const CHAPTER_EXPLAINERS: Record<string, ExplainerKey[]> = {
+  basics: ["sidebar"],
+  member: ["my-board"],
+  lead: ["lead-desk", "assign"],
+  leave: ["ask-leave"],
+  overview: ["present"],
+  manager: ["assign"],
+  admin: ["view-as"],
+  me: ["profile"],
 };
 
 export type FirstStep = { key: string; label: string; href: string };
@@ -541,4 +588,41 @@ export const FIRST_STEPS: Record<Audience, FirstStep[]> = {
     { key: "requests", label: "Look at Requests", href: "/requests" },
     { key: "manual", label: "Read the Departments chapter", href: "/profile/help#departments" },
   ],
+};
+
+// What each sidebar and top-bar entry is for, shown when hovering it. Keyed by the link (or the control's name).
+export const NAV_TIPS: Record<string, string> = {
+  "/dashboard": "Your starting point: your own work board, or your team's desk if you lead a team.",
+  "/me": "Your HR record: job, contact details, documents, equipment, goals, reviews and interviews.",
+  "/leave": "Your leave balances, asking for leave, and approving your team's leave.",
+  "/team": "Time and effort: your own as a member, your team's workload as a lead.",
+  "/profile": "Your profile: photo, skills, education, files, password, devices and preferences.",
+  "/overview": "Every unit and part in each stage, by grade or subject, with the Present mode for wall screens.",
+  "views": "The same records as a table, a spreadsheet, a board or a calendar. Switch views at the top right of the page.",
+  "/handovers": "Batches of work handed from one team lead to the next, to accept or return.",
+  "/questions": "Tracked questions between managers and the people doing the work.",
+  "/coverage": "Which grades, subjects and units are covered, and where the gaps are.",
+  "/reports": "Output, time, quality and deadlines, with exports for Excel and Power BI.",
+  "/email": "Send email from the workspace, with templates and a sent log.",
+  "/company": "All departments at once: progress, money and each department's dashboard.",
+  "/dev": "Dev team projects, tasks, sprints and GitHub repositories.",
+  "/studio": "Notes, exams, the question bank and flash cards.",
+  "/marketing": "Campaigns, the content calendar, tasks and KPIs.",
+  "/hr": "People records, leave, hiring, joiners and leavers, performance, training and reports.",
+  "/requests": "Ask another department for something, and follow what happens to it.",
+  "/owners": "Read-only stats and reports from every department, for owners.",
+  "/items/new": "Add a new production item.",
+  "/assign": "Assign many parts to people at once, with due dates.",
+  "/checklists": "Checklist templates for each stage.",
+  "/import-export": "Bring spreadsheets in and take data out, including Power BI feeds.",
+  "/settings": "Workflow settings: calendar, holidays, lists, policies and alerts.",
+  "/admin": "People, roles, permissions, sessions and devices, View as, and sign-in options.",
+  "/admin/data": "Find and fix records, check data health, undo imports and restore from Trash.",
+  "/audit": "Every recorded change, who made it and when.",
+  "top.search": "Search codes, titles and teachers (Ctrl K).",
+  "top.role": "If you hold more than one role, choose which one you are working as. It changes your view only.",
+  "top.chat": "Chat with people and groups, and start calls.",
+  "top.bell": "Notifications: work sent to you, approvals, reminders and mentions.",
+  "top.account": "Your profile, My record, help and training, theme, and signing out.",
+  "top.sidebar": "Show or hide the sidebar (Ctrl B).",
 };

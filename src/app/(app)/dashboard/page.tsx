@@ -69,7 +69,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     const own = mine.items.filter((i) => i.stage === team);
     return (
       <div className="space-y-6">
-        <PageHeader help={desk ? "lead" : "member"} eyebrow={`${STAGE_LABELS[team]}${desk ? " team lead" : ""}`} title={greeting} description={desk ? "Approve what your team sends, hand it over to the next team, accept what arrives and assign it." : "Your work. Start it, fill in what it needs on the card, mark it done, and send it to your team lead."} />
+        <PageHeader help={desk ? "lead" : "member"} explainer={desk ? "lead-desk" : "my-board"} eyebrow={`${STAGE_LABELS[team]}${desk ? " team lead" : ""}`} title={greeting} description={desk ? "Approve what your team sends, hand it over to the next team, accept what arrives and assign it." : "Your work. Start it, fill in what it needs on the card, mark it done, and send it to your team lead."} />
         {desk && <LeadDesk data={desk} />}
         {(!desk || own.length > 0) && <MyBoard items={own} title={desk ? "My own work" : "My work"} />}
       </div>

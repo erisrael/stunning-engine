@@ -18,7 +18,7 @@ export default async function OverviewPage() {
   return (
     <div className="space-y-4">
       <PageHeader
-        help="overview" title="Overview"
+        help="overview" explainer="present" title="Overview"
         description="Where every unit and part stands in Recording, Editing, Uploading and Publication. Switch between grade-first and subject-first, and between a table and a hierarchy."
         actions={
           <>

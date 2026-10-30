@@ -13,7 +13,7 @@ export default async function LeavePage({ searchParams }: { searchParams: Promis
   const [data, cal] = await Promise.all([myLeave(viewer), leaveCalendar(viewer, month)]);
   return (
     <div className="space-y-4">
-      <PageHeader help="leave" title="Leave" description="Your balances and leave requests. Your line manager approves first, then HR. Weekends and public holidays are not counted." />
+      <PageHeader help="leave" explainer="ask-leave" title="Leave" description="Your balances and leave requests. Your line manager approves first, then HR. Weekends and public holidays are not counted." />
       {data.employeeId ? (
         <MyLeave balances={data.balances} requests={data.requests} approvals={data.approvals} types={data.types} calendar={data.calendar} month={month} entries={cal.entries} />
       ) : (

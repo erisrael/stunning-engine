@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { savePrefsAction } from "@/app/actions/admin";
 import { FIRST_STEPS, TOURS, type Audience } from "@/lib/help";
 import { cn } from "@/lib/utils";
+import { Explainer } from "@/components/app/explainers";
 
 export type TourState = { seen?: Audience[]; steps?: string[] };
 
@@ -83,12 +84,12 @@ export function GetStarted({ audience, tour }: { audience: Audience; tour: TourS
   const step = steps[at];
   return (
     <Dialog open={open} onOpenChange={(o) => !o && close()}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>{last ? "Your first steps" : step!.title}</DialogTitle>
           <DialogDescription>{last ? "Tick them off as you go. This list stays in Help under your profile." : step!.text}</DialogDescription>
         </DialogHeader>
-        {last ? <FirstSteps audience={audience} done={done} onToggle={toggle} /> : step!.flow && <FlowAnimation key={at} steps={step!.flow} />}
+        {last ? <FirstSteps audience={audience} done={done} onToggle={toggle} /> : step!.explainer ? <Explainer key={at} id={step!.explainer} /> : step!.flow && <FlowAnimation key={at} steps={step!.flow} />}
         <DialogFooter className="items-center gap-2 sm:justify-between">
           <div className="flex gap-1" aria-hidden>
             {[...steps, null].map((_, i) => (

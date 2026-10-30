@@ -9,15 +9,20 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { savePrefsAction } from "@/app/actions/admin";
 import { FirstSteps, REPLAY_TOUR_EVENT, type TourState } from "@/components/app/get-started";
-import { AUDIENCE_LABELS, CHAPTERS, GUIDES, type Audience, type Chapter } from "@/lib/help";
+import { AUDIENCE_LABELS, CHAPTERS, CHAPTER_EXPLAINERS, GUIDES, type Audience, type Chapter } from "@/lib/help";
+import { Explainer } from "@/components/app/explainers";
+import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 
 const forAudience = (c: Chapter, a: Audience) => c.audiences === "all" || c.audiences.includes(a);
 const text = (c: Chapter) => [c.title, c.summary, ...c.sections.flatMap((s) => [s.title, s.text ?? "", ...(s.steps ?? [])])].join(" ").toLowerCase();
 
 function ChapterCard({ c, open, highlight }: { c: Chapter; open: boolean; highlight: boolean }) {
+  // Clips play only while the chapter is open.
+  const [shown, setShown] = React.useState(open);
+  React.useEffect(() => setShown(open), [open]);
   return (
-    <details id={c.key} open={open} className={cn("group scroll-mt-20 rounded-lg border bg-card", highlight && "ring-2 ring-primary/40")}>
+    <details id={c.key} open={open} onToggle={(e) => setShown((e.target as HTMLDetailsElement).open)} className={cn("group scroll-mt-20 rounded-lg border bg-card", highlight && "ring-2 ring-primary/40")}>
       <summary className="cursor-pointer list-none px-4 py-3">
         <div className="font-medium">{c.title}</div>
         <div className="text-sm text-muted-foreground">{c.summary}</div>
@@ -26,6 +31,13 @@ function ChapterCard({ c, open, highlight }: { c: Chapter; open: boolean; highli
         {c.image && (
           // eslint-disable-next-line @next/next/no-img-element -- static screenshots in /public
           <img src={c.image} alt={`${c.title}: screenshot`} loading="lazy" className="w-full max-w-3xl rounded-md border" />
+        )}
+        {shown && (CHAPTER_EXPLAINERS[c.key] ?? []).length > 0 && (
+          <div className="grid max-w-3xl gap-4 md:grid-cols-2">
+            {(CHAPTER_EXPLAINERS[c.key] ?? []).map((k) => (
+              <Explainer key={k} id={k} />
+            ))}
+          </div>
         )}
         {c.sections.map((s) => (
           <section key={s.title} className="space-y-1.5">
@@ -46,7 +58,8 @@ function ChapterCard({ c, open, highlight }: { c: Chapter; open: boolean; highli
 }
 
 // The training manual, guides, first steps and tour replay. Chapters for the person's role come first.
-export function HelpCenter({ audience, tour }: { audience: Audience; tour: TourState }) {
+export function HelpCenter({ audience, tour, canSeeAll = false }: { audience: Audience; tour: TourState; canSeeAll?: boolean }) {
+  const [everyone, setEveryone] = React.useState(false);
   const router = useRouter();
   const [q, setQ] = React.useState("");
   const [hash, setHash] = React.useState("");
@@ -65,10 +78,11 @@ export function HelpCenter({ audience, tour }: { audience: Audience; tour: TourS
   const needle = q.trim().toLowerCase();
   const match = (c: Chapter) => !needle || needle.split(/\s+/).every((w) => text(c).includes(w));
   const mine = CHAPTERS.filter((c) => forAudience(c, audience) && match(c));
-  const others = CHAPTERS.filter((c) => !forAudience(c, audience) && match(c));
+  // Each person sees their own chapters; managers and Admin can open every role's, to support their people.
+  const others = canSeeAll && everyone ? CHAPTERS.filter((c) => !forAudience(c, audience) && match(c)) : [];
   // Guides for the person's own chapters; a search looks through all of them.
   const own = new Set(CHAPTERS.filter((c) => forAudience(c, audience)).map((c) => c.key));
-  const guides = GUIDES.filter((g) => (needle ? `${g.title} ${g.steps.join(" ")}`.toLowerCase().includes(needle) : own.has(g.chapter)));
+  const guides = GUIDES.filter((g) => (own.has(g.chapter) || (canSeeAll && everyone)) && (!needle || `${g.title} ${g.steps.join(" ")}`.toLowerCase().includes(needle)));
   const toggle = (key: string, on: boolean) => {
     const next = on ? [...new Set([...done, key])] : done.filter((k) => k !== key);
     setDone(next);
@@ -83,7 +97,14 @@ export function HelpCenter({ audience, tour }: { audience: Audience; tour: TourS
           <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search the manual, for example: hand over, assign, password" className="pl-9" aria-label="Search help" />
         </div>
         <div className="space-y-2">
-          <h2 className="text-sm font-medium text-muted-foreground">For you ({AUDIENCE_LABELS[audience]})</h2>
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-sm font-medium text-muted-foreground">For you ({AUDIENCE_LABELS[audience]})</h2>
+            {canSeeAll && (
+              <label className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
+                <Switch checked={everyone} onCheckedChange={setEveryone} /> Show every role&apos;s chapters
+              </label>
+            )}
+          </div>
           {mine.map((c) => (
             <ChapterCard key={c.key} c={c} open={!!needle || hash === c.key} highlight={hash === c.key} />
           ))}

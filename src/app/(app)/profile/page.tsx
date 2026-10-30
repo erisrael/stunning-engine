@@ -21,6 +21,7 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
     <div className="space-y-4">
       <PageHeader
         title="Profile and preferences"
+        explainer="profile"
         actions={
           <Link href="/profile/help" className="text-sm font-medium text-primary hover:underline">
             Help and training

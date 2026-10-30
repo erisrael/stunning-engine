@@ -12,8 +12,14 @@ import { DeptDashboardView } from "./dept-dashboard-view";
 import { deptReport, listSprints, runningTimer, teamWorkload } from "@/server/work-extras";
 import { getSettings } from "@/server/settings";
 import { isPeriod } from "@/lib/dashboards";
+import { customDepartment } from "@/server/departments";
+import { githubOverview } from "@/server/github";
+import { accountingMap, ACCOUNTING_FORMATS } from "@/server/accounting";
+import { GithubRepos } from "./github-repos";
+import { FinanceAccounting } from "./integrations";
+import { deptPath } from "@/lib/work";
 
-const TABS = ["dashboard", "board", "list", "sheet", "overview", "timeline", "team", "report", "projects", "calendar", "configure"] as const;
+const TABS = ["dashboard", "board", "list", "sheet", "overview", "timeline", "team", "report", "projects", "calendar", "configure", "repos", "accounting"] as const;
 const SORTS = ["updated", "due", "priority", "code", "title", "status"] as const;
 
 // The Dev and Marketing sections share this page; their vocabulary, workflow and rights come from the configuration.
@@ -27,6 +33,13 @@ export async function WorkPage({ dept, searchParams }: { dept: WorkDept; searchP
   let tab = (TABS as readonly string[]).includes(sp.tab ?? "") ? (sp.tab as (typeof TABS)[number]) : sp.task ? "board" : "dashboard";
   if (tab === "configure" && !access.rights.configure) tab = "board";
   if (tab === "team" && !access.rights.seeAll) tab = "board";
+  // Department-specific tabs: GitHub for the Dev team, accounting exports for a Finance department.
+  const template = (await customDepartment(dept))?.template ?? null;
+  const extraTabs: { key: "repos" | "accounting"; label: string }[] = [
+    ...(dept === "dev" || template === "dev" ? [{ key: "repos" as const, label: "Repositories" }] : []),
+    ...(template === "finance" ? [{ key: "accounting" as const, label: "Accounting" }] : []),
+  ];
+  if ((tab === "repos" || tab === "accounting") && !extraTabs.some((t) => t.key === tab)) tab = "board";
   const period = isPeriod(sp.period) ? sp.period : "30d";
   const [sprints, timer] = await Promise.all([cfg.features.sprints ? listSprints(viewer, dept) : Promise.resolve([]), runningTimer(viewer)]);
   const header = (
@@ -42,6 +55,37 @@ export async function WorkPage({ dept, searchParams }: { dept: WorkDept; searchP
         <DeptConfigure dept={dept} config={cfg} version={cfg.version} people={(await deptPeople(dept)).map((p) => ({ id: p.id, name: p.name }))} />
       </div>
     );
+  if (tab === "repos" || tab === "accounting") {
+    const projects = await listProjects(viewer, dept);
+    const panel =
+      tab === "repos" ? (
+        <GithubRepos dept={dept} data={await githubOverview(viewer, dept)} projects={projects.map((p) => ({ id: p.id, name: p.name }))} taskHref={deptPath(dept)} />
+      ) : (
+        <FinanceAccounting dept={dept} map={await accountingMap(viewer, dept)} types={cfg.types.map((t) => ({ key: t.key, label: t.label }))} formats={ACCOUNTING_FORMATS} canConfigure={access.rights.configure && !access.readOnly} />
+      );
+    return (
+      <div className="space-y-4">
+        {header}
+        <WorkClient
+          dept={dept}
+          tab={tab}
+          filter={{}}
+          tasks={[]}
+          projects={projects}
+          people={(await deptPeople(dept)).map((p) => ({ id: p.id, name: p.name, position: p.position }))}
+          access={{ rights: access.rights, readOnly: access.readOnly }}
+          config={cfg}
+          viewerId={viewer.id}
+          openTaskId={null}
+          showArchived={false}
+          sprints={sprints}
+          timer={timer}
+          extraTabs={extraTabs}
+          panel={panel}
+        />
+      </div>
+    );
+  }
   if (tab === "dashboard") {
     const [projects, people] = await Promise.all([listProjects(viewer, dept), deptPeople(dept)]);
     return (
@@ -61,6 +105,7 @@ export async function WorkPage({ dept, searchParams }: { dept: WorkDept; searchP
           showArchived={false}
           sprints={sprints}
           timer={timer}
+          extraTabs={extraTabs}
           dashboard={<DeptDashboardView viewer={viewer} dept={dept} sp={sp} />}
         />
       </div>
@@ -114,6 +159,7 @@ export async function WorkPage({ dept, searchParams }: { dept: WorkDept; searchP
         report={report}
         period={period}
         workspace={settings.workspace.name}
+        extraTabs={extraTabs}
       />
     </div>
   );

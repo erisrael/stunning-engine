@@ -28,8 +28,7 @@ import {
   Settings2Icon,
   Trash2Icon,
   UploadIcon,
-  XIcon,
-} from "lucide-react";
+  XIcon, GitBranchIcon, CalculatorIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -96,6 +95,8 @@ export function WorkClient({
   openTaskId,
   showArchived,
   dashboard,
+  extraTabs = [],
+  panel,
   views = [],
   sprints = [],
   timer = null,
@@ -105,7 +106,7 @@ export function WorkClient({
   workspace = "",
 }: {
   dept: WorkDept;
-  tab: "dashboard" | "board" | "list" | "sheet" | "overview" | "timeline" | "team" | "report" | "projects" | "calendar";
+  tab: "dashboard" | "board" | "list" | "sheet" | "overview" | "timeline" | "team" | "report" | "projects" | "calendar" | "repos" | "accounting";
   filter: TaskFilter;
   tasks: Task[];
   projects: Project[];
@@ -116,6 +117,9 @@ export function WorkClient({
   openTaskId: string | null;
   showArchived: boolean;
   dashboard?: React.ReactNode;
+  // Tabs a department adds (GitHub repositories, accounting) and the panel for the open one.
+  extraTabs?: { key: "repos" | "accounting"; label: string }[];
+  panel?: React.ReactNode;
   views?: DeptView[];
   sprints?: Sprint[];
   // The viewer's running timer, if any (in any department).
@@ -224,6 +228,11 @@ export function WorkClient({
             <TabsTrigger value="report">
               <FileTextIcon className="size-3.5" /> {access.rights.seeAll ? "Report" : "My report"}
             </TabsTrigger>
+            {extraTabs.map((t) => (
+              <TabsTrigger key={t.key} value={t.key}>
+                {t.key === "repos" ? <GitBranchIcon className="size-3.5" /> : <CalculatorIcon className="size-3.5" />} {t.label}
+              </TabsTrigger>
+            ))}
             <TabsTrigger value="projects">
               <FolderKanbanIcon className="size-3.5" /> {names.projects} ({projects.length})
             </TabsTrigger>
@@ -252,7 +261,7 @@ export function WorkClient({
               </Button>
             </>
           )}
-          {tab !== "dashboard" && (
+          {tab !== "dashboard" && tab !== "repos" && tab !== "accounting" && (
             <Button size="sm" variant="outline" onClick={() => exportCsv(tasks)} disabled={!tasks.length}>
               <DownloadIcon /> Export
             </Button>
@@ -270,7 +279,7 @@ export function WorkClient({
         </div>
       </div>
 
-      {tab !== "projects" && tab !== "dashboard" && tab !== "team" && tab !== "report" && (
+      {tab !== "projects" && tab !== "dashboard" && tab !== "team" && tab !== "report" && tab !== "repos" && tab !== "accounting" && (
         <div className="flex flex-wrap items-center gap-2">
           <form
             className="relative"
@@ -314,9 +323,10 @@ export function WorkClient({
         </div>
       )}
 
-      {tab !== "projects" && tab !== "dashboard" && tab !== "team" && tab !== "report" && <ViewOptions dept={dept} tab={tab} config={cfg} access={access} views={views} people={people} projects={projects} />}
+      {tab !== "projects" && tab !== "dashboard" && tab !== "team" && tab !== "report" && tab !== "repos" && tab !== "accounting" && <ViewOptions dept={dept} tab={tab} config={cfg} access={access} views={views} people={people} projects={projects} />}
 
       {tab === "dashboard" && dashboard}
+      {(tab === "repos" || tab === "accounting") && panel}
       {tab === "board" && <Board dept={dept} config={cfg} people={people} tasks={tasks} viewerId={viewerId} access={access} onOpen={setEditing} onDetails={(status) => setEditing({ status })} />}
       {tab === "sheet" && <SheetView dept={dept} config={cfg} tasks={tasks} people={people} projects={projects} access={access} viewerId={viewerId} onOpen={setEditing} />}
       {tab === "overview" && <OverviewTree config={cfg} tasks={tasks} projects={projects} onOpen={setEditing} />}

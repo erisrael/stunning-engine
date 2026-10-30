@@ -28,6 +28,16 @@ export async function filterOptions(user: AppUser, page: string) {
     // Managers and planners may share saved views with everyone.
     isManager: user.roles.includes("manager") || user.perms.includes("items.plan"),
     timezone: s.workspace.timezone,
+    // Which of the views of the same records this person may open.
+    allowedViews: [
+      ["/content", "nav.list"],
+      ["/sheet", "nav.sheet"],
+      ["/pipeline", "nav.board"],
+      ["/calendar", "nav.calendar"],
+      ["/reports", "reports.view"],
+    ]
+      .filter(([, c]) => user.perms.includes(c as never))
+      .map(([h]) => h!),
   };
 }
 

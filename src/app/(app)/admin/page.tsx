@@ -16,6 +16,11 @@ import { PageImport } from "@/components/app/page-import";
 import { DepartmentsAdmin } from "./departments-admin";
 import { customDepartments, deptPeople } from "@/server/departments";
 import { DEPARTMENTS } from "@/lib/domain";
+import { headers } from "next/headers";
+import { DATASETS, listTokens, type Dataset } from "@/server/feeds";
+import { IntegrationsAdmin } from "@/components/app/integrations";
+import { sidebarDefaults } from "@/server/ui-prefs";
+import { SidebarAdmin } from "./sidebar-admin";
 
 export const metadata = { title: "Admin" };
 
@@ -94,6 +99,8 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           {manageUsers && <TabsTrigger value="departments">Departments</TabsTrigger>}
           {manageUsers && <TabsTrigger value="permissions">Roles and permissions</TabsTrigger>}
           {manageUsers && <TabsTrigger value="access">Access</TabsTrigger>}
+          {manageUsers && <TabsTrigger value="sidebar">Sidebar</TabsTrigger>}
+          {manageUsers && <TabsTrigger value="integrations">Integrations</TabsTrigger>}
           {manageData && <TabsTrigger value="data">Data</TabsTrigger>}
         </TabsList>
         {manageUsers && (
@@ -118,6 +125,16 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
             </TabsContent>
             <TabsContent value="access">
               <AccessAdmin users={users} grades={grades} subjects={subjects} />
+            </TabsContent>
+            <TabsContent value="sidebar">
+              <SidebarAdmin defaults={await sidebarDefaults()} />
+            </TabsContent>
+            <TabsContent value="integrations">
+              <IntegrationsAdmin
+                tokens={await listTokens(viewer)}
+                datasets={Object.fromEntries(Object.entries(DATASETS).map(([k, v]) => [k, v.label])) as Record<Dataset, string>}
+                origin={`${(await headers()).get("x-forwarded-proto") ?? "https"}://${(await headers()).get("host") ?? "localhost"}`}
+              />
             </TabsContent>
           </>
         )}

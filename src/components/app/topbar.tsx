@@ -28,7 +28,8 @@ import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, Comma
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Breadcrumb, BreadcrumbItem, BreadcrumbList, BreadcrumbPage, BreadcrumbLink, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
-import { UserAvatar } from "@/components/app/primitives";
+import { Hint, UserAvatar } from "@/components/app/primitives";
+import { NAV_TIPS } from "@/lib/help";
 import { logoutAction, switchRoleAction } from "@/app/actions/auth";
 import { searchAction } from "@/app/actions/search";
 import { listNotificationsAction, markNotificationsAction, snoozeNotificationAction } from "@/app/actions/collab";
@@ -115,7 +116,7 @@ export function Topbar({ user, activeRole, unread, chatUnread }: { user: { name:
 
   return (
     <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b bg-background/85 px-3 backdrop-blur supports-[backdrop-filter]:bg-background/70 sm:px-4 no-print">
-      <SidebarTrigger className="-ml-1" />
+      <Hint tip={NAV_TIPS["top.sidebar"]}><SidebarTrigger className="-ml-1" /></Hint>
       <Separator orientation="vertical" className="mr-1 hidden h-5 sm:block" />
       <Breadcrumb className="hidden min-w-0 md:block">
         <BreadcrumbList>
@@ -135,13 +136,16 @@ export function Topbar({ user, activeRole, unread, chatUnread }: { user: { name:
         </BreadcrumbList>
       </Breadcrumb>
       <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
+        <Hint title="Search" tip={NAV_TIPS["top.search"]}>
         <Button variant="outline" size="sm" className="h-8 w-9 justify-start gap-2 px-2 text-muted-foreground sm:w-72" onClick={() => setSearchOpen(true)} aria-label="Search">
           <SearchIcon className="size-4" />
           <span className="hidden sm:inline">Search code, title, teacher</span>
           <kbd className="ml-auto hidden rounded border bg-muted px-1 font-mono text-[10px] lg:inline">Ctrl K</kbd>
         </Button>
+        </Hint>
         <RoleSwitcher roles={user.roles} active={activeRole} />
-        <Button variant="ghost" size="icon" className={cn("relative", pathname === "/chat" && "bg-accent")} aria-label={`Chat, ${chat} unread`} title="Chat" asChild>
+        <Hint title="Chat" tip={NAV_TIPS["top.chat"]}>
+        <Button variant="ghost" size="icon" className={cn("relative", pathname === "/chat" && "bg-accent")} aria-label={`Chat, ${chat} unread`} asChild>
           <Link href="/chat">
             <MessageCircleIcon />
             {chat > 0 && (
@@ -151,6 +155,8 @@ export function Topbar({ user, activeRole, unread, chatUnread }: { user: { name:
             )}
           </Link>
         </Button>
+        </Hint>
+        <Hint title="Notifications" tip={NAV_TIPS["top.bell"]}>
         <Button variant="ghost" size="icon" className="relative" aria-label={`Notifications, ${count} unread`} onClick={() => setBellOpen(true)}>
           <BellIcon />
           {count > 0 && (
@@ -159,6 +165,7 @@ export function Topbar({ user, activeRole, unread, chatUnread }: { user: { name:
             </span>
           )}
         </Button>
+        </Hint>
         <UserMenu user={user} />
       </div>
       <SearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
@@ -172,7 +179,7 @@ function RoleSwitcher({ roles, active }: { roles: Role[]; active: Role }) {
   const [pending, start] = React.useTransition();
   if (roles.length < 2)
     return (
-      <span className="hidden h-8 items-center rounded-lg border bg-muted/50 px-2.5 text-xs font-medium sm:inline-flex" title="Your role">
+      <span className="hidden h-8 items-center rounded-lg border bg-muted/50 px-2.5 text-xs font-medium sm:inline-flex" title="Your role. Admin sets what each role can see and do.">
         {ROLE_LABELS[active]}
       </span>
     );
@@ -187,9 +194,11 @@ function RoleSwitcher({ roles, active }: { roles: Role[]; active: Role }) {
         })
       }
     >
+      <Hint title="Role" tip={NAV_TIPS["top.role"]}>
       <SelectTrigger size="sm" className={cn("h-8 w-[118px] text-xs sm:w-[140px]", pending && "opacity-60")} aria-label="Active role">
         <SelectValue />
       </SelectTrigger>
+      </Hint>
       <SelectContent align="end">
         {roles.map((r) => (
           <SelectItem key={r} value={r}>
@@ -206,11 +215,13 @@ function UserMenu({ user }: { user: { name: string; email: string } }) {
   const [look, setLook] = useAppearance();
   return (
     <DropdownMenu>
+      <Hint title={user.name} tip={NAV_TIPS["top.account"]}>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="icon" className="rounded-full" aria-label="Account menu">
           <UserAvatar name={user.name} size="md" />
         </Button>
       </DropdownMenuTrigger>
+      </Hint>
       <DropdownMenuContent align="end" className="w-60">
         <DropdownMenuLabel className="font-normal">
           <div className="text-sm font-medium">{user.name}</div>
