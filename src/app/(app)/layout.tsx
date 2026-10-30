@@ -19,6 +19,7 @@ import { GetStarted } from "@/components/app/get-started";
 import { audienceFor } from "@/lib/help";
 import { sidebarDefaults } from "@/server/ui-prefs";
 import { avatarsFor } from "@/server/profiles";
+import { touchPresence } from "@/server/chat-extras";
 import { PreviewBanner } from "@/components/app/security";
 import { ROLE_LABELS } from "@/lib/domain";
 
@@ -26,6 +27,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const viewer = await requireViewer();
   // Alert checks run after the page is sent, so no visitor waits for them (hosts also call /api/cron/checks).
   after(() => maybeRunScheduledChecks());
+  // Online status follows activity anywhere in the app, not only in chat (never while viewing as someone).
+  if (!viewer.previewBy) after(() => touchPresence(viewer.id));
   const [counts, cookieStore, settings, users] = await Promise.all([shellCounts(viewer), cookies(), getSettings(), userDirectory()]);
   const sidebarCookie = cookieStore.get("sidebar_state")?.value;
   return (
