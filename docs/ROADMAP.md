@@ -230,7 +230,14 @@ Studio keeps its content types (notes, exams, flash cards, question bank) and ga
 
 ### 7. Order of delivery
 
-1. **Configuration foundation**: config storage, the Configure screen, statuses, types, fields, names and positions. Today's values are moved into it, and the board and list read from it.
+1. **Configuration foundation** (done): a Configure tab in Dev and Marketing (heads by default; Admin always), also linked from Admin, Departments. It covers:
+   - Names and code prefix.
+   - Statuses with category, colour, column limit, "on board" and "only with the right".
+   - Task types and priorities (order sets sorting), and suggested labels.
+   - Custom fields (11 kinds, required from a status category, per type, on cards, as list columns, leads-only) and project statuses.
+   - KPIs with units, rights per position, form features and notifications.
+
+   Changes are saved together as a version, with a history and restore. Keys in use can be switched off but not removed, and the configuration can be exported and imported as JSON. Tasks store their status category, so Owners and reports count correctly after renames. Board, List, Calendar, the task and project forms, CSV import and export, and the Owners dashboard all read the configuration.
 2. **Department dashboard**: widget library, layouts, filters, and the Owners selection.
 3. **Views**:
    - List columns and grouping, board swimlanes and limits, saved views.

@@ -18,7 +18,6 @@ import { deleteReportAction, reportFactsAction, saveReportAction } from "@/app/a
 import type { DeptReport, OwnerStats } from "@/server/owners";
 import { CAT } from "@/lib/chart-colors";
 import { DEPARTMENT_LABELS, DEPARTMENTS, STAGE_LABELS, type Department } from "@/lib/domain";
-import { WORK_CONFIG } from "@/lib/work";
 
 export function OwnersClient({
   tab,
@@ -127,7 +126,7 @@ function Overview({ s }: { s: OwnerStats }) {
           {s.work.map((w) => (
             <div key={w.dept} className="space-y-2 rounded-xl border bg-card p-4">
               <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold">{WORK_CONFIG[w.dept as "dev" | "marketing"].title}</h3>
+                <h3 className="text-sm font-semibold">{s.names[w.dept]?.title ?? w.dept}</h3>
                 <span className="text-xs text-muted-foreground tabular">
                   {fmt(w.done)} done · {fmt(w.open)} open{w.overdue ? ` · ${fmt(w.overdue)} overdue` : ""}
                 </span>
@@ -147,7 +146,7 @@ function Overview({ s }: { s: OwnerStats }) {
                       </span>
                     </li>
                   ))}
-                {!s.projects.some((x) => x.dept === w.dept) && <li className="text-xs text-muted-foreground">No active {WORK_CONFIG[w.dept as "dev" | "marketing"].projects.toLowerCase()}.</li>}
+                {!s.projects.some((x) => x.dept === w.dept) && <li className="text-xs text-muted-foreground">No active {(s.names[w.dept]?.projects ?? "projects").toLowerCase()}.</li>}
               </ul>
             </div>
           ))}
@@ -155,7 +154,7 @@ function Overview({ s }: { s: OwnerStats }) {
         {s.kpis.length > 0 && (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
             {s.kpis.map((k) => (
-              <MetricCard key={k.metric} label={`Marketing ${WORK_CONFIG.marketing.metrics.find((m) => m.key === k.metric)?.label.toLowerCase() ?? k.metric}`} value={fmt(k.total)} hint="this month" />
+              <MetricCard key={k.metric} label={`Marketing ${k.label.toLowerCase()}`} value={fmt(k.total)} hint="this month" />
             ))}
           </div>
         )}

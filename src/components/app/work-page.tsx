@@ -1,25 +1,44 @@
 import { redirect } from "next/navigation";
 import { requireViewer } from "@/server/auth";
-import { deptAccess, deptPeople } from "@/server/departments";
+import { deptPeople } from "@/server/departments";
+import { workAccess } from "@/server/dept-config";
 import { listProjects, listTasks, type TaskFilter } from "@/server/work";
 import { PageHeader } from "@/components/app/primitives";
 import { POSITION_LABELS } from "@/lib/domain";
-import { TASK_STATUSES, WORK_CONFIG, type WorkDept } from "@/lib/work";
+import type { WorkDept } from "@/lib/work";
 import { WorkClient } from "./work-client";
+import { DeptConfigure } from "./dept-configure";
 
-const TABS = ["board", "list", "projects", "calendar"] as const;
+const TABS = ["board", "list", "projects", "calendar", "configure"] as const;
 const SORTS = ["updated", "due", "priority", "code", "title", "status"] as const;
 
-// The Dev and Marketing sections share this page; only the vocabulary differs.
+// The Dev and Marketing sections share this page; their vocabulary, workflow and rights come from the configuration.
 export async function WorkPage({ dept, searchParams }: { dept: WorkDept; searchParams: Promise<Record<string, string | undefined>> }) {
   const viewer = await requireViewer();
-  const access = await deptAccess(viewer, dept);
-  if (!access.view) redirect("/dashboard?denied=permission");
+  const access = await workAccess(viewer, dept).catch(() => null);
+  if (!access) redirect("/dashboard?denied=permission");
+  const cfg = access.config;
   const sp = await searchParams;
-  const tab = (TABS as readonly string[]).includes(sp.tab ?? "") ? (sp.tab as (typeof TABS)[number]) : "board";
+  let tab = (TABS as readonly string[]).includes(sp.tab ?? "") ? (sp.tab as (typeof TABS)[number]) : "board";
+  if (tab === "configure" && !access.rights.configure) tab = "board";
+  const header = (
+    <PageHeader
+      title={cfg.title}
+      description={`${cfg.description}${access.readOnly ? " You are viewing as an owner (read only)." : access.position ? ` You are ${POSITION_LABELS[access.position].toLowerCase()} here.` : ""}`}
+    />
+  );
+  if (tab === "configure")
+    return (
+      <div className="space-y-4">
+        {header}
+        <DeptConfigure dept={dept} config={cfg} version={cfg.version} />
+      </div>
+    );
+  const statuses = sp.status ? sp.status.split(",").filter((s) => cfg.statuses.some((x) => x.key === s)) : [];
   const filter: TaskFilter = {
     q: sp.q ?? null,
-    status: sp.status ? sp.status.split(",").filter((s) => (TASK_STATUSES as readonly string[]).includes(s)) : [],
+    status: statuses,
+    open: sp.status === "open",
     assignee: sp.assignee ?? null,
     project: sp.project ?? null,
     type: sp.type ?? null,
@@ -31,13 +50,9 @@ export async function WorkPage({ dept, searchParams }: { dept: WorkDept; searchP
   // The board orders cards by their position, so it ignores the list sort.
   const { tasks } = await listTasks(viewer, dept, tab === "board" ? { ...filter, sort: "status", dir: "asc" } : filter);
   const [projects, people] = await Promise.all([listProjects(viewer, dept, { archived: sp.archived === "1" }), deptPeople(dept)]);
-  const cfg = WORK_CONFIG[dept];
   return (
     <div className="space-y-4">
-      <PageHeader
-        title={cfg.title}
-        description={`${cfg.description}${access.readOnly ? " You are viewing as an owner (read only)." : access.position ? ` You are ${POSITION_LABELS[access.position].toLowerCase()} here.` : ""}`}
-      />
+      {header}
       <WorkClient
         dept={dept}
         tab={tab}
@@ -45,7 +60,8 @@ export async function WorkPage({ dept, searchParams }: { dept: WorkDept; searchP
         tasks={tasks}
         projects={projects}
         people={people.map((p) => ({ id: p.id, name: p.name, position: p.position }))}
-        access={{ manage: access.manage, readOnly: access.readOnly }}
+        access={{ rights: access.rights, readOnly: access.readOnly }}
+        config={cfg}
         viewerId={viewer.id}
         openTaskId={sp.task ?? null}
         showArchived={sp.archived === "1"}

@@ -22,6 +22,7 @@ import {
   PencilIcon,
   PlusIcon,
   SearchIcon,
+  Settings2Icon,
   Trash2Icon,
   UploadIcon,
   XIcon,
@@ -54,24 +55,32 @@ import {
   taskCommentsAction,
 } from "@/app/actions/departments";
 import type { Project, Task, TaskFilter } from "@/server/work";
-import { POSITION_LABELS, PRIORITY_LABELS, type Position, type Priority } from "@/lib/domain";
-import { PROJECT_STATUS_LABELS, PROJECT_STATUSES, TASK_PRIORITIES, TASK_STATUS_LABELS, TASK_STATUS_TONE, TASK_STATUSES, WORK_CONFIG, type TaskStatus, type WorkDept } from "@/lib/work";
+import { POSITION_LABELS, type Position } from "@/lib/domain";
+import type { WorkDept } from "@/lib/work";
+import { fieldEmpty, fieldRequired, fieldShown, formatField, labelOf, statusOf, type DeptConfig, type DeptField, type FieldValue, type Rights } from "@/lib/dept-config";
 import { cn } from "@/lib/utils";
 
 type Person = { id: string; name: string; position: Position };
-type Access = { manage: boolean; readOnly: boolean };
+type Access = { rights: Rights; readOnly: boolean };
 
-const PRIORITY_DOT: Record<string, string> = { urgent: "bg-red-500", high: "bg-orange-500", normal: "bg-sky-500", low: "bg-muted-foreground/40" };
-const BOARD: TaskStatus[] = ["backlog", "todo", "in_progress", "review", "done"];
 const today = () => new Date().toISOString().slice(0, 10);
+const finished = (t: Task) => t.status_category === "done" || t.status_category === "cancelled";
+// Active items, plus the one already in use (a switched-off status or type stays readable on old tasks).
+const usable = <T extends { key: string; active: boolean }>(items: T[], current?: string) => items.filter((i) => i.active || i.key === current);
 
-function Tone({ status }: { status: TaskStatus }) {
-  const t = TASK_STATUS_TONE[status];
+function Tone({ config, status }: { config: DeptConfig; status: string }) {
+  const s = statusOf(config, status);
+  const c = s?.color ?? "#94a3b8";
   return (
-    <span className="inline-flex h-5 items-center rounded-full px-2 text-[11px] font-medium" style={{ background: `var(--st-${t}-bg)`, color: `var(--st-${t}-fg)` }}>
-      {TASK_STATUS_LABELS[status]}
+    <span className="inline-flex h-5 items-center rounded-full px-2 text-[11px] font-medium" style={{ background: `${c}22`, color: c }}>
+      {s?.label ?? status}
     </span>
   );
+}
+
+function PriorityDot({ config, priority }: { config: DeptConfig; priority: string }) {
+  const p = config.priorities.find((x) => x.key === priority);
+  return <span className="size-2 shrink-0 rounded-full" style={{ background: p?.color ?? "#94a3b8" }} title={p?.label ?? priority} />;
 }
 
 function download(name: string, rows: (string | number | null)[][]) {
@@ -91,6 +100,7 @@ export function WorkClient({
   projects,
   people,
   access,
+  config,
   viewerId,
   openTaskId,
   showArchived,
@@ -102,6 +112,7 @@ export function WorkClient({
   projects: Project[];
   people: Person[];
   access: Access;
+  config: DeptConfig;
   viewerId: string;
   openTaskId: string | null;
   showArchived: boolean;
@@ -109,14 +120,15 @@ export function WorkClient({
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
-  const cfg = WORK_CONFIG[dept];
+  const cfg = config;
+  const names = cfg.names;
   const go = (patch: Record<string, string | null>) => {
     const p = new URLSearchParams(params.toString());
     for (const [k, v] of Object.entries(patch)) v ? p.set(k, v) : p.delete(k);
     router.replace(`${pathname}?${p.toString()}`, { scroll: false });
   };
   const [q, setQ] = React.useState(filter.q ?? "");
-  const [editing, setEditing] = React.useState<Task | { status?: TaskStatus; dueDate?: string } | null>(null);
+  const [editing, setEditing] = React.useState<Task | { status?: string; dueDate?: string } | null>(null);
   const [projectDialog, setProjectDialog] = React.useState<Project | "new" | null>(null);
   const fileRef = React.useRef<HTMLInputElement>(null);
   const writable = !access.readOnly;
@@ -130,10 +142,26 @@ export function WorkClient({
     setEditing(null);
     if (openTaskId) go({ task: null });
   };
+  const fieldCols = cfg.fields.filter((f) => f.active);
   const exportCsv = (list: Task[]) =>
     download(`${dept}-tasks-${today()}.csv`, [
-      ["code", "title", "description", "type", "status", "priority", "project_key", "assignee", "due_date", "estimate_hours", "spent_hours", "progress", "labels"],
-      ...list.map((t) => [t.code, t.title, t.description, t.type, t.status, t.priority, t.project_key, t.assignee_name, t.due_date, t.estimate_hours, t.spent_hours, t.progress, t.labels.join(";")]),
+      ["code", "title", "description", "type", "status", "priority", "project_key", "assignee", "due_date", "estimate_hours", "spent_hours", "progress", "labels", ...fieldCols.map((f) => f.key)],
+      ...list.map((t) => [
+        t.code,
+        t.title,
+        t.description,
+        labelOf(cfg.types, t.type),
+        labelOf(cfg.statuses, t.status),
+        labelOf(cfg.priorities, t.priority),
+        t.project_key,
+        t.assignee_name,
+        t.due_date,
+        t.estimate_hours,
+        t.spent_hours,
+        t.progress,
+        t.labels.join(";"),
+        ...fieldCols.map((f) => (f.type === "multiselect" && Array.isArray(t.fields[f.key]) ? (t.fields[f.key] as string[]).join(";") : formatField(f, t.fields[f.key], people))),
+      ]),
     ]);
   const importCsv = (file: File) =>
     Papa.parse<Record<string, string>>(file, {
@@ -146,7 +174,7 @@ export function WorkClient({
         if (!r.ok) return toast.error(r.error);
         const d = r.data as { created: number; errors: string[] };
         if (d.errors.length) toast.warning(`${d.created} imported, ${d.errors.length} skipped`, { description: d.errors.slice(0, 4).join("\n"), duration: 12000 });
-        else toast.success(`${d.created} tasks imported`);
+        else toast.success(`${d.created} ${names.tasks.toLowerCase()} imported`);
         router.refresh();
       },
     });
@@ -163,18 +191,23 @@ export function WorkClient({
               <ListIcon className="size-3.5" /> List
             </TabsTrigger>
             <TabsTrigger value="projects">
-              <FolderKanbanIcon className="size-3.5" /> {cfg.projects} ({projects.length})
+              <FolderKanbanIcon className="size-3.5" /> {names.projects} ({projects.length})
             </TabsTrigger>
             <TabsTrigger value="calendar">
               <CalendarIcon className="size-3.5" /> Calendar
             </TabsTrigger>
+            {access.rights.configure && (
+              <TabsTrigger value="configure">
+                <Settings2Icon className="size-3.5" /> Configure
+              </TabsTrigger>
+            )}
           </TabsList>
         </Tabs>
         <div className="ml-auto flex flex-wrap gap-2">
           {writable && (
             <>
               <input ref={fileRef} type="file" accept=".csv,text/csv" className="hidden" onChange={(e) => e.target.files?.[0] && importCsv(e.target.files[0])} />
-              <Button size="sm" variant="outline" onClick={() => fileRef.current?.click()} title="Columns: title, description, type, status, priority, assignee_email, project_key, due_date, estimate_hours, labels">
+              <Button size="sm" variant="outline" onClick={() => fileRef.current?.click()} title={`Columns: title, description, type, status, priority, assignee_email, project_key, due_date, estimate_hours, labels${fieldCols.length ? `, ${fieldCols.map((f) => f.key).join(", ")}` : ""}`}>
                 <UploadIcon /> Import CSV
               </Button>
             </>
@@ -182,14 +215,14 @@ export function WorkClient({
           <Button size="sm" variant="outline" onClick={() => exportCsv(tasks)} disabled={!tasks.length}>
             <DownloadIcon /> Export
           </Button>
-          {access.manage && (
+          {writable && access.rights.projects && (
             <Button size="sm" variant="outline" onClick={() => setProjectDialog("new")}>
-              <PlusIcon /> New {cfg.project.toLowerCase()}
+              <PlusIcon /> New {names.project.toLowerCase()}
             </Button>
           )}
           {writable && (
             <Button size="sm" onClick={() => setEditing({})}>
-              <PlusIcon /> New task
+              <PlusIcon /> New {names.task.toLowerCase()}
             </Button>
           )}
         </div>
@@ -205,36 +238,36 @@ export function WorkClient({
             }}
           >
             <SearchIcon className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search tasks" className="h-8 w-48 pl-7 text-sm" />
+            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Search ${names.tasks.toLowerCase()}`} className="h-8 w-48 pl-7 text-sm" />
           </form>
-          <FilterSelect value={filter.project} onChange={(v) => go({ project: v })} placeholder={`Any ${cfg.project.toLowerCase()}`} options={[{ value: "none", label: `No ${cfg.project.toLowerCase()}` }, ...projects.map((p) => ({ value: p.id, label: `${p.key} ${p.name}` }))]} />
+          <FilterSelect value={filter.project} onChange={(v) => go({ project: v })} placeholder={`Any ${names.project.toLowerCase()}`} options={[{ value: "none", label: `No ${names.project.toLowerCase()}` }, ...projects.map((p) => ({ value: p.id, label: `${p.key} ${p.name}` }))]} />
           <FilterSelect
             value={filter.assignee}
             onChange={(v) => go({ assignee: v })}
             placeholder="Anyone"
-            options={[{ value: "me", label: "Me" }, { value: "none", label: "Unassigned" }, ...(access.manage || access.readOnly ? people.map((p) => ({ value: p.id, label: p.name })) : [])]}
+            options={[{ value: "me", label: "Me" }, { value: "none", label: "Unassigned" }, ...(access.rights.seeAll ? people.map((p) => ({ value: p.id, label: p.name })) : [])]}
           />
-          <FilterSelect value={filter.type} onChange={(v) => go({ type: v })} placeholder="Any type" options={cfg.taskTypes.map((t) => ({ value: t.key, label: t.label }))} />
-          <FilterSelect value={filter.priority} onChange={(v) => go({ priority: v })} placeholder="Any priority" options={TASK_PRIORITIES.map((p) => ({ value: p, label: PRIORITY_LABELS[p as Priority] }))} />
+          <FilterSelect value={filter.type} onChange={(v) => go({ type: v })} placeholder="Any type" options={cfg.types.map((t) => ({ value: t.key, label: t.label }))} />
+          <FilterSelect value={filter.priority} onChange={(v) => go({ priority: v })} placeholder="Any priority" options={cfg.priorities.map((p) => ({ value: p.key, label: p.label }))} />
           <FilterSelect value={filter.due} onChange={(v) => go({ due: v })} placeholder="Any due date" options={[{ value: "overdue", label: "Overdue" }, { value: "week", label: "Due this week" }, { value: "none", label: "No due date" }]} />
           {tab === "list" && (
             <FilterSelect
-              value={filter.status?.length === 1 ? filter.status[0] : filter.status?.length ? "open" : null}
-              onChange={(v) => go({ status: v === "open" ? "backlog,todo,in_progress,review" : v })}
+              value={filter.open ? "open" : filter.status?.length === 1 ? filter.status[0] : null}
+              onChange={(v) => go({ status: v })}
               placeholder="Any status"
-              options={[{ value: "open", label: "Open" }, ...TASK_STATUSES.map((s) => ({ value: s, label: TASK_STATUS_LABELS[s] }))]}
+              options={[{ value: "open", label: "Not finished" }, ...cfg.statuses.map((s) => ({ value: s.key, label: s.label }))]}
             />
           )}
         </div>
       )}
 
-      {tab === "board" && <Board dept={dept} tasks={tasks} viewerId={viewerId} access={access} onOpen={setEditing} onAdd={(status) => setEditing({ status })} />}
-      {tab === "list" && <TaskList dept={dept} tasks={tasks} filter={filter} people={people} projects={projects} access={access} viewerId={viewerId} go={go} onOpen={setEditing} onExport={exportCsv} />}
-      {tab === "projects" && <Projects dept={dept} projects={projects} access={access} showArchived={showArchived} go={go} onEdit={setProjectDialog} />}
+      {tab === "board" && <Board dept={dept} config={cfg} people={people} tasks={tasks} viewerId={viewerId} access={access} onOpen={setEditing} onAdd={(status) => setEditing({ status })} />}
+      {tab === "list" && <TaskList dept={dept} config={cfg} tasks={tasks} filter={filter} people={people} projects={projects} access={access} viewerId={viewerId} go={go} onOpen={setEditing} onExport={exportCsv} />}
+      {tab === "projects" && <Projects dept={dept} config={cfg} projects={projects} access={access} showArchived={showArchived} go={go} onEdit={setProjectDialog} />}
       {tab === "calendar" && <MonthCalendar tasks={tasks} onOpen={setEditing} onAdd={writable ? (d) => setEditing({ dueDate: d }) : undefined} />}
 
-      {editing && <TaskDialog dept={dept} task={"id" in editing ? editing : null} preset={"id" in editing ? {} : editing} people={people} projects={projects} access={access} viewerId={viewerId} onClose={closeTask} />}
-      {projectDialog && <ProjectDialog dept={dept} project={projectDialog === "new" ? null : projectDialog} people={people} onClose={() => setProjectDialog(null)} />}
+      {editing && <TaskDialog dept={dept} config={cfg} task={"id" in editing ? editing : null} preset={"id" in editing ? {} : editing} people={people} projects={projects} access={access} viewerId={viewerId} onClose={closeTask} />}
+      {projectDialog && <ProjectDialog dept={dept} config={cfg} project={projectDialog === "new" ? null : projectDialog} people={people} onClose={() => setProjectDialog(null)} />}
     </div>
   );
 }
@@ -257,8 +290,10 @@ function FilterSelect({ value, onChange, placeholder, options }: { value: string
   );
 }
 
-function TaskCard({ t, onOpen, draggable, onDragStart }: { t: Task; onOpen: () => void; draggable?: boolean; onDragStart?: (e: React.DragEvent) => void }) {
-  const overdue = t.due_date && t.due_date < today() && t.status !== "done" && t.status !== "cancelled";
+function TaskCard({ t, config, people, onOpen, draggable, onDragStart }: { t: Task; config: DeptConfig; people: Person[]; onOpen: () => void; draggable?: boolean; onDragStart?: (e: React.DragEvent) => void }) {
+  const overdue = t.due_date && t.due_date < today() && !finished(t);
+  const type = config.types.find((x) => x.key === t.type);
+  const shown = config.fields.filter((f) => f.onCard && fieldShown(f, t.type) && !fieldEmpty(t.fields[f.key]));
   return (
     <button
       type="button"
@@ -269,8 +304,13 @@ function TaskCard({ t, onOpen, draggable, onDragStart }: { t: Task; onOpen: () =
       className="block w-full rounded-lg border bg-card p-2 text-left text-sm shadow-xs hover:border-primary/40"
     >
       <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-        <span className={cn("size-2 rounded-full", PRIORITY_DOT[t.priority])} title={PRIORITY_LABELS[t.priority as Priority]} />
+        <PriorityDot config={config} priority={t.priority} />
         <span className="font-mono">{t.code}</span>
+        {type && (
+          <span className="truncate rounded px-1 text-[10px]" style={{ background: `${type.color}22`, color: type.color }}>
+            {type.label}
+          </span>
+        )}
         {t.comments > 0 && (
           <span className="ml-auto flex items-center gap-0.5">
             <MessageSquareIcon className="size-3" /> {t.comments}
@@ -278,7 +318,17 @@ function TaskCard({ t, onOpen, draggable, onDragStart }: { t: Task; onOpen: () =
         )}
       </div>
       <p className="mt-0.5 line-clamp-2 font-medium">{t.title}</p>
-      {t.progress > 0 && t.status !== "done" && (
+      {shown.length > 0 && (
+        <dl className="mt-1 space-y-0.5 text-[11px]">
+          {shown.map((f) => (
+            <div key={f.key} className="flex gap-1">
+              <dt className="text-muted-foreground">{f.label}:</dt>
+              <dd className="truncate">{formatField(f, t.fields[f.key], people)}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      {config.features.progress && t.progress > 0 && !finished(t) && (
         <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-muted">
           <div className="h-full bg-primary" style={{ width: `${t.progress}%` }} />
         </div>
@@ -296,13 +346,33 @@ function TaskCard({ t, onOpen, draggable, onDragStart }: { t: Task; onOpen: () =
   );
 }
 
-function Board({ dept, tasks, viewerId, access, onOpen, onAdd }: { dept: WorkDept; tasks: Task[]; viewerId: string; access: Access; onOpen: (t: Task) => void; onAdd: (s: TaskStatus) => void }) {
+function Board({
+  dept,
+  config,
+  people,
+  tasks,
+  viewerId,
+  access,
+  onOpen,
+  onAdd,
+}: {
+  dept: WorkDept;
+  config: DeptConfig;
+  people: Person[];
+  tasks: Task[];
+  viewerId: string;
+  access: Access;
+  onOpen: (t: Task) => void;
+  onAdd: (s: string) => void;
+}) {
   const router = useRouter();
   const [dragging, setDragging] = React.useState<string | null>(null);
   const [local, setLocal] = React.useState(tasks);
   React.useEffect(() => setLocal(tasks), [tasks]);
-  const canMove = (t: Task) => !access.readOnly && (access.manage || t.assignee_id === viewerId || t.reporter_id === viewerId);
-  const drop = async (status: TaskStatus, e: React.DragEvent) => {
+  const canMove = (t: Task) => !access.readOnly && (access.rights.editAll || t.assignee_id === viewerId || t.reporter_id === viewerId);
+  // Columns: statuses shown on the board, plus any switched-off status that still holds tasks.
+  const columns = config.statuses.filter((s) => (s.active && s.onBoard) || (!s.active && local.some((t) => t.status === s.key)));
+  const drop = async (status: string, e: React.DragEvent) => {
     e.preventDefault();
     const id = dragging;
     setDragging(null);
@@ -314,7 +384,7 @@ function Board({ dept, tasks, viewerId, access, onOpen, onAdd }: { dept: WorkDep
       if (!moved) return l;
       const rest = l.filter((t) => t.id !== id);
       const at = beforeId ? rest.findIndex((t) => t.id === beforeId) : -1;
-      const next = { ...moved, status };
+      const next = { ...moved, status, status_category: statusOf(config, status)?.category ?? moved.status_category };
       if (at < 0) return [...rest, next];
       return [...rest.slice(0, at), next, ...rest.slice(at)];
     });
@@ -326,27 +396,32 @@ function Board({ dept, tasks, viewerId, access, onOpen, onAdd }: { dept: WorkDep
   };
   return (
     <div className="flex gap-3 overflow-x-auto pb-2">
-      {BOARD.map((st) => {
+      {columns.map((col) => {
+        const st = col.key;
         const list = local.filter((t) => t.status === st);
+        const over = col.limit != null && list.length > col.limit;
         return (
           <div
             key={st}
-            className={cn("flex w-72 shrink-0 flex-col rounded-xl bg-muted/40 p-2", dragging && "outline-dashed outline-1 outline-primary/30")}
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={(e) => drop(st, e)}
+            className={cn("flex w-72 shrink-0 flex-col rounded-xl bg-muted/40 p-2", dragging && col.active && "outline-dashed outline-1 outline-primary/30", !col.active && "opacity-70")}
+            onDragOver={(e) => col.active && e.preventDefault()}
+            onDrop={(e) => col.active && drop(st, e)}
           >
             <div className="mb-2 flex items-center gap-2 px-1">
-              <Tone status={st} />
-              <span className="text-xs text-muted-foreground tabular">{list.length}</span>
-              {!access.readOnly && (
-                <Button size="icon-xs" variant="ghost" className="ml-auto" aria-label={`Add to ${TASK_STATUS_LABELS[st]}`} onClick={() => onAdd(st)}>
+              <Tone config={config} status={st} />
+              <span className={cn("text-xs tabular", over ? "font-semibold text-destructive" : "text-muted-foreground")} title={col.limit != null ? `Limit ${col.limit}` : undefined}>
+                {list.length}
+                {col.limit != null && ` / ${col.limit}`}
+              </span>
+              {!access.readOnly && col.active && (
+                <Button size="icon-xs" variant="ghost" className="ml-auto" aria-label={`Add to ${col.label}`} onClick={() => onAdd(st)}>
                   <PlusIcon />
                 </Button>
               )}
             </div>
             <div className="flex min-h-24 flex-col gap-2">
               {list.map((t) => (
-                <TaskCard key={t.id} t={t} onOpen={() => onOpen(t)} draggable={canMove(t)} onDragStart={(e) => (e.dataTransfer.setData("text/plain", t.id), setDragging(t.id))} />
+                <TaskCard key={t.id} t={t} config={config} people={people} onOpen={() => onOpen(t)} draggable={canMove(t)} onDragStart={(e) => (e.dataTransfer.setData("text/plain", t.id), setDragging(t.id))} />
               ))}
               {!list.length && <p className="py-4 text-center text-xs text-muted-foreground">Nothing here</p>}
             </div>
@@ -359,6 +434,7 @@ function Board({ dept, tasks, viewerId, access, onOpen, onAdd }: { dept: WorkDep
 
 function TaskList({
   dept,
+  config,
   tasks,
   filter,
   people,
@@ -370,6 +446,7 @@ function TaskList({
   onExport,
 }: {
   dept: WorkDept;
+  config: DeptConfig;
   tasks: Task[];
   filter: TaskFilter;
   people: Person[];
@@ -413,7 +490,8 @@ function TaskList({
     if (bad) return toast.error(bad.error);
     router.refresh();
   };
-  if (!tasks.length) return <EmptyState title="No tasks" description="Change the filters, or add a task." />;
+  const cols = config.fields.filter((f) => f.active && f.inList);
+  if (!tasks.length) return <EmptyState title={`No ${config.names.tasks.toLowerCase()}`} description={`Change the filters, or add a ${config.names.task.toLowerCase()}.`} />;
   return (
     <div className="space-y-2">
       <div className="overflow-x-auto rounded-lg border">
@@ -424,18 +502,23 @@ function TaskList({
                 <Checkbox checked={ids.length === tasks.length ? true : ids.length ? "indeterminate" : false} onCheckedChange={(v) => setPicked(v ? new Set(tasks.map((t) => t.id)) : new Set())} aria-label="Select all" />
               </th>
               <Head k="code">Code</Head>
-              <Head k="title">Task</Head>
+              <Head k="title">{config.names.task}</Head>
               <Head k="status">Status</Head>
               <Head k="priority">Priority</Head>
               <th className="p-2 font-medium">Assignee</th>
+              {cols.map((f) => (
+                <th key={f.key} className="p-2 font-medium whitespace-nowrap">
+                  {f.label}
+                </th>
+              ))}
               <Head k="due">Due</Head>
               <Head k="updated">Updated</Head>
             </tr>
           </thead>
           <tbody>
             {tasks.map((t) => {
-              const mine = access.manage || t.assignee_id === viewerId || t.reporter_id === viewerId;
-              const overdue = t.due_date && t.due_date < today() && t.status !== "done" && t.status !== "cancelled";
+              const mine = access.rights.editAll || t.assignee_id === viewerId || t.reporter_id === viewerId;
+              const overdue = t.due_date && t.due_date < today() && !finished(t);
               return (
                 <tr key={t.id} className={cn("border-t", picked.has(t.id) && "bg-primary/5")}>
                   <td className="p-2">
@@ -447,7 +530,7 @@ function TaskList({
                       {t.title}
                     </button>
                     <span className="block truncate text-xs text-muted-foreground">
-                      {WORK_CONFIG[dept].taskTypes.find((x) => x.key === t.type)?.label}
+                      {labelOf(config.types, t.type)}
                       {t.project_name && ` · ${t.project_name}`}
                       {t.milestone_name && ` · ${t.milestone_name}`}
                     </span>
@@ -459,23 +542,28 @@ function TaskList({
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {TASK_STATUSES.map((s) => (
-                            <SelectItem key={s} value={s}>
-                              {TASK_STATUS_LABELS[s]}
+                          {usable(config.statuses, t.status).map((s) => (
+                            <SelectItem key={s.key} value={s.key}>
+                              {s.label}
                             </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
                     ) : (
-                      <Tone status={t.status} />
+                      <Tone config={config} status={t.status} />
                     )}
                   </td>
                   <td className="p-2 text-xs">
                     <span className="inline-flex items-center gap-1">
-                      <span className={cn("size-2 rounded-full", PRIORITY_DOT[t.priority])} /> {PRIORITY_LABELS[t.priority as Priority]}
+                      <PriorityDot config={config} priority={t.priority} /> {labelOf(config.priorities, t.priority)}
                     </span>
                   </td>
                   <td className="p-2 text-xs">{t.assignee_name ?? <span className="text-muted-foreground italic">Unassigned</span>}</td>
+                  {cols.map((f) => (
+                    <td key={f.key} className="max-w-48 truncate p-2 text-xs">
+                      {fieldShown(f, t.type) ? formatField(f, t.fields[f.key], people) : ""}
+                    </td>
+                  ))}
                   <td className={cn("p-2 text-xs whitespace-nowrap", overdue && "font-medium text-destructive")}>{t.due_date ?? "-"}</td>
                   <td className="p-2 text-xs whitespace-nowrap text-muted-foreground">{t.updated_at.slice(0, 10)}</td>
                 </tr>
@@ -489,13 +577,13 @@ function TaskList({
           <span className="text-sm font-medium tabular">{ids.length} selected</span>
           {!access.readOnly && (
             <>
-              <BulkPick label="Status" options={TASK_STATUSES.map((s) => ({ value: s, label: TASK_STATUS_LABELS[s] }))} onPick={(v) => bulk({ status: v }, "updated")} disabled={busy} />
-              <BulkPick label="Priority" options={TASK_PRIORITIES.map((p) => ({ value: p, label: PRIORITY_LABELS[p as Priority] }))} onPick={(v) => bulk({ priority: v }, "updated")} disabled={busy} />
-              {access.manage && (
+              <BulkPick label="Status" options={usable(config.statuses).map((s) => ({ value: s.key, label: s.label }))} onPick={(v) => bulk({ status: v }, "updated")} disabled={busy} />
+              <BulkPick label="Priority" options={usable(config.priorities).map((p) => ({ value: p.key, label: p.label }))} onPick={(v) => bulk({ priority: v }, "updated")} disabled={busy} />
+              {access.rights.assign && (
                 <>
                   <BulkPick label="Assignee" options={[{ value: "none", label: "Unassigned" }, ...people.map((p) => ({ value: p.id, label: p.name }))]} onPick={(v) => bulk({ assigneeId: v === "none" ? null : v }, "reassigned")} disabled={busy} />
                   <BulkPick
-                    label={WORK_CONFIG[dept].project}
+                    label={config.names.project}
                     options={[{ value: "none", label: "None" }, ...projects.map((p) => ({ value: p.id, label: `${p.key} ${p.name}` }))]}
                     onPick={(v) => bulk({ projectId: v === "none" ? null : v }, "moved")}
                     disabled={busy}
@@ -560,6 +648,7 @@ function MonthCalendar({ tasks, onOpen, onAdd }: { tasks: Task[]; onOpen: (t: Ta
     setMonth(d.toISOString().slice(0, 7));
   };
   const undated = tasks.filter((t) => !t.due_date).length;
+  const done = (t: Task) => t.status_category === "done";
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2">
@@ -597,7 +686,7 @@ function MonthCalendar({ tasks, onOpen, onAdd }: { tasks: Task[]; onOpen: (t: Ta
               )}
               <div className="space-y-0.5">
                 {list.slice(0, 4).map((t) => (
-                  <button key={t.id} type="button" onClick={() => onOpen(t)} className={cn("block w-full truncate rounded px-1 py-0.5 text-left text-[11px]", t.status === "done" ? "bg-muted text-muted-foreground line-through" : "bg-primary/10 hover:bg-primary/20")}>
+                  <button key={t.id} type="button" onClick={() => onOpen(t)} className={cn("block w-full truncate rounded px-1 py-0.5 text-left text-[11px]", done(t) ? "bg-muted text-muted-foreground line-through" : "bg-primary/10 hover:bg-primary/20")}>
                     {t.title}
                   </button>
                 ))}
@@ -615,8 +704,24 @@ function MonthCalendar({ tasks, onOpen, onAdd }: { tasks: Task[]; onOpen: (t: Ta
 // Projects (campaigns)
 // ---------------------------------------------------------------------------
 
-function Projects({ dept, projects, access, showArchived, go, onEdit }: { dept: WorkDept; projects: Project[]; access: Access; showArchived: boolean; go: (p: Record<string, string | null>) => void; onEdit: (p: Project) => void }) {
-  const cfg = WORK_CONFIG[dept];
+function Projects({
+  dept,
+  config: cfg,
+  projects,
+  access,
+  showArchived,
+  go,
+  onEdit,
+}: {
+  dept: WorkDept;
+  config: DeptConfig;
+  projects: Project[];
+  access: Access;
+  showArchived: boolean;
+  go: (p: Record<string, string | null>) => void;
+  onEdit: (p: Project) => void;
+}) {
+  const kpis = cfg.features.kpis ? cfg.kpis.filter((k) => k.active) : [];
   const [kpiFor, setKpiFor] = React.useState<Project | null>(null);
   return (
     <div className="space-y-3">
@@ -624,7 +729,11 @@ function Projects({ dept, projects, access, showArchived, go, onEdit }: { dept: 
         <Switch checked={showArchived} onCheckedChange={(v) => go({ archived: v ? "1" : null })} /> Show archived
       </label>
       {!projects.length ? (
-        <EmptyState icon={<FolderKanbanIcon className="size-5" />} title={`No ${cfg.projects.toLowerCase()}`} description={access.manage ? `Create one with New ${cfg.project.toLowerCase()}.` : "Heads and leads create them."} />
+        <EmptyState
+          icon={<FolderKanbanIcon className="size-5" />}
+          title={`No ${cfg.names.projects.toLowerCase()}`}
+          description={access.rights.projects ? `Create one with New ${cfg.names.project.toLowerCase()}.` : "Heads and leads create them."}
+        />
       ) : (
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {projects.map((p) => (
@@ -637,12 +746,12 @@ function Projects({ dept, projects, access, showArchived, go, onEdit }: { dept: 
                       <span className="font-mono text-xs text-muted-foreground">{p.key}</span> {p.name}
                     </CardTitle>
                     <p className="text-xs text-muted-foreground">
-                      {PROJECT_STATUS_LABELS[p.status as keyof typeof PROJECT_STATUS_LABELS] ?? p.status}
+                      {labelOf(cfg.projectStatuses, p.status)}
                       {p.lead_name && ` · ${p.lead_name}`}
                       {p.due_date && ` · due ${p.due_date}`}
                     </p>
                   </div>
-                  {access.manage && (
+                  {access.rights.projects && !access.readOnly && (
                     <Button size="icon-xs" variant="ghost" aria-label="Edit" onClick={() => onEdit(p)}>
                       <PencilIcon />
                     </Button>
@@ -655,14 +764,15 @@ function Projects({ dept, projects, access, showArchived, go, onEdit }: { dept: 
                   <div className="flex justify-between text-xs">
                     <span>{p.progress}% done</span>
                     <span className="text-muted-foreground tabular">
-                      {p.done}/{p.total} tasks{p.overdue ? ` · ${p.overdue} overdue` : ""}
+                      {p.done}/{p.total} {cfg.names.tasks.toLowerCase()}
+                      {p.overdue ? ` · ${p.overdue} overdue` : ""}
                     </span>
                   </div>
                   <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-muted">
                     <div className="h-full bg-primary" style={{ width: `${p.progress}%` }} />
                   </div>
                 </div>
-                {p.milestones.length > 0 && (
+                {cfg.features.milestones && p.milestones.length > 0 && (
                   <ul className="space-y-1 text-xs">
                     {p.milestones.map((m) => (
                       <li key={m.id} className="flex items-center gap-2">
@@ -676,9 +786,9 @@ function Projects({ dept, projects, access, showArchived, go, onEdit }: { dept: 
                     ))}
                   </ul>
                 )}
-                {cfg.metrics.length > 0 && (
+                {kpis.length > 0 && (
                   <div className="space-y-1 rounded-lg bg-muted/40 p-2 text-xs">
-                    {cfg.metrics
+                    {kpis
                       .filter((m) => p.meta.kpiTargets?.[m.key] || p.metrics[m.key])
                       .map((m) => {
                         const target = p.meta.kpiTargets?.[m.key];
@@ -692,37 +802,38 @@ function Projects({ dept, projects, access, showArchived, go, onEdit }: { dept: 
                             <span className="tabular">
                               {actual.toLocaleString("en-US")}
                               {target ? ` / ${target.toLocaleString("en-US")}` : ""}
+                              {m.unit && ` ${m.unit}`}
                             </span>
                           </div>
                         );
                       })}
-                    {p.budget != null && <p className="text-muted-foreground">Budget {p.budget.toLocaleString("en-US")}</p>}
+                    {cfg.features.budget && p.budget != null && <p className="text-muted-foreground">Budget {p.budget.toLocaleString("en-US")}</p>}
                     <Button size="xs" variant="outline" onClick={() => setKpiFor(p)}>
                       KPI entries
                     </Button>
                   </div>
                 )}
                 <Button size="xs" variant="ghost" onClick={() => go({ tab: "list", project: p.id })}>
-                  Open its tasks
+                  Open its {cfg.names.tasks.toLowerCase()}
                 </Button>
               </CardContent>
             </Card>
           ))}
         </div>
       )}
-      {kpiFor && <KpiDialog dept={dept} project={kpiFor} access={access} onClose={() => setKpiFor(null)} />}
+      {kpiFor && <KpiDialog dept={dept} config={cfg} project={kpiFor} access={access} onClose={() => setKpiFor(null)} />}
     </div>
   );
 }
 
-function ProjectDialog({ dept, project, people, onClose }: { dept: WorkDept; project: Project | null; people: Person[]; onClose: () => void }) {
+function ProjectDialog({ dept, config: cfg, project, people, onClose }: { dept: WorkDept; config: DeptConfig; project: Project | null; people: Person[]; onClose: () => void }) {
   const router = useRouter();
-  const cfg = WORK_CONFIG[dept];
+  const kpis = cfg.features.kpis ? cfg.kpis.filter((k) => k.active || project?.meta.kpiTargets?.[k.key]) : [];
   const [f, setF] = React.useState({
     key: project?.key ?? "",
     name: project?.name ?? "",
     description: project?.description ?? "",
-    status: project?.status ?? "active",
+    status: project?.status ?? (cfg.projectStatuses.find((s) => s.active && s.category === "active") ?? cfg.projectStatuses.find((s) => s.active))!.key,
     leadId: project?.lead_id ?? "",
     startDate: project?.start_date ?? "",
     dueDate: project?.due_date ?? "",
@@ -730,7 +841,7 @@ function ProjectDialog({ dept, project, people, onClose }: { dept: WorkDept; pro
     budget: project?.budget != null ? String(project.budget) : "",
     channel: project?.meta.channel ?? "",
     archived: project?.archived ?? false,
-    targets: Object.fromEntries(cfg.metrics.map((m) => [m.key, project?.meta.kpiTargets?.[m.key] ? String(project.meta.kpiTargets[m.key]) : ""])) as Record<string, string>,
+    targets: Object.fromEntries(kpis.map((m) => [m.key, project?.meta.kpiTargets?.[m.key] ? String(project.meta.kpiTargets[m.key]) : ""])) as Record<string, string>,
   });
   const [ms, setMs] = React.useState({ name: "", due: "" });
   const [busy, setBusy] = React.useState(false);
@@ -748,7 +859,7 @@ function ProjectDialog({ dept, project, people, onClose }: { dept: WorkDept; pro
       dueDate: f.dueDate || null,
       color: f.color,
       budget: f.budget ? Number(f.budget) : null,
-      meta: { ...(cfg.metrics.length ? { kpiTargets: targets, channel: f.channel || undefined } : {}) },
+      meta: { ...project?.meta, ...(kpis.length ? { kpiTargets: targets, channel: f.channel || undefined } : {}) },
       archived: f.archived,
     });
     setBusy(false);
@@ -762,7 +873,7 @@ function ProjectDialog({ dept, project, people, onClose }: { dept: WorkDept; pro
       <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>
-            {project ? "Edit" : "New"} {cfg.project.toLowerCase()}
+            {project ? "Edit" : "New"} {cfg.names.project.toLowerCase()}
           </DialogTitle>
           <DialogDescription>The key prefixes its task codes, for example {f.key || "WEB"}-12.</DialogDescription>
         </DialogHeader>
@@ -788,9 +899,9 @@ function ProjectDialog({ dept, project, people, onClose }: { dept: WorkDept; pro
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {PROJECT_STATUSES.map((s) => (
-                  <SelectItem key={s} value={s}>
-                    {PROJECT_STATUS_LABELS[s]}
+                {usable(cfg.projectStatuses, project?.status).map((s) => (
+                  <SelectItem key={s.key} value={s.key}>
+                    {s.label}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -824,12 +935,14 @@ function ProjectDialog({ dept, project, people, onClose }: { dept: WorkDept; pro
             <Label>Colour</Label>
             <Input type="color" value={f.color} onChange={(e) => setF({ ...f, color: e.target.value })} className="h-9 p-1" />
           </div>
-          <div className="space-y-1.5">
-            <Label>Budget (optional)</Label>
-            <Input type="number" min={0} value={f.budget} onChange={(e) => setF({ ...f, budget: e.target.value })} />
-          </div>
+          {cfg.features.budget && (
+            <div className="space-y-1.5">
+              <Label>Budget (optional)</Label>
+              <Input type="number" min={0} value={f.budget} onChange={(e) => setF({ ...f, budget: e.target.value })} />
+            </div>
+          )}
         </div>
-        {cfg.metrics.length > 0 && (
+        {kpis.length > 0 && (
           <div className="space-y-2 rounded-lg border p-3">
             <div className="space-y-1.5">
               <Label>Channel</Label>
@@ -837,18 +950,21 @@ function ProjectDialog({ dept, project, people, onClose }: { dept: WorkDept; pro
             </div>
             <Label>KPI targets</Label>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-              {cfg.metrics.map((m) => (
+              {kpis.map((m) => (
                 <div key={m.key} className="space-y-1">
-                  <span className="text-xs text-muted-foreground">{m.label}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {m.label}
+                    {m.unit && ` (${m.unit})`}
+                  </span>
                   <Input type="number" min={0} value={f.targets[m.key]} onChange={(e) => setF({ ...f, targets: { ...f.targets, [m.key]: e.target.value } })} className="h-8" />
                 </div>
               ))}
             </div>
           </div>
         )}
-        {project && (
+        {project && cfg.features.milestones && (
           <div className="space-y-2 rounded-lg border p-3">
-            <Label>Milestones</Label>
+            <Label>{cfg.names.milestone}s</Label>
             {project.milestones.map((m) => (
               <div key={m.id} className="flex items-center gap-2 text-sm">
                 <Checkbox
@@ -864,7 +980,7 @@ function ProjectDialog({ dept, project, people, onClose }: { dept: WorkDept; pro
                 <Button
                   size="icon-xs"
                   variant="ghost"
-                  aria-label="Delete milestone"
+                  aria-label={`Delete ${cfg.names.milestone.toLowerCase()}`}
                   onClick={async () => {
                     const r = await deleteMilestoneAction(dept, m.id);
                     if (!r.ok) return toast.error(r.error);
@@ -876,7 +992,7 @@ function ProjectDialog({ dept, project, people, onClose }: { dept: WorkDept; pro
               </div>
             ))}
             <div className="flex gap-2">
-              <Input value={ms.name} onChange={(e) => setMs({ ...ms, name: e.target.value })} placeholder="New milestone" className="h-8" />
+              <Input value={ms.name} onChange={(e) => setMs({ ...ms, name: e.target.value })} placeholder={`New ${cfg.names.milestone.toLowerCase()}`} className="h-8" />
               <Input type="date" value={ms.due} onChange={(e) => setMs({ ...ms, due: e.target.value })} className="h-8 w-40" />
               <Button
                 size="sm"
@@ -905,7 +1021,7 @@ function ProjectDialog({ dept, project, people, onClose }: { dept: WorkDept; pro
               variant="ghost"
               className="text-destructive"
               onClick={async () => {
-                if (!window.confirm(`Delete ${project.key}? Its tasks are kept without a ${cfg.project.toLowerCase()}.`)) return;
+                if (!window.confirm(`Delete ${project.key}? Its ${cfg.names.tasks.toLowerCase()} are kept without a ${cfg.names.project.toLowerCase()}.`)) return;
                 const r = await deleteProjectAction(dept, project.id);
                 if (!r.ok) return toast.error(r.error);
                 onClose();
@@ -931,32 +1047,32 @@ function ProjectDialog({ dept, project, people, onClose }: { dept: WorkDept; pro
   );
 }
 
-function KpiDialog({ dept, project, access, onClose }: { dept: WorkDept; project: Project; access: Access; onClose: () => void }) {
+function KpiDialog({ dept, config, project, access, onClose }: { dept: WorkDept; config: DeptConfig; project: Project; access: Access; onClose: () => void }) {
   const router = useRouter();
-  const cfg = WORK_CONFIG[dept];
+  const metrics = config.kpis.filter((k) => k.active);
   const [rows, setRows] = React.useState<{ id: string; metric: string; value: number; recorded_on: string; note: string | null; created_by_name: string | null }[] | null>(null);
-  const [f, setF] = React.useState({ metric: cfg.metrics[0]?.key ?? "", value: "", date: today(), note: "" });
+  const [f, setF] = React.useState({ metric: metrics[0]?.key ?? "", value: "", date: today(), note: "" });
   const load = React.useCallback(async () => {
     const r = await listMetricsAction(dept, project.id);
     if (r.ok) setRows(r.data as typeof rows);
   }, [dept, project.id]);
   React.useEffect(() => void load(), [load]);
-  const label = (k: string) => cfg.metrics.find((m) => m.key === k)?.label ?? k;
+  const label = (k: string) => labelOf(config.kpis, k);
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>KPIs: {project.name}</DialogTitle>
-          <DialogDescription>Record results as they come in; totals show on the campaign card.</DialogDescription>
+          <DialogDescription>Record results as they come in; totals show on the {config.names.project.toLowerCase()} card.</DialogDescription>
         </DialogHeader>
-        {!access.readOnly && (
+        {!access.readOnly && access.rights.kpis && (
           <div className="grid gap-2 sm:grid-cols-[1fr_100px_140px]">
             <Select value={f.metric} onValueChange={(v) => setF({ ...f, metric: v })}>
               <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {cfg.metrics.map((m) => (
+                {metrics.map((m) => (
                   <SelectItem key={m.key} value={m.key}>
                     {m.label}
                   </SelectItem>
@@ -990,7 +1106,7 @@ function KpiDialog({ dept, project, access, onClose }: { dept: WorkDept; project
                   <td className="p-1.5 text-right tabular">{Number(r.value).toLocaleString("en-US")}</td>
                   <td className="p-1.5 text-muted-foreground">{r.note ?? r.created_by_name ?? ""}</td>
                   <td className="p-1.5">
-                    {access.manage && (
+                    {access.rights.projects && !access.readOnly && (
                       <button
                         type="button"
                         aria-label="Delete entry"
@@ -1026,6 +1142,7 @@ function KpiDialog({ dept, project, access, onClose }: { dept: WorkDept; project
 
 function TaskDialog({
   dept,
+  config: cfg,
   task,
   preset,
   people,
@@ -1035,8 +1152,9 @@ function TaskDialog({
   onClose,
 }: {
   dept: WorkDept;
+  config: DeptConfig;
   task: Task | null;
-  preset: { status?: TaskStatus; dueDate?: string };
+  preset: { status?: string; dueDate?: string };
   people: Person[];
   projects: Project[];
   access: Access;
@@ -1044,17 +1162,17 @@ function TaskDialog({
   onClose: () => void;
 }) {
   const router = useRouter();
-  const cfg = WORK_CONFIG[dept];
-  const canEdit = !access.readOnly && (!task || access.manage || task.assignee_id === viewerId || task.reporter_id === viewerId);
+  const canEdit = !access.readOnly && (!task || access.rights.editAll || task.assignee_id === viewerId || task.reporter_id === viewerId);
+  const firstStatus = (cfg.statuses.find((s) => s.active && s.category === "open") ?? cfg.statuses.find((s) => s.active))!.key;
   const [f, setF] = React.useState({
     title: task?.title ?? "",
     description: task?.description ?? "",
-    type: task?.type ?? cfg.taskTypes[0].key,
-    status: (task?.status ?? preset.status ?? "todo") as string,
-    priority: task?.priority ?? "normal",
+    type: task?.type ?? cfg.types.find((t) => t.active)!.key,
+    status: task?.status ?? preset.status ?? firstStatus,
+    priority: task?.priority ?? (cfg.priorities.find((p) => p.key === "normal" && p.active) ?? cfg.priorities.find((p) => p.active))!.key,
     projectId: task?.project_id ?? "",
     milestoneId: task?.milestone_id ?? "",
-    assigneeId: task?.assignee_id ?? (access.manage ? "" : viewerId),
+    assigneeId: task?.assignee_id ?? (access.rights.assign ? "" : viewerId),
     estimate: task?.estimate_hours != null ? String(task.estimate_hours) : "",
     spent: task?.spent_hours != null ? String(task.spent_hours) : "",
     progress: task?.progress ?? 0,
@@ -1062,6 +1180,9 @@ function TaskDialog({
     dueDate: task?.due_date ?? preset.dueDate ?? "",
     labels: task?.labels.join(", ") ?? "",
   });
+  const [values, setValues] = React.useState<Record<string, FieldValue>>(task?.fields ?? {});
+  const category = statusOf(cfg, f.status)?.category ?? "open";
+  const fields = cfg.fields.filter((x) => fieldShown(x, f.type));
   const [busy, setBusy] = React.useState(false);
   const [comments, setComments] = React.useState<{ id: string; author_name: string; body: string; created_at: string }[] | null>(null);
   const [comment, setComment] = React.useState("");
@@ -1090,10 +1211,11 @@ function TaskDialog({
       startDate: f.startDate || null,
       dueDate: f.dueDate || null,
       labels: f.labels.split(","),
+      fields: values,
     });
     setBusy(false);
     if (!r.ok) return toast.error(r.error);
-    toast.success(task ? "Saved" : "Task created");
+    toast.success(task ? "Saved" : `${cfg.names.task} created`);
     onClose();
     router.refresh();
   };
@@ -1118,7 +1240,7 @@ function TaskDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {task && <span className="font-mono text-sm text-muted-foreground">{task.code}</span>}
-            {task ? (canEdit ? "Edit task" : task.title) : "New task"}
+            {task ? (canEdit ? `Edit ${cfg.names.task.toLowerCase()}` : task.title) : `New ${cfg.names.task.toLowerCase()}`}
           </DialogTitle>
           {task && (
             <DialogDescription>
@@ -1133,55 +1255,93 @@ function TaskDialog({
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="space-y-1.5">
               <Label>Type</Label>
-              {sel(f.type, (v) => setF({ ...f, type: v }), cfg.taskTypes.map((t) => ({ value: t.key, label: t.label })))}
+              {sel(f.type, (v) => setF({ ...f, type: v }), usable(cfg.types, task?.type).map((t) => ({ value: t.key, label: t.label })))}
             </div>
             <div className="space-y-1.5">
               <Label>Status</Label>
-              {sel(f.status, (v) => setF({ ...f, status: v, progress: v === "done" ? 100 : f.progress }), TASK_STATUSES.map((s) => ({ value: s, label: TASK_STATUS_LABELS[s] })))}
+              {sel(
+                f.status,
+                (v) => setF({ ...f, status: v, progress: statusOf(cfg, v)?.category === "done" ? 100 : f.progress }),
+                usable(cfg.statuses, task?.status).map((s) => ({ value: s.key, label: s.label })),
+              )}
             </div>
             <div className="space-y-1.5">
               <Label>Priority</Label>
-              {sel(f.priority, (v) => setF({ ...f, priority: v }), TASK_PRIORITIES.map((p) => ({ value: p, label: PRIORITY_LABELS[p as Priority] })))}
+              {sel(f.priority, (v) => setF({ ...f, priority: v }), usable(cfg.priorities, task?.priority).map((p) => ({ value: p.key, label: p.label })))}
             </div>
             <div className="space-y-1.5">
-              <Label>{cfg.project}</Label>
+              <Label>{cfg.names.project}</Label>
               {sel(f.projectId, (v) => setF({ ...f, projectId: v, milestoneId: "" }), projects.map((p) => ({ value: p.id, label: `${p.key} ${p.name}` })), "None")}
             </div>
-            <div className="space-y-1.5">
-              <Label>Milestone</Label>
-              {sel(f.milestoneId, (v) => setF({ ...f, milestoneId: v }), (project?.milestones ?? []).map((m) => ({ value: m.id, label: m.name })), "None")}
-            </div>
+            {cfg.features.milestones && (
+              <div className="space-y-1.5">
+                <Label>{cfg.names.milestone}</Label>
+                {sel(f.milestoneId, (v) => setF({ ...f, milestoneId: v }), (project?.milestones ?? []).map((m) => ({ value: m.id, label: m.name })), "None")}
+              </div>
+            )}
             <div className="space-y-1.5">
               <Label>Assignee</Label>
-              {access.manage
+              {access.rights.assign
                 ? sel(f.assigneeId, (v) => setF({ ...f, assigneeId: v }), people.map((p) => ({ value: p.id, label: `${p.name}${p.position !== "member" ? ` (${POSITION_LABELS[p.position].toLowerCase()})` : ""}` })), "Unassigned")
                 : sel(f.assigneeId, (v) => setF({ ...f, assigneeId: v }), [{ value: viewerId, label: "Me" }, ...(task?.assignee_id && task.assignee_id !== viewerId ? [{ value: task.assignee_id, label: task.assignee_name ?? "Someone" }] : [])], "Unassigned")}
             </div>
-            <div className="space-y-1.5">
-              <Label>Start</Label>
-              <Input type="date" value={f.startDate} onChange={(e) => setF({ ...f, startDate: e.target.value })} disabled={!canEdit} />
-            </div>
+            {cfg.features.startDate && (
+              <div className="space-y-1.5">
+                <Label>Start</Label>
+                <Input type="date" value={f.startDate} onChange={(e) => setF({ ...f, startDate: e.target.value })} disabled={!canEdit} />
+              </div>
+            )}
             <div className="space-y-1.5">
               <Label>Due</Label>
               <Input type="date" value={f.dueDate} onChange={(e) => setF({ ...f, dueDate: e.target.value })} disabled={!canEdit} />
             </div>
-            <div className="space-y-1.5">
-              <Label>Labels</Label>
-              <Input value={f.labels} onChange={(e) => setF({ ...f, labels: e.target.value })} placeholder="mobile, api" disabled={!canEdit} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Estimate (hours)</Label>
-              <Input type="number" min={0} step="0.5" value={f.estimate} onChange={(e) => setF({ ...f, estimate: e.target.value })} disabled={!canEdit} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Spent (hours)</Label>
-              <Input type="number" min={0} step="0.5" value={f.spent} onChange={(e) => setF({ ...f, spent: e.target.value })} disabled={!canEdit} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Progress: {f.progress}%</Label>
-              <input type="range" min={0} max={100} step={5} value={f.progress} onChange={(e) => setF({ ...f, progress: Number(e.target.value) })} disabled={!canEdit} className="w-full accent-[var(--primary)]" />
-            </div>
+            {cfg.features.labels && (
+              <div className="space-y-1.5">
+                <Label>Labels</Label>
+                <Input value={f.labels} onChange={(e) => setF({ ...f, labels: e.target.value })} placeholder={cfg.labels.slice(0, 3).join(", ") || "mobile, api"} disabled={!canEdit} list={`labels-${dept}`} />
+                {cfg.labels.length > 0 && (
+                  <datalist id={`labels-${dept}`}>
+                    {cfg.labels.map((l) => (
+                      <option key={l} value={l} />
+                    ))}
+                  </datalist>
+                )}
+              </div>
+            )}
+            {cfg.features.estimates && (
+              <div className="space-y-1.5">
+                <Label>Estimate (hours)</Label>
+                <Input type="number" min={0} step="0.5" value={f.estimate} onChange={(e) => setF({ ...f, estimate: e.target.value })} disabled={!canEdit} />
+              </div>
+            )}
+            {cfg.features.timeSpent && (
+              <div className="space-y-1.5">
+                <Label>Spent (hours)</Label>
+                <Input type="number" min={0} step="0.5" value={f.spent} onChange={(e) => setF({ ...f, spent: e.target.value })} disabled={!canEdit} />
+              </div>
+            )}
+            {cfg.features.progress && (
+              <div className="space-y-1.5">
+                <Label>Progress: {f.progress}%</Label>
+                <input type="range" min={0} max={100} step={5} value={f.progress} onChange={(e) => setF({ ...f, progress: Number(e.target.value) })} disabled={!canEdit} className="w-full accent-[var(--primary)]" />
+              </div>
+            )}
           </div>
+          {fields.length > 0 && (
+            <div className="grid gap-3 rounded-lg border p-3 sm:grid-cols-2">
+              {fields.map((fd) => (
+                <FieldInput
+                  key={fd.key}
+                  field={fd}
+                  value={values[fd.key] ?? null}
+                  people={people}
+                  required={fieldRequired(fd, category)}
+                  disabled={!canEdit || (fd.leadsOnly && !access.rights.editAll)}
+                  onChange={(v) => setValues((x) => ({ ...x, [fd.key]: v }))}
+                />
+              ))}
+            </div>
+          )}
         </div>
         {task && (
           <div className="space-y-2 border-t pt-3">
@@ -1217,7 +1377,7 @@ function TaskDialog({
           </div>
         )}
         <DialogFooter className="sm:justify-between">
-          {task && canEdit && (access.manage || task.reporter_id === viewerId) ? (
+          {task && canEdit && (access.rights.deleteAll || task.reporter_id === viewerId) ? (
             <Button
               variant="ghost"
               className="text-destructive"
@@ -1247,5 +1407,126 @@ function TaskDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// One custom field in the task dialog, drawn by its type.
+function FieldInput({
+  field: f,
+  value,
+  people,
+  required,
+  disabled,
+  onChange,
+}: {
+  field: DeptField;
+  value: FieldValue;
+  people: Person[];
+  required: boolean;
+  disabled: boolean;
+  onChange: (v: FieldValue) => void;
+}) {
+  const id = `fld-${f.key}`;
+  const wide = f.type === "longtext" || f.type === "multiselect";
+  const label = (
+    <Label htmlFor={id}>
+      {f.label}
+      {required && <span className="text-destructive"> *</span>}
+    </Label>
+  );
+  let input: React.ReactNode;
+  switch (f.type) {
+    case "longtext":
+      input = <Textarea id={id} rows={3} value={String(value ?? "")} onChange={(e) => onChange(e.target.value)} disabled={disabled} />;
+      break;
+    case "number":
+    case "money":
+      input = <Input id={id} type="number" step="any" value={value == null ? "" : String(value)} onChange={(e) => onChange(e.target.value === "" ? null : Number(e.target.value))} disabled={disabled} />;
+      break;
+    case "date":
+      input = <Input id={id} type="date" value={String(value ?? "")} onChange={(e) => onChange(e.target.value || null)} disabled={disabled} />;
+      break;
+    case "url":
+      input = <Input id={id} type="url" value={String(value ?? "")} onChange={(e) => onChange(e.target.value)} placeholder="https://" disabled={disabled} />;
+      break;
+    case "checkbox":
+      input = (
+        <label className="flex h-9 items-center gap-2 text-sm">
+          <Checkbox id={id} checked={value === true} onCheckedChange={(v) => onChange(v === true)} disabled={disabled} /> Yes
+        </label>
+      );
+      break;
+    case "rating":
+      input = (
+        <div className="flex h-9 items-center gap-1" role="radiogroup" aria-label={f.label}>
+          {[1, 2, 3, 4, 5].map((n) => (
+            <button
+              key={n}
+              type="button"
+              role="radio"
+              aria-checked={value === n}
+              aria-label={`${n} of 5`}
+              disabled={disabled}
+              onClick={() => onChange(value === n ? null : n)}
+              className={cn("text-lg leading-none", Number(value) >= n ? "text-amber-500" : "text-muted-foreground/40")}
+            >
+              ★
+            </button>
+          ))}
+        </div>
+      );
+      break;
+    case "select":
+    case "person": {
+      const options = f.type === "person" ? people.map((p) => ({ value: p.id, label: p.name })) : f.options.map((o) => ({ value: o, label: o }));
+      input = (
+        <Select value={value ? String(value) : "none"} onValueChange={(v) => onChange(v === "none" ? null : v)} disabled={disabled}>
+          <SelectTrigger id={id} className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">None</SelectItem>
+            {options.map((o) => (
+              <SelectItem key={o.value} value={o.value}>
+                {o.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      );
+      break;
+    }
+    case "multiselect": {
+      const picked = Array.isArray(value) ? value : [];
+      input = (
+        <div className="flex flex-wrap gap-1.5">
+          {f.options.map((o) => {
+            const on = picked.includes(o);
+            return (
+              <button
+                key={o}
+                type="button"
+                aria-pressed={on}
+                disabled={disabled}
+                onClick={() => onChange(on ? picked.filter((x) => x !== o) : [...picked, o])}
+                className={cn("rounded-full border px-2.5 py-0.5 text-xs", on ? "border-primary bg-primary text-primary-foreground" : "hover:bg-muted")}
+              >
+                {o}
+              </button>
+            );
+          })}
+        </div>
+      );
+      break;
+    }
+    default:
+      input = <Input id={id} value={String(value ?? "")} onChange={(e) => onChange(e.target.value)} disabled={disabled} />;
+  }
+  return (
+    <div className={cn("space-y-1.5", wide && "sm:col-span-2")}>
+      {label}
+      {input}
+      {f.help && <p className="text-xs text-muted-foreground">{f.help}</p>}
+    </div>
   );
 }

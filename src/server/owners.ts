@@ -4,12 +4,14 @@ import { all, get, nowIso, run, uid } from "./db";
 import { audit, WorkflowError } from "./workflow";
 import { notify, usersWithRole } from "./notifications";
 import { positionsOf } from "./departments";
+import { ensureDeptConfigs } from "./dept-config";
 import { can, type AppUser } from "./users";
 import { DEPARTMENT_LABELS, DEPARTMENT_ROLES, DEPARTMENTS, STAGES, type Department } from "@/lib/domain";
 
 const n = (v: unknown) => Number(v ?? 0);
 
 export async function ownerStats() {
+  const configs = await ensureDeptConfigs();
   const today = nowIso().slice(0, 10);
   const monthStart = `${today.slice(0, 7)}-01`;
   const p = await get<Record<string, number>>(
@@ -43,18 +45,24 @@ export async function ownerStats() {
   const questions = await get<{ total: number; approved: number }>("SELECT COUNT(*) AS total, SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) AS approved FROM studio_questions");
   const cards = await get<{ c: number }>("SELECT COUNT(*) AS c FROM studio_cards c JOIN studio_resources r ON r.id = c.resource_id WHERE r.status = 'published'");
   const work = await all<{ dept: string; total: number; done: number; open: number; overdue: number }>(
-    `SELECT dept, COUNT(*) AS total, SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) AS done,
-       SUM(CASE WHEN status IN ('backlog','todo','in_progress','review') THEN 1 ELSE 0 END) AS open,
-       SUM(CASE WHEN status IN ('backlog','todo','in_progress','review') AND due_date < ? THEN 1 ELSE 0 END) AS overdue
-     FROM dept_tasks WHERE status <> 'cancelled' GROUP BY dept`,
+    `SELECT dept, COUNT(*) AS total, SUM(CASE WHEN status_category = 'done' THEN 1 ELSE 0 END) AS done,
+       SUM(CASE WHEN status_category IN ('open','active','review') THEN 1 ELSE 0 END) AS open,
+       SUM(CASE WHEN status_category IN ('open','active','review') AND due_date < ? THEN 1 ELSE 0 END) AS overdue
+     FROM dept_tasks WHERE status_category <> 'cancelled' GROUP BY dept`,
     today,
   );
   const projects = await all<{ dept: string; name: string; key: string; status: string; due_date: string | null; total: number; done: number }>(
     `SELECT p.dept, p.name, p.key, p.status, p.due_date,
-       (SELECT COUNT(*) FROM dept_tasks t WHERE t.project_id = p.id AND t.status <> 'cancelled') AS total,
-       (SELECT COUNT(*) FROM dept_tasks t WHERE t.project_id = p.id AND t.status = 'done') AS done
-     FROM dept_projects p WHERE p.archived = 0 AND p.status IN ('planning','active','on_hold') ORDER BY p.dept, p.due_date`,
+       (SELECT COUNT(*) FROM dept_tasks t WHERE t.project_id = p.id AND t.status_category <> 'cancelled') AS total,
+       (SELECT COUNT(*) FROM dept_tasks t WHERE t.project_id = p.id AND t.status_category = 'done') AS done
+     FROM dept_projects p WHERE p.archived = 0 ORDER BY p.dept, p.due_date`,
   );
+  // Live projects: a status whose category is not done or cancelled, per the department's configuration.
+  const isLive = (dept: string, status: string) => {
+    const c = configs[dept as keyof typeof configs];
+    const st = c?.projectStatuses.find((x) => x.key === status);
+    return !st || (st.category !== "done" && st.category !== "cancelled");
+  };
   const kpis = await all<{ metric: string; total: number }>(
     "SELECT m.metric, SUM(m.value) AS total FROM dept_metrics m JOIN dept_projects p ON p.id = m.project_id WHERE p.dept = 'marketing' AND m.recorded_on >= ? GROUP BY m.metric",
     monthStart,
@@ -99,8 +107,10 @@ export async function ownerStats() {
       const w = work.find((x) => x.dept === d);
       return { dept: d, total: n(w?.total), done: n(w?.done), open: n(w?.open), overdue: n(w?.overdue) };
     }),
-    projects: projects.map((x) => ({ ...x, total: n(x.total), done: n(x.done) })),
-    kpis: kpis.map((k) => ({ metric: k.metric, total: n(k.total) })),
+    projects: projects.filter((x) => isLive(x.dept, x.status)).map((x) => ({ ...x, total: n(x.total), done: n(x.done) })),
+    kpis: kpis.map((k) => ({ metric: k.metric, label: configs.marketing.kpis.find((m) => m.key === k.metric)?.label ?? k.metric, total: n(k.total) })),
+    // Names as each department calls them (Configure tab).
+    names: Object.fromEntries(Object.entries(configs).map(([d, c]) => [d, { title: c.title, projects: c.names.projects }])) as Record<string, { title: string; projects: string }>,
     people,
     users: { total: n(activeUsers?.total), activeWeek: n(activeUsers?.recent) },
   };
@@ -234,6 +244,7 @@ export async function deleteReport(user: AppUser, id: string) {
 export async function reportFacts(user: AppUser, department: Department, from: string, to: string) {
   const mine = await reportDepartments(user);
   if (!mine.includes(department)) throw new WorkflowError("FORBIDDEN", "Not your department.");
+  if (department === "dev" || department === "marketing") await ensureDeptConfigs();
   const end = `${to}T23:59:59.999Z`;
   if (department === "production") {
     const r = await get<{ published: number; recorded: number; edited: number; uploaded: number }>(
@@ -254,7 +265,7 @@ export async function reportFacts(user: AppUser, department: Department, from: s
   const t = await get<{ done: number; created: number; overdue: number }>(
     `SELECT SUM(CASE WHEN completed_at >= ? AND completed_at <= ? THEN 1 ELSE 0 END) AS done,
        SUM(CASE WHEN created_at >= ? AND created_at <= ? THEN 1 ELSE 0 END) AS created,
-       SUM(CASE WHEN status IN ('backlog','todo','in_progress','review') AND due_date < ? THEN 1 ELSE 0 END) AS overdue FROM dept_tasks WHERE dept = ?`,
+       SUM(CASE WHEN status_category IN ('open','active','review') AND due_date < ? THEN 1 ELSE 0 END) AS overdue FROM dept_tasks WHERE dept = ?`,
     from, end, from, end, to, department,
   );
   return `${n(t?.done)} tasks done, ${n(t?.created)} new tasks, ${n(t?.overdue)} overdue at the end of the period.`;

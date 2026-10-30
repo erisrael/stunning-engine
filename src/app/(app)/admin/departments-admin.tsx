@@ -21,7 +21,7 @@ export function DepartmentsAdmin({ departments }: { departments: DeptRow[] }) {
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
         A department&apos;s people are those holding its roles (set in People). Heads and leads see and assign all of the department&apos;s work and write its reports for the owners; members see their
-        own work. Production keeps its stage team leads in Teams; its heads and leads here write the production report.
+        own work. What each position may do, and the statuses, types and fields of Dev and Marketing, are set in each section's Configure tab. Production keeps its stage team leads in Teams; its heads and leads here write the production report.
       </p>
       <div className="grid gap-4 lg:grid-cols-2">
         {departments.map((d) => (
@@ -30,9 +30,16 @@ export function DepartmentsAdmin({ departments }: { departments: DeptRow[] }) {
               <CardTitle className="flex items-center justify-between text-base">
                 {DEPARTMENT_LABELS[d.dept]}
                 {SECTION[d.dept] && (
-                  <Link href={SECTION[d.dept]!} className="text-xs font-normal text-primary hover:underline">
-                    Open section
-                  </Link>
+                  <span className="flex gap-3 text-xs font-normal">
+                    {(d.dept === "dev" || d.dept === "marketing") && (
+                      <Link href={`${SECTION[d.dept]}?tab=configure`} className="text-primary hover:underline">
+                        Configure
+                      </Link>
+                    )}
+                    <Link href={SECTION[d.dept]!} className="text-primary hover:underline">
+                      Open section
+                    </Link>
+                  </span>
                 )}
               </CardTitle>
               <CardDescription>Roles: {DEPARTMENT_ROLES[d.dept].map((r) => ROLE_LABELS[r]).join(", ")}</CardDescription>

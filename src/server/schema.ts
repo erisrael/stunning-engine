@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 9;
+export const SCHEMA_VERSION = 10;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -940,6 +940,31 @@ CREATE TABLE IF NOT EXISTS call_signals (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_call_signals ON call_signals(call_id, seq);
+
+-- v10: department configuration (statuses, types, fields, rights...) as data, with every saved version kept so an
+-- earlier one can be restored. Tasks store their status category (kept in step with the configuration) so counts
+-- survive renamed statuses, and their custom field values.
+CREATE TABLE IF NOT EXISTS dept_config (
+  dept TEXT PRIMARY KEY,
+  config TEXT NOT NULL,
+  version INTEGER NOT NULL,
+  updated_at TEXT NOT NULL,
+  updated_by TEXT
+);
+
+CREATE TABLE IF NOT EXISTS dept_config_versions (
+  dept TEXT NOT NULL,
+  version INTEGER NOT NULL,
+  config TEXT NOT NULL,
+  summary TEXT,
+  created_at TEXT NOT NULL,
+  created_by TEXT,
+  PRIMARY KEY (dept, version)
+);
+
+ALTER TABLE dept_tasks ADD COLUMN IF NOT EXISTS status_category TEXT NOT NULL DEFAULT 'open';
+ALTER TABLE dept_tasks ADD COLUMN IF NOT EXISTS fields TEXT NOT NULL DEFAULT '{}';
+CREATE INDEX IF NOT EXISTS idx_dept_tasks_category ON dept_tasks(dept, status_category);
 `;
 
 // Tables in dependency order; used to empty the workspace and to export or restore backups.
@@ -1011,4 +1036,6 @@ export const TABLES = [
   "studio_cards",
   "calls",
   "call_signals",
+  "dept_config",
+  "dept_config_versions",
 ] as const;

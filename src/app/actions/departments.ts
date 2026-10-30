@@ -4,6 +4,7 @@ import { requireViewer } from "@/server/auth";
 import { wrap } from "@/server/action-result";
 import { setPosition } from "@/server/departments";
 import * as work from "@/server/work";
+import * as cfg from "@/server/dept-config";
 import * as studio from "@/server/studio";
 import { deleteReport, reportFacts, saveReport, type ReportInput } from "@/server/owners";
 import type { Department, Position } from "@/lib/domain";
@@ -16,6 +17,19 @@ export async function setPositionAction(dept: Department, userId: string, positi
 }
 
 // --- Dev and Marketing ---
+
+export async function saveDeptConfigAction(dept: string, config: unknown, baseVersion: number) {
+  return wrap(async () => cfg.saveDeptConfig(await requireViewer(), dept, config, baseVersion));
+}
+export async function deptConfigVersionsAction(dept: string) {
+  return wrap(async () => cfg.configVersions(await requireViewer(), dept), { revalidate: false });
+}
+export async function restoreDeptConfigAction(dept: string, version: number) {
+  return wrap(async () => cfg.restoreDeptConfig(await requireViewer(), dept, version));
+}
+export async function deptConfigUsageAction(dept: string) {
+  return wrap(async () => cfg.configUsage(await requireViewer(), dept), { revalidate: false });
+}
 
 export async function saveProjectAction(dept: string, input: work.ProjectInput) {
   return wrap(async () => work.saveProject(await requireViewer(), dept, input));
