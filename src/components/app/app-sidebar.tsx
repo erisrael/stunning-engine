@@ -5,6 +5,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 import {
   ArrowLeftRightIcon,
   Building2Icon,
+  InboxIcon,
   BookOpenIcon,
   CodeIcon,
   CrownIcon,
@@ -64,8 +65,10 @@ export function AppSidebar({
   counts,
   workspaceName,
   reportsLink = false,
+  customDepts = [],
 }: {
   perms: Capability[];
+  customDepts?: { key: string; title: string }[];
   reportsLink?: boolean;
   activeRole: Role;
   counts: { myWork: number; notifications: number; questions: number; handoffs: number; corrections: number };
@@ -108,6 +111,8 @@ export function AppSidebar({
         { href: "/dev", label: "Dev team", icon: CodeIcon, cap: ["dev.access", "owners.view"] },
         { href: "/studio", label: "Studio", icon: BookOpenIcon, cap: ["studio.access", "owners.view"] },
         { href: "/marketing", label: "Marketing", icon: MegaphoneIcon, cap: ["marketing.access", "owners.view"] },
+        ...customDepts.map((d) => ({ href: `/d/${d.key}`, label: d.title, icon: Building2Icon })),
+        { href: "/requests", label: "Requests", icon: InboxIcon },
         { href: "/owners", label: "Owners", icon: CrownIcon, cap: "owners.view" },
         ...(reportsLink ? [{ href: "/owners?tab=reports", label: "Department reports", icon: FileTextIcon }] : []),
       ],

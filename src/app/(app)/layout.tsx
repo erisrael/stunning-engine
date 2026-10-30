@@ -13,6 +13,7 @@ import { isManager, userDirectory } from "@/server/users";
 import { ChatKeyBootstrap } from "./chat/secure";
 import { CallLayer } from "@/components/app/call-layer";
 import { reportDepartments } from "@/server/owners";
+import { myCustomDepartments } from "@/server/departments";
 import { can } from "@/server/users";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -30,7 +31,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     >
     <CallLayer>
     <SidebarProvider defaultOpen={sidebarCookie !== "false"}>
-      <AppSidebar reportsLink={!can(viewer, "owners.view") && (await reportDepartments(viewer)).length > 0} perms={viewer.perms} activeRole={viewer.activeRole} counts={counts} workspaceName={settings.workspace.name} />
+      <AppSidebar reportsLink={!can(viewer, "owners.view") && (await reportDepartments(viewer)).length > 0} customDepts={await myCustomDepartments(viewer)} perms={viewer.perms} activeRole={viewer.activeRole} counts={counts} workspaceName={settings.workspace.name} />
       <SidebarInset className="min-w-0">
         <Topbar user={{ name: viewer.name, email: viewer.email, roles: viewer.roles }} activeRole={viewer.activeRole} unread={counts.notifications} chatUnread={counts.chat} />
         {viewer.mustChangePassword && (

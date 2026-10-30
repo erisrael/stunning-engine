@@ -9,8 +9,11 @@ import type { WorkDept } from "@/lib/work";
 import { WorkClient } from "./work-client";
 import { DeptConfigure } from "./dept-configure";
 import { DeptDashboardView } from "./dept-dashboard-view";
+import { deptReport, listSprints, runningTimer, teamWorkload } from "@/server/work-extras";
+import { getSettings } from "@/server/settings";
+import { isPeriod } from "@/lib/dashboards";
 
-const TABS = ["dashboard", "board", "list", "sheet", "overview", "projects", "calendar", "configure"] as const;
+const TABS = ["dashboard", "board", "list", "sheet", "overview", "timeline", "team", "report", "projects", "calendar", "configure"] as const;
 const SORTS = ["updated", "due", "priority", "code", "title", "status"] as const;
 
 // The Dev and Marketing sections share this page; their vocabulary, workflow and rights come from the configuration.
@@ -23,6 +26,9 @@ export async function WorkPage({ dept, searchParams }: { dept: WorkDept; searchP
   // The dashboard is the landing tab; a link to a task opens the board with it.
   let tab = (TABS as readonly string[]).includes(sp.tab ?? "") ? (sp.tab as (typeof TABS)[number]) : sp.task ? "board" : "dashboard";
   if (tab === "configure" && !access.rights.configure) tab = "board";
+  if (tab === "team" && !access.rights.seeAll) tab = "board";
+  const period = isPeriod(sp.period) ? sp.period : "30d";
+  const [sprints, timer] = await Promise.all([cfg.features.sprints ? listSprints(viewer, dept) : Promise.resolve([]), runningTimer(viewer)]);
   const header = (
     <PageHeader
       title={cfg.title}
@@ -33,7 +39,7 @@ export async function WorkPage({ dept, searchParams }: { dept: WorkDept; searchP
     return (
       <div className="space-y-4">
         {header}
-        <DeptConfigure dept={dept} config={cfg} version={cfg.version} />
+        <DeptConfigure dept={dept} config={cfg} version={cfg.version} people={(await deptPeople(dept)).map((p) => ({ id: p.id, name: p.name }))} />
       </div>
     );
   if (tab === "dashboard") {
@@ -53,6 +59,8 @@ export async function WorkPage({ dept, searchParams }: { dept: WorkDept; searchP
           viewerId={viewer.id}
           openTaskId={null}
           showArchived={false}
+          sprints={sprints}
+          timer={timer}
           dashboard={<DeptDashboardView viewer={viewer} dept={dept} sp={sp} />}
         />
       </div>
@@ -68,12 +76,22 @@ export async function WorkPage({ dept, searchParams }: { dept: WorkDept; searchP
     type: sp.type ?? null,
     priority: sp.priority ?? null,
     due: sp.due === "overdue" || sp.due === "week" || sp.due === "none" ? sp.due : null,
+    sprint: sp.sprint ?? null,
+    request: sp.request === "pending" ? "pending" : null,
     sort: (SORTS as readonly string[]).includes(sp.sort ?? "") ? (sp.sort as TaskFilter["sort"]) : tab === "board" ? undefined : "updated",
     dir: sp.dir === "asc" ? "asc" : "desc",
   };
-  // The board orders cards by their position, so it ignores the list sort.
-  const { tasks } = await listTasks(viewer, dept, tab === "board" ? { ...filter, sort: "status", dir: "asc" } : filter);
-  const [projects, people, views] = await Promise.all([listProjects(viewer, dept, { archived: sp.archived === "1" }), deptPeople(dept), deptViews(viewer, dept)]);
+  // The board orders cards by their position, so it ignores the list sort. Team and Report load their own data.
+  const ownData = tab === "team" || tab === "report";
+  const [{ tasks }, projects, people, views, team, report, settings] = await Promise.all([
+    ownData ? Promise.resolve({ tasks: [] }) : listTasks(viewer, dept, tab === "board" ? { ...filter, sort: "status", dir: "asc" } : filter),
+    listProjects(viewer, dept, { archived: sp.archived === "1" }),
+    deptPeople(dept),
+    deptViews(viewer, dept),
+    tab === "team" ? teamWorkload(viewer, dept, period) : Promise.resolve(null),
+    tab === "report" ? deptReport(viewer, dept, period) : Promise.resolve(null),
+    getSettings(),
+  ]);
   return (
     <div className="space-y-4">
       {header}
@@ -90,6 +108,12 @@ export async function WorkPage({ dept, searchParams }: { dept: WorkDept; searchP
         openTaskId={sp.task ?? null}
         showArchived={sp.archived === "1"}
         views={views}
+        sprints={sprints}
+        timer={timer}
+        team={team}
+        report={report}
+        period={period}
+        workspace={settings.workspace.name}
       />
     </div>
   );

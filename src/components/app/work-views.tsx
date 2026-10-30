@@ -346,8 +346,9 @@ export function ViewOptions({ dept, tab, config: cfg, access, views, people, pro
   );
 }
 
-function SavedViews({ dept, views, canShare, canDeleteShared }: { dept: WorkDept; views: DeptView[]; canShare: boolean; canDeleteShared: boolean }) {
+export function SavedViews({ dept, views, canShare, canDeleteShared }: { dept: WorkDept; views: DeptView[]; canShare: boolean; canDeleteShared: boolean }) {
   const router = useRouter();
+  const pathname = usePathname();
   const params = useSearchParams();
   const [list, setList] = React.useState(views);
   const [saving, setSaving] = React.useState(false);
@@ -371,7 +372,7 @@ function SavedViews({ dept, views, canShare, canDeleteShared }: { dept: WorkDept
         <DropdownMenuContent align="start" className="w-64">
           {list.length > 0 && <DropdownMenuLabel>Saved views</DropdownMenuLabel>}
           {list.map((v) => (
-            <DropdownMenuItem key={v.id} onClick={() => router.push(`/${dept}?${v.query}`)} className="flex items-center gap-2">
+            <DropdownMenuItem key={v.id} onClick={() => router.push(`${pathname}?${v.query}`)} className="flex items-center gap-2">
               <span className="min-w-0 flex-1 truncate">{v.name}</span>
               {v.shared && <span className="text-[10px] text-muted-foreground">shared</span>}
               {(v.mine || canDeleteShared) && (
@@ -463,6 +464,19 @@ function TaskCard({ t, config, people, parts, onOpen, draggable, onDragStart }: 
         )}
       </div>
       <p className="mt-0.5 line-clamp-2 font-medium">{t.title}</p>
+      {(t.request_state === "pending" || t.subtasks_total > 0 || t.blocked_by.length > 0 || t.parent_code || t.recur) && (
+        <div className="mt-1 flex flex-wrap gap-1 text-[10px]">
+          {t.request_state === "pending" && <span className="rounded bg-amber-500/15 px-1 text-amber-700 dark:text-amber-400">Request from {t.requested_by_name ?? "someone"}</span>}
+          {t.parent_code && <span className="rounded bg-muted px-1">in {t.parent_code}</span>}
+          {t.subtasks_total > 0 && (
+            <span className="rounded bg-muted px-1">
+              {t.subtasks_done}/{t.subtasks_total} subtasks
+            </span>
+          )}
+          {t.blocked_by.length > 0 && <span className="rounded bg-red-500/10 px-1 text-red-700 dark:text-red-400">waits for {t.blocked_by.length}</span>}
+          {t.recur && <span className="rounded bg-muted px-1">repeats</span>}
+        </div>
+      )}
       {has("project") && t.project_key && <p className="truncate text-[11px] text-muted-foreground">{`${t.project_key} ${t.project_name}`}</p>}
       {fields.length > 0 && (
         <dl className="mt-1 space-y-0.5 text-[11px]">

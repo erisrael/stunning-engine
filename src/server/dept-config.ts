@@ -5,14 +5,21 @@
 
 import { all, get, nowIso, parseJson, placeholders, run, tx } from "./db";
 import { audit, WorkflowError } from "./workflow";
-import { deptAccess, type DeptAccess } from "./departments";
+import { createDepartmentRow, customDepartment, customDepartments, deptAccess, type DeptAccess } from "./departments";
 import { can, type AppUser } from "./users";
-import { ADMIN_RIGHTS, NO_RIGHTS, READ_RIGHTS, defaultConfig, normalizeConfig, type DeptConfig, type Rights } from "@/lib/dept-config";
-import { WORK_DEPTS, type WorkDept } from "@/lib/work";
+import { ADMIN_RIGHTS, NO_RIGHTS, READ_RIGHTS, defaultConfig, deptTemplateConfig, normalizeConfig, type DeptConfig, type Rights } from "@/lib/dept-config";
+import { WORK_DEPTS, isBuiltInWorkDept, type WorkDept } from "@/lib/work";
 
-export function workDept(d: string): WorkDept {
-  if (!(WORK_DEPTS as readonly string[]).includes(d)) throw new WorkflowError("VALIDATION", "Unknown department.");
-  return d as WorkDept;
+// A work department's key: Dev, Marketing, or a department created in Admin.
+export async function workDept(d: string): Promise<WorkDept> {
+  if (isBuiltInWorkDept(d)) return d;
+  if (typeof d === "string" && (await customDepartment(d))) return d;
+  throw new WorkflowError("VALIDATION", "Unknown department.");
+}
+
+// Every work department: the built-in ones, then those created in Admin (not archived).
+export async function allWorkDepts(): Promise<WorkDept[]> {
+  return [...WORK_DEPTS, ...(await customDepartments()).map((d) => d.key)];
 }
 
 // Keeps every task's stored category in step with its status's category.
@@ -28,7 +35,7 @@ async function syncCategories(dept: WorkDept, cfg: DeptConfig) {
 const cache = new Map<WorkDept, { version: number; config: DeptConfig }>();
 
 export async function getDeptConfig(d: string): Promise<DeptConfig & { version: number }> {
-  const dept = workDept(d);
+  const dept = await workDept(d);
   const row = await get<{ config: string; version: number }>("SELECT config, version FROM dept_config WHERE dept = ?", dept);
   if (row) {
     const v = Number(row.version);
@@ -43,7 +50,8 @@ export async function getDeptConfig(d: string): Promise<DeptConfig & { version: 
     cache.set(dept, { version: v, config });
     return { ...config, version: v };
   }
-  const config = defaultConfig(dept);
+  const custom = isBuiltInWorkDept(dept) ? null : await customDepartment(dept);
+  const config = custom ? deptTemplateConfig(custom.template, custom.title, dept.replace(/[^a-z0-9]/g, "").toUpperCase().slice(0, 4) || "TASK") : defaultConfig(dept);
   const now = nowIso();
   await tx(async () => {
     await run("INSERT INTO dept_config (dept, config, version, updated_at) VALUES (?, ?, 1, ?) ON CONFLICT (dept) DO NOTHING", dept, JSON.stringify(config), now);
@@ -55,14 +63,23 @@ export async function getDeptConfig(d: string): Promise<DeptConfig & { version: 
 
 // Makes sure both work departments have a configuration (and categorised tasks) before reports count them.
 export async function ensureDeptConfigs() {
-  return Object.fromEntries(await Promise.all(WORK_DEPTS.map(async (d) => [d, await getDeptConfig(d)] as const))) as Record<WorkDept, DeptConfig & { version: number }>;
+  const keys = await allWorkDepts();
+  return Object.fromEntries(await Promise.all(keys.map(async (d) => [d, await getDeptConfig(d)] as const))) as Record<string, DeptConfig & { version: number }>;
+}
+
+// A new department from a template (Admin): its row, then its configuration as version 1.
+export async function createDepartment(user: AppUser, input: { key: string; title: string; template: string }) {
+  const d = await createDepartmentRow(user, input);
+  const cfg = await getDeptConfig(d.key);
+  await audit({ actor: user }, { action: "department.create", summary: `${user.name} created the ${d.title} department from the ${input.template} template` });
+  return { key: d.key, title: cfg.title };
 }
 
 export type WorkAccess = DeptAccess & { rights: Rights; config: DeptConfig & { version: number } };
 
 // What this person may do in the department: Admin everything, owners read, others by their position.
 export async function workAccess(user: AppUser, d: string, need: "view" | "write" = "view"): Promise<WorkAccess> {
-  const dept = workDept(d);
+  const dept = await workDept(d);
   const a = await deptAccess(user, dept);
   if (!a.view) throw new WorkflowError("FORBIDDEN", "You do not have access to this department.");
   if (need === "write" && a.readOnly) throw new WorkflowError("FORBIDDEN", "This department is read only for you.");
@@ -128,7 +145,7 @@ async function checkRemovals(dept: WorkDept, old: DeptConfig, next: DeptConfig) 
 export async function saveDeptConfig(user: AppUser, d: string, raw: unknown, baseVersion: number, summary?: string) {
   const w = await workAccess(user, d, "write");
   need(w, "configure", "Only people with the right to configure this department can change it.");
-  const dept = workDept(d);
+  const dept = await workDept(d);
   let next: DeptConfig;
   try {
     next = normalizeConfig(raw, dept);
@@ -160,14 +177,14 @@ export async function configVersions(user: AppUser, d: string) {
   return (
     await all<{ version: number; summary: string | null; created_at: string; created_by_name: string | null }>(
       "SELECT v.version, v.summary, v.created_at, u.name AS created_by_name FROM dept_config_versions v LEFT JOIN users u ON u.id = v.created_by WHERE v.dept = ? ORDER BY v.version DESC LIMIT 100",
-      workDept(d),
+      await workDept(d),
     )
   ).map((r) => ({ ...r, version: Number(r.version) }));
 }
 
 // Restoring saves the earlier configuration as a new version (the history keeps everything).
 export async function restoreDeptConfig(user: AppUser, d: string, version: number) {
-  const dept = workDept(d);
+  const dept = await workDept(d);
   const row = await get<{ config: string }>("SELECT config FROM dept_config_versions WHERE dept = ? AND version = ?", dept, version);
   if (!row) throw new WorkflowError("NOT_FOUND", "That version was not found.");
   const current = await getDeptConfig(dept);
@@ -178,7 +195,7 @@ export async function restoreDeptConfig(user: AppUser, d: string, version: numbe
 export async function configUsage(user: AppUser, d: string) {
   const w = await workAccess(user, d);
   need(w, "configure", "Only people with the right to configure this department can see this.");
-  const dept = workDept(d);
+  const dept = await workDept(d);
   const count = async (sql: string) => Object.fromEntries((await all<{ k: string; c: number }>(sql, dept)).map((r) => [r.k, Number(r.c)]));
   return {
     statuses: await count("SELECT status AS k, COUNT(*) AS c FROM dept_tasks WHERE dept = ? GROUP BY status"),

@@ -7,7 +7,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowDownIcon, ArrowLeftIcon, ArrowUpIcon, DownloadIcon, HistoryIcon, Loader2Icon, PlusIcon, RotateCcwIcon, Trash2Icon, UploadIcon } from "lucide-react";
+import { ArrowDownIcon, ArrowLeftIcon, ArrowUpIcon, DownloadIcon, HistoryIcon, Loader2Icon, PlusIcon, RotateCcwIcon, Trash2Icon, UploadIcon, XIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -29,19 +29,24 @@ import {
   STATUS_CATEGORY_LABELS,
   colorAt,
   makeKey,
+  AUTOMATION_ACTIONS,
+  AUTOMATION_TRIGGERS,
+  type ChecklistLine,
+  type DeptAutomation,
+  type DeptTemplate,
   type DeptConfig,
   type DeptField,
   type FieldType,
   type StatusCategory,
 } from "@/lib/dept-config";
 import { POSITION_LABELS } from "@/lib/domain";
-import type { WorkDept } from "@/lib/work";
+import { deptPath, type WorkDept } from "@/lib/work";
 import { cn } from "@/lib/utils";
 
 type Usage = Record<"statuses" | "types" | "priorities" | "projectStatuses" | "kpis", Record<string, number>>;
 type Item = { key: string; label: string; active: boolean; color?: string };
 
-export function DeptConfigure({ dept, config, version }: { dept: WorkDept; config: DeptConfig; version: number }) {
+export function DeptConfigure({ dept, config, version, people = [] }: { dept: WorkDept; config: DeptConfig; version: number; people?: { id: string; name: string }[] }) {
   const router = useRouter();
   const [c, setC] = React.useState<DeptConfig>(config);
   const [busy, setBusy] = React.useState(false);
@@ -89,7 +94,7 @@ export function DeptConfigure({ dept, config, version }: { dept: WorkDept; confi
   return (
     <div className="space-y-3 pb-20">
       <div className="flex flex-wrap items-center gap-2">
-        <Button size="sm" variant="ghost" onClick={() => router.push(`/${dept}`)}>
+        <Button size="sm" variant="ghost" onClick={() => router.push(deptPath(dept))}>
           <ArrowLeftIcon /> Back to {c.names.tasks.toLowerCase()}
         </Button>
         <span className="text-sm text-muted-foreground">Configuration, version {version}</span>
@@ -111,6 +116,10 @@ export function DeptConfigure({ dept, config, version }: { dept: WorkDept; confi
           <TabsTrigger value="types">Types</TabsTrigger>
           <TabsTrigger value="priorities">Priorities and labels</TabsTrigger>
           <TabsTrigger value="fields">Fields</TabsTrigger>
+          <TabsTrigger value="checklists">Checklists</TabsTrigger>
+          <TabsTrigger value="templates">Templates</TabsTrigger>
+          <TabsTrigger value="automations">Automations</TabsTrigger>
+          <TabsTrigger value="requests">Requests</TabsTrigger>
           <TabsTrigger value="projects">{c.names.projects}</TabsTrigger>
           <TabsTrigger value="rights">Rights</TabsTrigger>
           <TabsTrigger value="notify">Notifications</TabsTrigger>
@@ -216,7 +225,7 @@ export function DeptConfigure({ dept, config, version }: { dept: WorkDept; confi
               <CardDescription>For example Bug and Feature, or Social post and Design. Custom fields can be limited to some types (Fields tab).</CardDescription>
             </CardHeader>
             <CardContent>
-              <ListEditor items={c.types} usage={usage?.types} onChange={(v) => set("types", v)} make={(label, key, i) => ({ key, label, color: colorAt(i), active: true })} />
+              <ListEditor items={c.types} usage={usage?.types} onChange={(v) => set("types", v)} make={(label, key, i) => ({ key, label, color: colorAt(i), active: true, checklist: [] })} />
             </CardContent>
           </Card>
         </TabsContent>
@@ -244,6 +253,22 @@ export function DeptConfigure({ dept, config, version }: { dept: WorkDept; confi
 
         <TabsContent value="fields">
           <FieldsEditor config={c} onChange={(v) => set("fields", v)} />
+        </TabsContent>
+
+        <TabsContent value="checklists">
+          <ChecklistsEditor config={c} onChange={(v) => set("types", v)} />
+        </TabsContent>
+
+        <TabsContent value="templates">
+          <TemplatesEditor config={c} onChange={(v) => set("templates", v)} />
+        </TabsContent>
+
+        <TabsContent value="automations">
+          <AutomationsEditor config={c} people={people} onChange={(v) => set("automations", v)} />
+        </TabsContent>
+
+        <TabsContent value="requests">
+          <IntakeEditor config={c} onChange={(intake, requests) => setC((x) => ({ ...x, intake, features: { ...x.features, requests } }))} />
         </TabsContent>
 
         <TabsContent value="projects" className="space-y-3">
@@ -692,6 +717,329 @@ function History({ dept, version, dirty }: { dept: WorkDept; version: number; di
             ))}
           </ul>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Checklists per type, templates, automations, requests
+// ---------------------------------------------------------------------------
+
+function LinesEditor({ lines, onChange, label }: { lines: ChecklistLine[]; onChange: (l: ChecklistLine[]) => void; label: string }) {
+  const [text, setText] = React.useState("");
+  return (
+    <div className="space-y-1.5">
+      <ul className="space-y-1">
+        {lines.map((l, i) => (
+          <li key={i} className="flex items-center gap-2 text-sm">
+            <Input value={l.text} aria-label={`${label} line ${i + 1}`} onChange={(e) => onChange(lines.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)))} className="h-8 flex-1" />
+            <label className="flex items-center gap-1 text-xs whitespace-nowrap">
+              <Switch checked={l.verify} onCheckedChange={(v) => onChange(lines.map((x, j) => (j === i ? { ...x, verify: v } : x)))} /> Lead verifies
+            </label>
+            <Button size="icon-xs" variant="ghost" className="text-destructive" aria-label={`Remove line ${i + 1}`} onClick={() => onChange(lines.filter((_, j) => j !== i))}>
+              <Trash2Icon />
+            </Button>
+          </li>
+        ))}
+      </ul>
+      <form
+        className="flex gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!text.trim()) return;
+          onChange([...lines, { text: text.trim(), verify: false }]);
+          setText("");
+        }}
+      >
+        <Input value={text} onChange={(e) => setText(e.target.value)} placeholder="New checklist line" aria-label={`New ${label} line`} className="h-8 w-72" />
+        <Button size="sm" variant="outline" type="submit" disabled={!text.trim()}>
+          <PlusIcon /> Add
+        </Button>
+      </form>
+    </div>
+  );
+}
+
+function ChecklistsEditor({ config: c, onChange }: { config: DeptConfig; onChange: (types: DeptConfig["types"]) => void }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Checklists</CardTitle>
+        <CardDescription>
+          Lines copied onto each new {c.names.task.toLowerCase()} of a type. Every line must be ticked before it is done; lines a lead verifies need a lead or the reviewer too.
+          {!c.features.checklists && " Switch on Checklists in General, Features to use them."}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {c.types
+          .filter((t) => t.active)
+          .map((t) => (
+            <section key={t.key} className="space-y-1.5 rounded-lg border p-3">
+              <h3 className="flex items-center gap-2 text-sm font-semibold">
+                <span className="size-2.5 rounded-full" style={{ background: t.color }} /> {t.label}
+              </h3>
+              <LinesEditor label={t.label} lines={t.checklist} onChange={(lines) => onChange(c.types.map((x) => (x.key === t.key ? { ...x, checklist: lines } : x)))} />
+            </section>
+          ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+function TemplatesEditor({ config: c, onChange }: { config: DeptConfig; onChange: (t: DeptTemplate[]) => void }) {
+  const [label, setLabel] = React.useState("");
+  const patch = (i: number, p: Partial<DeptTemplate>) => onChange(c.templates.map((x, j) => (j === i ? { ...x, ...p } : x)));
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">{c.names.task} templates</CardTitle>
+        <CardDescription>
+          Ready-made {c.names.tasks.toLowerCase()} to start from (in the New {c.names.task.toLowerCase()} form): title, details, type, priority, estimate, checklist and subtasks.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {c.templates.map((t, i) => (
+          <div key={t.key} className="space-y-2 rounded-lg border p-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <Input aria-label="Template name" value={t.label} onChange={(e) => patch(i, { label: e.target.value })} className="h-8 w-56 font-medium" />
+              <Select value={t.type} onValueChange={(v) => patch(i, { type: v })}>
+                <SelectTrigger size="sm" className="h-8 w-40 text-xs" aria-label="Type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {c.types.map((x) => (
+                    <SelectItem key={x.key} value={x.key}>
+                      {x.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={t.priority} onValueChange={(v) => patch(i, { priority: v })}>
+                <SelectTrigger size="sm" className="h-8 w-32 text-xs" aria-label="Priority">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {c.priorities.map((x) => (
+                    <SelectItem key={x.key} value={x.key}>
+                      {x.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Input type="number" min={0} step="0.5" aria-label="Estimate (hours)" placeholder="Estimate h" value={t.estimate ?? ""} onChange={(e) => patch(i, { estimate: e.target.value ? Number(e.target.value) : null })} className="h-8 w-28 text-xs" />
+              <Button size="icon-xs" variant="ghost" className="ml-auto text-destructive" aria-label={`Remove ${t.label}`} onClick={() => onChange(c.templates.filter((_, j) => j !== i))}>
+                <Trash2Icon />
+              </Button>
+            </div>
+            <Input aria-label="Title" placeholder="Title of new tasks (optional)" value={t.title} onChange={(e) => patch(i, { title: e.target.value })} className="h-8" />
+            <Textarea aria-label="Details" rows={2} placeholder="Details" value={t.description} onChange={(e) => patch(i, { description: e.target.value })} />
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1">
+                <Label className="text-xs">Subtasks (one per line)</Label>
+                <Textarea rows={3} value={t.subtasks.join("\n")} onChange={(e) => patch(i, { subtasks: e.target.value.split("\n") })} onBlur={() => patch(i, { subtasks: t.subtasks.map((x) => x.trim()).filter(Boolean) })} />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Checklist</Label>
+                <LinesEditor label={t.label} lines={t.checklist} onChange={(lines) => patch(i, { checklist: lines })} />
+              </div>
+            </div>
+          </div>
+        ))}
+        <form
+          className="flex gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const l = label.trim();
+            if (!l) return;
+            const type = c.types.find((x) => x.active)!.key;
+            onChange([...c.templates, { key: makeKey(l, c.templates.map((x) => x.key)), label: l, title: "", description: "", type, priority: c.priorities.find((p) => p.key === "normal")?.key ?? c.priorities[0]!.key, estimate: null, checklist: [], subtasks: [] }]);
+            setLabel("");
+          }}
+        >
+          <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="New template name" aria-label="New template name" className="h-8 w-56" />
+          <Button size="sm" variant="outline" type="submit" disabled={!label.trim()}>
+            <PlusIcon /> Add template
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
+  );
+}
+
+function AutomationsEditor({ config: c, people, onChange }: { config: DeptConfig; people: { id: string; name: string }[]; onChange: (a: DeptAutomation[]) => void }) {
+  const [label, setLabel] = React.useState("");
+  const patch = (i: number, p: Partial<DeptAutomation>) => onChange(c.automations.map((x, j) => (j === i ? { ...x, ...p } : x)));
+  const valueOptions = (kind: string | null) =>
+    kind === "status" ? c.statuses.map((s) => ({ value: s.key, label: s.label })) : kind === "priority" ? c.priorities.map((s) => ({ value: s.key, label: s.label })) : kind === "person" ? people.map((p) => ({ value: p.id, label: p.name })) : [];
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Automations</CardTitle>
+        <CardDescription>Simple when-then rules. They run once for each event, and changes they make do not set off other automations. Each run is in the history.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {c.automations.map((a, i) => (
+          <div key={a.key} className={cn("space-y-2 rounded-lg border p-3", !a.active && "bg-muted/40")}>
+            <div className="flex flex-wrap items-center gap-2">
+              <Input aria-label="Rule name" value={a.label} onChange={(e) => patch(i, { label: e.target.value })} className="h-8 w-64 font-medium" />
+              <label className="ml-auto flex items-center gap-1 text-xs">
+                <Switch checked={a.active} onCheckedChange={(v) => patch(i, { active: v })} /> On
+              </label>
+              <Button size="icon-xs" variant="ghost" className="text-destructive" aria-label={`Remove ${a.label}`} onClick={() => onChange(c.automations.filter((_, j) => j !== i))}>
+                <Trash2Icon />
+              </Button>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <span className="text-muted-foreground">When</span>
+              <Select value={a.when} onValueChange={(v) => patch(i, { when: v as DeptAutomation["when"], status: v === "status" ? (a.status ?? c.statuses[0]!.key) : null })}>
+                <SelectTrigger size="sm" className="h-8 w-56 text-xs" aria-label="When">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {AUTOMATION_TRIGGERS.map((t) => (
+                    <SelectItem key={t.key} value={t.key}>
+                      {t.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {a.when === "status" && (
+                <Select value={a.status ?? ""} onValueChange={(v) => patch(i, { status: v })}>
+                  <SelectTrigger size="sm" className="h-8 w-40 text-xs" aria-label="Status">
+                    <SelectValue placeholder="Choose status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {c.statuses.map((s) => (
+                      <SelectItem key={s.key} value={s.key}>
+                        {s.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              <span className="text-muted-foreground">for</span>
+              <Select value={a.type ?? "any"} onValueChange={(v) => patch(i, { type: v === "any" ? null : v })}>
+                <SelectTrigger size="sm" className="h-8 w-40 text-xs" aria-label="Type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="any">any type</SelectItem>
+                  {c.types.map((t) => (
+                    <SelectItem key={t.key} value={t.key}>
+                      {t.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <ul className="space-y-1.5 pl-4">
+              {a.actions.map((act, k) => {
+                const def = AUTOMATION_ACTIONS.find((x) => x.key === act.do)!;
+                return (
+                  <li key={k} className="flex flex-wrap items-center gap-2 text-sm">
+                    <span className="text-muted-foreground">then</span>
+                    <Select value={act.do} onValueChange={(v) => patch(i, { actions: a.actions.map((x, j) => (j === k ? { do: v as typeof act.do, value: null } : x)) })}>
+                      <SelectTrigger size="sm" className="h-8 w-48 text-xs" aria-label="Action">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {AUTOMATION_ACTIONS.map((x) => (
+                          <SelectItem key={x.key} value={x.key}>
+                            {x.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {def.value === "number" && (
+                      <Input type="number" min={0} max={100} aria-label="Value" value={act.value ?? ""} onChange={(e) => patch(i, { actions: a.actions.map((x, j) => (j === k ? { ...x, value: e.target.value } : x)) })} className="h-8 w-24 text-xs" />
+                    )}
+                    {(def.value === "status" || def.value === "priority" || def.value === "person") && (
+                      <Select value={act.value ?? ""} onValueChange={(v) => patch(i, { actions: a.actions.map((x, j) => (j === k ? { ...x, value: v } : x)) })}>
+                        <SelectTrigger size="sm" className="h-8 w-44 text-xs" aria-label="Value">
+                          <SelectValue placeholder="Choose" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {valueOptions(def.value).map((o) => (
+                            <SelectItem key={o.value} value={o.value}>
+                              {o.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                    <Button size="icon-xs" variant="ghost" aria-label="Remove action" onClick={() => patch(i, { actions: a.actions.filter((_, j) => j !== k) })}>
+                      <XIcon />
+                    </Button>
+                  </li>
+                );
+              })}
+            </ul>
+            <Button size="xs" variant="ghost" onClick={() => patch(i, { actions: [...a.actions, { do: "notify_reporter", value: null }] })}>
+              <PlusIcon /> Add action
+            </Button>
+          </div>
+        ))}
+        <form
+          className="flex gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const l = label.trim();
+            if (!l) return;
+            const done = c.statuses.find((s) => s.category === "done")?.key ?? c.statuses[0]!.key;
+            onChange([...c.automations, { key: makeKey(l, c.automations.map((x) => x.key)), label: l, when: "status", status: done, type: null, actions: [{ do: "notify_reporter", value: null }], active: true }]);
+            setLabel("");
+          }}
+        >
+          <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="New rule, e.g. Tell the creator when done" aria-label="New rule name" className="h-8 w-80" />
+          <Button size="sm" variant="outline" type="submit" disabled={!label.trim()}>
+            <PlusIcon /> Add rule
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
+  );
+}
+
+function IntakeEditor({ config: c, onChange }: { config: DeptConfig; onChange: (i: DeptConfig["intake"], requests: boolean) => void }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Requests from other departments</CardTitle>
+        <CardDescription>
+          When on, anyone can ask this department for something on the Requests page. Requests land here waiting for a head or lead to accept (and assign) or decline them; the person who asked is
+          kept informed.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <label className="flex items-center gap-2 text-sm">
+          <Switch checked={c.features.requests} onCheckedChange={(v) => onChange(c.intake, v)} /> Take requests
+        </label>
+        <div className="space-y-1.5">
+          <Label>Types people may ask for (none ticked: all)</Label>
+          <div className="flex flex-wrap gap-1.5">
+            {c.types
+              .filter((t) => t.active)
+              .map((t) => {
+                const on = c.intake.types.includes(t.key);
+                return (
+                  <button
+                    key={t.key}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => onChange({ ...c.intake, types: on ? c.intake.types.filter((x) => x !== t.key) : [...c.intake.types, t.key] }, c.features.requests)}
+                    className={cn("rounded-full border px-2.5 py-0.5 text-xs", on ? "border-primary bg-primary text-primary-foreground" : "hover:bg-muted")}
+                  >
+                    {t.label}
+                  </button>
+                );
+              })}
+          </div>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="intake-intro">Note on the request form</Label>
+          <Textarea id="intake-intro" rows={2} value={c.intake.intro} onChange={(e) => onChange({ ...c.intake, intro: e.target.value }, c.features.requests)} placeholder="What to include in a request" />
+        </div>
       </CardContent>
     </Card>
   );

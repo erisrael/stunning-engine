@@ -96,7 +96,7 @@ The same app inside a small native app for Android and iPhone, so calls ring lik
 - **Desktop**: stays the installable web app (Add to Home Screen / Install); a desktop shell only if needed later
 - **Order**: 5a works in the browser first; 5b then adds native ringing on top of the same `calls` table
 
-## Phase 5c: Departments as complete as the workflow
+## Phase 5c: Departments as complete as the workflow (done)
 
 Goal: Dev, Marketing and Studio work as fully as the production workflow does, with a home dashboard, the same family of views (Overview, List, Sheet, Board, Calendar, Team, Reports), checklists, handoffs and saved views. And almost nothing should be fixed in code: each department is set up from Admin.
 
@@ -265,10 +265,29 @@ Studio keeps its content types (notes, exams, flash cards, question bank) and ga
      - Undo the last 20 changes.
    - **Overview**: a tree of project, milestone and task, with progress, done, overdue and estimated hours rolled up. Expand all or collapse all.
    - **Saved views**: the tab, filters, columns, grouping, swimlanes and card contents under a name. Views are private, or shared with the department by heads and leads.
-4. **Timeline, Team and workload, Reports**, then time tracking.
-5. **Checklists, reviews, requests between departments, subtasks and dependencies, automations, sprints.**
-6. **Studio on the same footing.**
-7. **New departments from templates.**
+4. **Timeline, Team and workload, Reports, time tracking** (done):
+   - **Timeline:** a Gantt of projects, milestones and tasks. Drag a bar to move it, or drag its edge to change the due date. Dependency arrows are drawn, and the critical path is outlined.
+   - **Team:** open estimated hours against weekly capacity (editable, 40 hours by default), due this week, overdue, logged this week and done. Leads move work between people here.
+   - **Report:** a printable report (save as PDF) and an Excel workbook for any period. The owners' report facts for Dev, Marketing and created departments now include hours and project progress.
+   - **Time:** a timer on a task (one per person, with a running chip in the header) and manual time entries. Spent hours follow the entries.
+5. **Task depth** (done):
+   - **Checklists:** per type, with lines a lead verifies. A task cannot be done with unticked or unverified lines.
+   - **Review step:** a reviewer must be chosen before In review. Only the reviewer or a lead approves the task or sends it back with a note.
+   - **Subtasks:** one level deep. The parent can't be done before them, and its progress follows them.
+   - **Dependencies:** "blocked by", with loops refused and blocked work kept from starting.
+   - **Task details:** watchers, @mentions in comments, file attachments (up to 8 MB) and the history of each task.
+   - **Recurring tasks:** daily to quarterly. The next one is created when the current one is done.
+   - **Task templates:** title, details, type, priority, estimate, checklist and subtasks.
+   - **Automations:** when created, moved to a status, or all subtasks done, then assign, set priority or status or progress, or notify.
+   - **Sprints:** one active at a time, with a "current sprint" filter.
+   - **Requests between departments:** a Requests page for everyone. A head or lead accepts (and assigns) or declines with a reason, and the person who asked is told.
+6. **Studio on the same footing** (done):
+   - Work gets an assignee and a due date.
+   - A Board follows the review flow (drag to submit, approve, publish or send back with a note). There is also a Calendar, a Team view and saved views.
+   - Configure (Studio heads and Admin) sets a review checklist, copied on submission. It can be required before approving and publishing.
+7. **New departments from templates** (done):
+   - Admin creates a department in Admin, Departments: Support, Sales, Operations, HR, Finance or Blank. Each template brings its statuses, types, fields, KPIs, automations and request settings.
+   - People are added with a position. The department lives at `/d/<key>` with every view, appears in the sidebar, the Company overview, owners' reports and requests, and can be archived and restored.
 
 Each step ships on its own and keeps today's screens working until its replacement is ready.
 

@@ -2,18 +2,20 @@
 
 import { requireViewer } from "@/server/auth";
 import { wrap } from "@/server/action-result";
-import { setPosition } from "@/server/departments";
+import { setDepartmentArchived, setPosition } from "@/server/departments";
+import * as extras from "@/server/work-extras";
+import * as studioX from "@/server/studio-extras";
 import * as work from "@/server/work";
 import * as cfg from "@/server/dept-config";
 import * as dash from "@/server/dashboards";
 import * as studio from "@/server/studio";
 import { deleteReport, reportFacts, saveReport, type ReportInput } from "@/server/owners";
-import type { Department, Position } from "@/lib/domain";
+import type { Position } from "@/lib/domain";
 import type { ResourceType } from "@/lib/studio";
 
 // Every action checks department access and position on the server (see departments.ts).
 
-export async function setPositionAction(dept: Department, userId: string, position: Position) {
+export async function setPositionAction(dept: string, userId: string, position: Position | "remove") {
   return wrap(async () => setPosition(await requireViewer(), dept, userId, position));
 }
 
@@ -136,7 +138,7 @@ export async function saveReportAction(input: ReportInput) {
 export async function deleteReportAction(id: string) {
   return wrap(async () => deleteReport(await requireViewer(), id));
 }
-export async function reportFactsAction(department: Department, from: string, to: string) {
+export async function reportFactsAction(department: string, from: string, to: string) {
   return wrap(async () => reportFacts(await requireViewer(), department, from, to), { revalidate: false });
 }
 
@@ -148,4 +150,73 @@ export async function studioLessonsAction(unitId: string) {
     const { all } = await import("@/server/db");
     return all<{ id: string; number: number; title: string }>("SELECT id, number, title FROM lessons WHERE unit_id = ? ORDER BY number", unitId);
   }, { revalidate: false });
+}
+
+// --- Created departments ---
+
+export async function createDepartmentAction(input: { key: string; title: string; template: string }) {
+  return wrap(async () => cfg.createDepartment(await requireViewer(), input));
+}
+export async function archiveDepartmentAction(key: string, archived: boolean) {
+  return wrap(async () => setDepartmentArchived(await requireViewer(), key, archived));
+}
+
+// --- Task depth: review, details, watchers, files, time ---
+
+export async function getTaskAction(dept: string, id: string) {
+  return wrap(async () => work.getTask(await requireViewer(), dept, id), { revalidate: false });
+}
+export async function reviewTaskAction(dept: string, id: string, decision: "approve" | "send_back", note?: string | null) {
+  return wrap(async () => work.reviewTask(await requireViewer(), dept, id, decision, note));
+}
+export async function taskDetailsAction(dept: string, id: string) {
+  return wrap(async () => extras.taskDetails(await requireViewer(), dept, id), { revalidate: false });
+}
+export async function setWatchingAction(dept: string, id: string, on: boolean) {
+  return wrap(async () => extras.setWatching(await requireViewer(), dept, id, on), { revalidate: false });
+}
+export async function addTaskFileAction(dept: string, id: string, file: { name: string; mime: string; base64: string }) {
+  return wrap(async () => extras.addTaskFile(await requireViewer(), dept, id, file));
+}
+export async function deleteTaskFileAction(dept: string, fileId: string) {
+  return wrap(async () => extras.deleteTaskFile(await requireViewer(), dept, fileId));
+}
+export async function startTimerAction(dept: string, taskId: string) {
+  return wrap(async () => extras.startTimer(await requireViewer(), dept, taskId));
+}
+export async function stopTimerAction() {
+  return wrap(async () => extras.stopTimer(await requireViewer()));
+}
+export async function addTimeEntryAction(dept: string, taskId: string, input: { date: string; hours: number; note?: string | null }) {
+  return wrap(async () => extras.addTimeEntry(await requireViewer(), dept, taskId, input));
+}
+export async function deleteTimeEntryAction(dept: string, entryId: string) {
+  return wrap(async () => extras.deleteTimeEntry(await requireViewer(), dept, entryId));
+}
+
+// --- Sprints, capacity, requests ---
+
+export async function saveSprintAction(dept: string, input: Parameters<typeof extras.saveSprint>[2]) {
+  return wrap(async () => extras.saveSprint(await requireViewer(), dept, input));
+}
+export async function deleteSprintAction(dept: string, id: string) {
+  return wrap(async () => extras.deleteSprint(await requireViewer(), dept, id));
+}
+export async function setCapacityAction(dept: string, userId: string, hours: number) {
+  return wrap(async () => extras.setCapacity(await requireViewer(), dept, userId, hours));
+}
+export async function createRequestAction(dept: string, input: Parameters<typeof extras.createRequest>[2]) {
+  return wrap(async () => extras.createRequest(await requireViewer(), dept, input));
+}
+export async function decideRequestAction(dept: string, id: string, decision: "accept" | "decline", input: { assigneeId?: string | null; note?: string | null }) {
+  return wrap(async () => extras.decideRequest(await requireViewer(), dept, id, decision, input));
+}
+
+// --- Studio on the same footing ---
+
+export async function saveStudioConfigAction(input: Parameters<typeof studioX.saveStudioConfig>[1]) {
+  return wrap(async () => studioX.saveStudioConfig(await requireViewer(), input));
+}
+export async function setResourceChecklistAction(id: string, checklist: Parameters<typeof studioX.setResourceChecklist>[2]) {
+  return wrap(async () => studioX.setResourceChecklist(await requireViewer(), id, checklist));
 }

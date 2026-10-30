@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 11;
+export const SCHEMA_VERSION = 12;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -976,6 +976,89 @@ CREATE TABLE IF NOT EXISTS dept_dashboards (
   updated_by TEXT,
   PRIMARY KEY (dept, scope)
 );
+
+-- v12: departments created from templates (Support, Sales, ...); and task depth: subtasks, reviewer, checklist,
+-- recurrence, sprints, requests from other departments, dependencies, watchers, files, time entries, capacity.
+-- Studio work gains an assignee, a due date and a review checklist.
+CREATE TABLE IF NOT EXISTS departments (
+  key TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  template TEXT NOT NULL DEFAULT 'blank',
+  archived INTEGER NOT NULL DEFAULT 0,
+  sort INTEGER NOT NULL DEFAULT 0,
+  created_by TEXT,
+  created_at TEXT NOT NULL
+);
+
+ALTER TABLE dept_tasks ADD COLUMN IF NOT EXISTS parent_id TEXT;
+ALTER TABLE dept_tasks ADD COLUMN IF NOT EXISTS reviewer_id TEXT;
+ALTER TABLE dept_tasks ADD COLUMN IF NOT EXISTS checklist TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE dept_tasks ADD COLUMN IF NOT EXISTS recur TEXT;
+ALTER TABLE dept_tasks ADD COLUMN IF NOT EXISTS sprint_id TEXT;
+ALTER TABLE dept_tasks ADD COLUMN IF NOT EXISTS request_state TEXT;
+ALTER TABLE dept_tasks ADD COLUMN IF NOT EXISTS requested_by TEXT;
+CREATE INDEX IF NOT EXISTS idx_dept_tasks_parent ON dept_tasks(parent_id);
+CREATE INDEX IF NOT EXISTS idx_dept_tasks_requested ON dept_tasks(requested_by);
+
+CREATE TABLE IF NOT EXISTS dept_task_links (
+  task_id TEXT NOT NULL REFERENCES dept_tasks(id) ON DELETE CASCADE,
+  blocked_by TEXT NOT NULL REFERENCES dept_tasks(id) ON DELETE CASCADE,
+  PRIMARY KEY (task_id, blocked_by)
+);
+
+CREATE TABLE IF NOT EXISTS dept_task_watchers (
+  task_id TEXT NOT NULL REFERENCES dept_tasks(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  PRIMARY KEY (task_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS dept_task_files (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL REFERENCES dept_tasks(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  mime TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  data TEXT NOT NULL,
+  uploaded_by TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_dept_task_files ON dept_task_files(task_id);
+
+CREATE TABLE IF NOT EXISTS dept_time_entries (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL REFERENCES dept_tasks(id) ON DELETE CASCADE,
+  dept TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  started_at TEXT NOT NULL,
+  ended_at TEXT,
+  minutes INTEGER NOT NULL DEFAULT 0,
+  note TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_dept_time_task ON dept_time_entries(task_id);
+CREATE INDEX IF NOT EXISTS idx_dept_time_user ON dept_time_entries(user_id, started_at);
+
+CREATE TABLE IF NOT EXISTS dept_sprints (
+  id TEXT PRIMARY KEY,
+  dept TEXT NOT NULL,
+  name TEXT NOT NULL,
+  goal TEXT,
+  start_date TEXT,
+  end_date TEXT,
+  status TEXT NOT NULL DEFAULT 'planned',
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS dept_capacity (
+  dept TEXT NOT NULL,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  hours_per_week DOUBLE PRECISION NOT NULL,
+  PRIMARY KEY (dept, user_id)
+);
+
+ALTER TABLE studio_resources ADD COLUMN IF NOT EXISTS assignee_id TEXT;
+ALTER TABLE studio_resources ADD COLUMN IF NOT EXISTS due_date TEXT;
+ALTER TABLE studio_resources ADD COLUMN IF NOT EXISTS checklist TEXT NOT NULL DEFAULT '[]';
 `;
 
 // Tables in dependency order; used to empty the workspace and to export or restore backups.
@@ -1050,4 +1133,11 @@ export const TABLES = [
   "dept_config",
   "dept_config_versions",
   "dept_dashboards",
+  "departments",
+  "dept_task_links",
+  "dept_task_watchers",
+  "dept_task_files",
+  "dept_time_entries",
+  "dept_sprints",
+  "dept_capacity",
 ] as const;

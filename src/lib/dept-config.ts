@@ -4,7 +4,7 @@
 // Keys never change once created (tasks store them); labels, colours, order and on/off can change freely.
 // Dashboards and reports count by status category, so renaming or adding statuses keeps the numbers right.
 
-import { WORK_CONFIG, type WorkDept } from "./work";
+import { WORK_CONFIG, isBuiltInWorkDept, type WorkDept } from "./work";
 
 export const STATUS_CATEGORIES = ["open", "active", "review", "done", "cancelled"] as const;
 export type StatusCategory = (typeof STATUS_CATEGORIES)[number];
@@ -58,11 +58,41 @@ export const FEATURES = [
   { key: "startDate", label: "Start dates" },
   { key: "budget", label: "Project budget" },
   { key: "kpis", label: "KPIs and targets" },
+  { key: "checklists", label: "Checklists on tasks" },
+  { key: "review", label: "Review step (a reviewer approves or sends back)" },
+  { key: "subtasks", label: "Subtasks" },
+  { key: "dependencies", label: "Dependencies (blocked by)" },
+  { key: "timeTracking", label: "Time tracking (timer and time entries)" },
+  { key: "recurring", label: "Recurring tasks" },
+  { key: "attachments", label: "File attachments" },
+  { key: "sprints", label: "Sprints" },
+  { key: "requests", label: "Requests from other departments" },
 ] as const;
 export type Feature = (typeof FEATURES)[number]["key"];
 
 export type DeptStatus = { key: string; label: string; category: StatusCategory; color: string; limit: number | null; restricted: boolean; onBoard: boolean; active: boolean };
-export type DeptType = { key: string; label: string; color: string; active: boolean };
+export type ChecklistLine = { text: string; verify: boolean };
+// verify: a lead (someone who edits everyone's tasks) or the reviewer must check it too.
+export type DeptType = { key: string; label: string; color: string; active: boolean; checklist: ChecklistLine[] };
+export type DeptTemplate = { key: string; label: string; title: string; description: string; type: string; priority: string; estimate: number | null; checklist: ChecklistLine[]; subtasks: string[] };
+
+export const AUTOMATION_TRIGGERS = [
+  { key: "created", label: "A task is created" },
+  { key: "status", label: "A task moves to a status" },
+  { key: "subtasks_done", label: "All subtasks of a task are done" },
+] as const;
+export const AUTOMATION_ACTIONS = [
+  { key: "assign", label: "Assign to", value: "person" },
+  { key: "priority", label: "Set priority", value: "priority" },
+  { key: "status", label: "Move to status", value: "status" },
+  { key: "progress", label: "Set progress to (%)", value: "number" },
+  { key: "notify_reporter", label: "Notify the creator", value: null },
+  { key: "notify_assignee", label: "Notify the assignee", value: null },
+  { key: "notify_managers", label: "Notify heads and leads", value: null },
+] as const;
+export type AutomationTrigger = (typeof AUTOMATION_TRIGGERS)[number]["key"];
+export type AutomationAction = (typeof AUTOMATION_ACTIONS)[number]["key"];
+export type DeptAutomation = { key: string; label: string; when: AutomationTrigger; status: string | null; type: string | null; actions: { do: AutomationAction; value: string | null }[]; active: boolean };
 export type DeptPriority = { key: string; label: string; color: string; active: boolean };
 export type DeptProjectStatus = { key: string; label: string; category: ProjectCategory; active: boolean };
 export type DeptField = {
@@ -96,6 +126,10 @@ export type DeptConfig = {
   rights: Record<ConfigPosition, Rights>;
   features: Record<Feature, boolean>;
   notify: { assigned: boolean; statusToReporter: boolean; reviewToManagers: boolean; comments: boolean };
+  templates: DeptTemplate[];
+  automations: DeptAutomation[];
+  // Requests from other departments: which types people may ask for, and a note shown on the request form.
+  intake: { types: string[]; intro: string };
 };
 
 const PALETTE = ["#64748b", "#0ea5e9", "#7b68ee", "#f59e0b", "#22c55e", "#ef4444", "#ec4899", "#14b8a6", "#a855f7", "#f97316"];
@@ -103,8 +137,10 @@ export const colorAt = (i: number) => PALETTE[i % PALETTE.length]!;
 
 const ALL_RIGHTS: Rights = { seeAll: true, editAll: true, assign: true, deleteAll: true, projects: true, restricted: true, kpis: true, configure: true };
 
-// Today's fixed values, so nothing changes until someone edits the configuration.
+// Today's fixed values for Dev and Marketing, so nothing changes until someone edits the configuration. Other
+// departments start from a template (deptTemplateConfig) when they are created; this is only their fallback.
 export function defaultConfig(dept: WorkDept): DeptConfig {
+  if (!isBuiltInWorkDept(dept)) return deptTemplateConfig("blank", dept, dept.toUpperCase().slice(0, 4));
   const w = WORK_CONFIG[dept];
   const marketing = dept === "marketing";
   return {
@@ -120,7 +156,7 @@ export function defaultConfig(dept: WorkDept): DeptConfig {
       { key: "done", label: "Done", category: "done", color: "#22c55e", limit: null, restricted: false, onBoard: true, active: true },
       { key: "cancelled", label: "Cancelled", category: "cancelled", color: "#a1a1aa", limit: null, restricted: false, onBoard: false, active: true },
     ],
-    types: w.taskTypes.map((t, i) => ({ key: t.key, label: t.label, color: colorAt(i + 1), active: true })),
+    types: w.taskTypes.map((t, i) => ({ key: t.key, label: t.label, color: colorAt(i + 1), active: true, checklist: [] })),
     priorities: [
       { key: "urgent", label: "Urgent", color: "#ef4444", active: true },
       { key: "high", label: "High", color: "#f97316", active: true },
@@ -142,9 +178,177 @@ export function defaultConfig(dept: WorkDept): DeptConfig {
       lead: { ...ALL_RIGHTS, configure: false },
       member: { seeAll: false, editAll: false, assign: false, deleteAll: false, projects: false, restricted: true, kpis: true, configure: false },
     },
-    features: { milestones: true, estimates: true, timeSpent: true, progress: true, labels: true, startDate: true, budget: true, kpis: marketing },
+    features: { ...BASE_FEATURES, kpis: marketing },
     notify: { assigned: true, statusToReporter: false, reviewToManagers: false, comments: true },
+    templates: [],
+    automations: [],
+    intake: { types: [], intro: "" },
   };
+}
+
+const BASE_FEATURES: Record<Feature, boolean> = {
+  milestones: true,
+  estimates: true,
+  timeSpent: true,
+  progress: true,
+  labels: true,
+  startDate: true,
+  budget: true,
+  kpis: false,
+  checklists: true,
+  review: false,
+  subtasks: true,
+  dependencies: true,
+  timeTracking: true,
+  recurring: true,
+  attachments: true,
+  sprints: false,
+  requests: false,
+};
+
+// ---------------------------------------------------------------------------
+// Templates for new departments (Admin, Departments, New department)
+// ---------------------------------------------------------------------------
+
+export const DEPT_TEMPLATES = [
+  { key: "support", label: "Support", hint: "Tickets from customers or staff: triage, waiting on the customer, resolved" },
+  { key: "sales", label: "Sales", hint: "Leads and deals through a pipeline, with deal value and won or lost" },
+  { key: "operations", label: "Operations", hint: "Recurring and one-off jobs, purchases and facilities" },
+  { key: "hr", label: "HR", hint: "Hiring, onboarding and people requests (before the full HR module)" },
+  { key: "finance", label: "Finance", hint: "Payments, invoices and approvals (before the full Finance module)" },
+  { key: "blank", label: "Blank", hint: "A simple To do, In progress, Done board to shape yourself" },
+] as const;
+export type DeptTemplateKey = (typeof DEPT_TEMPLATES)[number]["key"];
+
+const st = (key: string, label: string, category: StatusCategory, color: string, extra: Partial<DeptStatus> = {}): DeptStatus => ({ key, label, category, color, limit: null, restricted: false, onBoard: category !== "cancelled", active: true, ...extra });
+const ty = (key: string, label: string, i: number, checklist: ChecklistLine[] = []): DeptType => ({ key, label, color: colorAt(i + 1), active: true, checklist });
+const fd = (key: string, label: string, type: FieldType, extra: Partial<DeptField> = {}): DeptField => ({ key, label, type, options: [], help: "", requiredFrom: null, types: [], onCard: false, inList: true, leadsOnly: false, active: true, ...extra });
+const kp = (key: string, label: string, unit = "", higherIsBetter = true): DeptKpi => ({ key, label, unit, higherIsBetter, active: true });
+
+export function deptTemplateConfig(template: string, title: string, codePrefix: string): DeptConfig {
+  const base: DeptConfig = {
+    title,
+    description: "",
+    names: { project: "Project", projects: "Projects", task: "Task", tasks: "Tasks", milestone: "Milestone" },
+    codePrefix,
+    statuses: [st("todo", "To do", "open", "#64748b"), st("in_progress", "In progress", "active", "#0ea5e9"), st("done", "Done", "done", "#22c55e"), st("cancelled", "Cancelled", "cancelled", "#a1a1aa")],
+    types: [ty("task", "Task", 0)],
+    priorities: [
+      { key: "urgent", label: "Urgent", color: "#ef4444", active: true },
+      { key: "high", label: "High", color: "#f97316", active: true },
+      { key: "normal", label: "Normal", color: "#0ea5e9", active: true },
+      { key: "low", label: "Low", color: "#94a3b8", active: true },
+    ],
+    labels: [],
+    projectStatuses: [
+      { key: "planning", label: "Planning", category: "planning", active: true },
+      { key: "active", label: "Active", category: "active", active: true },
+      { key: "on_hold", label: "On hold", category: "paused", active: true },
+      { key: "done", label: "Done", category: "done", active: true },
+      { key: "cancelled", label: "Cancelled", category: "cancelled", active: true },
+    ],
+    fields: [],
+    kpis: [],
+    rights: {
+      head: { ...ALL_RIGHTS },
+      lead: { ...ALL_RIGHTS, configure: false },
+      member: { seeAll: false, editAll: false, assign: false, deleteAll: false, projects: false, restricted: true, kpis: true, configure: false },
+    },
+    features: { ...BASE_FEATURES, budget: false },
+    notify: { assigned: true, statusToReporter: true, reviewToManagers: false, comments: true },
+    templates: [],
+    automations: [],
+    intake: { types: [], intro: "" },
+  };
+  switch (template) {
+    case "support":
+      return {
+        ...base,
+        description: "Tickets from customers and staff, from triage to resolved.",
+        names: { project: "Queue", projects: "Queues", task: "Ticket", tasks: "Tickets", milestone: "Milestone" },
+        statuses: [
+          st("new", "New", "open", "#94a3b8"),
+          st("triage", "Triage", "open", "#64748b"),
+          st("in_progress", "In progress", "active", "#0ea5e9"),
+          st("waiting", "Waiting on customer", "active", "#f59e0b"),
+          st("resolved", "Resolved", "done", "#22c55e"),
+          st("closed", "Closed", "cancelled", "#a1a1aa"),
+        ],
+        types: [ty("question", "Question", 0), ty("incident", "Incident", 1, [{ text: "Customer told the issue is fixed", verify: false }]), ty("request", "Request", 2)],
+        fields: [
+          fd("customer", "Customer", "text", { onCard: true }),
+          fd("channel", "Channel", "select", { options: ["Phone", "Telegram", "Email", "In person", "App"] }),
+          fd("satisfaction", "Satisfaction", "rating", { inList: false }),
+        ],
+        kpis: [kp("tickets", "Tickets resolved"), kp("first_response", "Hours to first response", "h", false)],
+        features: { ...base.features, milestones: false, budget: false, requests: true },
+        intake: { types: ["question", "incident", "request"], intro: "Describe the problem, who is affected and how to reach them." },
+        automations: [
+          { key: "urgent_incidents", label: "Incidents start as urgent", when: "created", status: null, type: "incident", actions: [{ do: "priority", value: "urgent" }, { do: "notify_managers", value: null }], active: true },
+          { key: "resolved_notify", label: "Tell the creator when resolved", when: "status", status: "resolved", type: null, actions: [{ do: "notify_reporter", value: null }], active: true },
+        ],
+      };
+    case "sales":
+      return {
+        ...base,
+        description: "Leads and deals through the pipeline.",
+        names: { project: "Campaign", projects: "Campaigns", task: "Deal", tasks: "Deals", milestone: "Milestone" },
+        statuses: [
+          st("lead", "Lead", "open", "#94a3b8"),
+          st("contacted", "Contacted", "active", "#0ea5e9"),
+          st("proposal", "Proposal", "active", "#7b68ee"),
+          st("negotiation", "Negotiation", "review", "#f59e0b"),
+          st("won", "Won", "done", "#22c55e"),
+          st("lost", "Lost", "cancelled", "#ef4444", { onBoard: true }),
+        ],
+        types: [ty("school", "School", 0), ty("parent", "Parent or student", 1), ty("partner", "Partner", 2)],
+        fields: [
+          fd("company", "Organisation", "text", { onCard: true }),
+          fd("contact", "Contact person", "text"),
+          fd("phone", "Phone", "text", { inList: false }),
+          fd("value", "Deal value", "money", { onCard: true, requiredFrom: "review" }),
+          fd("source", "Source", "select", { options: ["Referral", "Website", "Social media", "Event", "Cold call"] }),
+        ],
+        kpis: [kp("revenue", "Revenue won", "ETB"), kp("deals", "Deals won")],
+        features: { ...base.features, kpis: true, budget: true },
+      };
+    case "operations":
+      return {
+        ...base,
+        description: "Recurring and one-off jobs, purchases and facilities.",
+        names: { project: "Area", projects: "Areas", task: "Job", tasks: "Jobs", milestone: "Milestone" },
+        statuses: [st("todo", "To do", "open", "#64748b"), st("in_progress", "In progress", "active", "#0ea5e9"), st("waiting", "Waiting", "active", "#f59e0b"), st("done", "Done", "done", "#22c55e"), st("cancelled", "Cancelled", "cancelled", "#a1a1aa")],
+        types: [ty("job", "Job", 0), ty("purchase", "Purchase", 1, [{ text: "Quote attached", verify: false }, { text: "Approved", verify: true }]), ty("repair", "Repair", 2)],
+        fields: [fd("cost", "Cost", "money"), fd("supplier", "Supplier", "text")],
+        features: { ...base.features, requests: true },
+        intake: { types: ["job", "purchase", "repair"], intro: "What is needed, where, and by when." },
+      };
+    case "hr":
+      return {
+        ...base,
+        description: "Hiring, onboarding and people requests.",
+        names: { project: "Position", projects: "Positions", task: "Case", tasks: "Cases", milestone: "Stage" },
+        statuses: [st("new", "New", "open", "#94a3b8"), st("in_progress", "In progress", "active", "#0ea5e9"), st("approval", "Waiting for approval", "review", "#f59e0b"), st("done", "Done", "done", "#22c55e"), st("cancelled", "Cancelled", "cancelled", "#a1a1aa")],
+        types: [ty("hiring", "Hiring", 0), ty("onboarding", "Onboarding", 1, [{ text: "Accounts created", verify: false }, { text: "Equipment handed over", verify: false }, { text: "Contract signed", verify: true }]), ty("leave", "Leave request", 2), ty("other", "Other", 3)],
+        fields: [fd("person", "Employee", "person", { onCard: true })],
+        features: { ...base.features, review: true, requests: true },
+        rights: { ...base.rights, member: { ...base.rights.member, seeAll: false } },
+        intake: { types: ["leave", "other"], intro: "HR requests are seen only by HR." },
+      };
+    case "finance":
+      return {
+        ...base,
+        description: "Payments, invoices and approvals.",
+        names: { project: "Budget", projects: "Budgets", task: "Item", tasks: "Items", milestone: "Milestone" },
+        statuses: [st("submitted", "Submitted", "open", "#94a3b8"), st("checking", "Checking", "active", "#0ea5e9"), st("approval", "Waiting for approval", "review", "#f59e0b"), st("paid", "Paid", "done", "#22c55e"), st("rejected", "Rejected", "cancelled", "#ef4444", { onBoard: true })],
+        types: [ty("payment", "Payment", 0, [{ text: "Receipt or invoice attached", verify: false }]), ty("invoice", "Invoice", 1), ty("expense", "Expense claim", 2, [{ text: "Receipt attached", verify: false }])],
+        fields: [fd("amount", "Amount", "money", { onCard: true, requiredFrom: "open" }), fd("payee", "Payee", "text"), fd("reference", "Reference", "text", { inList: false })],
+        features: { ...base.features, review: true, requests: true, budget: true },
+        intake: { types: ["payment", "expense"], intro: "Attach the invoice or receipt." },
+      };
+    default:
+      return base;
+  }
 }
 
 export const ADMIN_RIGHTS: Rights = { ...ALL_RIGHTS };
@@ -205,7 +409,13 @@ export function normalizeConfig(raw: unknown, dept: WorkDept): DeptConfig {
   const live = statuses.filter((s) => s.active);
   if (!live.some((s) => s.category === "done")) throw new Error("Keep at least one status in the Done category switched on.");
   if (!live.some((s) => OPEN_CATEGORIES.includes(s.category))) throw new Error("Keep at least one status for unfinished work switched on.");
-  const types = list(r.types ?? d.types, "Task types", (t, i) => ({ key: str(t.key, 32), label: str(t.label, 40) || str(t.key, 32), color: color(t.color, colorAt(i)), active: bool(t.active, true) }));
+  const types = list(r.types ?? d.types, "Task types", (t, i) => ({
+    key: str(t.key, 32),
+    label: str(t.label, 40) || str(t.key, 32),
+    color: color(t.color, colorAt(i)),
+    active: bool(t.active, true),
+    checklist: lines(t.checklist),
+  }));
   if (!types.some((t) => t.active)) throw new Error("Keep at least one task type switched on.");
   const priorities = list(r.priorities ?? d.priorities, "Priorities", (p, i) => ({ key: str(p.key, 32), label: str(p.label, 40) || str(p.key, 32), color: color(p.color, colorAt(i)), active: bool(p.active, true) }));
   if (!priorities.some((p) => p.active)) throw new Error("Keep at least one priority switched on.");
@@ -244,6 +454,39 @@ export function normalizeConfig(raw: unknown, dept: WorkDept): DeptConfig {
   if (!rights.head.configure) throw new Error("Heads must keep the right to configure the department.");
   const ff = (r.features ?? {}) as Record<string, unknown>;
   const nn = (r.notify ?? {}) as Record<string, unknown>;
+  const statusKeys = statuses.map((x) => x.key);
+  const priorityKeys = priorities.map((x) => x.key);
+  const templates = list(r.templates ?? d.templates, "Templates", (t) => ({
+    key: str(t.key, 32),
+    label: str(t.label, 40) || str(t.key, 32),
+    title: str(t.title, 200),
+    description: typeof t.description === "string" ? t.description.slice(0, 4000) : "",
+    type: typeKeys.includes(t.type as string) ? (t.type as string) : typeKeys[0]!,
+    priority: priorityKeys.includes(t.priority as string) ? (t.priority as string) : (priorityKeys.includes("normal") ? "normal" : priorityKeys[0]!),
+    estimate: Number.isFinite(Number(t.estimate)) && Number(t.estimate) > 0 ? Number(t.estimate) : null,
+    checklist: lines(t.checklist),
+    subtasks: Array.isArray(t.subtasks) ? t.subtasks.map((x) => str(x, 200)).filter(Boolean).slice(0, 30) : [],
+  }));
+  const actionKeys = AUTOMATION_ACTIONS.map((x) => x.key) as string[];
+  const automations = list(r.automations ?? d.automations, "Automations", (a) => ({
+    key: str(a.key, 32),
+    label: str(a.label, 80) || "Automation",
+    when: (AUTOMATION_TRIGGERS.map((x) => x.key) as string[]).includes(a.when as string) ? (a.when as AutomationTrigger) : "status",
+    status: statusKeys.includes(a.status as string) ? (a.status as string) : null,
+    type: typeKeys.includes(a.type as string) ? (a.type as string) : null,
+    actions: (Array.isArray(a.actions) ? a.actions : [])
+      .filter((x): x is Record<string, unknown> => !!x && typeof x === "object" && actionKeys.includes((x as Record<string, unknown>).do as string))
+      .slice(0, 6)
+      .map((x) => ({ do: x.do as AutomationAction, value: x.value == null || x.value === "" ? null : str(x.value, 60) })),
+    active: bool(a.active, true),
+  }));
+  for (const a of automations) {
+    if (a.when === "status" && !a.status) throw new Error(`Automation "${a.label}": choose the status it reacts to.`);
+    if (!a.actions.length) throw new Error(`Automation "${a.label}": add at least one action.`);
+    const bad = a.actions.find((x) => (x.do === "status" && !statusKeys.includes(x.value ?? "")) || (x.do === "priority" && !priorityKeys.includes(x.value ?? "")) || (x.do === "assign" && !x.value));
+    if (bad) throw new Error(`Automation "${a.label}": choose a value for "${AUTOMATION_ACTIONS.find((x) => x.key === bad.do)!.label}".`);
+  }
+  const ii = (r.intake ?? {}) as Record<string, unknown>;
   const prefix = str(r.codePrefix, 8).toUpperCase() || d.codePrefix;
   if (!/^[A-Z][A-Z0-9]{1,7}$/.test(prefix)) throw new Error("The code prefix is 2 to 8 letters or digits, starting with a letter.");
   return {
@@ -272,8 +515,24 @@ export function normalizeConfig(raw: unknown, dept: WorkDept): DeptConfig {
       reviewToManagers: bool(nn.reviewToManagers, d.notify.reviewToManagers),
       comments: bool(nn.comments, d.notify.comments),
     },
+    templates,
+    automations,
+    intake: { types: Array.isArray(ii.types) ? ii.types.filter((t): t is string => typeof t === "string" && typeKeys.includes(t)) : [], intro: str(ii.intro, 300) },
   };
 }
+
+function lines(raw: unknown): ChecklistLine[] {
+  return Array.isArray(raw)
+    ? raw
+        .filter((x): x is Record<string, unknown> => !!x && typeof x === "object")
+        .map((x) => ({ text: str(x.text, 160), verify: bool(x.verify) }))
+        .filter((x) => x.text)
+        .slice(0, 30)
+    : [];
+}
+
+// A checklist line on a task.
+export type TaskCheck = { id: string; text: string; verify: boolean; done: boolean; doneBy: string | null; verifiedBy: string | null };
 
 // Lookups used by every view.
 export const statusOf = (c: DeptConfig, key: string) => c.statuses.find((s) => s.key === key);

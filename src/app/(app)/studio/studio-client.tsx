@@ -29,6 +29,11 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { SavedViews } from "@/components/app/work-views";
+import { StudioBoard, StudioCalendar, StudioConfigure, StudioTeam } from "./studio-views";
+import type { StudioConfig, StudioTeamData, StudioWork } from "@/server/studio-extras";
+import type { DeptView } from "@/server/work";
+import type { TaskCheck } from "@/lib/dept-config";
 import { Textarea } from "@/components/ui/textarea";
 import { EmptyState } from "@/components/app/primitives";
 import {
@@ -39,6 +44,7 @@ import {
   listQuestionsAction,
   questionsStatusAction,
   resourceStatusAction,
+  setResourceChecklistAction,
   saveQuestionAction,
   saveResourceAction,
   setCardsAction,
@@ -54,6 +60,7 @@ import {
   RESOURCE_STATUS_TONE,
   RESOURCE_STATUSES,
   RESOURCE_TYPE_LABELS,
+  RESOURCE_TYPES,
   type QuestionOption,
   type QuestionType,
   type ResourceStatus,
@@ -63,7 +70,7 @@ import { cn } from "@/lib/utils";
 
 type Tax = { grades: { id: string; name: string; code: string }[]; subjects: { id: string; name: string; code: string }[]; units: { id: string; gradeId: string; subjectId: string; number: number; title: string }[] };
 type Access = { manage: boolean; readOnly: boolean };
-type Filter = { q: string | null; status: string | null; gradeId: string | null; subjectId: string | null; unitId: string | null; type: string | null; difficulty: string | null; mine: boolean; sort: string | null; dir: "asc" | "desc" };
+type Filter = { q: string | null; status: string | null; gradeId: string | null; subjectId: string | null; unitId: string | null; type: string | null; difficulty: string | null; mine: boolean; sort: string | null; dir: "asc" | "desc"; person?: string | null };
 type Placement = { gradeId: string; subjectId: string; unitId: string; lessonId: string };
 
 function StatusTag({ status }: { status: string }) {
@@ -97,8 +104,14 @@ export function StudioClient({
   openId,
   taxonomy,
   dashboard,
+  work = [],
+  team = null,
+  studioConfig = null,
+  canConfigure = false,
+  people = [],
+  views = [],
 }: {
-  tab: ResourceType | "questions" | "dashboard";
+  tab: ResourceType | "questions" | "dashboard" | "board" | "calendar" | "team" | "configure";
   filter: Filter;
   resources: Resource[];
   questions: Question[];
@@ -107,6 +120,12 @@ export function StudioClient({
   openId: string | null;
   taxonomy: Tax;
   dashboard?: React.ReactNode;
+  work?: StudioWork[];
+  team?: StudioTeamData | null;
+  studioConfig?: StudioConfig | null;
+  canConfigure?: boolean;
+  people?: { id: string; name: string }[];
+  views?: DeptView[];
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -126,13 +145,41 @@ export function StudioClient({
     <Tabs value={current} onValueChange={(v) => (v === "dashboard" ? router.push(pathname) : go({ tab: v, status: null, sort: null, type: null, difficulty: null, period: null, person: null, grade: null }))}>
       <TabsList>
         <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
+        <TabsTrigger value="board">Board</TabsTrigger>
+        <TabsTrigger value="calendar">Calendar</TabsTrigger>
+        {(access.manage || access.readOnly) && <TabsTrigger value="team">Team</TabsTrigger>}
         <TabsTrigger value="note">Notes</TabsTrigger>
         <TabsTrigger value="exam">Exams</TabsTrigger>
         <TabsTrigger value="flashcards">Flash cards</TabsTrigger>
         <TabsTrigger value="questions">Question bank</TabsTrigger>
+        {canConfigure && <TabsTrigger value="configure">Configure</TabsTrigger>}
       </TabsList>
     </Tabs>
   );
+  const [openWork, setOpenWork] = React.useState<{ id: string; type: ResourceType } | null>(null);
+  const openById = (id: string) => {
+    const w = work.find((x) => x.id === id) ?? team?.people.flatMap((p) => p.open).find((x) => x.id === id);
+    if (w) setOpenWork({ id, type: w.type });
+  };
+  if (current === "board" || current === "calendar" || current === "team" || current === "configure")
+    return (
+      <div className="space-y-3">
+        {nav}
+        {current !== "configure" && current !== "team" && (
+          <div className="flex flex-wrap items-center gap-2">
+            <SavedViews dept="studio" views={views} canShare={access.manage && !access.readOnly} canDeleteShared={access.manage && !access.readOnly} />
+            <Pick value={filter.type} onChange={(v) => go({ type: v })} placeholder="Every type" options={RESOURCE_TYPES.map((t) => ({ value: t, label: RESOURCE_TYPE_LABELS[t].many }))} />
+            <Pick value={filter.gradeId} onChange={(v) => go({ g: v })} placeholder="Any grade" options={taxonomy.grades.map((g) => ({ value: g.id, label: g.name }))} />
+            {(access.manage || access.readOnly) && <Pick value={filter.person ?? null} onChange={(v) => go({ person: v })} placeholder="Everyone" options={[{ value: "me", label: "Me" }, ...people.map((p) => ({ value: p.id, label: p.name }))]} />}
+          </div>
+        )}
+        {current === "board" && <StudioBoard work={work} manage={access.manage} viewerId={viewerId} readOnly={access.readOnly} onOpen={openById} />}
+        {current === "calendar" && <StudioCalendar work={work} onOpen={openById} />}
+        {current === "team" && team && <StudioTeam data={team} onOpen={openById} />}
+        {current === "configure" && studioConfig && <StudioConfigure config={studioConfig} />}
+        {openWork && <ResourceEditor id={openWork.id} type={openWork.type} taxonomy={taxonomy} access={access} viewerId={viewerId} people={people} onClose={() => setOpenWork(null)} />}
+      </div>
+    );
   if (current === "dashboard")
     return (
       <div className="space-y-3">
@@ -197,7 +244,7 @@ export function StudioClient({
         <ResourceList type={tab} resources={resources} access={access} viewerId={viewerId} onOpen={setOpen} />
       )}
 
-      {open && tab !== "questions" && <ResourceEditor id={open === "new" ? null : open} type={tab} taxonomy={taxonomy} access={access} viewerId={viewerId} onClose={() => (setOpen(null), openId && go({ open: null }))} />}
+      {open && tab !== "questions" && <ResourceEditor id={open === "new" ? null : open} type={tab} taxonomy={taxonomy} access={access} viewerId={viewerId} people={people} onClose={() => (setOpen(null), openId && go({ open: null }))} />}
       {questionDialog && <QuestionDialog question={questionDialog === "new" ? null : questionDialog} taxonomy={taxonomy} access={access} onClose={() => setQuestionDialog(null)} onSaved={() => (setQuestionDialog(null), router.refresh())} />}
     </div>
   );
@@ -349,10 +396,26 @@ function PlacementFields({ value, onChange, taxonomy, disabled }: { value: Place
 
 type Loaded = { resource: Resource; questions: (Question & { points: number })[]; cards: { id: string; front: string; back: string }[] };
 
-function ResourceEditor({ id, type, taxonomy, access, viewerId, onClose }: { id: string | null; type: ResourceType; taxonomy: Tax; access: Access; viewerId: string; onClose: () => void }) {
+function ResourceEditor({
+  id,
+  type,
+  taxonomy,
+  access,
+  viewerId,
+  people = [],
+  onClose,
+}: {
+  id: string | null;
+  type: ResourceType;
+  taxonomy: Tax;
+  access: Access;
+  viewerId: string;
+  people?: { id: string; name: string }[];
+  onClose: () => void;
+}) {
   const router = useRouter();
   const [data, setData] = React.useState<Loaded | null>(null);
-  const [f, setF] = React.useState({ title: "", body: "", language: "en", durationMin: "", passMark: "", instructions: "" });
+  const [f, setF] = React.useState({ title: "", body: "", language: "en", durationMin: "", passMark: "", instructions: "", assigneeId: "", dueDate: "" });
   const [place, setPlace] = React.useState<Placement>({ gradeId: "", subjectId: "", unitId: "", lessonId: "" });
   const [examQs, setExamQs] = React.useState<(Question & { points: number })[]>([]);
   const [cards, setCards] = React.useState<{ front: string; back: string }[]>([]);
@@ -368,14 +431,23 @@ function ResourceEditor({ id, type, taxonomy, access, viewerId, onClose }: { id:
     if (!r.ok) return toast.error(r.error);
     const d = r.data as unknown as Loaded;
     setData(d);
-    setF({ title: d.resource.title, body: d.resource.body, language: d.resource.language, durationMin: String(d.resource.meta.durationMin ?? ""), passMark: String(d.resource.meta.passMark ?? ""), instructions: d.resource.meta.instructions ?? "" });
+    setF({
+      title: d.resource.title,
+      body: d.resource.body,
+      language: d.resource.language,
+      durationMin: String(d.resource.meta.durationMin ?? ""),
+      passMark: String(d.resource.meta.passMark ?? ""),
+      instructions: d.resource.meta.instructions ?? "",
+      assigneeId: d.resource.assignee_id ?? "",
+      dueDate: d.resource.due_date ?? "",
+    });
     setPlace({ gradeId: d.resource.grade_id ?? "", subjectId: d.resource.subject_id ?? "", unitId: d.resource.unit_id ?? "", lessonId: d.resource.lesson_id ?? "" });
     setExamQs(d.questions);
     setCards(d.cards.map((c) => ({ front: c.front, back: c.back })));
   }, [id]);
   React.useEffect(() => void load(), [load]);
   const r = data?.resource;
-  const own = !r || r.author_id === viewerId;
+  const own = !r || r.author_id === viewerId || r.assignee_id === viewerId;
   const canEdit = !access.readOnly && (own || access.manage);
 
   const save = async (andClose = false) => {
@@ -388,6 +460,8 @@ function ResourceEditor({ id, type, taxonomy, access, viewerId, onClose }: { id:
         language: f.language,
         body: f.body,
         meta: type === "exam" ? { durationMin: Number(f.durationMin) || undefined, passMark: Number(f.passMark) || undefined, instructions: f.instructions || undefined } : {},
+        assigneeId: f.assigneeId || null,
+        dueDate: f.dueDate || null,
         ...place,
       });
       if (!saved.ok) throw new Error(saved.error);
@@ -472,6 +546,31 @@ ${examQs.map((q, i) => `<div class="q"><b>${i + 1}.</b> ${esc(q.stem)} <i>(${q.p
             </Select>
           </div>
           <PlacementFields value={place} onChange={setPlace} taxonomy={taxonomy} disabled={!canEdit} />
+          <div className="grid gap-2 sm:grid-cols-2">
+            <div className="space-y-1">
+              <Label className="text-xs">Assigned to</Label>
+              <Select value={f.assigneeId || "none"} onValueChange={(v) => setF({ ...f, assigneeId: v === "none" ? "" : v })} disabled={!canEdit}>
+                <SelectTrigger className="w-full" aria-label="Assigned to">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">The author</SelectItem>
+                  {(access.manage ? people : people.filter((p) => p.id === viewerId)).map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs" htmlFor="res-due">
+                Due
+              </Label>
+              <Input id="res-due" type="date" value={f.dueDate} onChange={(e) => setF({ ...f, dueDate: e.target.value })} disabled={!canEdit} />
+            </div>
+          </div>
+          {r && r.checklist.length > 0 && <ReviewChecklist id={r.id} lines={r.checklist} canTick={canEdit} canVerify={access.manage && !access.readOnly} onChanged={async () => void (await load())} />}
 
           {type === "note" && (
             <div className="space-y-1.5">
@@ -1123,5 +1222,31 @@ function QuestionDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function ReviewChecklist({ id, lines, canTick, canVerify, onChanged }: { id: string; lines: TaskCheck[]; canTick: boolean; canVerify: boolean; onChanged: () => Promise<void> }) {
+  const set = async (next: TaskCheck[]) => {
+    const r = await setResourceChecklistAction(id, next);
+    if (!r.ok) return toast.error(r.error);
+    await onChanged();
+  };
+  return (
+    <div className="space-y-1.5 rounded-lg border p-3">
+      <Label>Review checklist</Label>
+      <ul className="space-y-1">
+        {lines.map((c, i) => (
+          <li key={c.id} className="flex items-center gap-2 text-sm">
+            <Checkbox aria-label={`Done: ${c.text}`} checked={c.done} disabled={!canTick} onCheckedChange={(v) => set(lines.map((x, j) => (j === i ? { ...x, done: v === true, verifiedBy: v === true ? x.verifiedBy : null } : x)))} />
+            <span className={cn("flex-1", c.done && "text-muted-foreground line-through")}>{c.text}</span>
+            {c.verify && (
+              <Button size="xs" variant={c.verifiedBy ? "secondary" : "outline"} disabled={!canVerify || !c.done} onClick={() => set(lines.map((x, j) => (j === i ? { ...x, verifiedBy: x.verifiedBy ? null : "me" } : x)))}>
+                {c.verifiedBy ? "Verified" : "Verify"}
+              </Button>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }

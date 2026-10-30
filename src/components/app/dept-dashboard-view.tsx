@@ -10,7 +10,7 @@ type Params = Record<string, string | undefined>;
 
 // A department's dashboard with its filters, loaded for this viewer. Used in the department's own section and in
 // the Company overview.
-export async function DeptDashboardView({ viewer, dept, sp }: { viewer: AppUser; dept: "dev" | "marketing" | "studio"; sp: Params }) {
+export async function DeptDashboardView({ viewer, dept, sp }: { viewer: AppUser; dept: string; sp: Params }) {
   const period = isPeriod(sp.period) ? sp.period : "30d";
   const info = await dashboardLayout(viewer, dept);
   if (dept === "studio") {

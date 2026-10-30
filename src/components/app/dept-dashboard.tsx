@@ -20,6 +20,7 @@ import { RESOURCE_TYPE_LABELS, RESOURCE_TYPES } from "@/lib/studio";
 import { POSITION_LABELS, POSITIONS, type Position } from "@/lib/domain";
 import { CAT } from "@/lib/chart-colors";
 import { cn } from "@/lib/utils";
+import { deptPath } from "@/lib/work";
 
 const fmt = (v: number) => v.toLocaleString("en-US");
 const SPAN: Record<WidgetSize, string> = { s: "col-span-1", m: "sm:col-span-2", l: "sm:col-span-2 lg:col-span-4" };
@@ -292,12 +293,13 @@ const shortWeek = (w: string) => w.slice(5);
 // Dev and Marketing
 // ---------------------------------------------------------------------------
 
-export function WorkDashboard({ dept, data, info }: { dept: "dev" | "marketing"; data: WorkDashboardData; info: LayoutInfo }) {
+export function WorkDashboard({ dept, data, info }: { dept: string; data: WorkDashboardData; info: LayoutInfo }) {
+  const base = deptPath(dept);
   const today = new Date().toISOString().slice(0, 10);
   const label = (k: string) => data.statuses.find((s) => s.key === k)?.label ?? k;
   const t = data.names.tasks.toLowerCase();
-  const taskHref = (id: string) => `/${dept}?task=${id}`;
-  const listHref = (q: string) => `/${dept}?tab=list${q}`;
+  const taskHref = (id: string) => `${base}?task=${id}`;
+  const listHref = (q: string) => `${base}?tab=list${q}`;
   const taskRows = (list: WorkDashboardData["lists"]["mine"], meta: (x: WorkDashboardData["lists"]["mine"][number]) => string | undefined) =>
     list.map((x) => ({ id: x.id, href: taskHref(x.id), code: x.code, title: x.title, meta: meta(x), late: !!x.due_date && x.due_date < today }));
   const c = data.cards;
@@ -438,14 +440,14 @@ export function WorkDashboard({ dept, data, info }: { dept: "dev" | "marketing";
       case "l_milestones":
         return (
           <Panel title={`Upcoming ${data.names.milestone.toLowerCase()}s`} description="Next 45 days, and late ones">
-            <ItemList rows={data.milestones.map((m) => ({ id: m.id, href: `/${dept}?tab=projects`, code: m.project_key, title: m.name, meta: m.due_date.slice(5), late: m.due_date < today }))} empty="None coming up." />
+            <ItemList rows={data.milestones.map((m) => ({ id: m.id, href: `${base}?tab=projects`, code: m.project_key, title: m.name, meta: m.due_date.slice(5), late: m.due_date < today }))} empty="None coming up." />
           </Panel>
         );
       case "l_risk":
         return (
           <Panel title={`${data.names.projects} at risk`} description="Late work, or past their due date">
             <ItemList
-              rows={data.risk.map((r) => ({ id: r.id, href: `/${dept}?tab=list&project=${r.id}&due=overdue`, code: r.key, title: r.name, meta: `${r.progress}%${r.late ? ` · ${r.late} late` : ""}${r.pastDue ? " · past due" : ""}`, late: true }))}
+              rows={data.risk.map((r) => ({ id: r.id, href: `${base}?tab=list&project=${r.id}&due=overdue`, code: r.key, title: r.name, meta: `${r.progress}%${r.late ? ` · ${r.late} late` : ""}${r.pastDue ? " · past due" : ""}`, late: true }))}
               empty="Nothing at risk."
             />
           </Panel>

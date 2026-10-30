@@ -6,7 +6,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { BriefcaseIcon, CodeIcon, LandmarkIcon, LayoutDashboardIcon, MegaphoneIcon, BookOpenIcon, VideoIcon } from "lucide-react";
+import { BriefcaseIcon, Building2Icon, CodeIcon, LandmarkIcon, LayoutDashboardIcon, MegaphoneIcon, BookOpenIcon, VideoIcon } from "lucide-react";
 import { MetricCard, Meter } from "@/components/app/primitives";
 import { BarsChart, ChartFrame } from "@/components/app/charts";
 import type { CompanySummary } from "@/server/company";
@@ -25,10 +25,10 @@ const ICONS: Record<CompanyView, React.ComponentType<{ className?: string }>> = 
 const fmt = (v: number) => v.toLocaleString("en-US");
 
 // Switches the view, keeping the period; department filters are dropped because each department has its own.
-export function ViewSwitcher({ current, labels }: { current: CompanyView; labels: Partial<Record<CompanyView, string>> }) {
+export function ViewSwitcher({ current, labels, extra = [] }: { current: string; labels: Partial<Record<CompanyView, string>>; extra?: { key: string; label: string }[] }) {
   const pathname = usePathname();
   const params = useSearchParams();
-  const href = (v: CompanyView) => {
+  const href = (v: string) => {
     const p = new URLSearchParams();
     if (params.get("tab")) p.set("tab", params.get("tab")!);
     if (params.get("period")) p.set("period", params.get("period")!);
@@ -38,8 +38,8 @@ export function ViewSwitcher({ current, labels }: { current: CompanyView; labels
   };
   return (
     <nav aria-label="Department" className="flex w-full gap-1 overflow-x-auto rounded-xl border bg-muted/40 p-1">
-      {COMPANY_VIEWS.map((v) => {
-        const Icon = ICONS[v.key];
+      {[...COMPANY_VIEWS.map((v) => ({ key: v.key as string, label: v.label as string })), ...extra].map((v) => {
+        const Icon = ICONS[v.key as CompanyView] ?? Building2Icon;
         return (
         <Link
           key={v.key}
@@ -50,7 +50,7 @@ export function ViewSwitcher({ current, labels }: { current: CompanyView; labels
             current === v.key ? "bg-background font-medium shadow-sm" : "text-muted-foreground hover:bg-background/60 hover:text-foreground",
           )}
         >
-          <Icon className="size-4" /> {labels[v.key] ?? v.label}
+          <Icon className="size-4" /> {labels[v.key as CompanyView] ?? v.label}
         </Link>
         );
       })}
@@ -58,12 +58,6 @@ export function ViewSwitcher({ current, labels }: { current: CompanyView; labels
   );
 }
 
-const SERIES = [
-  { key: "production", label: "Production (published)", color: CAT[0] },
-  { key: "dev", label: "Dev (done)", color: CAT[1] },
-  { key: "studio", label: "Studio (published)", color: CAT[2] },
-  { key: "marketing", label: "Marketing (done)", color: CAT[3] },
-];
 
 export function CompanyOverall({ data }: { data: CompanySummary }) {
   const pathname = usePathname();
@@ -73,7 +67,8 @@ export function CompanyOverall({ data }: { data: CompanySummary }) {
     p.set("view", v);
     return `${pathname}?${p.toString()}`;
   };
-  const series = SERIES.map((s) => ({ ...s, label: s.key === "dev" || s.key === "marketing" ? `${data.departments.find((d) => d.dept === s.key)?.title ?? s.key} (done)` : s.label }));
+  // One series per department: published videos and resources, finished tasks elsewhere.
+  const series = data.departments.map((d, i) => ({ key: d.dept, label: `${d.title} (${d.dept === "production" || d.dept === "studio" ? "published" : "done"})`, color: CAT[i % CAT.length]! }));
   const totalBudget = data.money.reduce((s, m) => s + m.budget, 0);
   const totalSpend = data.money.reduce((s, m) => s + m.spendTotal, 0);
   return (
@@ -112,7 +107,7 @@ export function CompanyOverall({ data }: { data: CompanySummary }) {
             );
           })}
         </div>
-        <ChartFrame title="Finished per week across the company" description="Last 12 weeks" table={{ columns: ["Week", ...series.map((s) => s.label)], rows: data.weekly.map((w) => [w.week, w.production, w.dev, w.studio, w.marketing]) }}>
+        <ChartFrame title="Finished per week across the company" description="Last 12 weeks" table={{ columns: ["Week", ...series.map((s) => s.label)], rows: data.weekly.map((w) => [w.week, ...series.map((s) => Number(w[s.key] ?? 0))]) }}>
           <BarsChart data={data.weekly.map((w) => ({ ...w, week: w.week.slice(5) }))} xKey="week" series={series} stacked />
         </ChartFrame>
       </section>

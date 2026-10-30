@@ -8,7 +8,7 @@ import { ensureDeptConfigs } from "./dept-config";
 import { can, type AppUser } from "./users";
 import { periodRange, type Period } from "@/lib/dashboards";
 import type { FieldValue } from "@/lib/dept-config";
-import { WORK_DEPTS } from "@/lib/work";
+
 
 const n = (v: unknown) => Number(v ?? 0);
 const DAY = 864e5;
@@ -35,11 +35,12 @@ function weekOf(iso: string) {
   return d.toISOString().slice(0, 10);
 }
 
-export type DeptSummary = { dept: "production" | "dev" | "studio" | "marketing"; title: string; unit: string; total: number; done: number; open: number; overdue: number; donePeriod: number; inReview: number };
+export type DeptSummary = { dept: string; title: string; unit: string; total: number; done: number; open: number; overdue: number; donePeriod: number; inReview: number };
 
 export async function companySummary(user: AppUser, period: Period) {
   if (!canSeeCompany(user)) throw new WorkflowError("FORBIDDEN", "You do not have access to the company overview.");
   const configs = await ensureDeptConfigs();
+  const workDepts = Object.keys(configs);
   const range = periodRange(period);
   const now = nowIso();
   const today = now.slice(0, 10);
@@ -76,7 +77,7 @@ export async function companySummary(user: AppUser, period: Period) {
   );
   const departments: DeptSummary[] = [
     { dept: "production", title: "Production", unit: "videos", total: n(p?.total), done: n(p?.done), open: n(p?.open), overdue: n(p?.overdue), donePeriod: n(p?.period), inReview: n(p?.review) },
-    ...WORK_DEPTS.map((d) => {
+    ...workDepts.map((d) => {
       const w = work.find((x) => x.dept === d);
       return { dept: d, title: configs[d].title, unit: configs[d].names.tasks.toLowerCase(), total: n(w?.total), done: n(w?.done), open: n(w?.open), overdue: n(w?.overdue), donePeriod: n(w?.period), inReview: n(w?.review) };
     }),
@@ -92,17 +93,16 @@ export async function companySummary(user: AppUser, period: Period) {
   ]);
   const thisWeek = weekOf(now);
   const weeks = Array.from({ length: 12 }, (_, i) => new Date(Date.parse(thisWeek) - (11 - i) * 7 * DAY).toISOString().slice(0, 10));
-  const weekly = weeks.map((wk) => ({
+  const weekly: ({ week: string } & Record<string, number | string>)[] = weeks.map((wk) => ({
     week: wk,
     production: pw.filter((r) => weekOf(r.at) === wk).length,
-    dev: ww.filter((r) => r.dept === "dev" && weekOf(r.at) === wk).length,
-    marketing: ww.filter((r) => r.dept === "marketing" && weekOf(r.at) === wk).length,
     studio: sw.filter((r) => weekOf(r.at) === wk).length,
+    ...Object.fromEntries(workDepts.map((d) => [d, ww.filter((r) => r.dept === d && weekOf(r.at) === wk).length])),
   }));
 
   // Money from the departments: budgets of live projects, spend recorded as a Spend or Cost KPI, money fields.
   const money = [];
-  for (const d of WORK_DEPTS) {
+  for (const d of workDepts) {
     const cfg = configs[d];
     const live = cfg.projectStatuses.filter((x) => x.category !== "done" && x.category !== "cancelled").map((x) => x.key);
     const projects = (await all<{ id: string; status: string; budget: number | null }>("SELECT id, status, budget FROM dept_projects WHERE dept = ? AND archived = 0", d)).filter((x) => live.includes(x.status));

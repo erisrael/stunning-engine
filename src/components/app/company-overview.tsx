@@ -13,11 +13,12 @@ import { DeptDashboardView } from "./dept-dashboard-view";
 
 // The Company overview: switch between the whole company and each department. Used by /company and the Owners page.
 export async function CompanyOverview({ viewer, sp }: { viewer: AppUser; sp: Record<string, string | undefined> }) {
-  const view = (COMPANY_VIEWS.some((v) => v.key === sp.view) ? sp.view : "overall") as CompanyView;
-  const period = isPeriod(sp.period) ? sp.period : "30d";
   const configs = await ensureDeptConfigs();
-  const switcher = <ViewSwitcher current={view} labels={{ dev: configs.dev.title, marketing: configs.marketing.title }} />;
-  if (view === "dev" || view === "marketing" || view === "studio")
+  const created = Object.keys(configs).filter((k) => k !== "dev" && k !== "marketing");
+  const view = (COMPANY_VIEWS.some((v) => v.key === sp.view) || created.includes(sp.view ?? "") ? sp.view : "overall") as CompanyView | string;
+  const period = isPeriod(sp.period) ? sp.period : "30d";
+  const switcher = <ViewSwitcher current={view} labels={{ dev: configs.dev!.title, marketing: configs.marketing!.title }} extra={created.map((k) => ({ key: k, label: configs[k]!.title }))} />;
+  if (view === "dev" || view === "marketing" || view === "studio" || created.includes(view))
     return (
       <div className="space-y-4">
         {switcher}

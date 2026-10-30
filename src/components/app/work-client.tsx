@@ -14,6 +14,10 @@ import {
   LayoutDashboardIcon,
   FolderKanbanIcon,
   KanbanIcon,
+  FileTextIcon,
+  GanttChartIcon,
+  TimerIcon,
+  UsersIcon,
   ListTreeIcon,
   SheetIcon,
   ListIcon,
@@ -38,6 +42,10 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { EmptyState } from "@/components/app/primitives";
 import {
+  getTaskAction,
+  stopTimerAction,
+  saveSprintAction,
+  deleteSprintAction,
   addMetricAction,
   addTaskCommentAction,
   bulkTasksAction,
@@ -58,6 +66,13 @@ import { fieldRequired, fieldShown, formatField, labelOf, statusOf, type DeptCon
 import { cn } from "@/lib/utils";
 import { today, usable, type Access, type Person } from "./work-shared";
 import { Board, OverviewTree, SheetView, TaskList, ViewOptions } from "./work-views";
+import { TaskDialog } from "./work-task-dialog";
+import { TimelineView } from "./work-timeline";
+import { TeamView } from "./work-team";
+import { ReportView } from "./work-report";
+import { DashFilters } from "./dept-dashboard";
+import type { DeptReportData, Sprint, TeamWorkload } from "@/server/work-extras";
+import type { Period } from "@/lib/dashboards";
 
 function download(name: string, rows: (string | number | null)[][]) {
   const csv = rows.map((r) => r.map((c) => `"${String(c ?? "").replace(/"/g, '""')}"`).join(",")).join("\r\n");
@@ -82,9 +97,15 @@ export function WorkClient({
   showArchived,
   dashboard,
   views = [],
+  sprints = [],
+  timer = null,
+  team = null,
+  report = null,
+  period = "30d",
+  workspace = "",
 }: {
   dept: WorkDept;
-  tab: "dashboard" | "board" | "list" | "sheet" | "overview" | "projects" | "calendar";
+  tab: "dashboard" | "board" | "list" | "sheet" | "overview" | "timeline" | "team" | "report" | "projects" | "calendar";
   filter: TaskFilter;
   tasks: Task[];
   projects: Project[];
@@ -96,6 +117,13 @@ export function WorkClient({
   showArchived: boolean;
   dashboard?: React.ReactNode;
   views?: DeptView[];
+  sprints?: Sprint[];
+  // The viewer's running timer, if any (in any department).
+  timer?: { task_id: string; code: string; title: string; started_at: string; dept: string } | null;
+  team?: TeamWorkload | null;
+  report?: DeptReportData | null;
+  period?: Period;
+  workspace?: string;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -108,16 +136,22 @@ export function WorkClient({
     router.replace(`${pathname}?${p.toString()}`, { scroll: false });
   };
   const [q, setQ] = React.useState(filter.q ?? "");
-  const [editing, setEditing] = React.useState<Task | { status?: string; dueDate?: string } | null>(null);
+  const [editing, setEditing] = React.useState<Task | { status?: string; dueDate?: string; parentId?: string } | null>(null);
+  // Opens a task by id, fetching it when this tab did not load it (Team, Report, notifications).
+  const openById = async (id: string) => {
+    const t = tasks.find((x) => x.id === id);
+    if (t) return setEditing(t);
+    const r = await getTaskAction(dept, id);
+    if (!r.ok) return toast.error(r.error);
+    setEditing(r.data as Task);
+  };
   const [projectDialog, setProjectDialog] = React.useState<Project | "new" | null>(null);
   const fileRef = React.useRef<HTMLInputElement>(null);
   const writable = !access.readOnly;
   React.useEffect(() => {
-    if (openTaskId) {
-      const t = tasks.find((x) => x.id === openTaskId);
-      if (t) setEditing(t);
-    }
-  }, [openTaskId, tasks]);
+    if (openTaskId) void openById(openTaskId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openTaskId]);
   const closeTask = () => {
     setEditing(null);
     if (openTaskId) go({ task: null });
@@ -179,6 +213,17 @@ export function WorkClient({
             <TabsTrigger value="overview">
               <ListTreeIcon className="size-3.5" /> Overview
             </TabsTrigger>
+            <TabsTrigger value="timeline">
+              <GanttChartIcon className="size-3.5" /> Timeline
+            </TabsTrigger>
+            {access.rights.seeAll && (
+              <TabsTrigger value="team">
+                <UsersIcon className="size-3.5" /> Team
+              </TabsTrigger>
+            )}
+            <TabsTrigger value="report">
+              <FileTextIcon className="size-3.5" /> Report
+            </TabsTrigger>
             <TabsTrigger value="projects">
               <FolderKanbanIcon className="size-3.5" /> {names.projects} ({projects.length})
             </TabsTrigger>
@@ -193,6 +238,12 @@ export function WorkClient({
           </TabsList>
         </Tabs>
         <div className="ml-auto flex flex-wrap gap-2">
+          {timer && <RunningTimer timer={timer} onStop={async () => {
+            const r = await stopTimerAction();
+            if (!r.ok) return toast.error(r.error);
+            toast.success("Timer stopped");
+            router.refresh();
+          }} />}
           {writable && (
             <>
               <input ref={fileRef} type="file" accept=".csv,text/csv" className="hidden" onChange={(e) => e.target.files?.[0] && importCsv(e.target.files[0])} />
@@ -219,7 +270,7 @@ export function WorkClient({
         </div>
       </div>
 
-      {tab !== "projects" && tab !== "dashboard" && (
+      {tab !== "projects" && tab !== "dashboard" && tab !== "team" && tab !== "report" && (
         <div className="flex flex-wrap items-center gap-2">
           <form
             className="relative"
@@ -241,7 +292,18 @@ export function WorkClient({
           <FilterSelect value={filter.type} onChange={(v) => go({ type: v })} placeholder="Any type" options={cfg.types.map((t) => ({ value: t.key, label: t.label }))} />
           <FilterSelect value={filter.priority} onChange={(v) => go({ priority: v })} placeholder="Any priority" options={cfg.priorities.map((p) => ({ value: p.key, label: p.label }))} />
           <FilterSelect value={filter.due} onChange={(v) => go({ due: v })} placeholder="Any due date" options={[{ value: "overdue", label: "Overdue" }, { value: "week", label: "Due this week" }, { value: "none", label: "No due date" }]} />
-          {(tab === "list" || tab === "sheet" || tab === "overview") && (
+          {cfg.features.sprints && sprints.length > 0 && (
+            <FilterSelect
+              value={filter.sprint}
+              onChange={(v) => go({ sprint: v })}
+              placeholder="Any sprint"
+              options={[{ value: "current", label: "Current sprint" }, { value: "none", label: "No sprint" }, ...sprints.map((sp) => ({ value: sp.id, label: sp.name }))]}
+            />
+          )}
+          {cfg.features.requests && access.rights.assign && (
+            <FilterSelect value={filter.request} onChange={(v) => go({ request: v })} placeholder="All work" options={[{ value: "pending", label: "Requests waiting" }]} />
+          )}
+          {(tab === "list" || tab === "sheet" || tab === "overview" || tab === "timeline") && (
             <FilterSelect
               value={filter.open ? "open" : filter.status?.length === 1 ? filter.status[0] : null}
               onChange={(v) => go({ status: v })}
@@ -252,17 +314,24 @@ export function WorkClient({
         </div>
       )}
 
-      {tab !== "projects" && tab !== "dashboard" && <ViewOptions dept={dept} tab={tab} config={cfg} access={access} views={views} people={people} projects={projects} />}
+      {tab !== "projects" && tab !== "dashboard" && tab !== "team" && tab !== "report" && <ViewOptions dept={dept} tab={tab} config={cfg} access={access} views={views} people={people} projects={projects} />}
 
       {tab === "dashboard" && dashboard}
       {tab === "board" && <Board dept={dept} config={cfg} people={people} tasks={tasks} viewerId={viewerId} access={access} onOpen={setEditing} onDetails={(status) => setEditing({ status })} />}
       {tab === "sheet" && <SheetView dept={dept} config={cfg} tasks={tasks} people={people} projects={projects} access={access} viewerId={viewerId} onOpen={setEditing} />}
       {tab === "overview" && <OverviewTree config={cfg} tasks={tasks} projects={projects} onOpen={setEditing} />}
+      {tab === "timeline" && <TimelineView dept={dept} config={cfg} tasks={tasks} projects={projects} access={access} viewerId={viewerId} onOpen={setEditing} />}
+      {(tab === "team" || tab === "report") && <DashFilters period={period} filters={[]} />}
+      {tab === "team" && team && <TeamView dept={dept} config={cfg} data={team} people={people} access={access} onOpen={openById} />}
+      {tab === "report" && report && <ReportView dept={dept} data={report} period={period} workspace={workspace} />}
       {tab === "list" && <TaskList dept={dept} config={cfg} tasks={tasks} filter={filter} people={people} projects={projects} access={access} viewerId={viewerId} go={go} onOpen={setEditing} onExport={exportCsv} />}
+      {tab === "projects" && cfg.features.sprints && <Sprints dept={dept} sprints={sprints} canEdit={!access.readOnly && access.rights.projects} go={go} />}
       {tab === "projects" && <Projects dept={dept} config={cfg} projects={projects} access={access} showArchived={showArchived} go={go} onEdit={setProjectDialog} />}
       {tab === "calendar" && <MonthCalendar tasks={tasks} onOpen={setEditing} onAdd={writable ? (d) => setEditing({ dueDate: d }) : undefined} />}
 
-      {editing && <TaskDialog dept={dept} config={cfg} task={"id" in editing ? editing : null} preset={"id" in editing ? {} : editing} people={people} projects={projects} access={access} viewerId={viewerId} onClose={closeTask} />}
+      {editing && (
+        <TaskDialog dept={dept} config={cfg} task={"id" in editing ? editing : null} preset={"id" in editing ? {} : editing} people={people} projects={projects} tasks={tasks} sprints={sprints} access={access} viewerId={viewerId} onClose={closeTask} />
+      )}
       {projectDialog && <ProjectDialog dept={dept} config={cfg} project={projectDialog === "new" ? null : projectDialog} people={people} onClose={() => setProjectDialog(null)} />}
     </div>
   );
@@ -789,397 +858,104 @@ function KpiDialog({ dept, config, project, access, onClose }: { dept: WorkDept;
   );
 }
 
-// ---------------------------------------------------------------------------
-// Task dialog
-// ---------------------------------------------------------------------------
-
-function TaskDialog({
-  dept,
-  config: cfg,
-  task,
-  preset,
-  people,
-  projects,
-  access,
-  viewerId,
-  onClose,
-}: {
-  dept: WorkDept;
-  config: DeptConfig;
-  task: Task | null;
-  preset: { status?: string; dueDate?: string };
-  people: Person[];
-  projects: Project[];
-  access: Access;
-  viewerId: string;
-  onClose: () => void;
-}) {
-  const router = useRouter();
-  const canEdit = !access.readOnly && (!task || access.rights.editAll || task.assignee_id === viewerId || task.reporter_id === viewerId);
-  const firstStatus = (cfg.statuses.find((s) => s.active && s.category === "open") ?? cfg.statuses.find((s) => s.active))!.key;
-  const [f, setF] = React.useState({
-    title: task?.title ?? "",
-    description: task?.description ?? "",
-    type: task?.type ?? cfg.types.find((t) => t.active)!.key,
-    status: task?.status ?? preset.status ?? firstStatus,
-    priority: task?.priority ?? (cfg.priorities.find((p) => p.key === "normal" && p.active) ?? cfg.priorities.find((p) => p.active))!.key,
-    projectId: task?.project_id ?? "",
-    milestoneId: task?.milestone_id ?? "",
-    assigneeId: task?.assignee_id ?? (access.rights.assign ? "" : viewerId),
-    estimate: task?.estimate_hours != null ? String(task.estimate_hours) : "",
-    spent: task?.spent_hours != null ? String(task.spent_hours) : "",
-    progress: task?.progress ?? 0,
-    startDate: task?.start_date ?? "",
-    dueDate: task?.due_date ?? preset.dueDate ?? "",
-    labels: task?.labels.join(", ") ?? "",
-  });
-  const [values, setValues] = React.useState<Record<string, FieldValue>>(task?.fields ?? {});
-  const category = statusOf(cfg, f.status)?.category ?? "open";
-  const fields = cfg.fields.filter((x) => fieldShown(x, f.type));
-  const [busy, setBusy] = React.useState(false);
-  const [comments, setComments] = React.useState<{ id: string; author_name: string; body: string; created_at: string }[] | null>(null);
-  const [comment, setComment] = React.useState("");
-  const project = projects.find((p) => p.id === f.projectId);
-  const loadComments = React.useCallback(async () => {
-    if (!task) return;
-    const r = await taskCommentsAction(dept, task.id);
-    if (r.ok) setComments(r.data as typeof comments);
-  }, [dept, task]);
-  React.useEffect(() => void loadComments(), [loadComments]);
-  const save = async () => {
-    setBusy(true);
-    const r = await saveTaskAction(dept, {
-      id: task?.id,
-      title: f.title,
-      description: f.description,
-      type: f.type,
-      status: f.status,
-      priority: f.priority,
-      projectId: f.projectId || null,
-      milestoneId: f.milestoneId || null,
-      assigneeId: f.assigneeId || null,
-      estimateHours: f.estimate ? Number(f.estimate) : null,
-      spentHours: f.spent ? Number(f.spent) : null,
-      progress: Number(f.progress),
-      startDate: f.startDate || null,
-      dueDate: f.dueDate || null,
-      labels: f.labels.split(","),
-      fields: values,
-    });
-    setBusy(false);
-    if (!r.ok) return toast.error(r.error);
-    toast.success(task ? "Saved" : `${cfg.names.task} created`);
-    onClose();
-    router.refresh();
-  };
-  const sel = (value: string, onChange: (v: string) => void, options: { value: string; label: string }[], placeholder?: string) => (
-    <Select value={value || "none"} onValueChange={(v) => onChange(v === "none" ? "" : v)} disabled={!canEdit}>
-      <SelectTrigger className="w-full">
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        {placeholder && <SelectItem value="none">{placeholder}</SelectItem>}
-        {options.map((o) => (
-          <SelectItem key={o.value} value={o.value}>
-            {o.label}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
+function RunningTimer({ timer, onStop }: { timer: { code: string; title: string; started_at: string }; onStop: () => void }) {
+  const [now, setNow] = React.useState(Date.now());
+  React.useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, []);
+  const m = Math.max(0, Math.floor((now - Date.parse(timer.started_at)) / 60000));
   return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            {task && <span className="font-mono text-sm text-muted-foreground">{task.code}</span>}
-            {task ? (canEdit ? `Edit ${cfg.names.task.toLowerCase()}` : task.title) : `New ${cfg.names.task.toLowerCase()}`}
-          </DialogTitle>
-          {task && (
-            <DialogDescription>
-              Created by {task.reporter_name ?? "someone"} on {task.created_at.slice(0, 10)}
-              {task.completed_at && `, done ${task.completed_at.slice(0, 10)}`}
-            </DialogDescription>
-          )}
-        </DialogHeader>
-        <div className="space-y-3">
-          <Input value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} placeholder="What needs doing" disabled={!canEdit} />
-          <Textarea rows={4} value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} placeholder="Details, links, acceptance criteria" disabled={!canEdit} />
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div className="space-y-1.5">
-              <Label>Type</Label>
-              {sel(f.type, (v) => setF({ ...f, type: v }), usable(cfg.types, task?.type).map((t) => ({ value: t.key, label: t.label })))}
-            </div>
-            <div className="space-y-1.5">
-              <Label>Status</Label>
-              {sel(
-                f.status,
-                (v) => setF({ ...f, status: v, progress: statusOf(cfg, v)?.category === "done" ? 100 : f.progress }),
-                usable(cfg.statuses, task?.status).map((s) => ({ value: s.key, label: s.label })),
-              )}
-            </div>
-            <div className="space-y-1.5">
-              <Label>Priority</Label>
-              {sel(f.priority, (v) => setF({ ...f, priority: v }), usable(cfg.priorities, task?.priority).map((p) => ({ value: p.key, label: p.label })))}
-            </div>
-            <div className="space-y-1.5">
-              <Label>{cfg.names.project}</Label>
-              {sel(f.projectId, (v) => setF({ ...f, projectId: v, milestoneId: "" }), projects.map((p) => ({ value: p.id, label: `${p.key} ${p.name}` })), "None")}
-            </div>
-            {cfg.features.milestones && (
-              <div className="space-y-1.5">
-                <Label>{cfg.names.milestone}</Label>
-                {sel(f.milestoneId, (v) => setF({ ...f, milestoneId: v }), (project?.milestones ?? []).map((m) => ({ value: m.id, label: m.name })), "None")}
-              </div>
-            )}
-            <div className="space-y-1.5">
-              <Label>Assignee</Label>
-              {access.rights.assign
-                ? sel(f.assigneeId, (v) => setF({ ...f, assigneeId: v }), people.map((p) => ({ value: p.id, label: `${p.name}${p.position !== "member" ? ` (${POSITION_LABELS[p.position].toLowerCase()})` : ""}` })), "Unassigned")
-                : sel(f.assigneeId, (v) => setF({ ...f, assigneeId: v }), [{ value: viewerId, label: "Me" }, ...(task?.assignee_id && task.assignee_id !== viewerId ? [{ value: task.assignee_id, label: task.assignee_name ?? "Someone" }] : [])], "Unassigned")}
-            </div>
-            {cfg.features.startDate && (
-              <div className="space-y-1.5">
-                <Label>Start</Label>
-                <Input type="date" value={f.startDate} onChange={(e) => setF({ ...f, startDate: e.target.value })} disabled={!canEdit} />
-              </div>
-            )}
-            <div className="space-y-1.5">
-              <Label>Due</Label>
-              <Input type="date" value={f.dueDate} onChange={(e) => setF({ ...f, dueDate: e.target.value })} disabled={!canEdit} />
-            </div>
-            {cfg.features.labels && (
-              <div className="space-y-1.5">
-                <Label>Labels</Label>
-                <Input value={f.labels} onChange={(e) => setF({ ...f, labels: e.target.value })} placeholder={cfg.labels.slice(0, 3).join(", ") || "mobile, api"} disabled={!canEdit} list={`labels-${dept}`} />
-                {cfg.labels.length > 0 && (
-                  <datalist id={`labels-${dept}`}>
-                    {cfg.labels.map((l) => (
-                      <option key={l} value={l} />
-                    ))}
-                  </datalist>
-                )}
-              </div>
-            )}
-            {cfg.features.estimates && (
-              <div className="space-y-1.5">
-                <Label>Estimate (hours)</Label>
-                <Input type="number" min={0} step="0.5" value={f.estimate} onChange={(e) => setF({ ...f, estimate: e.target.value })} disabled={!canEdit} />
-              </div>
-            )}
-            {cfg.features.timeSpent && (
-              <div className="space-y-1.5">
-                <Label>Spent (hours)</Label>
-                <Input type="number" min={0} step="0.5" value={f.spent} onChange={(e) => setF({ ...f, spent: e.target.value })} disabled={!canEdit} />
-              </div>
-            )}
-            {cfg.features.progress && (
-              <div className="space-y-1.5">
-                <Label>Progress: {f.progress}%</Label>
-                <input type="range" min={0} max={100} step={5} value={f.progress} onChange={(e) => setF({ ...f, progress: Number(e.target.value) })} disabled={!canEdit} className="w-full accent-[var(--primary)]" />
-              </div>
-            )}
-          </div>
-          {fields.length > 0 && (
-            <div className="grid gap-3 rounded-lg border p-3 sm:grid-cols-2">
-              {fields.map((fd) => (
-                <FieldInput
-                  key={fd.key}
-                  field={fd}
-                  value={values[fd.key] ?? null}
-                  people={people}
-                  required={fieldRequired(fd, category)}
-                  disabled={!canEdit || (fd.leadsOnly && !access.rights.editAll)}
-                  onChange={(v) => setValues((x) => ({ ...x, [fd.key]: v }))}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-        {task && (
-          <div className="space-y-2 border-t pt-3">
-            <Label>Comments</Label>
-            <div className="max-h-48 space-y-2 overflow-y-auto">
-              {comments?.map((c) => (
-                <div key={c.id} className="rounded-lg bg-muted/50 p-2 text-sm">
-                  <p className="text-xs font-medium">
-                    {c.author_name} <span className="font-normal text-muted-foreground">{c.created_at.slice(0, 16).replace("T", " ")}</span>
-                  </p>
-                  <p className="whitespace-pre-wrap">{c.body}</p>
-                </div>
-              ))}
-              {comments && !comments.length && <p className="text-xs text-muted-foreground">No comments yet.</p>}
-            </div>
-            {canEdit && (
-              <div className="flex gap-2">
-                <Input value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Write a comment" />
-                <Button
-                  variant="outline"
-                  disabled={!comment.trim()}
-                  onClick={async () => {
-                    const r = await addTaskCommentAction(dept, task.id, comment);
-                    if (!r.ok) return toast.error(r.error);
-                    setComment("");
-                    await loadComments();
-                  }}
-                >
-                  Post
-                </Button>
-              </div>
-            )}
-          </div>
-        )}
-        <DialogFooter className="sm:justify-between">
-          {task && canEdit && (access.rights.deleteAll || task.reporter_id === viewerId) ? (
-            <Button
-              variant="ghost"
-              className="text-destructive"
-              onClick={async () => {
-                if (!window.confirm(`Delete ${task.code}?`)) return;
-                const r = await bulkTasksAction(dept, [task.id], { delete: true });
-                if (!r.ok) return toast.error(r.error);
-                onClose();
-                router.refresh();
-              }}
-            >
-              <Trash2Icon /> Delete
-            </Button>
-          ) : (
-            <span />
-          )}
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={onClose}>
-              {canEdit ? "Cancel" : "Close"}
-            </Button>
-            {canEdit && (
-              <Button disabled={busy || !f.title.trim()} onClick={save}>
-                {busy && <Loader2Icon className="animate-spin" />} {task ? "Save" : "Create"}
-              </Button>
-            )}
-          </div>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <Button size="sm" variant="outline" className="border-emerald-500/50 text-emerald-700 dark:text-emerald-400" onClick={onStop} title={`Stop the timer on ${timer.code} ${timer.title}`}>
+      <TimerIcon className="animate-pulse" /> {timer.code} {Math.floor(m / 60)}:{String(m % 60).padStart(2, "0")} · Stop
+    </Button>
   );
 }
 
-// One custom field in the task dialog, drawn by its type.
-function FieldInput({
-  field: f,
-  value,
-  people,
-  required,
-  disabled,
-  onChange,
-}: {
-  field: DeptField;
-  value: FieldValue;
-  people: Person[];
-  required: boolean;
-  disabled: boolean;
-  onChange: (v: FieldValue) => void;
-}) {
-  const id = `fld-${f.key}`;
-  const wide = f.type === "longtext" || f.type === "multiselect";
-  const label = (
-    <Label htmlFor={id}>
-      {f.label}
-      {required && <span className="text-destructive"> *</span>}
-    </Label>
-  );
-  let input: React.ReactNode;
-  switch (f.type) {
-    case "longtext":
-      input = <Textarea id={id} rows={3} value={String(value ?? "")} onChange={(e) => onChange(e.target.value)} disabled={disabled} />;
-      break;
-    case "number":
-    case "money":
-      input = <Input id={id} type="number" step="any" value={value == null ? "" : String(value)} onChange={(e) => onChange(e.target.value === "" ? null : Number(e.target.value))} disabled={disabled} />;
-      break;
-    case "date":
-      input = <Input id={id} type="date" value={String(value ?? "")} onChange={(e) => onChange(e.target.value || null)} disabled={disabled} />;
-      break;
-    case "url":
-      input = <Input id={id} type="url" value={String(value ?? "")} onChange={(e) => onChange(e.target.value)} placeholder="https://" disabled={disabled} />;
-      break;
-    case "checkbox":
-      input = (
-        <label className="flex h-9 items-center gap-2 text-sm">
-          <Checkbox id={id} checked={value === true} onCheckedChange={(v) => onChange(v === true)} disabled={disabled} /> Yes
-        </label>
-      );
-      break;
-    case "rating":
-      input = (
-        <div className="flex h-9 items-center gap-1" role="radiogroup" aria-label={f.label}>
-          {[1, 2, 3, 4, 5].map((n) => (
-            <button
-              key={n}
-              type="button"
-              role="radio"
-              aria-checked={value === n}
-              aria-label={`${n} of 5`}
-              disabled={disabled}
-              onClick={() => onChange(value === n ? null : n)}
-              className={cn("text-lg leading-none", Number(value) >= n ? "text-amber-500" : "text-muted-foreground/40")}
-            >
-              ★
-            </button>
-          ))}
-        </div>
-      );
-      break;
-    case "select":
-    case "person": {
-      const options = f.type === "person" ? people.map((p) => ({ value: p.id, label: p.name })) : f.options.map((o) => ({ value: o, label: o }));
-      input = (
-        <Select value={value ? String(value) : "none"} onValueChange={(v) => onChange(v === "none" ? null : v)} disabled={disabled}>
-          <SelectTrigger id={id} className="w-full">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="none">None</SelectItem>
-            {options.map((o) => (
-              <SelectItem key={o.value} value={o.value}>
-                {o.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      );
-      break;
-    }
-    case "multiselect": {
-      const picked = Array.isArray(value) ? value : [];
-      input = (
-        <div className="flex flex-wrap gap-1.5">
-          {f.options.map((o) => {
-            const on = picked.includes(o);
-            return (
-              <button
-                key={o}
-                type="button"
-                aria-pressed={on}
-                disabled={disabled}
-                onClick={() => onChange(on ? picked.filter((x) => x !== o) : [...picked, o])}
-                className={cn("rounded-full border px-2.5 py-0.5 text-xs", on ? "border-primary bg-primary text-primary-foreground" : "hover:bg-muted")}
-              >
-                {o}
-              </button>
-            );
-          })}
-        </div>
-      );
-      break;
-    }
-    default:
-      input = <Input id={id} value={String(value ?? "")} onChange={(e) => onChange(e.target.value)} disabled={disabled} />;
-  }
+// Sprints: plan, start (one at a time; starting one closes the previous) and close.
+function Sprints({ dept, sprints, canEdit, go }: { dept: WorkDept; sprints: Sprint[]; canEdit: boolean; go: (p: Record<string, string | null>) => void }) {
+  const router = useRouter();
+  const [f, setF] = React.useState({ name: "", startDate: "", endDate: "", goal: "" });
+  const save = async (input: Parameters<typeof saveSprintAction>[1]) => {
+    const r = await saveSprintAction(dept, input);
+    if (!r.ok) return toast.error(r.error);
+    router.refresh();
+  };
   return (
-    <div className={cn("space-y-1.5", wide && "sm:col-span-2")}>
-      {label}
-      {input}
-      {f.help && <p className="text-xs text-muted-foreground">{f.help}</p>}
-    </div>
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base">Sprints</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {sprints.length ? (
+          <ul className="divide-y rounded-lg border">
+            {sprints.map((sp) => (
+              <li key={sp.id} className="flex flex-wrap items-center gap-2 px-3 py-2 text-sm">
+                <span className="min-w-0 flex-1">
+                  <span className="font-medium">{sp.name}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {" "}
+                    · {sp.status === "active" ? "current" : sp.status}
+                    {sp.start_date && ` · ${sp.start_date} to ${sp.end_date ?? "?"}`}
+                    {sp.goal && ` · ${sp.goal}`}
+                  </span>
+                </span>
+                <span className="text-xs text-muted-foreground tabular">
+                  {sp.done}/{sp.total} done
+                </span>
+                <Button size="xs" variant="ghost" onClick={() => go({ tab: "board", sprint: sp.id })}>
+                  Open board
+                </Button>
+                {canEdit && sp.status !== "active" && sp.status !== "closed" && (
+                  <Button size="xs" variant="outline" onClick={() => save({ id: sp.id, name: sp.name, goal: sp.goal, startDate: sp.start_date, endDate: sp.end_date, status: "active" })}>
+                    Start
+                  </Button>
+                )}
+                {canEdit && sp.status === "active" && (
+                  <Button size="xs" variant="outline" onClick={() => save({ id: sp.id, name: sp.name, goal: sp.goal, startDate: sp.start_date, endDate: sp.end_date, status: "closed" })}>
+                    Close
+                  </Button>
+                )}
+                {canEdit && (
+                  <Button
+                    size="icon-xs"
+                    variant="ghost"
+                    aria-label={`Delete ${sp.name}`}
+                    onClick={async () => {
+                      if (!window.confirm(`Delete ${sp.name}? Its tasks stay, without a sprint.`)) return;
+                      const r = await deleteSprintAction(dept, sp.id);
+                      if (!r.ok) return toast.error(r.error);
+                      router.refresh();
+                    }}
+                  >
+                    <Trash2Icon />
+                  </Button>
+                )}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-muted-foreground">No sprints yet.</p>
+        )}
+        {canEdit && (
+          <form
+            className="flex flex-wrap gap-2"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              await save({ name: f.name, goal: f.goal, startDate: f.startDate || null, endDate: f.endDate || null, status: "planned" });
+              setF({ name: "", startDate: "", endDate: "", goal: "" });
+            }}
+          >
+            <Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="Sprint name" aria-label="Sprint name" className="h-8 w-40" />
+            <Input type="date" value={f.startDate} onChange={(e) => setF({ ...f, startDate: e.target.value })} aria-label="Sprint start" className="h-8 w-36" />
+            <Input type="date" value={f.endDate} onChange={(e) => setF({ ...f, endDate: e.target.value })} aria-label="Sprint end" className="h-8 w-36" />
+            <Input value={f.goal} onChange={(e) => setF({ ...f, goal: e.target.value })} placeholder="Goal (optional)" aria-label="Sprint goal" className="h-8 flex-1" />
+            <Button size="sm" variant="outline" type="submit" disabled={!f.name.trim()}>
+              <PlusIcon /> Plan sprint
+            </Button>
+          </form>
+        )}
+      </CardContent>
+    </Card>
   );
 }

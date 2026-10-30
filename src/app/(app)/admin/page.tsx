@@ -14,7 +14,7 @@ import { ROLES, STAGES, type Role, type Stage } from "@/lib/domain";
 import { AccessAdmin, DataAdmin, PeopleAdmin, PermissionsAdmin, TeamsAdmin, type AdminUser, type TeamPerson } from "./admin-client";
 import { PageImport } from "@/components/app/page-import";
 import { DepartmentsAdmin } from "./departments-admin";
-import { deptPeople } from "@/server/departments";
+import { customDepartments, deptPeople } from "@/server/departments";
 import { DEPARTMENTS } from "@/lib/domain";
 
 export const metadata = { title: "Admin" };
@@ -105,7 +105,13 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
               <TeamsAdmin people={team} />
             </TabsContent>
             <TabsContent value="departments">
-              <DepartmentsAdmin departments={await Promise.all(DEPARTMENTS.map(async (d) => ({ dept: d, people: (await deptPeople(d)).map((x) => ({ id: x.id, name: x.name, roles: x.roles, position: x.position })) })))} />
+              <DepartmentsAdmin
+                departments={await Promise.all(DEPARTMENTS.map(async (d) => ({ dept: d, people: (await deptPeople(d)).map((x) => ({ id: x.id, name: x.name, roles: x.roles, position: x.position })) })))}
+                custom={await Promise.all(
+                  (await customDepartments({ includeArchived: true })).map(async (c) => ({ ...c, people: (await deptPeople(c.key)).map((x) => ({ id: x.id, name: x.name, roles: x.roles, position: x.position })) })),
+                )}
+                everyone={users.filter((u) => u.active).map((u) => ({ id: u.id, name: u.name }))}
+              />
             </TabsContent>
             <TabsContent value="permissions">
               <PermissionsAdmin matrix={await getPermissionMatrix()} counts={roleCounts} leadCounts={leadCounts} />

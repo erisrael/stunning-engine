@@ -11,7 +11,8 @@ import { OPEN_CATEGORIES, fieldShown, type FieldValue, type StatusCategory } fro
 import { RESOURCE_STATUS_LABELS, RESOURCE_TYPE_LABELS, RESOURCE_TYPES, type ResourceType } from "@/lib/studio";
 import type { Position } from "@/lib/domain";
 
-export type DashDept = "dev" | "marketing" | "studio";
+// "studio", or a work department (Dev, Marketing, or one created in Admin).
+export type DashDept = string;
 const kindOf = (d: DashDept): DashKind => (d === "studio" ? "studio" : "work");
 const n = (v: unknown) => Number(v ?? 0);
 const DAY = 864e5;
@@ -117,7 +118,7 @@ type TaskRow = {
 
 export type DashTask = { id: string; code: string; title: string; status: string; due_date: string | null; assignee_name: string | null; updated_at: string };
 
-export async function workDashboard(user: AppUser, d: "dev" | "marketing", f: DashFilter) {
+export async function workDashboard(user: AppUser, d: string, f: DashFilter) {
   const w = await workAccess(user, d);
   const cfg = w.config;
   const range = periodRange(f.period);

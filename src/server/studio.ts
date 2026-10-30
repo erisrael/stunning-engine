@@ -5,7 +5,9 @@
 import { all, get, nowIso, parseJson, placeholders, run, tx, uid } from "./db";
 import { audit, WorkflowError } from "./workflow";
 import { notify } from "./notifications";
-import { deptManagers, requireDept, type DeptAccess } from "./departments";
+import { deptManagers, deptPeople, requireDept, type DeptAccess } from "./departments";
+import { getStudioConfig } from "./studio-extras";
+import type { TaskCheck } from "@/lib/dept-config";
 import type { AppUser } from "./users";
 import { RESOURCE_STATUSES, RESOURCE_TYPES, QUESTION_TYPES, type QuestionOption, type ResourceStatus, type ResourceType } from "@/lib/studio";
 
@@ -42,6 +44,10 @@ export type Resource = {
   meta: { durationMin?: number; passMark?: number; instructions?: string };
   author_id: string | null;
   author_name: string | null;
+  assignee_id: string | null;
+  assignee_name: string | null;
+  due_date: string | null;
+  checklist: TaskCheck[];
   reviewer_name: string | null;
   review_note: string | null;
   version: number;
@@ -55,7 +61,7 @@ export type ResourceFilter = { type: ResourceType; q?: string | null; status?: s
 
 function scope(user: AppUser, a: DeptAccess, alias = "r") {
   if (a.manage || a.readOnly) return { sql: "1=1", params: [] as string[] };
-  return { sql: `(${alias}.author_id = ? OR ${alias}.status = 'published')`, params: [user.id] };
+  return { sql: `(${alias}.author_id = ? OR ${alias}.assignee_id = ? OR ${alias}.status = 'published')`, params: [user.id, user.id] };
 }
 
 export async function listResources(user: AppUser, f: ResourceFilter): Promise<{ rows: Resource[]; access: DeptAccess }> {
@@ -85,15 +91,15 @@ export async function listResources(user: AppUser, f: ResourceFilter): Promise<{
   }
   const dir = f.dir === "asc" ? "ASC" : "DESC";
   const order = f.sort === "title" ? `lower(r.title) ${dir}` : f.sort === "status" ? `r.status ${dir}, r.updated_at DESC` : `r.updated_at ${dir}`;
-  const rows = await all<Resource & { meta: string }>(
-    `SELECT r.*, g.name AS grade, s.name AS subject, u.number AS unit_number, l.number AS lesson_number, ua.name AS author_name, ur.name AS reviewer_name,
+  const rows = await all<Omit<Resource, "meta" | "checklist"> & { meta: string; checklist: string }>(
+    `SELECT r.*, g.name AS grade, s.name AS subject, u.number AS unit_number, l.number AS lesson_number, ua.name AS author_name, ur.name AS reviewer_name, us.name AS assignee_name,
        CASE WHEN r.type = 'exam' THEN (SELECT COUNT(*) FROM studio_exam_questions q WHERE q.resource_id = r.id) WHEN r.type = 'flashcards' THEN (SELECT COUNT(*) FROM studio_cards c WHERE c.resource_id = r.id) ELSE 0 END AS count
      FROM studio_resources r LEFT JOIN grades g ON g.id = r.grade_id LEFT JOIN subjects s ON s.id = r.subject_id LEFT JOIN units u ON u.id = r.unit_id
-     LEFT JOIN lessons l ON l.id = r.lesson_id LEFT JOIN users ua ON ua.id = r.author_id LEFT JOIN users ur ON ur.id = r.reviewer_id
+     LEFT JOIN lessons l ON l.id = r.lesson_id LEFT JOIN users ua ON ua.id = r.author_id LEFT JOIN users ur ON ur.id = r.reviewer_id LEFT JOIN users us ON us.id = r.assignee_id
      WHERE ${where.join(" AND ")} ORDER BY ${order} LIMIT 1000`,
     ...params,
   );
-  return { access: a, rows: rows.map((r) => ({ ...r, meta: parseJson(r.meta, {}), count: Number(r.count), version: Number(r.version) })) };
+  return { access: a, rows: rows.map((r) => ({ ...r, meta: parseJson(r.meta, {}), checklist: parseJson<TaskCheck[]>(r.checklist as unknown as string, []), count: Number(r.count), version: Number(r.version) })) };
 }
 
 export async function getResource(user: AppUser, id: string) {
@@ -113,12 +119,23 @@ export async function getResource(user: AppUser, id: string) {
   return { resource: r, questions, cards, access: a };
 }
 
-export type ResourceInput = Placement & { id?: string; type: ResourceType; title: string; language?: string; body?: string; meta?: Resource["meta"] };
+export type ResourceInput = Placement & { id?: string; type: ResourceType; title: string; language?: string; body?: string; meta?: Resource["meta"]; assigneeId?: string | null; dueDate?: string | null };
 
 async function canEdit(user: AppUser, a: DeptAccess, id: string) {
   if (a.manage) return true;
-  const r = await get<{ author_id: string | null }>("SELECT author_id FROM studio_resources WHERE id = ?", id);
-  return r?.author_id === user.id;
+  const r = await get<{ author_id: string | null; assignee_id: string | null }>("SELECT author_id, assignee_id FROM studio_resources WHERE id = ?", id);
+  return r?.author_id === user.id || r?.assignee_id === user.id;
+}
+
+// Who does the work and by when. Heads and leads assign anyone in Studio; others only themselves.
+async function planFields(user: AppUser, a: DeptAccess, input: ResourceInput, old: { assignee_id: string | null; due_date: string | null } | null) {
+  const assignee = input.assigneeId !== undefined ? input.assigneeId || null : (old?.assignee_id ?? null);
+  if (assignee && assignee !== old?.assignee_id) {
+    if (!a.manage && assignee !== user.id) throw new WorkflowError("FORBIDDEN", "Only Studio heads and leads assign work to others.");
+    if (!(await deptPeople("studio")).some((p) => p.id === assignee)) throw new WorkflowError("VALIDATION", "The person is not in Studio.");
+  }
+  const due = input.dueDate !== undefined ? (input.dueDate && /^\d{4}-\d{2}-\d{2}$/.test(input.dueDate) ? input.dueDate : null) : (old?.due_date ?? null);
+  return { assignee, due };
 }
 
 export async function saveResource(user: AppUser, input: ResourceInput) {
@@ -129,14 +146,15 @@ export async function saveResource(user: AppUser, input: ResourceInput) {
   await checkPlacement(input);
   const now = nowIso();
   if (input.id) {
-    const old = await get<{ status: string; version: number }>("SELECT status, version FROM studio_resources WHERE id = ?", input.id);
+    const old = await get<{ status: string; version: number; assignee_id: string | null; due_date: string | null }>("SELECT status, version, assignee_id, due_date FROM studio_resources WHERE id = ?", input.id);
     if (!old) throw new WorkflowError("NOT_FOUND", "Not found.");
     if (!(await canEdit(user, a, input.id))) throw new WorkflowError("FORBIDDEN", "You can edit only your own work.");
     // Changing published work starts a new version that goes through review again.
     const reopen = old.status === "published" || old.status === "approved";
+    const plan = await planFields(user, a, input, old);
     await run(
       `UPDATE studio_resources SET title = ?, grade_id = ?, subject_id = ?, unit_id = ?, lesson_id = ?, language = ?, body = ?, meta = ?, updated_at = ?,
-         status = ?, version = ? WHERE id = ?`,
+         status = ?, version = ?, assignee_id = ?, due_date = ? WHERE id = ?`,
       title,
       input.gradeId || null,
       input.subjectId || null,
@@ -148,15 +166,20 @@ export async function saveResource(user: AppUser, input: ResourceInput) {
       now,
       reopen ? "draft" : old.status,
       reopen ? Number(old.version) + 1 : Number(old.version),
+      plan.assignee,
+      plan.due,
       input.id,
     );
+    if (plan.assignee && plan.assignee !== old.assignee_id && plan.assignee !== user.id)
+      await notify([plan.assignee], { type: "assignment", title: `Studio work for you: ${title}`, body: plan.due ? `Due ${plan.due}` : undefined, link: `/studio?open=${input.id}`, dedupeKey: `studio-assign:${input.id}:${plan.assignee}:${now}` }, now, user.id);
     await audit({ actor: user }, { action: "studio.saved", summary: `${user.name} edited ${input.type} "${title}"${reopen ? " (new version, back to draft)" : ""}` });
     return input.id;
   }
   const id = uid("res_");
+  const plan = await planFields(user, a, input, null);
   await run(
-    `INSERT INTO studio_resources (id, type, title, grade_id, subject_id, unit_id, lesson_id, language, status, body, meta, author_id, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?)`,
+    `INSERT INTO studio_resources (id, type, title, grade_id, subject_id, unit_id, lesson_id, language, status, body, meta, author_id, assignee_id, due_date, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?)`,
     id,
     input.type,
     title,
@@ -168,9 +191,13 @@ export async function saveResource(user: AppUser, input: ResourceInput) {
     input.body ?? "",
     JSON.stringify(input.meta ?? {}),
     user.id,
+    plan.assignee,
+    plan.due,
     now,
     now,
   );
+  if (plan.assignee && plan.assignee !== user.id)
+    await notify([plan.assignee], { type: "assignment", title: `Studio work for you: ${title}`, body: plan.due ? `Due ${plan.due}` : undefined, link: `/studio?open=${id}`, dedupeKey: `studio-assign:${id}:${plan.assignee}` }, now, user.id);
   await audit({ actor: user }, { action: "studio.created", summary: `${user.name} created ${input.type} "${title}"` });
   return id;
 }
@@ -178,9 +205,14 @@ export async function saveResource(user: AppUser, input: ResourceInput) {
 // Review flow: draft -> review (author) -> approved (head or lead) -> published (head or lead); changes go back to draft.
 export async function setResourceStatus(user: AppUser, id: string, action: "submit" | "approve" | "changes" | "publish" | "unpublish" | "archive" | "restore", note?: string | null) {
   const a = await requireDept(user, "studio", "write");
-  const r = await get<{ status: ResourceStatus; title: string; type: string; author_id: string | null }>("SELECT status, title, type, author_id FROM studio_resources WHERE id = ?", id);
+  const r = await get<{ status: ResourceStatus; title: string; type: string; author_id: string | null; assignee_id: string | null; checklist: string }>(
+    "SELECT status, title, type, author_id, assignee_id, checklist FROM studio_resources WHERE id = ?",
+    id,
+  );
   if (!r) throw new WorkflowError("NOT_FOUND", "Not found.");
-  const own = r.author_id === user.id;
+  const own = r.author_id === user.id || r.assignee_id === user.id;
+  const studioCfg = await getStudioConfig();
+  const checklist = parseJson<TaskCheck[]>(r.checklist, []);
   const now = nowIso();
   const set = async (status: ResourceStatus) => {
     await run("UPDATE studio_resources SET status = ?, updated_at = ? WHERE id = ?", status, now, id);
@@ -190,6 +222,13 @@ export async function setResourceStatus(user: AppUser, id: string, action: "subm
     case "submit":
       if (!own && !a.manage) throw new WorkflowError("FORBIDDEN", "Only the author submits for review.");
       if (r.status !== "draft") throw new WorkflowError("INVALID_STATE", "Only drafts are submitted.");
+      // The review checklist is copied on the first submission; the reviewer works through it.
+      if (!checklist.length && studioCfg.reviewChecklist.length)
+        await run(
+          "UPDATE studio_resources SET checklist = ? WHERE id = ?",
+          JSON.stringify(studioCfg.reviewChecklist.map((l) => ({ id: uid("chk_"), text: l.text, verify: l.verify, done: false, doneBy: null, verifiedBy: null }))),
+          id,
+        );
       await set("review");
       await notify(await deptManagers("studio"), { type: "approval", title: `Review: ${r.title}`, body: `${user.name} submitted a ${r.type} for review.`, link: `/studio?open=${id}`, dedupeKey: `studio-review:${id}:${now}` }, now, user.id);
       return;
@@ -198,6 +237,10 @@ export async function setResourceStatus(user: AppUser, id: string, action: "subm
     case "publish":
     case "unpublish":
       if (!a.manage) throw new WorkflowError("FORBIDDEN", "Only Studio heads and leads review and publish.");
+      if ((action === "approve" || action === "publish") && studioCfg.requireChecklist) {
+        const open = checklist.find((c) => !c.done || (c.verify && !c.verifiedBy));
+        if (open) throw new WorkflowError("VALIDATION", `Finish the review checklist first: "${open.text}"${open.done ? " needs verifying" : ""}.`);
+      }
       if (action === "approve") {
         if (r.status !== "review") throw new WorkflowError("INVALID_STATE", "Only work in review is approved.");
         await run("UPDATE studio_resources SET reviewer_id = ?, review_note = ? WHERE id = ?", user.id, note?.trim() || null, id);

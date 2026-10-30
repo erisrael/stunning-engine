@@ -1,7 +1,14 @@
-// Vocabulary of the Dev and Marketing work sections (shared by the server and the browser).
+// Vocabulary of the work departments (shared by the server and the browser). Dev and Marketing are built in; more
+// departments are created from templates in Admin, Departments, and live at /d/<key>.
 
 export const WORK_DEPTS = ["dev", "marketing"] as const;
-export type WorkDept = (typeof WORK_DEPTS)[number];
+export type BuiltInWorkDept = (typeof WORK_DEPTS)[number];
+// A built-in key or the key of a department created in Admin.
+export type WorkDept = string;
+export const isBuiltInWorkDept = (d: string): d is BuiltInWorkDept => (WORK_DEPTS as readonly string[]).includes(d);
+export const deptPath = (d: string) => (isBuiltInWorkDept(d) ? `/${d}` : `/d/${d}`);
+// Keys of new departments: lowercase letters, digits and dashes, not clashing with pages or built-in departments.
+export const RESERVED_DEPT_KEYS = ["dev", "marketing", "studio", "production", "owners", "company", "admin", "new"];
 
 export const TASK_STATUSES = ["backlog", "todo", "in_progress", "review", "done", "cancelled"] as const;
 export type TaskStatus = (typeof TASK_STATUSES)[number];
@@ -17,7 +24,7 @@ export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
 export const PROJECT_STATUS_LABELS: Record<ProjectStatus, string> = { planning: "Planning", active: "Active", on_hold: "On hold", done: "Done", cancelled: "Cancelled" };
 
 export const WORK_CONFIG: Record<
-  WorkDept,
+  BuiltInWorkDept,
   { title: string; project: string; projects: string; taskTypes: { key: string; label: string }[]; metrics: { key: string; label: string }[]; description: string }
 > = {
   dev: {

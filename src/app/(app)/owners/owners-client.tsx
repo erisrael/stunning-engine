@@ -17,7 +17,14 @@ import { BarsChart, ChartFrame } from "@/components/app/charts";
 import { deleteReportAction, reportFactsAction, saveReportAction } from "@/app/actions/departments";
 import type { DeptReport, OwnerStats } from "@/server/owners";
 import { CAT } from "@/lib/chart-colors";
-import { DEPARTMENT_LABELS, DEPARTMENTS, STAGE_LABELS, type Department } from "@/lib/domain";
+import { STAGE_LABELS } from "@/lib/domain";
+
+// Department names (built-in and created ones), from the server.
+const Labels = React.createContext<Record<string, string>>({});
+const useDeptLabel = () => {
+  const map = React.useContext(Labels);
+  return (d: string) => map[d] ?? d;
+};
 
 export function OwnersClient({
   tab,
@@ -29,17 +36,19 @@ export function OwnersClient({
   filter,
   openId,
   overview,
+  labels = {},
 }: {
   tab: "overview" | "reports";
   isOwner: boolean;
   stats: OwnerStats | null;
   reports: DeptReport[];
-  writeFor: Department[];
+  writeFor: string[];
   viewerId: string;
-  filter: { department: Department | null; status: string | null; q: string | null };
+  filter: { department: string | null; status: string | null; q: string | null };
   openId: string | null;
   // The Company overview, rendered on the server, when the viewer may see it.
   overview?: React.ReactNode;
+  labels?: Record<string, string>;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -50,6 +59,7 @@ export function OwnersClient({
     router.replace(`${pathname}?${p.toString()}`, { scroll: false });
   };
   return (
+    <Labels.Provider value={labels}>
     <div className="space-y-4">
       {isOwner && (
         <Tabs value={tab} onValueChange={(v) => go({ tab: v === "overview" ? null : v })}>
@@ -62,6 +72,7 @@ export function OwnersClient({
       {tab === "overview" && (overview ?? (stats && <Overview s={stats} />))}
       {tab === "reports" && <Reports reports={reports} writeFor={writeFor} viewerId={viewerId} filter={filter} openId={openId} go={go} />}
     </div>
+    </Labels.Provider>
   );
 }
 
@@ -186,12 +197,13 @@ function Reports({
   go,
 }: {
   reports: DeptReport[];
-  writeFor: Department[];
+  writeFor: string[];
   viewerId: string;
-  filter: { department: Department | null; status: string | null; q: string | null };
+  filter: { department: string | null; status: string | null; q: string | null };
   openId: string | null;
   go: (p: Record<string, string | null>) => void;
 }) {
+  const deptLabel = useDeptLabel();
   const [q, setQ] = React.useState(filter.q ?? "");
   const [open, setOpen] = React.useState<DeptReport | "new" | null>(null);
   React.useEffect(() => {
@@ -216,9 +228,9 @@ function Reports({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Every department</SelectItem>
-            {DEPARTMENTS.map((d) => (
+            {Object.keys(React.useContext(Labels)).map((d) => (
               <SelectItem key={d} value={d}>
-                {DEPARTMENT_LABELS[d]}
+                {deptLabel(d)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -246,7 +258,7 @@ function Reports({
           {reports.map((r) => (
             <button key={r.id} type="button" onClick={() => setOpen(r)} className="space-y-1.5 rounded-xl border bg-card p-4 text-left hover:border-primary/40">
               <div className="flex items-center gap-2">
-                <Badge variant="secondary">{DEPARTMENT_LABELS[r.department]}</Badge>
+                <Badge variant="secondary">{deptLabel(r.department)}</Badge>
                 {r.status === "draft" && <Badge variant="outline">Draft</Badge>}
                 <span className="ml-auto text-xs text-muted-foreground">
                   {r.period_start} to {r.period_end}
@@ -273,7 +285,8 @@ function lastWeek() {
   return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) };
 }
 
-function ReportDialog({ report, writeFor, viewerId, onClose }: { report: DeptReport | null; writeFor: Department[]; viewerId: string; onClose: () => void }) {
+function ReportDialog({ report, writeFor, viewerId, onClose }: { report: DeptReport | null; writeFor: string[]; viewerId: string; onClose: () => void }) {
+  const deptLabel = useDeptLabel();
   const router = useRouter();
   const canEdit = !report || (report.author_id === viewerId && writeFor.includes(report.department));
   const lw = lastWeek();
@@ -290,7 +303,7 @@ function ReportDialog({ report, writeFor, viewerId, onClose }: { report: DeptRep
   const [busy, setBusy] = React.useState(false);
   const save = async (submit: boolean) => {
     setBusy(true);
-    const r = await saveReportAction({ id: report?.id, ...f, department: f.department as Department, submit });
+    const r = await saveReportAction({ id: report?.id, ...f, department: f.department, submit });
     setBusy(false);
     if (!r.ok) return toast.error(r.error);
     toast.success(submit ? "Sent to the owners" : "Draft saved");
@@ -309,21 +322,21 @@ function ReportDialog({ report, writeFor, viewerId, onClose }: { report: DeptRep
         <DialogHeader>
           <DialogTitle>{report ? (canEdit ? "Edit report" : report.title) : "New department report"}</DialogTitle>
           <DialogDescription>
-            {report ? `${DEPARTMENT_LABELS[report.department]}, ${report.period_start} to ${report.period_end}, by ${report.author_name ?? "unknown"}` : "Saved as a draft until you send it. Owners are told when it is sent."}
+            {report ? `${deptLabel(report.department)}, ${report.period_start} to ${report.period_end}, by ${report.author_name ?? "unknown"}` : "Saved as a draft until you send it. Owners are told when it is sent."}
           </DialogDescription>
         </DialogHeader>
         {canEdit && (
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="space-y-1.5">
               <Label>Department</Label>
-              <Select value={f.department} onValueChange={(v) => setF({ ...f, department: v as Department })}>
+              <Select value={f.department} onValueChange={(v) => setF({ ...f, department: v })}>
                 <SelectTrigger className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   {writeFor.map((d) => (
                     <SelectItem key={d} value={d}>
-                      {DEPARTMENT_LABELS[d]}
+                      {deptLabel(d)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -349,7 +362,7 @@ function ReportDialog({ report, writeFor, viewerId, onClose }: { report: DeptRep
             variant="outline"
             className="w-fit"
             onClick={async () => {
-              const r = await reportFactsAction(f.department as Department, f.periodStart, f.periodEnd);
+              const r = await reportFactsAction(f.department, f.periodStart, f.periodEnd);
               if (!r.ok) return toast.error(r.error);
               setF((x) => ({ ...x, summary: x.summary ? `${x.summary}\n${r.data}` : String(r.data) }));
             }}

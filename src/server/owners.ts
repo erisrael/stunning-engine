@@ -3,7 +3,8 @@
 import { all, get, nowIso, run, uid } from "./db";
 import { audit, WorkflowError } from "./workflow";
 import { notify, usersWithRole } from "./notifications";
-import { positionsOf } from "./departments";
+import { customDepartments, departmentLabel, positionsOf } from "./departments";
+import { deptReportFacts } from "./work-extras";
 import { ensureDeptConfigs } from "./dept-config";
 import { can, type AppUser } from "./users";
 import { DEPARTMENT_LABELS, DEPARTMENT_ROLES, DEPARTMENTS, STAGES, type Department } from "@/lib/domain";
@@ -123,7 +124,7 @@ export type OwnerStats = Awaited<ReturnType<typeof ownerStats>>;
 
 export type DeptReport = {
   id: string;
-  department: Department;
+  department: string;
   period_start: string;
   period_end: string;
   title: string;
@@ -139,10 +140,11 @@ export type DeptReport = {
 };
 
 // Which departments a person writes reports for: where they are head or lead (Admin: all).
-export async function reportDepartments(user: AppUser): Promise<Department[]> {
-  if (can(user, "users.manage")) return [...DEPARTMENTS];
+export async function reportDepartments(user: AppUser): Promise<string[]> {
+  const all_ = [...DEPARTMENTS, ...(await customDepartments()).map((c) => c.key)];
+  if (can(user, "users.manage")) return all_;
   const pos = await positionsOf(user.id);
-  const out = DEPARTMENTS.filter((d) => pos[d] === "head" || pos[d] === "lead");
+  const out: string[] = all_.filter((d) => pos[d] === "head" || pos[d] === "lead");
   // Production managers report for production.
   if (user.roles.includes("manager") && !out.includes("production")) out.unshift("production");
   return out;
@@ -181,11 +183,11 @@ export async function listReports(user: AppUser, f: { department?: string | null
   );
 }
 
-export type ReportInput = { id?: string; department: Department; periodStart: string; periodEnd: string; title: string; summary: string; highlights?: string; risks?: string; nextSteps?: string; submit?: boolean };
+export type ReportInput = { id?: string; department: string; periodStart: string; periodEnd: string; title: string; summary: string; highlights?: string; risks?: string; nextSteps?: string; submit?: boolean };
 
 export async function saveReport(user: AppUser, input: ReportInput) {
   const mine = await reportDepartments(user);
-  if (!mine.includes(input.department)) throw new WorkflowError("FORBIDDEN", `You do not write reports for ${DEPARTMENT_LABELS[input.department] ?? input.department}.`);
+  if (!mine.includes(input.department)) throw new WorkflowError("FORBIDDEN", `You do not write reports for ${await departmentLabel(input.department)}.`);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.periodStart) || !/^\d{4}-\d{2}-\d{2}$/.test(input.periodEnd) || input.periodStart > input.periodEnd) throw new WorkflowError("VALIDATION", "Choose the period (start before end).");
   if (!input.title.trim() || !input.summary.trim()) throw new WorkflowError("VALIDATION", "A report needs a title and a summary.");
   const now = nowIso();
@@ -227,8 +229,9 @@ export async function saveReport(user: AppUser, input: ReportInput) {
   }
   if (input.submit) {
     await run("UPDATE dept_reports SET status = 'submitted', submitted_at = COALESCE(submitted_at, ?) WHERE id = ?", now, id);
-    await audit({ actor: user }, { action: "report.submitted", summary: `${user.name} submitted the ${DEPARTMENT_LABELS[input.department]} report "${input.title.trim()}"` });
-    await notify(await usersWithRole("owner"), { type: "discussion", title: `${DEPARTMENT_LABELS[input.department]} report: ${input.title.trim()}`, body: input.summary.slice(0, 160), link: `/owners?tab=reports&open=${id}`, dedupeKey: `report:${id}` }, now, user.id);
+    const label = await departmentLabel(input.department);
+    await audit({ actor: user }, { action: "report.submitted", summary: `${user.name} submitted the ${label} report "${input.title.trim()}"` });
+    await notify(await usersWithRole("owner"), { type: "discussion", title: `${label} report: ${input.title.trim()}`, body: input.summary.slice(0, 160), link: `/owners?tab=reports&open=${id}`, dedupeKey: `report:${id}` }, now, user.id);
   }
   return id;
 }
@@ -241,10 +244,9 @@ export async function deleteReport(user: AppUser, id: string) {
 }
 
 // What a department did in a period, to start a report from.
-export async function reportFacts(user: AppUser, department: Department, from: string, to: string) {
+export async function reportFacts(user: AppUser, department: string, from: string, to: string) {
   const mine = await reportDepartments(user);
   if (!mine.includes(department)) throw new WorkflowError("FORBIDDEN", "Not your department.");
-  if (department === "dev" || department === "marketing") await ensureDeptConfigs();
   const end = `${to}T23:59:59.999Z`;
   if (department === "production") {
     const r = await get<{ published: number; recorded: number; edited: number; uploaded: number }>(
@@ -262,13 +264,8 @@ export async function reportFacts(user: AppUser, department: Department, from: s
     const by = (t: string) => n(r.find((x) => x.type === t)?.c);
     return `Published ${by("note")} notes, ${by("exam")} exams and ${by("flashcards")} flash card decks; ${n(q?.c)} new questions in the bank.`;
   }
-  const t = await get<{ done: number; created: number; overdue: number }>(
-    `SELECT SUM(CASE WHEN completed_at >= ? AND completed_at <= ? THEN 1 ELSE 0 END) AS done,
-       SUM(CASE WHEN created_at >= ? AND created_at <= ? THEN 1 ELSE 0 END) AS created,
-       SUM(CASE WHEN status_category IN ('open','active','review') AND due_date < ? THEN 1 ELSE 0 END) AS overdue FROM dept_tasks WHERE dept = ?`,
-    from, end, from, end, to, department,
-  );
-  return `${n(t?.done)} tasks done, ${n(t?.created)} new tasks, ${n(t?.overdue)} overdue at the end of the period.`;
+  // Dev, Marketing and created departments.
+  return deptReportFacts(user, department, from, to);
 }
 
 export async function canSeeReports(user: AppUser) {
