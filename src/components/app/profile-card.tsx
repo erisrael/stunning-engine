@@ -14,7 +14,9 @@ import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/componen
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { UserAvatar } from "@/components/app/primitives";
 import { addProfileFileAction, deleteProfileFileAction, saveProfileAction } from "@/app/actions/profile";
-import type { Cover, Education, Experience, Language, LinkItem, Profile, ProfileSection, Skill } from "@/server/profiles";
+import type { Contact, Cover, Education, Experience, Language, LinkItem, Profile, ProfileSection, Skill, Visibility } from "@/server/profiles";
+import { PhoneIcon } from "lucide-react";
+import { ContactSheet } from "@/app/(app)/chat/chat-plus";
 import { cn } from "@/lib/utils";
 
 export const COVER_CLASS: Record<Cover, string> = {
@@ -57,6 +59,7 @@ export function ProfileCard({ profile }: { profile: Profile }) {
   const [editing, setEditing] = React.useState(false);
   const [p, setP] = React.useState(profile);
   const [busy, setBusy] = React.useState(false);
+  const [contactOpen, setContactOpen] = React.useState(false);
   React.useEffect(() => setP(profile), [profile]);
   const photo = React.useRef<HTMLInputElement>(null);
   const save = async (patch: Partial<Profile> = p) => {
@@ -74,6 +77,7 @@ export function ProfileCard({ profile }: { profile: Profile }) {
       links: patch.links,
       studyStatus: patch.studyStatus,
       hidden: patch.hidden,
+      contact: patch.contact ?? undefined,
     });
     setBusy(false);
     if (!r.ok) return void toast.error(r.error);
@@ -183,6 +187,13 @@ export function ProfileCard({ profile }: { profile: Profile }) {
               <span>{p.roles.join(", ")}</span>
             </div>
           </div>
+          {!p.canEdit && (
+            <div className="flex gap-2 pb-1">
+              <Button variant="outline" onClick={() => setContactOpen(true)}>
+                <PhoneIcon /> Contact
+              </Button>
+            </div>
+          )}
           {p.canEdit && (
             <div className="flex gap-2 pb-1">
               {editing ? (
@@ -436,8 +447,10 @@ export function ProfileCard({ profile }: { profile: Profile }) {
             </CardContent>
           </Card>
         )}
+        {p.canEdit && p.contact && <ContactEditor profile={p} onSave={(contact) => save({ ...p, contact })} busy={busy} />}
         {p.files && <Files profile={p} />}
       </div>
+      <ContactSheet userId={contactOpen ? p.userId : null} onClose={() => setContactOpen(false)} />
     </div>
   );
 }
@@ -522,6 +535,62 @@ function Files({ profile }: { profile: Profile }) {
             </Button>
           </div>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+const VIS_LABELS: Record<Visibility, string> = { everyone: "Everyone", team: "My team", nobody: "Only me" };
+
+// Contact details colleagues see when they tap you in chat or open your profile, each with who may see it.
+function ContactEditor({ profile, onSave, busy }: { profile: Profile; onSave: (c: Contact) => void; busy: boolean }) {
+  const [c, setC] = React.useState<Contact>(profile.contact!);
+  const field = (k: keyof Contact, label: string, placeholder: string) => (
+    <div className="space-y-1">
+      <Label htmlFor={`ct-${k}`}>{label}</Label>
+      <Input id={`ct-${k}`} value={String(c[k] ?? "")} onChange={(e) => setC({ ...c, [k]: e.target.value })} placeholder={placeholder} />
+    </div>
+  );
+  const vis = (k: "phoneVisible" | "emailVisible" | "messengersVisible", label: string) => (
+    <div className="space-y-1">
+      <Label>{label}</Label>
+      <Select value={c[k]} onValueChange={(v) => setC({ ...c, [k]: v as Visibility })}>
+        <SelectTrigger className="w-full" aria-label={label}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {(Object.keys(VIS_LABELS) as Visibility[]).map((x) => (
+            <SelectItem key={x} value={x}>
+              {VIS_LABELS[x]}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+  return (
+    <Card className="lg:col-span-2">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <PhoneIcon className="size-4" /> Contact details
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3 text-sm">
+        <p className="text-xs text-muted-foreground">Shown on your contact card when someone taps you in chat. My team means people in your stage or department and your leads. HR and Admin always see them.</p>
+        <div className="grid gap-3 sm:grid-cols-3">
+          {field("phone", "Mobile", "+251 9…")}
+          {field("phone2", "Other phone", "Office line")}
+          {vis("phoneVisible", "Phones visible to")}
+          {field("workEmail", "Work email", "you@myseed.com.et")}
+          {field("office", "Office or desk", "Studio 2, 3rd floor")}
+          {vis("emailVisible", "Email visible to")}
+          {field("telegram", "Telegram username", "@name")}
+          {field("whatsapp", "WhatsApp number", "+251 9…")}
+          {vis("messengersVisible", "Telegram and WhatsApp visible to")}
+        </div>
+        <Button onClick={() => onSave(c)} disabled={busy}>
+          Save contact details
+        </Button>
       </CardContent>
     </Card>
   );

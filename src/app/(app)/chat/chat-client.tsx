@@ -85,6 +85,10 @@ import {
 } from "./chat-extras";
 import { SecureGate, useSecureChat } from "./secure";
 import { cn } from "@/lib/utils";
+import { ContactSheet, ForwardDialog, JumpToDate, MediaSheet, MentionPicker, OnlineDot, ReadersDialog, ReportDialog, SearchSheet, Ticks, presenceLabel } from "./chat-plus";
+import { deleteConversationAction, messagesFromAction, newerMessagesAction, presenceAction } from "@/app/actions/chat-plus";
+import { useSearchParams } from "next/navigation";
+import { FlagIcon, ForwardIcon, ImageIcon as MediaIcon, MoreVerticalIcon, EyeIcon } from "lucide-react";
 
 type Person = { id: string; name: string; handle: string; roles: Role[] };
 
@@ -128,7 +132,7 @@ function dayLabel(iso: string, tz: string) {
 
 // Light formatting: @mentions, links and line breaks.
 function Body({ text, mine }: { text: string; mine: boolean }) {
-  const parts = text.split(/(@[a-z0-9._-]+|https?:\/\/\S+)/gi);
+  const parts = text.split(/(@[a-z0-9._-]+|#[\p{L}\p{N}_]+|https?:\/\/\S+)/giu);
   return (
     <span className="break-words whitespace-pre-wrap">
       {parts.map((p, i) =>
@@ -136,6 +140,10 @@ function Body({ text, mine }: { text: string; mine: boolean }) {
           <span key={i} className={cn("font-medium", mine ? "text-white underline decoration-white/40" : "text-primary")}>
             {p}
           </span>
+        ) : /^#[\p{L}\p{N}_]+$/u.test(p) ? (
+          <button key={i} type="button" title={`Find ${p}`} onClick={() => window.dispatchEvent(new CustomEvent("chat:tag", { detail: p }))} className={cn("font-medium hover:underline", mine ? "text-white" : "text-primary")}>
+            {p}
+          </button>
         ) : /^https?:\/\//.test(p) ? (
           <a key={i} href={p} target="_blank" rel="noreferrer" className="underline underline-offset-2">
             {p}
@@ -157,9 +165,15 @@ export function ChatClient({
   initialMessages,
   directory,
   timezone,
+  canCreateGroup = false,
+  isAdmin = false,
+  presence = {},
 }: {
   viewer: { id: string; name: string; handle: string };
   canManage: boolean;
+  canCreateGroup?: boolean;
+  isAdmin?: boolean;
+  presence?: Record<string, string | null>;
   canCreateChannel: boolean;
   groups: ChatGroupSummary[];
   activeId: string | null;
@@ -205,7 +219,7 @@ export function ChatClient({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              {canManage && (
+              {(canManage || canCreateGroup) && (
                 <DropdownMenuItem onClick={() => setCreating(true)}>
                   <UsersIcon /> New group
                 </DropdownMenuItem>
@@ -232,7 +246,8 @@ export function ChatClient({
                 {g.kind === "direct" ? (
                   <span className="relative shrink-0">
                     <UserAvatar name={g.name} size="md" className="size-11 text-sm" />
-                    <LockIcon className="absolute -right-0.5 -bottom-0.5 size-4 rounded-full bg-card p-0.5 text-[var(--st-done-fg)]" />
+                    <LockIcon className="absolute -top-0.5 -right-0.5 size-4 rounded-full bg-card p-0.5 text-[var(--st-done-fg)]" />
+                    {g.peer && <OnlineDot at={presence[g.peer.id]} className="absolute -right-0.5 -bottom-0.5" />}
                   </span>
                 ) : g.kind === "channel" ? (
                   <span className="relative shrink-0">
@@ -287,6 +302,8 @@ export function ChatClient({
             viewer={viewer}
             initialMessages={initialMessages}
             canManage={active.kind !== "direct" && (canManage || active.myRole === "admin")}
+            isAdmin={isAdmin || (active.kind !== "direct" && canManage)}
+            peerSeen={active.peer ? (presence[active.peer.id] ?? null) : null}
             directory={directory}
             names={names}
             timezone={timezone}
@@ -312,6 +329,8 @@ function Conversation({
   viewer,
   initialMessages,
   canManage,
+  isAdmin,
+  peerSeen,
   directory,
   names,
   timezone,
@@ -320,6 +339,8 @@ function Conversation({
   viewer: { id: string; name: string; handle: string };
   initialMessages: ChatMessage[];
   canManage: boolean;
+  isAdmin: boolean;
+  peerSeen: string | null;
   directory: Person[];
   names: Record<string, string>;
   timezone: string;
@@ -334,6 +355,22 @@ function Conversation({
   const [infoOpen, setInfoOpen] = React.useState(false);
   const [hasOlder, setHasOlder] = React.useState(initialMessages.length >= 80);
   const [sending, setSending] = React.useState(false);
+  // Search, the timeline, shared media, contact cards, forwarding, reports and receipts.
+  const [searchOpen, setSearchOpen] = React.useState(false);
+  const [searchQ, setSearchQ] = React.useState("");
+  const [mediaOpen, setMediaOpen] = React.useState(false);
+  const [contactId, setContactId] = React.useState<string | null>(null);
+  const [forwarding, setForwarding] = React.useState<ChatMessage | null>(null);
+  const [reporting, setReporting] = React.useState<{ m?: ChatMessage; chat?: boolean } | null>(null);
+  const [readersOf, setReadersOf] = React.useState<string | null>(null);
+  const [reads, setReads] = React.useState<{ userId: string; seq: number }[]>([]);
+  const [windowed, setWindowed] = React.useState(false);
+  const [highlight, setHighlight] = React.useState<string | null>(null);
+  const [peerAt, setPeerAt] = React.useState<string | null>(peerSeen);
+  const [mentionables, setMentionables] = React.useState<{ handle: string; name: string }[]>([]);
+  const windowedRef = React.useRef(false);
+  windowedRef.current = windowed;
+  const params = useSearchParams();
   const scroller = React.useRef<HTMLDivElement>(null);
   const input = React.useRef<HTMLTextAreaElement>(null);
   const since = React.useRef(new Date().toISOString());
@@ -379,9 +416,11 @@ function Conversation({
   }, []);
 
   const poll = React.useCallback(async () => {
-    const r = await pollMessagesAction({ groupId: group.id, afterSeq: lastSeqRef.current, since: since.current });
+    // While looking at an earlier part of the chat, new messages wait until "Back to latest".
+    const r = await pollMessagesAction({ groupId: group.id, afterSeq: windowedRef.current ? 9e15 : lastSeqRef.current, since: since.current });
     if (!r.ok || !r.data) return;
     since.current = r.data.at;
+    if (r.data.reads) setReads(r.data.reads);
     if (r.data.fresh.length || r.data.changed.length) merge(r.data.fresh, r.data.changed);
   }, [group.id, merge]);
 
@@ -455,6 +494,72 @@ function Conversation({
     });
   }
 
+  // Jumps to a message (search) or a date: shows that part of the chat, highlighted.
+  const jump = React.useCallback(
+    async (at: { seq?: number; date?: string }) => {
+      const r = await messagesFromAction(group.id, at);
+      if (!r.ok || !r.data) return void toast.error(r.ok ? "Nothing there" : r.error);
+      const d = r.data as { messages: ChatMessage[]; anchorSeq: number | null; hasNewer: boolean };
+      if (!d.anchorSeq) return void toast.info("No messages from that date on.");
+      stick.current = false;
+      setMessages(d.messages);
+      setWindowed(d.hasNewer);
+      setHasOlder(true);
+      const anchor = d.messages.find((m) => m.seq === d.anchorSeq);
+      if (anchor) {
+        setHighlight(anchor.id);
+        requestAnimationFrame(() => document.getElementById(`m-${anchor.id}`)?.scrollIntoView({ block: "center" }));
+        setTimeout(() => setHighlight(null), 2500);
+      }
+    },
+    [group.id],
+  );
+  async function backToLatest() {
+    const r = await olderMessagesAction(group.id, 9e15);
+    if (!r.ok || !r.data) return;
+    setMessages(r.data);
+    setWindowed(false);
+    stick.current = true;
+  }
+  async function loadNewer() {
+    const r = await newerMessagesAction(group.id, lastSeq);
+    if (!r.ok || !r.data) return;
+    const list = r.data as ChatMessage[];
+    merge(list);
+    if (list.length < 80) setWindowed(false);
+  }
+  // Links from search results in other chats, and #tags.
+  React.useEffect(() => {
+    const seq = Number(params.get("seq"));
+    if (seq) void jump({ seq });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per chat
+  }, [group.id]);
+  React.useEffect(() => {
+    const onTag = (e: Event) => {
+      setSearchQ((e as CustomEvent<string>).detail);
+      setSearchOpen(true);
+    };
+    window.addEventListener("chat:tag", onTag);
+    return () => window.removeEventListener("chat:tag", onTag);
+  }, []);
+  // The other person's online status, kept fresh.
+  React.useEffect(() => {
+    if (!group.peer) return;
+    const id = group.peer.id;
+    const tick = () => void presenceAction([id]).then((r) => r.ok && setPeerAt((r.data as Record<string, string | null>)[id] ?? null));
+    tick();
+    const t = setInterval(tick, 30000);
+    return () => clearInterval(t);
+  }, [group.peer]);
+  // People to @mention (groups and channels).
+  React.useEffect(() => {
+    if (group.kind === "direct" || mentionables.length || !/(?:^|\s)@[a-z0-9._-]*$/i.test(text)) return;
+    void groupInfoAction(group.id).then((r) => r.ok && r.data && setMentionables(r.data.members.filter((m) => m.userId !== viewer.id).map((m) => ({ handle: m.handle, name: m.name }))));
+  }, [text, group.kind, group.id, mentionables.length, viewer.id]);
+  const others = Math.max(0, group.kind === "direct" ? 1 : group.memberCount - 1);
+  const seenCount = (m: ChatMessage) => reads.filter((r) => r.seq >= m.seq).length;
+  const readable = messages.map(shown);
+
   const pinned = [...messages].reverse().find((m) => m.pinned && !m.deletedAt);
 
   return (
@@ -465,14 +570,20 @@ function Conversation({
             <ArrowLeftIcon />
           </Link>
         </Button>
-        <button className="flex min-w-0 flex-1 items-center gap-3 text-left" onClick={() => setInfoOpen(true)}>
-          <GroupAvatar name={group.name} color={group.color} size={40} />
+        <button className="flex min-w-0 flex-1 items-center gap-3 text-left" onClick={() => (group.peer ? setContactId(group.peer.id) : setInfoOpen(true))}>
+          <span className="relative">
+            <GroupAvatar name={group.name} color={group.color} size={40} />
+            {group.peer && <OnlineDot at={peerAt} className="absolute -right-0.5 -bottom-0.5" />}
+          </span>
           <span className="min-w-0">
             <span className="block truncate font-semibold">{group.name}</span>
             <span className="block truncate text-xs text-muted-foreground">
               {group.kind === "direct" ? (
-                <span className="inline-flex items-center gap-1 text-[var(--st-done-fg)]">
-                  <LockIcon className="size-3" /> End-to-end encrypted · @{group.peer?.handle}
+                <span className="inline-flex items-center gap-1">
+                  <span className={presenceLabel(peerAt) === "online" ? "text-[var(--st-done-fg)]" : ""}>{presenceLabel(peerAt)}</span>
+                  <span className="text-[var(--st-done-fg)]">
+                    · <LockIcon className="inline size-3" /> encrypted
+                  </span>
                 </span>
               ) : group.kind === "channel" ? (
                 <>
@@ -503,9 +614,46 @@ function Conversation({
             {group.muted ? <BellOffIcon /> : <BellIcon />}
           </Button>
         )}
-        <Button size="icon" variant="ghost" title="Group info" onClick={() => setInfoOpen(true)}>
+        <Button size="icon" variant="ghost" title="Search this chat" aria-label="Search this chat" onClick={() => (setSearchQ(""), setSearchOpen(true))}>
+          <SearchIcon />
+        </Button>
+        <JumpToDate onJump={(date) => void jump({ date })} />
+        <Button size="icon" variant="ghost" title={group.peer ? "Contact and shared media" : "Group info"} onClick={() => (group.peer ? setContactId(group.peer.id) : setInfoOpen(true))}>
           <InfoIcon />
         </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button size="icon" variant="ghost" aria-label="More">
+              <MoreVerticalIcon />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={() => setMediaOpen(true)}>
+              <MediaIcon /> Shared media, files and links
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setReporting({ chat: true })}>
+              <FlagIcon /> Report this chat
+            </DropdownMenuItem>
+            {isAdmin && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  variant="destructive"
+                  onClick={async () => {
+                    if (!window.confirm(`Delete "${group.name}" for everyone, with all its messages and files? This cannot be undone.`)) return;
+                    const r = await deleteConversationAction(group.id);
+                    if (!r.ok) return void toast.error(r.error);
+                    toast.success("Chat deleted");
+                    router.push("/chat");
+                    router.refresh();
+                  }}
+                >
+                  <Trash2Icon /> Delete this chat
+                </DropdownMenuItem>
+              </>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </header>
 
       {pinned && (
@@ -552,6 +700,13 @@ function Conversation({
                 ) : (
                   <Bubble
                     m={shown(m)}
+                    highlight={highlight === m.id}
+                    seen={seenCount(m)}
+                    others={others}
+                    onAuthor={() => setContactId(m.authorId)}
+                    onForward={() => setForwarding(m)}
+                    onReport={() => setReporting({ m })}
+                    onReaders={() => setReadersOf(m.id)}
                     mine={m.authorId === viewer.id}
                     grouped={!!grouped}
                     canManage={canManage}
@@ -593,8 +748,20 @@ function Conversation({
             );
           })}
           {!messages.length && <p className="py-10 text-center text-sm text-muted-foreground">No messages yet. Say hello.</p>}
+          {windowed && (
+            <Button size="sm" variant="ghost" className="mx-auto mt-2 rounded-full bg-card/80 text-xs" onClick={loadNewer}>
+              Load later messages
+            </Button>
+          )}
         </div>
       </div>
+      {windowed && (
+        <div className="flex justify-center border-t bg-muted/40 py-1">
+          <Button size="sm" variant="ghost" className="text-xs" onClick={backToLatest}>
+            You are looking at earlier messages. Back to the latest
+          </Button>
+        </div>
+      )}
 
       {group.kind === "direct" && secure.state !== "ready" ? (
         <SecureGate secure={secure} peerName={group.peer?.name ?? "this person"} />
@@ -624,6 +791,16 @@ function Conversation({
                 <XIcon />
               </Button>
             </div>
+          )}
+          {group.kind !== "direct" && (
+            <MentionPicker
+              text={text}
+              members={mentionables}
+              onPick={(h) => {
+                setText((t) => t.replace(/@([a-z0-9._-]*)$/i, `@${h} `));
+                input.current?.focus();
+              }}
+            />
           )}
           <div className="mx-auto flex max-w-3xl items-end gap-1">
             {!recording && !editing && (
@@ -690,6 +867,18 @@ function Conversation({
       )}
 
       {pollOpen && <PollDialog groupId={group.id} onClose={() => setPollOpen(false)} onSent={sent} />}
+      <SearchSheet open={searchOpen} onOpenChange={setSearchOpen} group={group} loaded={readable} initialQuery={searchQ} onJump={(seq) => void jump({ seq })} timezone={timezone} />
+      <MediaSheet open={mediaOpen} onOpenChange={setMediaOpen} group={group} cryptoKey={secure.key} viewerId={viewer.id} onJump={(seq) => void jump({ seq })} />
+      <ContactSheet userId={contactId} onClose={() => setContactId(null)} onMedia={group.peer && contactId === group.peer.id ? () => (setContactId(null), setMediaOpen(true)) : undefined} />
+      {forwarding && <ForwardDialog message={forwarding} plainText={forwarding.file ? fileText(shown(forwarding)).caption : shown(forwarding).body} sourceName={group.name} viewerId={viewer.id} onClose={() => setForwarding(null)} />}
+      {reporting && (
+        <ReportDialog
+          target={reporting.m ? { targetType: "message", targetId: reporting.m.id } : { targetType: "chat", targetId: group.id, targetLabel: group.name }}
+          evidence={reporting.m && reporting.m.encrypted ? shown(reporting.m).body : null}
+          onClose={() => setReporting(null)}
+        />
+      )}
+      {readersOf && <ReadersDialog messageId={readersOf} timezone={timezone} onClose={() => setReadersOf(null)} />}
       {group.kind !== "direct" && <GroupInfo open={infoOpen} onOpenChange={setInfoOpen} group={group} canManage={canManage} directory={directory} viewerId={viewer.id} timezone={timezone} />}
     </>
   );
@@ -697,6 +886,13 @@ function Conversation({
 
 function Bubble({
   m,
+  highlight = false,
+  seen = 0,
+  others = 0,
+  onAuthor,
+  onForward,
+  onReport,
+  onReaders,
   mine,
   grouped,
   canManage,
@@ -725,6 +921,13 @@ function Bubble({
   onEdit: () => void;
   onChanged: (patch: Partial<ChatMessage>) => void;
   onAnswer: (questionId: string, answer: string) => Promise<void>;
+  highlight?: boolean;
+  seen?: number;
+  others?: number;
+  onAuthor?: () => void;
+  onForward?: () => void;
+  onReport?: () => void;
+  onReaders?: () => void;
 }) {
   const time = new Date(m.createdAt).toLocaleTimeString("en-GB", { timeZone: timezone, hour: "2-digit", minute: "2-digit" });
   const [answering, setAnswering] = React.useState(false);
@@ -736,9 +939,17 @@ function Bubble({
   const editable = mine && (m.kind === "text" || m.kind === "file") && !gif && !m.file?.encrypted;
 
   return (
-    <div id={`m-${m.id}`} className={cn("flex flex-col", !grouped && "mt-2")}>
+    <div id={`m-${m.id}`} className={cn("flex flex-col rounded-xl transition-colors duration-700", !grouped && "mt-2", highlight && "bg-primary/20")}>
       <div className={cn("group flex items-end gap-2", mine ? "justify-end" : "justify-start")}>
-        {!mine && <span className="w-8 shrink-0">{!grouped && <UserAvatar name={m.authorName} />}</span>}
+        {!mine && (
+          <span className="w-8 shrink-0">
+            {!grouped && (
+              <button type="button" onClick={onAuthor} aria-label={`About ${m.authorName}`} title={`About ${m.authorName}`}>
+                <UserAvatar name={m.authorName} />
+              </button>
+            )}
+          </span>
+        )}
         {sticker ? (
           <div className="relative px-1 text-5xl leading-tight" title={time}>
             {m.body}
@@ -747,8 +958,13 @@ function Bubble({
         ) : (
           <div className={cn("relative max-w-[82%] rounded-2xl px-3 py-1.5 text-sm shadow-xs sm:max-w-[70%]", mine ? "rounded-br-md bg-primary text-primary-foreground" : "rounded-bl-md bg-card")}>
             {!mine && !grouped && (
-              <p className="text-xs font-semibold" style={{ color: nameColor(m.authorId) }}>
+              <button type="button" onClick={onAuthor} className="block text-xs font-semibold hover:underline" style={{ color: nameColor(m.authorId) }}>
                 {m.authorName}
+              </button>
+            )}
+            {m.forwardedFrom && !m.deletedAt && (
+              <p className={cn("flex items-center gap-1 text-[11px] italic", mine ? "text-white/80" : "text-primary")}>
+                <ForwardIcon className="size-3" /> Forwarded from {m.forwardedFrom}
               </p>
             )}
             {m.replyTo && (
@@ -831,6 +1047,7 @@ function Bubble({
             <span className={cn("float-right mt-1 ml-2 flex items-center gap-1 text-[10px] leading-none", mine ? "text-white/70" : "text-muted-foreground")}>
               {m.pinned && <PinIcon className="size-2.5" />}
               {m.editedAt && !m.deletedAt && "edited"} {time}
+              {!m.deletedAt && <Ticks seen={seen} total={others} mine={mine} />}
             </span>
           </div>
         )}
@@ -846,6 +1063,21 @@ function Bubble({
               <DropdownMenuItem onClick={onReply}>
                 <CornerUpLeftIcon /> Reply
               </DropdownMenuItem>
+              {onForward && (m.kind === "text" || m.kind === "file") && (
+                <DropdownMenuItem onClick={onForward}>
+                  <ForwardIcon /> Forward
+                </DropdownMenuItem>
+              )}
+              {mine && onReaders && (
+                <DropdownMenuItem onClick={onReaders}>
+                  <EyeIcon /> Seen by
+                </DropdownMenuItem>
+              )}
+              {!mine && onReport && (
+                <DropdownMenuItem onClick={onReport}>
+                  <FlagIcon /> Report
+                </DropdownMenuItem>
+              )}
               {(m.kind === "text" || caption) && !gif && (
                 <DropdownMenuItem
                   onClick={() => {

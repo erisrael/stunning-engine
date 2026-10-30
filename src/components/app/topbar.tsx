@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
-import { BellIcon, CheckCheckIcon, ClockIcon, HelpCircleIcon, IdCardIcon, LogOutIcon, MessageCircleIcon, MonitorIcon, MoonIcon, PaletteIcon, SearchIcon, SquareIcon, SunIcon, UserIcon } from "lucide-react";
+import { BellIcon, CheckCheckIcon, ClockIcon, FlagIcon, HelpCircleIcon, IdCardIcon, LogOutIcon, MessageSquareHeartIcon, MessageCircleIcon, MonitorIcon, MoonIcon, PaletteIcon, SearchIcon, SquareIcon, SunIcon, UserIcon } from "lucide-react";
 import { ACCENTS, useAppearance } from "@/components/app/appearance";
 import { Button } from "@/components/ui/button";
 import { SidebarTrigger } from "@/components/ui/sidebar";
@@ -30,6 +30,9 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Breadcrumb, BreadcrumbItem, BreadcrumbList, BreadcrumbPage, BreadcrumbLink, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
 import { Hint, UserAvatar } from "@/components/app/primitives";
 import { NAV_TIPS } from "@/lib/help";
+import { FeedbackDialog } from "@/components/app/support-forms";
+
+const FEEDBACK_LABELS = { idea: "Idea or wish", bug: "Something is broken", question: "Question", praise: "Praise", other: "Other" };
 import { logoutAction, switchRoleAction } from "@/app/actions/auth";
 import { searchAction } from "@/app/actions/search";
 import { listNotificationsAction, markNotificationsAction, snoozeNotificationAction } from "@/app/actions/collab";
@@ -57,6 +60,8 @@ const TITLES: Record<string, string> = {
   new: "New item",
   profile: "Profile",
   help: "Help",
+  feedback: "Feedback",
+  safety: "Safety",
   hr: "HR",
   people: "People",
   me: "My record",
@@ -211,9 +216,11 @@ function RoleSwitcher({ roles, active }: { roles: Role[]; active: Role }) {
 }
 
 function UserMenu({ user }: { user: { name: string; email: string; avatar?: string | null } }) {
+  const [feedbackOpen, setFeedbackOpen] = React.useState(false);
   const { theme, setTheme } = useTheme();
   const [look, setLook] = useAppearance();
   return (
+    <>
     <DropdownMenu>
       <Hint title={user.name} tip={NAV_TIPS["top.account"]}>
       <DropdownMenuTrigger asChild>
@@ -246,6 +253,14 @@ function UserMenu({ user }: { user: { name: string; email: string; avatar?: stri
         <DropdownMenuItem asChild>
           <Link href="/profile/help">
             <HelpCircleIcon /> Help and training
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => setFeedbackOpen(true)}>
+          <MessageSquareHeartIcon /> Send feedback
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link href="/safety">
+            <FlagIcon /> Safety and reporting
           </Link>
         </DropdownMenuItem>
         <DropdownMenuSub>
@@ -300,6 +315,8 @@ function UserMenu({ user }: { user: { name: string; email: string; avatar?: stri
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+    <FeedbackDialog open={feedbackOpen} onOpenChange={setFeedbackOpen} categories={FEEDBACK_LABELS} />
+    </>
   );
 }
 

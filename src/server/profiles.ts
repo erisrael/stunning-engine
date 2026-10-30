@@ -20,6 +20,21 @@ export type Education = { school: string; degree: string; field: string; from: s
 export type Experience = { org: string; title: string; from: string; to: string; note: string };
 export type Language = { name: string; level: string };
 export type LinkItem = { label: string; url: string };
+export const VISIBILITY = ["everyone", "team", "nobody"] as const;
+export type Visibility = (typeof VISIBILITY)[number];
+// Contact details, each with who may see it. The sign-in email is shown to colleagues unless hidden.
+export type Contact = {
+  phone: string;
+  phone2: string;
+  workEmail: string;
+  telegram: string;
+  whatsapp: string;
+  office: string;
+  phoneVisible: Visibility;
+  emailVisible: Visibility;
+  messengersVisible: Visibility;
+};
+export const CONTACT_DEFAULT: Contact = { phone: "", phone2: "", workEmail: "", telegram: "", whatsapp: "", office: "", phoneVisible: "team", emailVisible: "everyone", messengersVisible: "team" };
 
 export type Profile = {
   userId: string;
@@ -38,6 +53,8 @@ export type Profile = {
   links: LinkItem[];
   studyStatus: (typeof STUDY_STATUSES)[number] | null;
   hidden: ProfileSection[];
+  // The person's own contact settings (for themselves only).
+  contact: Contact | null;
   files: { id: string; kind: string; title: string; name: string; size: number; createdAt: string }[] | null;
   canEdit: boolean;
 };
@@ -75,7 +92,7 @@ export async function getProfile(viewer: AppUser, userId: string): Promise<Profi
   const u = await loadUser(userId);
   if (!u?.active && viewer.id !== userId) return null;
   if (!u) return null;
-  const p = await get<{ headline: string | null; about: string | null; location: string | null; avatar: string | null; cover: Cover; skills: string; education: string; experience: string; languages: string; links: string; study_status: Profile["studyStatus"]; hidden_sections: string }>(
+  const p = await get<{ headline: string | null; about: string | null; location: string | null; avatar: string | null; cover: Cover; skills: string; education: string; experience: string; languages: string; links: string; study_status: Profile["studyStatus"]; hidden_sections: string; contact: string }>(
     "SELECT * FROM profiles WHERE user_id = ?",
     userId,
   );
@@ -111,12 +128,13 @@ export async function getProfile(viewer: AppUser, userId: string): Promise<Profi
     studyStatus: p?.study_status ?? null,
     // Sections the person hid are hidden from others, not from themselves.
     hidden,
+    contact: self ? { ...CONTACT_DEFAULT, ...parseJson<Partial<Contact>>(p?.contact, {}) } : null,
     files: self || !hidden.includes("files") ? files : can(viewer, "hr.access") ? files : null,
     canEdit: self,
   };
 }
 
-export type ProfileInput = Partial<Omit<Profile, "userId" | "name" | "email" | "roles" | "files" | "canEdit">>;
+export type ProfileInput = Partial<Omit<Profile, "userId" | "name" | "email" | "roles" | "files" | "canEdit" | "contact">> & { contact?: Partial<Contact> };
 
 export async function saveProfile(user: AppUser, input: ProfileInput) {
   const cur = await getProfile(user, user.id);
@@ -147,12 +165,25 @@ export async function saveProfile(user: AppUser, input: ProfileInput) {
   const cover = COVERS.includes(input.cover as Cover) ? (input.cover as Cover) : cur.cover;
   const study = input.studyStatus === undefined ? cur.studyStatus : STUDY_STATUSES.includes(input.studyStatus as never) ? input.studyStatus : null;
   const hidden = pick(input.hidden, cur.hidden).filter((h) => PROFILE_SECTIONS.includes(h));
+  const vis = (v: unknown, d: Visibility) => (VISIBILITY.includes(v as Visibility) ? (v as Visibility) : d);
+  const cc = { ...(cur.contact ?? CONTACT_DEFAULT), ...(input.contact ?? {}) };
+  const contact: Contact = {
+    phone: str(cc.phone, 40),
+    phone2: str(cc.phone2, 40),
+    workEmail: str(cc.workEmail, 120),
+    telegram: str(cc.telegram, 60).replace(/^@/, ""),
+    whatsapp: str(cc.whatsapp, 40),
+    office: str(cc.office, 120),
+    phoneVisible: vis(cc.phoneVisible, "team"),
+    emailVisible: vis(cc.emailVisible, "everyone"),
+    messengersVisible: vis(cc.messengersVisible, "team"),
+  };
   await run(
-    `INSERT INTO profiles (user_id, headline, about, location, avatar, cover, skills, education, experience, languages, links, study_status, hidden_sections, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO profiles (user_id, headline, about, location, avatar, cover, skills, education, experience, languages, links, study_status, hidden_sections, contact, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT (user_id) DO UPDATE SET headline = excluded.headline, about = excluded.about, location = excluded.location, avatar = excluded.avatar, cover = excluded.cover,
        skills = excluded.skills, education = excluded.education, experience = excluded.experience, languages = excluded.languages, links = excluded.links,
-       study_status = excluded.study_status, hidden_sections = excluded.hidden_sections, updated_at = excluded.updated_at`,
+       study_status = excluded.study_status, hidden_sections = excluded.hidden_sections, contact = excluded.contact, updated_at = excluded.updated_at`,
     user.id,
     str(pick(input.headline, cur.headline) ?? "", 120) || null,
     str(pick(input.about, cur.about) ?? "", 2000) || null,
@@ -166,6 +197,7 @@ export async function saveProfile(user: AppUser, input: ProfileInput) {
     JSON.stringify(links),
     study,
     JSON.stringify(hidden),
+    JSON.stringify(contact),
     nowIso(),
   );
 }
@@ -218,4 +250,69 @@ export async function directory() {
     "SELECT u.id, u.name, u.title, p.headline, p.avatar, p.skills, p.cover FROM users u LEFT JOIN profiles p ON p.user_id = u.id WHERE u.active = 1 ORDER BY u.name",
   );
   return rows.map((r) => ({ id: r.id, name: r.name, headline: r.headline ?? r.title, avatar: r.avatar, cover: (r.cover ?? "emerald") as Cover, skills: parseJson<Skill[]>(r.skills, []).slice(0, 5).map((s) => s.name) }));
+}
+
+// Someone in the same team: a shared production stage, a shared department, or their lead or line manager.
+async function sameTeam(viewer: AppUser, userId: string) {
+  if (viewer.id === userId) return true;
+  const target = await loadUser(userId);
+  if (!target) return false;
+  if (STAGES.some((st) => viewer.roles.includes(st) && target.roles.includes(st))) return true;
+  if (await isTheirLead(viewer, userId)) return true;
+  return !!(await get(
+    "SELECT 1 AS x FROM department_positions a JOIN department_positions b ON b.department = a.department WHERE a.user_id = ? AND b.user_id = ?",
+    viewer.id,
+    userId,
+  ));
+}
+
+export type ContactCard = {
+  userId: string;
+  name: string;
+  handle: string;
+  avatar: string | null;
+  cover: Cover;
+  headline: string | null;
+  roles: string[];
+  lastActiveAt: string | null;
+  email: string | null;
+  workEmail: string | null;
+  phone: string | null;
+  phone2: string | null;
+  telegram: string | null;
+  whatsapp: string | null;
+  office: string | null;
+  location: string | null;
+  isSelf: boolean;
+};
+
+// What a colleague sees when they tap someone in chat: each detail as far as the person allows.
+export async function contactCard(viewer: AppUser, userId: string): Promise<ContactCard | null> {
+  const u = await loadUser(userId);
+  if (!u?.active) return null;
+  const p = await get<{ headline: string | null; avatar: string | null; cover: Cover | null; contact: string | null; location: string | null }>("SELECT headline, avatar, cover, contact, location FROM profiles WHERE user_id = ?", userId);
+  const c = { ...CONTACT_DEFAULT, ...parseJson<Partial<Contact>>(p?.contact, {}) };
+  const team = await sameTeam(viewer, userId);
+  const admin = can(viewer, "users.manage") || can(viewer, "hr.access");
+  const allowed = (v: Visibility) => viewer.id === userId || admin || v === "everyone" || (v === "team" && team);
+  const last = await get<{ last_active_at: string | null; handle: string }>("SELECT last_active_at, handle FROM users WHERE id = ?", userId);
+  return {
+    userId,
+    name: u.name,
+    handle: last?.handle ?? u.handle,
+    avatar: p?.avatar ?? null,
+    cover: p?.cover ?? "emerald",
+    headline: p?.headline ?? u.title ?? null,
+    roles: u.roles.map((r) => ROLE_LABELS[r]),
+    lastActiveAt: last?.last_active_at ?? null,
+    email: allowed(c.emailVisible) ? u.email : null,
+    workEmail: allowed(c.emailVisible) && c.workEmail ? c.workEmail : null,
+    phone: allowed(c.phoneVisible) && c.phone ? c.phone : null,
+    phone2: allowed(c.phoneVisible) && c.phone2 ? c.phone2 : null,
+    telegram: allowed(c.messengersVisible) && c.telegram ? c.telegram : null,
+    whatsapp: allowed(c.messengersVisible) && c.whatsapp ? c.whatsapp : null,
+    office: c.office || null,
+    location: p?.location ?? null,
+    isSelf: viewer.id === userId,
+  };
 }

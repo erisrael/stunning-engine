@@ -5,6 +5,7 @@ import { purgeTrash } from "./trash";
 import { cleanupChatFiles } from "./chat";
 import { hrReminderChecks } from "./hr";
 import { trainingReminders } from "./hr-growth";
+import { applyChatRetention } from "./chat-extras";
 import { BLOCKER_CAUSE_LABELS, STAGE_LABELS, type Stage } from "@/lib/domain";
 import { localDate } from "@/lib/format";
 
@@ -138,6 +139,8 @@ export async function runScheduledChecks(now = nowIso()) {
   // HR: documents, contracts and probation coming up (deduplicated per date, so this runs safely every time).
   await hrReminderChecks(now);
   await trainingReminders(now);
+  // Chat messages and files past the retention set in Admin, Chat.
+  await applyChatRetention(now);
   await setMeta("lastChecksAt", now);
   return counts;
 }

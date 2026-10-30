@@ -18,8 +18,6 @@ import {
   pinnedMessages,
   publicChannels,
   touchMessage,
-  VOICE_TTL_MS,
-  VOICE_UNPLAYED_TTL_MS,
 } from "@/server/chat";
 import { can, canViewItem } from "@/server/users";
 import { canContactOwners, ownerIds } from "@/server/departments";
@@ -27,6 +25,7 @@ import { maxUploadBytes, objectExists, signedUploadUrl, storageKind } from "@/se
 import { removeSubscription, saveSubscription, sendPush, subscriptionCount, vapidKeys } from "@/server/push";
 import { verifyPassword } from "@/server/passwords";
 import { headers } from "next/headers";
+import { canCreateGroups, chatConfig, checkUpload, recordRead, touchPresence, readPositions } from "@/server/chat-extras";
 import crypto from "node:crypto";
 
 const NO_REVALIDATE = { revalidate: false };
@@ -70,6 +69,8 @@ export async function sendMessageAction(input: {
   encrypted?: boolean;
   kind?: SendKind;
   meta?: { fileId?: string; provider?: string } | null;
+  // Set when the browser forwards an encrypted message: "Name in Chat".
+  forwardedFrom?: string | null;
 }) {
   return wrap(async () => {
     const { viewer, member } = await requireMember(input.groupId);
@@ -99,7 +100,7 @@ export async function sendMessageAction(input: {
       const now = nowIso();
       const id = uid("msg_");
       await run(
-        "INSERT INTO chat_messages (id, group_id, author_id, body, reply_to_id, encrypted, kind, meta, created_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)",
+        "INSERT INTO chat_messages (id, group_id, author_id, body, reply_to_id, encrypted, kind, meta, forwarded_from, created_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?)",
         id,
         input.groupId,
         viewer.id,
@@ -107,6 +108,7 @@ export async function sendMessageAction(input: {
         input.replyToId ?? null,
         kind,
         meta ? JSON.stringify(meta) : null,
+        input.forwardedFrom?.trim().slice(0, 160) || null,
         now,
       );
       await attach(id);
@@ -128,7 +130,7 @@ export async function sendMessageAction(input: {
     const now = nowIso();
     const id = uid("msg_");
     await run(
-      "INSERT INTO chat_messages (id, group_id, author_id, body, reply_to_id, item_id, kind, meta, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO chat_messages (id, group_id, author_id, body, reply_to_id, item_id, kind, meta, forwarded_from, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       id,
       input.groupId,
       viewer.id,
@@ -137,6 +139,7 @@ export async function sendMessageAction(input: {
       itemId,
       kind,
       meta ? JSON.stringify(meta) : null,
+      input.forwardedFrom?.trim().slice(0, 160) || null,
       now,
     );
     await attach(id);
@@ -221,8 +224,10 @@ export async function pollMessagesAction(input: { groupId: string; afterSeq: num
     await cleanupChatFiles(10);
     const fresh = await groupMessages(input.groupId, { afterSeq: input.afterSeq, viewerId: viewer.id });
     const changed = await changedMessages(input.groupId, input.since, viewer.id);
-    if (member) await run("UPDATE chat_members SET last_read_at = ? WHERE group_id = ? AND user_id = ?", now, input.groupId, viewer.id);
-    return { fresh, changed, at: now };
+    if (member) await recordRead(input.groupId, viewer.id);
+    await touchPresence(viewer.id);
+    const reads = await readPositions(input.groupId, viewer.id);
+    return { fresh, changed, at: now, reads };
   }, NO_REVALIDATE);
 }
 
@@ -245,7 +250,7 @@ export async function groupInfoAction(groupId: string) {
 export async function markReadAction(groupId: string) {
   return wrap(async () => {
     const viewer = await requireViewer();
-    await run("UPDATE chat_members SET last_read_at = ? WHERE group_id = ? AND user_id = ?", nowIso(), groupId, viewer.id);
+    await recordRead(groupId, viewer.id);
   }, NO_REVALIDATE);
 }
 
@@ -263,7 +268,7 @@ export async function muteGroupAction(groupId: string, muted: boolean) {
 export async function createGroupAction(input: { name: string; description?: string; color?: string; memberIds: string[] }) {
   return wrap(async () => {
     const viewer = await requireViewer();
-    if (!canManageChat(viewer)) throw new WorkflowError("FORBIDDEN", "Only managers and admins can create groups.");
+    if (!(await canCreateGroups(viewer))) throw new WorkflowError("FORBIDDEN", "Only managers, admins, team leads and department heads create groups.");
     const name = input.name.trim();
     if (!name) throw new WorkflowError("VALIDATION", "Name the group.");
     if (name.length > 60) throw new WorkflowError("VALIDATION", "Group names are limited to 60 characters.");
@@ -504,9 +509,9 @@ export async function prepareUploadAction(input: { groupId: string; name: string
     if (g?.kind === "channel" && member.member_role !== "admin") throw new WorkflowError("FORBIDDEN", "Only channel admins post here.");
     if (g?.kind === "direct" && !input.encrypted) throw new WorkflowError("VALIDATION", "Files in direct chats are encrypted on your device first.");
     const storage = storageKind();
-    const max = maxUploadBytes(storage);
     if (!(input.size > 0)) throw new WorkflowError("VALIDATION", "The file is empty.");
-    if (input.size > max) throw new WorkflowError("VALIDATION", `Files are limited to ${Math.round(max / 1048576)} MB.`);
+    await checkUpload(viewer.id, input.size, maxUploadBytes(storage));
+    const cfg = await chatConfig();
     const mime = (input.mime || "application/octet-stream").slice(0, 120);
     if (BLOCKED_TYPES.test(mime) || /\.(exe|bat|cmd|msi|sh|ps1|scr|js|html?)$/i.test(input.name)) throw new WorkflowError("VALIDATION", "This kind of file cannot be shared in chat.");
     const id = uid("fil_");
@@ -527,7 +532,7 @@ export async function prepareUploadAction(input: { groupId: string; name: string
       path,
       input.encrypted,
       input.durationSec ?? null,
-      input.kind === "voice" ? new Date(Date.now() + VOICE_UNPLAYED_TTL_MS).toISOString() : null,
+      input.kind === "voice" && cfg.voiceAutoDelete ? new Date(Date.now() + cfg.voiceUnplayedDays * 864e5).toISOString() : null,
       now,
     );
     return { fileId: id, storage, uploadUrl: storage === "supabase" ? await signedUploadUrl(path) : `/api/chat/upload?id=${id}` };
@@ -544,8 +549,10 @@ export async function voicePlayedAction(fileId: string) {
     if (!f || f.kind !== "voice") throw new WorkflowError("NOT_FOUND", "Voice message not found.");
     const { viewer } = await requireMember(f.group_id);
     if (viewer.id === f.uploader_id || f.first_played_at) return null;
+    const cfg = await chatConfig();
+    if (!cfg.voiceAutoDelete) return null;
     const now = new Date();
-    const expires = new Date(now.getTime() + VOICE_TTL_MS).toISOString();
+    const expires = new Date(now.getTime() + cfg.voiceMinutes * 60e3).toISOString();
     await run("UPDATE chat_files SET first_played_at = ?, expires_at = ? WHERE id = ? AND first_played_at IS NULL", now.toISOString(), expires, fileId);
     if (f.message_id) await touchMessage(f.message_id);
     return expires;
@@ -555,7 +562,8 @@ export async function voicePlayedAction(fileId: string) {
 export async function uploadLimitsAction() {
   return wrap(async () => {
     await requireViewer();
-    return { storage: storageKind(), maxBytes: maxUploadBytes() };
+    const cfg = await chatConfig();
+    return { storage: storageKind(), maxBytes: Math.min(maxUploadBytes(), cfg.maxFileMb * 1048576), voiceAutoDelete: cfg.voiceAutoDelete, voiceMinutes: cfg.voiceMinutes, allowGifs: cfg.allowGifs };
   }, NO_REVALIDATE);
 }
 

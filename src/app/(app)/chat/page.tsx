@@ -1,10 +1,10 @@
 import { EmptyState } from "@/components/app/primitives";
 import { requireViewer } from "@/server/auth";
-import { run, nowIso } from "@/server/db";
 import { canManageChat, groupMessages, listGroups, membership } from "@/server/chat";
 import { getSettings } from "@/server/settings";
 import { can, userDirectory } from "@/server/users";
 import { ChatClient } from "./chat-client";
+import { canCreateGroups, presenceOf, recordRead, touchPresence } from "@/server/chat-extras";
 import { canContactOwners, ownerIds } from "@/server/departments";
 
 export const metadata = { title: "Chat" };
@@ -18,7 +18,7 @@ export default async function ChatPage({ searchParams }: { searchParams: Promise
   const active = groups.find((x) => x.id === g) ?? null;
   const messages = active ? await groupMessages(active.id, { viewerId: viewer.id }) : [];
   if (active && (await membership(active.id, viewer.id))) {
-    await run("UPDATE chat_members SET last_read_at = ? WHERE group_id = ? AND user_id = ?", nowIso(), active.id, viewer.id);
+    await recordRead(active.id, viewer.id);
     active.unread = 0;
   }
   const settings = await getSettings();
@@ -27,6 +27,12 @@ export default async function ChatPage({ searchParams }: { searchParams: Promise
       key={active?.id ?? "none"}
       viewer={{ id: viewer.id, name: viewer.name, handle: viewer.handle }}
       canManage={canManageChat(viewer)}
+      canCreateGroup={await canCreateGroups(viewer)}
+      isAdmin={can(viewer, "users.manage")}
+      presence={await (async () => {
+        await touchPresence(viewer.id);
+        return presenceOf(groups.filter((x) => x.peer).map((x) => x.peer!.id));
+      })()}
       canCreateChannel={can(viewer, "chat.channels")}
       groups={groups}
       activeId={active?.id ?? null}

@@ -26,6 +26,10 @@ import { SessionsTable } from "@/components/app/security";
 import { googleSettings } from "@/server/password-reset";
 import { smtpSettings } from "@/server/email";
 import { SignInAdmin } from "./signin-admin";
+import { ChatAdmin, FeedbackAdmin, ReportsAdmin } from "./support-admin";
+import { chatConfig, chatUsage } from "@/server/chat-extras";
+import { maxUploadBytes } from "@/server/storage";
+import { FEEDBACK_CATEGORIES, FEEDBACK_STATUSES, REPORT_REASONS, REPORT_STATUSES, listFeedback, listReports } from "@/server/support";
 
 export const metadata = { title: "Admin" };
 
@@ -105,6 +109,9 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           {manageUsers && <TabsTrigger value="permissions">Roles and permissions</TabsTrigger>}
           {manageUsers && <TabsTrigger value="access">Access</TabsTrigger>}
           {manageUsers && <TabsTrigger value="sessions">Sessions and devices</TabsTrigger>}
+          {manageUsers && <TabsTrigger value="chat">Chat</TabsTrigger>}
+          {manageUsers && <TabsTrigger value="feedback">Feedback</TabsTrigger>}
+          {manageUsers && <TabsTrigger value="reports">Safety reports</TabsTrigger>}
           {manageUsers && <TabsTrigger value="signin">Sign-in</TabsTrigger>}
           {manageUsers && <TabsTrigger value="sidebar">Sidebar</TabsTrigger>}
           {manageUsers && <TabsTrigger value="integrations">Integrations</TabsTrigger>}
@@ -135,6 +142,15 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
             </TabsContent>
             <TabsContent value="sessions">
               <SessionsTable rows={await listSessions(viewer, { everyone: true })} blocked={await listBlocked(viewer)} everyone />
+            </TabsContent>
+            <TabsContent value="chat">
+              <ChatAdmin config={await chatConfig()} usage={await chatUsage(viewer)} hardMaxMb={Math.round(maxUploadBytes() / 1048576)} />
+            </TabsContent>
+            <TabsContent value="feedback">
+              <FeedbackAdmin rows={await listFeedback(viewer)} categories={FEEDBACK_CATEGORIES} statuses={FEEDBACK_STATUSES} />
+            </TabsContent>
+            <TabsContent value="reports">
+              <ReportsAdmin rows={await listReports(viewer)} reasons={REPORT_REASONS} statuses={REPORT_STATUSES} />
             </TabsContent>
             <TabsContent value="signin">
               <SignInAdmin google={await googleSettings()} emailReady={(await smtpSettings()).source !== "none"} />

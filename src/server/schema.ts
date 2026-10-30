@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 16;
+export const SCHEMA_VERSION = 17;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -1457,6 +1457,49 @@ CREATE TABLE IF NOT EXISTS password_resets (
   used_at TEXT,
   created_at TEXT NOT NULL
 );
+
+-- v17: chat presence and read receipts (who read up to which message, and when), contact details on profiles,
+-- feedback to Admin, and safety reports.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_active_at TEXT;
+ALTER TABLE chat_members ADD COLUMN IF NOT EXISTS last_read_seq BIGINT NOT NULL DEFAULT 0;
+CREATE TABLE IF NOT EXISTS chat_receipts (
+  group_id TEXT NOT NULL REFERENCES chat_groups(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL,
+  upto_seq BIGINT NOT NULL,
+  read_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_chat_receipts ON chat_receipts(group_id, upto_seq);
+ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS forwarded_from TEXT;
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS contact TEXT NOT NULL DEFAULT '{}';
+
+CREATE TABLE IF NOT EXISTS feedback (
+  id TEXT PRIMARY KEY,
+  user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+  category TEXT NOT NULL,
+  message TEXT NOT NULL,
+  page TEXT,
+  status TEXT NOT NULL DEFAULT 'new',
+  reply TEXT,
+  replied_by TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS reports (
+  id TEXT PRIMARY KEY,
+  reporter_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+  target_type TEXT NOT NULL,
+  target_id TEXT,
+  target_label TEXT,
+  reason TEXT NOT NULL,
+  details TEXT,
+  evidence TEXT,
+  status TEXT NOT NULL DEFAULT 'open',
+  resolution TEXT,
+  handled_by TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
 `;
 
 // Tables in dependency order; used to empty the workspace and to export or restore backups.
@@ -1566,4 +1609,7 @@ export const TABLES = [
   "profiles",
   "profile_files",
   "password_resets",
+  "chat_receipts",
+  "feedback",
+  "reports",
 ] as const;

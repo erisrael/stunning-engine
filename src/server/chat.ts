@@ -39,6 +39,8 @@ export type ChatMessage = {
   file: ChatFile | null;
   encrypted: boolean;
   pinned: boolean;
+  // "Name in Group" when the message was forwarded.
+  forwardedFrom: string | null;
   editedAt: string | null;
   deletedAt: string | null;
   createdAt: string;
@@ -195,6 +197,7 @@ type MessageRow = {
   meta: string | null;
   encrypted: number;
   pinned: number;
+  forwarded_from: string | null;
   edited_at: string | null;
   deleted_at: string | null;
   created_at: string;
@@ -270,6 +273,7 @@ async function hydrate(rows: MessageRow[], viewerId?: string): Promise<ChatMessa
       })(),
       encrypted: !!r.encrypted,
       pinned: !!r.pinned,
+      forwardedFrom: r.forwarded_from ?? null,
       editedAt: r.edited_at,
       deletedAt: r.deleted_at,
       createdAt: r.created_at,
@@ -310,7 +314,7 @@ export async function touchMessage(id: string) {
   await run("UPDATE chat_messages SET updated_at = ? WHERE id = ?", nowIso(), id);
 }
 
-const MESSAGE_SELECT = `SELECT c.seq, c.id, c.group_id, c.author_id, u.name AS author_name, c.body, c.reply_to_id, c.item_id, c.kind, c.meta, c.encrypted, c.pinned, c.edited_at, c.deleted_at, c.created_at
+const MESSAGE_SELECT = `SELECT c.seq, c.id, c.group_id, c.author_id, u.name AS author_name, c.body, c.reply_to_id, c.item_id, c.kind, c.meta, c.encrypted, c.pinned, c.forwarded_from, c.edited_at, c.deleted_at, c.created_at
   FROM chat_messages c JOIN users u ON u.id = c.author_id`;
 
 export async function groupMessages(groupId: string, opts: { afterSeq?: number; beforeSeq?: number; limit?: number; viewerId?: string } = {}) {
@@ -450,7 +454,8 @@ export const VOICE_UNPLAYED_TTL_MS = 7 * 864e5;
 
 // Removes expired files from storage. Called by the scheduled checks and while chats are open.
 export async function cleanupChatFiles(limit = 25) {
-  const { deleteStored } = await import("./storage");
+  const { removeStoredFile } = await import("./chat-extras");
+  const deleteStored = removeStoredFile;
   const expired = await all<{ id: string; storage: string; path: string; message_id: string | null }>(
     "SELECT id, storage, path, message_id FROM chat_files WHERE deleted_at IS NULL AND expires_at IS NOT NULL AND expires_at < ? LIMIT ?",
     nowIso(),
