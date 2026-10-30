@@ -40,11 +40,12 @@ How new work is added without disturbing what already runs:
 - [x] Channels: only admins post; public (Find channels) or private; invite links for groups and channels; the creator manages admins, members and settings; new permission "Create channels"
 - [x] Push notifications (Web Push) on browser and phone: every notification and every chat message (except muted chats); signing keys generated automatically; installable app (Add to Home Screen, required on iPhone)
 - [x] Calls: one-click Jitsi video call, or share a Google Meet link (both open in a new tab)
-- [ ] In-app 1:1 calls (WebRTC) and connecting a Google account to create Meet links automatically
+- [ ] In-app calls with our own ringing (Phase 5a) and connecting a Google account to create Meet links automatically
 
 ## Phase 4: Email (done)
 
 - [x] Email account (SMTP) in Email, Settings, with presets for Gmail (app password), Google Workspace, Zoho and Microsoft 365; or SMTP_HOST, SMTP_PORT, SMTP_SECURE, SMTP_USER, SMTP_PASS, SMTP_FROM in the hosting settings. Passwords stored encrypted (key from APP_SECRET, or generated once). Test button
+- [x] Your own domain (cPanel) preset with the four setup steps; Check login from the app's server (server name, port 465/587 reachable, sign-in) with errors that say what to do; Check inbox delivery (SPF, DKIM, DMARC, MX)
 - [x] Sender addresses per employee: the mailbox is created at the provider, then registered here with its own sign-in or as an alias of the main account; one default address for everyone else
 - [x] Compose (`/email`): recipients by person, role, team leads, chat group members and outside addresses; check recipients before sending; one email each (personal placeholders), hidden list (BCC) or together with CC and BCC; Markdown message (raw HTML removed); attachments up to 10 MB; preview; send a test to yourself
 - [x] Templates: create, edit, delete, search; shared or private; placeholders {{first_name}}, {{name}}, {{email}}, {{role}}, {{sender_name}}, {{date}}
@@ -63,6 +64,41 @@ How new work is added without disturbing what already runs:
 - [x] Department reports: heads and leads (and production managers) write periodic reports with the period's numbers filled in; owners are notified and read them
 - [x] Chat: owners are hidden from people without "Start direct chats with owners" (Admin, Managers and owners have it); owners can message anyone, and those people can reply
 - [ ] Dev integrations (GitHub issues and pull requests), time tracking per task
+
+## Phase 5a: Calls with our own ringing
+
+In-app voice and video calls with ringing on the other side and a clear end, built on what the app already has (database, push, polling). No paid service and no outside signalling service.
+
+- **Placing a call**: Voice and Video buttons in direct chats (groups of up to 4 later); larger meetings keep the Jitsi and Meet links
+- **Ringing module** (`calls` table plus `call_signals` for the connection messages):
+  - States: ringing, accepted, declined, busy, missed, cancelled, ended, failed; every change is stored with its time
+  - The callee's app checks for incoming calls every 2 seconds while open (one small query), and a push notification "Incoming call from …" is sent at once for a closed app or phone; tapping it opens the call
+  - Incoming screen: full screen with the caller's name and photo, a ringtone, Accept and Decline
+  - The caller hears ringback and sees Ringing, then Busy (already in a call), Declined or No answer (after 45 seconds, saved as missed)
+- **Knowing it ended**:
+  - Either side hanging up sets the call to ended; the other side sees it within about a second
+  - A heartbeat every 5 seconds from both sides; no heartbeat for 15 seconds, or a lost connection, ends the call for both
+  - Afterwards a card in the chat: "Video call, 12:34", "Missed voice call", "Declined"; missed calls notify; call history per chat
+- **Media**: WebRTC, straight between the two devices and encrypted end to end. While connecting, offers, answers and network candidates go through `call_signals`, polled every 500 ms only during setup
+- **Networks that block direct connections** (common on mobile data): free public STUN, plus a TURN relay from a free tier (Cloudflare or Metered) set in Settings; without it some calls fail with "This network blocks calls"
+- **During a call**: mute, camera on/off, switch camera on phones, screen share on computers, timer, connection quality, a small floating window when moving around the app
+- **Limit on the website**: with the browser fully closed, the phone shows the push notification with its sound, not a continuous ring. Continuous ringing on a locked phone comes with the native app (Phase 5b)
+
+## Phase 5b: Native app shell
+
+The same app inside a small native app for Android and iPhone, so calls ring like a phone call and notifications are reliable. The pages stay the web app; nothing is built twice.
+
+- **Shell**: Capacitor, loading the live site, so every web update reaches the app without a store release; offline screen when there is no network
+- **Android first**:
+  - Firebase Cloud Messaging (free) for high-priority call pushes that wake the phone
+  - Full-screen incoming call over the lock screen with continuous ringtone, Accept and Decline, using Android's self-managed calls (ConnectionService), so it also works with Bluetooth headsets and pauses for real phone calls
+  - Distribution: install file (APK) shared with staff at no cost, or Google Play (one-time USD 25)
+- **iPhone**:
+  - Apple's VoIP push (PushKit) and the system call screen (CallKit), which Apple requires for call ringing
+  - Needs an Apple Developer account (USD 99 a year); staff install through TestFlight or the App Store
+- **Also in the shell**: app badge with unread count, camera and microphone permissions asked once, sign-in kept securely, deep links from emails and notifications into the right page
+- **Desktop**: stays the installable web app (Add to Home Screen / Install); a desktop shell only if needed later
+- **Order**: 5a works in the browser first; 5b then adds native ringing on top of the same `calls` table
 
 ## Phase 6: Overview visualizer, help and onboarding
 

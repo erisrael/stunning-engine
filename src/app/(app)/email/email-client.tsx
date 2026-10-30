@@ -8,6 +8,7 @@ import {
   ArrowUpDownIcon,
   ArrowUpIcon,
   CheckCircle2Icon,
+  CircleAlertIcon,
   CircleXIcon,
   DownloadIcon,
   EyeIcon,
@@ -48,8 +49,10 @@ import {
   saveSmtpAction,
   sendEmailAction,
   testSmtpAction,
+  checkInboxDeliveryAction,
+  checkSmtpLoginAction,
 } from "@/app/actions/email";
-import type { EmailLogRow, EmailTemplate, LogFilter, Recipient, Sender, SendMode, SmtpSettings } from "@/server/email";
+import type { CheckStep, EmailLogRow, EmailTemplate, LogFilter, Recipient, Sender, SendMode, SmtpSettings } from "@/server/email";
 import { ROLE_LABELS, ROLES, STAGE_LABELS, STAGES, type Role } from "@/lib/domain";
 import { fmtDateTime, fmtRelative } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -813,7 +816,8 @@ function EmailSettings({ smtp, senders, people, presets, secretSource, viewerEma
   const router = useRouter();
   const fromEnv = smtp.source === "env";
   const [f, setF] = React.useState({ host: smtp.host, port: smtp.port, secure: smtp.secure, user: smtp.user, password: "", fromName: smtp.fromName, fromAddress: smtp.fromAddress, replyTo: smtp.replyTo });
-  const [preset, setPreset] = React.useState<string>(presets.find((p) => p.host && p.host === smtp.host)?.key ?? "custom");
+  const [preset, setPreset] = React.useState<string>(presets.find((p) => p.host && p.host === smtp.host)?.key ?? (/^mail\./i.test(smtp.host) ? "cpanel" : "custom"));
+  const [checks, setChecks] = React.useState<{ title: string; steps: CheckStep[] } | null>(null);
   const [testTo, setTestTo] = React.useState(viewerEmail);
   const [busy, setBusy] = React.useState<string | null>(null);
   const [editing, setEditing] = React.useState<Sender | "new" | null>(null);
@@ -840,6 +844,7 @@ function EmailSettings({ smtp, senders, people, presets, secretSource, viewerEma
                   setPreset(v);
                   const p = presets.find((x) => x.key === v);
                   if (p && p.host) setF((x) => ({ ...x, host: p.host, port: p.port, secure: p.secure }));
+                  if (p?.key === "cpanel") setF((x) => ({ ...x, host: mailHostFor(x.user || x.fromAddress) || x.host, port: p.port, secure: p.secure }));
                 }}
               >
                 <SelectTrigger className="w-full">
@@ -855,6 +860,16 @@ function EmailSettings({ smtp, senders, people, presets, secretSource, viewerEma
               </Select>
               {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
             </div>
+          )}
+          {!fromEnv && preset === "cpanel" && (
+            <ol className="list-decimal space-y-1 rounded-lg border bg-muted/40 py-2 pr-3 pl-8 text-xs text-muted-foreground">
+              <li>In cPanel, open Email Accounts and note the outgoing server, port, and username for the mailbox.</li>
+              <li>Enter the mailbox password and save.</li>
+              <li>Run Check login, then send a test email to yourself.</li>
+              <li>
+                Run Check inbox delivery. In cPanel, Email Deliverability repairs SPF and installs DKIM in one click; add a DMARC record such as <code>v=DMARC1; p=none</code>.
+              </li>
+            </ol>
           )}
           <div className="grid gap-3 sm:grid-cols-[1fr_100px]">
             <div className="space-y-1.5">
@@ -872,7 +887,22 @@ function EmailSettings({ smtp, senders, people, presets, secretSource, viewerEma
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label>Sign-in name</Label>
-              <Input disabled={fromEnv} value={f.user} onChange={(e) => setF({ ...f, user: e.target.value })} placeholder="team@yourdomain.com" autoComplete="off" />
+              <Input
+                disabled={fromEnv}
+                value={f.user}
+                onChange={(e) => {
+                  const user = e.target.value;
+                  // On cPanel the sender is usually the mailbox itself, at mail.<its domain>.
+                  setF((x) => ({
+                    ...x,
+                    user,
+                    ...(preset === "cpanel" && (!x.host || x.host === mailHostFor(x.user)) ? { host: mailHostFor(user) } : {}),
+                    ...(preset === "cpanel" && (!x.fromAddress || x.fromAddress === x.user) ? { fromAddress: user } : {}),
+                  }));
+                }}
+                placeholder="team@yourdomain.com"
+                autoComplete="off"
+              />
             </div>
             <div className="space-y-1.5">
               <Label>Password or app password</Label>
@@ -937,6 +967,36 @@ function EmailSettings({ smtp, senders, people, presets, secretSource, viewerEma
               {busy === "test" ? <Loader2Icon className="animate-spin" /> : <MailIcon />} Send a test
             </Button>
           </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              disabled={!!busy || smtp.source === "none"}
+              onClick={async () => {
+                setBusy("login");
+                const r = await checkSmtpLoginAction(null);
+                setBusy(null);
+                if (!r.ok) return toast.error(r.error, { duration: 12000 });
+                setChecks({ title: `Check login: ${smtp.host}`, steps: r.data! });
+              }}
+            >
+              {busy === "login" ? <Loader2Icon className="animate-spin" /> : <CheckCircle2Icon />} Check login
+            </Button>
+            <Button
+              variant="outline"
+              disabled={!!busy || !smtp.fromAddress}
+              onClick={async () => {
+                setBusy("dns");
+                const r = await checkInboxDeliveryAction(smtp.fromAddress);
+                setBusy(null);
+                if (!r.ok) return toast.error(r.error);
+                setChecks({ title: `Inbox delivery: ${r.data!.domain}`, steps: r.data!.steps });
+              }}
+            >
+              {busy === "dns" ? <Loader2Icon className="animate-spin" /> : <SearchIcon />} Check inbox delivery
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">The checks and the test use the saved settings, and run from the app&apos;s server, so they show what the hosting allows.</p>
+          {checks && <CheckList {...checks} onClose={() => setChecks(null)} />}
         </CardContent>
       </Card>
 
@@ -993,6 +1053,41 @@ function EmailSettings({ smtp, senders, people, presets, secretSource, viewerEma
         </CardContent>
       </Card>
       {editing && <SenderDialog sender={editing === "new" ? null : editing} people={people} onClose={() => setEditing(null)} onSaved={() => (setEditing(null), router.refresh())} />}
+    </div>
+  );
+}
+
+function mailHostFor(address: string) {
+  const domain = address.split("@")[1]?.trim().toLowerCase();
+  return domain ? `mail.${domain}` : "";
+}
+
+function CheckList({ title, steps, onClose }: { title: string; steps: CheckStep[]; onClose: () => void }) {
+  return (
+    <div className="rounded-lg border p-3">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <span className="text-sm font-medium">{title}</span>
+        <Button size="icon-xs" variant="ghost" aria-label="Close" onClick={onClose}>
+          <XIcon />
+        </Button>
+      </div>
+      <ul className="space-y-2">
+        {steps.map((s) => (
+          <li key={s.label} className="flex gap-2 text-sm">
+            {s.status === "ok" ? (
+              <CheckCircle2Icon className="mt-0.5 size-4 shrink-0 text-emerald-600" />
+            ) : s.status === "warn" ? (
+              <CircleAlertIcon className="mt-0.5 size-4 shrink-0 text-amber-600" />
+            ) : (
+              <CircleXIcon className="mt-0.5 size-4 shrink-0 text-destructive" />
+            )}
+            <span className="min-w-0">
+              <span className="font-medium">{s.label}</span>
+              <span className="block break-words text-xs text-muted-foreground">{s.detail}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

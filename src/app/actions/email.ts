@@ -6,6 +6,8 @@ import { getSettings } from "@/server/settings";
 import { can } from "@/server/users";
 import { WorkflowError } from "@/server/workflow";
 import {
+  checkInboxDelivery,
+  checkSmtpLogin,
   deleteSender,
   deleteTemplate,
   getLog,
@@ -47,6 +49,20 @@ export async function testSmtpAction(senderId: string | null, to: string) {
     if (senderId && !(await sendersFor(viewer)).some((s) => s.id === senderId)) throw new WorkflowError("FORBIDDEN", "You cannot send from that address.");
     if (!isEmail(to)) throw new WorkflowError("VALIDATION", "Enter the address to send the test to.");
     await testSmtp(viewer, senderId, to);
+  }, { revalidate: false });
+}
+
+export async function checkSmtpLoginAction(senderId: string | null) {
+  return wrap(async () => {
+    await manager();
+    return checkSmtpLogin(senderId);
+  }, { revalidate: false });
+}
+
+export async function checkInboxDeliveryAction(address: string) {
+  return wrap(async () => {
+    await manager();
+    return checkInboxDelivery(address);
   }, { revalidate: false });
 }
 

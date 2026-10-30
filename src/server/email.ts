@@ -3,6 +3,8 @@
 // sender address: a mailbox created at the provider, registered here with its own login or as an alias the
 // shared account may send as. Every email is logged with the outcome per recipient.
 
+import dns from "node:dns/promises";
+import net from "node:net";
 import nodemailer from "nodemailer";
 import { Marked } from "marked";
 import { all, get, nowIso, placeholders, run, uid } from "./db";
@@ -19,6 +21,7 @@ export type SmtpSettings = { host: string; port: number; secure: boolean; user: 
 type StoredSmtp = { host: string; port: number; secure: boolean; user: string; passEnc: string | null; fromName: string; fromAddress: string; replyTo: string };
 
 export const SMTP_PRESETS = [
+  { key: "cpanel", label: "Your own domain (cPanel hosting)", host: "", port: 465, secure: true, hint: "In cPanel, open Email Accounts, then Connect Devices for the mailbox. The outgoing server is usually mail.yourdomain, port 465 with SSL, and the sign-in name is the full email address." },
   { key: "gmail", label: "Gmail (app password)", host: "smtp.gmail.com", port: 465, secure: true, hint: "Turn on 2-Step Verification, then create an app password at myaccount.google.com/apppasswords. Gmail sends up to about 500 emails a day." },
   { key: "workspace", label: "Google Workspace", host: "smtp.gmail.com", port: 465, secure: true, hint: "Use a Workspace mailbox and an app password. Employee addresses can be added as aliases (Send mail as) or as their own logins." },
   { key: "zoho", label: "Zoho Mail", host: "smtp.zoho.com", port: 465, secure: true, hint: "Free for small teams on your own domain. Use an app-specific password if two-factor sign-in is on." },
@@ -84,7 +87,7 @@ export function isEmail(v: string) {
   return /^[^@\s<>"]+@[^@\s<>"]+\.[^@\s<>"]+$/.test(v.trim());
 }
 
-type Transport = { transporter: nodemailer.Transporter; fromAddress: string; fromName: string; replyTo: string };
+type Transport = { transporter: nodemailer.Transporter; host: string; port: number; authUser: string; fromAddress: string; fromName: string; replyTo: string };
 
 // The connection for a sender: its own login when it has one, otherwise the shared account.
 async function transportFor(sender: SenderRow | null): Promise<Transport> {
@@ -114,6 +117,9 @@ async function transportFor(sender: SenderRow | null): Promise<Transport> {
   });
   return {
     transporter,
+    host,
+    port,
+    authUser,
     fromAddress: sender?.address ?? env?.fromAddress ?? s!.fromAddress,
     fromName: sender?.display_name ?? env?.fromName ?? s!.fromName,
     replyTo: env ? "" : (s!.replyTo ?? ""),
@@ -132,10 +138,114 @@ export async function testSmtp(user: AppUser, senderId: string | null, to: strin
       text: `This is a test from Myseed Content Manager, sent by ${user.name} as ${t.fromAddress}. Email is working.`,
     });
   } catch (err) {
-    throw new WorkflowError("INVALID_STATE", `The email server said: ${err instanceof Error ? err.message : String(err)}`);
+    throw new WorkflowError("INVALID_STATE", explainSmtpError(err, t.host, t.port));
   } finally {
     t.transporter.close();
   }
+}
+
+// What a failed connection means and what to do about it, instead of the bare server message.
+function explainSmtpError(err: unknown, host: string, port: number) {
+  const e = err as { code?: string; responseCode?: number; message?: string };
+  const said = e?.message ?? String(err);
+  if (e?.code === "EAUTH" || e?.responseCode === 535)
+    return `The server rejected the sign-in. Use the full email address as the sign-in name and the mailbox password (reset it in cPanel, Email Accounts, if unsure). The server said: ${said}`;
+  if (/ENOTFOUND|EAI_AGAIN/.test(said)) return `The server name ${host} was not found. Check the outgoing server in cPanel, Email Accounts, Connect Devices.`;
+  if (e?.code === "ETIMEDOUT" || /timeout/i.test(said))
+    return `No answer from ${host} on port ${port}. Usually the app's hosting blocks outgoing email ports (Render's free plan blocks 25, 465 and 587). Run Check login to see which ports the server can reach.`;
+  if (/certificate|self.signed|altnames/i.test(said))
+    return `The server's certificate does not match ${host}. Use the server name shown in cPanel's Connect Devices (sometimes your host's server name instead of mail.yourdomain). The server said: ${said}`;
+  if (/wrong version number|ssl3_get_record/i.test(said)) return `Encryption mismatch: port 465 needs "Encrypted connection from the start" on, port 587 needs it off.`;
+  return `The email server said: ${said}`;
+}
+
+export type CheckStep = { label: string; status: "ok" | "warn" | "fail"; detail: string };
+
+function probePort(host: string, port: number, ms = 8000) {
+  return new Promise<"open" | "timeout" | "refused">((resolve) => {
+    const sock = net.connect({ host, port });
+    const done = (r: "open" | "timeout" | "refused") => (sock.destroy(), resolve(r));
+    sock.setTimeout(ms, () => done("timeout"));
+    sock.once("connect", () => done("open"));
+    sock.once("error", () => done("refused"));
+  });
+}
+
+// Setup step 3, run from the app's server: find the mail server, reach its port, then sign in. Sends nothing.
+export async function checkSmtpLogin(senderId: string | null): Promise<CheckStep[]> {
+  const sender = senderId ? await senderRow(senderId) : null;
+  const t = await transportFor(sender);
+  const steps: CheckStep[] = [];
+  try {
+    try {
+      const a = await dns.lookup(t.host);
+      steps.push({ label: "Server name", status: "ok", detail: `${t.host} is at ${a.address}.` });
+    } catch {
+      steps.push({ label: "Server name", status: "fail", detail: `${t.host} was not found. Check the outgoing server in cPanel, Email Accounts, Connect Devices.` });
+      return steps;
+    }
+    const other = t.port === 465 ? 587 : 465;
+    const [mine, alt] = await Promise.all([probePort(t.host, t.port), probePort(t.host, other)]);
+    if (mine !== "open") {
+      steps.push({
+        label: `Port ${t.port}`,
+        status: "fail",
+        detail:
+          alt === "open"
+            ? `Port ${t.port} is ${mine === "timeout" ? "blocked or not answering" : "refused"}, but port ${other} answers. Switch to port ${other} (${other === 465 ? "with" : "without"} "Encrypted connection from the start").`
+            : `Neither port ${t.port} nor ${other} answers from the app's server, so the hosting blocks outgoing email. Move the app to a plan that allows SMTP, or send through a web-based relay.`,
+      });
+      return steps;
+    }
+    steps.push({ label: `Port ${t.port}`, status: "ok", detail: `The app's server can reach ${t.host} on port ${t.port}.` });
+    try {
+      await t.transporter.verify();
+      steps.push({ label: "Sign-in", status: "ok", detail: `Signed in as ${t.authUser || "(no sign-in)"}. Now send a test email to yourself.` });
+    } catch (err) {
+      steps.push({ label: "Sign-in", status: "fail", detail: explainSmtpError(err, t.host, t.port) });
+    }
+    return steps;
+  } finally {
+    t.transporter.close();
+  }
+}
+
+async function txt(name: string) {
+  try {
+    return (await dns.resolveTxt(name)).map((r) => r.join(""));
+  } catch {
+    return [];
+  }
+}
+
+// Setup step 4: the DNS records that keep the domain's mail out of spam. DKIM uses cPanel's "default" selector.
+export async function checkInboxDelivery(address: string): Promise<{ domain: string; steps: CheckStep[] }> {
+  const domain = address.split("@")[1]?.trim().toLowerCase();
+  if (!domain) throw new WorkflowError("VALIDATION", "Set the default sender address first.");
+  const steps: CheckStep[] = [];
+  const spf = (await txt(domain)).filter((r) => /^v=spf1/i.test(r));
+  if (spf.length === 1) steps.push({ label: "SPF", status: "ok", detail: spf[0] });
+  else if (spf.length > 1) steps.push({ label: "SPF", status: "fail", detail: `${spf.length} SPF records found; only one is allowed. In cPanel, Email Deliverability, click Repair next to SPF.` });
+  else steps.push({ label: "SPF", status: "fail", detail: "No SPF record. In cPanel, open Email Deliverability and click Repair next to SPF." });
+  const dkim = (await txt(`default._domainkey.${domain}`)).find((r) => /p=/i.test(r));
+  steps.push(
+    dkim
+      ? { label: "DKIM", status: "ok", detail: "Signing key found (selector default)." }
+      : { label: "DKIM", status: "fail", detail: "No DKIM key at default._domainkey. In cPanel, open Email Deliverability and click Install the suggested record next to DKIM." },
+  );
+  const dmarc = (await txt(`_dmarc.${domain}`)).find((r) => /^v=DMARC1/i.test(r));
+  steps.push(
+    dmarc
+      ? { label: "DMARC", status: "ok", detail: dmarc }
+      : { label: "DMARC", status: "warn", detail: `No DMARC record. In cPanel, Zone Editor, add a TXT record named _dmarc.${domain} with the value v=DMARC1; p=none` },
+  );
+  const mx = await dns.resolveMx(domain).catch(() => []);
+  steps.push(
+    mx.length
+      ? { label: "MX", status: "ok", detail: `Replies are delivered to ${mx.sort((a, b) => a.priority - b.priority).map((m) => m.exchange).join(", ")}.` }
+      : { label: "MX", status: "warn", detail: "No MX record, so replies to this address cannot be delivered." },
+  );
+  return { domain, steps };
 }
 
 // ---------------------------------------------------------------------------
