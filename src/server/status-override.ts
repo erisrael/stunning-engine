@@ -84,6 +84,13 @@ async function applyHere(sys: Ctx, actor: AppUser, itemId: string, attempt: Atte
         await setAttemptStatus(attempt, "blocked", now, reason);
       }
       break;
+    case "finished":
+    case "lead_review":
+    case "ready":
+      if (stage === "publication") throw new WorkflowError("VALIDATION", `${targetLabel(stage, value)} does not apply to ${STAGE_LABELS[stage]}.`);
+      await started();
+      await setAttemptStatus(attempt, value, now, reason);
+      break;
     case "awaiting_handoff":
       await submit(sys, actor, itemId, attempt, reason);
       break;

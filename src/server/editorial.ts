@@ -656,6 +656,8 @@ export async function createHandover(user: AppUser, input: { itemIds: string[]; 
   if (!from) throw new WorkflowError("VALIDATION", "None of these items is in production.");
   const to = NEXT_STAGE[from];
   if (!to) throw new WorkflowError("VALIDATION", "Publication is the last stage; nothing to hand over.");
+  // Handing over is the team lead's: the team members send their work to the lead, who hands it on.
+  if (!wide(user) && !isLeadOf(user, from)) throw new WorkflowError("FORBIDDEN", `Only the ${STAGE_LABELS[from]} team lead or a manager hands work over to ${STAGE_LABELS[to]}.`);
   if (input.toUserId && !(await get("SELECT 1 AS x FROM role_assignments WHERE user_id = ? AND role = ?", input.toUserId, to)))
     throw new WorkflowError("VALIDATION", `The receiver must hold the ${STAGE_LABELS[to]} role.`);
 
@@ -810,7 +812,7 @@ export async function updateHandoverNote(user: AppUser, id: string, note: string
   await run("UPDATE handovers SET note = ? WHERE id = ?", note.trim() || null, id);
 }
 
-// Items a person can put in a new handover: waiting in their stage, or already submitted and not in an open handover.
+// Items a team lead can put in a new handover: work in the stage they lead (ready first), not already in an open handover.
 export async function handoverCandidates(user: AppUser) {
   const sc = scopeSql(user, "i");
   const rows = await all<{ id: string; code: string; title: string; stage: Stage; stage_status: string; owner_id: string | null; grade: string; subject: string; unit_number: number | null; part_number: number | null }>(
@@ -818,12 +820,12 @@ export async function handoverCandidates(user: AppUser) {
      FROM items i JOIN stage_attempts a ON a.id = i.current_attempt_id
      LEFT JOIN item_memberships m ON m.item_id = i.id AND m.is_primary = 1 LEFT JOIN grades g ON g.id = m.grade_id LEFT JOIN subjects s ON s.id = m.subject_id
      LEFT JOIN units u ON u.id = m.unit_id LEFT JOIN lessons l ON l.id = i.lesson_id
-     WHERE i.lifecycle = 'in_production' AND a.stage <> 'publication' AND a.status IN ('queued','in_progress','paused','awaiting_handoff') AND ${sc.sql}
+     WHERE i.lifecycle = 'in_production' AND a.stage <> 'publication' AND a.status IN ('queued','in_progress','paused','finished','lead_review','ready','awaiting_handoff') AND ${sc.sql}
        AND NOT EXISTS (SELECT 1 FROM handover_items x JOIN handovers h ON h.id = x.handover_id WHERE x.item_id = i.id AND x.status = 'pending' AND h.status IN ('open','partial'))
      ORDER BY g.sort, s.sort, u.number, l.number, i.code LIMIT 3000`,
     ...sc.params,
   );
-  return rows.filter((r) => wide(user) || isLeadOf(user, r.stage) || (hasRole(user, r.stage) && (!r.owner_id || r.owner_id === user.id)));
+  return rows.filter((r) => wide(user) || isLeadOf(user, r.stage));
 }
 
 // ---------------------------------------------------------------------------

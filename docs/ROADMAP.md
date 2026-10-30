@@ -28,6 +28,9 @@ How new work is added without disturbing what already runs:
 - [x] Stage progress imports notify the next team, both leads and the managers
 - [x] New permissions (Admin, Roles and permissions): Handovers page, Assign work in bulk, Manage checklist templates, Verify checklist items; added to existing roles automatically
 - [ ] Unread handover count on the sidebar
+- [x] Team flow on Home: team members work from a board of their own work (To do, In progress, Done not sent, With team lead), fill in checklists, links and lengths right on the card, mark work done and send it to the team lead one at a time or all at the end of the day
+- [x] Only team leads hand over: the lead approves or returns (with a note) what the team sends, hands over what is ready to the next team's lead, accepts what arrives and assigns it, all from the lead desk on Home
+- [x] Permissions: team members see only their own work (no Overview, lists, board, reports or item pages); team leads see the whole workflow from recording to published; publication keeps item pages and the calendar
 
 ## Phase 3: Chat (done)
 

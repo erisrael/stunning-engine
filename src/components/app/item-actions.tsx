@@ -63,7 +63,9 @@ export function primaryActions(item: ActionItem, v: ActionViewer) {
   if (item.lifecycle !== "in_production" || !item.stage) return out;
   const work = canWorkClient(v, item.stage, item.ownerId);
   const next = NEXT_STAGE[item.stage];
-  const receive = next ? leads(v, next) || (v.roles.includes(next) && (!item.nextOwnerId || item.nextOwnerId === v.id)) : false;
+  // The next team's lead receives handed-over work (or the person it was handed to by name).
+  const receive = next ? leads(v, next) || item.nextOwnerId === v.id : false;
+  const lead = leads(v, item.stage);
   if (item.stage === "publication") {
     const publisher = v.roles.includes("publication") || leads(v, "publication");
     if (item.status === "blocked" && work) out.push({ key: "unblock", label: "Clear blocker", icon: <CheckIcon />, run: "dialog", kind: "unblock" });
@@ -93,23 +95,30 @@ export function primaryActions(item: ActionItem, v: ActionViewer) {
     if (item.stage === "uploading") out.push({ key: "upload", label: "Record upload", icon: <UploadCloudIcon />, run: "dialog", kind: "upload", variant: "outline" });
     out.push({ key: "pause", label: "Pause", icon: <PauseIcon />, run: "dialog", kind: "pause", variant: "outline" });
   }
-  if (["in_progress", "paused", "queued"].includes(item.status ?? "")) out.push({ key: "submit", label: "Send to next team", icon: <SendIcon />, run: "dialog", kind: "submit", variant: item.status === "in_progress" ? "default" : "outline" });
+  // Team members send finished work to their team lead; only the lead approves and hands over to the next team.
+  if (item.status === "lead_review" && lead) out.push({ key: "approve", label: "Approve", icon: <CheckIcon />, run: "direct", kind: "leadApprove" });
+  if (!lead && ["in_progress", "paused", "finished"].includes(item.status ?? ""))
+    out.push({ key: "submitLead", label: "Send to team lead", icon: <SendIcon />, run: "direct", kind: "submitLead", variant: item.status === "paused" ? "outline" : "default" });
+  if (lead && ["in_progress", "paused", "queued", "finished", "lead_review", "ready"].includes(item.status ?? ""))
+    out.push({ key: "submit", label: next ? `Hand over to ${STAGE_LABELS[next]}` : "Hand over", icon: <SendIcon />, run: "dialog", kind: "submit", variant: item.status === "ready" ? "default" : "outline" });
   return out;
 }
 
 type Entry =
   | { type: "label"; label: string }
   | { type: "separator" }
-  | { type: "item"; key: string; label: string; icon?: React.ReactNode; href?: string; dialog?: DialogKind; preset?: Record<string, unknown>; direct?: "start"; destructive?: boolean };
+  | { type: "item"; key: string; label: string; icon?: React.ReactNode; href?: string; dialog?: DialogKind; preset?: Record<string, unknown>; direct?: string; destructive?: boolean };
 
 // Every action for an item, shared by the "..." menu and the right-click menu so both always match.
 export function menuEntries(item: ActionItem, v: ActionViewer): Entry[] {
   const can = (c: Capability) => v.perms.includes(c);
   const out: Entry[] = [{ type: "label", label: item.code }];
-  for (const a of primaryActions(item, v)) out.push({ type: "item", key: a.key, label: a.label, icon: a.icon, ...(a.run === "direct" ? { direct: "start" as const } : { dialog: a.kind as DialogKind }) });
+  for (const a of primaryActions(item, v)) out.push({ type: "item", key: a.key, label: a.label, icon: a.icon, ...(a.run === "direct" ? { direct: a.kind } : { dialog: a.kind as DialogKind }) });
   out.push({ type: "separator" });
-  out.push({ type: "item", key: "page", label: "Open page view", icon: <FileTextIcon />, href: `/items/${item.id}/form` });
-  out.push({ type: "item", key: "detail", label: "Open detail view", icon: <ExternalLinkIcon />, href: `/items/${item.id}` });
+  if (can("items.detail")) {
+    out.push({ type: "item", key: "page", label: "Open page view", icon: <FileTextIcon />, href: `/items/${item.id}/form` });
+    out.push({ type: "item", key: "detail", label: "Open detail view", icon: <ExternalLinkIcon />, href: `/items/${item.id}` });
+  }
   out.push({ type: "item", key: "question", label: "Ask a question", icon: <HelpCircleIcon />, dialog: "question" });
   const work = canWorkClient(v, item.stage, item.ownerId);
   if (item.lifecycle === "in_production" && item.stage) {
@@ -140,7 +149,7 @@ function useEntryRunner(item: ActionItem) {
   const ref: ItemRef = { id: item.id, code: item.code, title: item.title, version: item.version, stage: item.stage, status: item.status };
   return (e: Extract<Entry, { type: "item" }>) => {
     if (e.href) router.push(e.href);
-    else if (e.direct) void run(ref, { action: "start" });
+    else if (e.direct) void run(ref, { action: e.direct } as never);
     else if (e.dialog) open(e.dialog, ref, e.preset);
   };
 }
@@ -179,7 +188,7 @@ export function ItemActions({
             e.stopPropagation();
             if (a.run === "direct") {
               setBusy(true);
-              await run(ref, { action: "start" });
+              await run(ref, { action: a.kind } as never);
               setBusy(false);
             } else open(a.kind as never, ref);
           }}

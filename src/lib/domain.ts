@@ -53,6 +53,7 @@ export const CAPABILITIES = [
   { key: "nav.coverage", label: "Coverage", group: "Sidebar" },
   { key: "nav.team", label: "Team or My effort", group: "Sidebar" },
   { key: "nav.handovers", label: "Handovers", group: "Sidebar" },
+  { key: "items.detail", label: "Open item pages (Page view); without it, work is done from the Home board", group: "Sidebar" },
   { key: "assign.bulk", label: "Assign work in bulk (Assign page)", group: "Editorial workflow" },
   { key: "checklists.manage", label: "Create and edit checklist templates", group: "Editorial workflow" },
   { key: "checklists.verify", label: "Verify checklist items done by others", group: "Editorial workflow" },
@@ -80,22 +81,26 @@ export type Capability = (typeof CAPABILITIES)[number]["key"];
 export const NAV_CAPABILITIES: Capability[] = ["nav.overview", "nav.questions", "nav.list", "nav.sheet", "nav.board", "nav.calendar", "nav.coverage", "nav.team", "nav.handovers"];
 // Editorial workflow tools; team leads get them for their own stage, Admin for every stage.
 export const EDITORIAL_CAPABILITIES: Capability[] = ["assign.bulk", "checklists.manage", "checklists.verify"];
-const STAFF: Capability[] = [...NAV_CAPABILITIES, "export.run", "export.report", "export.tracker", "import.stage"];
+// Team members see their own work only: their Home board, questions and their own effort. Team leads see the whole
+// workflow (Overview, lists, board, coverage, reports) on top of their role.
+const STAFF: Capability[] = ["nav.questions", "nav.team"];
+const FULL_VIEW: Capability[] = [...NAV_CAPABILITIES, "items.detail"];
 
 export const DEFAULT_PERMISSIONS: Record<Role, Capability[]> = {
   recording: STAFF,
   editing: STAFF,
   uploading: STAFF,
-  publication: STAFF,
+  // Publication reviews and releases from the item page, with the release calendar.
+  publication: [...STAFF, "nav.calendar", "items.detail"],
   // Managers follow delivery: they view everything but do not edit item data.
-  manager: [...NAV_CAPABILITIES, "export.run", "export.report", "export.tracker", "export.audit", "reports.view", "team.view", "corrections.approve", "chat.manage", "chat.channels", "chat.contact_owners", "email.send", "questions.ask", "settings.manage", "company.view"],
+  manager: [...FULL_VIEW, "export.run", "export.report", "export.tracker", "export.audit", "reports.view", "team.view", "corrections.approve", "chat.manage", "chat.channels", "chat.contact_owners", "email.send", "questions.ask", "settings.manage", "company.view"],
   // Department roles see their own section only; Admin can widen this in Roles and permissions.
-  owner: ["owners.view", "company.view", "nav.overview", "nav.coverage", "reports.view", "team.view", "export.run", "export.report", "chat.channels", "chat.contact_owners", "email.send"],
+  owner: ["owners.view", "company.view", "items.detail", "nav.overview", "nav.coverage", "reports.view", "team.view", "export.run", "export.report", "chat.channels", "chat.contact_owners", "email.send"],
   developer: ["dev.access"],
   content: ["studio.access"],
   marketing: ["marketing.access", "email.send"],
   admin: [
-    ...NAV_CAPABILITIES,
+    ...FULL_VIEW,
     "items.create",
     "items.plan",
     "items.close",
@@ -143,7 +148,7 @@ export const POSITION_LABELS: Record<Position, string> = { head: "Head", lead: "
 // Team leads (Admin, Teams) get these on top of their roles; Admin can change them per team.
 export type LeadKey = `lead.${Stage}`;
 export const leadKey = (stage: Stage): LeadKey => `lead.${stage}`;
-const LEAD_BASE: Capability[] = ["reports.view", "team.view", "questions.ask", "export.run", "export.report", "export.tracker", "import.stage", "chat.channels", ...EDITORIAL_CAPABILITIES];
+const LEAD_BASE: Capability[] = [...NAV_CAPABILITIES, "items.detail", "reports.view", "team.view", "questions.ask", "export.run", "export.report", "export.tracker", "import.stage", "chat.channels", ...EDITORIAL_CAPABILITIES];
 export const DEFAULT_LEAD_PERMISSIONS: Record<LeadKey, Capability[]> = {
   "lead.recording": [...LEAD_BASE, "items.create", "items.plan", "import.tracker"],
   "lead.editing": LEAD_BASE,
@@ -191,6 +196,9 @@ export const ATTEMPT_STATUSES = [
   "in_progress",
   "paused",
   "blocked",
+  "finished",
+  "lead_review",
+  "ready",
   "awaiting_handoff",
   "completed",
   "returned",
@@ -198,19 +206,25 @@ export const ATTEMPT_STATUSES = [
 ] as const;
 export type AttemptStatus = (typeof ATTEMPT_STATUSES)[number];
 
-// One vocabulary everywhere: To do, In progress, Paused, Blocked, Submitted, Done.
+// One vocabulary everywhere. A team member works To do, In progress, then Done (not sent yet); sending it puts it
+// With the team lead, who approves it (Ready for handover) and hands it over to the next team's lead (Handed over).
 export const STATUS_LABELS: Record<AttemptStatus, string> = {
   queued: "To do",
   in_progress: "In progress",
   paused: "Paused",
   blocked: "Blocked",
-  awaiting_handoff: "Submitted",
+  finished: "Done, not sent",
+  lead_review: "With team lead",
+  ready: "Ready for handover",
+  awaiting_handoff: "Handed over",
   completed: "Done",
   returned: "Returned",
   superseded: "Replaced",
 };
 
-export const OPEN_STATUSES: AttemptStatus[] = ["queued", "in_progress", "paused", "blocked", "awaiting_handoff"];
+export const OPEN_STATUSES: AttemptStatus[] = ["queued", "in_progress", "paused", "blocked", "finished", "lead_review", "ready", "awaiting_handoff"];
+// Still with the team member (not yet sent to the team lead).
+export const WORKER_STATUSES: AttemptStatus[] = ["queued", "in_progress", "paused", "blocked", "finished"];
 
 // Substates shown inside Uploading and Publication.
 export const UPLOAD_SUBSTATES = ["uploading", "processing", "failed", "uploaded"] as const;
@@ -287,7 +301,7 @@ const COMMON_OPTIONS: SheetStatusOption[] = [
   { value: "in_progress", label: "In progress" },
   { value: "paused", label: "Paused" },
   { value: "blocked", label: "Blocked" },
-  { value: "awaiting_handoff", label: "Submitted" },
+  { value: "awaiting_handoff", label: "Handed over" },
   { value: "completed", label: "Done" },
 ];
 
@@ -300,7 +314,7 @@ export const SHEET_STATUS_OPTIONS: Record<Stage, SheetStatusOption[]> = {
     { value: "sub:processing", label: "Processing" },
     { value: "sub:failed", label: "Upload failed" },
     { value: "blocked", label: "Blocked" },
-    { value: "awaiting_handoff", label: "Submitted" },
+    { value: "awaiting_handoff", label: "Handed over" },
     { value: "completed", label: "Done" },
   ],
   publication: [

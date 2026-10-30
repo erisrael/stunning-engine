@@ -22,7 +22,9 @@ import { ManagerHome } from "./manager-home";
 import { PageImport } from "@/components/app/page-import";
 import { DASHBOARD_PANELS as PANELS } from "@/lib/panels";
 import { redirect } from "next/navigation";
-import { can } from "@/server/users";
+import { can, isLeadOf } from "@/server/users";
+import { leadDesk, myWork } from "@/server/team-flow";
+import { LeadDesk, MyBoard } from "@/components/app/team-flow";
 
 export const metadata = { title: "Dashboard" };
 
@@ -57,6 +59,21 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   if (managerView(role)) {
     const hour = Number(new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", hourCycle: "h23" }).format(new Date()));
     return <ManagerHome viewer={viewer} timezone={tz} greeting={hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening"} />;
+  }
+  // Recording, Editing and Uploading: team members get their own board; team leads their desk, then their own work.
+  const team = (["recording", "editing", "uploading"] as string[]).includes(role) ? (role as "recording" | "editing" | "uploading") : null;
+  if (team) {
+    const hour = Number(new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", hourCycle: "h23" }).format(new Date()));
+    const greeting = `${hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening"}, ${viewer.name.split(" ")[0]}`;
+    const [desk, mine] = await Promise.all([isLeadOf(viewer, team) ? leadDesk(viewer, team) : Promise.resolve(null), myWork(viewer)]);
+    const own = mine.items.filter((i) => i.stage === team);
+    return (
+      <div className="space-y-6">
+        <PageHeader eyebrow={`${STAGE_LABELS[team]}${desk ? " team lead" : ""}`} title={greeting} description={desk ? "Approve what your team sends, hand it over to the next team, accept what arrives and assign it." : "Your work. Start it, fill in what it needs on the card, mark it done, and send it to your team lead."} />
+        {desk && <LeadDesk data={desk} />}
+        {(!desk || own.length > 0) && <MyBoard items={own} title={desk ? "My own work" : "My work"} />}
+      </div>
+    );
   }
   const data = await dashboardData(viewer, role, filters, now);
   const options = await filterOptions(viewer, "/dashboard");

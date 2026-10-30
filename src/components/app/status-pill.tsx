@@ -41,6 +41,11 @@ export function toneFor(status: string | null | undefined, substate?: string | n
       return "paused";
     case "blocked":
       return "blocked";
+    case "finished":
+      return "active";
+    case "lead_review":
+      return "paused";
+    case "ready":
     case "awaiting_handoff":
       return "handoff";
     case "completed":

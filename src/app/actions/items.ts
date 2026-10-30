@@ -17,6 +17,11 @@ export type ItemActionInput =
   | { action: "block"; cause: string; note?: string; resolverId?: string | null }
   | { action: "unblock"; resolution?: string; resume?: boolean }
   | { action: "submit"; note?: string }
+  | { action: "finish" }
+  | { action: "reopenFinished" }
+  | { action: "submitLead"; note?: string }
+  | { action: "leadApprove"; note?: string }
+  | { action: "leadReturn"; note: string }
   | { action: "accept"; note?: string }
   | { action: "return"; reasonCategory: string; note: string }
   | { action: "reopen"; target: Stage; reasonCategory: string; note: string }
@@ -66,6 +71,16 @@ export async function itemAction(itemId: string, input: ItemActionInput, opts: {
               return await wf.unblockWork(ctx, itemId, { resolution: input.resolution, resume: input.resume, expectedVersion: v });
             case "submit":
               return await wf.submitHandoff(ctx, itemId, { note: input.note, expectedVersion: v });
+            case "finish":
+              return await wf.finishWork(ctx, itemId);
+            case "reopenFinished":
+              return await wf.reopenFinished(ctx, itemId);
+            case "submitLead":
+              return await wf.submitToLead(ctx, itemId, { note: input.note });
+            case "leadApprove":
+              return await wf.leadDecide(ctx, itemId, { decision: "approve", note: input.note });
+            case "leadReturn":
+              return await wf.leadDecide(ctx, itemId, { decision: "return", note: input.note });
             case "accept":
               return await wf.acceptHandoff(ctx, itemId, { note: input.note, expectedVersion: v });
             case "return":
@@ -224,6 +239,8 @@ export type BulkInput =
   | { action: "release" }
   | { action: "accept" }
   | { action: "submit" }
+  | { action: "submitLead" }
+  | { action: "leadApprove" }
   | { action: "tags"; tags: string[] };
 
 // Bulk changes run row by row through the same engine rules; ineligible rows are reported, never forced.
@@ -273,6 +290,12 @@ export async function bulkAction(ids: string[], input: BulkInput, dryRun = false
             break;
           case "submit":
             await wf.submitHandoff(ctx, id);
+            break;
+          case "submitLead":
+            await wf.submitToLead(ctx, id);
+            break;
+          case "leadApprove":
+            await wf.leadDecide(ctx, id, { decision: "approve" });
             break;
           case "tags":
             await wf.updateItemFields(ctx, id, { tags: input.tags });

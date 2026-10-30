@@ -23,7 +23,7 @@ function canMove(r: WorkRow, v: ActionViewer) {
   if (r.lifecycle !== "in_production" || !r.stage) return false;
   if (r.stage_status === "awaiting_handoff") {
     const next = NEXT_STAGE[r.stage];
-    return !!next && (v.perms.includes("work.override") || !!v.leads?.includes(next) || (v.roles.includes(next) && (!r.nextOwnerId || r.nextOwnerId === v.id)));
+    return !!next && (v.perms.includes("work.override") || !!v.leads?.includes(next) || r.nextOwnerId === v.id);
   }
   return canWorkClient(v, r.stage, r.ownerId);
 }
@@ -33,6 +33,7 @@ export function Board({ columns, viewer, users, tz, now, mode }: { columns: Col[
   const router = useRouter();
   const [drag, setDrag] = React.useState<WorkRow | null>(null);
   const [over, setOver] = React.useState<string | null>(null);
+  const v = (st: Stage) => viewer.perms.includes("work.override") || !!viewer.leads?.includes(st);
 
   // Team board: dropping on the next stage sends the item on (or accepts it). Nothing skips evidence or acceptance.
   const dropTeam = (r: WorkRow, target: string) => {
@@ -48,7 +49,12 @@ export function Board({ columns, viewer, users, tz, now, mode }: { columns: Col[
     const fromStage = from as Stage;
     const next = NEXT_STAGE[fromStage];
     if (target === "published" && fromStage === "publication") return open("live", ref);
-    if (target === next) return r.stage_status === "awaiting_handoff" ? open("accept", ref) : open("submit", ref);
+    if (target === next) {
+      if (r.stage_status === "awaiting_handoff") return open("accept", ref);
+      // Only the team lead hands over; members send to their lead.
+      if (v(fromStage)) return open("submit", ref);
+      return void run(ref, { action: "submitLead" }, { source: "board" });
+    }
     if (STAGES.indexOf(target as Stage) > -1 && STAGES.indexOf(target as Stage) < STAGES.indexOf(fromStage)) return open("redo", ref, { target });
     toast.error(`Work moves one stage at a time. ${STAGE_LABELS[fromStage]} sends to ${next ? STAGE_LABELS[next] : "release"}.`);
   };
@@ -61,7 +67,10 @@ export function Board({ columns, viewer, users, tz, now, mode }: { columns: Col[
     if (r.lifecycle === "draft") return toast.info("Start recording first: drag it to In progress.");
     if (target === "paused") return open("pause", ref);
     if (target === "blocked") return open("block", ref);
-    if (target === "awaiting_handoff") return open("submit", ref);
+    if (target === "finished") return void run(ref, { action: "finish" });
+    if (target === "lead_review") return v(r.stage!) ? toast.info("Your own work goes straight to Ready.") : void run(ref, { action: "submitLead" });
+    if (target === "ready") return v(r.stage!) ? void run(ref, { action: r.stage_status === "lead_review" ? "leadApprove" : "submitLead" }) : toast.error("Your team lead approves work.");
+    if (target === "awaiting_handoff") return v(r.stage!) ? open("submit", ref) : toast.error("Your team lead hands work over. Send it to them instead.");
     if (target === "queued") return toast.info("Started work cannot go back to To do. Pause it instead.");
   };
 
@@ -79,7 +88,7 @@ export function Board({ columns, viewer, users, tz, now, mode }: { columns: Col[
     <div className="-mx-3 overflow-x-auto px-3 pb-2 sm:mx-0 sm:px-0">
       <div className="flex snap-x snap-mandatory gap-3">
         {columns.map((c) => {
-          const byStatus = ["in_progress", "blocked", "paused", "queued", "awaiting_handoff"];
+          const byStatus = ["in_progress", "blocked", "paused", "queued", "finished", "lead_review", "ready", "awaiting_handoff"];
           return (
             <section
               key={c.key}

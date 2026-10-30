@@ -15,7 +15,7 @@ import { PageImport } from "@/components/app/page-import";
 
 export const metadata = { title: "Board" };
 
-const ORDER: Record<string, number> = { in_progress: 0, blocked: 1, awaiting_handoff: 2, paused: 3, queued: 4 };
+const ORDER: Record<string, number> = { lead_review: 0, ready: 1, in_progress: 2, blocked: 3, finished: 4, awaiting_handoff: 5, paused: 6, queued: 7 };
 
 export default async function PipelinePage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const viewer = await requireCapability("nav.board");
@@ -38,7 +38,9 @@ export default async function PipelinePage({ searchParams }: { searchParams: Pro
       { key: "in_progress", label: "In progress", hint: "Timer running", rows: mine.filter((r) => r.stage_status === "in_progress") },
       { key: "paused", label: "Paused", rows: mine.filter((r) => r.stage_status === "paused") },
       { key: "blocked", label: "Blocked", hint: "Waiting on someone", rows: mine.filter((r) => r.stage_status === "blocked") },
-      { key: "awaiting_handoff", label: "Sent to next team", hint: "Waiting for them to accept", rows: mine.filter((r) => r.stage_status === "awaiting_handoff") },
+      { key: "finished", label: "Done, not sent", hint: "Send to the team lead from Home", rows: mine.filter((r) => r.stage_status === "finished") },
+      { key: "lead_review", label: "With team lead", hint: "Waiting for approval", rows: mine.filter((r) => r.stage_status === "lead_review" || r.stage_status === "ready") },
+      { key: "awaiting_handoff", label: "Handed over", hint: "Waiting for the next team's lead", rows: mine.filter((r) => r.stage_status === "awaiting_handoff") },
     ];
   } else {
     const published = rows.filter((r) => r.lifecycle === "published").sort((a, b) => (b.published_at ?? "").localeCompare(a.published_at ?? "")).slice(0, 25).map((r) => r.id);

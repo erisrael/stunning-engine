@@ -140,6 +140,9 @@ const INTERVAL_FOR: Partial<Record<AttemptStatus, string>> = {
   in_progress: "active",
   paused: "paused",
   blocked: "blocked",
+  finished: "finished",
+  lead_review: "review",
+  ready: "ready",
   awaiting_handoff: "handoff",
 };
 
@@ -342,11 +345,19 @@ async function nextActionFor(item: ItemRow, attempt: AttemptRow | null): Promise
       return { text: "Resume work", owner: attempt.owner_id };
     case "blocked":
       return { text: "Resolve blocker", owner: await blockerResolver(attempt.id) ?? attempt.owner_id };
+    case "finished":
+      return { text: "Send to the team lead", owner: attempt.owner_id };
+    case "lead_review":
+      return { text: `Team lead approves ${label.toLowerCase()}`, owner: (await teamLeads(attempt.stage))[0] ?? null };
+    case "ready": {
+      const next = NEXT_STAGE[attempt.stage];
+      return { text: next ? `Team lead hands over to ${STAGE_LABELS[next]}` : "Confirm release", owner: (await teamLeads(attempt.stage))[0] ?? null };
+    }
     case "awaiting_handoff": {
       const next = NEXT_STAGE[attempt.stage];
       return {
-        text: next ? `Accept or return ${label.toLowerCase()} handoff` : "Confirm release",
-        owner: next ? await stageOwner(item.id, next) : attempt.owner_id,
+        text: next ? `${STAGE_LABELS[next]} team lead accepts the handover` : "Confirm release",
+        owner: next ? ((await teamLeads(next))[0] ?? null) : attempt.owner_id,
       };
     }
   }
@@ -1246,6 +1257,125 @@ export async function missingRequirements(itemId: string, attempt?: AttemptRow |
 }
 
 // ---------------------------------------------------------------------------
+// Team member to team lead: finish, send, approve or return
+// ---------------------------------------------------------------------------
+
+// The team lead (or a manager) of a stage acts for the team: approves work and hands it over.
+export function leadsStage(u: AppUser | null, stage: Stage) {
+  return !u || isManager(u) || isLeadOf(u, stage);
+}
+
+// What a team member must have done before marking work done: everything except the lead's verifications.
+async function workerMissing(itemId: string, attempt: AttemptRow) {
+  return (await missingRequirements(itemId, attempt)).filter((r) => !r.key.startsWith("verify:"));
+}
+
+// The team member marks their work done. It stays with them (Done, not sent) until they send it to the team lead,
+// one at a time or all together at the end of the day.
+export async function finishWork(ctx: Ctx, itemId: string) {
+  return await tx(async () => {
+    const now = at(ctx);
+    await requireView(ctx, itemId);
+    const attempt = await requireAttempt(itemId);
+    if (attempt.stage === "publication") throw new WorkflowError("INVALID_STATE", "Publication completes when the release is confirmed live.");
+    if (!["queued", "in_progress", "paused"].includes(attempt.status))
+      throw new WorkflowError("INVALID_STATE", `This cannot be marked done while it is ${STATUS_LABELS[attempt.status].toLowerCase()}.`);
+    await requireWork(ctx, attempt);
+    const missing = await workerMissing(itemId, attempt);
+    if (missing.length) throw new WorkflowError("REQUIREMENTS_MISSING", "Finish what is still needed first.", missing);
+    await endSessions(attempt.id, now, "finished");
+    if (!attempt.first_started_at) await run("UPDATE stage_attempts SET first_started_at = ? WHERE id = ?", now, attempt.id);
+    // Recorded, edited and uploaded dates are when the work was done.
+    await run(`UPDATE items SET ${STAGE_DATE_COLUMN[attempt.stage]} = ? WHERE id = ?`, now, itemId);
+    await setAttemptStatus(attempt, "finished", now);
+    await audit(ctx, { itemId, attemptId: attempt.id, stage: attempt.stage, action: "work.finished", summary: `${actorName(ctx)} marked ${STAGE_LABELS[attempt.stage].toLowerCase()} done` });
+    await syncItem(itemId, now);
+  });
+}
+
+// Back to work on something marked done but not yet sent.
+export async function reopenFinished(ctx: Ctx, itemId: string) {
+  return await tx(async () => {
+    const now = at(ctx);
+    await requireView(ctx, itemId);
+    const attempt = await requireAttempt(itemId);
+    if (attempt.status !== "finished") throw new WorkflowError("INVALID_STATE", "Only work marked done and not yet sent can be reopened.");
+    await requireWork(ctx, attempt);
+    await setAttemptStatus(attempt, "paused", now, "Reopened");
+    await audit(ctx, { itemId, attemptId: attempt.id, stage: attempt.stage, action: "work.reopened", summary: `${actorName(ctx)} reopened ${STAGE_LABELS[attempt.stage].toLowerCase()} to change it` });
+    await syncItem(itemId, now);
+  });
+}
+
+// Sends finished work to the stage's team lead. Work still in progress is marked done on the way. A lead (or a
+// manager) sending their own work approves it at the same time.
+export async function submitToLead(ctx: Ctx, itemId: string, input: { note?: string | null } = {}) {
+  const attempt = await requireAttempt(itemId);
+  if (["queued", "in_progress", "paused"].includes(attempt.status)) await finishWork(ctx, itemId);
+  return await tx(async () => {
+    const now = at(ctx);
+    await requireView(ctx, itemId);
+    const a = await requireAttempt(itemId);
+    if (a.status !== "finished") throw new WorkflowError("INVALID_STATE", `This is ${STATUS_LABELS[a.status].toLowerCase()}; only work marked done is sent to the team lead.`);
+    await requireWork(ctx, a);
+    const item = await getItem(itemId);
+    if (input.note?.trim()) await run("UPDATE stage_attempts SET notes = ? WHERE id = ?", [a.notes, `${actorName(ctx)}: ${input.note.trim()}`].filter(Boolean).join("\n"), a.id);
+    await run("UPDATE stage_attempts SET handoff_submitted_at = ? WHERE id = ?", now, a.id);
+    if (leadsStage(ctx.actor, a.stage)) {
+      await approveChecks(ctx, a, now);
+      await setAttemptStatus(a, "ready", now);
+      await audit(ctx, { itemId, attemptId: a.id, stage: a.stage, action: "lead.approved", summary: `${actorName(ctx)} finished ${STAGE_LABELS[a.stage].toLowerCase()}; ready for handover` });
+    } else {
+      await setAttemptStatus(a, "lead_review", now);
+      await audit(ctx, { itemId, attemptId: a.id, stage: a.stage, action: "lead.submitted", summary: `${actorName(ctx)} sent ${STAGE_LABELS[a.stage].toLowerCase()} to the team lead`, reason: input.note ?? null });
+      if (!ctx.silent) {
+        const leads = await teamLeads(a.stage);
+        await notify(
+          leads.length ? leads : await managers(),
+          { type: "approval", title: `To approve: ${item.code}`, body: `${actorName(ctx)} finished ${STAGE_LABELS[a.stage].toLowerCase()} of ${item.title}.`, link: "/dashboard", itemId, groupKey: `lead-review:${a.stage}` },
+          now,
+          actorId(ctx) ?? undefined,
+        );
+      }
+    }
+    await syncItem(itemId, now);
+  });
+}
+
+// Approving verifies the checklist lines a lead must verify.
+async function approveChecks(ctx: Ctx, a: AttemptRow, now: string) {
+  await run("UPDATE checklist_results SET verified_by = ?, verified_at = ? WHERE attempt_id = ? AND checked = 1 AND verified_at IS NULL", actorId(ctx), now, a.id);
+}
+
+// The team lead approves work sent to them (Ready for handover) or returns it to the team member with a note.
+export async function leadDecide(ctx: Ctx, itemId: string, input: { decision: "approve" | "return"; note?: string | null }) {
+  return await tx(async () => {
+    const now = at(ctx);
+    await requireView(ctx, itemId);
+    const a = await requireAttempt(itemId);
+    if (!leadsStage(ctx.actor, a.stage)) throw new WorkflowError("FORBIDDEN", `Only the ${STAGE_LABELS[a.stage]} team lead or a manager approves this.`);
+    if (!["lead_review", "finished"].includes(a.status)) throw new WorkflowError("INVALID_STATE", `This is ${STATUS_LABELS[a.status].toLowerCase()}, not waiting for approval.`);
+    const item = await getItem(itemId);
+    if (input.decision === "approve") {
+      const missing = await workerMissing(itemId, a);
+      if (missing.length) throw new WorkflowError("REQUIREMENTS_MISSING", "Something required is still missing.", missing);
+      await approveChecks(ctx, a, now);
+      await setAttemptStatus(a, "ready", now);
+      await audit(ctx, { itemId, attemptId: a.id, stage: a.stage, action: "lead.approved", summary: `${actorName(ctx)} approved ${STAGE_LABELS[a.stage].toLowerCase()}; ready for handover`, reason: input.note ?? null });
+    } else {
+      if (!input.note?.trim()) throw new WorkflowError("VALIDATION", "Say what needs to change.");
+      await run("UPDATE stage_attempts SET notes = ?, handoff_submitted_at = NULL WHERE id = ?", [a.notes, `Team lead: ${input.note.trim()}`].filter(Boolean).join("\n"), a.id);
+      await run("UPDATE checklist_results SET verified_by = NULL, verified_at = NULL WHERE attempt_id = ?", a.id);
+      await setAttemptStatus(a, "paused", now, input.note.trim());
+      await audit(ctx, { itemId, attemptId: a.id, stage: a.stage, action: "lead.returned", summary: `${actorName(ctx)} returned ${STAGE_LABELS[a.stage].toLowerCase()} to the team member`, reason: input.note.trim() });
+      if (!ctx.silent && a.owner_id && a.owner_id !== actorId(ctx))
+        await notify([a.owner_id], { type: "handoff", title: `Changes needed: ${item.code}`, body: input.note.trim(), link: `/dashboard?item=${itemId}`, itemId, dedupeKey: `lead-return:${a.id}:${now}` }, now, actorId(ctx) ?? undefined);
+    }
+    await syncItem(itemId, now);
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Handoffs
 // ---------------------------------------------------------------------------
 
@@ -1258,17 +1388,21 @@ export async function submitHandoff(ctx: Ctx, itemId: string, input: { note?: st
       const attempt = await requireAttempt(itemId);
       if (attempt.stage === "publication")
         throw new WorkflowError("INVALID_STATE", "Publication completes when the live release is confirmed.");
-      if (!["in_progress", "paused", "queued"].includes(attempt.status))
+      if (!leadsStage(ctx.actor, attempt.stage))
+        throw new WorkflowError("FORBIDDEN", `Your team lead hands work over to ${STAGE_LABELS[NEXT_STAGE[attempt.stage]!]}. Mark it done and send it to the team lead.`);
+      if (!["in_progress", "paused", "queued", "finished", "lead_review", "ready"].includes(attempt.status))
         throw new WorkflowError("INVALID_STATE", `A handoff cannot be submitted while the stage is ${STATUS_LABELS[attempt.status].toLowerCase()}.`);
       await requireWork(ctx, attempt);
+      // Handing over approves any line still waiting for the lead's verification.
+      if (attempt.status !== "ready") await approveChecks(ctx, attempt, now);
       const missing = await missingRequirements(itemId, attempt);
       if (missing.length)
         throw new WorkflowError("REQUIREMENTS_MISSING", "Complete the required evidence before submitting the handoff.", missing);
       await endSessions(attempt.id, now, "handoff");
-      await run("UPDATE stage_attempts SET handoff_submitted_at = ?, notes = COALESCE(?, notes) WHERE id = ?", now, input.note ?? null, attempt.id);
+      await run("UPDATE stage_attempts SET handoff_submitted_at = COALESCE(handoff_submitted_at, ?), notes = COALESCE(?, notes) WHERE id = ?", now, input.note ?? null, attempt.id);
       if (attempt.stage === "uploading") await run("UPDATE stage_attempts SET substate = 'uploaded' WHERE id = ?", attempt.id);
-      // Recorded, edited and uploaded dates follow the latest handoff; they can be corrected afterwards.
-      await run(`UPDATE items SET ${STAGE_DATE_COLUMN[attempt.stage]} = ? WHERE id = ?`, now, itemId);
+      // Recorded, edited and uploaded dates are when the work was marked done; a direct handover sets them now.
+      if (!["finished", "lead_review", "ready"].includes(attempt.status)) await run(`UPDATE items SET ${STAGE_DATE_COLUMN[attempt.stage]} = ? WHERE id = ?`, now, itemId);
       await setAttemptStatus(attempt, "awaiting_handoff", now);
       const next = NEXT_STAGE[attempt.stage]!;
       const receiver = await stageOwner(itemId, next);
@@ -1281,15 +1415,16 @@ export async function submitHandoff(ctx: Ctx, itemId: string, input: { note?: st
               reason: input.note ?? null,
             });
       if (!ctx.silent) {
+        // The next team's lead receives the handover; without a lead, whoever is set to do the work there.
         const leads = await teamLeads(next);
-        const recipients = [...(receiver ? [receiver] : leads.length ? [] : await roleUsersForItem(next, itemId)), ...leads];
+        const recipients = leads.length ? leads : receiver ? [receiver] : await roleUsersForItem(next, itemId);
         await notify(
                   recipients,
                   {
                     type: "handoff",
                     title: `Handoff waiting: ${item.code}`,
-                    body: `${STAGE_LABELS[attempt.stage]} submitted ${item.title}. Accept or return it.`,
-                    link: `/items/${itemId}`,
+                    body: `${STAGE_LABELS[attempt.stage]} handed over ${item.title}. Accept or return it.`,
+                    link: `/dashboard`,
                     itemId,
                     dedupeKey: `handoff:${attempt.id}`,
                   },
@@ -1320,6 +1455,7 @@ async function canReceive(ctx: Ctx, itemId: string, next: Stage) {
   if (isManager(u)) return true;
   if (isLeadOf(u, next)) return true;
   if (!hasRole(u, next)) return false;
+  if ((await teamLeads(next)).length) return false;
   const owner = await stageOwner(itemId, next);
   return !owner || owner === u.id;
 }
@@ -1359,8 +1495,9 @@ export async function acceptHandoff(ctx: Ctx, itemId: string, input: { note?: st
               summary: `${actorName(ctx)} accepted the ${STAGE_LABELS[attempt.stage].toLowerCase()} handoff${self ? " (self-acceptance)" : ""}`,
               reason: input.note ?? null,
             });
-      // Accepting user becomes the owner of the next stage when none is assigned.
-      const owner = await stageOwner(itemId, next) ?? (ctx.actor && hasRole(ctx.actor, next) ? ctx.actor.id : null);
+      // The next stage keeps its planned owner; otherwise the accepting lead assigns it (a team member accepting,
+      // where there is no lead, takes it).
+      const owner = (await stageOwner(itemId, next)) ?? (ctx.actor && hasRole(ctx.actor, next) && !leadsStage(ctx.actor, next) ? ctx.actor.id : null);
       await openAttempt(ctx, itemId, next, "initial", null, owner);
       if (!ctx.silent && attempt.owner_id)
         await notify(

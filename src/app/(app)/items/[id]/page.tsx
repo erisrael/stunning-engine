@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { notFound } from "next/navigation";
@@ -65,6 +66,8 @@ const BUCKETS = [
 export default async function ItemPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string }> }) {
   const viewer = await requireViewer();
   const { id } = await params;
+  // Team members work from their Home board; links to an item open it there.
+  if (!can(viewer, "items.detail")) redirect(`/dashboard?item=${encodeURIComponent(id)}`);
   const { tab = "overview" } = await searchParams;
   if (!await canViewItem(viewer, id)) notFound();
   const d = await itemDetail(id);
