@@ -6,6 +6,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/app/primitives";
 import { CalendarSettings, DestinationSettings, ListSettings, TaxonomySettings, WorkflowSettings, WorkspaceSettings } from "./settings-client";
 import { PageImport } from "@/components/app/page-import";
+import { CallSettings } from "./call-settings";
+import { turnSettings } from "@/server/calls";
+import { secretSource } from "@/server/secrets";
 
 export const metadata = { title: "Settings" };
 
@@ -21,7 +24,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
     <div className="space-y-4">
       <PageHeader
         title="Settings"
-        description="Curriculum, workflow rules, destinations, calendar and lists. People, roles and permissions are in Admin."
+        description="Curriculum, workflow rules, destinations, calendar, lists and calls. People, roles and permissions are in Admin."
         actions={<PageImport viewer={viewer} page="curriculum" label="Import curriculum" />}
       />
       <Tabs defaultValue={tab} className="gap-4">
@@ -32,6 +35,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           <TabsTrigger value="calendar">Calendar and alerts</TabsTrigger>
           <TabsTrigger value="lists">Lists</TabsTrigger>
           <TabsTrigger value="workspace">Workspace</TabsTrigger>
+          <TabsTrigger value="calls">Calls</TabsTrigger>
         </TabsList>
         <TabsContent value="taxonomy">
           <TaxonomySettings t={{ grades: tax.grades, subjects: tax.subjects, gradeSubjects: tax.gradeSubjects, units: tax.units, lessons, terms: s.lists.terms }} />
@@ -50,6 +54,9 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         </TabsContent>
         <TabsContent value="workspace">
           <WorkspaceSettings settings={s} />
+        </TabsContent>
+        <TabsContent value="calls">
+          <CallSettings turn={await turnSettings()} secretSource={secretSource()} />
         </TabsContent>
       </Tabs>
     </div>

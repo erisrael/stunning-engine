@@ -45,7 +45,9 @@ export async function subscriptionCount(userId: string) {
   return Number((await get<{ c: number }>("SELECT COUNT(*) AS c FROM push_subscriptions WHERE user_id = ?", userId))?.c ?? 0);
 }
 
-export type PushPayload = { title: string; body?: string; link?: string; tag?: string };
+// ttl: seconds the push service keeps trying (short for calls); urgent: delivered at once even in battery saving;
+// call: the call id, so the device shows a ringing notification with Answer and Decline.
+export type PushPayload = { title: string; body?: string; link?: string; tag?: string; ttl?: number; urgent?: boolean; call?: string };
 
 // Sends to every device of the given people. Expired subscriptions are removed. Never throws.
 export async function sendPush(userIds: string[], payload: PushPayload) {
@@ -59,13 +61,14 @@ export async function sendPush(userIds: string[], payload: PushPayload) {
     if (!subs.length) return;
     const k = await vapidKeys();
     const subject = process.env.VAPID_SUBJECT || "mailto:admin@myseed.local";
-    const body = JSON.stringify({ title: payload.title, body: payload.body ?? "", link: payload.link ?? "/dashboard", tag: payload.tag });
+    const body = JSON.stringify({ title: payload.title, body: payload.body ?? "", link: payload.link ?? "/dashboard", tag: payload.tag, call: payload.call });
     await Promise.allSettled(
       subs.map(async (s) => {
         try {
           await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, body, {
             vapidDetails: { subject, publicKey: k.publicKey, privateKey: k.privateKey },
-            TTL: 3600,
+            TTL: payload.ttl ?? 3600,
+            urgency: payload.urgent ? "high" : "normal",
             timeout: 4000,
           });
           await run("UPDATE push_subscriptions SET last_used_at = ? WHERE endpoint = ?", nowIso(), s.endpoint);

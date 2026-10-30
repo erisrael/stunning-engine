@@ -488,7 +488,7 @@ function Conversation({
             </span>
           </span>
         </button>
-        {member && group.canPost && (group.kind !== "direct" || secure.state === "ready") && <CallButton group={group} cryptoKey={secure.key} onSent={sent} />}
+        {member && group.canPost && <CallButton group={group} cryptoKey={secure.key} onSent={sent} />}
         {member && (
           <Button
             size="icon"
@@ -771,7 +771,7 @@ function Bubble({
             ) : m.kind === "poll" && m.poll ? (
               <PollCard m={m} mine={mine} names={names} canClose={mine || canManage} onChanged={onChanged} />
             ) : m.kind === "call" ? (
-              <CallCard url={m.body} mine={mine} provider={String(m.meta?.provider ?? "jitsi")} />
+              <CallCard url={m.body} mine={mine} provider={String(m.meta?.provider ?? "jitsi")} meta={m.meta} groupId={m.groupId} />
             ) : gif ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={gif} alt="GIF" className="mb-1 max-h-60 max-w-full rounded-lg" loading="lazy" />

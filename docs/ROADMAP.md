@@ -40,7 +40,8 @@ How new work is added without disturbing what already runs:
 - [x] Channels: only admins post; public (Find channels) or private; invite links for groups and channels; the creator manages admins, members and settings; new permission "Create channels"
 - [x] Push notifications (Web Push) on browser and phone: every notification and every chat message (except muted chats); signing keys generated automatically; installable app (Add to Home Screen, required on iPhone)
 - [x] Calls: one-click Jitsi video call, or share a Google Meet link (both open in a new tab)
-- [ ] In-app calls with our own ringing (Phase 5a) and connecting a Google account to create Meet links automatically
+- [x] In-app calls with our own ringing (Phase 5a)
+- [ ] Connecting a Google account to create Meet links automatically
 
 ## Phase 4: Email (done)
 
@@ -65,24 +66,19 @@ How new work is added without disturbing what already runs:
 - [x] Chat: owners are hidden from people without "Start direct chats with owners" (Admin, Managers and owners have it); owners can message anyone, and those people can reply
 - [ ] Dev integrations (GitHub issues and pull requests), time tracking per task
 
-## Phase 5a: Calls with our own ringing
+## Phase 5a: Calls with our own ringing (done)
 
 In-app voice and video calls with ringing on the other side and a clear end, built on what the app already has (database, push, polling). No paid service and no outside signalling service.
 
-- **Placing a call**: Voice and Video buttons in direct chats (groups of up to 4 later); larger meetings keep the Jitsi and Meet links
-- **Ringing module** (`calls` table plus `call_signals` for the connection messages):
-  - States: ringing, accepted, declined, busy, missed, cancelled, ended, failed; every change is stored with its time
-  - The callee's app checks for incoming calls every 2 seconds while open (one small query), and a push notification "Incoming call from …" is sent at once for a closed app or phone; tapping it opens the call
-  - Incoming screen: full screen with the caller's name and photo, a ringtone, Accept and Decline
-  - The caller hears ringback and sees Ringing, then Busy (already in a call), Declined or No answer (after 45 seconds, saved as missed)
-- **Knowing it ended**:
-  - Either side hanging up sets the call to ended; the other side sees it within about a second
-  - A heartbeat every 5 seconds from both sides; no heartbeat for 15 seconds, or a lost connection, ends the call for both
-  - Afterwards a card in the chat: "Video call, 12:34", "Missed voice call", "Declined"; missed calls notify; call history per chat
-- **Media**: WebRTC, straight between the two devices and encrypted end to end. While connecting, offers, answers and network candidates go through `call_signals`, polled every 500 ms only during setup
-- **Networks that block direct connections** (common on mobile data): free public STUN, plus a TURN relay from a free tier (Cloudflare or Metered) set in Settings; without it some calls fail with "This network blocks calls"
-- **During a call**: mute, camera on/off, switch camera on phones, screen share on computers, timer, connection quality, a small floating window when moving around the app
-- **Limit on the website**: with the browser fully closed, the phone shows the push notification with its sound, not a continuous ring. Continuous ringing on a locked phone comes with the native app (Phase 5b)
+- [x] Voice and Video buttons in direct chats; groups keep the Jitsi and Meet links
+- [x] Ringing module (`calls` and `call_signals` tables, `/api/calls`): ringing, accepted, declined, busy, missed, cancelled, ended, failed. The open app checks for incoming calls every 2.5 seconds; a closed app or phone gets a push notification with Answer and Decline that stays until answered or replaced by "Missed call"
+- [x] Incoming screen with the caller's name, ringtone and vibration, Accept and Decline; the caller hears ringback and sees Ringing, then Busy, Declined or No answer (45 seconds, saved as missed and notified)
+- [x] Knowing it ended: hanging up ends it for both within a second; a closed tab hangs up as it closes; a lost connection ends it after 15 seconds without a heartbeat (the length counts only until the last heartbeat)
+- [x] Call card in the chat (Voice call 12:34, Missed voice call, Declined, No answer) with Call back
+- [x] During a call: mute, camera on/off, switch camera (phones), screen share (computers, video calls), timer, connection quality, minimise to a corner while using the app
+- [x] Media directly between the two devices (WebRTC), encrypted end to end; free public STUN, and Cloudflare's TURN relay (free for 1,000 GB a month) for networks that block direct connections, set in Settings, Calls with Test relay, or CLOUDFLARE_TURN_KEY_ID and CLOUDFLARE_TURN_API_TOKEN
+- [ ] Group calls of up to 4 people in the app
+- [ ] Continuous ringing on a locked phone: comes with the native app (Phase 5b)
 
 ## Phase 5b: Native app shell
 
@@ -99,6 +95,16 @@ The same app inside a small native app for Android and iPhone, so calls ring lik
 - **Also in the shell**: app badge with unread count, camera and microphone permissions asked once, sign-in kept securely, deep links from emails and notifications into the right page
 - **Desktop**: stays the installable web app (Add to Home Screen / Install); a desktop shell only if needed later
 - **Order**: 5a works in the browser first; 5b then adds native ringing on top of the same `calls` table
+
+## Phase 5c: Departments as complete as the workflow
+
+Full plan: [DEPARTMENTS_PLAN.md](DEPARTMENTS_PLAN.md). In short:
+
+- [ ] Configuration per department in Admin: names, statuses (with category, colour, limits, rights), task types, custom fields, priorities and labels, project template, KPIs, position rights, notifications, optional features; new departments from templates
+- [ ] Department home dashboard: widget library (cards, charts, lists, calendar, activity), layout set by the head per position and adjustable per person, dashboard filters, selection for Owners
+- [ ] Views like the workflow: Overview tree, List (columns, grouping), Sheet, Board (swimlanes, limits), Calendar, Timeline, Team and workload, Reports; saved views shared or private
+- [ ] Checklists, reviews, requests between departments, subtasks and dependencies, time tracking, automations, sprints
+- [ ] Studio on the same footing
 
 ## Phase 6: Overview visualizer, help and onboarding
 

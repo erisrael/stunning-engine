@@ -11,6 +11,7 @@ import { Topbar } from "@/components/app/topbar";
 import { ActionCenter } from "@/components/app/action-center";
 import { isManager, userDirectory } from "@/server/users";
 import { ChatKeyBootstrap } from "./chat/secure";
+import { CallLayer } from "@/components/app/call-layer";
 import { reportDepartments } from "@/server/owners";
 import { can } from "@/server/users";
 
@@ -27,6 +28,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       isManager={isManager(viewer)}
       timezone={settings.workspace.timezone}
     >
+    <CallLayer>
     <SidebarProvider defaultOpen={sidebarCookie !== "false"}>
       <AppSidebar reportsLink={!can(viewer, "owners.view") && (await reportDepartments(viewer)).length > 0} perms={viewer.perms} activeRole={viewer.activeRole} counts={counts} workspaceName={settings.workspace.name} />
       <SidebarInset className="min-w-0">
@@ -44,6 +46,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <ChatKeyBootstrap viewerId={viewer.id} />
       </SidebarInset>
     </SidebarProvider>
+    </CallLayer>
     </ActionCenter>
   );
 }

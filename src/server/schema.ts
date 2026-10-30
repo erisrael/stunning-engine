@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 8;
+export const SCHEMA_VERSION = 9;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -908,6 +908,38 @@ CREATE TABLE IF NOT EXISTS studio_cards (
   back TEXT NOT NULL,
   sort INTEGER NOT NULL DEFAULT 0
 );
+
+-- v9: in-app calls. One row per call with its state (ringing, accepted, declined, busy, missed, cancelled, ended,
+-- failed) and when each side was last seen, so a closed tab or lost connection ends the call. call_signals carries
+-- the WebRTC connection messages (offer, answer, network candidates) between the two browsers while connecting.
+CREATE TABLE IF NOT EXISTS calls (
+  id TEXT PRIMARY KEY,
+  group_id TEXT NOT NULL REFERENCES chat_groups(id) ON DELETE CASCADE,
+  caller_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  callee_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  media TEXT NOT NULL DEFAULT 'audio',
+  status TEXT NOT NULL DEFAULT 'ringing',
+  end_reason TEXT,
+  ended_by TEXT,
+  caller_seen_at TEXT,
+  callee_seen_at TEXT,
+  answered_at TEXT,
+  ended_at TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_calls_callee ON calls(callee_id, status);
+CREATE INDEX IF NOT EXISTS idx_calls_caller ON calls(caller_id, status);
+CREATE INDEX IF NOT EXISTS idx_calls_group ON calls(group_id, created_at);
+
+CREATE TABLE IF NOT EXISTS call_signals (
+  seq BIGSERIAL PRIMARY KEY,
+  call_id TEXT NOT NULL REFERENCES calls(id) ON DELETE CASCADE,
+  from_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_call_signals ON call_signals(call_id, seq);
 `;
 
 // Tables in dependency order; used to empty the workspace and to export or restore backups.
@@ -977,4 +1009,6 @@ export const TABLES = [
   "studio_questions",
   "studio_exam_questions",
   "studio_cards",
+  "calls",
+  "call_signals",
 ] as const;

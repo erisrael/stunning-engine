@@ -18,6 +18,9 @@ import {
   PaperclipIcon,
   PauseIcon,
   PhoneIcon,
+  PhoneIncomingIcon,
+  PhoneMissedIcon,
+  PhoneOutgoingIcon,
   PlayIcon,
   PlusIcon,
   RefreshCwIcon,
@@ -38,6 +41,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { MultiSelect } from "@/components/app/multi-select";
+import { useCalls } from "@/components/app/call-layer";
 import {
   closePollAction,
   createChannelAction,
@@ -772,7 +776,50 @@ export function PollCard({ m, mine, names, canClose, onChanged }: { m: ChatMessa
 
 const MEET = /^https:\/\/meet\.google\.com\/[a-z]{3}-[a-z]{4}-[a-z]{3}(\?\S*)?$/i;
 
-export function CallCard({ url, mine, provider }: { url: string; mine: boolean; provider: string }) {
+function fmtCallLength(sec: number) {
+  const m = Math.floor(sec / 60);
+  return m >= 60 ? `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}:${String(sec % 60).padStart(2, "0")}` : `${m}:${String(sec % 60).padStart(2, "0")}`;
+}
+
+// The record of an in-app call, written by the server when the call ends. "mine" means the viewer placed it.
+function InAppCallCard({ meta, mine, groupId }: { meta: Record<string, unknown>; mine: boolean; groupId: string }) {
+  const calls = useCalls();
+  const video = meta.media === "video";
+  const status = String(meta.status ?? "ended");
+  const sec = Number(meta.durationSec ?? 0);
+  const missed = !mine && (status === "missed" || status === "cancelled" || status === "busy");
+  const kind = video ? "video call" : "voice call";
+  const title =
+    status === "ended"
+      ? `${video ? "Video" : "Voice"} call`
+      : missed
+        ? `Missed ${kind}`
+        : status === "declined"
+          ? mine ? `${video ? "Video" : "Voice"} call declined` : `You declined a ${kind}`
+          : status === "busy"
+            ? `${video ? "Video" : "Voice"} call, busy`
+            : status === "failed"
+              ? `${video ? "Video" : "Voice"} call failed`
+              : mine ? `${video ? "Video" : "Voice"} call, no answer` : `Missed ${kind}`;
+  const Icon = missed ? PhoneMissedIcon : mine ? PhoneOutgoingIcon : PhoneIncomingIcon;
+  return (
+    <div className={cn("mb-1 flex w-64 max-w-full items-center gap-2 rounded-xl p-2", mine ? "bg-white/15" : "bg-muted")}>
+      <span className={cn("flex size-9 shrink-0 items-center justify-center rounded-full", missed ? "bg-red-500/15 text-red-600" : mine ? "bg-white/25" : "bg-primary/15 text-primary")}>
+        <Icon className="size-4" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-medium">{title}</span>
+        <span className={cn("block truncate text-[11px]", mine ? "text-white/75" : "text-muted-foreground")}>{status === "ended" && sec ? fmtCallLength(sec) : mine ? "Outgoing" : "Incoming"}</span>
+      </span>
+      <Button size="icon-xs" variant={mine ? "secondary" : "default"} title="Call back" aria-label="Call back" disabled={calls.inCall} onClick={() => calls.start(groupId, video ? "video" : "audio")}>
+        {video ? <VideoIcon /> : <PhoneIcon />}
+      </Button>
+    </div>
+  );
+}
+
+export function CallCard({ url, mine, provider, meta, groupId }: { url: string; mine: boolean; provider: string; meta?: Record<string, unknown> | null; groupId: string }) {
+  if (provider === "inapp" && meta) return <InAppCallCard meta={meta} mine={mine} groupId={groupId} />;
   const valid = /^https:\/\/(meet\.jit\.si|meet\.google\.com)\//.test(url);
   return (
     <div className={cn("mb-1 flex w-64 max-w-full items-center gap-2 rounded-xl p-2", mine ? "bg-white/15" : "bg-muted")}>
@@ -795,6 +842,7 @@ export function CallCard({ url, mine, provider }: { url: string; mine: boolean; 
 }
 
 export function CallButton({ group, cryptoKey, onSent }: { group: ChatGroupSummary; cryptoKey: CryptoKey | null; onSent: () => void }) {
+  const calls = useCalls();
   const [meetOpen, setMeetOpen] = React.useState(false);
   const [link, setLink] = React.useState("");
   const send = async (url: string, provider: "jitsi" | "meet") => {
@@ -805,6 +853,18 @@ export function CallButton({ group, cryptoKey, onSent }: { group: ChatGroupSumma
     if (!r.ok) return toast.error(r.error);
     onSent();
   };
+  // Direct chats call in the app, with ringing on the other side; groups use a meeting link.
+  if (group.kind === "direct")
+    return (
+      <>
+        <Button size="icon" variant="ghost" title="Voice call" aria-label="Voice call" disabled={calls.inCall} onClick={() => calls.start(group.id, "audio")}>
+          <PhoneIcon />
+        </Button>
+        <Button size="icon" variant="ghost" title="Video call" aria-label="Video call" disabled={calls.inCall} onClick={() => calls.start(group.id, "video")}>
+          <VideoIcon />
+        </Button>
+      </>
+    );
   return (
     <>
       <DropdownMenu>
