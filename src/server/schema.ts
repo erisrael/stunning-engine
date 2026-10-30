@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 12;
+export const SCHEMA_VERSION = 13;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -1059,6 +1059,95 @@ CREATE TABLE IF NOT EXISTS dept_capacity (
 ALTER TABLE studio_resources ADD COLUMN IF NOT EXISTS assignee_id TEXT;
 ALTER TABLE studio_resources ADD COLUMN IF NOT EXISTS due_date TEXT;
 ALTER TABLE studio_resources ADD COLUMN IF NOT EXISTS checklist TEXT NOT NULL DEFAULT '[]';
+
+-- v13: HR. Employee records (one per person, linked to their account when they have one), sensitive details kept
+-- in their own table, documents with expiry dates, and the equipment register with its history.
+CREATE TABLE IF NOT EXISTS employees (
+  id TEXT PRIMARY KEY,
+  code TEXT NOT NULL UNIQUE,
+  user_id TEXT UNIQUE REFERENCES users(id) ON DELETE SET NULL,
+  full_name TEXT NOT NULL,
+  preferred_name TEXT,
+  email TEXT,
+  phone TEXT,
+  address TEXT,
+  birth_date TEXT,
+  gender TEXT,
+  emergency_contacts TEXT NOT NULL DEFAULT '[]',
+  job_title TEXT,
+  department TEXT,
+  manager_id TEXT REFERENCES employees(id) ON DELETE SET NULL,
+  employment_type TEXT NOT NULL DEFAULT 'full_time',
+  status TEXT NOT NULL DEFAULT 'active',
+  location TEXT,
+  start_date TEXT,
+  probation_end TEXT,
+  contract_end TEXT,
+  end_date TEXT,
+  end_reason TEXT,
+  notes TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  updated_by TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_employees_manager ON employees(manager_id);
+CREATE INDEX IF NOT EXISTS idx_employees_dept ON employees(department);
+
+CREATE TABLE IF NOT EXISTS employee_private (
+  employee_id TEXT PRIMARY KEY REFERENCES employees(id) ON DELETE CASCADE,
+  salary_grade TEXT,
+  national_id TEXT,
+  tin TEXT,
+  pension_no TEXT,
+  bank_name TEXT,
+  bank_account TEXT,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS employee_documents (
+  id TEXT PRIMARY KEY,
+  employee_id TEXT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,
+  title TEXT NOT NULL,
+  name TEXT NOT NULL,
+  mime TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  data TEXT NOT NULL,
+  expires_at TEXT,
+  uploaded_by TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_employee_documents ON employee_documents(employee_id);
+
+CREATE TABLE IF NOT EXISTS equipment (
+  id TEXT PRIMARY KEY,
+  tag TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  category TEXT NOT NULL DEFAULT 'other',
+  serial TEXT,
+  condition TEXT NOT NULL DEFAULT 'good',
+  status TEXT NOT NULL DEFAULT 'available',
+  holder_id TEXT REFERENCES employees(id) ON DELETE SET NULL,
+  issued_at TEXT,
+  due_back TEXT,
+  purchased_at TEXT,
+  notes TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_equipment_holder ON equipment(holder_id);
+
+CREATE TABLE IF NOT EXISTS equipment_events (
+  id TEXT PRIMARY KEY,
+  equipment_id TEXT NOT NULL REFERENCES equipment(id) ON DELETE CASCADE,
+  action TEXT NOT NULL,
+  employee_id TEXT,
+  condition TEXT,
+  note TEXT,
+  actor_id TEXT,
+  at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_equipment_events ON equipment_events(equipment_id, at);
 `;
 
 // Tables in dependency order; used to empty the workspace and to export or restore backups.
@@ -1140,4 +1229,9 @@ export const TABLES = [
   "dept_time_entries",
   "dept_sprints",
   "dept_capacity",
+  "employees",
+  "employee_private",
+  "employee_documents",
+  "equipment",
+  "equipment_events",
 ] as const;

@@ -4,6 +4,8 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import {
   ArrowLeftRightIcon,
+  ContactIcon,
+  IdCardIcon,
   Building2Icon,
   InboxIcon,
   BookOpenIcon,
@@ -102,6 +104,7 @@ export function AppSidebar({
         { href: "/coverage", label: "Coverage", icon: GridIcon, keepFilters: true, cap: "nav.coverage" },
         { href: "/reports", label: "Reports", icon: ChartColumnIcon, keepFilters: true, cap: "reports.view" },
         { href: "/team", label: perms.includes("team.view") ? "Team" : "My effort", icon: UsersIcon, badge: perms.includes("corrections.approve") ? counts.corrections : 0, cap: "nav.team" },
+        { href: "/me", label: "My record", icon: IdCardIcon },
       ],
     },
     {
@@ -112,6 +115,7 @@ export function AppSidebar({
         { href: "/studio", label: "Studio", icon: BookOpenIcon, cap: ["studio.access", "owners.view"] },
         { href: "/marketing", label: "Marketing", icon: MegaphoneIcon, cap: ["marketing.access", "owners.view"] },
         ...customDepts.map((d) => ({ href: `/d/${d.key}`, label: d.title, icon: Building2Icon })),
+        { href: "/hr", label: "HR", icon: ContactIcon, cap: "hr.access" },
         { href: "/requests", label: "Requests", icon: InboxIcon },
         { href: "/owners", label: "Owners", icon: CrownIcon, cap: "owners.view" },
         ...(reportsLink ? [{ href: "/owners?tab=reports", label: "Department reports", icon: FileTextIcon }] : []),

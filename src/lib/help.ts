@@ -2,7 +2,7 @@
 // Pages link here with a chapter key (PageHeader help="..."); tooltips read TIPS so wording stays the same everywhere.
 import type { Role, Stage } from "@/lib/domain";
 
-export type Audience = "member" | "lead" | "publication" | "manager" | "owner" | "department";
+export type Audience = "member" | "lead" | "publication" | "manager" | "owner" | "department" | "hr";
 
 export const AUDIENCE_LABELS: Record<Audience, string> = {
   member: "Team member",
@@ -11,11 +11,13 @@ export const AUDIENCE_LABELS: Record<Audience, string> = {
   manager: "Manager and admin",
   owner: "Owner",
   department: "Department",
+  hr: "HR",
 };
 
 // Which tour and first steps a person sees, from the role they are viewing as.
 export function audienceFor(activeRole: Role, leads: Stage[]): Audience {
   if (activeRole === "owner") return "owner";
+  if (activeRole === "hr_manager" || activeRole === "hr_officer") return "hr";
   if (activeRole === "manager" || activeRole === "admin") return "manager";
   if (activeRole === "developer" || activeRole === "content" || activeRole === "marketing") return "department";
   if (activeRole === "publication") return leads.includes("publication") ? "lead" : "publication";
@@ -252,6 +254,47 @@ export const CHAPTERS: Chapter[] = [
     ],
   },
   {
+    key: "hr",
+    title: "HR: people records, documents and equipment",
+    audiences: ["hr", "manager"],
+    summary: "Keep employee records, reporting lines, documents and equipment up to date.",
+    sections: [
+      {
+        title: "Employee records",
+        steps: [
+          "Open HR, then People. Press Add everyone with an account the first time, so each person has a record.",
+          "Open a person to fill in their job, department, line manager, employment type and dates.",
+          "Salary grade, ID, tax and bank details are visible only to people allowed to see them (HR Manager by default).",
+        ],
+      },
+      {
+        title: "Documents and reminders",
+        text: "Attach IDs, contracts and certificates with an expiry date. HR is reminded 30 days before a document or contract ends and 14 days before probation ends. The Documents tab lists everything due soon.",
+      },
+      {
+        title: "Org chart",
+        text: "The org chart follows each person's line manager. Team leads see their own team in My record.",
+      },
+      {
+        title: "Equipment",
+        text: "Register cameras, microphones and laptops. Issue them to a person with a return date, and take them back with their condition. Each person sees what they hold in My record.",
+      },
+    ],
+  },
+  {
+    key: "me",
+    title: "My record",
+    audiences: "all",
+    summary: "Your own HR record, documents, equipment and team.",
+    sections: [
+      {
+        title: "What you can see and change",
+        text: "Open My record from the account menu. You can update your phone, address and emergency contacts yourself. Ask HR to change anything else.",
+      },
+      { title: "Your team", text: "If people report to you, they are listed with their job and contact details." },
+    ],
+  },
+  {
     key: "talk",
     title: "Chat, calls and email",
     audiences: "all",
@@ -387,6 +430,11 @@ export const TOURS: Record<Audience, TourStep[]> = {
     { title: "Company overview", text: "Switch between the overall view and each department.", flow: ["Overall", "Departments", "Reports"] },
     { title: "Present in meetings", text: "Overview's Present button runs a full-screen summary that updates by itself." },
   ],
+  hr: [
+    { title: "Welcome to HR", text: "This short tour shows where people records live. You can replay it from Help." },
+    { title: "People", text: "Every employee has a record with job, line manager, dates and documents.", flow: ["Add", "Fill in", "Documents", "Reminders"] },
+    { title: "Equipment", text: "Issue equipment to people and take it back, so you always know who holds what.", flow: ["Register", "Issue", "Return"] },
+  ],
   department: [
     { title: "Welcome", text: "This short tour shows your department's workspace. You can replay it from Help." },
     { title: "Projects and tasks", text: "Tasks move across your board as they progress.", flow: ["To do", "In progress", "Review", "Done"] },
@@ -427,6 +475,12 @@ export const FIRST_STEPS: Record<Audience, FirstStep[]> = {
     { key: "password", label: "Set your own password", href: "/profile" },
     { key: "company", label: "Open the Company overview", href: "/company" },
     { key: "present", label: "Try the Overview presentation", href: "/overview/present" },
+  ],
+  hr: [
+    { key: "password", label: "Set your own password", href: "/profile" },
+    { key: "sync", label: "Create records for everyone with an account", href: "/hr" },
+    { key: "org", label: "Set line managers and check the org chart", href: "/hr?tab=org" },
+    { key: "manual", label: "Read the HR chapter", href: "/profile/help#hr" },
   ],
   department: [
     { key: "password", label: "Set your own password", href: "/profile" },

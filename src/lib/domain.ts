@@ -1,7 +1,7 @@
 // Shared domain vocabulary used by both the server and the client.
 
 // Production roles first, then the department roles (Phase 5). Department positions (head, lead, member) are set in Admin.
-export const ROLES = ["recording", "editing", "uploading", "publication", "manager", "admin", "owner", "developer", "content", "marketing"] as const;
+export const ROLES = ["recording", "editing", "uploading", "publication", "manager", "admin", "owner", "developer", "content", "marketing", "hr_manager", "hr_officer"] as const;
 export type Role = (typeof ROLES)[number];
 
 export const ROLE_LABELS: Record<Role, string> = {
@@ -15,6 +15,8 @@ export const ROLE_LABELS: Record<Role, string> = {
   developer: "Developer",
   content: "Content (Studio)",
   marketing: "Marketing",
+  hr_manager: "HR Manager",
+  hr_officer: "HR Officer",
 };
 
 export const ROLE_DESCRIPTIONS: Record<Role, string> = {
@@ -28,6 +30,8 @@ export const ROLE_DESCRIPTIONS: Record<Role, string> = {
   developer: "Dev team: projects, milestones and tasks in Dev.",
   content: "Studio: notes, exams, question bank and flash cards.",
   marketing: "Marketing: campaigns, content calendar, tasks and KPIs.",
+  hr_manager: "HR: employee records including salary and ID details, approvals, cases and HR settings.",
+  hr_officer: "HR: employee records, documents, equipment and day-to-day people operations.",
 };
 
 // Capabilities that can be granted per role in Admin, Roles and permissions.
@@ -71,6 +75,10 @@ export const CAPABILITIES = [
   { key: "owners.view", label: "Owners dashboard (stats and reports from every department, read only)", group: "Departments" },
   { key: "company.view", label: "Company overview: every department's dashboard, overall progress and money (read only)", group: "Departments" },
   { key: "chat.contact_owners", label: "Start direct chats with owners", group: "Collaboration" },
+  { key: "hr.access", label: "HR section: employee records, org chart, documents and equipment", group: "HR" },
+  { key: "hr.manage", label: "HR decisions: end employment, remove records, HR settings", group: "HR" },
+  { key: "hr.sensitive", label: "See and edit salary grade, ID, tax and bank details", group: "HR" },
+  { key: "hr.cases", label: "Confidential disciplinary and grievance cases", group: "HR" },
   { key: "settings.manage", label: "Change workflow settings", group: "Administration" },
   { key: "users.manage", label: "Manage users, roles, permissions and access", group: "Administration" },
   { key: "data.manage", label: "Empty, import and back up workspace data", group: "Administration" },
@@ -99,6 +107,8 @@ export const DEFAULT_PERMISSIONS: Record<Role, Capability[]> = {
   developer: ["dev.access"],
   content: ["studio.access"],
   marketing: ["marketing.access", "email.send"],
+  hr_manager: ["hr.access", "hr.manage", "hr.sensitive", "hr.cases", "nav.questions", "email.send", "chat.channels"],
+  hr_officer: ["hr.access", "nav.questions", "email.send"],
   admin: [
     ...FULL_VIEW,
     "items.create",
@@ -126,6 +136,8 @@ export const DEFAULT_PERMISSIONS: Record<Role, Capability[]> = {
     "marketing.access",
     "owners.view",
     "company.view",
+    "hr.access",
+    "hr.manage",
     ...EDITORIAL_CAPABILITIES,
   ],
 };
@@ -434,6 +446,7 @@ export const NOTIFICATION_TYPES = [
   "published",
   "job",
   "discussion",
+  "hr",
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 export const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
@@ -449,6 +462,7 @@ export const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
   published: "Successful publication",
   job: "Import and export jobs",
   discussion: "Chat groups",
+  hr: "HR reminders (documents, contracts, probation)",
 };
 // Essential workflow notifications stay visible even when the type is muted.
 export const ESSENTIAL_NOTIFICATION_TYPES: NotificationType[] = ["assignment", "handoff", "approval", "question"];

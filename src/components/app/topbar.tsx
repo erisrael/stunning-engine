@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
-import { BellIcon, CheckCheckIcon, ClockIcon, HelpCircleIcon, LogOutIcon, MessageCircleIcon, MonitorIcon, MoonIcon, PaletteIcon, SearchIcon, SquareIcon, SunIcon, UserIcon } from "lucide-react";
+import { BellIcon, CheckCheckIcon, ClockIcon, HelpCircleIcon, IdCardIcon, LogOutIcon, MessageCircleIcon, MonitorIcon, MoonIcon, PaletteIcon, SearchIcon, SquareIcon, SunIcon, UserIcon } from "lucide-react";
 import { ACCENTS, useAppearance } from "@/components/app/appearance";
 import { Button } from "@/components/ui/button";
 import { SidebarTrigger } from "@/components/ui/sidebar";
@@ -56,6 +56,9 @@ const TITLES: Record<string, string> = {
   new: "New item",
   profile: "Profile",
   help: "Help",
+  hr: "HR",
+  people: "People",
+  me: "My record",
   present: "Presentation",
   audit: "Audit log",
   print: "Printable summary",
@@ -216,6 +219,11 @@ function UserMenu({ user }: { user: { name: string; email: string } }) {
         <DropdownMenuItem asChild>
           <Link href="/profile">
             <UserIcon /> Profile and preferences
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link href="/me">
+            <IdCardIcon /> My record
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>

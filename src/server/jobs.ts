@@ -3,6 +3,7 @@ import { getMeta, getSettings, setMeta } from "./settings";
 import { managers, notify } from "./notifications";
 import { purgeTrash } from "./trash";
 import { cleanupChatFiles } from "./chat";
+import { hrReminderChecks } from "./hr";
 import { BLOCKER_CAUSE_LABELS, STAGE_LABELS, type Stage } from "@/lib/domain";
 import { localDate } from "@/lib/format";
 
@@ -133,6 +134,8 @@ export async function runScheduledChecks(now = nowIso()) {
   await purgeTrash({ actor: null, source: "system" }, "expired");
   // Voice messages past their 10 minutes, and uploads never sent.
   await cleanupChatFiles(200);
+  // HR: documents, contracts and probation coming up (deduplicated per date, so this runs safely every time).
+  await hrReminderChecks(now);
   await setMeta("lastChecksAt", now);
   return counts;
 }

@@ -321,6 +321,14 @@ What HR does in the app, as its own module (`/hr`) with HR Manager and HR Office
 - **Self-service**: own profile, payslips, leave balance and requests, attendance record, documents
 - **Reports**: headcount, joiners and leavers, turnover, leave usage, absenteeism and lateness (from Attendance), training completion
 
+### Order of delivery
+
+1. **People records** (done): HR Manager and HR Officer roles (`hr.access`, `hr.manage`, `hr.sensitive`, `hr.cases`); employee records linked to accounts, created in one go from existing accounts; salary grade, ID, tax and bank details in their own table, seen by `hr.sensitive` only and never written to the audit log; documents with expiry dates (ID documents need `hr.sensitive`); reminders to HR 30 days before documents and contracts end and 14 days before probation ends; org chart from line managers; equipment register with issue, take back and history; **My record** for everyone (own details, contact self-service, documents, equipment, people who report to them); line managers see their team read only
+2. **Leave**: leave types and policies, balances and accrual, requests approved by the line manager then HR, team leave calendar, public holidays (Ethiopian calendar), approved leave feeding capacity
+3. **Recruitment, onboarding and offboarding**: openings, applicant pipeline, interviews with scorecards, offer, hire into an employee and account; onboarding and offboarding checklists, with the final-settlement handoff to Finance
+4. **Performance, training and cases**: goals, review cycles, one-to-ones; courses and certifications with renewals; confidential cases (`hr.cases`)
+5. **Reports**: headcount, joiners and leavers, turnover, leave usage, training completion; absenteeism and lateness once Attendance exists
+
 ## Phase 8: Finance
 
 A Finance module (`/finance`) with Finance Manager and Accountant roles, separation between preparing and approving, and every change in the audit log.

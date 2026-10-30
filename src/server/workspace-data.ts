@@ -26,7 +26,8 @@ import { progressOf } from "@/lib/progress";
 // Emptying
 // ---------------------------------------------------------------------------
 
-const ACCOUNT_TABLES = new Set(["users", "role_assignments", "access_scopes", "sessions", "user_capacity", "leave_entries"]);
+// People records (HR) stay with the accounts.
+const ACCOUNT_TABLES = new Set(["users", "role_assignments", "access_scopes", "sessions", "user_capacity", "leave_entries", "employees", "employee_private", "employee_documents", "equipment", "equipment_events"]);
 
 // Removes all workspace data. Accounts and settings can be kept so people stay signed in.
 export async function emptyWorkspace(opts: { keepAccounts?: boolean; keepSettings?: boolean } = {}) {
