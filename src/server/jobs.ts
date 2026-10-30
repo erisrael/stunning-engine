@@ -4,6 +4,7 @@ import { managers, notify } from "./notifications";
 import { purgeTrash } from "./trash";
 import { cleanupChatFiles } from "./chat";
 import { hrReminderChecks } from "./hr";
+import { trainingReminders } from "./hr-growth";
 import { BLOCKER_CAUSE_LABELS, STAGE_LABELS, type Stage } from "@/lib/domain";
 import { localDate } from "@/lib/format";
 
@@ -136,6 +137,7 @@ export async function runScheduledChecks(now = nowIso()) {
   await cleanupChatFiles(200);
   // HR: documents, contracts and probation coming up (deduplicated per date, so this runs safely every time).
   await hrReminderChecks(now);
+  await trainingReminders(now);
   await setMeta("lastChecksAt", now);
   return counts;
 }

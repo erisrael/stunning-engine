@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 14;
+export const SCHEMA_VERSION = 15;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -1200,6 +1200,190 @@ CREATE TABLE IF NOT EXISTS leave_adjustments (
 CREATE INDEX IF NOT EXISTS idx_leave_adjustments ON leave_adjustments(employee_id, year);
 
 ALTER TABLE leave_entries ADD COLUMN IF NOT EXISTS request_id TEXT;
+
+-- v15: HR. Recruitment (openings, applicants, interviews, scorecards), onboarding and offboarding checklists,
+-- performance (goals, review cycles, one-to-ones), training and certifications, and confidential cases.
+CREATE TABLE IF NOT EXISTS job_openings (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  department TEXT,
+  location TEXT,
+  employment_type TEXT NOT NULL DEFAULT 'full_time',
+  positions INTEGER NOT NULL DEFAULT 1,
+  description TEXT,
+  hiring_manager_id TEXT REFERENCES employees(id) ON DELETE SET NULL,
+  status TEXT NOT NULL DEFAULT 'open',
+  closes_on TEXT,
+  created_by TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS applicants (
+  id TEXT PRIMARY KEY,
+  opening_id TEXT NOT NULL REFERENCES job_openings(id) ON DELETE CASCADE,
+  full_name TEXT NOT NULL,
+  email TEXT,
+  phone TEXT,
+  source TEXT,
+  stage TEXT NOT NULL DEFAULT 'applied',
+  notes TEXT,
+  rejected_reason TEXT,
+  offer_start_date TEXT,
+  offer_note TEXT,
+  employee_id TEXT REFERENCES employees(id) ON DELETE SET NULL,
+  created_by TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_applicants_opening ON applicants(opening_id, stage);
+
+CREATE TABLE IF NOT EXISTS applicant_files (
+  id TEXT PRIMARY KEY,
+  applicant_id TEXT NOT NULL REFERENCES applicants(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  mime TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  data TEXT NOT NULL,
+  uploaded_by TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS interviews (
+  id TEXT PRIMARY KEY,
+  applicant_id TEXT NOT NULL REFERENCES applicants(id) ON DELETE CASCADE,
+  scheduled_at TEXT NOT NULL,
+  duration_min INTEGER NOT NULL DEFAULT 45,
+  location TEXT,
+  interviewer_ids TEXT NOT NULL DEFAULT '[]',
+  status TEXT NOT NULL DEFAULT 'scheduled',
+  created_by TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_interviews_applicant ON interviews(applicant_id);
+
+CREATE TABLE IF NOT EXISTS scorecards (
+  id TEXT PRIMARY KEY,
+  interview_id TEXT NOT NULL REFERENCES interviews(id) ON DELETE CASCADE,
+  reviewer_id TEXT NOT NULL,
+  rating INTEGER NOT NULL,
+  recommendation TEXT NOT NULL,
+  notes TEXT,
+  created_at TEXT NOT NULL,
+  UNIQUE (interview_id, reviewer_id)
+);
+
+CREATE TABLE IF NOT EXISTS employee_checklists (
+  id TEXT PRIMARY KEY,
+  employee_id TEXT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,
+  items TEXT NOT NULL DEFAULT '[]',
+  status TEXT NOT NULL DEFAULT 'open',
+  started_at TEXT NOT NULL,
+  finished_at TEXT,
+  started_by TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_employee_checklists ON employee_checklists(employee_id, kind);
+
+CREATE TABLE IF NOT EXISTS hr_goals (
+  id TEXT PRIMARY KEY,
+  employee_id TEXT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  detail TEXT,
+  due_date TEXT,
+  progress INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'open',
+  created_by TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_hr_goals ON hr_goals(employee_id);
+
+CREATE TABLE IF NOT EXISTS review_cycles (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  period_start TEXT NOT NULL,
+  period_end TEXT NOT NULL,
+  self_due TEXT,
+  lead_due TEXT,
+  status TEXT NOT NULL DEFAULT 'open',
+  created_by TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS hr_reviews (
+  id TEXT PRIMARY KEY,
+  cycle_id TEXT NOT NULL REFERENCES review_cycles(id) ON DELETE CASCADE,
+  employee_id TEXT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  reviewer_user_id TEXT,
+  status TEXT NOT NULL DEFAULT 'self',
+  self_rating INTEGER,
+  self_notes TEXT,
+  self_at TEXT,
+  lead_rating INTEGER,
+  lead_notes TEXT,
+  lead_at TEXT,
+  evidence TEXT NOT NULL DEFAULT '{}',
+  UNIQUE (cycle_id, employee_id)
+);
+
+CREATE TABLE IF NOT EXISTS one_on_ones (
+  id TEXT PRIMARY KEY,
+  employee_id TEXT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  manager_user_id TEXT NOT NULL,
+  held_on TEXT NOT NULL,
+  notes TEXT,
+  actions TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_one_on_ones ON one_on_ones(employee_id, held_on);
+
+CREATE TABLE IF NOT EXISTS courses (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  provider TEXT,
+  description TEXT,
+  renew_months INTEGER,
+  mandatory INTEGER NOT NULL DEFAULT 0,
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS trainings (
+  id TEXT PRIMARY KEY,
+  course_id TEXT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+  employee_id TEXT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'assigned',
+  due_date TEXT,
+  completed_on TEXT,
+  expires_on TEXT,
+  note TEXT,
+  assigned_by TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_trainings ON trainings(employee_id);
+
+CREATE TABLE IF NOT EXISTS hr_cases (
+  id TEXT PRIMARY KEY,
+  code TEXT NOT NULL UNIQUE,
+  employee_id TEXT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,
+  title TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'open',
+  opened_on TEXT NOT NULL,
+  closed_on TEXT,
+  outcome TEXT,
+  created_by TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS hr_case_notes (
+  id TEXT PRIMARY KEY,
+  case_id TEXT NOT NULL REFERENCES hr_cases(id) ON DELETE CASCADE,
+  note TEXT NOT NULL,
+  actor_id TEXT,
+  at TEXT NOT NULL
+);
 `;
 
 // Tables in dependency order; used to empty the workspace and to export or restore backups.
@@ -1289,4 +1473,18 @@ export const TABLES = [
   "leave_types",
   "leave_requests",
   "leave_adjustments",
+  "job_openings",
+  "applicants",
+  "applicant_files",
+  "interviews",
+  "scorecards",
+  "employee_checklists",
+  "hr_goals",
+  "review_cycles",
+  "hr_reviews",
+  "one_on_ones",
+  "courses",
+  "trainings",
+  "hr_cases",
+  "hr_case_notes",
 ] as const;

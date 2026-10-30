@@ -7,6 +7,11 @@ import { getEmployee, hrDepartments, listEmployees } from "@/server/hr";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/app/primitives";
 import { EmployeeView } from "@/components/app/hr/employee-view";
+import { employeeChecklists } from "@/server/hr-hiring";
+import { growthFor } from "@/server/hr-growth";
+import { EmployeeLifecycle } from "@/components/app/hr/hiring";
+import { GrowthSection } from "@/components/app/hr/growth";
+import { can } from "@/server/users";
 
 export const metadata = { title: "Employee" };
 
@@ -27,6 +32,7 @@ export default async function EmployeePage({ params }: { params: Promise<{ id: s
         )
       ).map((u) => ({ value: u.id, label: `${u.name} (${u.email})` }))
     : undefined;
+  const [growth, lists] = await Promise.all([growthFor(viewer, detail.employee.id), employeeChecklists(viewer, detail.employee.id)]);
   return (
     <div className="space-y-4">
       <PageHeader
@@ -42,6 +48,10 @@ export default async function EmployeePage({ params }: { params: Promise<{ id: s
         }
       />
       <EmployeeView detail={detail} departments={departments} managers={managers} accounts={accounts} />
+      <div className="grid gap-4 xl:grid-cols-2">
+        {growth && <GrowthSection employeeId={detail.employee.id} growth={growth} />}
+        <EmployeeLifecycle employeeId={detail.employee.id} lists={lists} view={detail.view} canManage={can(viewer, "hr.manage")} status={detail.employee.status} />
+      </div>
     </div>
   );
 }

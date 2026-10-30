@@ -305,7 +305,7 @@ Each step ships on its own and keeps today's screens working until its replaceme
 - [x] **Get started**: a first-login tour per role with a short animation of how work moves, then a checklist of first steps. Saved per user (shown once per role), with "Replay tour" in Help
 - [ ] Chapters for each department created from templates, and more screenshots as screens settle
 
-## Phase 7: HR (people operations)
+## Phase 7: HR (people operations) (done)
 
 What HR does in the app, as its own module (`/hr`) with HR Manager and HR Officer roles. Employees get self-service; team leads see their own team only.
 
@@ -325,9 +325,9 @@ What HR does in the app, as its own module (`/hr`) with HR Manager and HR Office
 
 1. **People records** (done): HR Manager and HR Officer roles (`hr.access`, `hr.manage`, `hr.sensitive`, `hr.cases`); employee records linked to accounts, created in one go from existing accounts; salary grade, ID, tax and bank details in their own table, seen by `hr.sensitive` only and never written to the audit log; documents with expiry dates (ID documents need `hr.sensitive`); reminders to HR 30 days before documents and contracts end and 14 days before probation ends; org chart from line managers; equipment register with issue, take back and history; **My record** for everyone (own details, contact self-service, documents, equipment, people who report to them); line managers see their team read only
 2. **Leave** (done): leave types with defaults from the Labour Proclamation 1156/2019 (annual 16 days plus 1 per 2 years of service, built up monthly; sick, maternity, paternity, compassionate, marriage, unpaid), editable by the HR Manager; balances (prorated from the start date, with HR adjustments such as days carried over); requests counted in working days without weekends and public holidays, half days, overlap and balance checks; approved by the line manager then HR (HR can decide first, and records agreed leave directly); cancelling; who-is-off calendar (own team, or everyone for HR); public holidays shared with Settings, with Ethiopian holidays for any year in one click (Fasika computed; the lunar Muslim holidays added by hand); approved leave writes to capacity
-3. **Recruitment, onboarding and offboarding**: openings, applicant pipeline, interviews with scorecards, offer, hire into an employee and account; onboarding and offboarding checklists, with the final-settlement handoff to Finance
-4. **Performance, training and cases**: goals, review cycles, one-to-ones; courses and certifications with renewals; confidential cases (`hr.cases`)
-5. **Reports**: headcount, joiners and leavers, turnover, leave usage, training completion; absenteeism and lateness once Attendance exists
+3. **Recruitment, onboarding and offboarding** (done): openings with a hiring manager; applicant pipeline (applied, screening, interview, offer, hired, not selected) with CVs; interviews that notify the interviewers, who open the CV and add scorecards from My record; hire into an employee on probation under the hiring manager, with an app account (ordinary roles only, unless the person hiring manages users) and onboarding started; onboarding and offboarding checklists ticked by HR, the line manager or the person, editable by the HR Manager; offboarding sets the last day, tells the line manager, can remove app access, and holds the final-settlement line for Finance
+4. **Performance, training and cases** (done): goals shared by the person and their line manager; one-to-one notes; review cycles (self review, then the line manager) with production stage work, hours, department tasks, goals and leave attached as evidence; courses assigned to people, completion and renewal reminders; confidential cases for `hr.cases` only, kept out of the audit log's details
+5. **Reports** (done): headcount by department, type and status; joiners and leavers by month; turnover; leave taken by type; training completion; hiring; CSV download. Absenteeism and lateness come with Attendance (Phase 9)
 
 ## Phase 8: Finance
 

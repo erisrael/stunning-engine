@@ -279,6 +279,27 @@ export const CHAPTERS: Chapter[] = [
         title: "Equipment",
         text: "Register cameras, microphones and laptops. Issue them to a person with a return date, and take them back with their condition. Each person sees what they hold in My record.",
       },
+      {
+        title: "Hiring",
+        steps: [
+          "HR, Hiring: press New to open a position, with the hiring manager who will lead the new person.",
+          "Add applicants with their CV. Move them through Screening, Interview and Offer.",
+          "Schedule interviews and choose the interviewers; they are told, open the CV and add their scorecard in My record.",
+          "Press Hire: the person becomes an employee on probation under the hiring manager, gets an app account if you choose, and onboarding starts.",
+        ],
+      },
+      {
+        title: "Joiners and leavers",
+        text: "Onboarding and offboarding are checklists on the person's record. HR ticks HR lines, the line manager ticks theirs and the person ticks their own. Offboarding (HR Manager) sets the last day, tells the line manager, and its App access line can remove the account straight away. The HR Manager edits the checklists in Joiners and leavers.",
+      },
+      {
+        title: "Performance and training",
+        text: "Goals and one-to-ones are on each person's record, shared with their line manager. The HR Manager starts review cycles: each person writes a self review in My record, then the line manager writes theirs, with production and task work attached as evidence. Training lists courses; assign them, record completion, and renewals are reminded 30 days ahead.",
+      },
+      {
+        title: "Cases and reports",
+        text: "Cases (disciplinary, grievance, investigation) are visible to the HR Manager only, and the audit log keeps their details out. Reports show headcount, joiners and leavers, turnover, leave taken and training completion, with a CSV download.",
+      },
     ],
   },
   {
@@ -320,6 +341,8 @@ export const CHAPTERS: Chapter[] = [
         title: "What you can see and change",
         text: "Open My record from the account menu. You can update your phone, address and emergency contacts yourself. Ask HR to change anything else.",
       },
+      { title: "Goals, reviews and training", text: "Set goals with your line manager and read your one-to-one notes. When a review cycle opens, write your self review here; you see your manager's part once it is done. Training assigned to you is listed with its due date." },
+      { title: "Interviews", text: "If HR asks you to interview someone, the interview appears at the top of My record with their CV. Add your scorecard afterwards." },
       { title: "Your team", text: "If people report to you, they are listed with their job and contact details." },
     ],
   },

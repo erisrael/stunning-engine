@@ -43,3 +43,7 @@ export type EmergencyContact = { name: string; relation: string; phone: string }
 export const REMIND_DOC_DAYS = 30;
 export const REMIND_CONTRACT_DAYS = 30;
 export const REMIND_PROBATION_DAYS = 14;
+
+// Tabs of the HR page (shared by the server page and the client tabs).
+export const HR_TABS = ["people", "leave", "hiring", "lifecycle", "performance", "training", "cases", "reports", "due", "org", "equipment"] as const;
+export type HrTab = (typeof HR_TABS)[number];
