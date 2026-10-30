@@ -222,7 +222,7 @@ export function WorkClient({
               </TabsTrigger>
             )}
             <TabsTrigger value="report">
-              <FileTextIcon className="size-3.5" /> Report
+              <FileTextIcon className="size-3.5" /> {access.rights.seeAll ? "Report" : "My report"}
             </TabsTrigger>
             <TabsTrigger value="projects">
               <FolderKanbanIcon className="size-3.5" /> {names.projects} ({projects.length})

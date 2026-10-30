@@ -152,6 +152,40 @@ export function ledStages(user: AppUser): Stage[] {
   return STAGES.filter((s) => isManager(user) || isLeadOf(user, s));
 }
 
+// The whole workflow from recording to published, for team leads' Home: what is in each stage, waiting to be
+// handed over, and finished this week.
+export type Glance = { drafts: number; published: number; overdue: number; stages: { stage: Stage; inWork: number; waiting: number; doneWeek: number }[] };
+
+export async function workflowGlance(user: AppUser): Promise<Glance> {
+  const sc = scopeSql(user, "i");
+  const week = new Date(Date.now() - 7 * 864e5).toISOString();
+  const [byStage, byLife, done, overdue] = await Promise.all([
+    all<{ stage: Stage; status: string; c: number }>(
+      `SELECT a.stage, a.status, COUNT(*) AS c FROM items i JOIN stage_attempts a ON a.id = i.current_attempt_id WHERE i.lifecycle = 'in_production' AND ${sc.sql} GROUP BY a.stage, a.status`,
+      ...sc.params,
+    ),
+    all<{ lifecycle: string; c: number }>(`SELECT i.lifecycle, COUNT(*) AS c FROM items i WHERE i.revision_of_id IS NULL AND ${sc.sql} GROUP BY i.lifecycle`, ...sc.params),
+    all<{ stage: Stage; c: number }>(
+      `SELECT a.stage, COUNT(*) AS c FROM stage_attempts a JOIN items i ON i.id = a.item_id WHERE a.completed_at >= ? AND ${sc.sql} GROUP BY a.stage`,
+      week,
+      ...sc.params,
+    ),
+    all<{ c: number }>(`SELECT COUNT(*) AS c FROM items i WHERE i.lifecycle IN ('draft','in_production') AND i.current_due_at < ? AND ${sc.sql}`, new Date().toISOString(), ...sc.params),
+  ]);
+  const num = (v: unknown) => Number(v ?? 0);
+  return {
+    drafts: num(byLife.find((x) => x.lifecycle === "draft")?.c),
+    published: num(byLife.find((x) => x.lifecycle === "published")?.c),
+    overdue: num(overdue[0]?.c),
+    stages: STAGES.map((stage) => ({
+      stage,
+      inWork: byStage.filter((x) => x.stage === stage && x.status !== "awaiting_handoff").reduce((a, x) => a + num(x.c), 0),
+      waiting: num(byStage.find((x) => x.stage === stage && x.status === "awaiting_handoff")?.c),
+      doneWeek: num(done.find((x) => x.stage === stage)?.c),
+    })),
+  };
+}
+
 export type DeskPerson = { id: string; name: string; todo: number; active: number; done: number; review: number };
 
 // The team lead's desk for one stage.
@@ -184,6 +218,7 @@ export async function leadDesk(user: AppUser, stage: Stage) {
     stage,
     prev,
     next: NEXT_STAGE[stage] ?? null,
+    glance: await workflowGlance(user),
     review: await hydrate(review, user.id),
     ready: await hydrate(ready, user.id),
     unassigned: await hydrate(unassigned, user.id),

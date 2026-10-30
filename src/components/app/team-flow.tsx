@@ -320,6 +320,12 @@ export function MyBoard({ items, title = "My work" }: { items: FlowItem[]; title
   const params = useSearchParams();
   const [open, setOpen] = React.useState<string | null>(params.get("item"));
   const [sending, setSending] = React.useState(false);
+  // Columns show twelve cards at a time; a link to one item opens its whole column.
+  const [shown, setShown] = React.useState<Record<string, number>>(() => {
+    const it = items.find((i) => i.id === params.get("item"));
+    const col = it && COLUMNS.find((c) => c.statuses.includes(it.status));
+    return col ? { [col.key]: items.length } : {};
+  });
   const done = items.filter((i) => i.status === "finished");
   React.useEffect(() => {
     const id = params.get("item");
@@ -361,7 +367,7 @@ export function MyBoard({ items, title = "My work" }: { items: FlowItem[]; title
                   </p>
                   <p className="text-[11px] text-muted-foreground">{col.hint}</p>
                 </div>
-                {list.map((it) => {
+                {list.slice(0, shown[col.key] ?? 12).map((it) => {
                   const isOpen = open === it.id;
                   const b = (a: string) => busy === `${it.id}:${a}`;
                   return (
@@ -403,6 +409,11 @@ export function MyBoard({ items, title = "My work" }: { items: FlowItem[]; title
                     </Card>
                   );
                 })}
+                {list.length > (shown[col.key] ?? 12) && (
+                  <Button size="sm" variant="ghost" onClick={() => setShown({ ...shown, [col.key]: (shown[col.key] ?? 12) + 12 })}>
+                    Show more ({list.length - (shown[col.key] ?? 12)})
+                  </Button>
+                )}
                 {!list.length && <p className="py-3 text-center text-xs text-muted-foreground">Nothing here</p>}
               </div>
             );
@@ -440,6 +451,41 @@ function usePick(ids: string[]) {
   return { picked, toggle, all, chosen: picked.size ? [...picked] : ids };
 }
 
+// The whole workflow at a glance, from drafts to published, with the lead's own stage highlighted.
+function WorkflowGlance({ glance, mine }: { glance: LeadDeskData["glance"]; mine: string }) {
+  const cell = "flex min-w-28 flex-1 flex-col rounded-lg border bg-card px-3 py-2";
+  return (
+    <section aria-label="Workflow at a glance" className="space-y-1.5">
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <span className="font-medium text-foreground">Workflow at a glance</span>
+        {glance.overdue > 0 && <span className="text-[var(--st-blocked-fg)]">{glance.overdue} overdue</span>}
+        <a href="/overview" className="ml-auto hover:underline">
+          Open the Overview
+        </a>
+      </div>
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        <div className={cell}>
+          <span className="text-xs text-muted-foreground">Drafts</span>
+          <span className="text-xl font-semibold tabular">{glance.drafts}</span>
+        </div>
+        {glance.stages.map((g) => (
+          <div key={g.stage} className={cn(cell, g.stage === mine && "border-primary")} style={{ borderTop: `3px solid var(--stage-${g.stage})` }}>
+            <span className="text-xs text-muted-foreground">{STAGE_LABELS[g.stage as Stage]}</span>
+            <span className="text-xl font-semibold tabular">{g.inWork}</span>
+            <span className="text-[11px] text-muted-foreground">
+              {g.doneWeek} done this week{g.waiting ? ` · ${g.waiting} handed over` : ""}
+            </span>
+          </div>
+        ))}
+        <div className={cell}>
+          <span className="text-xs text-muted-foreground">Published</span>
+          <span className="text-xl font-semibold tabular">{glance.published}</span>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export function LeadDesk({ data }: { data: LeadDeskData }) {
   const router = useRouter();
   const { act, busy } = useAct();
@@ -447,6 +493,16 @@ export function LeadDesk({ data }: { data: LeadDeskData }) {
   const [returning, setReturning] = React.useState<{ id: string; note: string; reason?: string } | null>(null);
   const [assignTo, setAssignTo] = React.useState("");
   const [working, setWorking] = React.useState(false);
+  // Long lists show a page at a time, so Home stays short even with hundreds of items.
+  const [shown, setShown] = React.useState<Record<string, number>>({});
+  const PAGE = 10;
+  const cap = <T,>(k: string, list: T[]) => list.slice(0, shown[k] ?? PAGE);
+  const More = ({ k, total }: { k: string; total: number }) =>
+    total > (shown[k] ?? PAGE) ? (
+      <Button size="sm" variant="ghost" className="w-full" onClick={() => setShown({ ...shown, [k]: (shown[k] ?? PAGE) + PAGE })}>
+        Show {Math.min(PAGE, total - (shown[k] ?? PAGE))} more of {total - (shown[k] ?? PAGE)}
+      </Button>
+    ) : null;
   const review = usePick(data.review.map((i) => i.id));
   const ready = usePick(data.ready.map((i) => i.id));
   const unassigned = usePick(data.unassigned.map((i) => i.id));
@@ -465,6 +521,7 @@ export function LeadDesk({ data }: { data: LeadDeskData }) {
   return (
     <div className="space-y-3">
       <h2 className="text-lg font-semibold">{stageLabel} team lead</h2>
+      <WorkflowGlance glance={data.glance} mine={data.stage} />
       <div className="grid gap-3 xl:grid-cols-2">
         <Section
           title="To approve"
@@ -486,7 +543,7 @@ export function LeadDesk({ data }: { data: LeadDeskData }) {
             )
           }
         >
-          {data.review.map((it) => (
+          {cap("review", data.review).map((it) => (
             <Card key={it.id} item={it} open={open === it.id} onToggle={() => setOpen(open === it.id ? null : it.id)} select={tick(review, it.id)} badge={<span className="text-xs text-muted-foreground">by {it.ownerName ?? "someone"}</span>}>
               {open === it.id && <WorkPanel item={it} canEdit lead />}
               {returning?.id === it.id ? (
@@ -513,6 +570,7 @@ export function LeadDesk({ data }: { data: LeadDeskData }) {
               )}
             </Card>
           ))}
+          <More k="review" total={data.review.length} />
           {!data.review.length && <p className="text-xs text-muted-foreground">Nothing waiting for approval.</p>}
         </Section>
 
@@ -543,18 +601,19 @@ export function LeadDesk({ data }: { data: LeadDeskData }) {
               )
             }
           >
-            {data.ready.map((it) => (
+            {cap("ready", data.ready).map((it) => (
               <Card key={it.id} item={it} open={open === it.id} onToggle={() => setOpen(open === it.id ? null : it.id)} select={tick(ready, it.id)} badge={<span className="text-xs text-muted-foreground">by {it.ownerName ?? "someone"}</span>}>
                 {open === it.id && <WorkPanel item={it} canEdit lead />}
               </Card>
             ))}
+            <More k="ready" total={data.ready.length} />
             {!data.ready.length && <p className="text-xs text-muted-foreground">Nothing approved and waiting.</p>}
           </Section>
         )}
 
         {data.prev && (
           <Section title={`Arriving from ${STAGE_LABELS[data.prev]}`} tipKey="flow.incoming" hint="Handed over to your team; accept it, then assign it" count={data.incoming.length}>
-            {data.incoming.map((it) => (
+            {cap("incoming", data.incoming).map((it) => (
               <Card key={it.id} item={it} open={open === it.id} onToggle={() => setOpen(open === it.id ? null : it.id)} badge={it.batch ? <Badge variant="secondary">{it.batch.code}</Badge> : null}>
                 {open === it.id && <WorkPanel item={it} canEdit={false} lead />}
                 {returning?.id === it.id ? (
@@ -613,6 +672,7 @@ export function LeadDesk({ data }: { data: LeadDeskData }) {
                 )}
               </Card>
             ))}
+            <More k="incoming" total={data.incoming.length} />
             {!data.incoming.length && <p className="text-xs text-muted-foreground">Nothing arriving.</p>}
           </Section>
         )}
@@ -636,24 +696,32 @@ export function LeadDesk({ data }: { data: LeadDeskData }) {
                     ))}
                   </SelectContent>
                 </Select>
+                <Button size="sm" variant="outline" onClick={() => data.unassigned.filter((i) => !unassigned.picked.has(i.id)).slice(0, 5).forEach((i) => unassigned.toggle(i.id))} title="Tick the next five in the list">
+                  Tick next 5
+                </Button>
                 <Button
                   size="sm"
-                  disabled={!assignTo || working}
+                  disabled={!assignTo || working || !unassigned.picked.size}
+                  title={unassigned.picked.size ? undefined : "Tick the cards to assign first"}
                   onClick={async () => {
                     setWorking(true);
-                    results(await bulkAction(unassigned.chosen, { action: "assign", stage: data.stage as Stage, userId: assignTo }), "assigned");
+                    results(await bulkAction([...unassigned.picked], { action: "assign", stage: data.stage as Stage, userId: assignTo }), "assigned");
                     setWorking(false);
                   }}
                 >
-                  <UserPlusIcon /> Assign {unassigned.picked.size ? unassigned.picked.size : "all"}
+                  <UserPlusIcon /> Assign {unassigned.picked.size || ""}
+                </Button>
+                <Button size="sm" variant="ghost" asChild>
+                  <a href="/assign">Many at once</a>
                 </Button>
               </>
             )
           }
         >
-          {data.unassigned.map((it) => (
+          {cap("unassigned", data.unassigned).map((it) => (
             <Card key={it.id} item={it} open={open === it.id} onToggle={() => setOpen(open === it.id ? null : it.id)} select={tick(unassigned, it.id)} />
           ))}
+          <More k="unassigned" total={data.unassigned.length} />
           {!data.unassigned.length && <p className="text-xs text-muted-foreground">Everything is assigned.</p>}
         </Section>
       </div>
