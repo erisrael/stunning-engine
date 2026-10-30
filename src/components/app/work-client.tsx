@@ -7,9 +7,6 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Papa from "papaparse";
 import { toast } from "sonner";
 import {
-  ArrowDownIcon,
-  ArrowUpDownIcon,
-  ArrowUpIcon,
   CalendarIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
@@ -17,9 +14,10 @@ import {
   LayoutDashboardIcon,
   FolderKanbanIcon,
   KanbanIcon,
+  ListTreeIcon,
+  SheetIcon,
   ListIcon,
   Loader2Icon,
-  MessageSquareIcon,
   PencilIcon,
   PlusIcon,
   SearchIcon,
@@ -29,7 +27,6 @@ import {
   XIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -39,7 +36,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { EmptyState, UserAvatar } from "@/components/app/primitives";
+import { EmptyState } from "@/components/app/primitives";
 import {
   addMetricAction,
   addTaskCommentAction,
@@ -49,40 +46,18 @@ import {
   deleteProjectAction,
   importTasksAction,
   listMetricsAction,
-  moveTaskAction,
   saveMilestoneAction,
   saveProjectAction,
   saveTaskAction,
   taskCommentsAction,
 } from "@/app/actions/departments";
-import type { Project, Task, TaskFilter } from "@/server/work";
+import type { DeptView, Project, Task, TaskFilter } from "@/server/work";
 import { POSITION_LABELS, type Position } from "@/lib/domain";
 import type { WorkDept } from "@/lib/work";
-import { fieldEmpty, fieldRequired, fieldShown, formatField, labelOf, statusOf, type DeptConfig, type DeptField, type FieldValue, type Rights } from "@/lib/dept-config";
+import { fieldRequired, fieldShown, formatField, labelOf, statusOf, type DeptConfig, type DeptField, type FieldValue, type Rights } from "@/lib/dept-config";
 import { cn } from "@/lib/utils";
-
-type Person = { id: string; name: string; position: Position };
-type Access = { rights: Rights; readOnly: boolean };
-
-const today = () => new Date().toISOString().slice(0, 10);
-const finished = (t: Task) => t.status_category === "done" || t.status_category === "cancelled";
-// Active items, plus the one already in use (a switched-off status or type stays readable on old tasks).
-const usable = <T extends { key: string; active: boolean }>(items: T[], current?: string) => items.filter((i) => i.active || i.key === current);
-
-function Tone({ config, status }: { config: DeptConfig; status: string }) {
-  const s = statusOf(config, status);
-  const c = s?.color ?? "#94a3b8";
-  return (
-    <span className="inline-flex h-5 items-center rounded-full px-2 text-[11px] font-medium" style={{ background: `${c}22`, color: c }}>
-      {s?.label ?? status}
-    </span>
-  );
-}
-
-function PriorityDot({ config, priority }: { config: DeptConfig; priority: string }) {
-  const p = config.priorities.find((x) => x.key === priority);
-  return <span className="size-2 shrink-0 rounded-full" style={{ background: p?.color ?? "#94a3b8" }} title={p?.label ?? priority} />;
-}
+import { today, usable, type Access, type Person } from "./work-shared";
+import { Board, OverviewTree, SheetView, TaskList, ViewOptions } from "./work-views";
 
 function download(name: string, rows: (string | number | null)[][]) {
   const csv = rows.map((r) => r.map((c) => `"${String(c ?? "").replace(/"/g, '""')}"`).join(",")).join("\r\n");
@@ -106,9 +81,10 @@ export function WorkClient({
   openTaskId,
   showArchived,
   dashboard,
+  views = [],
 }: {
   dept: WorkDept;
-  tab: "dashboard" | "board" | "list" | "projects" | "calendar";
+  tab: "dashboard" | "board" | "list" | "sheet" | "overview" | "projects" | "calendar";
   filter: TaskFilter;
   tasks: Task[];
   projects: Project[];
@@ -119,6 +95,7 @@ export function WorkClient({
   openTaskId: string | null;
   showArchived: boolean;
   dashboard?: React.ReactNode;
+  views?: DeptView[];
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -196,6 +173,12 @@ export function WorkClient({
             <TabsTrigger value="list">
               <ListIcon className="size-3.5" /> List
             </TabsTrigger>
+            <TabsTrigger value="sheet">
+              <SheetIcon className="size-3.5" /> Sheet
+            </TabsTrigger>
+            <TabsTrigger value="overview">
+              <ListTreeIcon className="size-3.5" /> Overview
+            </TabsTrigger>
             <TabsTrigger value="projects">
               <FolderKanbanIcon className="size-3.5" /> {names.projects} ({projects.length})
             </TabsTrigger>
@@ -258,7 +241,7 @@ export function WorkClient({
           <FilterSelect value={filter.type} onChange={(v) => go({ type: v })} placeholder="Any type" options={cfg.types.map((t) => ({ value: t.key, label: t.label }))} />
           <FilterSelect value={filter.priority} onChange={(v) => go({ priority: v })} placeholder="Any priority" options={cfg.priorities.map((p) => ({ value: p.key, label: p.label }))} />
           <FilterSelect value={filter.due} onChange={(v) => go({ due: v })} placeholder="Any due date" options={[{ value: "overdue", label: "Overdue" }, { value: "week", label: "Due this week" }, { value: "none", label: "No due date" }]} />
-          {tab === "list" && (
+          {(tab === "list" || tab === "sheet" || tab === "overview") && (
             <FilterSelect
               value={filter.open ? "open" : filter.status?.length === 1 ? filter.status[0] : null}
               onChange={(v) => go({ status: v })}
@@ -269,8 +252,12 @@ export function WorkClient({
         </div>
       )}
 
+      {tab !== "projects" && tab !== "dashboard" && <ViewOptions dept={dept} tab={tab} config={cfg} access={access} views={views} people={people} projects={projects} />}
+
       {tab === "dashboard" && dashboard}
-      {tab === "board" && <Board dept={dept} config={cfg} people={people} tasks={tasks} viewerId={viewerId} access={access} onOpen={setEditing} onAdd={(status) => setEditing({ status })} />}
+      {tab === "board" && <Board dept={dept} config={cfg} people={people} tasks={tasks} viewerId={viewerId} access={access} onOpen={setEditing} onDetails={(status) => setEditing({ status })} />}
+      {tab === "sheet" && <SheetView dept={dept} config={cfg} tasks={tasks} people={people} projects={projects} access={access} viewerId={viewerId} onOpen={setEditing} />}
+      {tab === "overview" && <OverviewTree config={cfg} tasks={tasks} projects={projects} onOpen={setEditing} />}
       {tab === "list" && <TaskList dept={dept} config={cfg} tasks={tasks} filter={filter} people={people} projects={projects} access={access} viewerId={viewerId} go={go} onOpen={setEditing} onExport={exportCsv} />}
       {tab === "projects" && <Projects dept={dept} config={cfg} projects={projects} access={access} showArchived={showArchived} go={go} onEdit={setProjectDialog} />}
       {tab === "calendar" && <MonthCalendar tasks={tasks} onOpen={setEditing} onAdd={writable ? (d) => setEditing({ dueDate: d }) : undefined} />}
@@ -289,349 +276,6 @@ function FilterSelect({ value, onChange, placeholder, options }: { value: string
       </SelectTrigger>
       <SelectContent>
         <SelectItem value="all">{placeholder}</SelectItem>
-        {options.map((o) => (
-          <SelectItem key={o.value} value={o.value}>
-            {o.label}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
-}
-
-function TaskCard({ t, config, people, onOpen, draggable, onDragStart }: { t: Task; config: DeptConfig; people: Person[]; onOpen: () => void; draggable?: boolean; onDragStart?: (e: React.DragEvent) => void }) {
-  const overdue = t.due_date && t.due_date < today() && !finished(t);
-  const type = config.types.find((x) => x.key === t.type);
-  const shown = config.fields.filter((f) => f.onCard && fieldShown(f, t.type) && !fieldEmpty(t.fields[f.key]));
-  return (
-    <button
-      type="button"
-      draggable={draggable}
-      onDragStart={onDragStart}
-      onClick={onOpen}
-      data-task={t.id}
-      className="block w-full rounded-lg border bg-card p-2 text-left text-sm shadow-xs hover:border-primary/40"
-    >
-      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-        <PriorityDot config={config} priority={t.priority} />
-        <span className="font-mono">{t.code}</span>
-        {type && (
-          <span className="truncate rounded px-1 text-[10px]" style={{ background: `${type.color}22`, color: type.color }}>
-            {type.label}
-          </span>
-        )}
-        {t.comments > 0 && (
-          <span className="ml-auto flex items-center gap-0.5">
-            <MessageSquareIcon className="size-3" /> {t.comments}
-          </span>
-        )}
-      </div>
-      <p className="mt-0.5 line-clamp-2 font-medium">{t.title}</p>
-      {shown.length > 0 && (
-        <dl className="mt-1 space-y-0.5 text-[11px]">
-          {shown.map((f) => (
-            <div key={f.key} className="flex gap-1">
-              <dt className="text-muted-foreground">{f.label}:</dt>
-              <dd className="truncate">{formatField(f, t.fields[f.key], people)}</dd>
-            </div>
-          ))}
-        </dl>
-      )}
-      {config.features.progress && t.progress > 0 && !finished(t) && (
-        <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-muted">
-          <div className="h-full bg-primary" style={{ width: `${t.progress}%` }} />
-        </div>
-      )}
-      <div className="mt-1.5 flex items-center gap-1.5">
-        {t.assignee_name ? <UserAvatar name={t.assignee_name} size="xs" /> : <span className="text-[11px] text-muted-foreground italic">Unassigned</span>}
-        {t.labels.slice(0, 2).map((l) => (
-          <span key={l} className="rounded bg-muted px-1 text-[10px]">
-            {l}
-          </span>
-        ))}
-        {t.due_date && <span className={cn("ml-auto text-[11px]", overdue ? "font-medium text-destructive" : "text-muted-foreground")}>{t.due_date.slice(5)}</span>}
-      </div>
-    </button>
-  );
-}
-
-function Board({
-  dept,
-  config,
-  people,
-  tasks,
-  viewerId,
-  access,
-  onOpen,
-  onAdd,
-}: {
-  dept: WorkDept;
-  config: DeptConfig;
-  people: Person[];
-  tasks: Task[];
-  viewerId: string;
-  access: Access;
-  onOpen: (t: Task) => void;
-  onAdd: (s: string) => void;
-}) {
-  const router = useRouter();
-  const [dragging, setDragging] = React.useState<string | null>(null);
-  const [local, setLocal] = React.useState(tasks);
-  React.useEffect(() => setLocal(tasks), [tasks]);
-  const canMove = (t: Task) => !access.readOnly && (access.rights.editAll || t.assignee_id === viewerId || t.reporter_id === viewerId);
-  // Columns: statuses shown on the board, plus any switched-off status that still holds tasks.
-  const columns = config.statuses.filter((s) => (s.active && s.onBoard) || (!s.active && local.some((t) => t.status === s.key)));
-  const drop = async (status: string, e: React.DragEvent) => {
-    e.preventDefault();
-    const id = dragging;
-    setDragging(null);
-    if (!id) return;
-    const target = (e.target as HTMLElement).closest("[data-task]") as HTMLElement | null;
-    const beforeId = target?.dataset.task && target.dataset.task !== id ? target.dataset.task : null;
-    setLocal((l) => {
-      const moved = l.find((t) => t.id === id);
-      if (!moved) return l;
-      const rest = l.filter((t) => t.id !== id);
-      const at = beforeId ? rest.findIndex((t) => t.id === beforeId) : -1;
-      const next = { ...moved, status, status_category: statusOf(config, status)?.category ?? moved.status_category };
-      if (at < 0) return [...rest, next];
-      return [...rest.slice(0, at), next, ...rest.slice(at)];
-    });
-    const r = await moveTaskAction(dept, id, status, beforeId);
-    if (!r.ok) {
-      toast.error(r.error);
-      setLocal(tasks);
-    } else router.refresh();
-  };
-  return (
-    <div className="flex gap-3 overflow-x-auto pb-2">
-      {columns.map((col) => {
-        const st = col.key;
-        const list = local.filter((t) => t.status === st);
-        const over = col.limit != null && list.length > col.limit;
-        return (
-          <div
-            key={st}
-            className={cn("flex w-72 shrink-0 flex-col rounded-xl bg-muted/40 p-2", dragging && col.active && "outline-dashed outline-1 outline-primary/30", !col.active && "opacity-70")}
-            onDragOver={(e) => col.active && e.preventDefault()}
-            onDrop={(e) => col.active && drop(st, e)}
-          >
-            <div className="mb-2 flex items-center gap-2 px-1">
-              <Tone config={config} status={st} />
-              <span className={cn("text-xs tabular", over ? "font-semibold text-destructive" : "text-muted-foreground")} title={col.limit != null ? `Limit ${col.limit}` : undefined}>
-                {list.length}
-                {col.limit != null && ` / ${col.limit}`}
-              </span>
-              {!access.readOnly && col.active && (
-                <Button size="icon-xs" variant="ghost" className="ml-auto" aria-label={`Add to ${col.label}`} onClick={() => onAdd(st)}>
-                  <PlusIcon />
-                </Button>
-              )}
-            </div>
-            <div className="flex min-h-24 flex-col gap-2">
-              {list.map((t) => (
-                <TaskCard key={t.id} t={t} config={config} people={people} onOpen={() => onOpen(t)} draggable={canMove(t)} onDragStart={(e) => (e.dataTransfer.setData("text/plain", t.id), setDragging(t.id))} />
-              ))}
-              {!list.length && <p className="py-4 text-center text-xs text-muted-foreground">Nothing here</p>}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function TaskList({
-  dept,
-  config,
-  tasks,
-  filter,
-  people,
-  projects,
-  access,
-  viewerId,
-  go,
-  onOpen,
-  onExport,
-}: {
-  dept: WorkDept;
-  config: DeptConfig;
-  tasks: Task[];
-  filter: TaskFilter;
-  people: Person[];
-  projects: Project[];
-  access: Access;
-  viewerId: string;
-  go: (p: Record<string, string | null>) => void;
-  onOpen: (t: Task) => void;
-  onExport: (t: Task[]) => void;
-}) {
-  const router = useRouter();
-  const [picked, setPicked] = React.useState<Set<string>>(new Set());
-  const [busy, setBusy] = React.useState(false);
-  const ids = [...picked].filter((id) => tasks.some((t) => t.id === id));
-  const sortBy = (k: NonNullable<TaskFilter["sort"]>) => go({ sort: k, dir: filter.sort === k && filter.dir === "desc" ? "asc" : "desc" });
-  const Head = ({ k, children }: { k: NonNullable<TaskFilter["sort"]>; children: React.ReactNode }) => (
-    <th className="p-2 font-medium">
-      <button type="button" className="inline-flex items-center gap-1 hover:text-foreground" onClick={() => sortBy(k)}>
-        {children}
-        {filter.sort === k ? filter.dir === "asc" ? <ArrowUpIcon className="size-3" /> : <ArrowDownIcon className="size-3" /> : <ArrowUpDownIcon className="size-3 opacity-40" />}
-      </button>
-    </th>
-  );
-  const bulk = async (patch: Parameters<typeof bulkTasksAction>[2], label: string) => {
-    if (patch.delete && !window.confirm(`Delete ${ids.length} tasks? This cannot be undone.`)) return;
-    setBusy(true);
-    const r = await bulkTasksAction(dept, ids, patch);
-    setBusy(false);
-    if (!r.ok) return toast.error(r.error);
-    const res = r.data as { ok: boolean; error?: string }[];
-    const bad = res.filter((x) => !x.ok);
-    if (bad.length) toast.warning(`${res.length - bad.length} ${label}, ${bad.length} not allowed`, { description: bad[0].error });
-    else toast.success(`${res.length} ${label}`);
-    setPicked(new Set());
-    router.refresh();
-  };
-  const setStatus = async (t: Task, status: string) => {
-    const r = await bulkTasksAction(dept, [t.id], { status });
-    if (!r.ok) return toast.error(r.error);
-    const bad = (r.data as { ok: boolean; error?: string }[]).find((x) => !x.ok);
-    if (bad) return toast.error(bad.error);
-    router.refresh();
-  };
-  const cols = config.fields.filter((f) => f.active && f.inList);
-  if (!tasks.length) return <EmptyState title={`No ${config.names.tasks.toLowerCase()}`} description={`Change the filters, or add a ${config.names.task.toLowerCase()}.`} />;
-  return (
-    <div className="space-y-2">
-      <div className="overflow-x-auto rounded-lg border">
-        <table className="w-full text-sm">
-          <thead className="bg-muted/50 text-left text-xs text-muted-foreground">
-            <tr>
-              <th className="w-8 p-2">
-                <Checkbox checked={ids.length === tasks.length ? true : ids.length ? "indeterminate" : false} onCheckedChange={(v) => setPicked(v ? new Set(tasks.map((t) => t.id)) : new Set())} aria-label="Select all" />
-              </th>
-              <Head k="code">Code</Head>
-              <Head k="title">{config.names.task}</Head>
-              <Head k="status">Status</Head>
-              <Head k="priority">Priority</Head>
-              <th className="p-2 font-medium">Assignee</th>
-              {cols.map((f) => (
-                <th key={f.key} className="p-2 font-medium whitespace-nowrap">
-                  {f.label}
-                </th>
-              ))}
-              <Head k="due">Due</Head>
-              <Head k="updated">Updated</Head>
-            </tr>
-          </thead>
-          <tbody>
-            {tasks.map((t) => {
-              const mine = access.rights.editAll || t.assignee_id === viewerId || t.reporter_id === viewerId;
-              const overdue = t.due_date && t.due_date < today() && !finished(t);
-              return (
-                <tr key={t.id} className={cn("border-t", picked.has(t.id) && "bg-primary/5")}>
-                  <td className="p-2">
-                    <Checkbox checked={picked.has(t.id)} onCheckedChange={(v) => setPicked((s) => (v ? new Set(s.add(t.id)) : (s.delete(t.id), new Set(s))))} />
-                  </td>
-                  <td className="p-2 font-mono text-xs whitespace-nowrap">{t.code}</td>
-                  <td className="max-w-[360px] p-2">
-                    <button type="button" className="text-left font-medium hover:underline" onClick={() => onOpen(t)}>
-                      {t.title}
-                    </button>
-                    <span className="block truncate text-xs text-muted-foreground">
-                      {labelOf(config.types, t.type)}
-                      {t.project_name && ` · ${t.project_name}`}
-                      {t.milestone_name && ` · ${t.milestone_name}`}
-                    </span>
-                  </td>
-                  <td className="p-2">
-                    {mine && !access.readOnly ? (
-                      <Select value={t.status} onValueChange={(v) => setStatus(t, v)}>
-                        <SelectTrigger size="sm" className="h-7 w-32 text-xs">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {usable(config.statuses, t.status).map((s) => (
-                            <SelectItem key={s.key} value={s.key}>
-                              {s.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    ) : (
-                      <Tone config={config} status={t.status} />
-                    )}
-                  </td>
-                  <td className="p-2 text-xs">
-                    <span className="inline-flex items-center gap-1">
-                      <PriorityDot config={config} priority={t.priority} /> {labelOf(config.priorities, t.priority)}
-                    </span>
-                  </td>
-                  <td className="p-2 text-xs">{t.assignee_name ?? <span className="text-muted-foreground italic">Unassigned</span>}</td>
-                  {cols.map((f) => (
-                    <td key={f.key} className="max-w-48 truncate p-2 text-xs">
-                      {fieldShown(f, t.type) ? formatField(f, t.fields[f.key], people) : ""}
-                    </td>
-                  ))}
-                  <td className={cn("p-2 text-xs whitespace-nowrap", overdue && "font-medium text-destructive")}>{t.due_date ?? "-"}</td>
-                  <td className="p-2 text-xs whitespace-nowrap text-muted-foreground">{t.updated_at.slice(0, 10)}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-      {ids.length > 0 && (
-        <div className="sticky bottom-3 z-20 mx-auto flex w-fit max-w-full flex-wrap items-center gap-2 rounded-xl border bg-popover px-3 py-2 shadow-lg">
-          <span className="text-sm font-medium tabular">{ids.length} selected</span>
-          {!access.readOnly && (
-            <>
-              <BulkPick label="Status" options={usable(config.statuses).map((s) => ({ value: s.key, label: s.label }))} onPick={(v) => bulk({ status: v }, "updated")} disabled={busy} />
-              <BulkPick label="Priority" options={usable(config.priorities).map((p) => ({ value: p.key, label: p.label }))} onPick={(v) => bulk({ priority: v }, "updated")} disabled={busy} />
-              {access.rights.assign && (
-                <>
-                  <BulkPick label="Assignee" options={[{ value: "none", label: "Unassigned" }, ...people.map((p) => ({ value: p.id, label: p.name }))]} onPick={(v) => bulk({ assigneeId: v === "none" ? null : v }, "reassigned")} disabled={busy} />
-                  <BulkPick
-                    label={config.names.project}
-                    options={[{ value: "none", label: "None" }, ...projects.map((p) => ({ value: p.id, label: `${p.key} ${p.name}` }))]}
-                    onPick={(v) => bulk({ projectId: v === "none" ? null : v }, "moved")}
-                    disabled={busy}
-                  />
-                </>
-              )}
-              <Input
-                type="date"
-                aria-label="Set due date"
-                className="h-7 w-36 text-xs"
-                onChange={(e) => e.target.value && bulk({ dueDate: e.target.value }, "updated")}
-                disabled={busy}
-              />
-            </>
-          )}
-          <Button size="xs" variant="outline" onClick={() => onExport(tasks.filter((t) => picked.has(t.id)))}>
-            <DownloadIcon /> Export
-          </Button>
-          {!access.readOnly && (
-            <Button size="xs" variant="outline" className="text-destructive" disabled={busy} onClick={() => bulk({ delete: true }, "deleted")}>
-              <Trash2Icon /> Delete
-            </Button>
-          )}
-          <Button size="xs" variant="ghost" onClick={() => setPicked(new Set())}>
-            <XIcon /> Clear
-          </Button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function BulkPick({ label, options, onPick, disabled }: { label: string; options: { value: string; label: string }[]; onPick: (v: string) => void; disabled?: boolean }) {
-  return (
-    <Select value="" onValueChange={onPick} disabled={disabled}>
-      <SelectTrigger size="sm" className="h-7 w-32 text-xs">
-        <SelectValue placeholder={label} />
-      </SelectTrigger>
-      <SelectContent>
         {options.map((o) => (
           <SelectItem key={o.value} value={o.value}>
             {o.label}

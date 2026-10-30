@@ -708,9 +708,10 @@ export async function importTasks(user: AppUser, d: string, rows: Record<string,
   const out = { created: 0, errors: [] as string[] };
   for (const [i, r] of rows.slice(0, 1000).entries()) {
     try {
-      const email = (r.assignee_email ?? "").trim().toLowerCase();
-      const assignee = email ? people.find((p) => p.email.toLowerCase() === email) : undefined;
-      if (email && !assignee) throw new Error(`${email} is not in this department`);
+      // The assignee by email (assignee_email) or by name or email (assignee).
+      const who = (r.assignee_email || r.assignee || "").trim().toLowerCase();
+      const assignee = who ? people.find((p) => p.email.toLowerCase() === who || p.name.toLowerCase() === who) : undefined;
+      if (who && !assignee) throw new Error(`${who} is not in this department`);
       const pk = (r.project_key ?? "").trim().toUpperCase();
       const project = pk ? projects.find((p) => p.key === pk) : undefined;
       if (pk && !project) throw new Error(`unknown ${a.config.names.project.toLowerCase()} ${pk}`);
@@ -729,6 +730,7 @@ export async function importTasks(user: AppUser, d: string, rows: Record<string,
         projectId: project?.id ?? null,
         assigneeId: assignee?.id ?? null,
         dueDate: r.due_date || null,
+        startDate: r.start_date || null,
         estimateHours: r.estimate_hours ? Number(r.estimate_hours) : null,
         labels: (r.labels ?? "").split(/[;,]/),
         fields,
@@ -808,4 +810,49 @@ export async function deleteMetric(user: AppUser, d: string, id: string) {
   const a = await workAccess(user, dp, "write");
   need(a, "projects", "You cannot delete KPI results here.");
   await run("DELETE FROM dept_metrics WHERE id = ? AND project_id IN (SELECT id FROM dept_projects WHERE dept = ?)", id, dp);
+}
+
+// ---------------------------------------------------------------------------
+// Saved views: a named URL (tab, filters, columns, grouping, swimlanes). Private, or shared with the department by
+// people who assign or configure.
+// ---------------------------------------------------------------------------
+
+export type DeptView = { id: string; name: string; query: string; shared: boolean; mine: boolean };
+
+export async function deptViews(user: AppUser, d: string): Promise<DeptView[]> {
+  const dp = dept(d);
+  await workAccess(user, dp);
+  const rows = await all<{ id: string; name: string; query: string; shared: number; owner_id: string }>(
+    "SELECT id, name, query, shared, owner_id FROM saved_views WHERE page = ? AND (owner_id = ? OR shared = 1) ORDER BY shared DESC, lower(name)",
+    `dept:${dp}`,
+    user.id,
+  );
+  return rows.map((r) => ({ id: r.id, name: r.name, query: r.query, shared: !!r.shared, mine: r.owner_id === user.id }));
+}
+
+export async function saveDeptView(user: AppUser, d: string, input: { name: string; query: string; shared: boolean }) {
+  const dp = dept(d);
+  const a = await workAccess(user, dp);
+  const name = input.name.replace(/\s+/g, " ").trim().slice(0, 60);
+  if (!name) throw new WorkflowError("VALIDATION", "Name the view.");
+  if (input.shared && !(a.rights.assign || a.rights.configure)) throw new WorkflowError("FORBIDDEN", "Only heads and leads share views with the department.");
+  const query = input.query.replace(/^\?/, "").slice(0, 2000);
+  // Saving under an existing name of yours replaces that view.
+  const same = await get<{ id: string }>("SELECT id FROM saved_views WHERE page = ? AND owner_id = ? AND lower(name) = lower(?)", `dept:${dp}`, user.id, name);
+  if (same) {
+    await run("UPDATE saved_views SET query = ?, shared = ? WHERE id = ?", query, input.shared ? 1 : 0, same.id);
+    return same.id;
+  }
+  const id = uid("sv_");
+  await run("INSERT INTO saved_views (id, owner_id, name, page, query, config, shared, created_at) VALUES (?, ?, ?, ?, ?, '{}', ?, ?)", id, user.id, name, `dept:${dp}`, query, input.shared ? 1 : 0, nowIso());
+  return id;
+}
+
+export async function deleteDeptView(user: AppUser, d: string, id: string) {
+  const dp = dept(d);
+  const a = await workAccess(user, dp);
+  const v = await get<{ owner_id: string }>("SELECT owner_id FROM saved_views WHERE id = ? AND page = ?", id, `dept:${dp}`);
+  if (!v) return;
+  if (v.owner_id !== user.id && !a.rights.configure) throw new WorkflowError("FORBIDDEN", "You can delete only your own views.");
+  await run("DELETE FROM saved_views WHERE id = ?", id);
 }

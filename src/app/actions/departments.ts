@@ -39,6 +39,16 @@ export async function resetDashboardLayoutAction(dept: dash.DashDept, target: "m
   return wrap(async () => dash.resetDashboardLayout(await requireViewer(), dept, target));
 }
 
+export async function deptViewsAction(dept: string) {
+  return wrap(async () => work.deptViews(await requireViewer(), dept), { revalidate: false });
+}
+export async function saveDeptViewAction(dept: string, input: { name: string; query: string; shared: boolean }) {
+  return wrap(async () => work.saveDeptView(await requireViewer(), dept, input), { revalidate: false });
+}
+export async function deleteDeptViewAction(dept: string, id: string) {
+  return wrap(async () => work.deleteDeptView(await requireViewer(), dept, id), { revalidate: false });
+}
+
 export async function saveProjectAction(dept: string, input: work.ProjectInput) {
   return wrap(async () => work.saveProject(await requireViewer(), dept, input));
 }

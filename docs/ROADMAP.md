@@ -251,9 +251,20 @@ Studio keeps its content types (notes, exams, flash cards, question bank) and ga
      - A switcher between Overall, Production, Dev, Studio and Marketing. Each department shows its own dashboard, read only.
      - Overall shows progress per department, finished work per week across the company, and money: budgets on live projects, spend recorded as a Spend or Cost KPI, and money fields.
      - Revenue, expenses and payroll have a slot that Finance (Phase 8) fills.
-3. **Views**:
-   - List columns and grouping, board swimlanes and limits, saved views.
-   - Then the Sheet and the Overview tree.
+3. **Views** (done): Dev and Marketing gain Sheet and Overview tabs beside Board, List, Projects and Calendar.
+   - **List**:
+     - Choose and order columns, including custom fields, project, milestone, dates, estimates, labels and creator.
+     - Group by status, assignee, project, type, priority, milestone, or a choice, person or checkbox field. Groups fold, and show counts and totals of hours and money.
+   - **Board**:
+     - Swimlanes by assignee, project, type, priority, milestone or a field. Dragging between lanes changes the assignee, project, type or priority.
+     - Choose what cards show, and fold columns (remembered per browser).
+     - Quick add: type a title in a column and press Enter.
+   - **Sheet**:
+     - Type straight into cells (title, type, status, priority, assignee, project, dates, hours, progress, labels, custom fields). Each cell saves on Enter.
+     - Add rows at the bottom, and paste rows from Excel or Google Sheets in the visible column order (a header row is skipped).
+     - Undo the last 20 changes.
+   - **Overview**: a tree of project, milestone and task, with progress, done, overdue and estimated hours rolled up. Expand all or collapse all.
+   - **Saved views**: the tab, filters, columns, grouping, swimlanes and card contents under a name. Views are private, or shared with the department by heads and leads.
 4. **Timeline, Team and workload, Reports**, then time tracking.
 5. **Checklists, reviews, requests between departments, subtasks and dependencies, automations, sprints.**
 6. **Studio on the same footing.**

@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { requireViewer } from "@/server/auth";
 import { deptPeople } from "@/server/departments";
 import { workAccess } from "@/server/dept-config";
-import { listProjects, listTasks, type TaskFilter } from "@/server/work";
+import { deptViews, listProjects, listTasks, type TaskFilter } from "@/server/work";
 import { PageHeader } from "@/components/app/primitives";
 import { POSITION_LABELS } from "@/lib/domain";
 import type { WorkDept } from "@/lib/work";
@@ -10,7 +10,7 @@ import { WorkClient } from "./work-client";
 import { DeptConfigure } from "./dept-configure";
 import { DeptDashboardView } from "./dept-dashboard-view";
 
-const TABS = ["dashboard", "board", "list", "projects", "calendar", "configure"] as const;
+const TABS = ["dashboard", "board", "list", "sheet", "overview", "projects", "calendar", "configure"] as const;
 const SORTS = ["updated", "due", "priority", "code", "title", "status"] as const;
 
 // The Dev and Marketing sections share this page; their vocabulary, workflow and rights come from the configuration.
@@ -73,7 +73,7 @@ export async function WorkPage({ dept, searchParams }: { dept: WorkDept; searchP
   };
   // The board orders cards by their position, so it ignores the list sort.
   const { tasks } = await listTasks(viewer, dept, tab === "board" ? { ...filter, sort: "status", dir: "asc" } : filter);
-  const [projects, people] = await Promise.all([listProjects(viewer, dept, { archived: sp.archived === "1" }), deptPeople(dept)]);
+  const [projects, people, views] = await Promise.all([listProjects(viewer, dept, { archived: sp.archived === "1" }), deptPeople(dept), deptViews(viewer, dept)]);
   return (
     <div className="space-y-4">
       {header}
@@ -89,6 +89,7 @@ export async function WorkPage({ dept, searchParams }: { dept: WorkDept; searchP
         viewerId={viewer.id}
         openTaskId={sp.task ?? null}
         showArchived={sp.archived === "1"}
+        views={views}
       />
     </div>
   );
