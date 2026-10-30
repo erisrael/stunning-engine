@@ -17,8 +17,26 @@ import { ROLE_LABELS, ROLES, STAGES, type Role, type Stage } from "@/lib/domain"
 // SMTP settings
 // ---------------------------------------------------------------------------
 
-export type SmtpSettings = { host: string; port: number; secure: boolean; user: string; hasPassword: boolean; fromName: string; fromAddress: string; replyTo: string; source: "env" | "app" | "none" };
-type StoredSmtp = { host: string; port: number; secure: boolean; user: string; passEnc: string | null; fromName: string; fromAddress: string; replyTo: string };
+// Sending can go through an HTTPS email API instead of SMTP, for hosting that blocks the SMTP ports (Render's free
+// plan blocks 25, 465 and 587). The mailbox itself stays where it is (for example cPanel).
+export const RELAY_PROVIDERS = ["brevo", "resend"] as const;
+export type RelayProvider = (typeof RELAY_PROVIDERS)[number];
+export const RELAY_LABELS: Record<RelayProvider, string> = { brevo: "Brevo (free: 300 emails a day)", resend: "Resend (free: 3,000 emails a month)" };
+
+export type SmtpSettings = {
+  host: string;
+  port: number;
+  secure: boolean;
+  user: string;
+  hasPassword: boolean;
+  fromName: string;
+  fromAddress: string;
+  replyTo: string;
+  source: "env" | "app" | "none";
+  relay: RelayProvider | null;
+  hasRelayKey: boolean;
+};
+type StoredSmtp = { host: string; port: number; secure: boolean; user: string; passEnc: string | null; fromName: string; fromAddress: string; replyTo: string; relay?: RelayProvider | null; relayKeyEnc?: string | null };
 
 export const SMTP_PRESETS = [
   { key: "cpanel", label: "Your own domain (cPanel hosting)", host: "", port: 465, secure: true, hint: "In cPanel, open Email Accounts, then Connect Devices for the mailbox. The outgoing server is usually mail.yourdomain, port 465 with SSL, and the sign-in name is the full email address." },
@@ -47,19 +65,44 @@ function envSmtp() {
   };
 }
 
-export async function smtpSettings(): Promise<SmtpSettings> {
-  const env = envSmtp();
-  if (env) return { host: env.host, port: env.port, secure: env.secure, user: env.user, hasPassword: !!env.pass, fromName: env.fromName, fromAddress: env.fromAddress, replyTo: "", source: "env" };
-  const s = await storedSmtp();
-  if (!s) return { host: "", port: 587, secure: false, user: "", hasPassword: false, fromName: "Myseed", fromAddress: "", replyTo: "", source: "none" };
-  return { host: s.host, port: s.port, secure: s.secure, user: s.user, hasPassword: !!s.passEnc, fromName: s.fromName, fromAddress: s.fromAddress, replyTo: s.replyTo, source: "app" };
+// EMAIL_API_PROVIDER (brevo or resend) and EMAIL_API_KEY in the hosting settings switch sending to the web API.
+function envRelay(): { provider: RelayProvider; key: string } | null {
+  const p = process.env.EMAIL_API_PROVIDER as RelayProvider | undefined;
+  return p && RELAY_PROVIDERS.includes(p) && process.env.EMAIL_API_KEY ? { provider: p, key: process.env.EMAIL_API_KEY } : null;
 }
 
-export async function saveSmtp(user: AppUser, input: { host: string; port: number; secure: boolean; user: string; password?: string | null; fromName: string; fromAddress: string; replyTo?: string }) {
+export async function smtpSettings(): Promise<SmtpSettings> {
+  const env = envSmtp();
+  const er = envRelay();
+  if (env)
+    return { host: env.host, port: env.port, secure: env.secure, user: env.user, hasPassword: !!env.pass, fromName: env.fromName, fromAddress: env.fromAddress, replyTo: "", source: "env", relay: er?.provider ?? null, hasRelayKey: !!er };
+  const s = await storedSmtp();
+  if (!s) return { host: "", port: 587, secure: false, user: "", hasPassword: false, fromName: "Myseed", fromAddress: "", replyTo: "", source: "none", relay: er?.provider ?? null, hasRelayKey: !!er };
+  return {
+    host: s.host,
+    port: s.port,
+    secure: s.secure,
+    user: s.user,
+    hasPassword: !!s.passEnc,
+    fromName: s.fromName,
+    fromAddress: s.fromAddress,
+    replyTo: s.replyTo,
+    source: "app",
+    relay: er?.provider ?? s.relay ?? null,
+    hasRelayKey: !!er || !!s.relayKeyEnc,
+  };
+}
+
+export async function saveSmtp(
+  user: AppUser,
+  input: { host: string; port: number; secure: boolean; user: string; password?: string | null; fromName: string; fromAddress: string; replyTo?: string; relay?: RelayProvider | null; relayKey?: string | null },
+) {
   if (envSmtp()) throw new WorkflowError("INVALID_STATE", "SMTP is set in the hosting environment variables (SMTP_HOST). Change it there.");
+  const relay = input.relay && RELAY_PROVIDERS.includes(input.relay) ? input.relay : null;
   const host = input.host.trim();
-  if (!host || !/^[a-z0-9.-]+$/i.test(host)) throw new WorkflowError("VALIDATION", "Enter the SMTP server, for example smtp.gmail.com.");
-  if (!(input.port > 0 && input.port < 65536)) throw new WorkflowError("VALIDATION", "Enter the port, usually 465 or 587.");
+  // With a web API the SMTP server is optional (kept for when the hosting allows SMTP again).
+  if ((!relay || host) && (!host || !/^[a-z0-9.-]+$/i.test(host))) throw new WorkflowError("VALIDATION", "Enter the SMTP server, for example smtp.gmail.com.");
+  if ((!relay || host) && !(input.port > 0 && input.port < 65536)) throw new WorkflowError("VALIDATION", "Enter the port, usually 465 or 587.");
   if (!isEmail(input.fromAddress)) throw new WorkflowError("VALIDATION", "Enter the default sender address.");
   if (input.replyTo && !isEmail(input.replyTo)) throw new WorkflowError("VALIDATION", "The reply-to address is not valid.");
   const old = await storedSmtp();
@@ -73,14 +116,148 @@ export async function saveSmtp(user: AppUser, input: { host: string; port: numbe
     fromName: input.fromName.trim() || "Myseed",
     fromAddress: input.fromAddress.trim().toLowerCase(),
     replyTo: input.replyTo?.trim().toLowerCase() ?? "",
+    relay,
+    // An empty key field keeps the saved one.
+    relayKeyEnc: input.relayKey?.trim() ? await seal(input.relayKey.trim()) : (old?.relayKeyEnc ?? null),
   };
+  if (relay && !next.relayKeyEnc) throw new WorkflowError("VALIDATION", "Paste the API key from the email service.");
   await run(
     "INSERT INTO settings (key, value, updated_at, updated_by) VALUES ('cfg.smtp', ?, ?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by",
     JSON.stringify(next),
     nowIso(),
     user.id,
   );
-  await audit({ actor: user }, { action: "email.settings", summary: `${user.name} changed the email (SMTP) settings`, newValue: { host: next.host, port: next.port, user: next.user, fromAddress: next.fromAddress } });
+  await audit({ actor: user }, { action: "email.settings", summary: `${user.name} changed the email (SMTP) settings`, newValue: { host: next.host, port: next.port, user: next.user, fromAddress: next.fromAddress, relay: next.relay } });
+}
+
+// ---------------------------------------------------------------------------
+// Web API sending (Brevo, Resend) as a nodemailer transport, so every send path works unchanged
+// ---------------------------------------------------------------------------
+
+type Addr = { name?: string; address: string };
+const RELAY_HOST: Record<RelayProvider, string> = { brevo: "api.brevo.com", resend: "api.resend.com" };
+
+function toBase64(a: { content?: unknown; encoding?: string }) {
+  const c = a.content;
+  if (Buffer.isBuffer(c)) return c.toString("base64");
+  if (typeof c === "string") return a.encoding === "base64" ? c : Buffer.from(c, (a.encoding as BufferEncoding) || "utf8").toString("base64");
+  throw new Error("Attachments sent through the email API must be in memory.");
+}
+const str = (v: unknown) => (v === undefined || v === null ? undefined : Buffer.isBuffer(v) ? v.toString("utf8") : String(v));
+
+async function relaySend(provider: RelayProvider, key: string, mail: { data: Record<string, unknown>; message: { getAddresses(): Record<string, Addr[] | undefined> } }) {
+  const a = mail.message.getAddresses();
+  const from = a.from?.[0];
+  if (!from) throw new Error("No sender address.");
+  const d = mail.data as { subject?: string; text?: unknown; html?: unknown; attachments?: { filename?: string; content?: unknown; encoding?: string; contentType?: string }[] };
+  const files = (d.attachments ?? []).map((x) => ({ name: x.filename || "attachment", content: toBase64(x) }));
+  const body =
+    provider === "brevo"
+      ? {
+          sender: { name: from.name || undefined, email: from.address },
+          to: (a.to ?? []).map((x) => ({ email: x.address, name: x.name || undefined })),
+          cc: a.cc?.length ? a.cc.map((x) => ({ email: x.address, name: x.name || undefined })) : undefined,
+          bcc: a.bcc?.length ? a.bcc.map((x) => ({ email: x.address, name: x.name || undefined })) : undefined,
+          replyTo: a["reply-to"]?.[0] ? { email: a["reply-to"][0].address } : undefined,
+          subject: d.subject ?? "",
+          htmlContent: str(d.html),
+          textContent: str(d.text) ?? (d.html ? undefined : " "),
+          attachment: files.length ? files : undefined,
+        }
+      : {
+          from: from.name ? `${from.name.replace(/[<>"]/g, "")} <${from.address}>` : from.address,
+          to: (a.to ?? []).map((x) => x.address),
+          cc: a.cc?.length ? a.cc.map((x) => x.address) : undefined,
+          bcc: a.bcc?.length ? a.bcc.map((x) => x.address) : undefined,
+          reply_to: a["reply-to"]?.[0]?.address,
+          subject: d.subject ?? "",
+          html: str(d.html),
+          text: str(d.text),
+          attachments: files.length ? files.map((f) => ({ filename: f.name, content: f.content })) : undefined,
+        };
+  // Brevo and Resend both refuse a message with no "to"; Bcc-only sends go to the sender, the rest in Bcc.
+  if (provider === "brevo" && !(body as { to: unknown[] }).to.length) (body as { to: unknown[] }).to = [{ email: from.address }];
+  if (provider === "resend" && !(body as { to: unknown[] }).to.length) (body as { to: unknown[] }).to = [from.address];
+  const res = await fetch(provider === "brevo" ? "https://api.brevo.com/v3/smtp/email" : "https://api.resend.com/emails", {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json", ...(provider === "brevo" ? { "api-key": key } : { authorization: `Bearer ${key}` }) },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(20_000),
+  });
+  const json = (await res.json().catch(() => ({}))) as { messageId?: string; id?: string; message?: string; name?: string };
+  if (!res.ok) {
+    const err = new Error(json.message || `${provider} answered ${res.status}`) as Error & { responseCode?: number; code?: string };
+    err.responseCode = res.status;
+    if (res.status === 401 || res.status === 403) err.code = "EAUTH";
+    throw err;
+  }
+  return json.messageId ?? json.id ?? "";
+}
+
+async function relayCheckKey(provider: RelayProvider, key: string) {
+  const res = await fetch(provider === "brevo" ? "https://api.brevo.com/v3/account" : "https://api.resend.com/domains", {
+    headers: provider === "brevo" ? { "api-key": key, accept: "application/json" } : { authorization: `Bearer ${key}` },
+    signal: AbortSignal.timeout(15_000),
+  });
+  // Resend's "sending access" keys cannot list domains but are valid for sending.
+  if (provider === "resend" && res.status === 401) {
+    const j = (await res.json().catch(() => ({}))) as { name?: string };
+    if (j.name === "restricted_api_key") return;
+  }
+  if (!res.ok) {
+    const err = new Error(`The ${provider === "brevo" ? "Brevo" : "Resend"} API key was not accepted (${res.status}).`) as Error & { code?: string };
+    err.code = "EAUTH";
+    throw err;
+  }
+}
+
+// Whether the sender's domain is verified with the provider, so mail is accepted and lands in inboxes.
+async function relayDomainStatus(provider: RelayProvider, key: string, domain: string): Promise<"verified" | "pending" | "missing" | "unknown"> {
+  try {
+    if (provider === "brevo") {
+      const res = await fetch("https://api.brevo.com/v3/senders/domains", { headers: { "api-key": key, accept: "application/json" }, signal: AbortSignal.timeout(15_000) });
+      if (!res.ok) return "unknown";
+      const j = (await res.json()) as { domains?: { domain_name: string; authenticated?: boolean; verified?: boolean }[] };
+      const d = j.domains?.find((x) => x.domain_name.toLowerCase() === domain);
+      return !d ? "missing" : d.authenticated ? "verified" : "pending";
+    }
+    const res = await fetch("https://api.resend.com/domains", { headers: { authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(15_000) });
+    if (!res.ok) return "unknown";
+    const j = (await res.json()) as { data?: { name: string; status: string }[] };
+    const d = j.data?.find((x) => x.name.toLowerCase() === domain);
+    return !d ? "missing" : d.status === "verified" ? "verified" : "pending";
+  } catch {
+    return "unknown";
+  }
+}
+
+function relayTransport(provider: RelayProvider, key: string) {
+  return nodemailer.createTransport({
+    name: provider,
+    version: "1",
+    send(mail: Parameters<typeof relaySend>[2], callback: (err: Error | null, info?: unknown) => void) {
+      relaySend(provider, key, mail).then(
+        (messageId) => callback(null, { messageId, envelope: { from: mail.message.getAddresses().from?.[0]?.address, to: [] }, accepted: [], rejected: [], response: "accepted" }),
+        (err) => callback(err as Error),
+      );
+    },
+    // Called with a callback, or without one (then it returns a promise, as nodemailer's own transports do).
+    verify(callback?: (err: Error | null, ok?: boolean) => void) {
+      const p = relayCheckKey(provider, key).then(() => true);
+      if (!callback) return p;
+      p.then(() => callback(null, true), (err) => callback(err as Error));
+    },
+  } as unknown as nodemailer.Transport);
+}
+
+async function activeRelay(): Promise<{ provider: RelayProvider; key: string } | null> {
+  const er = envRelay();
+  if (er) return er;
+  const s = await storedSmtp();
+  if (!s?.relay || !s.relayKeyEnc) return null;
+  const key = await unseal(s.relayKeyEnc);
+  if (key === null) throw new WorkflowError("INVALID_STATE", "The saved API key cannot be read (the encryption key changed). Enter it again in Email, Settings.");
+  return { provider: s.relay, key };
 }
 
 export function isEmail(v: string) {
@@ -93,6 +270,19 @@ type Transport = { transporter: nodemailer.Transporter; host: string; port: numb
 async function transportFor(sender: SenderRow | null): Promise<Transport> {
   const env = envSmtp();
   const s = env ? null : await storedSmtp();
+  const relay = await activeRelay();
+  if (relay) {
+    // Through the web API every sender address goes out on the one key; the domain must be verified there.
+    return {
+      transporter: relayTransport(relay.provider, relay.key),
+      host: RELAY_HOST[relay.provider],
+      port: 443,
+      authUser: relay.provider === "brevo" ? "Brevo API key" : "Resend API key",
+      fromAddress: sender?.address ?? env?.fromAddress ?? s?.fromAddress ?? "",
+      fromName: sender?.display_name ?? env?.fromName ?? s?.fromName ?? "Myseed",
+      replyTo: env ? "" : (s?.replyTo ?? ""),
+    };
+  }
   if (!env && !s) throw new WorkflowError("INVALID_STATE", "Email is not set up yet. An administrator adds the SMTP account in Email, Settings.");
   const host = env?.host ?? s!.host;
   const port = env?.port ?? s!.port;
@@ -148,11 +338,13 @@ export async function testSmtp(user: AppUser, senderId: string | null, to: strin
 function explainSmtpError(err: unknown, host: string, port: number) {
   const e = err as { code?: string; responseCode?: number; message?: string };
   const said = e?.message ?? String(err);
+  // Web API sending (port 443): the service's own message is already plain.
+  if (port === 443) return e?.code === "EAUTH" ? `The API key was not accepted. Create a new key and paste it in Email, Settings. (${said})` : `The email service said: ${said}`;
   if (e?.code === "EAUTH" || e?.responseCode === 535)
     return `The server rejected the sign-in. Use the full email address as the sign-in name and the mailbox password (reset it in cPanel, Email Accounts, if unsure). The server said: ${said}`;
   if (/ENOTFOUND|EAI_AGAIN/.test(said)) return `The server name ${host} was not found. Check the outgoing server in cPanel, Email Accounts, Connect Devices.`;
   if (e?.code === "ETIMEDOUT" || /timeout/i.test(said))
-    return `No answer from ${host} on port ${port}. Usually the app's hosting blocks outgoing email ports (Render's free plan blocks 25, 465 and 587). Run Check login to see which ports the server can reach.`;
+    return `No answer from ${host} on port ${port}. Usually the app's hosting blocks outgoing email ports (Render's free plan blocks 25, 465 and 587). Switch "Send through" to a web API (Brevo or Resend) in Email, Settings; it works over HTTPS.`;
   if (/certificate|self.signed|altnames/i.test(said))
     return `The server's certificate does not match ${host}. Use the server name shown in cPanel's Connect Devices (sometimes your host's server name instead of mail.yourdomain). The server said: ${said}`;
   if (/wrong version number|ssl3_get_record/i.test(said)) return `Encryption mismatch: port 465 needs "Encrypted connection from the start" on, port 587 needs it off.`;
@@ -174,6 +366,31 @@ function probePort(host: string, port: number, ms = 8000) {
 // Setup step 3, run from the app's server: find the mail server, reach its port, then sign in. Sends nothing.
 export async function checkSmtpLogin(senderId: string | null): Promise<CheckStep[]> {
   const sender = senderId ? await senderRow(senderId) : null;
+  const relay = await activeRelay();
+  if (relay) {
+    const t = await transportFor(sender);
+    const name = relay.provider === "brevo" ? "Brevo" : "Resend";
+    const steps: CheckStep[] = [];
+    try {
+      await relayCheckKey(relay.provider, relay.key);
+      steps.push({ label: `${name} API`, status: "ok", detail: `The app's server reaches ${name} over HTTPS and the API key is accepted.` });
+    } catch (err) {
+      steps.push({ label: `${name} API`, status: "fail", detail: err instanceof Error ? err.message : String(err) });
+      return steps;
+    }
+    const domain = t.fromAddress.split("@")[1]?.toLowerCase() ?? "";
+    const st = domain ? await relayDomainStatus(relay.provider, relay.key, domain) : "unknown";
+    steps.push(
+      st === "verified"
+        ? { label: "Sender domain", status: "ok", detail: `${domain} is verified with ${name}. Now send a test email to yourself.` }
+        : st === "pending"
+          ? { label: "Sender domain", status: "warn", detail: `${domain} is added in ${name} but not verified yet. Add the DNS records ${name} shows to cPanel, Zone Editor, then press Verify in ${name}.` }
+          : st === "missing"
+            ? { label: "Sender domain", status: "fail", detail: `${domain} is not added in ${name}. Add it under Domains (${relay.provider === "brevo" ? "Senders, Domains and Dedicated IPs" : "Domains"}), then put the DNS records it shows into cPanel, Zone Editor.` }
+            : { label: "Sender domain", status: "warn", detail: `Could not read ${name}'s domain list with this key. Make sure ${domain} is verified there, then send a test.` },
+    );
+    return steps;
+  }
   const t = await transportFor(sender);
   const steps: CheckStep[] = [];
   try {
@@ -193,7 +410,7 @@ export async function checkSmtpLogin(senderId: string | null): Promise<CheckStep
         detail:
           alt === "open"
             ? `Port ${t.port} is ${mine === "timeout" ? "blocked or not answering" : "refused"}, but port ${other} answers. Switch to port ${other} (${other === 465 ? "with" : "without"} "Encrypted connection from the start").`
-            : `Neither port ${t.port} nor ${other} answers from the app's server, so the hosting blocks outgoing email. Move the app to a plan that allows SMTP, or send through a web-based relay.`,
+            : `Neither port ${t.port} nor ${other} answers from the app's server, so the hosting blocks outgoing email. Switch "Send through" to a web API (Brevo or Resend, both free to start), or move the app to a plan that allows SMTP.`,
       });
       return steps;
     }

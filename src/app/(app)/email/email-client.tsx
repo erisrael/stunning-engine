@@ -816,6 +816,10 @@ function EmailSettings({ smtp, senders, people, presets, secretSource, viewerEma
   const router = useRouter();
   const fromEnv = smtp.source === "env";
   const [f, setF] = React.useState({ host: smtp.host, port: smtp.port, secure: smtp.secure, user: smtp.user, password: "", fromName: smtp.fromName, fromAddress: smtp.fromAddress, replyTo: smtp.replyTo });
+  // "smtp", or a web API for hosting that blocks the SMTP ports.
+  const [via, setVia] = React.useState<"smtp" | "brevo" | "resend">(smtp.relay ?? "smtp");
+  const [relayKey, setRelayKey] = React.useState("");
+  const api = via !== "smtp";
   const [preset, setPreset] = React.useState<string>(presets.find((p) => p.host && p.host === smtp.host)?.key ?? (/^mail\./i.test(smtp.host) ? "cpanel" : "custom"));
   const [checks, setChecks] = React.useState<{ title: string; steps: CheckStep[] } | null>(null);
   const [testTo, setTestTo] = React.useState(viewerEmail);
@@ -836,6 +840,50 @@ function EmailSettings({ smtp, senders, people, presets, secretSource, viewerEma
         </CardHeader>
         <CardContent className="space-y-3">
           {!fromEnv && (
+            <div className="space-y-1.5">
+              <Label>Send through</Label>
+              <Select value={via} onValueChange={(v) => setVia(v as typeof via)}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="smtp">SMTP (your mail server)</SelectItem>
+                  <SelectItem value="brevo">Brevo web API (free: 300 emails a day)</SelectItem>
+                  <SelectItem value="resend">Resend web API (free: 3,000 emails a month)</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Use a web API when the hosting blocks the SMTP ports (Render&apos;s free plan blocks 25, 465 and 587). It sends over HTTPS from your own address; your mailbox stays where it is.
+              </p>
+            </div>
+          )}
+          {!fromEnv && api && (
+            <>
+              <ol className="list-decimal space-y-1 rounded-lg border bg-muted/40 py-2 pr-3 pl-8 text-xs text-muted-foreground">
+                {via === "brevo" ? (
+                  <>
+                    <li>Create a free account at brevo.com.</li>
+                    <li>Open Senders, Domains and Dedicated IPs, then Domains, and add your domain (for example myseed.com.et).</li>
+                    <li>In cPanel, Zone Editor, add the TXT and CNAME records Brevo shows, then press Authenticate in Brevo.</li>
+                    <li>Open SMTP and API, then API keys, create a key and paste it below.</li>
+                  </>
+                ) : (
+                  <>
+                    <li>Create a free account at resend.com.</li>
+                    <li>Open Domains and add your domain (for example myseed.com.et).</li>
+                    <li>In cPanel, Zone Editor, add the TXT and MX records Resend shows (on the send subdomain), then press Verify in Resend.</li>
+                    <li>Open API Keys, create a key with sending access and paste it below.</li>
+                  </>
+                )}
+                <li>Save, run Check login, then send a test email to yourself.</li>
+              </ol>
+              <div className="space-y-1.5">
+                <Label>API key</Label>
+                <Input type="password" value={relayKey} onChange={(e) => setRelayKey(e.target.value)} placeholder={smtp.hasRelayKey && smtp.relay === via ? "Saved; paste to replace" : "Paste the API key"} autoComplete="new-password" />
+              </div>
+            </>
+          )}
+          {!fromEnv && !api && (
             <div className="space-y-1.5">
               <Label>Provider</Label>
               <Select
@@ -861,7 +909,7 @@ function EmailSettings({ smtp, senders, people, presets, secretSource, viewerEma
               {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
             </div>
           )}
-          {!fromEnv && preset === "cpanel" && (
+          {!fromEnv && !api && preset === "cpanel" && (
             <ol className="list-decimal space-y-1 rounded-lg border bg-muted/40 py-2 pr-3 pl-8 text-xs text-muted-foreground">
               <li>In cPanel, open Email Accounts and note the outgoing server, port, and username for the mailbox.</li>
               <li>Enter the mailbox password and save.</li>
@@ -871,6 +919,8 @@ function EmailSettings({ smtp, senders, people, presets, secretSource, viewerEma
               </li>
             </ol>
           )}
+          {!api && (
+          <>
           <div className="grid gap-3 sm:grid-cols-[1fr_100px]">
             <div className="space-y-1.5">
               <Label>Server</Label>
@@ -916,6 +966,8 @@ function EmailSettings({ smtp, senders, people, presets, secretSource, viewerEma
               />
             </div>
           </div>
+          </>
+          )}
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label>Default sender name</Label>
@@ -941,11 +993,12 @@ function EmailSettings({ smtp, senders, people, presets, secretSource, viewerEma
                 disabled={!!busy}
                 onClick={async () => {
                   setBusy("save");
-                  const r = await saveSmtpAction({ ...f, password: f.password || null });
+                  const r = await saveSmtpAction({ ...f, password: f.password || null, relay: api ? via : null, relayKey: relayKey || null });
                   setBusy(null);
                   if (!r.ok) return toast.error(r.error);
                   toast.success("Email settings saved");
                   setF({ ...f, password: "" });
+                  setRelayKey("");
                   router.refresh();
                 }}
               >
@@ -976,7 +1029,7 @@ function EmailSettings({ smtp, senders, people, presets, secretSource, viewerEma
                 const r = await checkSmtpLoginAction(null);
                 setBusy(null);
                 if (!r.ok) return toast.error(r.error, { duration: 12000 });
-                setChecks({ title: `Check login: ${smtp.host}`, steps: r.data! });
+                setChecks({ title: `Check login: ${smtp.relay ? (smtp.relay === "brevo" ? "Brevo API" : "Resend API") : smtp.host}`, steps: r.data! });
               }}
             >
               {busy === "login" ? <Loader2Icon className="animate-spin" /> : <CheckCircle2Icon />} Check login
