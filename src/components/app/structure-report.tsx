@@ -13,6 +13,7 @@ import { MultiSelect } from "@/components/app/multi-select";
 import type { StructureRow } from "@/server/structure";
 import { SIMPLE_STATUS_LABELS, STAGE_LABELS, STAGES, type SimpleStatus, type Stage } from "@/lib/domain";
 import { cn } from "@/lib/utils";
+import { tip } from "@/lib/help";
 
 export type ReportMode = "grade" | "subject";
 export type ReportView = "table" | "tree" | "dashboard";
@@ -26,7 +27,7 @@ const CHIP: Record<SimpleStatus, string> = {
 
 export function SimpleChip({ status, className }: { status: SimpleStatus; className?: string }) {
   return (
-    <span className={cn("inline-flex h-6 min-w-16 items-center justify-center rounded-md px-2 text-[11px] font-semibold", CHIP[status], className)}>{SIMPLE_STATUS_LABELS[status]}</span>
+    <span title={tip(`simple.${status}`)} className={cn("inline-flex h-6 min-w-16 items-center justify-center rounded-md px-2 text-[11px] font-semibold", CHIP[status], className)}>{SIMPLE_STATUS_LABELS[status]}</span>
   );
 }
 

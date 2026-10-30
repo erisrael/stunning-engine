@@ -36,7 +36,7 @@ export default async function HandoversPage({ searchParams }: { searchParams: Pr
   return (
     <div className="space-y-4">
       <PageHeader
-        title="Handovers"
+        help="lead" title="Handovers"
         description="Work passed from one team to the next as a batch. The receiving side accepts what arrived or marks items missing with a note, which sends them back to the sender and their lead."
       />
       <HandoverList

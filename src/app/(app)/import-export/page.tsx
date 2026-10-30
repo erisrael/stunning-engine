@@ -43,7 +43,7 @@ export default async function ImportExportPage({ searchParams }: { searchParams:
   return (
     <div className="space-y-4">
       <PageHeader
-        title="Import and export"
+        help="manager" title="Import and export"
         description="Bring in work done outside the app (CSV, Excel or JSON), or take data out as Excel, CSV, JSON, the tracker file or a PDF report. You only see what your role allows."
       />
       <div className="grid gap-4 xl:grid-cols-3">

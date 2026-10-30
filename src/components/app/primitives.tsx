@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { InfoIcon, InboxIcon } from "lucide-react";
+import { CircleHelpIcon, InfoIcon, InboxIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
@@ -13,19 +13,29 @@ export function PageHeader({
   actions,
   children,
   eyebrow,
+  help,
 }: {
   title: React.ReactNode;
   description?: React.ReactNode;
   actions?: React.ReactNode;
   children?: React.ReactNode;
   eyebrow?: React.ReactNode;
+  // Help chapter key: shows a link to that chapter of the manual next to the title.
+  help?: string;
 }) {
   return (
     <div className="flex flex-col gap-3 pb-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
           {eyebrow && <div className="mb-1 text-xs font-medium tracking-wide text-muted-foreground uppercase">{eyebrow}</div>}
-          <h1 className="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">{title}</h1>
+          <h1 className="flex items-center gap-2 text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
+            {title}
+            {help && (
+              <Link href={`/profile/help#${help}`} title="How this page works" aria-label="Help for this page" className="text-muted-foreground hover:text-foreground">
+                <CircleHelpIcon className="size-4" />
+              </Link>
+            )}
+          </h1>
           {description && <p className="mt-1 max-w-3xl text-sm text-muted-foreground">{description}</p>}
         </div>
         {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}

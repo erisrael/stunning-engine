@@ -296,3 +296,6 @@
 :root[data-radius="round"] { --radius: 0.85rem; }
 :root[data-text="large"] { font-size: 17px; }
 :root[data-text="small"] { font-size: 15px; }
+
+/* Overview presentation: the bar under a slide fills while it is shown. */
+@keyframes viz-progress { from { transform: scaleX(0); } to { transform: scaleX(1); } }

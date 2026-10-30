@@ -294,15 +294,16 @@ Studio keeps its content types (notes, exams, flash cards, question bank) and ga
 
 Each step ships on its own and keeps today's screens working until its replacement is ready.
 
-## Phase 6: Overview visualizer, help and onboarding
+## Phase 6: Overview visualizer, help and onboarding (done)
 
-- **Visualizer mode on Overview**: a full-screen presentation that runs by itself, cycling through grades and subjects with progress per stage, recent completions and what is next. Meant for a wall screen or a meeting. It has play/pause, speed and filters, follows the current Overview filters, and refreshes its data while running.
-- **Help section under Profile** (`/profile/help`):
-  - User training manual, one chapter per role (Recording, Editing, Uploading, Publication, Team lead, Manager, Admin, and later each department), with screenshots
-  - Workflow guides: step-by-step walkthroughs of common tasks (start and submit work, accept a handoff, import progress, assign work, fix data in the Data manager, restore from Trash)
-  - Searchable, with links from each page's header to the matching chapter
-- **Tooltips**: short explanations on buttons, status chips, columns and filters across the app, written once in one place so wording stays consistent
-- **Get started**: a first-login tour for new users with short animations showing their role's daily flow, a checklist of first steps, and a "Replay tour" option in Help. Progress is saved per user, so the tour shows only once unless replayed.
+- [x] **Visualizer mode on Overview** (`/overview/present`, the Present button): a full-screen presentation that runs by itself. It cycles through the whole picture, each grade (or subject), recent completions and what is in process. It has play/pause, previous/next, speed, full screen, keyboard (arrows, Space, Esc), follows the Overview's filters, and refreshes every minute
+- [x] **Help section under Profile** (`/profile/help`, also in the account menu):
+  - Training manual, one chapter per role (team member, team lead, Publication, Overview, Manager, Admin, Owner, Departments, plus Getting around and Chat, calls and email), with screenshots; the person's own chapters come first
+  - Workflow guides for common tasks (start and send work, approve and hand over, accept and assign, assign in bulk, import progress, fix data, restore from Trash, present the Overview)
+  - Searchable; the question mark next to each page's title opens the matching chapter
+- [x] **Tooltips**: status chips, Overview cells, action buttons and the Home board columns explain themselves on hover, all written once in `src/lib/help.ts`
+- [x] **Get started**: a first-login tour per role with a short animation of how work moves, then a checklist of first steps. Saved per user (shown once per role), with "Replay tour" in Help
+- [ ] Chapters for each department created from templates, and more screenshots as screens settle
 
 ## Phase 7: HR (people operations)
 

@@ -36,6 +36,7 @@ import { createHandoverAction, decideHandoverAction, verifyChecklistAction } fro
 import type { FlowItem, LeadDeskData } from "@/server/team-flow";
 import { RETURN_REASON_LABELS, STAGE_LABELS, STATUS_LABELS, type Stage } from "@/lib/domain";
 import { cn } from "@/lib/utils";
+import { tip } from "@/lib/help";
 
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -355,7 +356,7 @@ export function MyBoard({ items, title = "My work" }: { items: FlowItem[]; title
             return (
               <div key={col.key} className="flex flex-col gap-2 rounded-xl bg-muted/40 p-2">
                 <div className="px-1">
-                  <p className="text-sm font-semibold">
+                  <p className="text-sm font-semibold" title={tip(`flow.${col.key}`)}>
                     {col.label} <span className="font-normal text-muted-foreground tabular">{list.length}</span>
                   </p>
                   <p className="text-[11px] text-muted-foreground">{col.hint}</p>
@@ -374,26 +375,26 @@ export function MyBoard({ items, title = "My work" }: { items: FlowItem[]; title
                       {isOpen && <WorkPanel item={it} canEdit={it.status !== "lead_review"} lead={false} />}
                       <div className="mt-2 flex flex-wrap gap-1.5">
                         {["queued", "paused"].includes(it.status) && (
-                          <Button size="sm" variant="outline" disabled={b("start")} onClick={() => act(it.id, { action: "start", switchFrom: true }, "Started")}>
+                          <Button title={tip("action.start")} size="sm" variant="outline" disabled={b("start")} onClick={() => act(it.id, { action: "start", switchFrom: true }, "Started")}>
                             <PlayIcon /> Start
                           </Button>
                         )}
                         {it.status === "in_progress" && (
-                          <Button size="sm" variant="outline" disabled={b("pause")} onClick={() => act(it.id, { action: "pause" })}>
+                          <Button title={tip("action.pause")} size="sm" variant="outline" disabled={b("pause")} onClick={() => act(it.id, { action: "pause" })}>
                             <PauseIcon /> Pause
                           </Button>
                         )}
                         {["queued", "paused", "in_progress"].includes(it.status) && (
-                          <Button size="sm" disabled={b("finish")} onClick={async () => (await act(it.id, { action: "finish" }, "Marked done")) || setOpen(it.id)}>
+                          <Button title={tip("action.finish")} size="sm" disabled={b("finish")} onClick={async () => (await act(it.id, { action: "finish" }, "Marked done")) || setOpen(it.id)}>
                             <CheckIcon /> Done
                           </Button>
                         )}
                         {it.status === "finished" && (
                           <>
-                            <Button size="sm" disabled={b("submitLead")} onClick={() => act(it.id, { action: "submitLead" }, "Sent to the team lead")}>
+                            <Button title={tip("action.submitLead")} size="sm" disabled={b("submitLead")} onClick={() => act(it.id, { action: "submitLead" }, "Sent to the team lead")}>
                               <SendIcon /> Send
                             </Button>
-                            <Button size="sm" variant="ghost" disabled={b("reopenFinished")} onClick={() => act(it.id, { action: "reopenFinished" })}>
+                            <Button title={tip("action.reopenFinished")} size="sm" variant="ghost" disabled={b("reopenFinished")} onClick={() => act(it.id, { action: "reopenFinished" })}>
                               <RotateCcwIcon /> Reopen
                             </Button>
                           </>
@@ -416,11 +417,11 @@ export function MyBoard({ items, title = "My work" }: { items: FlowItem[]; title
 // Team lead's desk
 // ---------------------------------------------------------------------------
 
-function Section({ title, hint, count, actions, children }: { title: string; hint: string; count: number; actions?: React.ReactNode; children: React.ReactNode }) {
+function Section({ title, hint, count, actions, children, tipKey }: { title: string; hint: string; count: number; actions?: React.ReactNode; children: React.ReactNode; tipKey?: string }) {
   return (
     <section className="space-y-2 rounded-xl border bg-card p-3" aria-label={title}>
       <div className="flex flex-wrap items-center gap-2">
-        <h3 className="text-sm font-semibold">
+        <h3 className="text-sm font-semibold" title={tipKey && tip(tipKey)}>
           {title} <span className="font-normal text-muted-foreground tabular">{count}</span>
         </h3>
         <span className="text-xs text-muted-foreground">{hint}</span>
@@ -467,7 +468,7 @@ export function LeadDesk({ data }: { data: LeadDeskData }) {
       <div className="grid gap-3 xl:grid-cols-2">
         <Section
           title="To approve"
-          hint="Sent to you by the team"
+          tipKey="flow.review" hint="Sent to you by the team"
           count={data.review.length}
           actions={
             data.review.length > 0 && (
@@ -495,14 +496,14 @@ export function LeadDesk({ data }: { data: LeadDeskData }) {
                     <Button size="sm" variant="outline" onClick={() => setReturning(null)}>
                       Cancel
                     </Button>
-                    <Button size="sm" disabled={!returning.note.trim()} onClick={async () => (await act(it.id, { action: "leadReturn", note: returning.note }, "Returned to the team member")) && setReturning(null)}>
+                    <Button title={tip("action.leadReturn")} size="sm" disabled={!returning.note.trim()} onClick={async () => (await act(it.id, { action: "leadReturn", note: returning.note }, "Returned to the team member")) && setReturning(null)}>
                       Return
                     </Button>
                   </div>
                 </div>
               ) : (
                 <div className="mt-2 flex gap-1.5">
-                  <Button size="sm" disabled={busy === `${it.id}:leadApprove`} onClick={() => act(it.id, { action: "leadApprove" }, "Approved")}>
+                  <Button title={tip("action.leadApprove")} size="sm" disabled={busy === `${it.id}:leadApprove`} onClick={() => act(it.id, { action: "leadApprove" }, "Approved")}>
                     <CheckIcon /> Approve
                   </Button>
                   <Button size="sm" variant="outline" onClick={() => setReturning({ id: it.id, note: "" })}>
@@ -518,7 +519,7 @@ export function LeadDesk({ data }: { data: LeadDeskData }) {
         {data.next && (
           <Section
             title="Ready for handover"
-            hint={`Approved; hand over to the ${STAGE_LABELS[data.next]} team lead`}
+            tipKey="flow.ready" hint={`Approved; hand over to the ${STAGE_LABELS[data.next]} team lead`}
             count={data.ready.length}
             actions={
               data.ready.length > 0 && (
@@ -552,7 +553,7 @@ export function LeadDesk({ data }: { data: LeadDeskData }) {
         )}
 
         {data.prev && (
-          <Section title={`Arriving from ${STAGE_LABELS[data.prev]}`} hint="Handed over to your team; accept it, then assign it" count={data.incoming.length}>
+          <Section title={`Arriving from ${STAGE_LABELS[data.prev]}`} tipKey="flow.incoming" hint="Handed over to your team; accept it, then assign it" count={data.incoming.length}>
             {data.incoming.map((it) => (
               <Card key={it.id} item={it} open={open === it.id} onToggle={() => setOpen(open === it.id ? null : it.id)} badge={it.batch ? <Badge variant="secondary">{it.batch.code}</Badge> : null}>
                 {open === it.id && <WorkPanel item={it} canEdit={false} lead />}
@@ -618,7 +619,7 @@ export function LeadDesk({ data }: { data: LeadDeskData }) {
 
         <Section
           title="To assign"
-          hint={`${stageLabel} work nobody has yet`}
+          tipKey="flow.assign" hint={`${stageLabel} work nobody has yet`}
           count={data.unassigned.length}
           actions={
             data.unassigned.length > 0 && (

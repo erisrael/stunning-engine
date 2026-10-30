@@ -74,7 +74,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
 
   return (
     <div className="space-y-4">
-      <PageHeader title="Admin" description="People, roles, permissions, access and workspace data. Every change is kept in the audit log." actions={
+      <PageHeader help="admin" title="Admin" description="People, roles, permissions, access and workspace data. Every change is kept in the audit log." actions={
           <>
             {manageData && (
               <Button asChild variant="outline" size="sm">

@@ -46,7 +46,7 @@ export default async function EmailPage({ searchParams }: { searchParams: Promis
   ]);
   return (
     <div className="space-y-4">
-      <PageHeader title="Email" description="Send email to people in the workspace and outside it, from your own address or the organisation's. Every email is logged with what happened for each recipient." />
+      <PageHeader help="talk" title="Email" description="Send email to people in the workspace and outside it, from your own address or the organisation's. Every email is logged with what happened for each recipient." />
       <EmailClient
         tab={tab}
         canManage={manage}

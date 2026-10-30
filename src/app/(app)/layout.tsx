@@ -15,6 +15,8 @@ import { CallLayer } from "@/components/app/call-layer";
 import { reportDepartments } from "@/server/owners";
 import { myCustomDepartments } from "@/server/departments";
 import { can } from "@/server/users";
+import { GetStarted } from "@/components/app/get-started";
+import { audienceFor } from "@/lib/help";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const viewer = await requireViewer();
@@ -45,6 +47,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         )}
         <main className="mx-auto w-full max-w-[1600px] min-w-0 flex-1 px-3 py-4 sm:px-6 sm:py-6">{children}</main>
         <ChatKeyBootstrap viewerId={viewer.id} />
+        {!viewer.mustChangePassword && <GetStarted audience={audienceFor(viewer.activeRole, viewer.leads)} tour={viewer.prefs.tour ?? {}} />}
       </SidebarInset>
     </SidebarProvider>
     </CallLayer>

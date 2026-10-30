@@ -27,7 +27,7 @@ export default async function ChecklistsPage({ searchParams }: { searchParams: P
   return (
     <div className="space-y-4">
       <PageHeader
-        title="Checklists"
+        help="manager" title="Checklists"
         description="Every stage has a standard checklist that applies to all its work. Extra checklists add lines for particular kinds of work and are picked per person when assigning. Lines can be required, and can need the team lead's verification before the handoff."
       />
       <ChecklistTemplates templates={templates} stages={stages} filter={filter} standard={Object.fromEntries(stages.map((s) => [s, standard[s].map((c) => ({ ...c, verify: !!c.verify }))]))} />

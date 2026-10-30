@@ -29,7 +29,7 @@ export default async function OwnersPage({ searchParams }: { searchParams: Promi
   return (
     <div className="space-y-4">
       <PageHeader
-        title={owner ? "Owners" : "Department reports"}
+        help="owner" title={owner ? "Owners" : "Department reports"}
         description={
           owner
             ? "How the company is doing: production, products, every department's progress, and the reports their heads and leads write. Read only."

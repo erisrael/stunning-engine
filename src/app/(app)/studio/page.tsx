@@ -45,7 +45,7 @@ export default async function StudioPage({ searchParams }: { searchParams: Promi
   return (
     <div className="space-y-4">
       <PageHeader
-        title="Studio"
+        help="departments" title="Studio"
         description={`Notes, exams, the question bank and flash cards, placed on the curriculum. Write and submit for review; heads and leads approve and publish.${access.readOnly ? " You are viewing as an owner (read only)." : access.position ? ` You are ${POSITION_LABELS[access.position].toLowerCase()} here.` : ""}`}
       />
       <StudioClient

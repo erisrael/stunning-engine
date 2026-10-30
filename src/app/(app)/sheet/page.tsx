@@ -33,7 +33,7 @@ export default async function SheetPage({ searchParams }: { searchParams: Promis
   return (
     <div className="space-y-4">
       <PageHeader
-        title="Sheet view"
+        help="lead" title="Sheet view"
         description="The familiar handoff and upload table, editing the same live records. Colored cells are dropdowns; locked cells explain who is responsible."
         actions={<PageImport viewer={viewer} page="work" />}
       />

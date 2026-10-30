@@ -1,3 +1,4 @@
+import type { Audience } from "@/lib/help";
 import { all, get, parseJson } from "./db";
 import { getPermissionMatrix } from "./settings";
 import { leadKey, type Capability, type Role, type Stage } from "@/lib/domain";
@@ -14,6 +15,8 @@ export type UserPrefs = {
   defaultLanding?: string;
   theme?: "light" | "dark" | "system";
   exportSettings?: { format?: string; scope?: string; grouping?: string; includeDates?: boolean; columns?: string[]; orientation?: string };
+  // Get-started tour: which role audiences have seen it, and which first steps are ticked.
+  tour?: { seen?: Audience[]; steps?: string[] };
 };
 
 export type AppUser = {

@@ -51,7 +51,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   return (
     <div className="space-y-4">
       <PageHeader
-        title="Reports"
+        help="manager" title="Reports"
         description={`Last ${weeks} complete weeks (${window}) compared with the ${weeks} weeks before. ${tzLabel(tz)}.`}
         actions={
           <>

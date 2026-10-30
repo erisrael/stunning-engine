@@ -39,7 +39,7 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
   return (
     <div className="space-y-4">
       <PageHeader
-        title="List"
+        help="lead" title="List"
         description="Every part in your access, grouped by grade and subject like the Overview. Click a row to open it; right-click for actions."
         actions={
           <>

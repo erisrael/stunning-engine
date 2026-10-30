@@ -67,7 +67,7 @@ export default async function CoveragePage({ searchParams }: { searchParams: Pro
   return (
     <div className="space-y-4">
       <PageHeader
-        title="Curriculum coverage"
+        help="overview" title="Curriculum coverage"
         description="Every unit and part of the curriculum against production. A part counts as recorded once its Recording stage is done, and published once it is live."
         actions={<PageImport viewer={viewer} page="curriculum" label="Import curriculum" />}
       />

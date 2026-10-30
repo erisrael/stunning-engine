@@ -31,7 +31,7 @@ export default async function DataManagerPage({ searchParams }: { searchParams: 
   return (
     <div className="space-y-4">
       <PageHeader
-        title="Data manager"
+        help="admin" title="Data manager"
         description="Every grade, subject, unit, part and item in one place. Rename, move, merge and fill in bulk, repair broken imports, and restore anything deleted. Every change is kept in the audit log."
         actions={
           <Button asChild variant="outline" size="sm">

@@ -38,7 +38,7 @@ export async function ManagerHome({ viewer, timezone, greeting }: { viewer: View
   ].filter((a) => a.show);
   return (
     <div className="space-y-5">
-      <PageHeader eyebrow="Home" title={`${greeting}, ${viewer.name.split(" ")[0]}`} description="How much has been done in each stage, and the shortcuts you use most." />
+      <PageHeader help="manager" eyebrow="Home" title={`${greeting}, ${viewer.name.split(" ")[0]}`} description="How much has been done in each stage, and the shortcuts you use most." />
       <section aria-label="Quick actions" className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-10">
         {actions.map((a) => (
           <Link

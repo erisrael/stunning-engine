@@ -33,6 +33,7 @@ import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuLabel, Con
 import { useActions, type DialogKind, type ItemRef } from "@/components/app/action-center";
 import { NEXT_STAGE, STAGE_LABELS, STAGES, type Capability, type Role, type Stage } from "@/lib/domain";
 import { cn } from "@/lib/utils";
+import { tip } from "@/lib/help";
 
 export type ActionItem = ItemRef & {
   lifecycle: string;
@@ -183,6 +184,7 @@ export function ItemActions({
           key={a.key}
           size={size}
           variant={a.variant ?? "default"}
+          title={tip(`action.${a.kind}`)}
           disabled={busy}
           onClick={async (e) => {
             e.stopPropagation();

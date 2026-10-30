@@ -10,7 +10,7 @@ export default async function RequestsPage() {
   const [targets, mine] = await Promise.all([requestTargets(viewer), myRequests(viewer)]);
   return (
     <div className="space-y-4">
-      <PageHeader title="Requests" description="Ask another department for something (a design, a fix, a purchase), and follow what happens to your requests. A head or lead accepts or declines each one." />
+      <PageHeader help="departments" title="Requests" description="Ask another department for something (a design, a fix, a purchase), and follow what happens to your requests. A head or lead accepts or declines each one." />
       <RequestsClient targets={targets} mine={mine} />
     </div>
   );

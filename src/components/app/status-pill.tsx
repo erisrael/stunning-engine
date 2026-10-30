@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { tip } from "@/lib/help";
 import { sheetStatusLabel, LIFECYCLE_LABELS, type AttemptStatus, type Stage } from "@/lib/domain";
 
 export type Tone = "neutral" | "queued" | "active" | "paused" | "blocked" | "handoff" | "done" | "scheduled" | "failed";
@@ -69,15 +70,18 @@ export function StatusPill({
   className,
   size = "sm",
   dot = true,
+  title,
 }: {
   tone: Tone;
   label: string;
   className?: string;
   size?: "xs" | "sm";
   dot?: boolean;
+  title?: string;
 }) {
   return (
     <span
+      title={title}
       className={cn(
         "inline-flex max-w-full items-center gap-1.5 rounded-full font-medium whitespace-nowrap",
         size === "xs" ? "h-5 px-2 text-[11px]" : "h-6 px-2.5 text-xs",
@@ -107,9 +111,9 @@ export function ItemStatusPill({
 }) {
   if (lifecycle !== "in_production" || !stage) {
     const tone: Tone = lifecycle === "published" ? "done" : "neutral";
-    return <StatusPill tone={tone} size={size} label={LIFECYCLE_LABELS[lifecycle as keyof typeof LIFECYCLE_LABELS] ?? lifecycle} />;
+    return <StatusPill tone={tone} size={size} title={tip(`status.${lifecycle}`)} label={LIFECYCLE_LABELS[lifecycle as keyof typeof LIFECYCLE_LABELS] ?? lifecycle} />;
   }
-  return <StatusPill tone={toneFor(status, substate)} size={size} label={sheetStatusLabel(stage, status, substate)} />;
+  return <StatusPill tone={toneFor(status, substate)} size={size} title={tip(`status.${status}`)} label={sheetStatusLabel(stage, status, substate)} />;
 }
 
 export function PriorityBadge({ priority }: { priority: string }) {

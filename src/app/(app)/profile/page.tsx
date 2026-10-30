@@ -19,7 +19,14 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
     : "All grades and subjects";
   return (
     <div className="space-y-4">
-      <PageHeader title="Profile and preferences" />
+      <PageHeader
+        title="Profile and preferences"
+        actions={
+          <Link href="/profile/help" className="text-sm font-medium text-primary hover:underline">
+            Help and training
+          </Link>
+        }
+      />
       <div className="grid gap-4 lg:grid-cols-3">
         <Card>
           <CardHeader className="flex-row items-center gap-3">

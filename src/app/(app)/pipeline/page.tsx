@@ -58,7 +58,7 @@ export default async function PipelinePage({ searchParams }: { searchParams: Pro
   return (
     <div className="space-y-4">
       <PageHeader
-        title={mode === "mine" ? "My work" : "Board"}
+        help="lead" title={mode === "mine" ? "My work" : "Board"}
         description={
           mode === "mine"
             ? "Your items in your stage. Drag to start, pause, block or send to the next team. The next team's lead is notified when you send."

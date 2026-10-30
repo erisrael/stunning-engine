@@ -11,7 +11,7 @@ export default async function CompanyPage({ searchParams }: { searchParams: Prom
   if (!canSeeCompany(viewer)) redirect("/dashboard?denied=permission");
   return (
     <div className="space-y-4">
-      <PageHeader title="Company overview" description="Overall progress and money across the company, and each department's own dashboard. Switch departments below. Read only." />
+      <PageHeader help="owner" title="Company overview" description="Overall progress and money across the company, and each department's own dashboard. Switch departments below. Read only." />
       <CompanyOverview viewer={viewer} sp={await searchParams} />
     </div>
   );

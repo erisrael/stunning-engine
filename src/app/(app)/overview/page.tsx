@@ -4,6 +4,7 @@ import { structureRows } from "@/server/structure";
 import { PageHeader } from "@/components/app/primitives";
 import { StructureReport } from "@/components/app/structure-report";
 import { PageImport } from "@/components/app/page-import";
+import { PresentButton } from "@/components/app/present-button";
 
 export const metadata = { title: "Overview" };
 
@@ -17,10 +18,11 @@ export default async function OverviewPage() {
   return (
     <div className="space-y-4">
       <PageHeader
-        title="Overview"
+        help="overview" title="Overview"
         description="Where every unit and part stands in Recording, Editing, Uploading and Publication. Switch between grade-first and subject-first, and between a table and a hierarchy."
         actions={
           <>
+            <PresentButton />
             <PageImport viewer={viewer} page="curriculum" label="Import curriculum" />
             <PageImport viewer={viewer} page="work" label="Import progress" />
           </>
