@@ -7,6 +7,7 @@ import { putDatabaseBlob } from "@/server/storage";
 export async function POST(request: Request) {
   const viewer = await getViewer();
   if (!viewer) return new Response("Sign in required", { status: 401 });
+  if (viewer.previewBy) return new Response("Not available in View as", { status: 403 });
   const id = new URL(request.url).searchParams.get("id") ?? "";
   const f = await get<{ uploader_id: string; storage: string; size: number; message_id: string | null; deleted_at: string | null }>(
     "SELECT uploader_id, storage, size, message_id, deleted_at FROM chat_files WHERE id = ?",

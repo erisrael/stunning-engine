@@ -18,7 +18,9 @@ export const metadata = { title: "Team and capacity" };
 export default async function TeamPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const viewer = await requireCapability("nav.team");
   const sp = await searchParams;
-  const isManager = viewer.roles.includes("manager");
+  // Managers see everyone; team leads see their own team's members; everyone else sees only themselves.
+  const manager = viewer.roles.includes("manager");
+  const isManager = manager || viewer.leads.length > 0;
   const s = await getSettings();
   const tz = s.workspace.timezone;
   const now = nowIso();
@@ -28,7 +30,8 @@ export default async function TeamPage({ searchParams }: { searchParams: Promise
   const effort = await myEffort(viewer.id, now);
   const effortTotal = effort.reduce((a, e) => a + ((e.ended_at ? new Date(e.ended_at).getTime() : Date.now()) - new Date(e.started_at).getTime()), 0);
   const me = data.team.find((t) => t.id === viewer.id);
-  const team = isManager ? data.team : data.team.filter((t) => t.id === viewer.id);
+  const inMyTeam = (t: { id: string; roles: string[] }) => t.id === viewer.id || viewer.leads.some((st) => t.roles.includes(st));
+  const team = manager ? data.team : isManager ? data.team.filter(inMyTeam) : data.team.filter((t) => t.id === viewer.id);
 
   return (
     <div className="space-y-4">
@@ -164,10 +167,10 @@ export default async function TeamPage({ searchParams }: { searchParams: Promise
           </Card>
         </TabsContent>
         <TabsContent value="leave">
-          <LeaveManager leave={isManager ? data.leave : data.leave.filter((l) => l.user_id === viewer.id)} users={data.team.map((t) => ({ id: t.id, name: t.name }))} names={names} viewerId={viewer.id} isManager={isManager} />
+          <LeaveManager leave={manager ? data.leave : data.leave.filter((l) => team.some((t) => t.id === l.user_id))} users={team.map((t) => ({ id: t.id, name: t.name }))} names={names} viewerId={viewer.id} isManager={isManager} />
         </TabsContent>
         <TabsContent value="corrections">
-          <Corrections rows={isManager ? data.corrections : data.corrections.filter((c) => c.requested_by === viewer.id)} names={names} tz={tz} isManager={isManager} />
+          <Corrections rows={manager ? data.corrections : data.corrections.filter((c) => team.some((t) => t.id === c.requested_by))} names={names} tz={tz} isManager={isManager} />
         </TabsContent>
       </Tabs>
     </div>

@@ -83,7 +83,7 @@ In-app voice and video calls with ringing on the other side and a clear end, bui
 - [ ] Group calls of up to 4 people in the app
 - [ ] Continuous ringing on a locked phone: comes with the native app (Phase 5b)
 
-## Phase 5b: Native app shell
+## Phase 5b: Native app shell (built last, after every other phase)
 
 The same app inside a small native app for Android and iPhone, so calls ring like a phone call and notifications are reliable. The pages stay the web app; nothing is built twice.
 
@@ -328,6 +328,18 @@ What HR does in the app, as its own module (`/hr`) with HR Manager and HR Office
 3. **Recruitment, onboarding and offboarding** (done): openings with a hiring manager; applicant pipeline (applied, screening, interview, offer, hired, not selected) with CVs; interviews that notify the interviewers, who open the CV and add scorecards from My record; hire into an employee on probation under the hiring manager, with an app account (ordinary roles only, unless the person hiring manages users) and onboarding started; onboarding and offboarding checklists ticked by HR, the line manager or the person, editable by the HR Manager; offboarding sets the last day, tells the line manager, can remove app access, and holds the final-settlement line for Finance
 4. **Performance, training and cases** (done): goals shared by the person and their line manager; one-to-one notes; review cycles (self review, then the line manager) with production stage work, hours, department tasks, goals and leave attached as evidence; courses assigned to people, completion and renewal reminders; confidential cases for `hr.cases` only, kept out of the audit log's details
 5. **Reports** (done): headcount by department, type and status; joiners and leavers by month; turnover; leave taken by type; training completion; hiring; CSV download. Absenteeism and lateness come with Attendance (Phase 9)
+
+## Phase 7b: Workspace polish, security and integrations (done)
+
+- [x] Sidebar: My space at the top; the four work views as one Work views entry; department sub-links; a tooltip on every entry and top-bar control; each person hides entries with the gear; Admin sets each role's sidebar (Admin, Sidebar)
+- [x] Presentation: customizable slides, analyzer (bottleneck, pace and forecast, leaders, load), comparisons (period, groups, stage funnel), today/week/month/all-time, detailed mode, voice mode, exports to PowerPoint, video, image, PDF, CSV, JSON and narration script
+- [x] Animated "Show me how" explainers on key pages, in Help chapters and in the longer get-started tours; Help shows each person only their own chapters (managers and Admin can show every role's)
+- [x] Dev team: GitHub repositories (CI, pull requests linked to task codes, issues, milestones, releases, commits). Finance departments: exports to Sage 50 (Peachtree), QuickBooks and Xero with account mapping. Power BI, Excel and Google Sheets feeds with API keys (Admin, Integrations)
+- [x] Admin, View as: see the app as any role, department, team lead or person, read only, with chat, email and private documents closed
+- [x] Sessions and devices: IP, device, last active; end sessions, sign a person out everywhere, block and unblock devices; everyone sees and ends their own on Profile
+- [x] Team page: team leads see their own team's members; members see only themselves
+- [x] Profiles: photo, cover, headline, skills with levels, education and study status, experience, languages, links, files (CV, certificates) seen by the person, their lead or manager, HR and Admin, and sections each person can hide; People directory searchable by skill
+- [x] Forgotten passwords: reset with Google (Gmail) or an emailed link (Admin, Sign-in)
 
 ## Phase 8: Finance
 

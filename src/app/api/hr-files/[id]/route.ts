@@ -5,6 +5,8 @@ import { readDocument } from "@/server/hr";
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const viewer = await getViewer();
   if (!viewer) return new Response("Sign in required", { status: 401 });
+  // View as never opens someone's private documents.
+  if (viewer.previewBy) return new Response("Not available in View as", { status: 403 });
   const file = await readDocument(viewer, (await params).id).catch(() => null);
   if (!file) return new Response("Not found", { status: 404 });
   // Files browsers could run (HTML, SVG) are always downloaded, never shown inline.

@@ -21,6 +21,11 @@ import { DATASETS, listTokens, type Dataset } from "@/server/feeds";
 import { IntegrationsAdmin } from "@/components/app/integrations";
 import { sidebarDefaults } from "@/server/ui-prefs";
 import { SidebarAdmin } from "./sidebar-admin";
+import { listBlocked, listSessions } from "@/server/devices";
+import { SessionsTable } from "@/components/app/security";
+import { googleSettings } from "@/server/password-reset";
+import { smtpSettings } from "@/server/email";
+import { SignInAdmin } from "./signin-admin";
 
 export const metadata = { title: "Admin" };
 
@@ -99,6 +104,8 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           {manageUsers && <TabsTrigger value="departments">Departments</TabsTrigger>}
           {manageUsers && <TabsTrigger value="permissions">Roles and permissions</TabsTrigger>}
           {manageUsers && <TabsTrigger value="access">Access</TabsTrigger>}
+          {manageUsers && <TabsTrigger value="sessions">Sessions and devices</TabsTrigger>}
+          {manageUsers && <TabsTrigger value="signin">Sign-in</TabsTrigger>}
           {manageUsers && <TabsTrigger value="sidebar">Sidebar</TabsTrigger>}
           {manageUsers && <TabsTrigger value="integrations">Integrations</TabsTrigger>}
           {manageData && <TabsTrigger value="data">Data</TabsTrigger>}
@@ -125,6 +132,12 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
             </TabsContent>
             <TabsContent value="access">
               <AccessAdmin users={users} grades={grades} subjects={subjects} />
+            </TabsContent>
+            <TabsContent value="sessions">
+              <SessionsTable rows={await listSessions(viewer, { everyone: true })} blocked={await listBlocked(viewer)} everyone />
+            </TabsContent>
+            <TabsContent value="signin">
+              <SignInAdmin google={await googleSettings()} emailReady={(await smtpSettings()).source !== "none"} />
             </TabsContent>
             <TabsContent value="sidebar">
               <SidebarAdmin defaults={await sidebarDefaults()} />

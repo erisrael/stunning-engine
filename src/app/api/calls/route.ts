@@ -7,6 +7,7 @@ import { WorkflowError } from "@/server/workflow";
 export async function POST(req: Request) {
   const viewer = await getViewer();
   if (!viewer) return Response.json({ ok: false, error: "Sign in again." }, { status: 401 });
+  if (viewer.previewBy) return Response.json({ ok: false, error: "Calls are not available in View as." }, { status: 403 });
   let body: { op?: string; callId?: string; groupId?: string; media?: string; afterSeq?: number; kind?: string; payload?: string; reason?: string };
   try {
     body = JSON.parse(await req.text());

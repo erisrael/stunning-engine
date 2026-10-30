@@ -43,9 +43,14 @@ export function LoginForm({ next }: { next?: string }) {
           />
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="password" className="text-xs font-semibold">
-            Password
-          </Label>
+          <div className="flex items-center justify-between">
+            <Label htmlFor="password" className="text-xs font-semibold">
+              Password
+            </Label>
+            <a href="/login/forgot" className="text-xs font-medium text-primary hover:underline">
+              Forgot password?
+            </a>
+          </div>
           <div className="relative">
             <Input
               id="password"
@@ -82,7 +87,13 @@ export function LoginForm({ next }: { next?: string }) {
             "Log in"
           )}
         </Button>
-        <p className="text-center text-xs text-muted-foreground">Forgot your password? Ask your admin to reset it.</p>
+        <p className="text-center text-xs text-muted-foreground">
+          Forgot your password?{" "}
+          <a href="/login/forgot" className="font-medium text-primary hover:underline">
+            Reset it with Gmail or an email link
+          </a>
+          .
+        </p>
       </form>
 
     </div>

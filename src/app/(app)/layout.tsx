@@ -18,6 +18,9 @@ import { can } from "@/server/users";
 import { GetStarted } from "@/components/app/get-started";
 import { audienceFor } from "@/lib/help";
 import { sidebarDefaults } from "@/server/ui-prefs";
+import { avatarsFor } from "@/server/profiles";
+import { PreviewBanner } from "@/components/app/security";
+import { ROLE_LABELS } from "@/lib/domain";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const viewer = await requireViewer();
@@ -36,7 +39,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <SidebarProvider defaultOpen={sidebarCookie !== "false"}>
       <AppSidebar reportsLink={!can(viewer, "owners.view") && (await reportDepartments(viewer)).length > 0} customDepts={await myCustomDepartments(viewer)} userHidden={viewer.prefs.sidebarHidden ?? []} roleHidden={(await sidebarDefaults())[viewer.activeRole] ?? []} perms={viewer.perms} activeRole={viewer.activeRole} counts={counts} workspaceName={settings.workspace.name} />
       <SidebarInset className="min-w-0">
-        <Topbar user={{ name: viewer.name, email: viewer.email, roles: viewer.roles }} activeRole={viewer.activeRole} unread={counts.notifications} chatUnread={counts.chat} />
+        {viewer.previewBy && <PreviewBanner name={viewer.name} role={ROLE_LABELS[viewer.activeRole]} />}
+        <Topbar user={{ name: viewer.name, email: viewer.email, roles: viewer.roles, avatar: (await avatarsFor([viewer.id]))[viewer.id] ?? null }} activeRole={viewer.activeRole} unread={counts.notifications} chatUnread={counts.chat} />
         {viewer.mustChangePassword && (
           <div className="border-b bg-[var(--st-paused-bg)] px-4 py-2 text-sm text-[var(--st-paused-fg)] no-print">
             You are signed in with a temporary password.{" "}

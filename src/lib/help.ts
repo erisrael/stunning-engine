@@ -348,6 +348,50 @@ export const CHAPTERS: Chapter[] = [
     ],
   },
   {
+    key: "account",
+    title: "Your profile, sign-in and devices",
+    audiences: "all",
+    summary: "Make your profile yours, see where you are signed in, and reset a forgotten password.",
+    sections: [
+      {
+        title: "Your profile",
+        steps: [
+          "Open Profile from the account menu, then Edit profile.",
+          "Add a photo and choose a cover colour, a headline, where you are, and whether you are studying.",
+          "Add your skills with a level, your education, experience, languages and links.",
+          "Upload your CV and certificates. Your lead or line manager, HR and Admin can open them; other colleagues cannot.",
+          "Untick sections under Shown to colleagues to keep them to yourself.",
+        ],
+      },
+      { title: "People", text: "People in the sidebar lists everyone with their headline and top skills. Search by a skill, for example Premiere, to find who can help." },
+      {
+        title: "Where you are signed in",
+        text: "The bottom of Profile lists every device you are signed in on, with its browser, IP address and last use. End a session you do not recognise, or sign out all others, then change your password.",
+      },
+      {
+        title: "Forgot your password",
+        steps: [
+          "On the sign-in page, press Forgot password?",
+          "Press Reset with Google and choose your Gmail account (the same email you sign in with), or ask for an email link.",
+          "Choose a new password. You are signed in, and signed out everywhere else.",
+        ],
+      },
+    ],
+  },
+  {
+    key: "admin-tools",
+    title: "Admin: View as, devices, sign-in, sidebar and integrations",
+    audiences: ["manager"],
+    summary: "See what others see, control sessions and devices, connect Google, shape each role's sidebar, and connect Power BI.",
+    sections: [
+      { title: "View as", text: "Admin, View as: choose a role, department or position, then a person. You see exactly their sidebar and pages, read only. Their chat, email and private documents stay closed, and every use is in the audit log. Exit from the strip at the top." },
+      { title: "Sessions and devices", text: "Admin, Sessions and devices lists everyone signed in with device, IP address and last use. End one session, sign a person out everywhere, or block a device so it cannot sign in again." },
+      { title: "Sign-in", text: "Admin, Sign-in connects a free Google OAuth client so people can reset forgotten passwords with Gmail. The email link uses the account in Email, Settings." },
+      { title: "Sidebar per role", text: "Admin, Sidebar hides entries a role does not need. Permissions still decide what each role can open." },
+      { title: "Integrations", text: "Admin, Integrations creates API keys for Power BI, Excel and Google Sheets feeds. The Dev team connects GitHub in its Repositories tab; a Finance department exports paid items to Sage 50 (Peachtree), QuickBooks or Xero from its Accounting tab." },
+    ],
+  },
+  {
     key: "talk",
     title: "Chat, calls and email",
     audiences: "all",
@@ -539,6 +583,8 @@ export const CHAPTER_EXPLAINERS: Record<string, ExplainerKey[]> = {
   manager: ["assign"],
   admin: ["view-as"],
   me: ["profile"],
+  account: ["profile", "sidebar"],
+  "admin-tools": ["view-as"],
 };
 
 export type FirstStep = { key: string; label: string; href: string };
@@ -610,6 +656,7 @@ export const NAV_TIPS: Record<string, string> = {
   "/marketing": "Campaigns, the content calendar, tasks and KPIs.",
   "/hr": "People records, leave, hiring, joiners and leavers, performance, training and reports.",
   "/requests": "Ask another department for something, and follow what happens to it.",
+  "/people": "Everyone in the workspace: find colleagues by name, job or skill and open their profiles.",
   "/owners": "Read-only stats and reports from every department, for owners.",
   "/items/new": "Add a new production item.",
   "/assign": "Assign many parts to people at once, with due dates.",
@@ -619,6 +666,8 @@ export const NAV_TIPS: Record<string, string> = {
   "/admin": "People, roles, permissions, sessions and devices, View as, and sign-in options.",
   "/admin/data": "Find and fix records, check data health, undo imports and restore from Trash.",
   "/audit": "Every recorded change, who made it and when.",
+  "/admin/preview": "See the app exactly as a role, department, team lead or person sees it. Read only.",
+  "/admin?tab=sessions": "Who is signed in where: devices, IP addresses, ending sessions and blocking devices.",
   "top.search": "Search codes, titles and teachers (Ctrl K).",
   "top.role": "If you hold more than one role, choose which one you are working as. It changes your view only.",
   "top.chat": "Chat with people and groups, and start calls.",

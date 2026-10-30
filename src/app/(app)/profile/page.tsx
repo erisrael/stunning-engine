@@ -7,6 +7,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { PageHeader, UserAvatar } from "@/components/app/primitives";
 import { PasswordForm, PrefsForm } from "./profile-client";
 import { PushToggle } from "@/components/app/push-toggle";
+import { getProfile } from "@/server/profiles";
+import { listSessions } from "@/server/devices";
+import { ProfileCard } from "@/components/app/profile-card";
+import { SessionsTable } from "@/components/app/security";
 
 export const metadata = { title: "Profile" };
 
@@ -28,6 +32,8 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
           </Link>
         }
       />
+      <ProfileCard profile={(await getProfile(viewer, viewer.id))!} />
+      <h2 className="pt-2 text-lg font-semibold">Account and preferences</h2>
       <div className="grid gap-4 lg:grid-cols-3">
         <Card>
           <CardHeader className="flex-row items-center gap-3">
@@ -86,6 +92,7 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
           </CardContent>
         </Card>
       </div>
+      <SessionsTable rows={await listSessions(viewer)} />
     </div>
   );
 }

@@ -1,3 +1,4 @@
+import { EmptyState } from "@/components/app/primitives";
 import { redirect } from "next/navigation";
 import { requireViewer } from "@/server/auth";
 import { all } from "@/server/db";
@@ -15,6 +16,8 @@ const TABS = ["compose", "sent", "templates", "settings"] as const;
 
 export default async function EmailPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const viewer = await requireViewer();
+  // Conversations and mail are private; View as does not open them.
+  if (viewer.previewBy) return <EmptyState title="Private in View as" description={`${viewer.name}'s ${"email"} is private, so View as does not show it.`} />;
   const manage = can(viewer, "email.manage");
   if (!can(viewer, "email.send") && !manage) redirect("/dashboard?denied=permission");
   const sp = await searchParams;

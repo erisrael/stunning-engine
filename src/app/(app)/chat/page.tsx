@@ -1,3 +1,4 @@
+import { EmptyState } from "@/components/app/primitives";
 import { requireViewer } from "@/server/auth";
 import { run, nowIso } from "@/server/db";
 import { canManageChat, groupMessages, listGroups, membership } from "@/server/chat";
@@ -10,6 +11,8 @@ export const metadata = { title: "Chat" };
 
 export default async function ChatPage({ searchParams }: { searchParams: Promise<{ g?: string }> }) {
   const viewer = await requireViewer();
+  // Conversations and mail are private; View as does not open them.
+  if (viewer.previewBy) return <EmptyState title="Private in View as" description={`${viewer.name}'s ${"chat"} is private, so View as does not show it.`} />;
   const { g } = await searchParams;
   const groups = await listGroups(viewer, { includeArchived: canManageChat(viewer) });
   const active = groups.find((x) => x.id === g) ?? null;

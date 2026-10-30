@@ -76,7 +76,7 @@ const TITLES: Record<string, string> = {
   checklists: "Checklists",
 };
 
-export function Topbar({ user, activeRole, unread, chatUnread }: { user: { name: string; email: string; roles: Role[] }; activeRole: Role; unread: number; chatUnread: number }) {
+export function Topbar({ user, activeRole, unread, chatUnread }: { user: { name: string; email: string; roles: Role[]; avatar?: string | null }; activeRole: Role; unread: number; chatUnread: number }) {
   const pathname = usePathname();
   const parts = pathname.split("/").filter(Boolean);
   const [searchOpen, setSearchOpen] = React.useState(false);
@@ -210,7 +210,7 @@ function RoleSwitcher({ roles, active }: { roles: Role[]; active: Role }) {
   );
 }
 
-function UserMenu({ user }: { user: { name: string; email: string } }) {
+function UserMenu({ user }: { user: { name: string; email: string; avatar?: string | null } }) {
   const { theme, setTheme } = useTheme();
   const [look, setLook] = useAppearance();
   return (
@@ -218,7 +218,12 @@ function UserMenu({ user }: { user: { name: string; email: string } }) {
       <Hint title={user.name} tip={NAV_TIPS["top.account"]}>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="icon" className="rounded-full" aria-label="Account menu">
-          <UserAvatar name={user.name} size="md" />
+          {user.avatar ? (
+            // eslint-disable-next-line @next/next/no-img-element -- small data URL photo
+            <img src={user.avatar} alt="" className="size-8 rounded-full object-cover" />
+          ) : (
+            <UserAvatar name={user.name} size="md" />
+          )}
         </Button>
       </DropdownMenuTrigger>
       </Hint>

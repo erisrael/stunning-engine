@@ -849,3 +849,13 @@ export async function resendFailed(user: AppUser, id: string, workspace: string)
     { logId: id, addresses: failed.map((r) => r.address) },
   );
 }
+
+// A message from the workspace itself (password reset links), through the default account or web API.
+export async function sendSystemEmail(to: string, subject: string, text: string, html?: string) {
+  const t = await transportFor(null);
+  try {
+    await t.transporter.sendMail({ from: { name: t.fromName, address: t.fromAddress }, to, subject, text, html, replyTo: t.replyTo || undefined });
+  } finally {
+    t.transporter.close();
+  }
+}

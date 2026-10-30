@@ -1,11 +1,14 @@
 import { revalidatePath } from "next/cache";
 import { WorkflowError } from "./workflow";
+import { inPreview } from "./auth";
 
 export type ActionResult<T = unknown> =
   | { ok: true; data?: T; duplicate?: boolean }
   | { ok: false; error: string; code?: string; details?: unknown };
 
 export async function wrap<T>(fn: () => T | Promise<T>, opts: { revalidate?: boolean } = {}): Promise<ActionResult<T>> {
+  // View as is read only: anything that changes data is refused (reads, which do not revalidate, still work).
+  if (opts.revalidate !== false && (await inPreview())) return { ok: false, error: "View as is read only. Exit View as (top of the page) to make changes.", code: "PREVIEW" };
   try {
     const data = await fn();
     if (opts.revalidate !== false) revalidatePath("/", "layout");

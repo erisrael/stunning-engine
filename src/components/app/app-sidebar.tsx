@@ -14,6 +14,8 @@ import {
   ContactIcon,
   CrownIcon,
   DatabaseIcon,
+  EyeIcon,
+  MonitorSmartphoneIcon,
   FilePlus2Icon,
   FileTextIcon,
   GridIcon,
@@ -34,6 +36,7 @@ import {
   UserCogIcon,
   UserPlusIcon,
   UsersIcon,
+  UsersRoundIcon,
 } from "lucide-react";
 import {
   Sidebar,
@@ -172,6 +175,7 @@ export function AppSidebar({
             { label: "Reports", href: "/hr?tab=reports" },
           ],
         },
+        { href: "/people", label: "People", icon: UsersRoundIcon },
         { href: "/requests", label: "Requests", icon: InboxIcon },
         { href: "/owners", label: "Owners", icon: CrownIcon, cap: "owners.view" },
         ...(reportsLink ? [{ href: "/owners?tab=reports", label: "Department reports", icon: FileTextIcon }] : []),
@@ -186,6 +190,8 @@ export function AppSidebar({
         { href: "/import-export", label: "Import and export", icon: ArrowLeftRightIcon, cap: ["import.run", "import.stage", "import.tracker", "export.run", "export.report", "export.tracker", "export.audit"] },
         { href: "/settings", label: "Settings", icon: SettingsIcon, cap: "settings.manage" },
         { href: "/admin", label: "Admin", icon: UserCogIcon, cap: ["users.manage", "data.manage"] },
+        { href: "/admin/preview", label: "View as", icon: EyeIcon, cap: "users.manage" },
+        { href: "/admin?tab=sessions", label: "Sessions and devices", icon: MonitorSmartphoneIcon, cap: "users.manage" },
         { href: "/admin/data", label: "Data manager", icon: DatabaseIcon, cap: "data.manage" },
         { href: "/audit", label: "Audit log", icon: ShieldCheckIcon, cap: ["users.manage", "items.plan"] },
       ],

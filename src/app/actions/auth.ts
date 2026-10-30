@@ -2,7 +2,8 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { requireViewer, setActiveRole, signIn, signOut } from "@/server/auth";
+import { requireViewer, setActiveRole, signIn, signOut, startSession } from "@/server/auth";
+import { completeReset, requestEmailReset, saveGoogleSettings } from "@/server/password-reset";
 import { get, run } from "@/server/db";
 import { hashPassword, passwordProblems, verifyPassword } from "@/server/passwords";
 import { wrap } from "@/server/action-result";
@@ -46,4 +47,30 @@ export async function changePasswordAction(input: { current: string; next: strin
     await run("UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?", hashPassword(input.next), viewer.id);
     await run("DELETE FROM sessions WHERE user_id = ? AND id <> ?", viewer.id, viewer.sessionId);
   });
+}
+
+// Forgotten password: always the same answer, so nobody learns which emails have accounts.
+export async function forgotPasswordAction(_prev: { sent?: boolean; error?: string } | undefined, formData: FormData) {
+  const email = String(formData.get("email") ?? "").trim();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return { error: "Enter the email you sign in with." };
+  await requestEmailReset(email);
+  return { sent: true };
+}
+
+export async function resetPasswordAction(_prev: { error?: string } | undefined, formData: FormData) {
+  const token = String(formData.get("token") ?? "");
+  const password = String(formData.get("password") ?? "");
+  if (password !== String(formData.get("confirm") ?? "")) return { error: "The two passwords are different." };
+  try {
+    const r = await completeReset(token, password);
+    const s = await startSession(r.userId);
+    if (!s.ok) return { error: s.error };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Something went wrong. Try again." };
+  }
+  redirect("/dashboard");
+}
+
+export async function saveGoogleSettingsAction(input: { clientId: string; secret?: string | null }) {
+  return wrap(async () => saveGoogleSettings(await requireViewer(), input));
 }
