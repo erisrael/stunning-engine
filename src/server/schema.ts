@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 13;
+export const SCHEMA_VERSION = 14;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -1148,6 +1148,58 @@ CREATE TABLE IF NOT EXISTS equipment_events (
   at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_equipment_events ON equipment_events(equipment_id, at);
+
+-- v14: leave. Types and policy, requests approved by the line manager then HR, balance adjustments. Approved leave
+-- also writes a leave_entries row so capacity counts it.
+CREATE TABLE IF NOT EXISTS leave_types (
+  key TEXT PRIMARY KEY,
+  label TEXT NOT NULL,
+  paid INTEGER NOT NULL DEFAULT 1,
+  days_per_year DOUBLE PRECISION,
+  service_bonus DOUBLE PRECISION NOT NULL DEFAULT 0,
+  accrual TEXT NOT NULL DEFAULT 'yearly',
+  needs_document INTEGER NOT NULL DEFAULT 0,
+  active INTEGER NOT NULL DEFAULT 1,
+  sort INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS leave_requests (
+  id TEXT PRIMARY KEY,
+  employee_id TEXT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  type_key TEXT NOT NULL,
+  start_date TEXT NOT NULL,
+  end_date TEXT NOT NULL,
+  half_day INTEGER NOT NULL DEFAULT 0,
+  days DOUBLE PRECISION NOT NULL,
+  reason TEXT,
+  status TEXT NOT NULL,
+  approver_id TEXT,
+  lead_decided_by TEXT,
+  lead_decided_at TEXT,
+  lead_note TEXT,
+  hr_decided_by TEXT,
+  hr_decided_at TEXT,
+  hr_note TEXT,
+  created_by TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_leave_requests_employee ON leave_requests(employee_id, start_date);
+CREATE INDEX IF NOT EXISTS idx_leave_requests_status ON leave_requests(status);
+
+CREATE TABLE IF NOT EXISTS leave_adjustments (
+  id TEXT PRIMARY KEY,
+  employee_id TEXT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  type_key TEXT NOT NULL,
+  year INTEGER NOT NULL,
+  days DOUBLE PRECISION NOT NULL,
+  note TEXT,
+  actor_id TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_leave_adjustments ON leave_adjustments(employee_id, year);
+
+ALTER TABLE leave_entries ADD COLUMN IF NOT EXISTS request_id TEXT;
 `;
 
 // Tables in dependency order; used to empty the workspace and to export or restore backups.
@@ -1234,4 +1286,7 @@ export const TABLES = [
   "employee_documents",
   "equipment",
   "equipment_events",
+  "leave_types",
+  "leave_requests",
+  "leave_adjustments",
 ] as const;

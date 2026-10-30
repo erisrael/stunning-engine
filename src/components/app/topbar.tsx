@@ -59,6 +59,7 @@ const TITLES: Record<string, string> = {
   hr: "HR",
   people: "People",
   me: "My record",
+  leave: "Leave",
   present: "Presentation",
   audit: "Audit log",
   print: "Printable summary",

@@ -31,7 +31,7 @@ import {
 } from "@/lib/hr";
 import { DueBadge, EmployeeStatusPill, EquipmentStatusPill, Field, daysUntil, fmtDay } from "./hr-shared";
 
-export type HrTab = "people" | "due" | "org" | "equipment";
+export type HrTab = "people" | "leave" | "due" | "org" | "equipment";
 type Dept = { key: string; label: string };
 type Person = { id: string; name: string };
 
@@ -57,6 +57,9 @@ export function HrHome(props: {
   due: HrDue[] | null;
   org: OrgNode[] | null;
   equipment: EquipmentRow[] | null;
+  // The Leave tab is built by the page (server data) and passed in.
+  leave?: React.ReactNode;
+  leaveWaiting: number;
 }) {
   const go = useTab();
   const deptLabel = (k: string | null) => (k ? (props.departments.find((d) => d.key === k)?.label ?? k) : "-");
@@ -65,12 +68,14 @@ export function HrHome(props: {
       <Tabs value={props.tab} onValueChange={(v) => go({ tab: v === "people" ? null : v })}>
         <TabsList className="w-full justify-start overflow-x-auto sm:w-fit">
           <TabsTrigger value="people">People</TabsTrigger>
+          <TabsTrigger value="leave">Leave{props.leaveWaiting ? ` (${props.leaveWaiting})` : ""}</TabsTrigger>
           <TabsTrigger value="due">Due soon{props.due?.length ? ` (${props.due.length})` : ""}</TabsTrigger>
           <TabsTrigger value="org">Org chart</TabsTrigger>
           <TabsTrigger value="equipment">Equipment</TabsTrigger>
         </TabsList>
       </Tabs>
       {props.tab === "people" && <People people={props.people} departments={props.departments} deptLabel={deptLabel} includeLeft={props.includeLeft} />}
+      {props.tab === "leave" && props.leave}
       {props.tab === "due" && <DueList due={props.due ?? []} />}
       {props.tab === "org" && <OrgChart nodes={props.org ?? []} deptLabel={deptLabel} />}
       {props.tab === "equipment" && <Equipment rows={props.equipment ?? []} people={props.people.filter((p) => p.status !== "left").map((p) => ({ id: p.id, name: p.name }))} />}

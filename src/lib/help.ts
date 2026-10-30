@@ -282,6 +282,35 @@ export const CHAPTERS: Chapter[] = [
     ],
   },
   {
+    key: "leave",
+    title: "Leave",
+    audiences: "all",
+    summary: "See your balances, ask for leave, and approve your team's leave.",
+    sections: [
+      {
+        title: "Asking for leave",
+        steps: [
+          "Open Leave in the sidebar.",
+          "Choose the leave type and the first and last day (tick Half a day for a single half day). Weekends and public holidays are not counted.",
+          "Press Ask for leave. Your line manager approves first, then HR. You are told either way.",
+          "You can cancel a request while it waits, or approved leave before it starts.",
+        ],
+      },
+      {
+        title: "Balances",
+        text: "Annual leave is 16 working days a year plus one day for every two years of service, built up month by month. Sick, maternity, paternity, compassionate and marriage leave have their own allowances; unpaid leave has no limit. HR can add days, for example days carried over.",
+      },
+      {
+        title: "Approving your team's leave",
+        text: "If people report to you, their requests appear at the top of Leave. Approve, or say why not. The calendar shows who in your team is off.",
+      },
+      {
+        title: "For HR",
+        text: "HR, Leave shows what waits for final approval, everyone's leave on a calendar, balances with adjustments, leave types and public holidays. Add Ethiopian holidays for a year in one go, and add Eid al-Fitr, Eid al-Adha and Mawlid once their dates are announced.",
+      },
+    ],
+  },
+  {
     key: "me",
     title: "My record",
     audiences: "all",
@@ -480,6 +509,7 @@ export const FIRST_STEPS: Record<Audience, FirstStep[]> = {
     { key: "password", label: "Set your own password", href: "/profile" },
     { key: "sync", label: "Create records for everyone with an account", href: "/hr" },
     { key: "org", label: "Set line managers and check the org chart", href: "/hr?tab=org" },
+    { key: "holidays", label: "Check this year's public holidays", href: "/hr?tab=leave" },
     { key: "manual", label: "Read the HR chapter", href: "/profile/help#hr" },
   ],
   department: [

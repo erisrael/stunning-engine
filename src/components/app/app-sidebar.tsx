@@ -5,6 +5,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 import {
   ArrowLeftRightIcon,
   ContactIcon,
+  PlaneIcon,
   IdCardIcon,
   Building2Icon,
   InboxIcon,
@@ -105,6 +106,7 @@ export function AppSidebar({
         { href: "/reports", label: "Reports", icon: ChartColumnIcon, keepFilters: true, cap: "reports.view" },
         { href: "/team", label: perms.includes("team.view") ? "Team" : "My effort", icon: UsersIcon, badge: perms.includes("corrections.approve") ? counts.corrections : 0, cap: "nav.team" },
         { href: "/me", label: "My record", icon: IdCardIcon },
+        { href: "/leave", label: "Leave", icon: PlaneIcon },
       ],
     },
     {
