@@ -397,7 +397,7 @@ export const CHAPTERS: Chapter[] = [
         title: "Two-step sign-in",
         steps: [
           "Install an authenticator app on your phone: Google Authenticator, Microsoft Authenticator or Authy.",
-          "On Profile, Sign-in and security, press Set up an authenticator app and scan the code with the app (or type the key).",
+          "On Profile, Account, press Set up an authenticator app and scan the code with the app (or type the key).",
           "Type the six-digit code the app shows, then save the ten recovery codes somewhere safe. Each works once if you lose your phone.",
           "From then on, after your password, type the code from the app. Tick Do not ask again on this device on your own computer or phone.",
           "If your role needs it, you are asked to set it up at your next sign-in. When Admin allows it, a code by email also works.",
@@ -406,7 +406,7 @@ export const CHAPTERS: Chapter[] = [
       },
       {
         title: "Sign in with Google or Microsoft",
-        text: "When Admin has switched them on, the sign-in page has Continue with Google, Microsoft or your company's single sign-on. It finds your account by your email. You can also link them on Profile, Sign-in and security.",
+        text: "When Admin has switched them on, the sign-in page has Continue with Google, Microsoft or your company's single sign-on. It finds your account by your email. You can also link them on Profile, Account.",
       },
       {
         title: "Where you are signed in",
@@ -721,52 +721,52 @@ export type FirstStep = { key: string; label: string; href: string };
 
 export const FIRST_STEPS: Record<Audience, FirstStep[]> = {
   member: [
-    { key: "password", label: "Set your own password", href: "/profile" },
+    { key: "password", label: "Set your own password", href: "/profile?tab=account" },
     { key: "push", label: "Turn on push notifications", href: "/profile" },
     { key: "board", label: "Open your board and start a card", href: "/dashboard" },
     { key: "manual", label: "Read your chapter of the manual", href: "/profile/help#member" },
   ],
   lead: [
-    { key: "password", label: "Set your own password", href: "/profile" },
+    { key: "password", label: "Set your own password", href: "/profile?tab=account" },
     { key: "push", label: "Turn on push notifications", href: "/profile" },
     { key: "desk", label: "Look over your lead desk", href: "/dashboard" },
     { key: "overview", label: "Open the Overview", href: "/overview" },
     { key: "manual", label: "Read the team lead chapter", href: "/profile/help#lead" },
   ],
   publication: [
-    { key: "password", label: "Set your own password", href: "/profile" },
+    { key: "password", label: "Set your own password", href: "/profile?tab=account" },
     { key: "push", label: "Turn on push notifications", href: "/profile" },
     { key: "calendar", label: "Open the Calendar", href: "/calendar" },
     { key: "manual", label: "Read the Publication chapter", href: "/profile/help#publication" },
   ],
   manager: [
-    { key: "password", label: "Set your own password", href: "/profile" },
+    { key: "password", label: "Set your own password", href: "/profile?tab=account" },
     { key: "people", label: "Check people, roles and team leads", href: "/admin" },
     { key: "checklists", label: "Review the stage checklists", href: "/checklists" },
     { key: "assign", label: "Assign some work", href: "/assign" },
     { key: "present", label: "Try the Overview presentation", href: "/overview/present" },
   ],
   owner: [
-    { key: "password", label: "Set your own password", href: "/profile" },
+    { key: "password", label: "Set your own password", href: "/profile?tab=account" },
     { key: "company", label: "Open the Company overview", href: "/company" },
     { key: "present", label: "Try the Overview presentation", href: "/overview/present" },
   ],
   hr: [
-    { key: "password", label: "Set your own password", href: "/profile" },
+    { key: "password", label: "Set your own password", href: "/profile?tab=account" },
     { key: "sync", label: "Create records for everyone with an account", href: "/hr" },
     { key: "org", label: "Set line managers and check the org chart", href: "/hr?tab=org" },
     { key: "holidays", label: "Check this year's public holidays", href: "/hr?tab=leave" },
     { key: "manual", label: "Read the HR chapter", href: "/profile/help#hr" },
   ],
   finance: [
-    { key: "password", label: "Set your own password", href: "/profile" },
+    { key: "password", label: "Set your own password", href: "/profile?tab=account" },
     { key: "accounts", label: "Add your bank and cash accounts", href: "/finance?tab=accounts" },
     { key: "settings", label: "Check tax brackets and pension rates", href: "/finance?tab=settings" },
     { key: "budgets", label: "Set this year's budgets", href: "/finance?tab=budgets" },
     { key: "manual", label: "Read the Finance chapter", href: "/profile/help#finance" },
   ],
   department: [
-    { key: "password", label: "Set your own password", href: "/profile" },
+    { key: "password", label: "Set your own password", href: "/profile?tab=account" },
     { key: "push", label: "Turn on push notifications", href: "/profile" },
     { key: "requests", label: "Look at Requests", href: "/requests" },
     { key: "manual", label: "Read the Departments chapter", href: "/profile/help#departments" },
@@ -776,10 +776,10 @@ export const FIRST_STEPS: Record<Audience, FirstStep[]> = {
 // What each sidebar and top-bar entry is for, shown when hovering it. Keyed by the link (or the control's name).
 export const NAV_TIPS: Record<string, string> = {
   "/dashboard": "Your starting point: your own work board, or your team's desk if you lead a team.",
-  "/me": "Your HR record: job, contact details, documents, equipment, goals, reviews and interviews.",
+  "/approvals": "Everything waiting for your decision: leave, expense claims, attendance corrections, handovers.",
+  "/profile": "You: your profile, HR record, leave, pay and claims, attendance history, password and two-step sign-in.",
   "/leave": "Your leave balances, asking for leave, and approving your team's leave.",
   "/team": "Time and effort: your own as a member, your team's workload as a lead.",
-  "/profile": "Your profile: photo, skills, education, files, password, devices and preferences.",
   "/overview": "Every unit and part in each stage, by grade or subject, with the Present mode for wall screens.",
   "views": "The same records as a table, a spreadsheet, a board or a calendar. Switch views at the top right of the page.",
   "/handovers": "Batches of work handed from one team lead to the next, to accept or return.",

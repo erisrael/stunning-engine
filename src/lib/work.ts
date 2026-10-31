@@ -7,6 +7,26 @@ export type BuiltInWorkDept = (typeof WORK_DEPTS)[number];
 export type WorkDept = string;
 export const isBuiltInWorkDept = (d: string): d is BuiltInWorkDept => (WORK_DEPTS as readonly string[]).includes(d);
 export const deptPath = (d: string) => (isBuiltInWorkDept(d) ? `/${d}` : `/d/${d}`);
+
+// Each view of a department has its own address: /dev is the dashboard, /dev/board, /dev/list and so on.
+export const DEPT_VIEWS = ["board", "list", "sheet", "overview", "timeline", "calendar", "projects", "team", "report", "repos", "accounting", "configure"] as const;
+export type DeptView = (typeof DEPT_VIEWS)[number];
+export const DEPT_VIEW_LABELS: Record<DeptView | "dashboard", string> = {
+  dashboard: "Home",
+  board: "Board",
+  list: "List",
+  sheet: "Sheet",
+  overview: "Overview",
+  timeline: "Timeline",
+  calendar: "Calendar",
+  projects: "Projects",
+  team: "Team",
+  report: "Report",
+  repos: "Repositories",
+  accounting: "Accounting",
+  configure: "Configure",
+};
+export const deptViewPath = (d: string, view: string, query = "") => `${deptPath(d)}${view && view !== "dashboard" ? `/${view}` : ""}${query ? `?${query.replace(/^[?&]/, "")}` : ""}`;
 // Keys of new departments: lowercase letters, digits and dashes, not clashing with pages or built-in departments.
 export const RESERVED_DEPT_KEYS = ["dev", "marketing", "studio", "production", "owners", "company", "admin", "new"];
 

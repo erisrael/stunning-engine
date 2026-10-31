@@ -159,7 +159,7 @@ const tooMany = (min: number) => `Too many attempts. Try again in ${min <= 1 ? "
 
 async function alertLockout(userId: string, name: string, email: string, minutes: number) {
   const now = nowIso();
-  await notify([userId], { type: "security", title: "Your account was locked for a while", body: `After several wrong passwords, sign-in waits ${minutes} minutes.`, link: "/profile#account" }, now);
+  await notify([userId], { type: "security", title: "Your account was locked for a while", body: `After several wrong passwords, sign-in waits ${minutes} minutes.`, link: "/profile?tab=account" }, now);
   await notify(await usersWithRole("admin"), { type: "security", title: `${name}'s account was locked`, body: `${minutes} minutes after several wrong passwords.`, link: "/admin?tab=signin", groupKey: "signin-lockouts" }, now);
   void mail(email, "Your account was locked for a while", `Someone (maybe you) entered a wrong password several times for your account. Sign-in waits ${minutes} minutes. If it was not you, reset your password and tell your administrator.`);
 }
@@ -287,7 +287,7 @@ async function finishSignIn(userId: string, method: string, next: string): Promi
     if (!seen && before) {
       const d = parseAgent((await headers()).get("user-agent"));
       const where = `${d.browser} on ${d.os}${(await requestIp()) ? `, address ${await requestIp()}` : ""}`;
-      await notify([userId], { type: "security", title: "New sign-in to your account", body: `${where}. If it was not you, end that session and change your password.`, link: "/profile#account" }, nowIso());
+      await notify([userId], { type: "security", title: "New sign-in to your account", body: `${where}. If it was not you, end that session and change your password.`, link: "/profile?tab=account" }, nowIso());
       void mail(u.email, "New sign-in to your account", `Your account was just used to sign in from a new device: ${where}.\n\nIf it was you, there is nothing to do. If not, open Profile, Account to end that session, and change your password.`);
       await logSignIn({ userId, event: "new_device", method, detail: where });
     }
@@ -471,7 +471,7 @@ async function useRecoveryCode(userId: string, ts: TwoStepRow, code: string) {
   if (!list.includes(h)) return false;
   await run("UPDATE user_two_step SET recovery = ?, updated_at = ? WHERE user_id = ?", JSON.stringify(list.filter((x) => x !== h)), nowIso(), userId);
   await logSignIn({ userId, event: "recovery_used", detail: `${list.length - 1} left` });
-  if (list.length - 1 <= 2) await notify([userId], { type: "security", title: "Few recovery codes left", body: `${list.length - 1} left. Make new ones on Profile, Account.`, link: "/profile#account" }, nowIso());
+  if (list.length - 1 <= 2) await notify([userId], { type: "security", title: "Few recovery codes left", body: `${list.length - 1} left. Make new ones on Profile, Account.`, link: "/profile?tab=account" }, nowIso());
   return true;
 }
 
@@ -562,7 +562,7 @@ export async function adminResetTwoStep(admin: AppUser, userId: string) {
   await run("DELETE FROM sessions WHERE user_id = ?", userId);
   await logSignIn({ userId, event: "two_step_reset", detail: `by ${admin.name}` });
   await audit({ actor: admin }, { action: "user.two_step", summary: `${admin.name} reset two-step sign-in for ${u.name}` });
-  await notify([userId], { type: "security", title: "Your two-step sign-in was reset", body: `By ${admin.name}. Set it up again when you next sign in.`, link: "/profile#account" }, nowIso());
+  await notify([userId], { type: "security", title: "Your two-step sign-in was reset", body: `By ${admin.name}. Set it up again when you next sign in.`, link: "/profile?tab=account" }, nowIso());
 }
 
 export type TwoStepRosterRow = { id: string; name: string; email: string; roles: Role[]; level: TwoStepLevel; on: boolean; providers: string[]; lastSignIn: string | null };

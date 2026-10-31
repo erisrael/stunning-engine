@@ -81,6 +81,18 @@ const PREPS: Record<string, () => Promise<unknown>> = {
   async system() {
     await passwordOnly();
   },
+  // A Dev team member (Dina) and a Dev lead (Leul), for the department sidebar.
+  async navigation() {
+    await passwordOnly();
+    const seen = JSON.stringify({ tour: { seen: ["member", "lead", "publication", "manager", "owner", "department", "hr", "finance"] } });
+    for (const [name, email] of [["Dina", "dina@demo.local"], ["Leul", "leul@demo.local"]]) {
+      const u = await upsertAccount({ name, email, title: "Developer", roles: ["developer"], password: "Demo-Workflow-2026", mustChangePassword: false });
+      await run("UPDATE users SET prefs = ? WHERE id = ?", seen, u.id);
+    }
+    const leul = (await get<{ id: string }>("SELECT id FROM users WHERE email = 'leul@demo.local'"))!.id;
+    await run("INSERT INTO department_positions (department, user_id, position) VALUES ('dev', ?, 'lead') ON CONFLICT DO NOTHING", leul);
+    await syncFromUsers(await admin());
+  },
   // A site on 196.188.10.0/24 (the test sends that address as the proxy would), QR, network, shared computer and
   // lead recording on, a shift covering the whole day, Hana as Dawit's lead, and a PIN for Yonas.
   async "qr-checkin"() {

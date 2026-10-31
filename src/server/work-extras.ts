@@ -348,7 +348,7 @@ export async function createRequest(user: AppUser, d: string, input: { title: st
     now,
     now,
   );
-  await notify(await deptManagers(dp), { type: "assignment", title: `New request ${code} from ${user.name}`, body: title, link: `${deptPath(dp)}?tab=list&request=pending`, dedupeKey: `request:${id}` }, now, user.id);
+  await notify(await deptManagers(dp), { type: "assignment", title: `New request ${code} from ${user.name}`, body: title, link: `${deptPath(dp)}/list?request=pending`, dedupeKey: `request:${id}` }, now, user.id);
   await audit({ actor: user }, { itemId: id, action: `${dp}.request`, summary: `${user.name} asked ${cfg.title}: ${code} ${title}` });
   return { id, code };
 }

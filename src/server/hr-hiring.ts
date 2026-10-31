@@ -352,7 +352,7 @@ export async function scheduleInterview(user: AppUser, applicantId: string, inpu
     nowIso(),
   );
   await run("UPDATE applicants SET stage = CASE WHEN stage IN ('applied','screening') THEN 'interview' ELSE stage END, updated_at = ? WHERE id = ?", nowIso(), applicantId);
-  await notify(ids, { type: "assignment", title: `Interview: ${a.full_name}`, body: `${a.title}, ${at.toISOString().slice(0, 16).replace("T", " ")} UTC${input.location ? `, ${input.location}` : ""}. Add your scorecard in My record afterwards.`, link: "/me" }, nowIso(), user.id);
+  await notify(ids, { type: "assignment", title: `Interview: ${a.full_name}`, body: `${a.title}, ${at.toISOString().slice(0, 16).replace("T", " ")} UTC${input.location ? `, ${input.location}` : ""}. Add your scorecard in My record afterwards.`, link: "/profile?tab=record" }, nowIso(), user.id);
   await audit({ actor: user }, { action: "hr.hiring", summary: `${user.name} scheduled an interview with ${a.full_name}` });
   return id;
 }

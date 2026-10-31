@@ -163,7 +163,7 @@ export async function addOneOnOne(user: AppUser, input: { employeeId: string; he
     nowIso(),
   );
   const e = await employeeUser(input.employeeId);
-  if (e?.user_id) await notify([e.user_id], { type: "hr", title: "One-to-one notes added", body: `From ${user.name}, ${input.heldOn}.`, link: "/me" }, nowIso(), user.id);
+  if (e?.user_id) await notify([e.user_id], { type: "hr", title: "One-to-one notes added", body: `From ${user.name}, ${input.heldOn}.`, link: "/profile?tab=record" }, nowIso(), user.id);
 }
 
 // ---------------------------------------------------------------------------
@@ -275,7 +275,7 @@ export async function startCycle(user: AppUser, input: { name: string; periodSta
   }
   await notify(
     people.map((p) => p.user_id),
-    { type: "hr", title: `Review: ${name}`, body: `Write your self review in My record${input.selfDue ? ` by ${input.selfDue}` : ""}.`, link: "/me", dedupeKey: `cycle:${id}` },
+    { type: "hr", title: `Review: ${name}`, body: `Write your self review in My record${input.selfDue ? ` by ${input.selfDue}` : ""}.`, link: "/profile?tab=record", dedupeKey: `cycle:${id}` },
     nowIso(),
     user.id,
   );
@@ -309,7 +309,7 @@ export async function submitReview(user: AppUser, reviewId: string, input: { par
     JSON.stringify(await evidenceFor(r.employee_id, c!.period_start, c!.period_end)),
     reviewId,
   );
-  if (e?.user_id) await notify([e.user_id], { type: "hr", title: "Your review is complete", body: "Read it in My record.", link: "/me" }, now, user.id);
+  if (e?.user_id) await notify([e.user_id], { type: "hr", title: "Your review is complete", body: "Read it in My record.", link: "/profile?tab=record" }, now, user.id);
   await audit({ actor: user }, { itemId: r.employee_id, action: "hr.performance", summary: `${user.name} completed ${e?.full_name}'s review` });
 }
 
@@ -360,7 +360,7 @@ export async function assignCourse(user: AppUser, courseId: string, input: { emp
     if (await get("SELECT 1 AS x FROM trainings WHERE course_id = ? AND employee_id = ? AND status = 'assigned'", courseId, eid)) continue;
     await run("INSERT INTO trainings (id, course_id, employee_id, due_date, assigned_by, created_at) VALUES (?, ?, ?, ?, ?, ?)", uid("trn_"), courseId, eid, isDay(input.dueDate) ? input.dueDate : null, user.id, now);
     const e = await employeeUser(eid);
-    if (e?.user_id) await notify([e.user_id], { type: "hr", title: `Training: ${c.title}`, body: input.dueDate ? `Complete it by ${input.dueDate}.` : undefined, link: "/me" }, now, user.id);
+    if (e?.user_id) await notify([e.user_id], { type: "hr", title: `Training: ${c.title}`, body: input.dueDate ? `Complete it by ${input.dueDate}.` : undefined, link: "/profile?tab=record" }, now, user.id);
     added++;
   }
   return added;

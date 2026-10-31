@@ -37,7 +37,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { EmptyState } from "@/components/app/primitives";
 import {
@@ -60,7 +59,7 @@ import {
 } from "@/app/actions/departments";
 import type { DeptView, Project, Task, TaskFilter } from "@/server/work";
 import { POSITION_LABELS, type Position } from "@/lib/domain";
-import type { WorkDept } from "@/lib/work";
+import { deptViewPath, type WorkDept } from "@/lib/work";
 import { fieldRequired, fieldShown, formatField, labelOf, statusOf, type DeptConfig, type DeptField, type FieldValue, type Rights } from "@/lib/dept-config";
 import { cn } from "@/lib/utils";
 import { today, usable, type Access, type Person } from "./work-shared";
@@ -134,9 +133,13 @@ export function WorkClient({
   const params = useSearchParams();
   const cfg = config;
   const names = cfg.names;
+  // Filters live in the query; the view is the path (/dev/board). Changing the view keeps the filters.
   const go = (patch: Record<string, string | null>) => {
     const p = new URLSearchParams(params.toString());
-    for (const [k, v] of Object.entries(patch)) v ? p.set(k, v) : p.delete(k);
+    const { tab: view, ...rest } = patch;
+    for (const [k, v] of Object.entries(rest)) v ? p.set(k, v) : p.delete(k);
+    p.delete("tab");
+    if (view !== undefined) return router.push(deptViewPath(dept, view ?? "dashboard", p.toString()));
     router.replace(`${pathname}?${p.toString()}`, { scroll: false });
   };
   const [q, setQ] = React.useState(filter.q ?? "");
@@ -200,52 +203,25 @@ export function WorkClient({
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <Tabs value={tab} onValueChange={(v) => (v === "dashboard" ? router.push(pathname) : go({ tab: v, task: null }))}>
-          <TabsList>
-            <TabsTrigger value="dashboard">
-              <LayoutDashboardIcon className="size-3.5" /> Dashboard
-            </TabsTrigger>
-            <TabsTrigger value="board">
-              <KanbanIcon className="size-3.5" /> Board
-            </TabsTrigger>
-            <TabsTrigger value="list">
-              <ListIcon className="size-3.5" /> List
-            </TabsTrigger>
-            <TabsTrigger value="sheet">
-              <SheetIcon className="size-3.5" /> Sheet
-            </TabsTrigger>
-            <TabsTrigger value="overview">
-              <ListTreeIcon className="size-3.5" /> Overview
-            </TabsTrigger>
-            <TabsTrigger value="timeline">
-              <GanttChartIcon className="size-3.5" /> Timeline
-            </TabsTrigger>
-            {access.rights.seeAll && (
-              <TabsTrigger value="team">
-                <UsersIcon className="size-3.5" /> Team
-              </TabsTrigger>
-            )}
-            <TabsTrigger value="report">
-              <FileTextIcon className="size-3.5" /> {access.rights.seeAll ? "Report" : "My report"}
-            </TabsTrigger>
-            {extraTabs.map((t) => (
-              <TabsTrigger key={t.key} value={t.key}>
-                {t.key === "repos" ? <GitBranchIcon className="size-3.5" /> : <CalculatorIcon className="size-3.5" />} {t.label}
-              </TabsTrigger>
+        {/* The other views are in the sidebar; Board, List and Sheet show the same tasks, so they switch here. */}
+        {(tab === "board" || tab === "list" || tab === "sheet") && (
+          <div className="inline-flex rounded-lg bg-muted p-0.5" role="group" aria-label="View">
+            {(
+              [
+                ["board", KanbanIcon, "Board"],
+                ["list", ListIcon, "List"],
+                ["sheet", SheetIcon, "Sheet"],
+              ] as const
+            )
+              // The Sheet (editing everyone's tasks in a grid) is for leads.
+              .filter(([v]) => v !== "sheet" || access.rights.seeAll)
+              .map(([v, Icon, label]) => (
+              <Button key={v} size="sm" variant={tab === v ? "secondary" : "ghost"} aria-pressed={tab === v} className={tab === v ? "bg-background shadow-xs" : ""} onClick={() => go({ tab: v, task: null })}>
+                <Icon className="size-3.5" /> {label}
+              </Button>
             ))}
-            <TabsTrigger value="projects">
-              <FolderKanbanIcon className="size-3.5" /> {names.projects} ({projects.length})
-            </TabsTrigger>
-            <TabsTrigger value="calendar">
-              <CalendarIcon className="size-3.5" /> Calendar
-            </TabsTrigger>
-            {access.rights.configure && (
-              <TabsTrigger value="configure">
-                <Settings2Icon className="size-3.5" /> Configure
-              </TabsTrigger>
-            )}
-          </TabsList>
-        </Tabs>
+          </div>
+        )}
         <div className="ml-auto flex flex-wrap gap-2">
           {timer && <RunningTimer timer={timer} onStop={async () => {
             const r = await stopTimerAction();

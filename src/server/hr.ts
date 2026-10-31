@@ -716,7 +716,7 @@ export async function issueEquipment(user: AppUser, id: string, input: { employe
   const now = nowIso();
   await run("UPDATE equipment SET status = 'issued', holder_id = ?, issued_at = ?, due_back = ?, updated_at = ? WHERE id = ?", input.employeeId, now.slice(0, 10), day(input.dueBack), now, id);
   await logEquipment(id, "issued", user, { employeeId: input.employeeId, note: clean(input.note, 400) });
-  if (e.user_id) await notify([e.user_id], { type: "hr", title: `Issued to you: ${q.name} (${q.tag})`, body: input.dueBack ? `Please return it by ${input.dueBack}.` : undefined, link: "/me" }, now, user.id);
+  if (e.user_id) await notify([e.user_id], { type: "hr", title: `Issued to you: ${q.name} (${q.tag})`, body: input.dueBack ? `Please return it by ${input.dueBack}.` : undefined, link: "/profile?tab=record" }, now, user.id);
 }
 
 export async function returnEquipment(user: AppUser, id: string, input: { condition?: string; note?: string | null }) {

@@ -1,4 +1,4 @@
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { requireViewer } from "@/server/auth";
 import { deptPeople } from "@/server/departments";
 import { workAccess } from "@/server/dept-config";
@@ -17,34 +17,40 @@ import { githubOverview } from "@/server/github";
 import { accountingMap, ACCOUNTING_FORMATS } from "@/server/accounting";
 import { GithubRepos } from "./github-repos";
 import { FinanceAccounting } from "./integrations";
-import { deptPath } from "@/lib/work";
+import { DEPT_VIEW_LABELS, DEPT_VIEWS, deptPath, deptViewPath } from "@/lib/work";
 
 const TABS = ["dashboard", "board", "list", "sheet", "overview", "timeline", "team", "report", "projects", "calendar", "configure", "repos", "accounting"] as const;
 const SORTS = ["updated", "due", "priority", "code", "title", "status"] as const;
 
 // The Dev and Marketing sections share this page; their vocabulary, workflow and rights come from the configuration.
-export async function WorkPage({ dept, searchParams }: { dept: WorkDept; searchParams: Promise<Record<string, string | undefined>> }) {
+// Each view has its own address (/dev/board); the old ?tab= links are sent there.
+export async function WorkPage({ dept, searchParams, view }: { dept: WorkDept; searchParams: Promise<Record<string, string | undefined>>; view?: string }) {
   const viewer = await requireViewer();
   const access = await workAccess(viewer, dept).catch(() => null);
   if (!access) redirect("/dashboard?denied=permission");
   const cfg = access.config;
   const sp = await searchParams;
-  // The dashboard is the landing tab; a link to a task opens the board with it.
-  let tab = (TABS as readonly string[]).includes(sp.tab ?? "") ? (sp.tab as (typeof TABS)[number]) : sp.task ? "board" : "dashboard";
-  if (tab === "configure" && !access.rights.configure) tab = "board";
-  if (tab === "team" && !access.rights.seeAll) tab = "board";
+  if (view !== undefined && !(DEPT_VIEWS as readonly string[]).includes(view)) notFound();
+  if (view === undefined && ((sp.tab && sp.tab !== "dashboard") || sp.task)) {
+    const { tab: old, ...rest } = sp;
+    const q = new URLSearchParams(Object.entries(rest).filter((e): e is [string, string] => typeof e[1] === "string")).toString();
+    redirect(deptViewPath(dept, (TABS as readonly string[]).includes(old ?? "") ? old! : "board", q));
+  }
+  // The dashboard is the department's home; a link to a task opens the board with it.
+  const tab = (view ?? "dashboard") as (typeof TABS)[number];
+  if ((tab === "configure" && !access.rights.configure) || (tab === "team" && !access.rights.seeAll)) redirect(deptViewPath(dept, "board"));
   // Department-specific tabs: GitHub for the Dev team, accounting exports for a Finance department.
   const template = (await customDepartment(dept))?.template ?? null;
   const extraTabs: { key: "repos" | "accounting"; label: string }[] = [
     ...(dept === "dev" || template === "dev" ? [{ key: "repos" as const, label: "Repositories" }] : []),
     ...(template === "finance" ? [{ key: "accounting" as const, label: "Accounting" }] : []),
   ];
-  if ((tab === "repos" || tab === "accounting") && !extraTabs.some((t) => t.key === tab)) tab = "board";
+  if ((tab === "repos" || tab === "accounting") && !extraTabs.some((t) => t.key === tab)) redirect(deptViewPath(dept, "board"));
   const period = isPeriod(sp.period) ? sp.period : "30d";
   const [sprints, timer] = await Promise.all([cfg.features.sprints ? listSprints(viewer, dept) : Promise.resolve([]), runningTimer(viewer)]);
   const header = (
     <PageHeader
-      title={cfg.title}
+      title={tab === "dashboard" ? cfg.title : `${cfg.title}: ${tab === "report" && !access.rights.seeAll ? "My report" : DEPT_VIEW_LABELS[tab]}`}
       description={`${cfg.description}${access.readOnly ? " You are viewing as an owner (read only)." : access.position ? ` You are ${POSITION_LABELS[access.position].toLowerCase()} here.` : ""}`}
     />
   );

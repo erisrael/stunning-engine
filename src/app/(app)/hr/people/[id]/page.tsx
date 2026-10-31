@@ -41,7 +41,7 @@ export default async function EmployeePage({ params }: { params: Promise<{ id: s
         title={detail.employee.preferredName || detail.employee.fullName}
         actions={
           <Button asChild variant="outline" size="sm">
-            <Link href={hr ? "/hr" : "/me"}>
+            <Link href={hr ? "/hr" : "/profile?tab=record"}>
               <ArrowLeftIcon /> {hr ? "HR" : "My record"}
             </Link>
           </Button>

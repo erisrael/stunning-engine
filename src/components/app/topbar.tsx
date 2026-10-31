@@ -27,6 +27,7 @@ import {
 import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { DEPT_VIEW_LABELS } from "@/lib/work";
 import { Breadcrumb, BreadcrumbItem, BreadcrumbList, BreadcrumbPage, BreadcrumbLink, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
 import { Hint, UserAvatar } from "@/components/app/primitives";
 import { NAV_TIPS } from "@/lib/help";
@@ -130,7 +131,7 @@ export function Topbar({ user, activeRole, unread, chatUnread }: { user: { name:
         <BreadcrumbList>
           {parts.map((p, i) => {
             const href = "/" + parts.slice(0, i + 1).join("/");
-            const label = TITLES[p] ?? (parts[i - 1] === "items" ? "Item detail" : p);
+            const label = TITLES[p] ?? (parts[i - 1] === "items" ? "Item detail" : (DEPT_VIEW_LABELS as Record<string, string>)[p] ?? p);
             const last = i === parts.length - 1;
             return (
               <React.Fragment key={href}>
@@ -249,7 +250,7 @@ function UserMenu({ user }: { user: { name: string; email: string; avatar?: stri
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
-          <Link href="/me">
+          <Link href="/profile?tab=record">
             <IdCardIcon /> My record
           </Link>
         </DropdownMenuItem>

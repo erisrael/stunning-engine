@@ -41,7 +41,22 @@ import {
   WalletIcon,
   LandmarkIcon,
   VideoIcon,
+  KanbanIcon,
+  ListIcon,
+  SheetIcon,
+  GanttChartIcon,
+  CalendarIcon,
+  FolderKanbanIcon,
+  GitBranchIcon,
+  CalculatorIcon,
+  CheckCheckIcon,
+  CircleUserIcon,
+  UserCheckIcon,
+  NotebookTextIcon,
+  FileQuestionIcon,
+  GalleryVerticalEndIcon,
 } from "lucide-react";
+import type { HomeDept } from "@/server/nav";
 import {
   Sidebar,
   SidebarContent,
@@ -84,6 +99,8 @@ type NavItem = {
   // Links shown under the entry while you are in that section.
   sub?: { label: string; href: string }[];
   locked?: boolean;
+  // Matched on the whole address (path and query), for department views that share a path prefix.
+  exact?: boolean;
 };
 
 const VIEW_PATHS: { href: string; cap: Capability }[] = [
@@ -93,14 +110,104 @@ const VIEW_PATHS: { href: string; cap: Capability }[] = [
   { href: "/calendar", cap: "nav.calendar" },
 ];
 
-const workTabs = (base: string, extra: { label: string; tab: string }[] = []) => [
-  { label: "Dashboard", href: `${base}?tab=dashboard` },
-  { label: "Board", href: `${base}?tab=board` },
-  { label: "List", href: `${base}?tab=list` },
-  { label: "Timeline", href: `${base}?tab=timeline` },
-  ...extra.map((e) => ({ label: e.label, href: `${base}?tab=${e.tab}` })),
-  { label: "Report", href: `${base}?tab=report` },
+// The views of a department, folded under it for people who oversee several departments.
+const deptViews = (base: string, extra: { label: string; view: string }[] = [], configure = false) => [
+  { label: "Home", href: base },
+  { label: "Board", href: `${base}/board` },
+  { label: "List", href: `${base}/list` },
+  { label: "Sheet", href: `${base}/sheet` },
+  { label: "Overview", href: `${base}/overview` },
+  { label: "Timeline", href: `${base}/timeline` },
+  { label: "Calendar", href: `${base}/calendar` },
+  { label: "Projects", href: `${base}/projects` },
+  { label: "Team", href: `${base}/team` },
+  { label: "Report", href: `${base}/report` },
+  ...extra.map((e) => ({ label: e.label, href: `${base}/${e.view}` })),
+  ...(configure ? [{ label: "Configure", href: `${base}/configure` }] : []),
 ];
+
+// A department as the person's own sidebar: My work, Work, Plan, Insights, Tools and Manage, by position.
+function homeGroups(h: HomeDept, viewerId: string): { label: string; items: NavItem[] }[] {
+  const b = h.base;
+  if (h.kind === "studio")
+    return [
+      {
+        label: "Studio",
+        items: [
+          { href: b, label: "Home", icon: HomeIcon, exact: true },
+          { href: `${b}?tab=board`, label: "Board", icon: KanbanIcon, exact: true },
+          { href: `${b}?tab=calendar`, label: "Calendar", icon: CalendarIcon, exact: true },
+        ],
+      },
+      {
+        label: "Content",
+        items: [
+          { href: `${b}?tab=note`, label: "Notes", icon: NotebookTextIcon, exact: true },
+          { href: `${b}?tab=exam`, label: "Exams", icon: FileTextIcon, exact: true },
+          { href: `${b}?tab=flashcards`, label: "Flash cards", icon: GalleryVerticalEndIcon, exact: true },
+          { href: `${b}?tab=questions`, label: "Question bank", icon: FileQuestionIcon, exact: true },
+        ],
+      },
+      ...(h.seeAll || h.configure
+        ? [
+            {
+              label: "Lead",
+              items: [
+                ...(h.seeAll ? [{ href: `${b}?tab=team`, label: "Team", icon: UsersIcon, exact: true }] : []),
+                ...(h.configure ? [{ href: `${b}?tab=configure`, label: "Configure", icon: Settings2Icon, exact: true }] : []),
+              ],
+            },
+          ]
+        : []),
+      { label: "Tools", items: [{ href: "/requests", label: "Requests", icon: InboxIcon }] },
+    ];
+  return [
+    {
+      label: h.title,
+      items: [
+        { href: b, label: "Home", icon: HomeIcon, exact: true },
+        { href: `${b}/board?assignee=${viewerId}`, label: "My board", icon: UserCheckIcon, exact: true },
+      ],
+    },
+    {
+      label: "Work",
+      items: [
+        { href: `${b}/board`, label: "Board", icon: KanbanIcon, exact: true },
+        { href: `${b}/list`, label: "List", icon: ListIcon, exact: true },
+        ...(h.seeAll ? [{ href: `${b}/sheet`, label: "Sheet", icon: SheetIcon, exact: true }] : []),
+      ],
+    },
+    {
+      label: "Plan",
+      items: [
+        { href: `${b}/projects`, label: "Projects", icon: FolderKanbanIcon, exact: true },
+        ...(h.seeAll
+          ? [
+              { href: `${b}/overview`, label: "Overview", icon: ListTreeIcon, exact: true },
+              { href: `${b}/timeline`, label: "Timeline", icon: GanttChartIcon, exact: true },
+            ]
+          : []),
+        { href: `${b}/calendar`, label: "Calendar", icon: CalendarIcon, exact: true },
+      ],
+    },
+    {
+      label: "Insights",
+      items: [
+        { href: `${b}/report`, label: h.seeAll ? "Report" : "My report", icon: ChartColumnIcon, exact: true },
+        ...(h.seeAll ? [{ href: `${b}/team`, label: "Team", icon: UsersIcon, exact: true }] : []),
+      ],
+    },
+    {
+      label: "Tools",
+      items: [
+        ...(h.repos ? [{ href: `${b}/repos`, label: "Repositories", icon: GitBranchIcon, exact: true }] : []),
+        ...(h.accounting ? [{ href: `${b}/accounting`, label: "Accounting", icon: CalculatorIcon, exact: true }] : []),
+        { href: "/requests", label: "Requests", icon: InboxIcon },
+      ],
+    },
+    ...(h.configure ? [{ label: "Department", items: [{ href: `${b}/configure`, label: "Configure", icon: Settings2Icon, exact: true }] }] : []),
+  ];
+}
 
 export function AppSidebar({
   perms,
@@ -111,12 +218,19 @@ export function AppSidebar({
   customDepts = [],
   userHidden = [],
   roleHidden = [],
+  home = null,
+  viewerId = "",
+  approver = false,
 }: {
+  home?: HomeDept | null;
+  viewerId?: string;
+  // Approves something (leave, claims, attendance, handovers): shows Approvals even when nothing waits.
+  approver?: boolean;
   perms: Capability[];
   customDepts?: { key: string; title: string }[];
   reportsLink?: boolean;
   activeRole: Role;
-  counts: { myWork: number; notifications: number; questions: number; handoffs: number; corrections: number; incoming: number; attendance: number };
+  counts: { myWork: number; notifications: number; questions: number; handoffs: number; corrections: number; incoming: number; attendance: number; approvals: number };
   workspaceName: string;
   // Hidden by this person, and by Admin for the role they are viewing as.
   userHidden?: string[];
@@ -137,15 +251,16 @@ export function AppSidebar({
     {
       label: "My space",
       items: [
-        { href: "/dashboard", label: staff ? "My work" : "Home", icon: HomeIcon, badge: counts.myWork, locked: true },
-        { href: "/me", label: "My record", icon: IdCardIcon },
-        { href: "/attendance", label: "Attendance", icon: ClockIcon, badge: counts.attendance },
-        { href: "/leave", label: "Leave", icon: PlaneIcon },
-        { href: "/pay", label: "Claims and pay", icon: WalletIcon },
-        ...(!lead ? [{ href: "/team", label: "My effort", icon: UsersIcon, cap: "nav.team" as Capability }] : []),
+        // My record, Leave and Claims and pay are tabs of Profile (bottom of the sidebar and the avatar menu).
+        { href: "/dashboard", label: home ? "Today" : staff ? "My work" : "Home", icon: HomeIcon, badge: home ? 0 : counts.myWork, locked: true },
+        { href: "/attendance", label: "Attendance", icon: ClockIcon },
+        ...(approver || counts.approvals > 0 ? [{ href: "/approvals", label: "Approvals", icon: CheckCheckIcon, badge: counts.approvals }] : []),
+        ...(!lead && !home ? [{ href: "/team", label: "My effort", icon: UsersIcon, cap: "nav.team" as Capability }] : []),
         { href: "/questions", label: "Questions", icon: MessageCircleQuestionIcon, badge: counts.questions, cap: "nav.questions" },
+        ...(home ? [{ href: "/people", label: "People", icon: UsersRoundIcon }] : []),
       ],
     },
+    ...(home ? homeGroups(home, viewerId) : []),
     {
       label: "Workflow",
       items: [
@@ -165,10 +280,10 @@ export function AppSidebar({
       label: "Departments",
       items: [
         { href: "/company", label: "Company overview", icon: Building2Icon, cap: "company.view" },
-        { href: "/dev", label: "Dev team", icon: CodeIcon, cap: ["dev.access", "owners.view"], sub: workTabs("/dev", [{ label: "Repositories", tab: "repos" }]) },
+        { href: "/dev", label: "Dev team", icon: CodeIcon, cap: ["dev.access", "owners.view"], sub: deptViews("/dev", [{ label: "Repositories", view: "repos" }], has("users.manage")) },
         { href: "/studio", label: "Studio", icon: BookOpenIcon, cap: ["studio.access", "owners.view"] },
-        { href: "/marketing", label: "Marketing", icon: MegaphoneIcon, cap: ["marketing.access", "owners.view"], sub: workTabs("/marketing", [{ label: "Calendar", tab: "calendar" }]) },
-        ...customDepts.map((d) => ({ href: `/d/${d.key}`, label: d.title, icon: BriefcaseIcon, sub: workTabs(`/d/${d.key}`) })),
+        { href: "/marketing", label: "Marketing", icon: MegaphoneIcon, cap: ["marketing.access", "owners.view"], sub: deptViews("/marketing", [], has("users.manage")) },
+        ...customDepts.map((d) => ({ href: `/d/${d.key}`, label: d.title, icon: BriefcaseIcon, sub: deptViews(`/d/${d.key}`, [], has("users.manage")) })),
         {
           href: "/hr",
           label: "HR",
@@ -219,11 +334,25 @@ export function AppSidebar({
       ],
     },
   ];
+  // People with their own department sidebar do not get the Departments heading.
+  if (home) groups.splice(groups.findIndex((g) => g.label === "Departments"), 1);
   const keyOf = (i: NavItem) => i.id ?? i.href;
   const hidden = new Set([...roleHidden, ...userHidden]);
   const visible = (i: NavItem) => allowed(i.cap) && (i.locked || !hidden.has(keyOf(i)));
   const tabParam = searchParams.get("tab");
+  // Department entries match on the whole address; of several matching ones (Board, My board), the one with the
+  // most matching query parts wins.
+  const exactScore = (href: string) => {
+    const [path, query] = href.split("?");
+    if (pathname !== path) return 0;
+    const want = new URLSearchParams(query ?? "");
+    for (const [k, v] of want) if (searchParams.get(k) !== v) return 0;
+    if (!query && tabParam) return 0;
+    return 1 + [...want.keys()].length;
+  };
+  const bestExact = Math.max(0, ...groups.flatMap((g) => g.items.filter((i) => i.exact).map((i) => exactScore(i.href))));
   const isActive = (item: NavItem) => {
+    if (item.exact) return bestExact > 0 && exactScore(item.href) === bestExact;
     const [path, query] = item.href.split("?");
     if (item.also?.includes(pathname)) return true;
     if (query) return pathname === path && new URLSearchParams(query).get("tab") === tabParam;
@@ -317,8 +446,18 @@ export function AppSidebar({
             );
           })}
         </SidebarContent>
-        <SidebarFooter className="border-t border-sidebar-border group-data-[collapsible=icon]:hidden">
-          <div className="flex items-center gap-1 px-2">
+        <SidebarFooter className="border-t border-sidebar-border">
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton asChild isActive={pathname === "/profile"} tooltip="Profile: my record, leave, pay and claims, account" className="h-8 font-medium">
+                <Link href="/profile" onClick={close}>
+                  <CircleUserIcon />
+                  <span>Profile</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+          <div className="flex items-center gap-1 px-2 group-data-[collapsible=icon]:hidden">
             <p className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
               Viewing as <span className="font-semibold text-foreground">{ROLE_LABELS[activeRole]}</span>
             </p>

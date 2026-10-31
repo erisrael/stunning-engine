@@ -133,7 +133,7 @@ function Tile({ label, value, hint }: { label: string; value: React.ReactNode; h
   );
 }
 
-export function MyAttendance({ data, month, today }: { data: MyData; month: string; today: string }) {
+export function MyAttendance({ data, month, today, monthLink = "/attendance?month=" }: { data: MyData; month: string; today: string; monthLink?: string }) {
   const { act, busy } = useAct();
   const [pin, setPin] = React.useState("");
   const [correcting, setCorrecting] = React.useState<{ day: string; inTime: string; outTime: string; reason: string } | null>(null);
@@ -273,13 +273,13 @@ export function MyAttendance({ data, month, today }: { data: MyData; month: stri
           <CardDescription>A wrong or missing time? Ask for a correction; your line manager approves it.</CardDescription>
           <CardAction className="flex items-center gap-1">
             <Button size="icon-sm" variant="ghost" asChild aria-label="Previous month">
-              <Link href={`/attendance?month=${shiftMonth(month, -1)}`}>
+              <Link href={`${monthLink}${shiftMonth(month, -1)}`}>
                 <ChevronLeftIcon />
               </Link>
             </Button>
             <span className="text-sm font-medium tabular-nums">{month}</span>
             <Button size="icon-sm" variant="ghost" asChild aria-label="Next month">
-              <Link href={`/attendance?month=${shiftMonth(month, 1)}`}>
+              <Link href={`${monthLink}${shiftMonth(month, 1)}`}>
                 <ChevronRightIcon />
               </Link>
             </Button>

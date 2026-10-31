@@ -471,7 +471,7 @@ export async function submitClaim(user: AppUser, input: { date: string; amount: 
     now,
     now,
   );
-  await notify(approver ? [approver] : await financeIds("finance.access"), { type: "approval", title: `Expense claim from ${user.name}`, body: `${description}: ${amount}`, link: approver ? "/pay?tab=approve" : "/finance?tab=claims" }, now, user.id);
+  await notify(approver ? [approver] : await financeIds("finance.access"), { type: "approval", title: `Expense claim from ${user.name}`, body: `${description}: ${amount}`, link: approver ? "/profile?tab=pay&pay=approve" : "/finance?tab=claims" }, now, user.id);
   return id;
 }
 
@@ -490,7 +490,7 @@ export async function decideClaim(user: AppUser, id: string, input: { approve: b
     need(user, c.amount > s.approvalLimit ? "approve" : "access", "approve claims");
     await run("UPDATE fin_claims SET status = ?, finance_by = ?, finance_at = ?, note = ?, updated_at = ? WHERE id = ?", input.approve ? "approved" : "rejected", user.id, now, clean(input.note, 300) || null, now, id);
   } else throw new WorkflowError("INVALID_STATE", "This claim is already decided.");
-  await notify([c.user_id], { type: "approval", title: input.approve ? "Expense claim approved" : "Expense claim not approved", body: input.approve ? c.description : clean(input.note), link: "/pay" }, now, user.id);
+  await notify([c.user_id], { type: "approval", title: input.approve ? "Expense claim approved" : "Expense claim not approved", body: input.approve ? c.description : clean(input.note), link: "/profile?tab=pay" }, now, user.id);
 }
 
 export async function payClaim(user: AppUser, id: string, input: { accountId: string; date: string }) {
@@ -504,7 +504,7 @@ export async function payClaim(user: AppUser, id: string, input: { accountId: st
     const t = await post(user, { date: input.date, direction: "out", amount: c.amount, accountId: input.accountId, ledgerCode: c.ledger_code, department: c.department, project: c.project, description: `Claim: ${c.name}, ${c.description}` }, "claim", id);
     await run("UPDATE fin_claims SET status = 'paid', paid_tx_id = ?, updated_at = ? WHERE id = ?", t, nowIso(), id);
   });
-  await notify([c.user_id], { type: "approval", title: "Expense claim paid", body: `${c.description}: ${c.amount}`, link: "/pay" }, nowIso(), user.id);
+  await notify([c.user_id], { type: "approval", title: "Expense claim paid", body: `${c.description}: ${c.amount}`, link: "/profile?tab=pay" }, nowIso(), user.id);
 }
 
 export async function listClaims(user: AppUser, scope: "mine" | "toApprove" | "finance") {
@@ -610,7 +610,7 @@ export async function movePurchase(user: AppUser, id: string, input: { step: "ap
       break;
     }
   }
-  if (p.requester_id && p.requester_id !== user.id) await notify([p.requester_id], { type: "approval", title: `Purchase ${p.number}: ${input.step === "reject" ? "not approved" : input.step === "approve" ? "approved" : input.step === "order" ? "ordered" : input.step === "receive" ? "received" : "billed"}`, body: p.title, link: "/pay?tab=purchases" }, now, user.id);
+  if (p.requester_id && p.requester_id !== user.id) await notify([p.requester_id], { type: "approval", title: `Purchase ${p.number}: ${input.step === "reject" ? "not approved" : input.step === "approve" ? "approved" : input.step === "order" ? "ordered" : input.step === "receive" ? "received" : "billed"}`, body: p.title, link: "/profile?tab=pay&pay=purchases" }, now, user.id);
   await audit({ actor: user }, { action: "finance.purchase", summary: `${user.name}: ${input.step} ${p.number}` });
 }
 
@@ -870,7 +870,7 @@ export async function movePayroll(user: AppUser, runId: string, input: { step: "
         await run("UPDATE fin_payroll_runs SET status = 'paid', paid_by = ?, account_id = ?, updated_at = ? WHERE id = ?", user.id, input.accountId!, now, runId);
       });
       const people = await all<{ user_id: string | null }>("SELECT e.user_id FROM fin_payslips s JOIN employees e ON e.id = s.employee_id WHERE s.run_id = ?", runId);
-      await notify(people.map((p) => p.user_id), { type: "approval", title: `Your payslip for ${r.period}`, body: "Your salary has been paid.", link: "/pay?tab=payslips" }, now, user.id);
+      await notify(people.map((p) => p.user_id), { type: "approval", title: `Your payslip for ${r.period}`, body: "Your salary has been paid.", link: "/profile?tab=pay&pay=payslips" }, now, user.id);
       break;
     }
     case "lock":

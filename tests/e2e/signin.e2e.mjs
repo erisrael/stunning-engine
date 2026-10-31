@@ -191,7 +191,7 @@ try {
   check("the sign-in page offers the provider", await s.getByRole("link", { name: "Continue with Mock SSO" }).isVisible());
   await s.getByRole("link", { name: "Continue with Mock SSO" }).click();
   check("SSO signs Meron in (matched by email; the provider counts as both steps)", await signedIn(s));
-  await s.goto(`${base}/profile`);
+  await s.goto(`${base}/profile?tab=account`);
   check("Profile shows the linked account", await s.getByRole("button", { name: "Unlink" }).isVisible().catch(() => false));
   await s.screenshot({ path: path.join(shots, "4-profile.png"), fullPage: true });
   const s2 = await fresh();
@@ -252,7 +252,7 @@ try {
   const y = await fresh();
   await password(y, "yonas@demo.local");
   check("Yonas (optional, not set up) signs in with the password only", await signedIn(y));
-  await y.goto(`${base}/profile#account`);
+  await y.goto(`${base}/profile?tab=account`);
   await y.getByRole("button", { name: "Set up an authenticator app" }).click();
   const ysecret = (await y.getByRole("dialog").getByTestId("setup-key").innerText()).replace(/\s/g, "");
   const [yc] = await freshCode(ysecret, 0);

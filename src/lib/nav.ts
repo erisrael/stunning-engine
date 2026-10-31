@@ -1,8 +1,7 @@
 // Sidebar entries Admin can hide for a role (the sidebar still shows only what the role's permissions allow).
 export const SIDEBAR_ENTRIES: { key: string; label: string; group: string }[] = [
-  { key: "/me", label: "My record", group: "My space" },
   { key: "/attendance", label: "Attendance", group: "My space" },
-  { key: "/leave", label: "Leave", group: "My space" },
+  { key: "/approvals", label: "Approvals", group: "My space" },
   { key: "/team", label: "My effort / Team", group: "My space" },
   { key: "/questions", label: "Questions", group: "My space" },
   { key: "/overview", label: "Overview", group: "Workflow" },
@@ -17,7 +16,6 @@ export const SIDEBAR_ENTRIES: { key: string; label: string; group: string }[] = 
   { key: "/studio", label: "Studio", group: "Departments" },
   { key: "/marketing", label: "Marketing", group: "Departments" },
   { key: "/hr", label: "HR", group: "Departments" },
-  { key: "/pay", label: "Claims and pay", group: "My space" },
   { key: "/finance", label: "Finance", group: "Departments" },
   { key: "/people", label: "People", group: "Departments" },
   { key: "/requests", label: "Requests", group: "Departments" },

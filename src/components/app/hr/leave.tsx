@@ -369,7 +369,7 @@ export function MyLeave(props: {
             <CardDescription>You and the people who report to you.</CardDescription>
           </CardHeader>
           <CardContent>
-            <LeaveCalendar month={props.month} entries={props.entries} calendar={props.calendar} hrefFor={(m) => `/leave?month=${m}`} />
+            <LeaveCalendar month={props.month} entries={props.entries} calendar={props.calendar} hrefFor={(m) => `/profile?tab=leave&month=${m}`} />
           </CardContent>
         </Card>
       </div>

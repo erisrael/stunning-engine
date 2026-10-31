@@ -491,7 +491,7 @@ Everything still open across the earlier phases, in three batches, then face che
 - [ ] Order from here:
   1. Phase 15: Foundations (sign-in, scheduled jobs, backups, tests, monitoring): done, except passkeys, slow-page timing and setting up the staging site
   2. Phase 10b: attendance by printed QR and office network: done, except SMS
-  3. Phase 11: navigation by role, Profile tabs
+  3. Phase 11: navigation by role, Profile tabs: done
   4. Phase 12: department workflows; 12b Dev studio; 12c presentation studio
   5. Phase 16: Myseed's own needs (presenter releases and fees, file locations, Myseed App upload, Amharic and the Ethiopian calendar, data protection)
   6. Phase 17: KRAs, KPIs and OKRs
@@ -567,29 +567,29 @@ Built: Attendance has a **Capture** tab (Admin, new permission "Attendance captu
 4. Shared check-in on an office computer; the team lead's scan; device registration and flags.
 5. Optional: SMS check-in.
 
-## Phase 11: Navigation that follows the person's role
+## Phase 11: Navigation that follows the person's role (done)
 
 Today a developer sees "Departments, Dev team" with sub-links, and every department page repeats a bar of ten tabs (Dashboard, Board, List, Sheet, Overview, Timeline, My report, Repositories, Projects, Calendar). My record, Leave and Claims and pay sit at the top of My space.
 
 ### 11.1 Departments as the person's own sidebar
 
-- [ ] For someone working in a department (Developer, Marketing, Content, or a member of a department made from a template), the department becomes their sidebar, the way Recording or Editing is for production staff. No "Departments" heading, no nesting.
-- [ ] Sections, each view at its own address (`/dev/board`, `/dev/list`...; the old `?tab=` links keep working):
+- [x] For someone working in a department (Developer, Marketing, Content, or a member of a department made from a template), the department becomes their sidebar, the way Recording or Editing is for production staff. No "Departments" heading, no nesting.
+- [x] Sections, each view at its own address (`/dev/board`, `/dev/list`...; the old `?tab=` links keep working):
   - **My work**: Home (the department dashboard) and My board (their own tasks as a board, see Phase 12).
   - **Work**: Board, List, Sheet.
   - **Plan**: Projects (with the count), Overview, Timeline, Calendar.
   - **Insights**: Report ("My report" for members), Team (leads).
   - **Tools**: Repositories (Dev), Accounting (Finance departments), Requests.
   - **Manage**: Configure (heads), Checklists and templates.
-- [ ] What a person sees follows their position: members get My work, Board, List, Calendar, My report and Requests; leads add Team, Overview, Timeline, Sheet and the lead desk; heads add Configure. Admin, Sidebar can still hide entries per role.
-- [ ] The tab bar on department pages goes. Each page has its title, its own filters and one compact "View" switch only where it helps (Board, List and Sheet of the same tasks).
-- [ ] People who oversee several departments (Admin, managers, owners, the Company overview) keep a "Departments" group with each department folded underneath.
-- [ ] Someone with roles in more than one department switches with the role switcher; the sidebar follows the active role.
+- [x] What a person sees follows their position: members get My work, Board, List, Calendar, My report and Requests; leads add Team, Overview, Timeline, Sheet and the lead desk; heads add Configure. Admin, Sidebar can still hide entries per role.
+- [x] The tab bar on department pages goes. Each page has its title, its own filters and one compact "View" switch only where it helps (Board, List and Sheet of the same tasks).
+- [x] People who oversee several departments (Admin, managers, owners, the Company overview) keep a "Departments" group with each department folded underneath.
+- [x] Someone with roles in more than one department switches with the role switcher; the sidebar follows the active role.
 
 ### 11.2 My space, and the Profile with tabs
 
-- [ ] My space keeps only daily things: Home or My work, Attendance (daily check-in), Questions, and an **Approvals** entry for people who approve anything (leave, claims, attendance corrections, handovers waiting), with one count.
-- [ ] **Profile** (the avatar menu, and a Profile entry at the bottom of the sidebar) gets tabs:
+- [x] My space keeps only daily things: Home or My work, Attendance (daily check-in), Questions, and an **Approvals** entry for people who approve anything (leave, claims, attendance corrections, handovers waiting), with one count.
+- [x] **Profile** (the avatar menu, and a Profile entry at the bottom of the sidebar) gets tabs:
   - Profile: photo, headline, skills, contact details.
   - My record: HR record and documents (today `/me`).
   - Leave: balances and requests (today `/leave`).
@@ -597,7 +597,9 @@ Today a developer sees "Departments, Dev team" with sub-links, and every departm
   - Attendance history and kiosk PIN (today's day stays on Attendance).
   - Account: password, sessions and devices, Google account, notifications, preferences.
   - Help.
-- [ ] `/me`, `/leave` and `/pay` move there; their old addresses send people to the right tab. Notifications and emails link to the new places.
+- [x] `/me`, `/leave` and `/pay` move there; their old addresses send people to the right tab. Notifications and emails link to the new places.
+
+Built: `src/server/nav.ts` picks the person's own department from the active role (Developer: Dev, Marketing, Content: Studio) or a position in a department made in Admin; production staff and people who oversee (Admin, managers, owners, Company overview) keep today's sidebar with each department's views folded. Views live at `/dev/board`, `/marketing/list`, `/d/<key>/timeline`; `?tab=` links are redirected with their filters. Studio keeps its own tabs (they are content types) and lists them in the sidebar for Studio people. Profile has tabs Profile, My record, Leave, Pay and claims, Attendance history and Account; `/me`, `/leave` and `/pay` redirect there. `/approvals` gathers leave, claims, attendance corrections and reviews, handovers and timer corrections.
 
 ## Phase 12: Department workflows as complete as production
 

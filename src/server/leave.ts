@@ -306,9 +306,9 @@ export async function requestLeave(user: AppUser, input: LeaveInput) {
   const what = `${type.label}: ${input.startDate}${input.endDate !== input.startDate ? ` to ${input.endDate}` : ""} (${days} ${days === 1 ? "day" : "days"})`;
   if (forOther) {
     await writeEntry({ id, employee_id: employeeId, start_date: input.startDate, end_date: input.endDate, type_label: type.label });
-    if (emp.user_id) await notify([emp.user_id], { type: "hr", title: "Leave recorded for you", body: what, link: "/leave" }, now, user.id);
+    if (emp.user_id) await notify([emp.user_id], { type: "hr", title: "Leave recorded for you", body: what, link: "/profile?tab=leave" }, now, user.id);
   } else if (approver) {
-    await notify([approver], { type: "approval", title: `Leave request: ${emp.full_name}`, body: what, link: "/leave", dedupeKey: `leave:${id}:lead` }, now);
+    await notify([approver], { type: "approval", title: `Leave request: ${emp.full_name}`, body: what, link: "/profile?tab=leave", dedupeKey: `leave:${id}:lead` }, now);
   } else {
     await notify(await hrUserIds(), { type: "approval", title: `Leave request: ${emp.full_name}`, body: what, link: "/hr?tab=leave", dedupeKey: `leave:${id}:hr` }, now, user.id);
   }
@@ -343,7 +343,7 @@ export async function decideLeave(user: AppUser, id: string, input: { decision: 
     await notify(await hrUserIds(), { type: "approval", title: `Leave to approve: ${r.full_name}`, body: `${what}. Approved by the line manager.`, link: "/hr?tab=leave", dedupeKey: `leave:${id}:hr` }, now, user.id);
   if (next === "approved") await writeEntry(r);
   if (next !== "pending_hr" && emp?.user_id)
-    await notify([emp.user_id], { type: "hr", title: next === "approved" ? "Leave approved" : "Leave not approved", body: `${what}${note ? `. ${note}` : ""}`, link: "/leave" }, now, user.id);
+    await notify([emp.user_id], { type: "hr", title: next === "approved" ? "Leave approved" : "Leave not approved", body: `${what}${note ? `. ${note}` : ""}`, link: "/profile?tab=leave" }, now, user.id);
   await audit({ actor: user }, { itemId: r.employee_id, action: "hr.leave", summary: `${user.name} ${input.decision === "approve" ? "approved" : "did not approve"} ${r.full_name}'s ${what}${note ? `: ${note}` : ""}` });
   return next;
 }
@@ -361,7 +361,7 @@ export async function cancelLeave(user: AppUser, id: string) {
   await run("DELETE FROM leave_entries WHERE request_id = ?", id);
   const what = `${r.type_label ?? r.type_key}: ${r.start_date}${r.end_date !== r.start_date ? ` to ${r.end_date}` : ""}`;
   if (r.status === "approved") await notify(await hrUserIds(), { type: "hr", title: `Leave cancelled: ${r.full_name}`, body: what, link: "/hr?tab=leave" }, now, user.id);
-  if (r.status === "pending_lead" && r.approver_id) await notify([r.approver_id], { type: "hr", title: `Leave request withdrawn: ${r.full_name}`, body: what, link: "/leave" }, now, user.id);
+  if (r.status === "pending_lead" && r.approver_id) await notify([r.approver_id], { type: "hr", title: `Leave request withdrawn: ${r.full_name}`, body: what, link: "/profile?tab=leave" }, now, user.id);
   await audit({ actor: user }, { itemId: r.employee_id, action: "hr.leave", summary: `${user.name} cancelled ${r.full_name}'s ${what}` });
 }
 

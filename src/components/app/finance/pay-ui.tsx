@@ -20,7 +20,7 @@ export type PayTab = "claims" | "purchases" | "payslips" | "approve";
 
 // Claims and pay: everyone claims expenses, asks to buy things and reads their payslips; line managers approve
 // their team's claims here.
-export function PayHome({ tab, claims, purchases, payslips, toApprove, departments, ledger, cur, today }: { tab: PayTab; claims: Claim[]; purchases: Purchase[]; payslips: Slip[]; toApprove: Claim[]; departments: Opt[]; ledger: Opt[]; cur: string; today: string }) {
+export function PayHome({ tab, tabParam = "tab", claims, purchases, payslips, toApprove, departments, ledger, cur, today }: { tab: PayTab; tabParam?: string; claims: Claim[]; purchases: Purchase[]; payslips: Slip[]; toApprove: Claim[]; departments: Opt[]; ledger: Opt[]; cur: string; today: string }) {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
@@ -29,7 +29,7 @@ export function PayHome({ tab, claims, purchases, payslips, toApprove, departmen
   const [rejecting, setRejecting] = React.useState<Claim | null>(null);
   const setTab = (t: string) => {
     const n = new URLSearchParams(params.toString());
-    n.set("tab", t);
+    n.set(tabParam, t);
     router.push(`${pathname}?${n}`);
   };
   return (
