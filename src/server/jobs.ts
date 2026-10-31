@@ -9,12 +9,13 @@ import { applyChatRetention } from "./chat-extras";
 import { budgetAlerts } from "./finance";
 import { kioskSilenceChecks } from "./attendance";
 import { flushOutbox } from "./outbox";
+import { acquireLease, housekeeping, releaseLease, runJob } from "./ops";
 import { BLOCKER_CAUSE_LABELS, STAGE_LABELS, type Stage } from "@/lib/domain";
 import { localDate } from "@/lib/format";
 
-// Scheduled checks: deadlines, blockers, stale timers, waiting handoffs and question escalation.
+// Work alerts: deadlines, blockers, stale timers, waiting handoffs and question escalation.
 // Each alert has a dedupe key per item and day, so repeated runs and page refreshes never re-send.
-export async function runScheduledChecks(now = nowIso()) {
+async function workAlerts(now: string) {
   const s = await getSettings();
   const tz = s.workspace.timezone;
   const day = localDate(now, tz);
@@ -135,25 +136,44 @@ export async function runScheduledChecks(now = nowIso()) {
           );
     counts.questions++;
   }
-  // Trash entries are kept for a fixed period, then removed for good.
-  await purgeTrash({ actor: null, source: "system" }, "expired");
-  // Voice messages past their 10 minutes, and uploads never sent.
-  await cleanupChatFiles(200);
-  // HR: documents, contracts and probation coming up (deduplicated per date, so this runs safely every time).
-  await hrReminderChecks(now);
-  await trainingReminders(now);
-  // Chat messages and files past the retention set in Admin, Chat.
-  await applyChatRetention(now);
-  // Finance: budgets passing their alert level.
-  await budgetAlerts();
-  // Attendance: a kiosk that went quiet during working hours.
-  await kioskSilenceChecks(now);
-  // Face data of people who have left is deleted.
-  await (await import("./attendance-face")).faceCleanup();
-  // Email waiting to go out: notification copies to retry and scheduled messages now due.
-  await flushOutbox(200);
-  await setMeta("lastChecksAt", now);
   return counts;
+}
+
+const NO_COUNTS = { dueSoon: 0, overdue: 0, blockers: 0, stale: 0, handoffs: 0, questions: 0 };
+
+// Every scheduled job, each recorded on its own (Admin, System), so one failing never stops the others.
+// Started by the timer inside the server (instrumentation.ts), by /api/cron/checks from outside, and on page
+// loads as a fallback; a lease makes sure two of them never run at the same time.
+export async function runScheduledChecks(now = nowIso(), opts: { trigger?: string; force?: boolean } = {}) {
+  if (!(await acquireLease("checks", 9 * 60e3, opts.force))) return NO_COUNTS;
+  try {
+    const counts = (await runJob("alerts", () => workAlerts(now))) ?? NO_COUNTS;
+    // Trash entries are kept for a fixed period, then removed for good.
+    await runJob("trash", () => purgeTrash({ actor: null, source: "system" }, "expired"));
+    // Voice messages past their 10 minutes, and uploads never sent.
+    await runJob("chat-files", () => cleanupChatFiles(200));
+    // HR: documents, contracts and probation coming up (deduplicated per date, so this runs safely every time).
+    await runJob("hr-reminders", async () => (await hrReminderChecks(now), await trainingReminders(now)));
+    // Chat messages and files past the retention set in Admin, Chat.
+    await runJob("chat-retention", () => applyChatRetention(now));
+    // Finance: budgets passing their alert level.
+    await runJob("budgets", () => budgetAlerts());
+    // Attendance: a kiosk that went quiet during working hours.
+    await runJob("kiosks", () => kioskSilenceChecks(now));
+    // Face data of people who have left is deleted.
+    await runJob("face-cleanup", async () => (await import("./attendance-face")).faceCleanup());
+    // Email waiting to go out: notification copies to retry and scheduled messages now due.
+    await runJob("outbox", () => flushOutbox(200));
+    // The daily backup when it is due, and the monthly test restore.
+    await runJob("backup", async () => (await import("./backups")).scheduledBackup(now));
+    // Old errors and sign-in records are cleared; new errors alert Admin.
+    await runJob("housekeeping", () => housekeeping(now));
+    await setMeta("lastChecksAt", now);
+    await setMeta("lastChecksTrigger", opts.trigger ?? "page");
+    return counts;
+  } finally {
+    await releaseLease("checks");
+  }
 }
 
 // Called on page loads; runs the checks at most every 10 minutes.

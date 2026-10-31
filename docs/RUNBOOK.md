@@ -33,8 +33,9 @@ The starting accounts are listed in [USERS.md](USERS.md). `npm run db:reset` pri
 | `npm run db:empty -- --keep-accounts` | Deletes the curriculum and all production data; keeps accounts and settings. |
 | `npm run db:import -- path/to/backup.json` | Adds or updates a curriculum backup in the current data. Safe to run again. |
 | `npm run db:status` | Row counts. |
-| `npm run backup` | Writes every table to `backups/myseed-YYYYMMDD-HHMM.json`. |
-| `npm run db:restore -- backups/file.json` | Replaces all data with a backup file. |
+| `npm run backup` | Writes every table to `backups/myseed-YYYYMMDD-HHMM.json.gz` (encrypted when `BACKUP_PASSPHRASE` is set). Automatic daily backups to the disk, Google Drive and S3 are set up in Admin, System (see [RECOVERY.md](RECOVERY.md)). |
+| `npm run db:restore -- backups/file` | Replaces all data with a backup file (`.json`, `.json.gz`, or `.json.gz.enc` with `BACKUP_PASSPHRASE`). |
+| `npm test` / `npm run test:e2e` | Server tests and browser tests against throwaway databases (build first for browser tests). |
 | `npm run db:bulk-restore -- backups/file.json` | Replaces all data with a backup file using batched inserts. Use this instead of `db:restore` when the database is remote (Supabase): the same restore finishes in seconds instead of hours. |
 | `npm run templates` | Writes the import templates to `templates/` (not committed; the app builds them on demand). |
 | `npm run checks` | Runs the scheduled alert checks once. |

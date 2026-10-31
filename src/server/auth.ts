@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { get, nowIso, run } from "./db";
 import { can, loadUser, type AppUser } from "./users";
 import { signInPolicy } from "./signin-config";
+import { clientIpFrom } from "./client-ip";
 import { sessionLimitFor } from "@/lib/signin-policy";
 import type { Capability, Role } from "@/lib/domain";
 
@@ -18,9 +19,10 @@ export type Viewer = AppUser & { activeRole: Role; sessionId: string; previewBy?
 
 const secure = () => process.env.NODE_ENV === "production" && process.env.MYSEED_INSECURE_COOKIES !== "1";
 
+// The visitor's address as our own proxy saw it (see client-ip.ts): used for sign-in limits, the sign-in log and
+// the office-network check for attendance, so it must not be something the visitor can write.
 export async function requestIp() {
-  const h = await headers();
-  return (h.get("x-forwarded-for")?.split(",")[0]?.trim() || h.get("x-real-ip") || h.get("cf-connecting-ip") || "").slice(0, 64) || null;
+  return clientIpFrom(await headers());
 }
 
 export async function deviceId(create: boolean) {

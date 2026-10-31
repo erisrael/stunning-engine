@@ -489,8 +489,8 @@ Everything still open across the earlier phases, in three batches, then face che
 
 - [x] Face check-in at the kiosk (Phase 9, step 2), with written guidelines (docs/FACE-CHECKIN.md)
 - [ ] Order from here:
-  1. Phase 15: Foundations (sign-in, scheduled jobs, backups, tests, monitoring)
-  2. Phase 10b: attendance by printed QR and office network
+  1. Phase 15: Foundations (sign-in, scheduled jobs, backups, tests, monitoring): done, except passkeys, slow-page timing and setting up the staging site
+  2. Phase 10b: attendance by printed QR and office network: done, except SMS
   3. Phase 11: navigation by role, Profile tabs
   4. Phase 12: department workflows; 12b Dev studio; 12c presentation studio
   5. Phase 16: Myseed's own needs (presenter releases and fees, file locations, Myseed App upload, Amharic and the Ethiopian calendar, data protection)
@@ -500,62 +500,64 @@ Everything still open across the earlier phases, in three batches, then face che
   9. Phase 14: Mail
 - [ ] Native app shell (Phase 5b), last
 
-## Phase 10b: Attendance by printed QR and office network (next, before Phase 11)
+## Phase 10b: Attendance by printed QR and office network (done, except SMS)
 
 For now there is no kiosk tablet: a QR code is printed and put up at the entrance. People scan it with their phone to check in, take breaks and lunch, and check out. Being on the office Wi-Fi proves they are on site. The kiosk (Phase 9) stays for later; everything below works alongside it.
 
 ### 10b.1 Who sets up what
 
-- [ ] **Admin sets up how attendance is taken** (new permission "Attendance capture setup", Admin only): which methods are on (printed QR, office network, kiosk, face, phone location, app anywhere), the sites and their networks, the QR posters, kiosks, devices, PIN rules, offline rules.
-- [ ] **HR manages the attendance itself** ("Attendance for everyone", as today): shifts and rotas, grace, overtime, break and lunch rules, reviewing hand-made days and flagged check-ins, corrections, timesheets, badges and PINs for people, reports.
-- [ ] Attendance, Setup splits into **Capture** (Admin) and **Rules** (HR); each sees only their part.
+- [x] **Admin sets up how attendance is taken** (new permission "Attendance capture setup", Admin only): which methods are on (printed QR, office network, kiosk, face, phone location, app anywhere), the sites and their networks, the QR posters, kiosks, devices, PIN rules, offline rules.
+- [x] **HR manages the attendance itself** ("Attendance for everyone", as today): shifts and rotas, grace, overtime, break and lunch rules, reviewing hand-made days and flagged check-ins, corrections, timesheets, badges and PINs for people, reports.
+- [x] Attendance, Setup splits into **Capture** (Admin) and **Rules** (HR); each sees only their part.
 
 ### 10b.2 The printed QR
 
-- [ ] Admin makes a **QR poster** per site (or per door): a printable A4 page with the QR code, the site name, a short address to type (for phones that cannot scan, for example `myseed.app/in`), and three lines of instructions.
-- [ ] The QR opens the check-in page in the app on the person's phone, already signed in after the first time (the phone is remembered).
-- [ ] **One tap, what makes sense now**: the page shows the person's name, the time and only the buttons that fit their state:
+- [x] Admin makes a **QR poster** per site (or per door): a printable A4 page with the QR code, the site name, a short address to type (for phones that cannot scan, for example `myseed.app/in`), and three lines of instructions.
+- [x] The QR opens the check-in page in the app on the person's phone, already signed in after the first time (the phone is remembered).
+- [x] **One tap, what makes sense now**: the page shows the person's name, the time and only the buttons that fit their state:
   - not in yet: **Check in**;
   - in: **Start break**, **Start lunch**, **Check out**;
   - on a break or at lunch: **Back from break** / **Back from lunch**.
   Then a clear confirmation with the time and any lateness, and the page closes itself.
-- [ ] **The QR alone is not enough**, because a photo of the poster works anywhere. A scan counts only when at least one of these, chosen by Admin per site, also holds:
+- [x] **The QR alone is not enough**, because a photo of the poster works anywhere. A scan counts only when at least one of these, chosen by Admin per site, also holds:
   - **Office network** (default): the phone is on the office Wi-Fi, recognised by the office's internet address (see 10b.3);
   - **Location**: the phone is within the site's radius (when the person allows location);
   - **This person's phone**: the device was registered to them (see 10b.5).
   A scan that fails the check is refused with the reason ("Connect to the office Wi-Fi and scan again").
-- [ ] **Changing the code**: Admin can make a new code for a poster at any time (old prints stop working), for example after a photo of it was shared; reprinting is one click.
+- [x] **Changing the code**: Admin can make a new code for a poster at any time (old prints stop working), for example after a photo of it was shared; reprinting is one click.
 
 ### 10b.3 Checking by the office network
 
-- [ ] What a web app can really see: the **public internet address** the office network uses to reach the internet. A browser cannot read the Wi-Fi name, the router or the phone's hardware (MAC) address, so the check is by address.
-- [ ] Admin adds each site's addresses (single addresses or ranges); a **Use this network** button fills in the address Admin is on, when Admin is at the office.
-- [ ] Addresses that change (many home and office internet plans): Admin is told when check-ins start failing for everyone at a site, and can update the address from the alert; a name that follows the address (dynamic DNS) is also accepted.
-- [ ] The address is read correctly behind the hosting's proxy (the forwarded address, from the hosting only), so it cannot be faked by the phone.
-- [ ] Optional: **check in without scanning** when on the office network: the Attendance page in the app shows the same buttons, so the QR is only the quick way in.
+- [x] What a web app can really see: the **public internet address** the office network uses to reach the internet. A browser cannot read the Wi-Fi name, the router or the phone's hardware (MAC) address, so the check is by address.
+- [x] Admin adds each site's addresses (single addresses or ranges); a **Use this network** button fills in the address Admin is on, when Admin is at the office.
+- [x] Addresses that change (many home and office internet plans): Admin is told when check-ins start failing for everyone at a site, and can update the address from the alert; a name that follows the address (dynamic DNS) is also accepted.
+- [x] The address is read correctly behind the hosting's proxy (the forwarded address, from the hosting only), so it cannot be faked by the phone.
+- [x] Optional: **check in without scanning** when on the office network: the Attendance page in the app shows the same buttons, so the QR is only the quick way in.
 
 ### 10b.4 Breaks and lunch
 
-- [ ] New kinds of check-in: break start and end, lunch start and end.
-- [ ] HR sets per shift: the lunch window and length (for example 12:00 to 14:00, 60 minutes), short breaks allowed (for example two of 15 minutes), and whether breaks are paid.
-- [ ] Hours worked count the real breaks taken when recorded (instead of the shift's fixed break); breaks and lunch that run over are flagged; someone still on a break at the end of the day is flagged like a missing check-out.
-- [ ] The daily board shows who is on a break or at lunch now; timesheets show break and lunch time per day; payroll takes unpaid break overruns only if HR switches that on.
+- [x] New kinds of check-in: break start and end, lunch start and end.
+- [x] HR sets per shift: the lunch window and length (for example 12:00 to 14:00, 60 minutes), short breaks allowed (for example two of 15 minutes), and whether breaks are paid.
+- [x] Hours worked count the real breaks taken when recorded (instead of the shift's fixed break); breaks and lunch that run over are flagged; someone still on a break at the end of the day is flagged like a missing check-out.
+- [x] The daily board shows who is on a break or at lunch now; timesheets show break and lunch time per day; payroll takes unpaid break overruns only if HR switches that on.
 
 ### 10b.5 People without a smartphone, or with a broken camera
 
 No extra device is needed; in order of preference:
 
-- [ ] **Type the short address** instead of scanning: any phone with a browser opens `myseed.app/in` (printed on the poster) and gets the same buttons; the office network check still applies.
-- [ ] **Shared check-in on an office computer**: any computer already at the office (reception, a team lead's laptop) can open **Check-in for others** (allowed on the office network only). The person types their number and PIN; the computer is not signed in as them, and the check-in is recorded as theirs with "shared computer" as the way. This is the kiosk without buying a tablet.
-- [ ] **The team lead checks them in**: in the app the lead scans the person's badge QR with their own phone (or picks them from the team list) and records the time; it is labelled "by the team lead" and HR reviews it, like today's hand-made days.
-- [ ] **Basic phones (no browser)**, optional and later: check in by SMS ("IN 12 4826" to a number) through an SMS gateway; it has a running cost per message, so it is a separate choice.
+- [x] **Type the short address** instead of scanning: any phone with a browser opens `myseed.app/in` (printed on the poster) and gets the same buttons; the office network check still applies.
+- [x] **Shared check-in on an office computer**: any computer already at the office (reception, a team lead's laptop) can open **Check-in for others** (allowed on the office network only). The person types their number and PIN; the computer is not signed in as them, and the check-in is recorded as theirs with "shared computer" as the way. This is the kiosk without buying a tablet.
+- [x] **The team lead checks them in**: in the app the lead scans the person's badge QR with their own phone (or picks them from the team list) and records the time; it is labelled "by the team lead" and HR reviews it, like today's hand-made days.
+- [ ] **Basic phones (no browser)** (not built; it needs an SMS gateway with a running cost), optional and later: check in by SMS ("IN 12 4826" to a number) through an SMS gateway; it has a running cost per message, so it is a separate choice.
 
 ### 10b.6 Stopping misuse
 
-- [ ] **Devices**: a phone is registered to one person the first time they check in from it (Admin chooses: anyone's first phone, or approved by HR). A phone used for two people within a short time is flagged, and the second check-in waits for HR.
-- [ ] **Time window**: QR and network check-ins are accepted only around shift times (for example from an hour before the start); outside it they are flagged.
-- [ ] **Flagged check-ins** go to HR's Review tab with the reason (another person's phone, outside the time window, unusual address); HR accepts or rejects, and the person is told.
-- [ ] Every check-in records how it was made (QR, office network, shared computer, team lead, kiosk, face), the device and the address, all visible to HR on the day's detail.
+- [x] **Devices**: a phone is registered to one person the first time they check in from it (Admin chooses: anyone's first phone, or approved by HR). A phone used for two people within a short time is flagged, and the second check-in waits for HR.
+- [x] **Time window**: QR and network check-ins are accepted only around shift times (for example from an hour before the start); outside it they are flagged.
+- [x] **Flagged check-ins** go to HR's Review tab with the reason (another person's phone, outside the time window, unusual address); HR accepts or rejects, and the person is told.
+- [x] Every check-in records how it was made (QR, office network, shared computer, team lead, kiosk, face), the device and the address, all visible to HR on the day's detail.
+
+Built: Attendance has a **Capture** tab (Admin, new permission "Attendance capture setup") and **Rules** (HR). Pages: `/in` (the QR and the typed short address), `/in/shared` (an office computer), `/attendance/poster` (the printable poster). The office address is read from the hosting's proxy header, counted from the end (`TRUSTED_PROXY_HOPS`, default 1; `TRUST_CLOUDFLARE=1` behind Cloudflare). Without a proxy in front of the app (`next start` reached directly) no address is known, so the network check cannot pass: put Nginx or Caddy in front on the VPS.
 
 ### 10b.7 Order of delivery
 
@@ -743,26 +745,29 @@ Done in step 1: Admin, Sign-in has tabs Rules, Google, Microsoft, SSO, Sign-up, 
 
 ### 15.2 Scheduled jobs that always run
 
-- [ ] A cron job on the hosting (Render cron or an external pinger) calls `/api/cron/checks` every 10 minutes with a secret; Admin, System shows when it last ran and warns when it has not run for 30 minutes.
-- [ ] Jobs listed with their last run and result: reminders, kiosk alerts, email outbox and Send later, chat retention, budget alerts, face data cleanup, trash purge, backups.
+- [x] Three ways, any of them enough: a timer inside the server (every 10 minutes; enough on a VPS), `/api/cron/checks` with `CRON_SECRET` for an outside schedule (a free GitHub Actions workflow, `.github/workflows/schedule.yml`, or a VPS cron line), and page visits as a fallback. A lease stops two runs overlapping. Admin, System shows when they last ran and turns red after 30 minutes.
+- [x] Each job recorded with its last run, result, time taken and error: work alerts, trash, chat files, HR and training reminders, chat retention, budgets, kiosks, face data, email outbox, backups, housekeeping. A job failing twice in a row alerts Admin; one failing job no longer stops the others.
 
 ### 15.3 Backups and recovery
 
-- [ ] An automatic daily backup (database export plus uploaded files) to storage outside Supabase (for example an S3-compatible bucket or Google Drive), encrypted, keeping 7 daily, 4 weekly and 12 monthly copies.
-- [ ] Admin, System: last backup, size, a download, and a **test restore** into a separate copy once a month with a short report.
-- [ ] A **staging site** (a second Render service with its own database) where changes are tried before they reach the live site.
-- [ ] A written recovery plan: who does what if the database or hosting fails, and how long a restore takes.
+- [x] Automatic daily backup (every table, including files kept in the database), gzipped and optionally encrypted with a passphrase (AES-256-GCM), to the server's disk, Google Drive (a "Myseed backups" folder, only files the app made) and optional S3-compatible storage (R2, B2, Wasabi, S3, MinIO); 7 daily, 4 weekly and 12 monthly kept (configurable).
+- [x] Admin, System: backups kept in each place with downloads, Back up now, history, and a **test restore** (into a throwaway in-memory database, every table's rows compared) monthly by itself or on demand.
+- [x] Command-line backup and restore read the new files (`BACKUP_PASSPHRASE` for encrypted ones).
+- [ ] A **staging site**: the steps are written (docs/RECOVERY.md); setting up the second service is for whoever runs the hosting.
+- [x] A written recovery plan: docs/RECOVERY.md (who does what, restoring, losing the server, account takeover, moving to a VPS). Names and phone numbers to fill in.
 
 ### 15.4 Tests in the project
 
-- [ ] The server and browser checks written during development (around 300) move into the project (`tests/`), run against a throwaway database, never the live one.
-- [ ] GitHub Actions on every push: type check, build, server tests, browser tests; a failing run blocks deploying.
+- [x] The server and browser checks live in `tests/` (`npm test`, `npm run test:e2e`, `npm run test:all`), each on its own copy of a seeded throwaway database, never the one in `.env`.
+- [x] GitHub Actions on every push (`.github/workflows/ci.yml`): type check, build, server tests, browser tests; screenshots kept when they fail. On Render, set Auto-Deploy to "After CI Checks Pass" so a failing run blocks deploying.
 
-### 15.5 Knowing when something breaks
+### 15.5 Knowing when something breaks (free, nothing outside)
 
-- [ ] Error reporting (Sentry, free tier) for the server and the browser, with the user and page, no personal data in messages.
-- [ ] An uptime check every minute (for example Better Stack or UptimeRobot, free) that messages Admin by email and Telegram when the site is down or slow.
-- [ ] Admin, System: health (database, storage, email, push), slow pages, recent errors.
+- [x] Errors from the server (every page, action and API), people's browsers and scheduled jobs, kept in the app and grouped by kind, with how often, where and who; email addresses, numbers and keys masked. Mark fixed; it opens again if it comes back.
+- [x] Alerts to Admin on new errors, failed backups and failing jobs: the bell always, email and Telegram (free bot) when set up; a test button.
+- [x] Uptime: `/api/health` for any checker; the GitHub schedule checks it every 10 minutes and GitHub emails when it fails.
+- [x] Admin, System, Health: database, scheduled jobs, backups, errors, email, file storage, Google, encryption key, outside schedule, server memory.
+- [ ] Slow pages: timing per page (with Phase 18's speed work).
 
 ## Phase 16: Myseed's own needs
 

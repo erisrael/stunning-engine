@@ -21,13 +21,17 @@ import { StatusPill, type Tone } from "@/components/app/status-pill";
 import * as A from "@/app/actions/attendance";
 import { FaceEnroll } from "./face-enroll";
 import {
+  ACTION_LABELS,
   CORRECTION_STATUS_LABELS,
   DAY_STATUS_LABELS,
   MARK_STATUSES,
   SOURCE_LABELS,
   fmtHours,
   fmtMin,
+  stateAfter,
+  toggleKind,
   type AttendanceConfig,
+  type EventKind,
   type CorrectionStatus,
   type DayResult,
   type DayStatus,
@@ -75,6 +79,9 @@ function Flags({ d }: { d: DayResult }) {
     <span className="flex flex-wrap gap-1">
       {d.manual && <Badge variant="secondary">{d.reviewed ? "Hand-made" : "Hand-made, HR to review"}</Badge>}
       {d.missingOut && <Badge variant="destructive">No check-out</Badge>}
+      {d.onBreak && <Badge variant="outline">{d.onBreak === "lunch" ? "At lunch now" : "On a break now"}</Badge>}
+      {d.missingReturn && <Badge variant="destructive">Did not come back from {d.lunchMin ? "lunch" : "a break"}</Badge>}
+      {d.breakOverMin > 0 && <Badge variant="outline">Breaks over by {d.breakOverMin} min</Badge>}
       {d.leaveLabel && d.status !== "leave" && <Badge variant="outline">{d.leaveLabel}</Badge>}
     </span>
   );
@@ -132,7 +139,9 @@ export function MyAttendance({ data, month, today }: { data: MyData; month: stri
   const [correcting, setCorrecting] = React.useState<{ day: string; inTime: string; outTime: string; reason: string } | null>(null);
   const canSelf = data.cfg.methods.web || data.cfg.methods.mobile;
   const last = data.events.at(-1);
-  const isIn = last?.kind === "in";
+  // One button: it ends a break or lunch, else checks in or out.
+  const nextKind = toggleKind(stateAfter(last?.kind));
+  const isIn = nextKind !== "in";
 
   const check = async () => {
     let loc: { lat: number; lng: number; accuracy: number } | null = null;
@@ -146,8 +155,11 @@ export function MyAttendance({ data, month, today }: { data: MyData; month: stri
         ),
       );
     }
-    const r = await act<{ kind: "in" | "out"; repeat: boolean; line: DayResult | null }>(() => A.punchAction(loc ?? {}));
-    if (r) toast.success(r.repeat ? "Already recorded a moment ago" : r.kind === "in" ? `Checked in${r.line?.lateMin ? `, ${r.line.lateMin} min late` : ""}` : "Checked out. See you tomorrow.");
+    const r = await act<{ kind: EventKind; repeat: boolean; line: DayResult | null }>(() => A.punchAction(loc ?? {}));
+    if (r)
+      toast.success(
+        r.repeat ? "Already recorded a moment ago" : r.kind === "in" ? `Checked in${r.line?.lateMin ? `, ${r.line.lateMin} min late` : ""}` : r.kind === "out" ? "Checked out. See you tomorrow." : ACTION_LABELS[r.kind].done,
+      );
   };
 
   return (
@@ -178,7 +190,7 @@ export function MyAttendance({ data, month, today }: { data: MyData; month: stri
               {!!data.today?.lateMin && <p className="text-sm text-[var(--st-paused-fg)]">{data.today.lateMin} min late</p>}
               {canSelf && (
                 <Button size="lg" className="ml-auto" disabled={busy} onClick={check}>
-                  {busy ? <Loader2Icon className="animate-spin" /> : isIn ? <LogOutIcon /> : <LogInIcon />} {isIn ? "Check out" : "Check in"}
+                  {busy ? <Loader2Icon className="animate-spin" /> : isIn ? <LogOutIcon /> : <LogInIcon />} {ACTION_LABELS[nextKind].button}
                 </Button>
               )}
             </div>
@@ -192,7 +204,8 @@ export function MyAttendance({ data, month, today }: { data: MyData; month: stri
               <ul className="flex flex-wrap gap-2 text-xs text-muted-foreground">
                 {data.events.map((e) => (
                   <li key={e.id} className="rounded border px-2 py-1">
-                    {e.kind === "in" ? "In" : "Out"} {fmtMin(e.minutes)} · {SOURCE_LABELS[e.source]}
+                    {ACTION_LABELS[e.kind]?.done ?? e.kind} {fmtMin(e.minutes)} · {SOURCE_LABELS[e.source]}
+                    {e.flagState === "pending" && " · HR to review"}
                     {e.offline && " · saved offline"}
                   </li>
                 ))}
@@ -807,6 +820,7 @@ export function Timesheets({ rows, month }: { rows: TimesheetRow[]; month: strin
               <th className="text-right font-medium">Half days</th>
               <th className="text-right font-medium">Leave</th>
               <th className="text-right font-medium">Hours</th>
+              <th className="text-right font-medium">Lunch and breaks</th>
               <th className="text-right font-medium">Overtime h</th>
               <th className="text-right font-medium">Unpaid days</th>
               <th className="text-right font-medium">No check-out</th>
@@ -831,6 +845,10 @@ export function Timesheets({ rows, month }: { rows: TimesheetRow[]; month: strin
                 <td className="text-right">{r.totals.halfDays}</td>
                 <td className="text-right">{r.totals.leave}</td>
                 <td className="text-right">{fmtHours(r.totals.workedMin)}</td>
+                <td className="text-right" title={`Lunch ${fmtHours(r.totals.lunchMin)}, breaks ${fmtHours(r.totals.breakMin)}`}>
+                  {r.totals.lunchMin + r.totals.breakMin ? fmtHours(r.totals.lunchMin + r.totals.breakMin) : "-"}
+                  {r.totals.breakOverMin > 0 && <span className="block text-xs text-[var(--st-paused-fg)]">over by {r.totals.breakOverMin} min</span>}
+                </td>
                 <td className="text-right">{r.overtimeHours}</td>
                 <td className="text-right">{r.unpaidDays}</td>
                 <td className="text-right">{r.totals.missingOut || "-"}</td>
@@ -863,12 +881,13 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
   );
 }
 
-export function Setup({ cfg, people, kiosks }: { cfg: AttendanceConfig; people: PersonSetup[]; kiosks: KioskInfo[] }) {
+// HR's half of the setup: shifts, breaks and rules, and people (shifts, rotas, PINs, badges, faces). How people
+// check in (methods, sites, posters, kiosks) is Admin's, in the Capture tab.
+export function Setup({ cfg, people }: { cfg: AttendanceConfig; people: PersonSetup[] }) {
   return (
     <div className="space-y-4">
       <Rules cfg={cfg} />
       <People cfg={cfg} people={people} />
-      <Kiosks kiosks={kiosks} />
     </div>
   );
 }
@@ -877,11 +896,6 @@ function Rules({ cfg }: { cfg: AttendanceConfig }) {
   const { act, busy } = useAct();
   const [c, setC] = React.useState(cfg);
   const setShift = (i: number, patch: Partial<Shift>) => setC({ ...c, shifts: c.shifts.map((s, j) => (j === i ? { ...s, ...patch } : s)) });
-  const here = () =>
-    navigator.geolocation?.getCurrentPosition(
-      (p) => setC({ ...c, site: { ...c.site, lat: Math.round(p.coords.latitude * 1e6) / 1e6, lng: Math.round(p.coords.longitude * 1e6) / 1e6 } }),
-      () => toast.error("Location is not available. Type the latitude and longitude."),
-    );
   const num = (v: string) => (v === "" ? 0 : Number(v));
   return (
     <Card>
@@ -933,6 +947,39 @@ function Rules({ cfg }: { cfg: AttendanceConfig }) {
               <Button size="icon-sm" variant="ghost" aria-label="Remove shift" disabled={c.shifts.length === 1} onClick={() => setC({ ...c, shifts: c.shifts.filter((_, j) => j !== i) })}>
                 <Trash2Icon />
               </Button>
+              <div className="flex w-full flex-wrap items-end gap-2 border-t pt-2">
+                <label className="flex items-center gap-1.5 pb-1.5 text-xs">
+                  <Checkbox checked={!!s.lunch} onCheckedChange={(v) => setShift(i, { lunch: v === true ? { from: "12:00", to: "14:00", minutes: 60 } : null })} /> Lunch
+                </label>
+                {s.lunch && (
+                  <>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Lunch from</Label>
+                      <Input type="time" value={s.lunch.from} onChange={(e) => setShift(i, { lunch: { ...s.lunch!, from: e.target.value } })} className="h-8 w-28" aria-label="Lunch window from" />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">to</Label>
+                      <Input type="time" value={s.lunch.to} onChange={(e) => setShift(i, { lunch: { ...s.lunch!, to: e.target.value } })} className="h-8 w-28" aria-label="Lunch window to" />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Lunch min</Label>
+                      <Input type="number" min={0} value={s.lunch.minutes} onChange={(e) => setShift(i, { lunch: { ...s.lunch!, minutes: num(e.target.value) } })} className="h-8 w-20" aria-label="Lunch minutes" />
+                    </div>
+                  </>
+                )}
+                <div className="space-y-1">
+                  <Label className="text-xs">Short breaks</Label>
+                  <Input type="number" min={0} value={s.shortBreaks?.count ?? 0} onChange={(e) => setShift(i, { shortBreaks: { minutes: 15, paid: true, ...s.shortBreaks, count: num(e.target.value) } })} className="h-8 w-20" aria-label="Short breaks a day" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">of min</Label>
+                  <Input type="number" min={0} value={s.shortBreaks?.minutes ?? 15} onChange={(e) => setShift(i, { shortBreaks: { count: 0, paid: true, ...s.shortBreaks, minutes: num(e.target.value) } })} className="h-8 w-20" aria-label="Short break minutes" />
+                </div>
+                <label className="flex items-center gap-1.5 pb-1.5 text-xs">
+                  <Checkbox checked={s.shortBreaks?.paid ?? true} onCheckedChange={(v) => setShift(i, { shortBreaks: { count: 0, minutes: 15, ...s.shortBreaks, paid: v === true } })} /> Breaks paid
+                </label>
+                <p className="pb-1.5 text-xs text-muted-foreground">When people record breaks and lunch, the real times count instead of the fixed break.</p>
+              </div>
             </div>
           ))}
           <Button size="sm" variant="outline" onClick={() => setC({ ...c, shifts: [...c.shifts, { key: `shift_${Date.now().toString(36)}`, label: "New shift", start: "09:00", end: "18:00", graceMin: 15, breakMin: 60, workdays: [1, 2, 3, 4, 5] }] })}>
@@ -952,39 +999,8 @@ function Rules({ cfg }: { cfg: AttendanceConfig }) {
           <Row label="Half day" hint="Fewer hours worked than this is a half day.">
             <Input type="number" min={1} step="0.5" value={c.halfDayHours} onChange={(e) => setC({ ...c, halfDayHours: num(e.target.value) })} className="w-24" aria-label="Half day hours" />
           </Row>
-          <Row label="Check in from the app" hint="Anywhere, from a computer or phone. Good for teams that work away from the office.">
-            <Switch checked={c.methods.web} onCheckedChange={(v) => setC({ ...c, methods: { ...c.methods, web: v } })} aria-label="Check in from the app" />
-          </Row>
-          <Row label="Check in at a kiosk" hint="A tablet or laptop at the entrance: badges and PINs.">
-            <Switch checked={c.methods.kiosk} onCheckedChange={(v) => setC({ ...c, methods: { ...c.methods, kiosk: v } })} aria-label="Kiosk check-in" />
-          </Row>
-          <Row label="Face check-in at the kiosk" hint="Optional, only for people HR enrols with their written consent. Read docs/FACE-CHECKIN.md before switching it on.">
-            <Switch checked={c.methods.face} onCheckedChange={(v) => setC({ ...c, methods: { ...c.methods, face: v } })} aria-label="Face check-in at the kiosk" />
-          </Row>
-          {c.methods.face && (
-            <Row label="Face match strictness" hint="Lower is stricter: fewer wrong matches, more people asked to use their badge. 0.45 to 0.5 suits most kiosks.">
-              <Input type="number" min={0.35} max={0.6} step={0.01} value={c.faceThreshold} onChange={(e) => setC({ ...c, faceThreshold: Number(e.target.value) })} className="w-24" aria-label="Face match threshold" />
-            </Row>
-          )}
-          <Row label="Phone at the site" hint="With app check-in off, phones can still check in, but only within the radius of the site. Location is read once, when the button is pressed.">
-            <Switch checked={c.methods.mobile} onCheckedChange={(v) => setC({ ...c, methods: { ...c.methods, mobile: v } })} aria-label="Phone check-in at the site" />
-          </Row>
-          <Row label="Site" hint="Name, latitude, longitude and radius in metres.">
-            <div className="flex flex-wrap gap-2">
-              <Input value={c.site.label} onChange={(e) => setC({ ...c, site: { ...c.site, label: e.target.value } })} className="w-36" aria-label="Site name" />
-              <Input value={c.site.lat ?? ""} onChange={(e) => setC({ ...c, site: { ...c.site, lat: e.target.value === "" ? null : Number(e.target.value) } })} placeholder="Latitude" className="w-32" aria-label="Latitude" />
-              <Input value={c.site.lng ?? ""} onChange={(e) => setC({ ...c, site: { ...c.site, lng: e.target.value === "" ? null : Number(e.target.value) } })} placeholder="Longitude" className="w-32" aria-label="Longitude" />
-              <Input type="number" value={c.site.radiusM} onChange={(e) => setC({ ...c, site: { ...c.site, radiusM: num(e.target.value) } })} className="w-24" aria-label="Radius in metres" />
-              <Button size="sm" variant="outline" onClick={here}>
-                <MapPinIcon /> Use where I am
-              </Button>
-            </div>
-          </Row>
-          <Row label="Kiosk alert" hint="Minutes without a signal from a kiosk, during working hours, before leads and HR are told to record days by hand.">
-            <Input type="number" min={5} value={c.kioskSilenceMin} onChange={(e) => setC({ ...c, kioskSilenceMin: num(e.target.value) })} className="w-24" aria-label="Kiosk silence minutes" />
-          </Row>
-          <Row label="Offline check-ins" hint="Hours a kiosk may keep check-ins while the network is down; they keep their real time.">
-            <Input type="number" min={1} value={c.offlineMaxHours} onChange={(e) => setC({ ...c, offlineMaxHours: num(e.target.value) })} className="w-24" aria-label="Offline hours" />
+          <Row label="Break overruns in payroll" hint="When on, unpaid minutes of lunch and breaks taken beyond the shift's allowance are deducted from pay (with the overtime and unpaid days).">
+            <Switch checked={c.deductBreakOverrun} onCheckedChange={(v) => setC({ ...c, deductBreakOverrun: v })} aria-label="Deduct break overruns" />
           </Row>
         </div>
         <div className="space-y-1.5">
@@ -992,7 +1008,25 @@ function Rules({ cfg }: { cfg: AttendanceConfig }) {
           <Textarea id="att-policy" rows={7} value={c.policy} onChange={(e) => setC({ ...c, policy: e.target.value })} />
           <p className="text-xs text-muted-foreground">Shown to everyone on their Attendance page. One point per line.</p>
         </div>
-        <Button disabled={busy} onClick={() => act(() => A.saveAttendanceConfigAction(c), "Attendance settings saved")}>
+        <Button
+          disabled={busy}
+          onClick={() =>
+            act(
+              () =>
+                A.saveAttendanceConfigAction({
+                  shifts: c.shifts,
+                  defaultShift: c.defaultShift,
+                  startDate: c.startDate,
+                  earlyLeaveMin: c.earlyLeaveMin,
+                  overtimeAfterMin: c.overtimeAfterMin,
+                  halfDayHours: c.halfDayHours,
+                  deductBreakOverrun: c.deductBreakOverrun,
+                  policy: c.policy,
+                }),
+              "Attendance rules saved",
+            )
+          }
+        >
           Save
         </Button>
       </CardContent>
@@ -1209,7 +1243,7 @@ function SetupLink({ code, onClose }: { code: { id: string; code: string; name: 
   );
 }
 
-function Kiosks({ kiosks }: { kiosks: KioskInfo[] }) {
+export function Kiosks({ kiosks }: { kiosks: KioskInfo[] }) {
   const { act, busy } = useAct();
   const [name, setName] = React.useState("");
   const [setup, setSetup] = React.useState<{ id: string; code: string; name: string } | null>(null);

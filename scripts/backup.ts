@@ -1,9 +1,12 @@
 /*
  * Backs up or restores every table as one JSON file. Works the same on Supabase and the embedded database.
  *
- *   npm run backup                          writes backups/myseed-YYYYMMDD-HHMM.json
+ *   npm run backup                          writes backups/myseed-YYYYMMDD-HHMM.json.gz
  *   npm run backup -- D:/backups            writes into the given folder
- *   npm run db:restore -- backups/file.json replaces all current data with the backup
+ *   npm run db:restore -- backups/file      replaces all current data with the backup (.json, .json.gz or
+ *                                           .json.gz.enc; encrypted ones need BACKUP_PASSPHRASE set)
+ *
+ * With BACKUP_PASSPHRASE set, `npm run backup` encrypts the file the same way as the automatic backups.
  *
  * On Supabase you can also use the dashboard's daily backups or `pg_dump` (see docs/RUNBOOK.md).
  */
@@ -12,20 +15,21 @@ import path from "node:path";
 import { closeDb, databaseLabel, run, tx } from "../src/server/db";
 import { TABLES } from "../src/server/schema";
 import { backupSnapshot, emptyWorkspace } from "../src/server/workspace-data";
+import { decodeBackup, encodeBackup } from "../src/server/backup-codec";
+import { backupName } from "../src/lib/backup-retention";
 
 async function backup(dir: string) {
   fs.mkdirSync(dir, { recursive: true });
-  const stamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, "").replace(/^(\d{8})(\d{4})$/, "$1-$2");
-  const target = path.join(dir, `myseed-${stamp}.json`);
+  const passphrase = process.env.BACKUP_PASSPHRASE || null;
+  const target = path.join(dir, backupName(new Date(), !!passphrase));
   const snapshot = await backupSnapshot();
-  fs.writeFileSync(target, JSON.stringify(snapshot));
+  fs.writeFileSync(target, encodeBackup(snapshot, passphrase));
   const rows = Object.values(snapshot.tables).reduce((n, r) => n + r.length, 0);
   console.log(`Backup written to ${target} (${rows} rows, ${(fs.statSync(target).size / 1024 / 1024).toFixed(1)} MB)`);
 }
 
 async function restore(file: string) {
-  const data = JSON.parse(fs.readFileSync(file, "utf8")) as { format?: string; tables?: Record<string, Record<string, unknown>[]> };
-  if (data.format !== "myseed-backup" || !data.tables) throw new Error(`${file} is not a Myseed backup.`);
+  const data = decodeBackup(fs.readFileSync(file), process.env.BACKUP_PASSPHRASE || null);
   await tx(async () => {
     await emptyWorkspace();
     for (const t of TABLES) {

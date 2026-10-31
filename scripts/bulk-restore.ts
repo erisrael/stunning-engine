@@ -8,6 +8,7 @@
  * Without DATABASE_URL it restores into the embedded database in data/pg.
  */
 import fs from "node:fs";
+import { decodeBackup } from "../src/server/backup-codec";
 import { closeDb, databaseLabel, placeholders, run, tx } from "../src/server/db";
 import { TABLES } from "../src/server/schema";
 import { emptyWorkspace } from "../src/server/workspace-data";
@@ -26,8 +27,8 @@ function insertChunk(table: string, rows: Record<string, unknown>[]) {
 async function main() {
   const file = process.argv[2];
   if (!file) throw new Error("Give the backup file: npm run db:bulk-restore -- backups/file.json");
-  const data = JSON.parse(fs.readFileSync(file, "utf8")) as { format?: string; tables?: Record<string, Record<string, unknown>[]> };
-  if (data.format !== "myseed-backup" || !data.tables) throw new Error(`${file} is not a Myseed backup.`);
+  // Plain JSON, gzipped or encrypted (BACKUP_PASSPHRASE) backups.
+  const data = decodeBackup(fs.readFileSync(file), process.env.BACKUP_PASSPHRASE || null);
   const tables = data.tables;
   console.log(`Database: ${databaseLabel()}`);
   await tx(async () => {

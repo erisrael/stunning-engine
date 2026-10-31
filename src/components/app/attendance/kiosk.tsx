@@ -4,7 +4,7 @@ import * as React from "react";
 import { CameraIcon, CheckCircle2Icon, DeleteIcon, KeyRoundIcon, Loader2Icon, ScanFaceIcon, WifiOffIcon, XCircleIcon } from "lucide-react";
 import { blinkWatcher, loadFaceApi, readFace } from "./face";
 import { Button } from "@/components/ui/button";
-import { DAY_STATUS_LABELS, type DayStatus } from "@/lib/attendance";
+import { DAY_STATUS_LABELS, type DayStatus, type EventKind } from "@/lib/attendance";
 import { cn } from "@/lib/utils";
 
 // The kiosk at the entrance. People scan their badge (a USB or Bluetooth scanner types it in, or the camera reads
@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 // their real time, signed with the kiosk's key, and sent when it is back.
 
 type Queued = { clientId: string; at: string; badge?: string; code?: string; pin?: string; sig: string };
-type Outcome = { ok: true; name: string; kind: "in" | "out"; time: string; status?: DayStatus | null; lateMin?: number; saved?: boolean } | { ok: false; error: string };
+type Outcome = { ok: true; name: string; kind: EventKind; time: string; status?: DayStatus | null; lateMin?: number; saved?: boolean } | { ok: false; error: string };
 
 const QUEUE_KEY = "myseed-kiosk-queue";
 const readQueue = (): Queued[] => {
@@ -299,10 +299,10 @@ export function KioskScreen({ initialName }: { initialName: string }) {
                 ) : (
                   <>
                     <p className="mt-3 text-3xl font-semibold">
-                      {outcome.kind === "in" ? `Welcome, ${outcome.name}` : `Goodbye, ${outcome.name}`}
+                      {outcome.kind === "in" ? `Welcome, ${outcome.name}` : outcome.kind === "out" ? `Goodbye, ${outcome.name}` : `${outcome.name}`}
                     </p>
                     <p className="mt-2 text-xl text-[#d6d4ee]">
-                      {outcome.kind === "in" ? "Checked in" : "Checked out"} at {outcome.time}
+                      {outcome.kind === "in" ? "Checked in" : outcome.kind === "out" ? "Checked out" : outcome.kind === "break_end" ? "Back from break" : outcome.kind === "lunch_end" ? "Back from lunch" : "Recorded"} at {outcome.time}
                       {outcome.kind === "in" && outcome.lateMin ? `, ${outcome.lateMin} min late` : ""}
                       {outcome.kind === "in" && outcome.status && !outcome.lateMin ? `. ${DAY_STATUS_LABELS[outcome.status]}` : ""}
                     </p>

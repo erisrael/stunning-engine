@@ -9,6 +9,9 @@
     "templates": "tsx scripts/generate-templates.ts",
     "checks": "tsx scripts/run-checks.ts",
     "typecheck": "tsc --noEmit",
+    "test": "tsx tests/run.ts",
+    "test:e2e": "tsx tests/run.ts --e2e",
+    "test:all": "tsx tests/run.ts --all",
     "backup": "tsx scripts/backup.ts",
     "setup": "npm run db:reset && npm run templates",
     "verify": "tsx scripts/verify.ts",
@@ -60,6 +63,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/web-push": "^3.6.4",
+    "playwright-core": "^1.56.1",
     "tailwindcss": "^4",
     "tsx": "^4.23.15",
     "typescript": "^5"

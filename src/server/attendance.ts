@@ -24,10 +24,14 @@ import {
   overnight,
   overtimeHours,
   shiftKeyOn,
+  stateAfter,
+  toggleKind,
   toMin,
   unpaidDays,
   type AttendanceConfig,
+  type CheckinState,
   type CorrectionStatus,
+  type EventKind,
   type DayEvent,
   type DayMark,
   type DayResult,
@@ -38,6 +42,8 @@ import {
   type Source,
 } from "@/lib/attendance";
 import { STAGES, type Stage } from "@/lib/domain";
+
+export type { CheckinState };
 
 const isDay = (v: unknown): v is string => typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v);
 const isTime = (v: unknown): v is string => typeof v === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
@@ -59,8 +65,15 @@ export async function attendanceConfig(): Promise<AttendanceConfig> {
   };
 }
 
+// How people check in (methods, the phone site, face strictness, kiosk timings) is Admin's ("Attendance capture
+// setup"); shifts, breaks and rules are HR's.
+const CAPTURE_KEYS: (keyof AttendanceConfig)[] = ["methods", "site", "faceThreshold", "kioskSilenceMin", "offlineMaxHours"];
+
 export async function saveAttendanceConfig(user: AppUser, input: Partial<AttendanceConfig>) {
-  needManage(user);
+  const touchesCapture = CAPTURE_KEYS.some((k) => input[k] !== undefined);
+  const touchesRules = (Object.keys(input) as (keyof AttendanceConfig)[]).some((k) => !CAPTURE_KEYS.includes(k));
+  if (touchesCapture && !can(user, "attendance.capture")) throw new WorkflowError("FORBIDDEN", "Only Admin sets up how attendance is taken.");
+  if (touchesRules) needManage(user);
   const cur = await attendanceConfig();
   const num = (v: unknown, d: number, min: number, max: number) => (Number.isFinite(Number(v)) ? Math.min(max, Math.max(min, Number(v))) : d);
   const shifts: Shift[] = (input.shifts ?? cur.shifts).map((s, i) => {
@@ -71,7 +84,14 @@ export async function saveAttendanceConfig(user: AppUser, input: Partial<Attenda
     if (!isTime(s.start) || !isTime(s.end) || toMin(s.end) === toMin(s.start)) throw new WorkflowError("VALIDATION", `${label}: give the start and end (HH:MM); they cannot be the same.`);
     const workdays = [...new Set((s.workdays ?? []).map(Number).filter((d) => d >= 0 && d <= 6))].sort();
     if (!workdays.length) throw new WorkflowError("VALIDATION", `${label}: choose the working days.`);
-    return { key, label, start: s.start, end: s.end, graceMin: num(s.graceMin, 15, 0, 120), breakMin: num(s.breakMin, 60, 0, 180), workdays };
+    let lunch: Shift["lunch"] = null;
+    if (s.lunch) {
+      if (!isTime(s.lunch.from) || !isTime(s.lunch.to) || toMin(s.lunch.to) <= toMin(s.lunch.from)) throw new WorkflowError("VALIDATION", `${label}: give the lunch window (from and to).`);
+      lunch = { from: s.lunch.from, to: s.lunch.to, minutes: num(s.lunch.minutes, 60, 0, 240) };
+    }
+    const sb = s.shortBreaks;
+    const shortBreaks = sb && num(sb.count, 0, 0, 10) > 0 ? { count: num(sb.count, 0, 0, 10), minutes: num(sb.minutes, 15, 1, 120), paid: sb.paid !== false } : null;
+    return { key, label, start: s.start, end: s.end, graceMin: num(s.graceMin, 15, 0, 120), breakMin: num(s.breakMin, 60, 0, 180), workdays, lunch, shortBreaks };
   });
   if (!shifts.length) throw new WorkflowError("VALIDATION", "Keep at least one shift.");
   if (new Set(shifts.map((s) => s.key)).size !== shifts.length) throw new WorkflowError("VALIDATION", "Two shifts have the same key.");
@@ -95,6 +115,7 @@ export async function saveAttendanceConfig(user: AppUser, input: Partial<Attenda
     site: { label: clean(site.label, 60) || "Office", lat: lat !== null && Number.isFinite(lat) ? lat : null, lng: lng !== null && Number.isFinite(lng) ? lng : null, radiusM: num(site.radiusM, 200, 20, 5000) },
     kioskSilenceMin: num(input.kioskSilenceMin ?? cur.kioskSilenceMin, 30, 5, 600),
     offlineMaxHours: num(input.offlineMaxHours ?? cur.offlineMaxHours, 72, 1, 240),
+    deductBreakOverrun: !!(input.deductBreakOverrun ?? cur.deductBreakOverrun),
     policy: clean(input.policy ?? cur.policy, 6000),
   };
   await run(
@@ -116,6 +137,9 @@ export const managesAttendance = (u: AppUser) => can(u, "attendance.manage");
 function needManage(u: AppUser) {
   if (!managesAttendance(u)) throw new WorkflowError("FORBIDDEN", "Only HR manages attendance for everyone.");
 }
+
+// HR people, for flags and alerts.
+export const hrIds = () => managerIds();
 
 async function managerIds() {
   return (await listUsers()).filter((u) => u.perms.includes("attendance.manage")).map((u) => u.id);
@@ -178,7 +202,7 @@ export async function shiftOf(employeeId: string, cfg?: AttendanceConfig, day?: 
   return pickShift(c, shiftKeyOn(a, day ?? (await tzNow()).date, c.defaultShift));
 }
 
-export type EventRow = { id: string; kind: "in" | "out"; at: string; minutes: number; source: Source; offline: boolean; note: string | null; distanceM: number | null };
+export type EventRow = { id: string; kind: EventKind; at: string; minutes: number; source: Source; offline: boolean; note: string | null; distanceM: number | null; flag: string | null; flagState: string | null };
 
 // Each person's days in a range, with their check-ins.
 async function loadDays(emps: Emp[], from: string, to: string, opts: { allDays?: boolean } = {}) {
@@ -190,8 +214,8 @@ async function loadDays(emps: Emp[], from: string, to: string, opts: { allDays?:
   const ids = emps.map((e) => e.id);
   const ph = ids.map(() => "?").join(",");
   const [events, marks, leaves, assigns] = await Promise.all([
-    all<{ id: string; employee_id: string; kind: "in" | "out"; at: string; day: string; source: Source; offline: number; note: string | null; distance_m: number | null }>(
-      `SELECT id, employee_id, kind, at, day, source, offline, note, distance_m FROM att_events WHERE voided = 0 AND day >= ? AND day <= ? AND employee_id IN (${ph}) ORDER BY at`,
+    all<{ id: string; employee_id: string; kind: EventKind; at: string; day: string; source: Source; offline: number; note: string | null; distance_m: number | null; flag: string | null; flag_state: string | null }>(
+      `SELECT id, employee_id, kind, at, day, source, offline, note, distance_m, flag, flag_state FROM att_events WHERE voided = 0 AND day >= ? AND day <= ? AND employee_id IN (${ph}) ORDER BY at`,
       from,
       to,
       ...ids,
@@ -222,7 +246,7 @@ async function loadDays(emps: Emp[], from: string, to: string, opts: { allDays?:
       const list = evByDay.get(ev.day) ?? [];
       // A night shift's check-out after midnight counts on from the day it started.
       const lp = localParts(ev.at, tz);
-      list.push({ id: ev.id, kind: ev.kind, at: ev.at, minutes: lp.minutes + (lp.date > ev.day ? 24 * 60 : 0), source: ev.source, offline: !!ev.offline, note: ev.note, distanceM: ev.distance_m === null ? null : Number(ev.distance_m) });
+      list.push({ id: ev.id, kind: ev.kind, at: ev.at, minutes: lp.minutes + (lp.date > ev.day ? 24 * 60 : 0), source: ev.source, offline: !!ev.offline, note: ev.note, distanceM: ev.distance_m === null ? null : Number(ev.distance_m), flag: ev.flag, flagState: ev.flag_state });
       evByDay.set(ev.day, list);
     }
     const days: DayResult[] = [];
@@ -300,29 +324,75 @@ export async function myAttendance(user: AppUser, month: string) {
   };
 }
 
-// Writes one check-in or check-out, turning the last one of the day around.
-async function punch(
-  employeeId: string,
-  input: { at?: string; source: Source; kioskId?: string | null; lat?: number | null; lng?: number | null; accuracy?: number | null; distanceM?: number | null; offline?: boolean; clientId?: string | null; note?: string | null; createdBy?: string | null },
-) {
+type PunchInput = {
+  at?: string;
+  source: Source;
+  kioskId?: string | null;
+  lat?: number | null;
+  lng?: number | null;
+  accuracy?: number | null;
+  distanceM?: number | null;
+  offline?: boolean;
+  clientId?: string | null;
+  note?: string | null;
+  createdBy?: string | null;
+  siteId?: string | null;
+  ip?: string | null;
+  deviceId?: string | null;
+  // Why HR should look at it (outside the usual hours, a new or shared phone, recorded by a lead).
+  flag?: string | null;
+};
+
+// The working day a moment belongs to: early in the morning after a night shift that started yesterday and is
+// still open, it is yesterday's.
+async function dayFor(employeeId: string, at: string) {
   const tz = (await getSettings()).workspace.timezone;
-  const at = input.at ?? nowIso();
   const lp = localParts(at, tz);
   let day = lp.date;
-  // Early morning, after a night shift that started yesterday and is still open: this closes yesterday.
   const yesterday = new Date(Date.parse(`${day}T12:00:00Z`) - 864e5).toISOString().slice(0, 10);
   const prevShift = await shiftOf(employeeId, undefined, yesterday);
   if (overnight(prevShift) && lp.minutes <= toMin(prevShift.end) + 4 * 60) {
-    const open = await get<{ kind: string }>("SELECT kind FROM att_events WHERE employee_id = ? AND day = ? AND voided = 0 ORDER BY at DESC LIMIT 1", employeeId, yesterday);
-    if (open?.kind === "in") day = yesterday;
+    const open = await get<{ kind: EventKind }>("SELECT kind FROM att_events WHERE employee_id = ? AND day = ? AND voided = 0 ORDER BY at DESC LIMIT 1", employeeId, yesterday);
+    if (open && stateAfter(open.kind) !== "out") day = yesterday;
   }
-  const prev = await get<{ kind: "in" | "out"; at: string }>("SELECT kind, at FROM att_events WHERE employee_id = ? AND day = ? AND voided = 0 AND at <= ? ORDER BY at DESC LIMIT 1", employeeId, day, at);
+  return day;
+}
+
+// Where the person is in their day now: out, in, on a break or at lunch, and since when.
+export async function stateOf(employeeId: string, at = nowIso()): Promise<{ state: CheckinState; since: string | null; day: string }> {
+  const day = await dayFor(employeeId, at);
+  const last = await get<{ kind: EventKind; at: string }>("SELECT kind, at FROM att_events WHERE employee_id = ? AND day = ? AND voided = 0 AND at <= ? ORDER BY at DESC LIMIT 1", employeeId, day, at);
+  return { state: stateAfter(last?.kind), since: last?.at ?? null, day };
+}
+
+// Writes one check-in, check-out, or start or end of a break or lunch. Only steps that follow from the person's
+// state are accepted (checking out also ends a break). The same step again within a minute is a repeat.
+export async function punchKind(employeeId: string, kind: EventKind, input: PunchInput) {
+  const at = input.at ?? nowIso();
+  const day = await dayFor(employeeId, at);
+  const prev = await get<{ kind: EventKind; at: string }>("SELECT kind, at FROM att_events WHERE employee_id = ? AND day = ? AND voided = 0 AND at <= ? ORDER BY at DESC LIMIT 1", employeeId, day, at);
+  if (prev && prev.kind === kind && Math.abs(Date.parse(at) - Date.parse(prev.at)) < 60e3) return { kind, at: prev.at, day, duplicate: true };
+  const state = stateAfter(prev?.kind);
+  const allowed: Record<CheckinState, EventKind[]> = { out: ["in"], in: ["out", "break_start", "lunch_start"], break: ["break_end", "out"], lunch: ["lunch_end", "out"] };
+  if (!allowed[state].includes(kind))
+    throw new WorkflowError("INVALID_STATE", state === "out" ? "Check in first." : state === "in" ? "You are already checked in." : state === "break" ? "You are on a break: press Back from break." : "You are at lunch: press Back from lunch.");
+  return insertEvent(employeeId, kind, at, day, input);
+}
+
+// Badge, PIN and face at the kiosk, and the app's single button: the step that follows from the state.
+async function punch(employeeId: string, input: PunchInput) {
+  const at = input.at ?? nowIso();
+  const day = await dayFor(employeeId, at);
+  const prev = await get<{ kind: EventKind; at: string }>("SELECT kind, at FROM att_events WHERE employee_id = ? AND day = ? AND voided = 0 AND at <= ? ORDER BY at DESC LIMIT 1", employeeId, day, at);
   // A second scan within a minute is the same check-in, not a check-out.
   if (prev && Math.abs(Date.parse(at) - Date.parse(prev.at)) < 60e3) return { kind: prev.kind, at: prev.at, day, duplicate: true };
-  const kind: "in" | "out" = prev?.kind === "in" ? "out" : "in";
+  return insertEvent(employeeId, toggleKind(stateAfter(prev?.kind)), at, day, input);
+}
+
+async function insertEvent(employeeId: string, kind: EventKind, at: string, day: string, input: PunchInput) {
   await run(
-    `INSERT INTO att_events (id, employee_id, kind, at, day, source, kiosk_id, lat, lng, accuracy, distance_m, offline, client_id, note, created_by, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO att_events (id, employee_id, kind, at, day, source, kiosk_id, lat, lng, accuracy, distance_m, offline, client_id, note, created_by, created_at, site_id, ip, device_id, flag, flag_state)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     uid("att_"),
     employeeId,
     kind,
@@ -339,9 +409,16 @@ async function punch(
     input.note ?? null,
     input.createdBy ?? null,
     nowIso(),
+    input.siteId ?? null,
+    input.ip ?? null,
+    input.deviceId ?? null,
+    input.flag ?? null,
+    input.flag ? "pending" : null,
   );
   return { kind, at, day, duplicate: false };
 }
+
+export const dayResult = (employeeId: string, day: string) => dayLine(employeeId, day);
 
 async function dayLine(employeeId: string, day: string) {
   const emp = await get<Emp>(`${EMP_SELECT} WHERE id = ?`, employeeId);
@@ -622,7 +699,13 @@ export async function payrollFeed(period: string, employeeIds: string[]) {
   if (!employeeIds.length) return new Map<string, { overtimeHours: number; unpaidDays: number }>();
   const emps = await all<Emp>(`${EMP_SELECT} WHERE id IN (${employeeIds.map(() => "?").join(",")})`, ...employeeIds);
   const rows = await sheetFor(emps, period);
-  return new Map(rows.map((r) => [r.employeeId, { overtimeHours: r.overtimeHours, unpaidDays: r.unpaidDays }]));
+  const cfg = await attendanceConfig();
+  // Unpaid break overruns, when HR switched them on, as parts of a day of the default shift.
+  const def = cfg.shifts.find((s) => s.key === cfg.defaultShift) ?? cfg.shifts[0]!;
+  const dayMin = Math.max(60, toMin(def.end) + (overnight(def) ? 24 * 60 : 0) - toMin(def.start) - def.breakMin);
+  return new Map(
+    rows.map((r) => [r.employeeId, { overtimeHours: r.overtimeHours, unpaidDays: Math.round((r.unpaidDays + (cfg.deductBreakOverrun ? r.totals.breakOverMin / dayMin : 0)) * 100) / 100 }]),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -740,7 +823,7 @@ export const KIOSK_COOKIE = "myseed_kiosk";
 type KioskRow = { id: string; name: string; active: number; last_seen_at: string | null; alerted_at: string | null; sign_key: string | null; setup_expires: string | null; token_hash: string | null; created_at: string };
 
 export async function listKiosks(user: AppUser) {
-  needManage(user);
+  if (!can(user, "attendance.capture")) needManage(user);
   const rows = await all<KioskRow>("SELECT id, name, active, last_seen_at, alerted_at, setup_expires, token_hash, created_at FROM att_kiosks ORDER BY created_at");
   return rows.map((k) => ({ id: k.id, name: k.name, active: !!k.active, lastSeenAt: k.last_seen_at, paired: !!k.token_hash, setupExpires: k.setup_expires, createdAt: k.created_at }));
 }
@@ -752,8 +835,12 @@ async function setupCode(id: string) {
   return code;
 }
 
+function needCapture(u: AppUser) {
+  if (!can(u, "attendance.capture")) throw new WorkflowError("FORBIDDEN", "Only Admin sets up kiosks.");
+}
+
 export async function createKiosk(user: AppUser, name: string) {
-  needManage(user);
+  needCapture(user);
   const n = clean(name, 60);
   if (!n) throw new WorkflowError("VALIDATION", "Name the kiosk, for example \"Main entrance\".");
   const id = uid("kio_");
@@ -763,14 +850,14 @@ export async function createKiosk(user: AppUser, name: string) {
 }
 
 export async function pairAgain(user: AppUser, id: string) {
-  needManage(user);
+  needCapture(user);
   await run("UPDATE att_kiosks SET token_hash = NULL WHERE id = ?", id);
   await audit({ actor: user }, { action: "attendance.kiosk", summary: `${user.name} unpaired a kiosk to set it up again` });
   return { id, code: await setupCode(id) };
 }
 
 export async function setKioskActive(user: AppUser, id: string, active: boolean) {
-  needManage(user);
+  needCapture(user);
   await run("UPDATE att_kiosks SET active = ?, token_hash = CASE WHEN ? = 1 THEN token_hash ELSE NULL END WHERE id = ?", active ? 1 : 0, active ? 1 : 0, id);
   await audit({ actor: user }, { action: "attendance.kiosk", summary: `${user.name} ${active ? "switched on" : "switched off and unpaired"} a kiosk` });
 }
@@ -906,11 +993,12 @@ export async function kioskSilenceChecks(now = nowIso()) {
 // HR's home for attendance: what needs looking at.
 export async function attendanceInbox(user: AppUser) {
   if (!managesAttendance(user)) return null;
-  const [review, pending] = await Promise.all([
+  const [review, pending, flags] = await Promise.all([
     get<{ c: number }>("SELECT COUNT(*) AS c FROM att_marks WHERE source = 'lead' AND reviewed_at IS NULL"),
     get<{ c: number }>("SELECT COUNT(*) AS c FROM att_corrections WHERE status IN ('pending_lead','pending_hr')"),
+    get<{ c: number }>("SELECT COUNT(*) AS c FROM att_events WHERE flag_state = 'pending' AND voided = 0"),
   ]);
-  return { review: Number(review?.c ?? 0), corrections: Number(pending?.c ?? 0) };
+  return { review: Number(review?.c ?? 0) + Number(flags?.c ?? 0), corrections: Number(pending?.c ?? 0) };
 }
 
 // ---------------------------------------------------------------------------

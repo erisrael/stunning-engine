@@ -11,6 +11,8 @@ import type { AppUser } from "./users";
 export const GOOGLE_SCOPES = {
   meet: "https://www.googleapis.com/auth/calendar.events",
   youtube: "https://www.googleapis.com/auth/youtube.upload",
+  // Only files this app creates (the backup folder), never the rest of the Drive.
+  drive: "https://www.googleapis.com/auth/drive.file",
 } as const;
 export type GooglePurpose = keyof typeof GOOGLE_SCOPES;
 
@@ -83,9 +85,13 @@ export async function disconnect(user: AppUser) {
 }
 
 // A valid access token with the scope needed, refreshed when it has expired.
-async function accessToken(userId: string, purpose: GooglePurpose) {
+export async function accessToken(userId: string, purpose: GooglePurpose) {
   const r = await get<TokenRow>("SELECT * FROM google_tokens WHERE user_id = ?", userId);
-  if (!r || !r.scopes.split(" ").includes(GOOGLE_SCOPES[purpose])) throw new WorkflowError("NOT_CONNECTED", purpose === "meet" ? "Connect your Google account to create Meet links." : "Connect your Google account to upload to YouTube.");
+  if (!r || !r.scopes.split(" ").includes(GOOGLE_SCOPES[purpose]))
+    throw new WorkflowError(
+      "NOT_CONNECTED",
+      purpose === "meet" ? "Connect your Google account to create Meet links." : purpose === "drive" ? "Connect Google Drive for backups (Admin, System)." : "Connect your Google account to upload to YouTube.",
+    );
   if (r.access_token && r.expires_at && r.expires_at > nowIso()) return r.access_token;
   const refresh = r.refresh_enc ? await unseal(r.refresh_enc) : null;
   const g = await googleConfig();

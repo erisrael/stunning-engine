@@ -19,6 +19,8 @@ export async function wrap<T>(fn: () => T | Promise<T>, opts: { revalidate?: boo
     // Next.js uses thrown errors for redirects; let them propagate.
     if (err && typeof err === "object" && "digest" in err && String((err as { digest: unknown }).digest).startsWith("NEXT_")) throw err;
     console.error(err);
+    // Unexpected failures (not the friendly refusals above) are kept for Admin, System, Errors.
+    void import("./ops").then(({ recordError }) => recordError({ source: "action", message: err instanceof Error ? err.message : String(err), stack: err instanceof Error ? err.stack : undefined }));
     return { ok: false, error: err instanceof Error ? err.message : "Something went wrong. Try again." };
   }
 }

@@ -434,6 +434,10 @@ export const CHAPTERS: Chapter[] = [
         title: "Sign-in",
         text: "Admin, Sign-in sets how people sign in. Rules: password length, leaked-password check, reuse and expiry; how many wrong passwords before the account waits; two-step sign-in (authenticator app, email code) off, optional or required per role; how long sessions last per role; alerts on new devices. Google, Microsoft, SSO: sign-in with Google Workspace, Microsoft 365 or any OpenID Connect provider, limited to your email domains, and optionally the only way in for some roles. Sign-up: off, by invitation link, or open to your email domains with your approval. Two-step by person shows who has it and resets a lost phone. Sign-in log shows every sign-in, failure and lockout. The Google client at the bottom also powers Reset with Google.",
       },
+      {
+        title: "System",
+        text: "Admin, System shows the health of the app; the scheduled jobs and their last run; backups (daily, to the server's disk, Google Drive and optional S3 storage, optionally encrypted, with a monthly test restore and downloads); errors from the server and people's browsers, kept in the app with personal data masked; and where alerts go (the bell, email, Telegram). docs/RECOVERY.md says how to restore.",
+      },
       { title: "Sidebar per role", text: "Admin, Sidebar hides entries a role does not need. Permissions still decide what each role can open." },
       { title: "Integrations", text: "Admin, Integrations creates API keys for Power BI, Excel and Google Sheets feeds. The Dev team connects GitHub in its Repositories tab; a Finance department exports paid items to Sage 50 (Peachtree), QuickBooks or Xero from its Accounting tab." },
     ],
@@ -460,11 +464,14 @@ export const CHAPTERS: Chapter[] = [
     key: "attendance",
     title: "Attendance: checking in, corrections and your team's day",
     audiences: "all",
-    summary: "Check in and out at the kiosk or in the app; ask for corrections; leads record days by hand when the kiosk is down.",
+    summary: "Check in and out with the printed QR, the app, a shared office computer or the kiosk; breaks and lunch; corrections; leads record the day.",
     sections: [
       {
         title: "Checking in and out",
         steps: [
+          "With the printed QR at the entrance: connect your phone to the office Wi-Fi, scan the QR with the camera, and tap Check in. The first time you sign in; after that it is one tap. Cannot scan? Type the short address printed on the poster.",
+          "During the day the same page offers Start break, Start lunch and Check out, and on a break only Back from break.",
+          "No smartphone, or a broken camera: any phone with a browser can open the short address; or use the office computer at the address ending in /in/shared with your number and PIN; or ask your team lead to record it.",
           "At the kiosk: scan your badge, or press Use my number and PIN and type your number (on your Attendance page) and PIN.",
           "In the app (when allowed): Attendance, Check in. From a phone, you may need to be at the site; the location is read once, when you press the button.",
           "Check out the same way when you leave. A night shift's check-out in the morning closes the night before.",
@@ -477,11 +484,25 @@ export const CHAPTERS: Chapter[] = [
         title: "Team leads: recording the day by hand",
         steps: [
           "Attendance, My team shows who is in, late, not in yet, absent or on leave.",
+          "Someone without a working phone: Attendance, My team, Record a check-in. Pick them or scan their badge with your phone, choose Check in, break, lunch or Check out. It is labelled as yours and HR reviews it.",
           "When the kiosk is down (you are told), tick people and press Record.",
           "Choose present, late, half day, absent or on leave, add times if you know them, and give the reason. The person is told, and HR reviews it.",
         ],
       },
-      { title: "HR", text: "Attendance, Setup holds the shifts, rotas, rules, check-in methods, site location, badges, PINs and kiosks. Review lists hand-made days to check; Timesheets downloads to Excel; Finance fills payroll from Attendance." },
+      {
+        title: "HR",
+        text: "Attendance, Rules holds the shifts with their lunch window and breaks (paid or not), lateness, overtime, rotas, badges and PINs. Review lists check-ins to look at (outside the usual hours, a new or shared phone, recorded by a lead), hand-made days, and phones. Timesheets show worked hours, lunch and breaks and overruns, and download to Excel; Finance fills payroll from Attendance (break overruns too, when switched on in Rules).",
+      },
+      {
+        title: "Admin: how people check in",
+        steps: [
+          "Attendance, Capture: switch on the printed QR, check-in on the office network, the shared office computer and team leads recording.",
+          "Add a site. While at the office, press Use this network to add the office's internet address (a web page cannot read the Wi-Fi name or a phone's hardware address, so the check is by the address the office uses on the internet). Choose which checks count: office network, location, or the person's own phone.",
+          "Print the QR poster and put it at the entrance. If a photo of it spreads, press New code and print again; old prints stop working.",
+          "If the office's address changes, check-ins fail and you are alerted with the new address seen; add it.",
+          "Choose whether a phone becomes someone's own at their first check-in or only when HR approves it, and the usual hours outside which check-ins are flagged.",
+        ],
+      },
     ],
   },
   {

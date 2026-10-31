@@ -60,7 +60,7 @@ export async function saveSettingsAction<K extends keyof Settings>(key: K, value
 export async function runChecksAction() {
   return wrap(async () => {
     await requireManager("settings.manage");
-    return await runScheduledChecks();
+    return await runScheduledChecks(undefined, { trigger: "admin", force: true });
   });
 }
 

@@ -23,12 +23,16 @@ import { sidebarDefaults } from "@/server/ui-prefs";
 import { SidebarAdmin } from "./sidebar-admin";
 import { listBlocked, listSessions } from "@/server/devices";
 import { SessionsTable } from "@/components/app/security";
-import { googleConfig, googleSettings } from "@/server/password-reset";
+import { appOrigin, googleConfig, googleSettings } from "@/server/password-reset";
 import { SignInPolicyAdmin } from "./signin-policy-admin";
 import { signInPolicy } from "@/server/signin-config";
 import { listInvites, listSignupRequests, signInLog, twoStepRoster } from "@/server/signin";
 import { redirectUri } from "@/server/oidc";
 import { PROVIDER_IDS } from "@/lib/signin-policy";
+import { OpenWithTab, SystemAdmin } from "./system-admin";
+import { healthChecks, jobStatus, listErrors, opsConfig } from "@/server/ops";
+import { backupConfig, backupRuns, defaultBackupDir, listBackups } from "@/server/backups";
+import { googleConnection, GOOGLE_SCOPES } from "@/server/google";
 import { smtpSettings } from "@/server/email";
 import { SignInAdmin } from "./signin-admin";
 import { ChatAdmin, FeedbackAdmin, ReportsAdmin } from "./support-admin";
@@ -120,6 +124,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           {manageUsers && <TabsTrigger value="signin">Sign-in</TabsTrigger>}
           {manageUsers && <TabsTrigger value="sidebar">Sidebar</TabsTrigger>}
           {manageUsers && <TabsTrigger value="integrations">Integrations</TabsTrigger>}
+          {manageUsers && <TabsTrigger value="system">System</TabsTrigger>}
           {manageData && <TabsTrigger value="data">Data</TabsTrigger>}
         </TabsList>
         {manageUsers && (
@@ -171,6 +176,28 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
                 }}
               />
               <SignInAdmin google={await googleSettings()} emailReady={(await smtpSettings()).source !== "none"} />
+            </TabsContent>
+            <TabsContent value="system">
+              {tab !== "system" ? (
+                <OpenWithTab tab="system" />
+              ) : (
+                <SystemAdmin
+                  data={{
+                    health: await healthChecks(),
+                    jobs: await jobStatus(),
+                    backup: await backupConfig(),
+                    backups: await listBackups(viewer),
+                    runs: await backupRuns(viewer),
+                    errors: await listErrors(viewer),
+                    ops: await opsConfig(),
+                    driveConnected: !!(await googleConnection(viewer.id))?.scopes.includes(GOOGLE_SCOPES.drive),
+                    googleReady: !!(await googleConfig()),
+                    appUrl: await appOrigin(),
+                    defaultDir: defaultBackupDir(),
+                    onRender: !!process.env.RENDER,
+                  }}
+                />
+              )}
             </TabsContent>
             <TabsContent value="sidebar">
               <SidebarAdmin defaults={await sidebarDefaults()} />

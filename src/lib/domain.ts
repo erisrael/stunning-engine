@@ -83,7 +83,8 @@ export const CAPABILITIES = [
   { key: "hr.manage", label: "HR decisions: end employment, remove records, HR settings", group: "HR" },
   { key: "hr.sensitive", label: "See and edit salary grade, ID, tax and bank details", group: "HR" },
   { key: "hr.cases", label: "Confidential disciplinary and grievance cases", group: "HR" },
-  { key: "attendance.manage", label: "Attendance for everyone: shifts, kiosks, badges, reviewing manual entries and corrections, reports", group: "HR" },
+  { key: "attendance.manage", label: "Attendance for everyone: shifts, breaks and rules, badges and PINs, reviewing manual entries, flagged check-ins and corrections, reports", group: "HR" },
+  { key: "attendance.capture", label: "Attendance capture setup: how people check in (QR posters, office networks, kiosks, phones)", group: "HR" },
   { key: "finance.access", label: "Finance section: record bills, invoices, payments, claims and purchases", group: "Finance" },
   { key: "finance.approve", label: "Approve payments, claims, purchases and payroll checks; close periods", group: "Finance" },
   { key: "finance.payroll", label: "Prepare payroll (salaries, allowances, deductions)", group: "Finance" },
@@ -151,6 +152,7 @@ export const DEFAULT_PERMISSIONS: Record<Role, Capability[]> = {
     "hr.access",
     "hr.manage",
     "attendance.manage",
+    "attendance.capture",
     ...EDITORIAL_CAPABILITIES,
   ],
 };

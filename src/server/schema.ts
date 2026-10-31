@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 23;
+export const SCHEMA_VERSION = 25;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -1966,6 +1966,79 @@ CREATE TABLE IF NOT EXISTS password_history (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_password_history ON password_history(user_id, created_at);
+-- v24: running the system (Phase 15): scheduled job results, errors kept in the app, and backup runs.
+-- Not part of backups (they describe this server, not the workspace).
+CREATE TABLE IF NOT EXISTS job_runs (
+  name TEXT PRIMARY KEY,
+  last_at TEXT,
+  last_ok_at TEXT,
+  ok INTEGER NOT NULL DEFAULT 1,
+  ms INTEGER NOT NULL DEFAULT 0,
+  detail TEXT,
+  error TEXT,
+  runs INTEGER NOT NULL DEFAULT 0,
+  failures INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS error_events (
+  id TEXT PRIMARY KEY,
+  fingerprint TEXT NOT NULL UNIQUE,
+  source TEXT NOT NULL,
+  message TEXT NOT NULL,
+  stack TEXT,
+  path TEXT,
+  route TEXT,
+  digest TEXT,
+  user_id TEXT,
+  count INTEGER NOT NULL DEFAULT 1,
+  first_at TEXT NOT NULL,
+  last_at TEXT NOT NULL,
+  resolved_at TEXT,
+  alerted_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_error_events_last ON error_events(last_at);
+CREATE TABLE IF NOT EXISTS backup_runs (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  started_at TEXT NOT NULL,
+  finished_at TEXT,
+  ok INTEGER NOT NULL DEFAULT 0,
+  file TEXT,
+  size BIGINT,
+  rows BIGINT,
+  targets TEXT NOT NULL DEFAULT '{}',
+  detail TEXT,
+  by_user TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_backup_runs ON backup_runs(kind, started_at);
+-- v25: attendance by printed QR and the office network (Phase 10b): breaks and lunch as check-in kinds, where and
+-- how each check-in was made, flags for HR, people's phones, and refused attempts (to spot a changed address).
+ALTER TABLE att_events ADD COLUMN IF NOT EXISTS site_id TEXT;
+ALTER TABLE att_events ADD COLUMN IF NOT EXISTS ip TEXT;
+ALTER TABLE att_events ADD COLUMN IF NOT EXISTS device_id TEXT;
+ALTER TABLE att_events ADD COLUMN IF NOT EXISTS flag TEXT;
+ALTER TABLE att_events ADD COLUMN IF NOT EXISTS flag_state TEXT;
+ALTER TABLE att_events ADD COLUMN IF NOT EXISTS flag_by TEXT;
+ALTER TABLE att_events ADD COLUMN IF NOT EXISTS flag_at TEXT;
+CREATE INDEX IF NOT EXISTS idx_att_events_flag ON att_events(flag_state);
+CREATE INDEX IF NOT EXISTS idx_att_events_device ON att_events(device_id, at);
+CREATE TABLE IF NOT EXISTS att_devices (
+  device_id TEXT NOT NULL,
+  employee_id TEXT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  status TEXT NOT NULL,
+  first_at TEXT NOT NULL,
+  last_at TEXT NOT NULL,
+  decided_by TEXT,
+  PRIMARY KEY (device_id, employee_id)
+);
+CREATE TABLE IF NOT EXISTS att_refusals (
+  id TEXT PRIMARY KEY,
+  site_id TEXT,
+  employee_id TEXT,
+  ip TEXT,
+  reason TEXT,
+  at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_att_refusals ON att_refusals(site_id, at);
 `;
 
 // Tables in dependency order; used to empty the workspace and to export or restore backups.
@@ -2109,4 +2182,5 @@ export const TABLES = [
   "signup_requests",
   "password_history",
   "signin_log",
+  "att_devices",
 ] as const;

@@ -1,7 +1,19 @@
 // Attendance: shared vocabulary, settings and the rules that turn check-ins into a day's result.
 // Used by the server and the client; no database access here.
 
-export type Shift = { key: string; label: string; start: string; end: string; graceMin: number; breakMin: number; workdays: number[] };
+// breakMin is the fixed break taken off a long day when people do not record breaks. When they do (QR, network or
+// kiosk), the real lunch and breaks count instead: lunch within its window and allowance, short breaks paid or not.
+export type Shift = {
+  key: string;
+  label: string;
+  start: string;
+  end: string;
+  graceMin: number;
+  breakMin: number;
+  workdays: number[];
+  lunch?: { from: string; to: string; minutes: number } | null;
+  shortBreaks?: { count: number; minutes: number; paid: boolean } | null;
+};
 
 export type AttendanceConfig = {
   // Days before this are not counted (no absences before attendance started). Empty: from the first check-in.
@@ -25,6 +37,8 @@ export type AttendanceConfig = {
   offlineMaxHours: number;
   // The written attendance and privacy policy shown to everyone.
   policy: string;
+  // Unpaid minutes of lunch and breaks beyond the allowance are deducted in payroll.
+  deductBreakOverrun: boolean;
 };
 
 export const DEFAULT_ATTENDANCE: AttendanceConfig = {
@@ -42,6 +56,7 @@ export const DEFAULT_ATTENDANCE: AttendanceConfig = {
   site: { label: "Office", lat: null, lng: null, radiusM: 200 },
   kioskSilenceMin: 30,
   offlineMaxHours: 72,
+  deductBreakOverrun: false,
   policy: [
     "Attendance records the times you start and finish work, so pay, overtime and leave are right.",
     "You check in when you arrive and check out when you leave, at the kiosk or in the app.",
@@ -69,7 +84,7 @@ export const DAY_STATUS_LABELS: Record<DayStatus, string> = {
 export const MARK_STATUSES = ["present", "late", "half_day", "absent", "leave"] as const;
 export type MarkStatus = (typeof MARK_STATUSES)[number];
 
-export const SOURCES = ["web", "mobile", "kiosk_pin", "kiosk_badge", "kiosk_face", "lead", "hr", "correction"] as const;
+export const SOURCES = ["web", "mobile", "kiosk_pin", "kiosk_badge", "kiosk_face", "lead", "hr", "correction", "qr", "network", "shared", "lead_scan"] as const;
 export type Source = (typeof SOURCES)[number];
 export const SOURCE_LABELS: Record<Source, string> = {
   web: "App",
@@ -80,7 +95,35 @@ export const SOURCE_LABELS: Record<Source, string> = {
   lead: "Team lead",
   hr: "HR",
   correction: "Correction",
+  qr: "Printed QR",
+  network: "Office network",
+  shared: "Shared computer",
+  lead_scan: "Recorded by the team lead",
 };
+
+// What a check-in records: arriving and leaving, and the start and end of a break or of lunch.
+export const EVENT_KINDS = ["in", "out", "break_start", "break_end", "lunch_start", "lunch_end"] as const;
+export type EventKind = (typeof EVENT_KINDS)[number];
+export const KIND_LABELS: Record<EventKind, string> = { in: "check-in", out: "check-out", break_start: "break start", break_end: "back from break", lunch_start: "lunch start", lunch_end: "back from lunch" };
+export const ACTION_LABELS: Record<EventKind, { button: string; done: string }> = {
+  in: { button: "Check in", done: "Checked in" },
+  out: { button: "Check out", done: "Checked out" },
+  break_start: { button: "Start break", done: "On a break" },
+  break_end: { button: "Back from break", done: "Back from break" },
+  lunch_start: { button: "Start lunch", done: "At lunch" },
+  lunch_end: { button: "Back from lunch", done: "Back from lunch" },
+};
+export type CheckinState = "out" | "in" | "break" | "lunch";
+export const STATE_LABELS: Record<CheckinState, string> = { out: "Not checked in", in: "Checked in", break: "On a break", lunch: "At lunch" };
+// The buttons that make sense in each state.
+export const NEXT_KINDS: Record<CheckinState, EventKind[]> = { out: ["in"], in: ["break_start", "lunch_start", "out"], break: ["break_end"], lunch: ["lunch_end"] };
+export function stateAfter(kind: EventKind | null | undefined): CheckinState {
+  return kind === "in" || kind === "break_end" || kind === "lunch_end" ? "in" : kind === "break_start" ? "break" : kind === "lunch_start" ? "lunch" : "out";
+}
+// Badge, PIN and face at the kiosk keep one button: it ends a break or lunch, else checks in or out.
+export function toggleKind(state: CheckinState): EventKind {
+  return state === "break" ? "break_end" : state === "lunch" ? "lunch_end" : state === "in" ? "out" : "in";
+}
 
 export const CORRECTION_STATUSES = ["pending_lead", "pending_hr", "approved", "rejected", "cancelled"] as const;
 export type CorrectionStatus = (typeof CORRECTION_STATUSES)[number];
@@ -141,7 +184,7 @@ export function shiftKeyOn(a: ShiftAssign | null | undefined, day: string, defau
   return a?.shiftKey ?? defaultKey;
 }
 
-export type DayEvent = { kind: "in" | "out"; minutes: number; source: Source };
+export type DayEvent = { kind: EventKind; minutes: number; source: Source };
 export type DayMark = { status: MarkStatus; inMin: number | null; outMin: number | null; note: string | null; source: "lead" | "hr"; reviewed: boolean };
 export type DayInput = {
   date: string;
@@ -169,6 +212,12 @@ export type DayResult = {
   leaveLabel: string | null;
   unpaidLeave: number;
   sources: Source[];
+  // Recorded breaks and lunch (minutes), unpaid time beyond the allowance, and whether one is open now.
+  breakMin: number;
+  lunchMin: number;
+  breakOverMin: number;
+  onBreak: "break" | "lunch" | null;
+  missingReturn: boolean;
 };
 
 // One person's day: a hand-made mark wins, then leave, holidays and days off, then the check-ins against the shift.
@@ -194,6 +243,11 @@ export function computeDay(d: DayInput): DayResult {
     leaveLabel: d.leave?.label ?? null,
     unpaidLeave: d.leave && !d.leave.paid ? (d.leave.half ? 0.5 : 1) : 0,
     sources: [...new Set(ev.map((e) => e.source))],
+    breakMin: 0,
+    lunchMin: 0,
+    breakOverMin: 0,
+    onBreak: null,
+    missingReturn: false,
   };
   const timed = (inMin: number | null, outMin: number | null) => {
     const worked = inMin !== null && outMin !== null && outMin > inMin ? outMin - inMin : 0;
@@ -228,24 +282,57 @@ export function computeDay(d: DayInput): DayResult {
     };
   }
 
-  // Closed in-and-out pairs count; a check-in left open past the day is a missing check-out.
+  // Work runs from a check-in (or the end of a break) to a check-out (or the start of a break); breaks and lunch
+  // are the gaps between. A check-in left open past the day is a missing check-out; a break left open, a missing
+  // return.
   let worked = 0;
   let open: number | null = null;
+  let pause: { kind: "break" | "lunch"; at: number } | null = null;
+  let breakMin = 0;
+  let lunchMin = 0;
+  const closePause = (at: number) => {
+    if (!pause) return;
+    if (pause.kind === "lunch") lunchMin += Math.max(0, at - pause.at);
+    else breakMin += Math.max(0, at - pause.at);
+    pause = null;
+  };
   for (const e of ev) {
-    if (e.kind === "in") open ??= e.minutes;
-    else if (open !== null) {
-      worked += e.minutes - open;
+    if (e.kind === "in") {
+      closePause(e.minutes);
+      open ??= e.minutes;
+    } else if (e.kind === "out") {
+      if (open !== null) worked += e.minutes - open;
       open = null;
+      closePause(e.minutes);
+    } else if (e.kind === "break_start" || e.kind === "lunch_start") {
+      if (open !== null) worked += e.minutes - open;
+      open = null;
+      if (!pause) pause = { kind: e.kind === "lunch_start" ? "lunch" : "break", at: e.minutes };
+    } else {
+      closePause(e.minutes);
+      open ??= e.minutes;
     }
   }
   const firstIn = ev.find((e) => e.kind === "in")?.minutes ?? null;
   const lastOut = [...ev].reverse().find((e) => e.kind === "out")?.minutes ?? null;
   const t = timed(firstIn, lastOut);
-  const net = worked >= 6 * 60 ? worked - d.shift.breakMin : worked;
+  // With breaks recorded, the real ones count: paid short breaks (up to the allowance) are work time; lunch and
+  // unpaid breaks are not. Without them, the shift's fixed break comes off a long day.
+  const recorded = ev.some((e) => e.kind !== "in" && e.kind !== "out");
+  const sb = d.shift.shortBreaks;
+  const breakAllow = (sb?.count ?? 0) * (sb?.minutes ?? 0);
+  const lunchAllow = d.shift.lunch ? d.shift.lunch.minutes : d.shift.breakMin;
+  const paidBreaks = recorded && sb && sb.paid ? Math.min(breakMin, breakAllow) : 0;
+  const net = recorded ? worked + paidBreaks : worked >= 6 * 60 ? worked - d.shift.breakMin : worked;
+  const breakOverMin = recorded ? Math.max(0, lunchMin - lunchAllow) + (sb && sb.paid ? 0 : Math.max(0, breakMin - breakAllow)) : 0;
+  const breaks = { breakMin, lunchMin, breakOverMin };
   // Minutes into this day's shift right now (a night shift's day runs on past midnight), or null when it is over.
   const nextDay = new Date(Date.parse(`${d.date}T12:00:00Z`) + 864e5).toISOString().slice(0, 10);
   const nowRel = d.date === d.now.date ? d.now.minutes : night && nextDay === d.now.date ? d.now.minutes + 24 * 60 : null;
   const missingOut = open !== null && (nowRel === null ? d.date < d.now.date : nowRel > end + 4 * 60);
+  const openPause = pause as { kind: "break" | "lunch"; at: number } | null;
+  const missingReturn = openPause !== null && (nowRel === null ? d.date < d.now.date : nowRel > end + 4 * 60);
+  const onBreak = openPause && !missingReturn ? openPause.kind : null;
   const workday = d.shift.workdays.includes(weekday(d.date));
 
   if (d.leave && !d.leave.half && firstIn === null) return { ...base, status: "leave" };
@@ -258,18 +345,33 @@ export function computeDay(d: DayInput): DayResult {
   }
   // Worked on a holiday or a day off: all of it is overtime.
   if (d.holiday || !workday)
-    return { ...base, ...t, status: d.holiday ? "holiday" : "off", workedMin: Math.max(0, net), lateMin: 0, earlyMin: 0, overtimeMin: Math.max(0, net), missingOut, note: d.holiday };
+    return { ...base, ...t, ...breaks, onBreak, missingReturn, status: d.holiday ? "holiday" : "off", workedMin: Math.max(0, net), lateMin: 0, earlyMin: 0, overtimeMin: Math.max(0, net), missingOut, note: d.holiday };
   // On a half day of leave, the half worked is a normal day's work.
   const short = !d.leave?.half && !missingOut && lastOut !== null && net < d.rules.halfDayHours * 60;
   const halfLeave = !!d.leave?.half;
   const status: DayStatus = short ? "half_day" : t.lateMin > 0 && !halfLeave ? "late" : "present";
-  return { ...base, ...t, status, workedMin: Math.max(0, net), missingOut, lateMin: halfLeave ? 0 : t.lateMin, earlyMin: halfLeave ? 0 : t.earlyMin };
+  return { ...base, ...t, ...breaks, onBreak, missingReturn, status, workedMin: Math.max(0, net), missingOut, lateMin: halfLeave ? 0 : t.lateMin, earlyMin: halfLeave ? 0 : t.earlyMin };
 }
 
 // A month's totals for one person, as payroll and the timesheet use them.
-export type MonthTotals = { present: number; late: number; lateMin: number; halfDays: number; absent: number; leave: number; unpaidLeave: number; workedMin: number; overtimeMin: number; missingOut: number; manual: number };
+export type MonthTotals = {
+  present: number;
+  late: number;
+  lateMin: number;
+  halfDays: number;
+  absent: number;
+  leave: number;
+  unpaidLeave: number;
+  workedMin: number;
+  overtimeMin: number;
+  missingOut: number;
+  manual: number;
+  breakMin: number;
+  lunchMin: number;
+  breakOverMin: number;
+};
 export function monthTotals(days: DayResult[]): MonthTotals {
-  const t: MonthTotals = { present: 0, late: 0, lateMin: 0, halfDays: 0, absent: 0, leave: 0, unpaidLeave: 0, workedMin: 0, overtimeMin: 0, missingOut: 0, manual: 0 };
+  const t: MonthTotals = { present: 0, late: 0, lateMin: 0, halfDays: 0, absent: 0, leave: 0, unpaidLeave: 0, workedMin: 0, overtimeMin: 0, missingOut: 0, manual: 0, breakMin: 0, lunchMin: 0, breakOverMin: 0 };
   for (const d of days) {
     if (d.status === "present" || d.status === "late") t.present++;
     if (d.status === "late") (t.late++, (t.lateMin += d.lateMin));
@@ -279,8 +381,11 @@ export function monthTotals(days: DayResult[]): MonthTotals {
     t.unpaidLeave += d.unpaidLeave;
     t.workedMin += d.workedMin;
     t.overtimeMin += d.overtimeMin;
-    if (d.missingOut) t.missingOut++;
+    if (d.missingOut || d.missingReturn) t.missingOut++;
     if (d.manual) t.manual++;
+    t.breakMin += d.breakMin;
+    t.lunchMin += d.lunchMin;
+    t.breakOverMin += d.breakOverMin;
   }
   return t;
 }
