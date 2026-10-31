@@ -488,7 +488,7 @@ Everything still open across the earlier phases, in three batches, then face che
 ### Then
 
 - [x] Face check-in at the kiosk (Phase 9, step 2), with written guidelines (docs/FACE-CHECKIN.md)
-- [ ] Phase 10b (attendance by printed QR and office network), then Phases 11 to 14 below
+- [ ] Phase 10b (attendance by printed QR and office network), then Phases 11, 12, 12b (Dev studio), 12c (presentation studio), 13 and 14 below
 - [ ] Native app shell (Phase 5b), last
 
 ## Phase 10b: Attendance by printed QR and office network (next, before Phase 11)
@@ -620,6 +620,70 @@ Production teams work as a loop: the lead assigns, members start, fill in the ca
 - [ ] **Studio**: Assigned (note, exam or deck on a grade, subject and part), Draft, Subject review (reviewer checklist), Approved, Published; a new version starts the loop again.
 - [ ] **Templates**: Support (Intake, Triage, In progress, Waiting on the requester, Resolved), Sales (Lead, Qualified, Proposal, Won or Lost), Operations, HR and Finance requests, each with its flow, checklists and guide.
 - [ ] Help: each department's chapter describes its own flow from the configuration (extends the Phase 10 chapters).
+
+## Phase 12b: Dev studio (the software lifecycle in one place)
+
+What exists today: a Timeline view (a Gantt chart with dependencies, drag to reschedule and the critical path) in every department; sprints as a simple switch (one active sprint, a "current sprint" filter); GitHub repositories with pull requests and checks; task templates. Phase 12 adds the Dev flow (code review, QA, release). This phase makes Dev a complete studio for planning, specifying, building, testing and releasing software, close to what teams know from Jira, Linear, GitHub and Confluence.
+
+### 12b.1 Sprints, configurable for any department (Admin)
+
+- [ ] **Admin, Departments, Sprints** for every department that works in sprints (Dev first; Marketing, Studio or any department can switch them on):
+  - sprint length (1 to 4 weeks), start day, naming ("Sprint 14" or by date), working days;
+  - capacity per person (hours or story points), and whether estimates are hours or points;
+  - the rituals to show: planning, daily stand-up, review, retrospective, each with a day and time;
+  - what happens to unfinished work at the end: moves to the next sprint, or back to the backlog.
+- [ ] **Sprint planning**: the backlog beside the sprint, drag tasks in, see capacity fill per person, the sprint goal.
+- [ ] **During the sprint**: burndown and burnup, scope added after the start marked, daily stand-up notes per person (yesterday, today, blockers).
+- [ ] **Sprint review and retrospective**: what was finished, what moved on, velocity (average of the last three sprints), and the retrospective board (went well, to improve, actions), with the actions becoming tasks.
+
+### 12b.2 Planning views (beyond today's Timeline)
+
+- [ ] **Roadmap**: projects and epics on quarters, with their progress, the team on each, and the release they target.
+- [ ] **Gantt** (the Timeline, extended): baselines (planned against actual), milestones as diamonds, the critical path, task groups folded by epic, resource load under the chart, export to PDF, Excel and MS Project XML.
+- [ ] **Epics, stories, tasks and sub-tasks** (the usual hierarchy), story points, acceptance criteria per story, and "definition of done" per department.
+- [ ] **Projects list with progress**: every project with status, health (on track, at risk, late, from dates and progress), percent done by points or hours, open bugs, the next milestone and release, the lead and the team; filters and a portfolio view for heads and owners.
+
+### 12b.3 Specifications and documents (SRS and the rest)
+
+- [ ] **Docs space per project**, with pages that link to tasks and back (a task shows the requirement it comes from, a requirement shows its tasks and their state):
+  - **SRS** (software requirements specification), following the usual IEEE 830 / ISO 29148 outline: purpose and scope, users, functional requirements (each with an ID, priority by MoSCoW, acceptance criteria), non-functional requirements (performance, security, availability, usability), interfaces, data, constraints and assumptions;
+  - **Product brief / PRD**, **technical design** (architecture, data model, interfaces, decisions), **architecture decision records**, **test plan**, **release notes** (filled from the tasks of the release), **runbook** and **postmortem**.
+- [ ] **Requirements traceability**: each requirement through to its tasks, pull requests, tests and the release; a matrix view shows what is not covered.
+- [ ] **Versions and approval**: each document has versions, a review by named reviewers and an approved state; changes after approval start a new version.
+- [ ] **Export**: Word and PDF with the company's cover page.
+
+### 12b.4 Myseed templates and specs
+
+- [ ] Ready templates, written for Myseed's own products (the learning app, the content manager, the Studio tools), in the documents above: an SRS for a learning feature (grade, subject, unit and part; video playback; offline use; Amharic and other languages; low bandwidth), a technical design template with Myseed's stack, a test plan with the devices Myseed students use, a release checklist and release notes template, a postmortem template.
+- [ ] Project templates that bring the epics, milestones, tasks and documents for common work: "New app feature", "Content import pipeline", "New grade or subject rollout", "Mobile release", "Bug bash".
+- [ ] Admin and Dev heads can edit them and add their own.
+
+### 12b.5 Development tools and integrations (industry standard)
+
+- [ ] **Git hosting**: GitHub (exists) and GitLab; branches and pull requests linked by task code (WEB-12) in the branch name or title; checks and review state on the task; a merged pull request moves the task on.
+- [ ] **CI/CD**: build and deploy status from GitHub Actions or GitLab CI on the task and the release; deployments per environment (development, staging, production) with time and version.
+- [ ] **Releases**: versions (semantic, 1.4.0), release trains, the tasks in each, release notes generated, and the deploy that shipped it.
+- [ ] **Quality**: test cases and test runs linked to requirements (pass, fail, blocked), bugs from failed tests with steps to reproduce; code coverage and quality numbers from the CI when available.
+- [ ] **Incidents**: error reports from Sentry (or similar) open bugs automatically; incidents with severity, timeline and a postmortem.
+- [ ] **Standard formats**: import from and export to Jira (CSV and JSON), Trello and Asana boards; webhooks out (task created, status changed, release shipped) and an API key for other tools; Slack or Telegram notices for a channel.
+- [ ] **DORA measures**: deployment frequency, lead time for changes, change failure rate and time to restore, from the releases, deploys and incidents.
+
+### 12b.6 Dev studio presentation
+
+- [ ] A presentation mode for Dev (as the Overview has for production, see Phase 12c): the roadmap, each project's progress and health, the current sprint (burndown, goal, what is done), the latest release and what is next, quality and DORA measures, cycling by itself or presented by hand, exported to PowerPoint, PDF or video.
+
+## Phase 12c: Presentation studio (all departments)
+
+What exists today: the Overview's presentation mode for production, with customizable slides, an analyzer (bottleneck, pace and forecast, leaders, load), comparisons, periods, detailed and voice modes, and exports to PowerPoint, video, image, PDF, CSV and JSON.
+
+- [ ] **One studio for every department**: production, Dev, Marketing, Studio, HR (headcount, attendance), Finance (budgets, spend) and the Company overview, each with its own slide types; owners can build a company deck from several departments.
+- [ ] **Building a presentation**: a slide list to add, remove, reorder (drag) and duplicate; per slide the data (department, filters, period), the chart type, the title and a speaker note; saved presentations per person or shared with the team; a few ready decks (weekly team meeting, monthly owners' review, sprint review, campaign results).
+- [ ] **Themes and layout**: light, dark and the company's colours and logo; title, chart, two charts side by side, big number, table, image, quote; the font size for big rooms.
+- [ ] **Animations and transitions**: per slide (fade, slide, zoom), charts that build up (bars growing, lines drawing, numbers counting up), points that appear one by one, a highlight that moves to what matters (the bottleneck, the late project), a progress bar for the deck; all switchable off for calm viewing and respecting "reduce motion".
+- [ ] **Explainers**: each chart can show a short plain sentence of what it says ("Editing is the slowest stage this week: 6 parts waiting, 2 days on average"), written from the numbers by fixed rules (not an AI), with a "why" note and the next action to take.
+- [ ] **For productivity**: a meeting mode with the agenda, a timer per slide, and "actions" captured during the meeting that become tasks for the right people afterwards; a "since last time" slide that shows what changed since the previous meeting; goals and targets shown against the actual numbers.
+- [ ] **Presenting**: presenter view with notes and the next slide on the presenter's screen, a laser pointer and drawing on the slide, a remote from a phone (next, previous) through the app, auto-play for a TV in the office that refreshes every minute.
+- [ ] **Sharing**: a read-only link for a set time, exports (PowerPoint with editable charts, PDF, video with the narration), and a schedule that emails the deck as PDF every week.
 
 ## Phase 13: Assistant (a guide, not an AI)
 
