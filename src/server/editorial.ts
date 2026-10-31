@@ -18,8 +18,9 @@ import {
 } from "./workflow";
 import { managers, notify, teamLeads, usersWithRole } from "./notifications";
 import { can, canViewItem, hasRole, isLeadOf, scopeSql, type AppUser } from "./users";
-import { getSettings, saveSetting, type ChecklistItem } from "./settings";
-import { NEXT_STAGE, STAGE_LABELS, STAGES, stageIndex, type Stage } from "@/lib/domain";
+import { getSettings, rulesFor, saveSetting, type ChecklistItem } from "./settings";
+import { NEXT_STAGE, PREV_STAGE, STAGE_LABELS, STAGES, STATUS_LABELS, stageIndex, type Stage } from "@/lib/domain";
+import { handoverStatuses, teamRules } from "@/lib/team-rules";
 
 type Raw = Record<string, unknown>;
 
@@ -354,7 +355,12 @@ export type AssignCandidate = {
   stage_done: boolean;
 };
 
-export async function assignCandidates(user: AppUser, f: { stage: Stage; gradeIds: string[]; subjectIds: string[] }): Promise<{ rows: AssignCandidate[]; capped: boolean }> {
+// Under the team's rules the next teams see only parts the previous team finished and handed over; parts still in
+// progress there, not started, or marked missing (sent back) stay off the list until they arrive.
+export async function assignCandidates(
+  user: AppUser,
+  f: { stage: Stage; gradeIds: string[]; subjectIds: string[] },
+): Promise<{ rows: AssignCandidate[]; capped: boolean; hidden: number; intake: "handed_over" | "all" }> {
   const where = ["i.lifecycle IN ('draft','in_production')"];
   const params: string[] = [f.stage, f.stage, f.stage];
   if (f.gradeIds.length) {
@@ -369,12 +375,16 @@ export async function assignCandidates(user: AppUser, f: { stage: Stage; gradeId
   where.push(sc.sql);
   params.push(...sc.params);
   const limit = 3000;
-  const rows = await all<Omit<AssignCandidate, "stage_done"> & { stage_done: number }>(
+  const prev = PREV_STAGE[f.stage];
+  const intake = prev ? (await rulesFor(f.stage)).intake : "all";
+  const arrived = STAGES.slice(stageIndex(f.stage));
+  const rows = await all<Omit<AssignCandidate, "stage_done"> & { stage_done: number; arrived: number }>(
     `SELECT i.id, i.code, i.title, i.lifecycle, i.stage, i.stage_status, m.grade_id, g.name AS grade, g.sort AS grade_sort, m.subject_id, s.name AS subject,
         s.sort AS subject_sort, m.unit_id, u.number AS unit_number, u.title AS unit_title, l.number AS part_number,
         sa.user_id AS owner_id, sa.stage_due_at AS due_at,
         (SELECT w.name FROM work_checklists w WHERE w.item_id = i.id AND w.stage = ?) AS checklist,
-        CASE WHEN EXISTS (SELECT 1 FROM stage_attempts a WHERE a.item_id = i.id AND a.stage = ? AND a.status = 'completed') THEN 1 ELSE 0 END AS stage_done
+        CASE WHEN EXISTS (SELECT 1 FROM stage_attempts a WHERE a.item_id = i.id AND a.stage = ? AND a.status = 'completed') THEN 1 ELSE 0 END AS stage_done,
+        CASE WHEN i.lifecycle = 'in_production' AND (i.stage IN (${arrived.map((x) => `'${x}'`).join(",")}) OR (i.stage = '${prev ?? ""}' AND i.stage_status = 'awaiting_handoff')) THEN 1 ELSE 0 END AS arrived
      FROM items i
      JOIN item_memberships m ON m.item_id = i.id AND m.is_primary = 1
      JOIN grades g ON g.id = m.grade_id JOIN subjects s ON s.id = m.subject_id
@@ -385,7 +395,13 @@ export async function assignCandidates(user: AppUser, f: { stage: Stage; gradeId
      LIMIT ${limit + 1}`,
     ...params,
   );
-  return { rows: rows.slice(0, limit).map((r) => ({ ...r, stage_done: !!r.stage_done })), capped: rows.length > limit };
+  const shown = intake === "handed_over" ? rows.filter((r) => Number(r.arrived) === 1) : rows;
+  return {
+    rows: shown.slice(0, limit).map(({ arrived: _, ...r }) => ({ ...r, stage_done: !!r.stage_done })),
+    capped: shown.length > limit,
+    hidden: rows.length - shown.length,
+    intake,
+  };
 }
 
 // Open work per person in a stage: assigned, not yet done there, item still open.
@@ -661,6 +677,9 @@ export async function createHandover(user: AppUser, input: { itemIds: string[]; 
   if (input.toUserId && !(await get("SELECT 1 AS x FROM role_assignments WHERE user_id = ? AND role = ?", input.toUserId, to)))
     throw new WorkflowError("VALIDATION", `The receiver must hold the ${STAGE_LABELS[to]} role.`);
 
+  // Only finished work goes over: approved by the lead, or (when the team allows it) marked done.
+  const rules = await rulesFor(from);
+  const allowed: string[] = handoverStatuses(rules);
   const results: HandoverCreateResult["results"] = [];
   const ok: string[] = [];
   // Admins and planners act for the team (system authority in the engine); everyone else under their own rights.
@@ -682,6 +701,13 @@ export async function createHandover(user: AppUser, input: { itemIds: string[]; 
     }
     try {
       const a = (await currentAttempt(id))!;
+      if (a.status !== "awaiting_handoff" && !allowed.includes(a.status))
+        throw new WorkflowError(
+          "INVALID_STATE",
+          rules.handoverFrom === "approved" && ["finished", "lead_review"].includes(a.status)
+            ? "Not approved by the team lead yet"
+            : `Not marked done yet (${STATUS_LABELS[a.status].toLowerCase()})`,
+        );
       if (a.status !== "awaiting_handoff") await submitHandoff(ctx, id, { note: input.note ?? null });
       ok.push(id);
       results.push({ id, code, ok: true });
@@ -812,7 +838,8 @@ export async function updateHandoverNote(user: AppUser, id: string, note: string
   await run("UPDATE handovers SET note = ? WHERE id = ?", note.trim() || null, id);
 }
 
-// Items a team lead can put in a new handover: work in the stage they lead (ready first), not already in an open handover.
+// Items a team lead can put in a new handover: finished work in the stage they lead (approved, or marked done when the
+// team allows it), not already in an open handover. Work in progress or not started never shows here.
 export async function handoverCandidates(user: AppUser) {
   const sc = scopeSql(user, "i");
   const rows = await all<{ id: string; code: string; title: string; stage: Stage; stage_status: string; owner_id: string | null; grade: string; subject: string; unit_number: number | null; part_number: number | null }>(
@@ -820,12 +847,15 @@ export async function handoverCandidates(user: AppUser) {
      FROM items i JOIN stage_attempts a ON a.id = i.current_attempt_id
      LEFT JOIN item_memberships m ON m.item_id = i.id AND m.is_primary = 1 LEFT JOIN grades g ON g.id = m.grade_id LEFT JOIN subjects s ON s.id = m.subject_id
      LEFT JOIN units u ON u.id = m.unit_id LEFT JOIN lessons l ON l.id = i.lesson_id
-     WHERE i.lifecycle = 'in_production' AND a.stage <> 'publication' AND a.status IN ('queued','in_progress','paused','finished','lead_review','ready','awaiting_handoff') AND ${sc.sql}
+     WHERE i.lifecycle = 'in_production' AND a.stage <> 'publication' AND a.status IN ('finished','lead_review','ready','awaiting_handoff') AND ${sc.sql}
        AND NOT EXISTS (SELECT 1 FROM handover_items x JOIN handovers h ON h.id = x.handover_id WHERE x.item_id = i.id AND x.status = 'pending' AND h.status IN ('open','partial'))
      ORDER BY g.sort, s.sort, u.number, l.number, i.code LIMIT 3000`,
     ...sc.params,
   );
-  return rows.filter((r) => wide(user) || isLeadOf(user, r.stage));
+  const teams = (await getSettings()).teams;
+  return rows.filter(
+    (r) => (wide(user) || isLeadOf(user, r.stage)) && (r.stage_status === "awaiting_handoff" || (handoverStatuses(teamRules(teams, r.stage)) as string[]).includes(r.stage_status)),
+  );
 }
 
 // ---------------------------------------------------------------------------

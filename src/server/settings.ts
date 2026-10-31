@@ -12,6 +12,7 @@ import {
   type Role,
   type Stage,
 } from "@/lib/domain";
+import { DEFAULT_TEAM_RULES, teamRules, type TeamRules } from "@/lib/team-rules";
 
 // verify: the team lead must also verify the line before the handoff.
 export type ChecklistItem = { key: string; label: string; required: boolean; verify?: boolean };
@@ -41,6 +42,7 @@ export type Settings = {
     requireRawDuration: boolean;
   };
   checklists: Record<Stage, ChecklistItem[]>;
+  teams: Record<Stage, TeamRules>;
   destinations: { key: string; label: string; requiredByDefault: boolean; active: boolean }[];
   lists: {
     deliverableTypes: { key: string; label: string; codeSuffix: string }[];
@@ -116,6 +118,7 @@ export const DEFAULT_SETTINGS: Settings = {
       { key: "release_window", label: "Release window confirmed", required: false },
     ],
   },
+  teams: DEFAULT_TEAM_RULES,
   destinations: [
     { key: "myseed_app", label: "Myseed App", requiredByDefault: true, active: true },
     { key: "youtube", label: "YouTube", requiredByDefault: false, active: true },
@@ -155,6 +158,11 @@ export const DEFAULT_SETTINGS: Settings = {
     agingBands: [2, 7, 14],
   },
 };
+
+// One team's rules, with defaults for anything added since they were saved.
+export async function rulesFor(stage: Stage): Promise<TeamRules> {
+  return teamRules((await getSettings()).teams, stage);
+}
 
 // Settings change rarely; a short cache saves a database round trip on almost every request.
 const CACHE_MS = 10_000;

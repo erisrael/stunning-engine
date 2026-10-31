@@ -4,7 +4,7 @@ import { getSettings } from "@/server/settings";
 import { taxonomy } from "@/server/queries";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/app/primitives";
-import { CalendarSettings, DestinationSettings, ListSettings, TaxonomySettings, WorkflowSettings, WorkspaceSettings } from "./settings-client";
+import { CalendarSettings, DestinationSettings, ListSettings, TaxonomySettings, TeamSettings, WorkflowSettings, WorkspaceSettings } from "./settings-client";
 import { PageImport } from "@/components/app/page-import";
 import { CallSettings } from "./call-settings";
 import { turnSettings } from "@/server/calls";
@@ -24,13 +24,14 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
     <div className="space-y-4">
       <PageHeader
         title="Settings"
-        description="Curriculum, workflow rules, destinations, calendar, lists and calls. People, roles and permissions are in Admin."
+        description="Curriculum, workflow rules, how each team works, destinations, calendar, lists and calls. People, roles and permissions are in Admin."
         actions={<PageImport viewer={viewer} page="curriculum" label="Import curriculum" />}
       />
       <Tabs defaultValue={tab} className="gap-4">
         <TabsList className="w-full justify-start overflow-x-auto sm:w-fit">
           <TabsTrigger value="taxonomy">Curriculum</TabsTrigger>
           <TabsTrigger value="workflow">Workflow</TabsTrigger>
+          <TabsTrigger value="teams">Teams</TabsTrigger>
           <TabsTrigger value="destinations">Destinations</TabsTrigger>
           <TabsTrigger value="calendar">Calendar and alerts</TabsTrigger>
           <TabsTrigger value="lists">Lists</TabsTrigger>
@@ -42,6 +43,9 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         </TabsContent>
         <TabsContent value="workflow">
           <WorkflowSettings settings={s} />
+        </TabsContent>
+        <TabsContent value="teams">
+          <TeamSettings settings={s} />
         </TabsContent>
         <TabsContent value="destinations">
           <DestinationSettings settings={s} />

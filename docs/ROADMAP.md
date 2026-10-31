@@ -294,6 +294,62 @@ Studio keeps its content types (notes, exams, flash cards, question bank) and ga
 
 Each step ships on its own and keeps today's screens working until its replacement is ready.
 
+## Phase 5d: Production teams in depth
+
+Every production team runs the same loop: the lead assigns; team members start, fill in the card, mark done and send to the lead; the lead approves or returns with a note and hands approved work over to the next team's lead, who accepts it or marks it missing and assigns it. Only finished work moves on. Each team is configured on its own in Settings, Teams.
+
+### Rules per team (done)
+
+- [x] **Settings, Teams** (Admin and managers), one card per team, saved with the other settings and in the audit log:
+  - **Work the lead can assign**: only parts the previous team finished and handed over (default for Editing, Uploading and Publication), or every planned part to plan ahead. Recording always sees every planned part.
+  - **Team lead review**: members' work goes to the lead to approve (default); off, sending it makes it ready for handover and the lead is told.
+  - **What the lead hands over**: only work the lead approved (default), or anything the team marked done.
+  - **Work in progress per person**: most parts one person may have started and not marked done (0: no limit).
+  - **Days to finish**: sets the team's due date when work arrives, if none is set (Editing 3, Uploading 2, Publication 2).
+  - **How the team works**: the team's own steps, one per line, shown to the team on Home ("How Editing works").
+- [x] Only finished work reaches the next team:
+  - The New handover list and the lead desk offer only approved work (or done work, by the rule above); parts in progress, paused, blocked or not started never show.
+  - Handing over refuses unfinished work with the reason, for leads, managers and Admin alike; imports and status corrections are unaffected.
+  - The next team's Assign page lists only parts that arrived, and says how many are left out (still in progress, not started, or sent back as missing).
+  - Parts marked missing go back to the sender's team and leave the receiving team's lists.
+- [x] Recording members see parts assigned to them before anyone has started them (drafts) on their Home board; Start puts them into production.
+- [x] The item page offers "Hand over" only on approved work.
+
+### Recording
+
+- **Lead**: adds parts (New item, curriculum import, spreadsheet import), assigns on Assign work (by grade or subject, whole units or single parts, one or several people, due date, extra checklist), reviews, hands over to Editing in batches.
+- **Members**: Start (timer), camera codes or raw links with minutes, checklist (presenter and script, audio, framing and light, board legible, files backed up), Done, Send.
+- **Hands over**: approved parts with at least one recording logged and the required checklist ticked.
+- Next:
+  - [ ] Session planning: book a studio slot, presenter and camera per part, with a day view for the lead.
+  - [ ] Retake requests from Editing or Publication land as a new Recording task with the reason.
+
+### Editing
+
+- **Lead**: accepts or marks missing what Recording handed over, assigns accepted parts (Home, To assign; or Assign work), reviews the master, returns with a note or approves, hands over to Uploading.
+- **Editors**: Start, edited master, captions and thumbnail links (captions and thumbnail required by default, Settings, Workflow), final length, checklist (cuts against script, audio cleaned, graphics and spelling, captions synced, export preset), Done, Send.
+- Next:
+  - [ ] Review comments pinned to a time in the master ("0:42: trim the silence").
+  - [ ] Version compare: the lead sees what changed since the last return.
+
+### Uploading
+
+- **Lead**: accepts from Editing, assigns, approves, hands over to Publication.
+- **Uploaders**: Start, the video ID or link per required destination (Settings, Destinations), processing state, playback and details checks, checklist (matches the approved master, metadata, processing finished, playback end to end, captions attached), Done, Send.
+- Next:
+  - [ ] Upload straight from the app to YouTube and the Myseed App, with the ID filled in automatically.
+
+### Publication
+
+- **Lead and reviewers**: receive the handover (Handovers: Received or Missing), Start review, checklist (educational accuracy, placement, thumbnail and title, release window), Review (approve, or request changes and send back to any earlier team), Schedule, Confirm live per destination. Published when every required destination is live.
+- Next:
+  - [ ] Release calendar with drag to reschedule, and a weekly release plan per subject.
+
+### Training material (done)
+
+- [x] Workflow presentation: one loop, the four teams, statuses, each team's steps with screenshots, the handover rule, the team settings and the recorded tutorial.
+- [x] Recorded tutorial (8:36, captioned): sign-in as each person, from adding parts to published, including a return with a note and a part that stays with Recording because it is still in progress.
+
 ## Phase 6: Overview visualizer, help and onboarding (done)
 
 - [x] **Visualizer mode on Overview** (`/overview/present`, the Present button): a full-screen presentation that runs by itself. It cycles through the whole picture, each grade (or subject), recent completions and what is in process. It has play/pause, previous/next, speed, full screen, keyboard (arrows, Space, Esc), follows the Overview's filters, and refreshes every minute

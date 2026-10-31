@@ -100,8 +100,9 @@ export function primaryActions(item: ActionItem, v: ActionViewer) {
   if (item.status === "lead_review" && lead) out.push({ key: "approve", label: "Approve", icon: <CheckIcon />, run: "direct", kind: "leadApprove" });
   if (!lead && ["in_progress", "paused", "finished"].includes(item.status ?? ""))
     out.push({ key: "submitLead", label: "Send to team lead", icon: <SendIcon />, run: "direct", kind: "submitLead", variant: item.status === "paused" ? "outline" : "default" });
-  if (lead && ["in_progress", "paused", "queued", "finished", "lead_review", "ready"].includes(item.status ?? ""))
-    out.push({ key: "submit", label: next ? `Hand over to ${STAGE_LABELS[next]}` : "Hand over", icon: <SendIcon />, run: "dialog", kind: "submit", variant: item.status === "ready" ? "default" : "outline" });
+  // Only finished, approved work is handed over (Settings, Teams).
+  if (lead && item.status === "ready")
+    out.push({ key: "submit", label: next ? `Hand over to ${STAGE_LABELS[next]}` : "Hand over", icon: <SendIcon />, run: "dialog", kind: "submit" });
   return out;
 }
 

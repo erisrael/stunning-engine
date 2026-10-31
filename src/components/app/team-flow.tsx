@@ -314,6 +314,21 @@ const COLUMNS: { key: string; label: string; statuses: string[]; hint: string }[
   { key: "lead", label: "With team lead", statuses: ["lead_review"], hint: "Waiting for approval" },
 ];
 
+// The team's own procedure (Settings, Teams), folded under the board's title.
+export function TeamGuide({ stage, steps }: { stage: Stage; steps: string[] }) {
+  if (!steps.length) return null;
+  return (
+    <details className="rounded-lg border bg-muted/20 px-3 py-2 text-sm" data-guide={stage}>
+      <summary className="cursor-pointer font-medium">How {STAGE_LABELS[stage]} works</summary>
+      <ol className="mt-2 list-decimal space-y-1 pl-5 text-muted-foreground">
+        {steps.map((s, i) => (
+          <li key={i}>{s}</li>
+        ))}
+      </ol>
+    </details>
+  );
+}
+
 export function MyBoard({ items, title = "My work" }: { items: FlowItem[]; title?: string }) {
   const { act, busy } = useAct();
   const router = useRouter();
@@ -378,7 +393,7 @@ export function MyBoard({ items, title = "My work" }: { items: FlowItem[]; title
                       onToggle={() => setOpen(isOpen ? null : it.id)}
                       badge={it.status === "paused" || it.status === "blocked" ? <Badge variant="secondary">{STATUS_LABELS[it.status]}</Badge> : null}
                     >
-                      {isOpen && <WorkPanel item={it} canEdit={it.status !== "lead_review"} lead={false} />}
+                      {isOpen && (it.draft ? <p className="border-t pt-2 text-xs text-muted-foreground">Press Start when the session begins; then fill in the recording here.</p> : <WorkPanel item={it} canEdit={it.status !== "lead_review"} lead={false} />)}
                       <div className="mt-2 flex flex-wrap gap-1.5">
                         {["queued", "paused"].includes(it.status) && (
                           <Button title={tip("action.start")} size="sm" variant="outline" disabled={b("start")} onClick={() => act(it.id, { action: "start", switchFrom: true }, "Started")}>
@@ -390,7 +405,7 @@ export function MyBoard({ items, title = "My work" }: { items: FlowItem[]; title
                             <PauseIcon /> Pause
                           </Button>
                         )}
-                        {["queued", "paused", "in_progress"].includes(it.status) && (
+                        {["queued", "paused", "in_progress"].includes(it.status) && !it.draft && (
                           <Button title={tip("action.finish")} size="sm" disabled={b("finish")} onClick={async () => (await act(it.id, { action: "finish" }, "Marked done")) || setOpen(it.id)}>
                             <CheckIcon /> Done
                           </Button>

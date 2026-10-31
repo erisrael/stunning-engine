@@ -1,5 +1,6 @@
 import { all, get, nowIso, run, tx, uid, parseJson } from "./db";
-import { getSettings } from "./settings";
+import { getSettings, rulesFor } from "./settings";
+import { handoverStatuses } from "@/lib/team-rules";
 import { can, canViewItem, hasRole, isLeadOf, isManager, type AppUser } from "./users";
 import { managers, notify, roleUsersForItem, teamLeads } from "./notifications";
 import {
@@ -787,6 +788,19 @@ export async function startWork(ctx: Ctx, itemId: string, opts: { expectedVersio
         }
         const mine = await get("SELECT 1 AS x FROM work_sessions WHERE attempt_id = ? AND user_id = ? AND ended_at IS NULL", attempt.id, uidActor);
         if (mine) return;
+        // The team's limit on work in progress per person.
+        const limit = (await rulesFor(attempt.stage)).wipLimit;
+        if (limit > 0 && attempt.status === "queued") {
+          // Started and not yet marked done: in progress, paused or blocked. Resuming is always allowed.
+          const open = await get<{ c: number }>(
+            "SELECT COUNT(*) AS c FROM stage_attempts a JOIN items i ON i.current_attempt_id = a.id WHERE a.stage = ? AND a.owner_id = ? AND a.status IN ('in_progress','paused','blocked') AND a.id <> ?",
+            attempt.stage,
+            uidActor,
+            attempt.id,
+          );
+          if (Number(open?.c ?? 0) >= limit)
+            throw new WorkflowError("INVALID_STATE", `${STAGE_LABELS[attempt.stage]} works on at most ${limit} ${limit === 1 ? "part" : "parts"} at a time. Mark one you started done first.`);
+        }
         if (!attempt.owner_id && ctx.actor && hasRole(ctx.actor, attempt.stage)) {
           await run("UPDATE stage_attempts SET owner_id = ? WHERE id = ?", uidActor, attempt.id);
           await run("UPDATE stage_assignments SET user_id = ?, assigned_at = ?, assigned_by = ? WHERE item_id = ? AND stage = ?", uidActor, now, uidActor, itemId, attempt.stage);
@@ -1321,7 +1335,21 @@ export async function submitToLead(ctx: Ctx, itemId: string, input: { note?: str
     const item = await getItem(itemId);
     if (input.note?.trim()) await run("UPDATE stage_attempts SET notes = ? WHERE id = ?", [a.notes, `${actorName(ctx)}: ${input.note.trim()}`].filter(Boolean).join("\n"), a.id);
     await run("UPDATE stage_attempts SET handoff_submitted_at = ? WHERE id = ?", now, a.id);
-    if (leadsStage(ctx.actor, a.stage)) {
+    const review = (await rulesFor(a.stage)).leadReview;
+    if (!review && !leadsStage(ctx.actor, a.stage)) {
+      // The team works without lead review: sent work is ready for the lead to hand over.
+      await setAttemptStatus(a, "ready", now);
+      await audit(ctx, { itemId, attemptId: a.id, stage: a.stage, action: "lead.submitted", summary: `${actorName(ctx)} sent ${STAGE_LABELS[a.stage].toLowerCase()} to the team lead; ready for handover`, reason: input.note ?? null });
+      if (!ctx.silent) {
+        const leads = await teamLeads(a.stage);
+        await notify(
+          leads.length ? leads : await managers(),
+          { type: "handoff", title: `Ready to hand over: ${item.code}`, body: `${actorName(ctx)} finished ${STAGE_LABELS[a.stage].toLowerCase()} of ${item.title}.`, link: "/dashboard", itemId, groupKey: `lead-ready:${a.stage}` },
+          now,
+          actorId(ctx) ?? undefined,
+        );
+      }
+    } else if (leadsStage(ctx.actor, a.stage)) {
       await approveChecks(ctx, a, now);
       await setAttemptStatus(a, "ready", now);
       await audit(ctx, { itemId, attemptId: a.id, stage: a.stage, action: "lead.approved", summary: `${actorName(ctx)} finished ${STAGE_LABELS[a.stage].toLowerCase()}; ready for handover` });
@@ -1392,9 +1420,20 @@ export async function submitHandoff(ctx: Ctx, itemId: string, input: { note?: st
         throw new WorkflowError("FORBIDDEN", `Your team lead hands work over to ${STAGE_LABELS[NEXT_STAGE[attempt.stage]!]}. Mark it done and send it to the team lead.`);
       if (!["in_progress", "paused", "queued", "finished", "lead_review", "ready"].includes(attempt.status))
         throw new WorkflowError("INVALID_STATE", `A handoff cannot be submitted while the stage is ${STATUS_LABELS[attempt.status].toLowerCase()}.`);
+      // People hand over finished work only (imports and status corrections run without an actor).
+      if (ctx.actor) {
+        const rules = await rulesFor(attempt.stage);
+        if (!handoverStatuses(rules).includes(attempt.status))
+          throw new WorkflowError(
+            "INVALID_STATE",
+            ["finished", "lead_review"].includes(attempt.status)
+              ? "Approve it first; only approved work is handed over."
+              : `This is ${STATUS_LABELS[attempt.status].toLowerCase()}. Mark it done and send it to the team lead first; only finished work is handed over.`,
+          );
+      }
       await requireWork(ctx, attempt);
       // Handing over approves any line still waiting for the lead's verification.
-      if (attempt.status !== "ready") await approveChecks(ctx, attempt, now);
+      await approveChecks(ctx, attempt, now);
       const missing = await missingRequirements(itemId, attempt);
       if (missing.length)
         throw new WorkflowError("REQUIREMENTS_MISSING", "Complete the required evidence before submitting the handoff.", missing);
@@ -1499,6 +1538,10 @@ export async function acceptHandoff(ctx: Ctx, itemId: string, input: { note?: st
       // where there is no lead, takes it).
       const owner = (await stageOwner(itemId, next)) ?? (ctx.actor && hasRole(ctx.actor, next) && !leadsStage(ctx.actor, next) ? ctx.actor.id : null);
       await openAttempt(ctx, itemId, next, "initial", null, owner);
+      // The receiving team's turnaround starts when the work arrives.
+      const days = (await rulesFor(next)).targetDays;
+      if (days > 0)
+        await run("UPDATE stage_assignments SET stage_due_at = ? WHERE item_id = ? AND stage = ? AND stage_due_at IS NULL", new Date(Date.parse(now) + days * 864e5).toISOString(), itemId, next);
       if (!ctx.silent && attempt.owner_id)
         await notify(
                   [attempt.owner_id],

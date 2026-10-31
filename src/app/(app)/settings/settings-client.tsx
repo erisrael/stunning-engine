@@ -25,7 +25,9 @@ import {
   upsertUnitAction,
 } from "@/app/actions/admin";
 import type { Settings } from "@/server/settings";
-import { STAGE_LABELS, STAGES, type Stage } from "@/lib/domain";
+import { NEXT_STAGE, PREV_STAGE, STAGE_LABELS, STAGES, type Stage } from "@/lib/domain";
+import { DEFAULT_TEAM_RULES, teamRules, type TeamRules } from "@/lib/team-rules";
+import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
 function useSave<K extends keyof Settings>(key: K) {
@@ -194,6 +196,87 @@ export function WorkflowSettings({ settings }: { settings: Settings }) {
           </div>
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+
+// How each production team works: what reaches it, what it hands on, review, limits and its written procedure.
+export function TeamSettings({ settings }: { settings: Settings }) {
+  const [t, setT] = React.useState<Record<Stage, TeamRules>>(() => Object.fromEntries(STAGES.map((st) => [st, teamRules(settings.teams, st)])) as Record<Stage, TeamRules>);
+  const save = useSave("teams");
+  const set = (st: Stage, patch: Partial<TeamRules>) => setT({ ...t, [st]: { ...t[st], ...patch } });
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-muted-foreground">
+        Every team works the same way: the lead assigns; team members start, fill in the card, mark done and send to the lead; the lead approves and hands over to the next team&apos;s lead, who
+        accepts or marks missing and assigns. These rules tune that flow per team. Checklists are on the Workflow tab and the Checklists page.
+      </p>
+      <div className="grid gap-4 xl:grid-cols-2">
+        {STAGES.map((st) => {
+          const r = t[st];
+          const prev = PREV_STAGE[st];
+          const next = NEXT_STAGE[st];
+          return (
+            <Card key={st} data-team={st}>
+              <CardHeader>
+                <CardTitle>{STAGE_LABELS[st]}</CardTitle>
+                <CardDescription>
+                  {prev ? `Receives from ${STAGE_LABELS[prev]}` : "Starts the work"}
+                  {next ? `, hands over to ${STAGE_LABELS[next]}.` : ", and publishes."}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {prev && (
+                  <Row label="Work the lead can assign" hint="What shows on Assign work for this team.">
+                    <Select value={r.intake} onValueChange={(v) => set(st, { intake: v as TeamRules["intake"] })}>
+                      <SelectTrigger className="w-full sm:w-80" aria-label={`${STAGE_LABELS[st]} intake`}><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="handed_over">Only parts {STAGE_LABELS[prev]} finished and handed over</SelectItem>
+                        <SelectItem value="all">Every planned part (plan ahead)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </Row>
+                )}
+                {next && (
+                  <>
+                    <Row label="Team lead review" hint="Members send finished work to the lead, who approves it or returns it with a note. Off: sending makes it ready for handover.">
+                      <Switch checked={r.leadReview} onCheckedChange={(v) => set(st, { leadReview: v })} aria-label={`${STAGE_LABELS[st]} lead review`} />
+                    </Row>
+                    <Row label="What the lead hands over" hint="Work in progress or not started is never handed over.">
+                      <Select value={r.handoverFrom} onValueChange={(v) => set(st, { handoverFrom: v as TeamRules["handoverFrom"] })}>
+                        <SelectTrigger className="w-full sm:w-80" aria-label={`${STAGE_LABELS[st]} handover`}><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="approved">Only work the lead approved</SelectItem>
+                          <SelectItem value="done">Anything the team marked done</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </Row>
+                  </>
+                )}
+                <Row label="Work in progress per person" hint="Most parts one person may have started and not yet marked done. 0: no limit.">
+                  <Input type="number" min={0} max={50} className="w-24" value={r.wipLimit} onChange={(e) => set(st, { wipLimit: Math.max(0, Math.min(50, Number(e.target.value) || 0)) })} aria-label={`${STAGE_LABELS[st]} limit`} />
+                </Row>
+                {prev && (
+                  <Row label="Days to finish" hint="Sets the team's due date when work arrives, if none is set. 0: none.">
+                    <Input type="number" min={0} max={60} className="w-24" value={r.targetDays} onChange={(e) => set(st, { targetDays: Math.max(0, Math.min(60, Number(e.target.value) || 0)) })} aria-label={`${STAGE_LABELS[st]} days`} />
+                  </Row>
+                )}
+                <div className="space-y-1.5 pt-3">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium">How the team works</p>
+                    <Button size="xs" variant="ghost" className="ml-auto" onClick={() => set(st, { guide: DEFAULT_TEAM_RULES[st].guide })}>Use the standard steps</Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">One step per line. Shown to the team on Home.</p>
+                  <Textarea rows={7} value={r.guide} onChange={(e) => set(st, { guide: e.target.value })} className="text-sm" aria-label={`${STAGE_LABELS[st]} steps`} />
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+      <Button onClick={() => save(t, "Team rules saved")}>Save team rules</Button>
     </div>
   );
 }

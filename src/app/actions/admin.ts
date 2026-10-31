@@ -32,6 +32,18 @@ export async function saveSettingsAction<K extends keyof Settings>(key: K, value
         }
       }
     }
+    if (key === "teams") {
+      const teams = value as Settings["teams"];
+      for (const st of STAGES) {
+        const r = teams[st];
+        if (!r) throw new WorkflowError("VALIDATION", `Missing the ${st} team rules.`);
+        if (!["handed_over", "all"].includes(r.intake) || !["approved", "done"].includes(r.handoverFrom)) throw new WorkflowError("VALIDATION", `Check the ${st} team rules.`);
+        r.wipLimit = Math.max(0, Math.min(50, Math.round(Number(r.wipLimit) || 0)));
+        r.targetDays = Math.max(0, Math.min(60, Math.round(Number(r.targetDays) || 0)));
+        r.leadReview = !!r.leadReview;
+        r.guide = String(r.guide ?? "").slice(0, 4000);
+      }
+    }
     if (key === "destinations" && !(value as Settings["destinations"]).some((d) => d.active && d.requiredByDefault))
       throw new WorkflowError("VALIDATION", "Keep at least one active destination that is required by default.");
     if (key === "calendar") {

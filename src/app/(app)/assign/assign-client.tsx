@@ -17,7 +17,9 @@ import { EmptyState } from "@/components/app/primitives";
 import { MultiSelect } from "@/components/app/multi-select";
 import { bulkAssignAction } from "@/app/actions/editorial";
 import type { AssignCandidate } from "@/server/editorial";
-import { STAGE_LABELS, STATUS_LABELS, type AttemptStatus, type Stage } from "@/lib/domain";
+import { PREV_STAGE, STAGE_LABELS, STATUS_LABELS, type AttemptStatus, type Stage } from "@/lib/domain";
+
+const PREV_LABEL = (st: Stage) => (PREV_STAGE[st] ? STAGE_LABELS[PREV_STAGE[st]!] : "The previous team");
 import { endOfLocalDayIso, fmtDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -44,7 +46,7 @@ export function AssignWizard(props: {
   grades: Opt[];
   subjects: Opt[];
   offered: string[];
-  candidates: { rows: AssignCandidate[]; capped: boolean } | null;
+  candidates: { rows: AssignCandidate[]; capped: boolean; hidden: number; intake: "handed_over" | "all" } | null;
   people: Person[];
   names: Record<string, string>;
   templates: Template[];
@@ -167,6 +169,12 @@ export function AssignWizard(props: {
           <EmptyState icon={<UsersIcon className="size-5" />} title={`Choose a ${mode === "grade" ? "grade" : "subject"} to start`} description="Parts appear here grouped by unit; select whole units or single parts." />
         ) : (
           <>
+            {candidates.hidden > 0 && (
+              <p className="rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground" data-testid="intake-note">
+                {candidates.hidden} {candidates.hidden === 1 ? "part is" : "parts are"} not listed: {PREV_LABEL(stage)} has not finished and handed {candidates.hidden === 1 ? "it" : "them"} over yet
+                (still in progress, not started, or sent back as missing). They appear here once they arrive.
+              </p>
+            )}
             <div className="flex flex-wrap items-center gap-2">
               <Select value={show} onValueChange={(v) => setShow(v as typeof show)}>
                 <SelectTrigger size="sm" className="h-8 w-44 text-xs" aria-label="Show">

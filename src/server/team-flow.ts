@@ -31,6 +31,8 @@ export type FlowItem = {
   checks: FlowCheck[];
   requirements: Requirement[];
   targets: FlowTarget[];
+  // Assigned for Recording but not started yet: Start puts it into production.
+  draft: boolean;
 };
 
 type Row = {
@@ -52,6 +54,7 @@ type Row = {
   subject: string | null;
   unit_number: number | null;
   part_number: number | null;
+  draft?: number;
 };
 
 const BASE = `SELECT i.id, i.code, i.title, i.version, i.current_due_at, i.actual_duration_min, a.id AS attempt_id, a.stage, a.status, a.owner_id, u.name AS owner_name,
@@ -121,6 +124,7 @@ async function hydrate(rows: Row[], viewerId: string): Promise<FlowItem[]> {
       checks,
       requirements: await evaluateRequirements(r.id),
       targets,
+      draft: !!Number(r.draft ?? 0),
     });
   }
   return out;
@@ -144,7 +148,23 @@ export async function myWork(user: AppUser) {
     user.id,
     ...sc.params,
   );
-  return { items: await hydrate(rows, user.id), stages };
+  // Parts assigned to them for Recording that nobody has started yet (still drafts).
+  const drafts = stages.includes("recording")
+    ? await all<Row>(
+        `SELECT i.id, i.code, i.title, i.version, COALESCE(sa.stage_due_at, i.current_due_at) AS current_due_at, i.actual_duration_min, '' AS attempt_id, 'recording' AS stage,
+            'queued' AS status, sa.user_id AS owner_id, u.name AS owner_name, NULL AS notes, NULL AS handoff_submitted_at, NULL AS raw_duration_min,
+            g.name AS grade, s.name AS subject, un.number AS unit_number, l.number AS part_number, 1 AS draft
+         FROM items i JOIN stage_assignments sa ON sa.item_id = i.id AND sa.stage = 'recording'
+         LEFT JOIN users u ON u.id = sa.user_id
+         LEFT JOIN item_memberships m ON m.item_id = i.id AND m.is_primary = 1
+         LEFT JOIN grades g ON g.id = m.grade_id LEFT JOIN subjects s ON s.id = m.subject_id
+         LEFT JOIN units un ON un.id = m.unit_id LEFT JOIN lessons l ON l.id = i.lesson_id
+         WHERE i.lifecycle = 'draft' AND sa.user_id = ? AND ${sc.sql} ${ORDER} LIMIT 300`,
+        user.id,
+        ...sc.params,
+      )
+    : [];
+  return { items: [...(await hydrate(rows, user.id)), ...(await hydrate(drafts, user.id))], stages };
 }
 
 // Stages this person leads (managers: every stage).

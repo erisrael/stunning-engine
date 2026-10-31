@@ -24,7 +24,8 @@ import { DASHBOARD_PANELS as PANELS } from "@/lib/panels";
 import { redirect } from "next/navigation";
 import { can, isLeadOf } from "@/server/users";
 import { leadDesk, myWork } from "@/server/team-flow";
-import { LeadDesk, MyBoard } from "@/components/app/team-flow";
+import { LeadDesk, MyBoard, TeamGuide } from "@/components/app/team-flow";
+import { teamRules } from "@/lib/team-rules";
 
 export const metadata = { title: "Dashboard" };
 
@@ -70,6 +71,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     return (
       <div className="space-y-6">
         <PageHeader help={desk ? "lead" : "member"} explainer={desk ? "lead-desk" : "my-board"} eyebrow={`${STAGE_LABELS[team]}${desk ? " team lead" : ""}`} title={greeting} description={desk ? "Approve what your team sends, hand it over to the next team, accept what arrives and assign it." : "Your work. Start it, fill in what it needs on the card, mark it done, and send it to your team lead."} />
+        <TeamGuide stage={team} steps={teamRules((await getSettings()).teams, team).guide.split("\n").map((s) => s.trim()).filter(Boolean)} />
         {desk && <LeadDesk data={desk} />}
         {(!desk || own.length > 0) && <MyBoard items={own} title={desk ? "My own work" : "My work"} />}
       </div>
