@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 20;
+export const SCHEMA_VERSION = 21;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -1776,6 +1776,67 @@ ALTER TABLE recording_sessions ADD COLUMN IF NOT EXISTS operator_id TEXT;
 ALTER TABLE recording_sessions ADD COLUMN IF NOT EXISTS batch_id TEXT;
 CREATE INDEX IF NOT EXISTS idx_recording_sessions_start ON recording_sessions(scheduled_start);
 
+-- A person's own Google account (Meet links, YouTube uploads); the refresh token is sealed.
+CREATE TABLE IF NOT EXISTS google_tokens (
+  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  email TEXT,
+  scopes TEXT NOT NULL DEFAULT '',
+  refresh_enc TEXT,
+  access_token TEXT,
+  expires_at TEXT,
+  updated_at TEXT NOT NULL
+);
+
+-- Group calls in the app (up to four people, a direct mesh between browsers).
+CREATE TABLE IF NOT EXISTS group_calls (
+  id TEXT PRIMARY KEY,
+  group_id TEXT NOT NULL REFERENCES chat_groups(id) ON DELETE CASCADE,
+  media TEXT NOT NULL DEFAULT 'audio',
+  started_by TEXT,
+  status TEXT NOT NULL DEFAULT 'active',
+  created_at TEXT NOT NULL,
+  ended_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_group_calls_group ON group_calls(group_id, status);
+CREATE TABLE IF NOT EXISTS group_call_members (
+  call_id TEXT NOT NULL REFERENCES group_calls(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL,
+  joined_at TEXT NOT NULL,
+  seen_at TEXT NOT NULL,
+  left_at TEXT,
+  PRIMARY KEY (call_id, user_id)
+);
+CREATE TABLE IF NOT EXISTS group_call_signals (
+  seq BIGSERIAL PRIMARY KEY,
+  call_id TEXT NOT NULL REFERENCES group_calls(id) ON DELETE CASCADE,
+  from_id TEXT NOT NULL,
+  to_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_group_call_signals ON group_call_signals(call_id, to_id, seq);
+
+-- Email that goes out later: notification copies and scheduled messages.
+CREATE TABLE IF NOT EXISTS email_outbox (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  user_id TEXT,
+  to_address TEXT,
+  subject TEXT,
+  text TEXT,
+  html TEXT,
+  payload TEXT,
+  status TEXT NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  error TEXT,
+  log_id TEXT,
+  send_after TEXT NOT NULL,
+  sent_at TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_email_outbox_due ON email_outbox(status, send_after);
+
 -- Attendance rotas: shifts that change week by week.
 ALTER TABLE att_shift_assign ADD COLUMN IF NOT EXISTS rota TEXT;
 ALTER TABLE att_shift_assign ADD COLUMN IF NOT EXISTS rota_start TEXT;
@@ -1932,4 +1993,9 @@ export const TABLES = [
   "att_kiosks",
   "att_badges",
   "item_review_notes",
+  "email_outbox",
+  "group_calls",
+  "group_call_members",
+  "group_call_signals",
+  "google_tokens",
 ] as const;

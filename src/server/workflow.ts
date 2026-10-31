@@ -37,6 +37,8 @@ export type WorkflowErrorCode =
   | "REQUIREMENTS_MISSING"
   | "CONFLICT"
   | "ACTIVE_SESSION_ELSEWHERE"
+  // A connected account (Google) is needed first.
+  | "NOT_CONNECTED"
   | "VALIDATION";
 
 export class WorkflowError extends Error {

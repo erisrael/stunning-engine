@@ -10,6 +10,8 @@ export type UserPrefs = {
   dashboardCards?: Record<string, string[]>;
   dashboardPanels?: Record<string, string[]>;
   mutedNotificationTypes?: string[];
+  // Notification types also sent to the person by email.
+  emailNotificationTypes?: string[];
   sheetPresets?: Record<string, { columns: string[]; groupBy?: string; includesBase?: boolean }>;
   contentColumns?: string[];
   defaultLanding?: string;

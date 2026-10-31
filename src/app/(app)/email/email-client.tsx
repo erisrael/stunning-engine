@@ -48,6 +48,9 @@ import {
   saveSenderAction,
   saveSmtpAction,
   sendEmailAction,
+  scheduleEmailAction,
+  scheduledEmailsAction,
+  cancelScheduledEmailAction,
   testSmtpAction,
   checkInboxDeliveryAction,
   checkSmtpLoginAction,
@@ -188,6 +191,14 @@ function Compose({
   const [preview, setPreview] = React.useState<string | null>(null);
   const [confirm, setConfirm] = React.useState(false);
   const [busy, setBusy] = React.useState<"send" | "test" | "check" | null>(null);
+  // Send later: a local date and time; empty sends now.
+  const [later, setLater] = React.useState("");
+  const [scheduled, setScheduled] = React.useState<{ id: string; subject: string | null; send_after: string; status: string; error: string | null }[]>([]);
+  const loadScheduled = React.useCallback(async () => {
+    const r = await scheduledEmailsAction();
+    if (r.ok) setScheduled(r.data as typeof scheduled);
+  }, []);
+  React.useEffect(() => void loadScheduled(), [loadScheduled]);
   const [saveOpen, setSaveOpen] = React.useState(false);
   const bodyRef = React.useRef<HTMLTextAreaElement>(null);
   const fileRef = React.useRef<HTMLInputElement>(null);
@@ -226,20 +237,29 @@ function Compose({
     try {
       if (totalSize > 10 * 1024 * 1024) throw new Error("Attachments are limited to 10 MB in total.");
       const attachments = await Promise.all(files.map(async (f) => ({ name: f.name, type: f.type, base64: await fileToBase64(f) })));
-      const r = await sendEmailAction({
+      const input = {
         senderId: senderId === "default" ? null : senderId,
         to: test ? { emails: [viewer.email] } : to,
         cc: test || mode === "individual" ? [] : splitEmails(cc),
         bcc: test || mode === "individual" ? [] : splitEmails(bcc),
         subject: test ? `[Test] ${subject}` : subject,
         body,
-        mode: test ? "individual" : mode,
+        mode: test ? ("individual" as const) : mode,
         attachments,
-      });
-      if (!r.ok) throw new Error(r.error);
-      const { sent, failed } = r.data as { sent: number; failed: number };
-      if (failed) toast.warning(`${sent} sent, ${failed} failed`, { description: "See Sent for the reasons; you can resend to those that failed." });
-      else toast.success(test ? `Test sent to ${viewer.email}` : `Sent to ${sent} ${sent === 1 ? "recipient" : "recipients"}`);
+      };
+      if (!test && later) {
+        const r = await scheduleEmailAction(input, new Date(later).toISOString());
+        if (!r.ok) throw new Error(r.error);
+        toast.success(`Scheduled for ${new Date(later).toLocaleString()}`);
+        setLater("");
+        void loadScheduled();
+      } else {
+        const r = await sendEmailAction(input);
+        if (!r.ok) throw new Error(r.error);
+        const { sent, failed } = r.data as { sent: number; failed: number };
+        if (failed) toast.warning(`${sent} sent, ${failed} failed`, { description: "See Sent for the reasons; you can resend to those that failed." });
+        else toast.success(test ? `Test sent to ${viewer.email}` : `Sent to ${sent} ${sent === 1 ? "recipient" : "recipients"}`);
+      }
       if (!test) {
         setConfirm(false);
         setUserIds([]);
@@ -460,6 +480,39 @@ function Compose({
           <p>Attachments are sent but not kept, so a resend goes without them.</p>
         </CardContent>
       </Card>
+      {scheduled.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Scheduled</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ul className="divide-y text-sm">
+              {scheduled.map((s) => (
+                <li key={s.id} className="flex flex-wrap items-center gap-2 py-1.5">
+                  <span className="min-w-0 flex-1 truncate">{s.subject}</span>
+                  <span className="text-xs text-muted-foreground tabular-nums">{new Date(s.send_after).toLocaleString()}</span>
+                  <Badge variant={s.status === "failed" ? "destructive" : "secondary"}>{s.status === "queued" ? "Waiting" : s.status === "sent" ? "Sent" : s.status === "cancelled" ? "Cancelled" : s.status === "failed" ? "Failed" : "Sending"}</Badge>
+                  {s.error && <span className="w-full text-xs text-destructive">{s.error}</span>}
+                  {s.status === "queued" && (
+                    <Button
+                      size="xs"
+                      variant="ghost"
+                      onClick={async () => {
+                        const r = await cancelScheduledEmailAction(s.id);
+                        if (!r.ok) return void toast.error(r.error);
+                        toast.success("Cancelled");
+                        void loadScheduled();
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
 
       <Dialog open={confirm} onOpenChange={setConfirm}>
         <DialogContent>
@@ -469,12 +522,17 @@ function Compose({
               {mode === "individual" ? "Each person gets their own copy." : mode === "bcc" ? "One email; recipients do not see each other." : "One email; everyone sees the full list."} Subject: {subject}
             </DialogDescription>
           </DialogHeader>
+          <div className="space-y-1.5">
+            <Label htmlFor="send-later">Send later (optional)</Label>
+            <Input id="send-later" type="datetime-local" value={later} onChange={(e) => setLater(e.target.value)} className="w-60" />
+            <p className="text-xs text-muted-foreground">It goes out within about ten minutes of that time. Attachments are kept until then.</p>
+          </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setConfirm(false)}>
               Cancel
             </Button>
             <Button disabled={busy === "send"} onClick={() => send(false)}>
-              {busy === "send" ? <Loader2Icon className="animate-spin" /> : <SendIcon />} Send now
+              {busy === "send" ? <Loader2Icon className="animate-spin" /> : <SendIcon />} {later ? "Schedule" : "Send now"}
             </Button>
           </DialogFooter>
         </DialogContent>

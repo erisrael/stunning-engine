@@ -109,3 +109,14 @@ export async function emailLogAction(id: string) {
 export async function resendFailedAction(id: string) {
   return wrap(async () => resendFailed(await sender(), id, await workspace()));
 }
+
+// Send later: the message waits and goes out with the scheduled checks (within about ten minutes of the time).
+export async function scheduleEmailAction(input: SendInput, sendAt: string) {
+  return wrap(async () => (await import("@/server/outbox")).scheduleEmail(await sender(), input, await workspace(), sendAt));
+}
+export async function scheduledEmailsAction() {
+  return wrap(async () => (await import("@/server/outbox")).scheduledEmails(await sender()), { revalidate: false });
+}
+export async function cancelScheduledEmailAction(id: string) {
+  return wrap(async () => (await import("@/server/outbox")).cancelScheduled(await sender(), id));
+}

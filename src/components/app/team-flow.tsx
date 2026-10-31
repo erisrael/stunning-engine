@@ -37,6 +37,7 @@ import type { FlowItem, LeadDeskData } from "@/server/team-flow";
 import { RETURN_REASON_LABELS, STAGE_LABELS, STATUS_LABELS, type Stage } from "@/lib/domain";
 import { cn } from "@/lib/utils";
 import { tip } from "@/lib/help";
+import { YoutubeUpload } from "@/components/app/google-connect";
 
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -254,6 +255,9 @@ function WorkPanel({ item, canEdit, lead }: { item: FlowItem; canEdit: boolean; 
               {t.label} <span className="font-normal text-muted-foreground">· {t.status}</span>
             </p>
             <UploadField target={t} disabled={!canEdit} onSave={(v) => act(item.id, { action: "upload", platform: t.platform, status: "uploaded", ...(/^https?:\/\//i.test(v) ? { uploadUrl: v } : { externalId: v }) }, "Upload recorded")} />
+            {t.platform === "youtube" && canEdit && !t.externalId && (
+              <YoutubeUpload title={item.title} description={item.place} onDone={(id) => act(item.id, { action: "upload", platform: t.platform, status: "uploaded", externalId: id }, "Video ID recorded")} />
+            )}
             <div className="flex gap-4 text-xs">
               <label className="flex items-center gap-1.5">
                 <Checkbox checked={t.playback} disabled={!canEdit} onCheckedChange={(v) => act(item.id, { action: "verify", platform: t.platform, playback: v === true })} /> Plays correctly

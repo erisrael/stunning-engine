@@ -434,7 +434,54 @@ export const CHAPTERS: Chapter[] = [
       { title: "Groups", text: "Managers, team leads and department heads create groups and manage their members. Admin sets chat limits, storage and auto-delete in Admin, Chat, and can delete any chat." },
       { title: "Feedback and safety", text: "Send feedback to Admin from the account menu. Report a message, person or chat from its menu, or anything else from Safety and reporting; only Admin sees reports and the person reported is never told who reported them." },
       { title: "Calls", text: "Press the phone icon in a chat to call. The other person's app rings, even on their phone if push notifications are on." },
-      { title: "Email", text: "If your role has email, the Email page sends and receives through the workspace's mailbox." },
+      { title: "Email", text: "If your role has email, the Email page sends and receives through the workspace's mailbox. In the send dialog, Send later schedules it; scheduled messages are listed under Scheduled, where you can cancel them." },
+      { title: "Notifications by email", text: "In Notifications, Preferences, switch on Email for the kinds of notice you also want in your inbox, for example approvals or assignments." },
+    ],
+  },
+  {
+    key: "attendance",
+    title: "Attendance: checking in, corrections and your team's day",
+    audiences: "all",
+    summary: "Check in and out at the kiosk or in the app; ask for corrections; leads record days by hand when the kiosk is down.",
+    sections: [
+      {
+        title: "Checking in and out",
+        steps: [
+          "At the kiosk: scan your badge, or press Use my number and PIN and type your number (on your Attendance page) and PIN.",
+          "In the app (when allowed): Attendance, Check in. From a phone, you may need to be at the site; the location is read once, when you press the button.",
+          "Check out the same way when you leave. A night shift's check-out in the morning closes the night before.",
+        ],
+      },
+      { title: "Your PIN", text: "Set or change your kiosk PIN on your Attendance page: 4 to 6 digits, not all the same and not in a row. Never share it; it records your time." },
+      { title: "A wrong or missing time", text: "On your Attendance page, press Correct next to the day, give the right times and what happened. Your line manager approves it; HR sees every correction." },
+      {
+        title: "Team leads: recording the day by hand",
+        steps: [
+          "Attendance, My team shows who is in, late, not in yet, absent or on leave.",
+          "When the kiosk is down (you are told), tick people and press Record.",
+          "Choose present, late, half day, absent or on leave, add times if you know them, and give the reason. The person is told, and HR reviews it.",
+        ],
+      },
+      { title: "HR", text: "Attendance, Setup holds the shifts, rotas, rules, check-in methods, site location, badges, PINs and kiosks. Review lists hand-made days to check; Timesheets downloads to Excel; Finance fills payroll from Attendance." },
+    ],
+  },
+  {
+    key: "sessions",
+    title: "Studio sessions",
+    audiences: ["lead", "member", "manager"],
+    summary: "The Recording lead books the studio, presenter and camera operator for the parts to record.",
+    sections: [
+      {
+        title: "Booking",
+        steps: [
+          "Studio sessions, Book a session.",
+          "Choose the day, start, length and studio, the camera operator and the presenter.",
+          "Tick the parts to record. Unassigned parts can go to the operator.",
+          "Book. A studio or operator already booked then is refused; the operator is told.",
+        ],
+      },
+      { title: "Moving and closing", text: "Drag a session to another day, or press Move to change the time or studio. The operator marks it Recorded when it is done; the lead can cancel it." },
+      { title: "On your Home", text: "Recorders see the booked time and studio on each part's card." },
     ],
   },
 ];

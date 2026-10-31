@@ -820,15 +820,15 @@ function InAppCallCard({ meta, mine, groupId }: { meta: Record<string, unknown>;
 
 export function CallCard({ url, mine, provider, meta, groupId }: { url: string; mine: boolean; provider: string; meta?: Record<string, unknown> | null; groupId: string }) {
   if (provider === "inapp" && meta) return <InAppCallCard meta={meta} mine={mine} groupId={groupId} />;
-  const valid = /^https:\/\/(meet\.jit\.si|meet\.google\.com)\//.test(url);
+  const valid = /^https:\/\/(meet\.jit\.si|meet\.google\.com)\//.test(url) || (provider === "group" && /^\/call\/gcl_[a-z0-9]+$/.test(url));
   return (
     <div className={cn("mb-1 flex w-64 max-w-full items-center gap-2 rounded-xl p-2", mine ? "bg-white/15" : "bg-muted")}>
       <span className={cn("flex size-9 shrink-0 items-center justify-center rounded-full", mine ? "bg-white/25" : "bg-primary/15 text-primary")}>
         <VideoIcon className="size-4" />
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block text-sm font-medium">Video call</span>
-        <span className={cn("block truncate text-[11px]", mine ? "text-white/75" : "text-muted-foreground")}>{provider === "meet" ? "Google Meet" : "Jitsi Meet"}</span>
+        <span className="block text-sm font-medium">{provider === "group" ? (meta?.media === "video" ? "Group video call" : "Group voice call") : "Video call"}</span>
+        <span className={cn("block truncate text-[11px]", mine ? "text-white/75" : "text-muted-foreground")}>{provider === "meet" ? "Google Meet" : provider === "group" ? "In the app, up to 4 people" : "Jitsi Meet"}</span>
       </span>
       {valid && (
         <Button size="xs" variant={mine ? "secondary" : "default"} asChild>
@@ -845,11 +845,11 @@ export function CallButton({ group, cryptoKey, onSent }: { group: ChatGroupSumma
   const calls = useCalls();
   const [meetOpen, setMeetOpen] = React.useState(false);
   const [link, setLink] = React.useState("");
-  const send = async (url: string, provider: "jitsi" | "meet") => {
+  const send = async (url: string, provider: "jitsi" | "meet" | "group", extra: Record<string, unknown> = {}) => {
     const direct = group.kind === "direct";
     if (direct && !cryptoKey) return toast.error("Unlock secure chat first.");
     const body = direct ? await encryptText(cryptoKey!, url) : url;
-    const r = await sendMessageAction({ groupId: group.id, body, encrypted: direct, kind: "call", meta: { provider } });
+    const r = await sendMessageAction({ groupId: group.id, body, encrypted: direct, kind: "call", meta: { provider, ...extra } });
     if (!r.ok) return toast.error(r.error);
     onSent();
   };
@@ -874,6 +874,25 @@ export function CallButton({ group, cryptoKey, onSent }: { group: ChatGroupSumma
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
+          {(["audio", "video"] as const).map((media) => (
+            <DropdownMenuItem
+              key={media}
+              onClick={async () => {
+                // Opened first, so the browser does not block the new tab.
+                const tab = window.open("about:blank", "_blank");
+                const r = await fetch("/api/calls/group", { method: "POST", body: JSON.stringify({ op: "start", groupId: group.id, media }) }).then((x) => x.json());
+                if (!r.ok) {
+                  tab?.close();
+                  return void toast.error(r.error);
+                }
+                if (tab) tab.location.href = `/call/${r.data.id}`;
+                else window.location.href = `/call/${r.data.id}`;
+                if (!r.data.existing) await send(`/call/${r.data.id}`, "group", { media });
+              }}
+            >
+              {media === "video" ? <VideoIcon /> : <PhoneIcon />} {media === "video" ? "Video call in the app (up to 4)" : "Voice call in the app (up to 4)"}
+            </DropdownMenuItem>
+          ))}
           <DropdownMenuItem
             onClick={async () => {
               const room = `https://meet.jit.si/Myseed-${crypto.getRandomValues(new Uint32Array(2)).join("")}`;
@@ -884,9 +903,18 @@ export function CallButton({ group, cryptoKey, onSent }: { group: ChatGroupSumma
             <VideoIcon /> Start a video call (Jitsi, free)
           </DropdownMenuItem>
           <DropdownMenuItem
-            onClick={() => {
-              window.open("https://meet.google.com/new", "_blank", "noopener");
+            onClick={async () => {
+              // With a connected Google account the link is made and shared for you; otherwise paste it by hand.
+              const tab = window.open("about:blank", "_blank");
+              const r = await fetch("/api/google", { method: "POST", body: JSON.stringify({ op: "meet", title: group.name ?? "Call" }) }).then((x) => x.json());
+              if (r.ok) {
+                if (tab) tab.location.href = r.data.link;
+                await send(r.data.link, "meet");
+                return;
+              }
+              if (tab) tab.location.href = "https://meet.google.com/new";
               setMeetOpen(true);
+              if (r.code === "NOT_CONNECTED") toast.message("Tip: connect your Google account in Profile and Meet links are made and shared for you.");
             }}
           >
             <VideoIcon /> Start a Google Meet and share the link

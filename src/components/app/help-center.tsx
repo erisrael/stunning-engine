@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { savePrefsAction } from "@/app/actions/admin";
 import { FirstSteps, REPLAY_TOUR_EVENT, type TourState } from "@/components/app/get-started";
-import { AUDIENCE_LABELS, CHAPTERS, CHAPTER_EXPLAINERS, GUIDES, type Audience, type Chapter } from "@/lib/help";
+import { AUDIENCE_LABELS, CHAPTERS as BASE_CHAPTERS, CHAPTER_EXPLAINERS, GUIDES, type Audience, type Chapter } from "@/lib/help";
 import { Explainer } from "@/components/app/explainers";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
@@ -58,7 +58,9 @@ function ChapterCard({ c, open, highlight }: { c: Chapter; open: boolean; highli
 }
 
 // The training manual, guides, first steps and tour replay. Chapters for the person's role come first.
-export function HelpCenter({ audience, tour, canSeeAll = false }: { audience: Audience; tour: TourState; canSeeAll?: boolean }) {
+export function HelpCenter({ audience, tour, canSeeAll = false, extra = [] }: { audience: Audience; tour: TourState; canSeeAll?: boolean; extra?: Chapter[] }) {
+  // Chapters written from each department's configuration come after the fixed ones.
+  const CHAPTERS = React.useMemo(() => [...BASE_CHAPTERS, ...extra], [extra]);
   const [everyone, setEveryone] = React.useState(false);
   const router = useRouter();
   const [q, setQ] = React.useState("");

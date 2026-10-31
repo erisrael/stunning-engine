@@ -68,6 +68,9 @@ export async function notify(userIds: (string | null | undefined)[], input: Noti
   }
   // The same notice also goes to the person's browsers and phones that turned on push.
   if (delivered.length) await sendPush(delivered, { title: input.title, body: input.body, link: input.link, tag: input.groupKey ?? input.dedupeKey });
+  // And by email to those who asked for email copies of this type (sent in the background).
+  if (delivered.length)
+    await (await import("./outbox")).queueNotificationEmails(delivered, input).catch((err) => console.error("Notification email", err));
 }
 
 export async function usersWithRole(role: Role): Promise<string[]> {

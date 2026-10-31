@@ -20,7 +20,7 @@ export default async function NotificationsPage() {
             <CardDescription>In-app delivery. Muting an optional type stops new notices of that type; your workflow queues stay visible either way.</CardDescription>
           </CardHeader>
           <CardContent>
-            <Preferences muted={viewer.prefs.mutedNotificationTypes ?? []} />
+            <Preferences muted={viewer.prefs.mutedNotificationTypes ?? []} emailed={viewer.prefs.emailNotificationTypes ?? []} />
           </CardContent>
         </Card>
       </div>

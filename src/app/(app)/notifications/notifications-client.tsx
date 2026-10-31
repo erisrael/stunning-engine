@@ -44,8 +44,15 @@ export function Inbox() {
   );
 }
 
-export function Preferences({ muted }: { muted: string[] }) {
+export function Preferences({ muted, emailed = [] }: { muted: string[]; emailed?: string[] }) {
   const [m, setM] = React.useState<string[]>(muted);
+  const [e, setE] = React.useState<string[]>(emailed);
+  const toggleEmail = async (t: NotificationType, on: boolean) => {
+    const next = on ? [...e, t] : e.filter((x) => x !== t);
+    setE(next);
+    const r = await savePrefsAction({ emailNotificationTypes: next });
+    if (!r.ok) toast.error(r.error);
+  };
   const toggle = async (t: NotificationType, on: boolean) => {
     const next = on ? m.filter((x) => x !== t) : [...m, t];
     setM(next);
@@ -62,7 +69,14 @@ export function Preferences({ muted }: { muted: string[] }) {
               <p className="text-sm">{NOTIFICATION_TYPE_LABELS[t]}</p>
               {essential && <p className="text-xs text-muted-foreground">Essential workflow notice; always delivered</p>}
             </div>
-            <Switch checked={essential || !m.includes(t)} disabled={essential} onCheckedChange={(v) => toggle(t, v)} aria-label={NOTIFICATION_TYPE_LABELS[t]} />
+            <div className="flex items-center gap-4">
+              <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Switch checked={e.includes(t)} disabled={!essential && m.includes(t)} onCheckedChange={(v) => toggleEmail(t, v)} aria-label={`Email copies: ${NOTIFICATION_TYPE_LABELS[t]}`} /> Email
+              </label>
+              <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Switch checked={essential || !m.includes(t)} disabled={essential} onCheckedChange={(v) => toggle(t, v)} aria-label={NOTIFICATION_TYPE_LABELS[t]} /> In the app
+              </label>
+            </div>
           </li>
         );
       })}

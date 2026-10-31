@@ -11,6 +11,8 @@ import { getProfile } from "@/server/profiles";
 import { listSessions } from "@/server/devices";
 import { ProfileCard } from "@/components/app/profile-card";
 import { SessionsTable } from "@/components/app/security";
+import { GoogleAccount } from "@/components/app/google-connect";
+import { googleConnection } from "@/server/google";
 
 export const metadata = { title: "Profile" };
 
@@ -89,6 +91,15 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
           </CardHeader>
           <CardContent>
             <PushToggle />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Google account</CardTitle>
+            <CardDescription>Connect your own Google account to create Google Meet links from group chats and to upload videos to YouTube from the Uploading card.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <GoogleAccount initial={await googleConnection(viewer.id)} />
           </CardContent>
         </Card>
       </div>
