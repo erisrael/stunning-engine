@@ -488,7 +488,16 @@ Everything still open across the earlier phases, in three batches, then face che
 ### Then
 
 - [x] Face check-in at the kiosk (Phase 9, step 2), with written guidelines (docs/FACE-CHECKIN.md)
-- [ ] Phase 10b (attendance by printed QR and office network), then Phases 11, 12, 12b (Dev studio), 12c (presentation studio), 13 and 14 below
+- [ ] Order from here:
+  1. Phase 15: Foundations (sign-in, scheduled jobs, backups, tests, monitoring)
+  2. Phase 10b: attendance by printed QR and office network
+  3. Phase 11: navigation by role, Profile tabs
+  4. Phase 12: department workflows; 12b Dev studio; 12c presentation studio
+  5. Phase 16: Myseed's own needs (presenter releases and fees, file locations, Myseed App upload, Amharic and the Ethiopian calendar, data protection)
+  6. Phase 17: KRAs, KPIs and OKRs
+  7. Phase 13: assistant
+  8. Phase 18: worth having
+  9. Phase 14: Mail
 - [ ] Native app shell (Phase 5b), last
 
 ## Phase 10b: Attendance by printed QR and office network (next, before Phase 11)
@@ -705,3 +714,144 @@ Today Email composes, sends and keeps a sent log through the company account; th
 - [ ] **Safety**: messages shown in a sandbox with scripts removed and outside pictures blocked until "Show images"; attachments downloaded on request; size limits.
 - [ ] **Syncing**: new mail checked every minute while Mail is open and with the scheduled checks; headers are kept in the app for a fast list, bodies fetched when opened.
 - [ ] **If the host blocks IMAP** (some hostings block mail ports): fall back to the mailbox's webmail link, and keep sending through the relay; the setup check (exists for SMTP) gets an IMAP check that says which case applies.
+
+## Phase 15: Foundations (first, before Phase 10b)
+
+Small pieces that protect everything else: sign-in, scheduled jobs, backups, tests and monitoring. Everything here is set up by Admin in Admin, Sign-in and Admin, System, with safe defaults.
+
+### 15.1 Sign-in and accounts, configurable
+
+- [ ] **Password rules** (Admin): minimum length, letters and numbers, optional check against known leaked passwords (through the Have I Been Pwned range check, which never sends the password), optional change every N days, no reuse of the last N.
+- [ ] **Wrong attempts**: after N wrong passwords (default 5) the account waits (default 15 minutes, growing on repeats); many failures from one address slow that address down; a "too many attempts" message that does not say whether the account exists; the person and Admin are told of a lockout.
+- [ ] **Two-step sign-in**, methods switched on by Admin:
+  - **authenticator app** (Google Authenticator, Microsoft Authenticator, Authy: TOTP codes), set up by scanning a QR on Profile, Account;
+  - **email code** as a fallback;
+  - **passkeys** (fingerprint or face on the phone or laptop, WebAuthn) later in the phase;
+  - **recovery codes** (10, shown once, each works once).
+  Admin chooses per role: off, optional, or required (default required for Admin, HR and Finance roles); "remember this device for N days". Admin can reset a person's two-step sign-in, recorded in the audit log.
+- [ ] **Sign in with another account (OAuth 2 / OpenID Connect)**, each provider switched on and set up by Admin (client ID and secret, stored sealed):
+  - Google (Gmail and Google Workspace), Microsoft (Microsoft 365 / Entra ID), and any OpenID Connect provider (Zoho, Keycloak and others);
+  - allowed email domains per provider (for example only `@myseed.et`);
+  - linking: a sign-in matches an existing account by verified email; a person can link or unlink providers on Profile, Account;
+  - Admin can make a provider the only way in for some roles.
+- [ ] **Sign-up**, Admin chooses: off (Admin creates accounts, today), invitation only (a link valid for a few days, with the role chosen by whoever invites), or open to allowed domains with Admin approval and a starting role; new people are linked to their HR record when one exists.
+- [ ] **Sessions**: idle sign-out and maximum session length per role (shorter for Admin, HR, Finance); a notice by email and in the app on a sign-in from a new device or country; existing Sessions and devices page stays.
+- [ ] **Sign-in log**: every sign-in, failure, lockout, two-step change and provider link, with time, device and address, for Admin; each person sees their own on Profile, Account.
+
+### 15.2 Scheduled jobs that always run
+
+- [ ] A cron job on the hosting (Render cron or an external pinger) calls `/api/cron/checks` every 10 minutes with a secret; Admin, System shows when it last ran and warns when it has not run for 30 minutes.
+- [ ] Jobs listed with their last run and result: reminders, kiosk alerts, email outbox and Send later, chat retention, budget alerts, face data cleanup, trash purge, backups.
+
+### 15.3 Backups and recovery
+
+- [ ] An automatic daily backup (database export plus uploaded files) to storage outside Supabase (for example an S3-compatible bucket or Google Drive), encrypted, keeping 7 daily, 4 weekly and 12 monthly copies.
+- [ ] Admin, System: last backup, size, a download, and a **test restore** into a separate copy once a month with a short report.
+- [ ] A **staging site** (a second Render service with its own database) where changes are tried before they reach the live site.
+- [ ] A written recovery plan: who does what if the database or hosting fails, and how long a restore takes.
+
+### 15.4 Tests in the project
+
+- [ ] The server and browser checks written during development (around 300) move into the project (`tests/`), run against a throwaway database, never the live one.
+- [ ] GitHub Actions on every push: type check, build, server tests, browser tests; a failing run blocks deploying.
+
+### 15.5 Knowing when something breaks
+
+- [ ] Error reporting (Sentry, free tier) for the server and the browser, with the user and page, no personal data in messages.
+- [ ] An uptime check every minute (for example Better Stack or UptimeRobot, free) that messages Admin by email and Telegram when the site is down or slow.
+- [ ] Admin, System: health (database, storage, email, push), slow pages, recent errors.
+
+## Phase 16: Myseed's own needs
+
+### 16.1 Presenter and teacher releases and fees
+
+- [ ] **Presenters** as people in the app (teachers and guests, with or without an account): contact, subjects, a signed **release** (consent to be filmed and for the videos to be used, where, for how long), the scanned form, its expiry.
+- [ ] A session or part cannot move past Recording without a valid release for its presenter (switchable); expiring releases warn HR and the Recording lead.
+- [ ] **Fees**: a rate per session, per part or per hour; recorded sessions build a monthly statement per presenter; Finance pays it as a bill (with withholding tax set in Finance).
+- [ ] Students or others appearing in videos: a release per person, linked to the parts.
+
+### 16.2 Where the files live
+
+- [ ] Admin sets the company storage locations (a shared Google Drive, a NAS path, a cloud bucket) and the folder pattern (grade, subject, unit, part); links outside the allowed places are flagged on the card.
+- [ ] A weekly **link check**: raw, master, captions and thumbnail links that no longer open are listed for the team leads.
+- [ ] When someone leaves, the leaver checklist lists the files still in their personal storage.
+
+### 16.3 Publishing to the Myseed App
+
+- [ ] The Uploading card uploads to the Myseed App through its API (as for YouTube), filling in the ID and checking playback; Publication confirms live through the same API.
+
+### 16.4 Amharic and the Ethiopian calendar
+
+- [ ] The interface in Amharic and English (and Afaan Oromo later), chosen per person; every label, message and email from one set of translations.
+- [ ] Dates shown in the Ethiopian calendar as an option per person and per workspace (Settings already has the switch marked "planned"), in date pickers too; holidays and payroll months follow it where chosen.
+
+### 16.5 Data protection for everyone's records
+
+- [ ] A privacy notice for staff, shown at first sign-in and when it changes, with acceptance recorded.
+- [ ] A retention schedule set by Admin and HR (for example attendance 5 years, chat 1 year, applicants 6 months) applied automatically, with what was removed logged.
+- [ ] **Download my data** for each person (their record, leave, pay, attendance, profile and messages they sent).
+- [ ] An access log of who opened HR and salary records, for HR managers and Admin.
+
+## Phase 17: Performance management: KRAs, KPIs and OKRs
+
+One system for "what each person and team is responsible for, how it is measured, and what we are trying to achieve this quarter", fed by the work already in the app, so most numbers fill themselves in. Everything is configurable by HR and Admin, with department heads setting their own within the rules.
+
+### 17.1 The parts and how they fit
+
+- **KRA (key result area)**: an area a role or position is responsible for, for example for an Editor: Quality, Delivery, Teamwork; for a Recording lead: Throughput, Planning, Team. Each KRA has a weight (they add up to 100%).
+- **KPI (key performance indicator)**: a number that shows how a KRA is going, for example "Parts edited per week", "Returned by the lead (%)", "On time (%)". Each KPI belongs to a KRA, with its own weight inside it.
+- **OKR (objectives and key results)**: what a company, department, team or person wants to achieve in a cycle (usually a quarter), with 2 to 5 measurable key results each. OKRs are about change and ambition; KRAs and KPIs are about the steady job.
+- **Scorecard**: for a person, team or department and a period, every KPI's actual against its target, scored, rolled up by KRA and overall. Scorecards and OKR results feed performance reviews (Phase 7).
+
+### 17.2 The KPI library (HR and Admin)
+
+- [ ] Each KPI has: name and plain description, unit (count, %, hours, days, money, score), direction (higher or lower is better), how often it is measured (weekly, monthly, quarterly), how a period's value is formed (sum, average, latest, rate), and red, amber and green bands.
+- [ ] **Where the number comes from**, chosen per KPI:
+  - **from the app** (no typing), from a catalogue of measures the app already has:
+    - production: parts finished per stage, on-time rate, cycle time per stage, returned by lead or marked missing (quality), redo requests received, review notes per part, published per week;
+    - departments: tasks done, story points, cycle time, reopened tasks, bugs found after release, requests answered in time, campaign KPIs (reach, leads, spend), budget used against plan;
+    - people: attendance (punctuality, absence rate, overtime), training completed, leave balance used;
+    - finance: spend against budget, invoices paid on time;
+  - **a formula** of other measures (for example published ÷ planned × 100);
+  - **typed in** by the person, their lead or HR (with evidence attached), for things the app cannot see (for example customer satisfaction from a survey);
+  - **imported** from a spreadsheet or Power BI feed.
+- [ ] Fairness built in: values per working day (leave and holidays excluded); a quantity KPI paired with a quality KPI (the setup warns when a KRA has only quantity measures); minimum sample sizes before a percentage counts.
+
+### 17.3 KRAs per role and position
+
+- [ ] **KRA templates** per role and position (Editor, Editing lead, Developer, Tech lead, Marketing officer, HR officer, Accountant...), with their KPIs, weights and default targets; ready templates for Myseed's roles to start from.
+- [ ] People get their template automatically from their role and position (and their department's version of it); a lead or HR can adjust one person's targets, with the reason, approved by HR; changes after the period starts need approval and are logged.
+- [ ] Targets: one number, a range, or per person; set per period or rising over time (for example +5% each quarter).
+
+### 17.4 Scorecards
+
+- [ ] **Scoring**, configured by HR: how an actual becomes a score (straight percentage of target capped at 120%, bands to a 1-5 scale, or pass or fail), how KPIs roll up into KRAs and KRAs into an overall score, and the rating labels (for example Exceeds, Meets, Below).
+- [ ] **My scorecard** (on Home and Profile): this period's KPIs with actual, target, trend and colour, clicking through to the work behind each number (which parts, which tasks, which days).
+- [ ] **Team and department scorecards** for leads and heads; a company scorecard for owners; comparisons across periods and teams (never ranking individuals on a public screen unless HR allows it).
+- [ ] Periods close on a date set by HR; after closing, numbers are frozen; late corrections go through HR with a reason.
+
+### 17.5 OKRs
+
+- [ ] **Cycles** set by Admin and HR: length (quarter by default), dates, a planning window before the start, a mid-cycle review and a scoring window at the end.
+- [ ] **Levels and alignment**: company, department, team and personal objectives; each can support a higher one, shown as a tree; limits configurable (for example at most 5 objectives and 5 key results each).
+- [ ] **Key results**: start value, target, current value and unit; updated by hand at check-ins or linked to a KPI or app measure so they move by themselves; milestone-type key results (done or not done) allowed.
+- [ ] **Check-ins** weekly (configurable): progress, confidence (on track, at risk, off track) and a short note; reminders to owners; off-track key results flagged to the lead.
+- [ ] **Scoring** at the end: 0.0 to 1.0 per key result (or percentage), the objective's average, a short reflection; the method is configurable.
+- [ ] **Visibility** per objective: everyone, the department, or private to the person and their lead.
+- [ ] Planned tasks and projects can be linked to a key result, so the work behind it is visible.
+
+### 17.6 Using it day to day
+
+- [ ] Home widgets: my KPIs this period, my key results to update, my team's off-track items.
+- [ ] The presentation studio (Phase 12c) gets KPI, scorecard and OKR slides; monthly owners' review deck includes the company scorecard and OKR progress.
+- [ ] Performance reviews (Phase 7) attach the period's scorecard and OKR results as evidence; HR can run a calibration view (spread of ratings per department).
+- [ ] Notifications: check-in reminders, KPIs turning red, targets changed, periods closing.
+- [ ] Permissions (configurable in the matrix): HR manages the library, templates, scoring and cycles; heads and leads set targets and OKRs for their teams within the rules; everyone sees their own; owners see the company.
+- [ ] Exports: Excel per period, and the Power BI feed.
+
+## Phase 18: Worth having
+
+- [ ] **Announcements and policies**: company and department news on Home, with optional "I have read this" for policies; a list of who has not confirmed yet.
+- [ ] **Phones and slow connections**: every page checked on a small phone, with a light mode that loads less (no animations, smaller images, fewer refreshes) for slow networks.
+- [ ] **Usage view** for Admin: which pages and features are used, by role and team, and who has not signed in for a while, to plan training (no tracking of content).
+- [ ] **Speed with years of data**: a test workspace filled with five years of data (tens of thousands of parts and tasks, a million attendance events), the slow pages fixed, and limits on lists with paging everywhere.
