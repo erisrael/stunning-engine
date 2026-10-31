@@ -83,6 +83,7 @@ export const CAPABILITIES = [
   { key: "hr.manage", label: "HR decisions: end employment, remove records, HR settings", group: "HR" },
   { key: "hr.sensitive", label: "See and edit salary grade, ID, tax and bank details", group: "HR" },
   { key: "hr.cases", label: "Confidential disciplinary and grievance cases", group: "HR" },
+  { key: "attendance.manage", label: "Attendance for everyone: shifts, kiosks, badges, reviewing manual entries and corrections, reports", group: "HR" },
   { key: "finance.access", label: "Finance section: record bills, invoices, payments, claims and purchases", group: "Finance" },
   { key: "finance.approve", label: "Approve payments, claims, purchases and payroll checks; close periods", group: "Finance" },
   { key: "finance.payroll", label: "Prepare payroll (salaries, allowances, deductions)", group: "Finance" },
@@ -116,8 +117,8 @@ export const DEFAULT_PERMISSIONS: Record<Role, Capability[]> = {
   developer: ["dev.access"],
   content: ["studio.access"],
   marketing: ["marketing.access", "email.send"],
-  hr_manager: ["hr.access", "hr.manage", "hr.sensitive", "hr.cases", "finance.payroll", "nav.questions", "email.send", "chat.channels"],
-  hr_officer: ["hr.access", "nav.questions", "email.send"],
+  hr_manager: ["hr.access", "hr.manage", "hr.sensitive", "hr.cases", "attendance.manage", "finance.payroll", "nav.questions", "email.send", "chat.channels"],
+  hr_officer: ["hr.access", "attendance.manage", "nav.questions", "email.send"],
   finance_manager: ["finance.access", "finance.approve", "finance.payroll", "finance.view", "nav.questions", "email.send", "chat.channels", "company.view"],
   accountant: ["finance.access", "finance.view", "nav.questions", "email.send"],
   admin: [
@@ -149,6 +150,7 @@ export const DEFAULT_PERMISSIONS: Record<Role, Capability[]> = {
     "company.view",
     "hr.access",
     "hr.manage",
+    "attendance.manage",
     ...EDITORIAL_CAPABILITIES,
   ],
 };

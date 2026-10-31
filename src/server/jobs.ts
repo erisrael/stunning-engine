@@ -7,6 +7,7 @@ import { hrReminderChecks } from "./hr";
 import { trainingReminders } from "./hr-growth";
 import { applyChatRetention } from "./chat-extras";
 import { budgetAlerts } from "./finance";
+import { kioskSilenceChecks } from "./attendance";
 import { BLOCKER_CAUSE_LABELS, STAGE_LABELS, type Stage } from "@/lib/domain";
 import { localDate } from "@/lib/format";
 
@@ -144,6 +145,8 @@ export async function runScheduledChecks(now = nowIso()) {
   await applyChatRetention(now);
   // Finance: budgets passing their alert level.
   await budgetAlerts();
+  // Attendance: a kiosk that went quiet during working hours.
+  await kioskSilenceChecks(now);
   await setMeta("lastChecksAt", now);
   return counts;
 }

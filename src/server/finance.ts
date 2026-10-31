@@ -786,6 +786,28 @@ export async function updatePayslip(user: AppUser, slipId: string, input: { over
   await recompute(slipId);
 }
 
+// Overtime hours and unpaid days for every payslip in a draft run, from Attendance (days absent without leave, half
+// days and unpaid leave; overtime past the end of each shift). Payslips can still be changed by hand afterwards.
+export async function fillFromAttendance(user: AppUser, runId: string) {
+  need(user, "payroll", "change payslips");
+  const r = await get<{ period: string; status: string }>("SELECT period, status FROM fin_payroll_runs WHERE id = ?", runId);
+  if (!r) throw new WorkflowError("NOT_FOUND", "Payroll run not found.");
+  if (r.status !== "draft") throw new WorkflowError("INVALID_STATE", "Payslips change only while the run is being prepared.");
+  const slips = await all<{ id: string; employee_id: string }>("SELECT id, employee_id FROM fin_payslips WHERE run_id = ?", runId);
+  const { payrollFeed } = await import("./attendance");
+  const feed = await payrollFeed(r.period, slips.map((s) => s.employee_id));
+  let changed = 0;
+  for (const s of slips) {
+    const f = feed.get(s.employee_id);
+    if (!f) continue;
+    await run("UPDATE fin_payslips SET overtime_hours = ?, unpaid_days = ? WHERE id = ?", Math.min(400, f.overtimeHours), Math.min(31, f.unpaidDays), s.id);
+    await recompute(s.id);
+    changed++;
+  }
+  await audit({ actor: user }, { action: "finance.payroll", summary: `${user.name} filled overtime and unpaid days for ${r.period} from Attendance (${changed} payslips)` });
+  return changed;
+}
+
 export async function payrollRuns(user: AppUser) {
   need(user, "payroll", "see payroll");
   return all<{ id: string; period: string; status: string; prepared: string | null; checked: string | null; approved: string | null; people: number; gross: number; net: number; tax: number; pension: number; employer: number; prepared_by: string | null; checked_by: string | null }>(

@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { ArrowDownLeftIcon, ArrowLeftRightIcon, ArrowUpRightIcon, DownloadIcon, LockIcon, PaperclipIcon, PencilIcon, PlusIcon, UnlockIcon } from "lucide-react";
+import { ArrowDownLeftIcon, ArrowLeftRightIcon, ArrowUpRightIcon, ClockIcon, DownloadIcon, LockIcon, PaperclipIcon, PencilIcon, PlusIcon, UnlockIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -997,6 +997,11 @@ function Payroll({ ctx, runs, structures, open, openId }: { ctx: Ctx; runs: RunR
             </CardTitle>
             <CardDescription>{current.status === "draft" ? "Enter overtime hours and unpaid days; everything else is calculated." : "Locked for changes. Send it back to change it."}</CardDescription>
             <CardAction className="flex gap-2">
+              {current.status === "draft" && ctx.rights.payroll && (
+                <Button size="sm" variant="outline" disabled={busy} title="Overtime past the end of each shift; absent days without leave, half days and unpaid leave" onClick={() => run(() => A.fillFromAttendanceAction(current.id), "Filled from Attendance")}>
+                  <ClockIcon /> Fill from Attendance
+                </Button>
+              )}
               <Button size="sm" variant="ghost" asChild>
                 <a href={`/api/finance?report=payroll&run=${current.id}`}>
                   <DownloadIcon /> Excel

@@ -65,7 +65,7 @@ export async function myEmployeeId(user: AppUser) {
 }
 
 // Everyone who reports to this employee, directly or through others.
-async function teamOf(employeeId: string): Promise<string[]> {
+export async function teamOf(employeeId: string): Promise<string[]> {
   const rows = await all<{ id: string }>(
     `WITH RECURSIVE t(id) AS (SELECT id FROM employees WHERE manager_id = ? UNION SELECT e.id FROM employees e JOIN t ON e.manager_id = t.id)
      SELECT id FROM t`,

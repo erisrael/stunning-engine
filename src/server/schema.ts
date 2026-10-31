@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 18;
+export const SCHEMA_VERSION = 19;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -1697,6 +1697,86 @@ CREATE TABLE IF NOT EXISTS fin_periods (
   locked_by TEXT,
   locked_at TEXT NOT NULL
 );
+
+-- Attendance (Phase 9). Check-ins are events; a day's result is computed from them, the shift, leave and holidays.
+-- A team lead's or HR's hand-made record of a day is a mark, which wins over the events.
+CREATE TABLE IF NOT EXISTS att_events (
+  id TEXT PRIMARY KEY,
+  employee_id TEXT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,
+  at TEXT NOT NULL,
+  day TEXT NOT NULL,
+  source TEXT NOT NULL,
+  kiosk_id TEXT,
+  lat DOUBLE PRECISION,
+  lng DOUBLE PRECISION,
+  accuracy DOUBLE PRECISION,
+  distance_m DOUBLE PRECISION,
+  offline INTEGER NOT NULL DEFAULT 0,
+  client_id TEXT,
+  note TEXT,
+  voided INTEGER NOT NULL DEFAULT 0,
+  created_by TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_att_events_day ON att_events(day, employee_id);
+CREATE INDEX IF NOT EXISTS idx_att_events_emp ON att_events(employee_id, day);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_att_events_client ON att_events(kiosk_id, client_id);
+CREATE TABLE IF NOT EXISTS att_marks (
+  employee_id TEXT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  day TEXT NOT NULL,
+  status TEXT NOT NULL,
+  in_time TEXT,
+  out_time TEXT,
+  note TEXT,
+  source TEXT NOT NULL,
+  set_by TEXT,
+  set_at TEXT NOT NULL,
+  reviewed_by TEXT,
+  reviewed_at TEXT,
+  PRIMARY KEY (employee_id, day)
+);
+CREATE TABLE IF NOT EXISTS att_shift_assign (
+  employee_id TEXT PRIMARY KEY REFERENCES employees(id) ON DELETE CASCADE,
+  shift_key TEXT NOT NULL,
+  updated_by TEXT,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS att_corrections (
+  id TEXT PRIMARY KEY,
+  employee_id TEXT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  day TEXT NOT NULL,
+  in_time TEXT,
+  out_time TEXT,
+  reason TEXT NOT NULL,
+  status TEXT NOT NULL,
+  approver_id TEXT,
+  decided_by TEXT,
+  decided_at TEXT,
+  decision_note TEXT,
+  created_by TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_att_corrections_emp ON att_corrections(employee_id, day);
+CREATE TABLE IF NOT EXISTS att_kiosks (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  token_hash TEXT UNIQUE,
+  setup_hash TEXT UNIQUE,
+  setup_expires TEXT,
+  sign_key TEXT,
+  active INTEGER NOT NULL DEFAULT 1,
+  last_seen_at TEXT,
+  alerted_at TEXT,
+  created_by TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS att_badges (
+  employee_id TEXT PRIMARY KEY REFERENCES employees(id) ON DELETE CASCADE,
+  pin_hash TEXT,
+  badge TEXT UNIQUE,
+  updated_at TEXT NOT NULL
+);
 `;
 
 // Tables in dependency order; used to empty the workspace and to export or restore backups.
@@ -1822,4 +1902,10 @@ export const TABLES = [
   "fin_payroll_runs",
   "fin_payslips",
   "fin_periods",
+  "att_events",
+  "att_marks",
+  "att_shift_assign",
+  "att_corrections",
+  "att_kiosks",
+  "att_badges",
 ] as const;

@@ -412,7 +412,7 @@ What HR does in the app, as its own module (`/hr`) with HR Manager and HR Office
 A Finance module (`/finance`) with Finance Manager and Accountant roles, separation between preparing and approving, and every change in the audit log.
 
 - [x] **Accounts and journal**: bank, cash, petty cash and mobile money accounts with balances; money in, payments and transfers; a Sage-style chart of accounts; closed months that cannot change
-- [x] **Payroll**: salary structures (basic, taxable and tax-free allowances, deductions), configurable Ethiopian income tax brackets (Proclamation 979/2016 by default) and pension (7% and 11%), overtime and unpaid days entered per run (from Attendance once Phase 9 exists); HR or Finance prepares, the Finance Manager checks, the owner approves, Finance pays; payslips (print or PDF) in Claims and pay; bank transfer file; tax and pension report; closing the month
+- [x] **Payroll**: salary structures (basic, taxable and tax-free allowances, deductions), configurable Ethiopian income tax brackets (Proclamation 979/2016 by default) and pension (7% and 11%), overtime and unpaid days entered per run or filled from Attendance; HR or Finance prepares, the Finance Manager checks, the owner approves, Finance pays; payslips (print or PDF) in Claims and pay; bank transfer file; tax and pension report; closing the month
 - [x] **Expense claims**: with receipts, line manager (or team lead) then Finance, paid status
 - [x] **Budgets**: per department, project, campaign and production line; spend including payroll; alerts at the chosen level and at 100% to Finance and department heads
 - [x] **Purchasing**: requests, approval (above the limit, the Finance Manager), ordering from a vendor, delivery, billing with a flag when the bill differs from the approved amount
@@ -423,16 +423,31 @@ A Finance module (`/finance`) with Finance Manager and Accountant roles, separat
 
 ## Phase 9: Attendance
 
-Attendance (`/attendance`) with a kiosk tab for check-in by face, and a team-leader fallback when there is no hardware or it fails.
+Attendance (`/attendance`, in everyone's My space) with a kiosk at the entrance, check-in from the app or from a phone at the site, and a team-lead fallback when there is no kiosk or it fails.
 
-- **Kiosk tab** (`/attendance/kiosk`): a tablet or laptop at the entrance, signed in as a kiosk device (no personal account). Face recognition runs in the browser (on-device face embeddings with a liveness check, such as blink or head turn, against photos); no camera images are uploaded, only the match result. Check in and check out with the time, plus a PIN or QR badge as an alternative
-- **Enrolment and consent**: HR enrols each person's face (several captures) only with their written consent; anyone can choose PIN instead; biometric templates are encrypted, never exported, and deleted when the person leaves or withdraws consent
-- **Offline tolerance**: when the network is down, the kiosk keeps check-ins with their real times and sends them later, signed so they cannot be altered
-- **Team-leader entry when hardware is missing or broken**: the lead marks each team member present, late, absent, half day or on leave, with a reason. Entries are labelled as manual and reviewed by HR, and every change is in the audit log. When a kiosk stops reporting, leads and HR are alerted and the day switches to manual entry
-- **Mobile check-in** (optional) with a location check, for field work such as on-location recording
-- **Shifts and rules**: working hours per team, grace period, late and early-leave rules, overtime, weekends and holidays; approved leave from HR shows automatically
-- **Daily board**: present, late, absent and on leave per team, for leads and HR
-- **Corrections**: people request a correction (forgot to check out), the lead approves, HR sees the trail
-- **Reports**: monthly timesheets, lateness, absence and overtime per person and team; feeds Payroll in Finance; Excel export
-- **Privacy**: biometric data is processed only for attendance, kept to the minimum, and covered by a written policy employees sign
+### Step 1: Attendance without biometrics (done)
 
+- [x] **Days are computed, not typed**: check-ins and check-outs are events; each day's result (present, late, half day, absent, on leave, holiday, day off, not in yet) comes from the person's shift, approved leave (half days included, unpaid leave counted), public holidays and any hand-made record. Late minutes, leaving early, overtime, hours worked (break taken off on long days) and missing check-outs follow from it. Nothing counts before "Count attendance from" (or the first check-in), so nobody is absent for days before attendance started
+- [x] **Shifts and rules** (Attendance, Setup; permission "Attendance for everyone", given to HR and Admin): shifts with start, end, grace, break and working days; a default shift and a shift per person; leaving early, overtime threshold, half-day hours; work on days off and holidays is all overtime
+- [x] **Check-in methods**, switched on per workspace: from the app anywhere; from a phone only within the site's radius (location read once, at the press of the button); at a kiosk
+- [x] **Kiosk** (`/kiosk`): HR adds a kiosk and gets a one-time setup link (and QR code) valid for a day; the tablet or laptop then holds the kiosk's own token, never a person's sign-in. People scan their badge (USB or Bluetooth scanner, or the camera where the browser reads QR codes) or type their number and PIN on a keypad. Welcome or goodbye with the time and lateness. A second scan within a minute is ignored. Five wrong PINs lock that number on that kiosk for ten minutes
+- [x] **Offline tolerance**: without a network the kiosk keeps check-ins on the device with their real time, signed with the kiosk's key so they cannot be altered, shows how many are waiting, and sends them when the network is back (oldest first, each recorded once, up to 72 hours late by default)
+- [x] **Badges and PINs**: printable badges with a QR code each (new badges retire the old ones); HR sets a starting PIN shown once; everyone sets their own PIN on their Attendance page
+- [x] **Team-lead entry when the kiosk is missing or broken**: the daily board for the lead's team (people who report to them, and members of the production teams they lead) with present, late, not in yet, absent, on leave and half day; tick people and record present, late, half day, absent or on leave with optional times and a required reason. Labelled hand-made, the person is told, HR reviews it (Review tab), every change is in the audit log
+- [x] **Kiosk alert**: a kiosk silent for 30 minutes during working hours tells HR and the leads to record days by hand, once per silence; the board shows a banner
+- [x] **Corrections**: people ask to correct a day (forgot to check out); the line manager approves (HR when there is none, or anytime); approving replaces that day's time in or out, and the old times stay, voided, for the trail
+- [x] **Timesheets**: per month, per person: days present, late (and minutes), absent, half days, leave, hours, overtime, missing check-outs; Excel with a summary and every day. HR sees everyone, leads their team
+- [x] **Payroll**: Finance, Payroll, "Fill from Attendance" sets each payslip's overtime hours and unpaid days (absent without leave, half of each half day, unpaid leave) in a draft run; still changeable by hand
+- [x] **Privacy**: a written attendance and privacy policy, editable by HR, shown to everyone on their Attendance page
+
+### Step 2: Face check-in at the kiosk (next)
+
+- [ ] Face recognition in the kiosk's browser (on-device face descriptors, a liveness check such as a blink or head turn); no camera images uploaded, only the match
+- [ ] Enrolment by HR with several captures, only with the person's written consent recorded in the app; anyone can choose badge or PIN instead
+- [ ] Face templates encrypted, never exported, deleted when the person leaves or withdraws consent
+- [ ] Kiosk check-in "by face" alongside badge and PIN, with the same offline signing
+
+### Later
+
+- [ ] Absence and lateness in HR reports and performance reviews
+- [ ] Shift rotas (different shifts on different weeks) and night shifts across midnight

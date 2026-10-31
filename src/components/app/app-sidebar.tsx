@@ -10,6 +10,7 @@ import {
   BriefcaseIcon,
   Building2Icon,
   ChartColumnIcon,
+  ClockIcon,
   CodeIcon,
   ContactIcon,
   CrownIcon,
@@ -137,6 +138,7 @@ export function AppSidebar({
       items: [
         { href: "/dashboard", label: staff ? "My work" : "Home", icon: HomeIcon, badge: counts.myWork, locked: true },
         { href: "/me", label: "My record", icon: IdCardIcon },
+        { href: "/attendance", label: "Attendance", icon: ClockIcon },
         { href: "/leave", label: "Leave", icon: PlaneIcon },
         { href: "/pay", label: "Claims and pay", icon: WalletIcon },
         ...(!lead ? [{ href: "/team", label: "My effort", icon: UsersIcon, cap: "nav.team" as Capability }] : []),
@@ -173,6 +175,7 @@ export function AppSidebar({
           sub: [
             { label: "People", href: "/hr" },
             { label: "Leave", href: "/hr?tab=leave" },
+            { label: "Attendance", href: "/attendance?tab=team" },
             { label: "Hiring", href: "/hr?tab=hiring" },
             { label: "Performance", href: "/hr?tab=performance" },
             { label: "Reports", href: "/hr?tab=reports" },

@@ -219,7 +219,7 @@ export async function setMeta(key: string, value: string) {
 }
 
 // Role and team-lead permission matrix (Admin, Roles and permissions). Missing entries fall back to defaults.
-const MATRIX_VERSION = 10;
+const MATRIX_VERSION = 11;
 // Version 2 made managers view-only, moved item creation to Admin and the Recording lead, and added sidebar switches.
 const V2_MANAGER_REMOVED: Capability[] = ["items.create", "items.plan", "items.close", "work.override", "release.emergency", "import.run", "import.stage"];
 const V2_ADMIN_ADDED: Capability[] = ["items.create", "items.plan", "items.close", "import.tracker"];
@@ -308,6 +308,13 @@ function migrateV10(stored: Partial<PermissionMatrix>): Partial<PermissionMatrix
   return out;
 }
 
+// v11: Attendance, managed by HR and Admin.
+function migrateV11(stored: Partial<PermissionMatrix>): Partial<PermissionMatrix> {
+  const out: Partial<PermissionMatrix> = { ...stored };
+  for (const r of ["admin", "hr_manager", "hr_officer"] as const) if (out[r]) out[r] = [...new Set([...out[r]!, "attendance.manage"] as Capability[])];
+  return out;
+}
+
 // Read on every request (signed-in user's permissions), so cached briefly; concurrent callers share one query.
 let matrixCache: { at: number; value: Promise<PermissionMatrix> } | null = null;
 
@@ -337,6 +344,7 @@ async function loadPermissionMatrix(): Promise<PermissionMatrix> {
   if (version < 8) stored = migrateV8(stored);
   if (version < 9) stored = migrateV9(stored);
   if (version < 10) stored = migrateV10(stored);
+  if (version < 11) stored = migrateV11(stored);
   const keys = [...ROLES, ...STAGES.map(leadKey)] as (keyof PermissionMatrix)[];
   const defaults: PermissionMatrix = { ...DEFAULT_PERMISSIONS, ...DEFAULT_LEAD_PERMISSIONS };
   return Object.fromEntries(keys.map((k) => [k, stored[k] ?? defaults[k]])) as PermissionMatrix;
