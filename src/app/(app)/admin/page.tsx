@@ -23,7 +23,12 @@ import { sidebarDefaults } from "@/server/ui-prefs";
 import { SidebarAdmin } from "./sidebar-admin";
 import { listBlocked, listSessions } from "@/server/devices";
 import { SessionsTable } from "@/components/app/security";
-import { googleSettings } from "@/server/password-reset";
+import { googleConfig, googleSettings } from "@/server/password-reset";
+import { SignInPolicyAdmin } from "./signin-policy-admin";
+import { signInPolicy } from "@/server/signin-config";
+import { listInvites, listSignupRequests, signInLog, twoStepRoster } from "@/server/signin";
+import { redirectUri } from "@/server/oidc";
+import { PROVIDER_IDS } from "@/lib/signin-policy";
 import { smtpSettings } from "@/server/email";
 import { SignInAdmin } from "./signin-admin";
 import { ChatAdmin, FeedbackAdmin, ReportsAdmin } from "./support-admin";
@@ -152,7 +157,19 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
             <TabsContent value="reports">
               <ReportsAdmin rows={await listReports(viewer)} reasons={REPORT_REASONS} statuses={REPORT_STATUSES} />
             </TabsContent>
-            <TabsContent value="signin">
+            <TabsContent value="signin" className="space-y-6">
+              <SignInPolicyAdmin
+                data={{
+                  policy: await signInPolicy(),
+                  googleReady: !!(await googleConfig()),
+                  emailReady: (await smtpSettings()).source !== "none",
+                  redirectUris: Object.fromEntries(await Promise.all(PROVIDER_IDS.map(async (id) => [id, await redirectUri(id)]))),
+                  invites: await listInvites(viewer),
+                  requests: await listSignupRequests(viewer),
+                  roster: await twoStepRoster(viewer),
+                  log: await signInLog(viewer, { limit: 200 }),
+                }}
+              />
               <SignInAdmin google={await googleSettings()} emailReady={(await smtpSettings()).source !== "none"} />
             </TabsContent>
             <TabsContent value="sidebar">

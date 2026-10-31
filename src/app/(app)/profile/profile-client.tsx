@@ -12,7 +12,7 @@ import { myChatKeysAction, saveChatKeysAction } from "@/app/actions/chat";
 import { rememberWrap, rewrapForPassword } from "@/lib/e2e";
 import { savePrefsAction } from "@/app/actions/admin";
 
-export function PasswordForm({ force }: { force: boolean }) {
+export function PasswordForm({ force, hint }: { force: boolean; hint: string }) {
   const router = useRouter();
   const [f, setF] = React.useState({ current: "", next: "", confirm: "" });
   const [busy, setBusy] = React.useState(false);
@@ -44,7 +44,7 @@ export function PasswordForm({ force }: { force: boolean }) {
       }}
     >
       <div className="space-y-1.5"><Label htmlFor="pw-cur">Current password</Label><Input id="pw-cur" type="password" autoComplete="current-password" value={f.current} onChange={(e) => setF({ ...f, current: e.target.value })} /></div>
-      <div className="space-y-1.5"><Label htmlFor="pw-new">New password</Label><Input id="pw-new" type="password" autoComplete="new-password" value={f.next} onChange={(e) => setF({ ...f, next: e.target.value })} /><p className="text-xs text-muted-foreground">At least 10 characters with letters and numbers.</p></div>
+      <div className="space-y-1.5"><Label htmlFor="pw-new">New password</Label><Input id="pw-new" type="password" autoComplete="new-password" value={f.next} onChange={(e) => setF({ ...f, next: e.target.value })} /><p className="text-xs text-muted-foreground">{hint}</p></div>
       <div className="space-y-1.5"><Label htmlFor="pw-conf">Confirm new password</Label><Input id="pw-conf" type="password" autoComplete="new-password" value={f.confirm} onChange={(e) => setF({ ...f, confirm: e.target.value })} /></div>
       <Button type="submit" disabled={busy || !f.current || !f.next}>Change password</Button>
     </form>

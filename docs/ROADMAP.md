@@ -721,22 +721,25 @@ Small pieces that protect everything else: sign-in, scheduled jobs, backups, tes
 
 ### 15.1 Sign-in and accounts, configurable
 
-- [ ] **Password rules** (Admin): minimum length, letters and numbers, optional check against known leaked passwords (through the Have I Been Pwned range check, which never sends the password), optional change every N days, no reuse of the last N.
-- [ ] **Wrong attempts**: after N wrong passwords (default 5) the account waits (default 15 minutes, growing on repeats); many failures from one address slow that address down; a "too many attempts" message that does not say whether the account exists; the person and Admin are told of a lockout.
-- [ ] **Two-step sign-in**, methods switched on by Admin:
+- [x] **Password rules** (Admin): minimum length, letters and numbers, optional check against known leaked passwords (through the Have I Been Pwned range check, which never sends the password), optional change every N days, no reuse of the last N.
+- [x] **Wrong attempts**: after N wrong passwords (default 5) the account waits (default 15 minutes, growing on repeats); many failures from one address slow that address down; a "too many attempts" message that does not say whether the account exists; the person and Admin are told of a lockout.
+- [x] **Two-step sign-in**, methods switched on by Admin (all but passkeys):
   - **authenticator app** (Google Authenticator, Microsoft Authenticator, Authy: TOTP codes), set up by scanning a QR on Profile, Account;
   - **email code** as a fallback;
-  - **passkeys** (fingerprint or face on the phone or laptop, WebAuthn) later in the phase;
+  - **passkeys** (fingerprint or face on the phone or laptop, WebAuthn): still to do;
   - **recovery codes** (10, shown once, each works once).
   Admin chooses per role: off, optional, or required (default required for Admin, HR and Finance roles); "remember this device for N days". Admin can reset a person's two-step sign-in, recorded in the audit log.
-- [ ] **Sign in with another account (OAuth 2 / OpenID Connect)**, each provider switched on and set up by Admin (client ID and secret, stored sealed):
+- [x] **Sign in with another account (OAuth 2 / OpenID Connect)**, each provider switched on and set up by Admin (client ID and secret, stored sealed):
   - Google (Gmail and Google Workspace), Microsoft (Microsoft 365 / Entra ID), and any OpenID Connect provider (Zoho, Keycloak and others);
   - allowed email domains per provider (for example only `@myseed.et`);
   - linking: a sign-in matches an existing account by verified email; a person can link or unlink providers on Profile, Account;
   - Admin can make a provider the only way in for some roles.
-- [ ] **Sign-up**, Admin chooses: off (Admin creates accounts, today), invitation only (a link valid for a few days, with the role chosen by whoever invites), or open to allowed domains with Admin approval and a starting role; new people are linked to their HR record when one exists.
-- [ ] **Sessions**: idle sign-out and maximum session length per role (shorter for Admin, HR, Finance); a notice by email and in the app on a sign-in from a new device or country; existing Sessions and devices page stays.
-- [ ] **Sign-in log**: every sign-in, failure, lockout, two-step change and provider link, with time, device and address, for Admin; each person sees their own on Profile, Account.
+- [x] **Sign-up**, Admin chooses: off (Admin creates accounts, today), invitation only (a link valid for a few days, with the role chosen by whoever invites), or open to allowed domains with Admin approval and a starting role; new people are linked to their HR record when one exists.
+- [x] **Sessions**: idle sign-out and maximum session length per role (shorter for Admin, HR, Finance); a notice by email and in the app on a sign-in from a new device (with its address; no country lookup); existing Sessions and devices page stays.
+- [x] **Sign-in log**: every sign-in, failure, lockout, two-step change and provider link, with time, device and address, for Admin; each person sees their own on Profile, Account.
+- [ ] **Passkeys** (WebAuthn) as another second step.
+
+Done in step 1: Admin, Sign-in has tabs Rules, Google, Microsoft, SSO, Sign-up, Two-step by person and Sign-in log; Profile has Sign-in and security; new pages `/login/verify` and `/signup`. Tested with a mock OpenID Connect provider; Google and Microsoft still need a try with real accounts.
 
 ### 15.2 Scheduled jobs that always run
 

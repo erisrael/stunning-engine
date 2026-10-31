@@ -5,7 +5,8 @@ import { requireCapability, requireManager, requireViewer } from "@/server/auth"
 import { wrap } from "@/server/action-result";
 import { all, get, nowIso, parseJson, run, tx, uid } from "@/server/db";
 import { getSettings, savePermissionMatrix, saveSetting, type Settings } from "@/server/settings";
-import { hashPassword, passwordProblems } from "@/server/passwords";
+import { hashPassword } from "@/server/passwords";
+import { newPasswordProblem, setPassword } from "@/server/signin";
 import { uniqueHandle } from "@/server/importer";
 import { audit, decideSessionCorrection, WorkflowError } from "@/server/workflow";
 import { runScheduledChecks } from "@/server/jobs";
@@ -209,7 +210,7 @@ export async function saveUserAction(input: UserInput) {
       if (taken && taken.id !== input.id) throw new WorkflowError("VALIDATION", `@${handle} is already taken.`);
     }
     if (input.password) {
-      const problem = passwordProblems(input.password);
+      const problem = await newPasswordProblem(input.password, input.id);
       if (problem) throw new WorkflowError("VALIDATION", problem);
     }
     let tempPassword: string | null = null;
@@ -229,7 +230,7 @@ export async function saveUserAction(input: UserInput) {
           id,
         );
         if (input.password)
-          await run("UPDATE users SET password_hash = ?, must_change_password = ? WHERE id = ?", hashPassword(input.password), input.mustChangePassword ?? false, id);
+          await setPassword(id, input.password, input.mustChangePassword ?? false);
         if (!input.active || input.password) await run("DELETE FROM sessions WHERE user_id = ? AND id <> ?", id, viewer.sessionId);
         await audit({ actor: viewer }, { action: "user.updated", summary: `${viewer.name} updated ${input.name}`, oldValue: before, newValue: { ...input, password: undefined, capacity: undefined } });
       } else {

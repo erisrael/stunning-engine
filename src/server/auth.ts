@@ -4,7 +4,8 @@ import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { get, nowIso, run } from "./db";
 import { can, loadUser, type AppUser } from "./users";
-import { verifyPassword } from "./passwords";
+import { signInPolicy } from "./signin-config";
+import { sessionLimitFor } from "@/lib/signin-policy";
 import type { Capability, Role } from "@/lib/domain";
 
 const COOKIE = "myseed_session";
@@ -12,7 +13,6 @@ const COOKIE = "myseed_session";
 const DEVICE_COOKIE = "myseed_device";
 // Admin's "View as": the person whose view is shown. Read only, and only honoured for people who manage users.
 export const PREVIEW_COOKIE = "myseed_preview";
-const SESSION_DAYS = 14;
 
 export type Viewer = AppUser & { activeRole: Role; sessionId: string; previewBy?: { id: string; name: string } };
 
@@ -23,7 +23,7 @@ export async function requestIp() {
   return (h.get("x-forwarded-for")?.split(",")[0]?.trim() || h.get("x-real-ip") || h.get("cf-connecting-ip") || "").slice(0, 64) || null;
 }
 
-async function deviceId(create: boolean) {
+export async function deviceId(create: boolean) {
   const jar = await cookies();
   const existing = jar.get(DEVICE_COOKIE)?.value;
   if (existing && /^[a-f0-9]{32}$/.test(existing)) return existing;
@@ -37,25 +37,15 @@ export async function isDeviceBlocked(id: string | null) {
   return !!id && !!(await get("SELECT 1 AS x FROM blocked_devices WHERE device_id = ?", id));
 }
 
-export async function signIn(email: string, password: string): Promise<{ ok: true } | { ok: false; error: string }> {
-  const row = await get<{ id: string; password_hash: string | null; active: number }>(
-      "SELECT id, password_hash, active FROM users WHERE lower(email) = lower(?)",
-      email.trim(),
-    );
-  if (!row || !row.active || !verifyPassword(password, row.password_hash)) {
-    return { ok: false, error: "Email or password is incorrect." };
-  }
-  return startSession(row.id);
-}
-
-// Signs a person in on this browser (after a password, or a password reset).
-export async function startSession(userId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+// Signs a person in on this browser once every step is done (see signin.ts, which checks passwords and two-step).
+export async function startSession(userId: string): Promise<{ ok: true; sessionId: string; deviceId: string | null } | { ok: false; error: string }> {
   const device = await deviceId(true);
   if (await isDeviceBlocked(device)) return { ok: false, error: "This device is blocked from signing in. Ask your administrator." };
   const user = (await loadUser(userId))!;
   const id = crypto.randomBytes(24).toString("hex");
   const now = new Date();
-  const expires = new Date(now.getTime() + SESSION_DAYS * 864e5);
+  // The session ends at the shortest maximum length of the person's roles (Admin, Sign-in, Sessions).
+  const expires = new Date(now.getTime() + sessionLimitFor(await signInPolicy(), user.roles).maxHours * 3600e3);
   const ua = (await headers()).get("user-agent")?.slice(0, 300) ?? null;
   const defaultRole = pickDefaultRole(user.roles);
   await run(
@@ -72,7 +62,7 @@ export async function startSession(userId: string): Promise<{ ok: true } | { ok:
       );
   await run("UPDATE users SET last_login_at = ? WHERE id = ?", now.toISOString(), userId);
   (await cookies()).set(COOKIE, id, { httpOnly: true, sameSite: "lax", secure: secure(), path: "/", expires });
-  return { ok: true };
+  return { ok: true, sessionId: id, deviceId: device };
 }
 
 export async function signOut() {
@@ -93,8 +83,8 @@ export const getViewer = cache(async (): Promise<Viewer | null> => {
   const jar = await cookies();
   const id = jar.get(COOKIE)?.value;
   if (!id) return null;
-  const session = await get<{ id: string; user_id: string; active_role: Role | null; expires_at: string; device_id: string | null; last_seen_at: string | null }>(
-      "SELECT id, user_id, active_role, expires_at, device_id, last_seen_at FROM sessions WHERE id = ?",
+  const session = await get<{ id: string; user_id: string; active_role: Role | null; created_at: string; expires_at: string; device_id: string | null; last_seen_at: string | null }>(
+      "SELECT id, user_id, active_role, created_at, expires_at, device_id, last_seen_at FROM sessions WHERE id = ?",
       id,
     );
   if (!session || session.expires_at < nowIso()) return null;
@@ -105,6 +95,13 @@ export const getViewer = cache(async (): Promise<Viewer | null> => {
   }
   const user = await loadUser(session.user_id);
   if (!user || !user.active) return null;
+  // Idle sign-out and maximum length follow the person's current roles, so a new role's limits apply at once.
+  const lim = sessionLimitFor(await signInPolicy(), user.roles);
+  const seen = Date.parse(session.last_seen_at ?? session.created_at);
+  if ((lim.idleMinutes && Date.now() - seen > lim.idleMinutes * 60e3) || Date.now() - Date.parse(session.created_at) > lim.maxHours * 3600e3) {
+    await run("DELETE FROM sessions WHERE id = ?", session.id);
+    return null;
+  }
   if (!session.last_seen_at || Date.now() - Date.parse(session.last_seen_at) > 5 * 60e3)
     await run("UPDATE sessions SET last_seen_at = ?, ip = COALESCE(?, ip) WHERE id = ?", nowIso(), await requestIp(), session.id);
   // The role switcher only changes presentation; it never grants a role the user lacks.

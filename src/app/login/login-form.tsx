@@ -8,14 +8,37 @@ import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { loginAction } from "@/app/actions/auth";
 import { rememberLogin } from "@/lib/e2e";
+import { OrLine, ProviderButtons } from "@/components/app/signin-ui";
+import type { ProviderId, SignupMode } from "@/lib/signin-policy";
 
-export function LoginForm({ next }: { next?: string }) {
+export function LoginForm({
+  next,
+  providers = [],
+  signup = "off",
+  message = null,
+}: {
+  next?: string;
+  providers?: { id: ProviderId; name: string }[];
+  signup?: SignupMode;
+  message?: { ok: boolean; text: string } | null;
+}) {
   const [state, action, pending] = useActionState(loginAction, undefined);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [show, setShow] = useState(false);
   return (
     <div className="space-y-5">
+      {message && (
+        <Alert variant={message.ok ? "default" : "destructive"} className="py-2">
+          <AlertDescription>{message.text}</AlertDescription>
+        </Alert>
+      )}
+      {providers.length > 0 && (
+        <>
+          <ProviderButtons providers={providers} next={next} />
+          <OrLine />
+        </>
+      )}
       <form
         action={async (fd: FormData) => {
           // Prepares secure chat on this device from the password (only a derived key is kept, never the password).
@@ -95,7 +118,14 @@ export function LoginForm({ next }: { next?: string }) {
           .
         </p>
       </form>
-
+      {signup === "domain" && (
+        <p className="text-center text-xs text-muted-foreground">
+          New here?{" "}
+          <a href="/signup" className="font-medium text-primary hover:underline">
+            Ask for an account
+          </a>
+        </p>
+      )}
     </div>
   );
 }

@@ -6,7 +6,7 @@ import { headers } from "next/headers";
 import { get, nowIso, parseJson, run } from "./db";
 import { audit, WorkflowError } from "./workflow";
 import { seal, unseal } from "./secrets";
-import { hashPassword, passwordProblems } from "./passwords";
+import { newPasswordProblem, setPassword } from "./signin";
 import { sendSystemEmail } from "./email";
 import { getSettings } from "./settings";
 import { can, loadUser, type AppUser } from "./users";
@@ -67,9 +67,9 @@ export async function checkResetToken(token: string) {
 export async function completeReset(token: string, password: string) {
   const r = await checkResetToken(token);
   if (!r) throw new WorkflowError("INVALID_STATE", "This link has expired or was already used. Ask for a new one.");
-  const problem = passwordProblems(password);
+  const problem = await newPasswordProblem(password, r.userId);
   if (problem) throw new WorkflowError("VALIDATION", problem);
-  await run("UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?", hashPassword(password), r.userId);
+  await setPassword(r.userId, password);
   await run("UPDATE password_resets SET used_at = ? WHERE token_hash = ?", nowIso(), hash(token));
   // A reset signs the person out everywhere else.
   await run("DELETE FROM sessions WHERE user_id = ?", r.userId);

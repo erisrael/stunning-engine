@@ -13,12 +13,18 @@ import { ProfileCard } from "@/components/app/profile-card";
 import { SessionsTable } from "@/components/app/security";
 import { GoogleAccount } from "@/components/app/google-connect";
 import { googleConnection } from "@/server/google";
+import { LinkedAccounts, SignInHistory, TwoStepCard } from "@/components/app/account-security";
+import { myIdentities, myTwoStep, signInLog } from "@/server/signin";
+import { readyProviders } from "@/server/oidc";
+import { signInPolicy } from "@/server/signin-config";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { passwordHint, PROVIDER_LABELS, type ProviderId } from "@/lib/signin-policy";
 
 export const metadata = { title: "Profile" };
 
-export default async function ProfilePage({ searchParams }: { searchParams: Promise<{ force?: string }> }) {
+export default async function ProfilePage({ searchParams }: { searchParams: Promise<{ force?: string; linked?: string; error?: string }> }) {
   const viewer = await requireViewer();
-  const { force } = await searchParams;
+  const { force, linked, error } = await searchParams;
   const tax = await taxonomy();
   const scope = viewer.scopes.length
     ? viewer.scopes.map((s) => [tax.grades.find((g) => g.id === s.gradeId)?.name, tax.subjects.find((x) => x.id === s.subjectId)?.name].filter(Boolean).join(" ")).join(", ")
@@ -34,6 +40,11 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
           </Link>
         }
       />
+      {(linked || error) && (
+        <Alert variant={error ? "destructive" : "default"}>
+          <AlertDescription>{error ? error.slice(0, 200) : `Your ${PROVIDER_LABELS[linked as ProviderId] ?? ""} account is linked. You can now sign in with it.`}</AlertDescription>
+        </Alert>
+      )}
       <ProfileCard profile={(await getProfile(viewer, viewer.id))!} />
       <h2 className="pt-2 text-lg font-semibold">Account and preferences</h2>
       <div className="grid gap-4 lg:grid-cols-3">
@@ -67,7 +78,7 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
             <CardDescription>{force || viewer.mustChangePassword ? "You are using a temporary password. Choose your own to continue." : "Changing it signs out your other sessions."}</CardDescription>
           </CardHeader>
           <CardContent>
-            <PasswordForm force={!!force} />
+            <PasswordForm force={!!force} hint={passwordHint((await signInPolicy()).password)} />
           </CardContent>
         </Card>
         <Card>
@@ -103,7 +114,19 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
           </CardContent>
         </Card>
       </div>
+      <h2 id="account" className="scroll-mt-20 pt-2 text-lg font-semibold">
+        Sign-in and security
+      </h2>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <TwoStepCard state={await myTwoStep(viewer)} />
+        <LinkedAccounts providers={await readyProviders().catch(() => [])} linked={await myIdentities(viewer.id)} />
+      </div>
       <SessionsTable rows={await listSessions(viewer)} />
+      <div className="space-y-2">
+        <h3 className="font-semibold">Your recent sign-ins</h3>
+        <p className="text-sm text-muted-foreground">If you see something you did not do, change your password and tell your administrator.</p>
+        <SignInHistory rows={await signInLog(viewer, { userId: viewer.id, limit: 20 })} />
+      </div>
     </div>
   );
 }

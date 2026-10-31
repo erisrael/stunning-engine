@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 22;
+export const SCHEMA_VERSION = 23;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -1875,6 +1875,97 @@ CREATE TABLE IF NOT EXISTS att_badges (
   badge TEXT UNIQUE,
   updated_at TEXT NOT NULL
 );
+-- v23: sign-in set by Admin (Phase 15): wrong attempts, two-step sign-in, other sign-in providers, invitations,
+-- sign-up requests, password history and the sign-in log.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS password_changed_at TEXT;
+CREATE TABLE IF NOT EXISTS signin_locks (
+  key TEXT PRIMARY KEY,
+  failures INTEGER NOT NULL DEFAULT 0,
+  lockouts INTEGER NOT NULL DEFAULT 0,
+  locked_until TEXT,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS signin_log (
+  id TEXT PRIMARY KEY,
+  user_id TEXT,
+  email TEXT,
+  event TEXT NOT NULL,
+  method TEXT,
+  ip TEXT,
+  device_id TEXT,
+  user_agent TEXT,
+  detail TEXT,
+  at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_signin_log_user ON signin_log(user_id, at);
+CREATE INDEX IF NOT EXISTS idx_signin_log_at ON signin_log(at);
+CREATE TABLE IF NOT EXISTS user_two_step (
+  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  totp_enc TEXT,
+  totp_pending_enc TEXT,
+  totp_confirmed_at TEXT,
+  last_step BIGINT NOT NULL DEFAULT 0,
+  recovery TEXT NOT NULL DEFAULT '[]',
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS two_step_trust (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  device_id TEXT NOT NULL,
+  until TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (user_id, device_id)
+);
+CREATE TABLE IF NOT EXISTS signin_challenges (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  mode TEXT NOT NULL,
+  method TEXT NOT NULL,
+  totp_pending_enc TEXT,
+  email_code_hash TEXT,
+  email_sent_at TEXT,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  next TEXT,
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS user_identities (
+  provider TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  email TEXT,
+  created_at TEXT NOT NULL,
+  last_used_at TEXT,
+  PRIMARY KEY (provider, subject)
+);
+CREATE INDEX IF NOT EXISTS idx_user_identities_user ON user_identities(user_id);
+CREATE TABLE IF NOT EXISTS signup_invites (
+  token_hash TEXT PRIMARY KEY,
+  email TEXT,
+  role TEXT NOT NULL,
+  created_by TEXT,
+  expires_at TEXT NOT NULL,
+  used_at TEXT,
+  used_by TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS signup_requests (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  email TEXT NOT NULL,
+  password_hash TEXT,
+  provider TEXT,
+  subject TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  decided_by TEXT,
+  decided_at TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS password_history (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  hash TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_password_history ON password_history(user_id, created_at);
 `;
 
 // Tables in dependency order; used to empty the workspace and to export or restore backups.
@@ -2012,4 +2103,10 @@ export const TABLES = [
   "group_call_members",
   "group_call_signals",
   "google_tokens",
+  "user_two_step",
+  "user_identities",
+  "signup_invites",
+  "signup_requests",
+  "password_history",
+  "signin_log",
 ] as const;

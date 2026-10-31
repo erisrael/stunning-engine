@@ -380,7 +380,7 @@ export const CHAPTERS: Chapter[] = [
     key: "account",
     title: "Your profile, sign-in and devices",
     audiences: "all",
-    summary: "Make your profile yours, see where you are signed in, and reset a forgotten password.",
+    summary: "Make your profile yours, turn on two-step sign-in, see where you are signed in, and reset a forgotten password.",
     sections: [
       {
         title: "Your profile",
@@ -394,8 +394,23 @@ export const CHAPTERS: Chapter[] = [
       },
       { title: "People", text: "People in the sidebar lists everyone with their headline and top skills. Search by a skill, for example Premiere, to find who can help." },
       {
+        title: "Two-step sign-in",
+        steps: [
+          "Install an authenticator app on your phone: Google Authenticator, Microsoft Authenticator or Authy.",
+          "On Profile, Sign-in and security, press Set up an authenticator app and scan the code with the app (or type the key).",
+          "Type the six-digit code the app shows, then save the ten recovery codes somewhere safe. Each works once if you lose your phone.",
+          "From then on, after your password, type the code from the app. Tick Do not ask again on this device on your own computer or phone.",
+          "If your role needs it, you are asked to set it up at your next sign-in. When Admin allows it, a code by email also works.",
+          "New phone? Press Move to a new phone. Lost the phone and the codes? Ask Admin to reset it.",
+        ],
+      },
+      {
+        title: "Sign in with Google or Microsoft",
+        text: "When Admin has switched them on, the sign-in page has Continue with Google, Microsoft or your company's single sign-on. It finds your account by your email. You can also link them on Profile, Sign-in and security.",
+      },
+      {
         title: "Where you are signed in",
-        text: "The bottom of Profile lists every device you are signed in on, with its browser, IP address and last use. End a session you do not recognise, or sign out all others, then change your password.",
+        text: "Profile lists every device you are signed in on, with its browser, IP address and last use, and your recent sign-ins. End a session you do not recognise, or sign out all others, then change your password. A sign-in from a new device sends you an alert.",
       },
       {
         title: "Forgot your password",
@@ -415,7 +430,10 @@ export const CHAPTERS: Chapter[] = [
     sections: [
       { title: "View as", text: "Admin, View as: choose a role, department or position, then a person. You see exactly their sidebar and pages, read only. Their chat, email and private documents stay closed, and every use is in the audit log. Exit from the strip at the top." },
       { title: "Sessions and devices", text: "Admin, Sessions and devices lists everyone signed in with device, IP address and last use. End one session, sign a person out everywhere, or block a device so it cannot sign in again." },
-      { title: "Sign-in", text: "Admin, Sign-in connects a free Google OAuth client so people can reset forgotten passwords with Gmail. The email link uses the account in Email, Settings." },
+      {
+        title: "Sign-in",
+        text: "Admin, Sign-in sets how people sign in. Rules: password length, leaked-password check, reuse and expiry; how many wrong passwords before the account waits; two-step sign-in (authenticator app, email code) off, optional or required per role; how long sessions last per role; alerts on new devices. Google, Microsoft, SSO: sign-in with Google Workspace, Microsoft 365 or any OpenID Connect provider, limited to your email domains, and optionally the only way in for some roles. Sign-up: off, by invitation link, or open to your email domains with your approval. Two-step by person shows who has it and resets a lost phone. Sign-in log shows every sign-in, failure and lockout. The Google client at the bottom also powers Reset with Google.",
+      },
       { title: "Sidebar per role", text: "Admin, Sidebar hides entries a role does not need. Permissions still decide what each role can open." },
       { title: "Integrations", text: "Admin, Integrations creates API keys for Power BI, Excel and Google Sheets feeds. The Dev team connects GitHub in its Repositories tab; a Finance department exports paid items to Sage 50 (Peachtree), QuickBooks or Xero from its Accounting tab." },
     ],

@@ -2,12 +2,15 @@ import { redirect } from "next/navigation";
 import { getViewer } from "@/server/auth";
 import { LoginForm } from "./login-form";
 import { MyseedLogo } from "@/components/app/logo";
+import { readyProviders } from "@/server/oidc";
+import { signInPolicy } from "@/server/signin-config";
 
 export const metadata = { title: "Sign in" };
 
-export default async function LoginPage({ searchParams }: { searchParams: Promise<{ next?: string }> }) {
+export default async function LoginPage({ searchParams }: { searchParams: Promise<{ next?: string; error?: string; notice?: string }> }) {
   if (await getViewer()) redirect("/dashboard");
-  const { next } = await searchParams;
+  const { next, error, notice } = await searchParams;
+  const signup = (await signInPolicy()).signup.mode;
   return (
     <div className="relative flex min-h-dvh flex-col items-center justify-center overflow-hidden bg-[#f6f7fb] px-4 py-10 dark:bg-background">
       <div aria-hidden className="pointer-events-none absolute inset-0">
@@ -30,7 +33,12 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
             <h1 className="text-2xl font-bold tracking-tight">Welcome back!</h1>
             <p className="mt-1 text-sm text-muted-foreground">Sign in to continue to your workspace.</p>
           </div>
-          <LoginForm next={next} />
+          <LoginForm
+            next={next}
+            providers={await readyProviders().catch(() => [])}
+            signup={signup}
+            message={notice === "requested" ? { ok: true, text: "Thanks. Your request for an account went to the administrator. You will get an email when it is approved." } : error ? { ok: false, text: error.slice(0, 200) } : null}
+          />
         </div>
 
         <p className="mt-6 text-center text-xs text-muted-foreground">

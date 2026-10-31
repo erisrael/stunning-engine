@@ -460,6 +460,7 @@ export const NOTIFICATION_TYPES = [
   "job",
   "discussion",
   "hr",
+  "security",
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 export const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
@@ -476,9 +477,10 @@ export const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
   job: "Import and export jobs",
   discussion: "Chat groups",
   hr: "HR reminders (documents, contracts, probation)",
+  security: "Account security (new sign-ins, lockouts)",
 };
 // Essential workflow notifications stay visible even when the type is muted.
-export const ESSENTIAL_NOTIFICATION_TYPES: NotificationType[] = ["assignment", "handoff", "approval", "question"];
+export const ESSENTIAL_NOTIFICATION_TYPES: NotificationType[] = ["assignment", "handoff", "approval", "question", "security"];
 
 export function roleForStage(stage: Stage): Role {
   return stage;
