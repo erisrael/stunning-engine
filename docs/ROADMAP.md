@@ -488,8 +488,73 @@ Everything still open across the earlier phases, in three batches, then face che
 ### Then
 
 - [x] Face check-in at the kiosk (Phase 9, step 2), with written guidelines (docs/FACE-CHECKIN.md)
-- [ ] Phases 11 to 14 below
+- [ ] Phase 10b (attendance by printed QR and office network), then Phases 11 to 14 below
 - [ ] Native app shell (Phase 5b), last
+
+## Phase 10b: Attendance by printed QR and office network (next, before Phase 11)
+
+For now there is no kiosk tablet: a QR code is printed and put up at the entrance. People scan it with their phone to check in, take breaks and lunch, and check out. Being on the office Wi-Fi proves they are on site. The kiosk (Phase 9) stays for later; everything below works alongside it.
+
+### 10b.1 Who sets up what
+
+- [ ] **Admin sets up how attendance is taken** (new permission "Attendance capture setup", Admin only): which methods are on (printed QR, office network, kiosk, face, phone location, app anywhere), the sites and their networks, the QR posters, kiosks, devices, PIN rules, offline rules.
+- [ ] **HR manages the attendance itself** ("Attendance for everyone", as today): shifts and rotas, grace, overtime, break and lunch rules, reviewing hand-made days and flagged check-ins, corrections, timesheets, badges and PINs for people, reports.
+- [ ] Attendance, Setup splits into **Capture** (Admin) and **Rules** (HR); each sees only their part.
+
+### 10b.2 The printed QR
+
+- [ ] Admin makes a **QR poster** per site (or per door): a printable A4 page with the QR code, the site name, a short address to type (for phones that cannot scan, for example `myseed.app/in`), and three lines of instructions.
+- [ ] The QR opens the check-in page in the app on the person's phone, already signed in after the first time (the phone is remembered).
+- [ ] **One tap, what makes sense now**: the page shows the person's name, the time and only the buttons that fit their state:
+  - not in yet: **Check in**;
+  - in: **Start break**, **Start lunch**, **Check out**;
+  - on a break or at lunch: **Back from break** / **Back from lunch**.
+  Then a clear confirmation with the time and any lateness, and the page closes itself.
+- [ ] **The QR alone is not enough**, because a photo of the poster works anywhere. A scan counts only when at least one of these, chosen by Admin per site, also holds:
+  - **Office network** (default): the phone is on the office Wi-Fi, recognised by the office's internet address (see 10b.3);
+  - **Location**: the phone is within the site's radius (when the person allows location);
+  - **This person's phone**: the device was registered to them (see 10b.5).
+  A scan that fails the check is refused with the reason ("Connect to the office Wi-Fi and scan again").
+- [ ] **Changing the code**: Admin can make a new code for a poster at any time (old prints stop working), for example after a photo of it was shared; reprinting is one click.
+
+### 10b.3 Checking by the office network
+
+- [ ] What a web app can really see: the **public internet address** the office network uses to reach the internet. A browser cannot read the Wi-Fi name, the router or the phone's hardware (MAC) address, so the check is by address.
+- [ ] Admin adds each site's addresses (single addresses or ranges); a **Use this network** button fills in the address Admin is on, when Admin is at the office.
+- [ ] Addresses that change (many home and office internet plans): Admin is told when check-ins start failing for everyone at a site, and can update the address from the alert; a name that follows the address (dynamic DNS) is also accepted.
+- [ ] The address is read correctly behind the hosting's proxy (the forwarded address, from the hosting only), so it cannot be faked by the phone.
+- [ ] Optional: **check in without scanning** when on the office network: the Attendance page in the app shows the same buttons, so the QR is only the quick way in.
+
+### 10b.4 Breaks and lunch
+
+- [ ] New kinds of check-in: break start and end, lunch start and end.
+- [ ] HR sets per shift: the lunch window and length (for example 12:00 to 14:00, 60 minutes), short breaks allowed (for example two of 15 minutes), and whether breaks are paid.
+- [ ] Hours worked count the real breaks taken when recorded (instead of the shift's fixed break); breaks and lunch that run over are flagged; someone still on a break at the end of the day is flagged like a missing check-out.
+- [ ] The daily board shows who is on a break or at lunch now; timesheets show break and lunch time per day; payroll takes unpaid break overruns only if HR switches that on.
+
+### 10b.5 People without a smartphone, or with a broken camera
+
+No extra device is needed; in order of preference:
+
+- [ ] **Type the short address** instead of scanning: any phone with a browser opens `myseed.app/in` (printed on the poster) and gets the same buttons; the office network check still applies.
+- [ ] **Shared check-in on an office computer**: any computer already at the office (reception, a team lead's laptop) can open **Check-in for others** (allowed on the office network only). The person types their number and PIN; the computer is not signed in as them, and the check-in is recorded as theirs with "shared computer" as the way. This is the kiosk without buying a tablet.
+- [ ] **The team lead checks them in**: in the app the lead scans the person's badge QR with their own phone (or picks them from the team list) and records the time; it is labelled "by the team lead" and HR reviews it, like today's hand-made days.
+- [ ] **Basic phones (no browser)**, optional and later: check in by SMS ("IN 12 4826" to a number) through an SMS gateway; it has a running cost per message, so it is a separate choice.
+
+### 10b.6 Stopping misuse
+
+- [ ] **Devices**: a phone is registered to one person the first time they check in from it (Admin chooses: anyone's first phone, or approved by HR). A phone used for two people within a short time is flagged, and the second check-in waits for HR.
+- [ ] **Time window**: QR and network check-ins are accepted only around shift times (for example from an hour before the start); outside it they are flagged.
+- [ ] **Flagged check-ins** go to HR's Review tab with the reason (another person's phone, outside the time window, unusual address); HR accepts or rejects, and the person is told.
+- [ ] Every check-in records how it was made (QR, office network, shared computer, team lead, kiosk, face), the device and the address, all visible to HR on the day's detail.
+
+### 10b.7 Order of delivery
+
+1. Capture and Rules split, and the Admin permission.
+2. Sites with office addresses; QR posters with codes; the one-tap check-in page with the network check.
+3. Breaks and lunch, in the rules, the day's result, the board and timesheets.
+4. Shared check-in on an office computer; the team lead's scan; device registration and flags.
+5. Optional: SMS check-in.
 
 ## Phase 11: Navigation that follows the person's role
 
