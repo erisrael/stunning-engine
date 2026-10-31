@@ -488,4 +488,91 @@ Everything still open across the earlier phases, in three batches, then face che
 ### Then
 
 - [x] Face check-in at the kiosk (Phase 9, step 2), with written guidelines (docs/FACE-CHECKIN.md)
-- [ ] Native app shell (Phase 5b)
+- [ ] Phases 11 to 14 below
+- [ ] Native app shell (Phase 5b), last
+
+## Phase 11: Navigation that follows the person's role
+
+Today a developer sees "Departments, Dev team" with sub-links, and every department page repeats a bar of ten tabs (Dashboard, Board, List, Sheet, Overview, Timeline, My report, Repositories, Projects, Calendar). My record, Leave and Claims and pay sit at the top of My space.
+
+### 11.1 Departments as the person's own sidebar
+
+- [ ] For someone working in a department (Developer, Marketing, Content, or a member of a department made from a template), the department becomes their sidebar, the way Recording or Editing is for production staff. No "Departments" heading, no nesting.
+- [ ] Sections, each view at its own address (`/dev/board`, `/dev/list`...; the old `?tab=` links keep working):
+  - **My work**: Home (the department dashboard) and My board (their own tasks as a board, see Phase 12).
+  - **Work**: Board, List, Sheet.
+  - **Plan**: Projects (with the count), Overview, Timeline, Calendar.
+  - **Insights**: Report ("My report" for members), Team (leads).
+  - **Tools**: Repositories (Dev), Accounting (Finance departments), Requests.
+  - **Manage**: Configure (heads), Checklists and templates.
+- [ ] What a person sees follows their position: members get My work, Board, List, Calendar, My report and Requests; leads add Team, Overview, Timeline, Sheet and the lead desk; heads add Configure. Admin, Sidebar can still hide entries per role.
+- [ ] The tab bar on department pages goes. Each page has its title, its own filters and one compact "View" switch only where it helps (Board, List and Sheet of the same tasks).
+- [ ] People who oversee several departments (Admin, managers, owners, the Company overview) keep a "Departments" group with each department folded underneath.
+- [ ] Someone with roles in more than one department switches with the role switcher; the sidebar follows the active role.
+
+### 11.2 My space, and the Profile with tabs
+
+- [ ] My space keeps only daily things: Home or My work, Attendance (daily check-in), Questions, and an **Approvals** entry for people who approve anything (leave, claims, attendance corrections, handovers waiting), with one count.
+- [ ] **Profile** (the avatar menu, and a Profile entry at the bottom of the sidebar) gets tabs:
+  - Profile: photo, headline, skills, contact details.
+  - My record: HR record and documents (today `/me`).
+  - Leave: balances and requests (today `/leave`).
+  - Pay and claims: payslips, claims, purchase requests (today `/pay`).
+  - Attendance history and kiosk PIN (today's day stays on Attendance).
+  - Account: password, sessions and devices, Google account, notifications, preferences.
+  - Help.
+- [ ] `/me`, `/leave` and `/pay` move there; their old addresses send people to the right tab. Notifications and emails link to the new places.
+
+## Phase 12: Department workflows as complete as production
+
+Production teams work as a loop: the lead assigns, members start, fill in the card, mark done and send to the lead, the lead approves or returns, and only finished work is handed over. Departments today have statuses, a review step and requests, but not this loop. The same engine is built once and set up per department.
+
+### 12.1 One flow engine for every department
+
+- [ ] **Configure, Flow** (heads and Admin): the stages a task goes through, each mapped to a status category, and for each stage:
+  - who works it (a position, a role, or the assignee),
+  - whether the lead reviews before it moves on (approve, or return with a note),
+  - what must be done first (checklist, required fields, links),
+  - where it goes next and who receives it (another stage, another position such as QA, or another department through Requests),
+  - a "days to finish" target and a work-in-progress limit per person,
+  - the stage's own steps, shown on Home (like "How Editing works").
+- [ ] **Member board** (Home for members): To do, In progress, Done not sent, With lead; start and pause with the timer, fill in the card (checklist, links, fields, attachments), Done, then Send one or all; returned work comes back with the lead's note.
+- [ ] **Lead desk** (Home for leads): To approve (approve or return with notes, see what changed since a return), Ready for the next stage (hand over as a batch), Arriving (accept or send back as missing), To assign (with each person's load), and the flow at a glance.
+- [ ] Only finished work moves on, as in production: unfinished or returned work never shows to the next stage.
+- [ ] Templates bring a ready flow; everything stays editable and versioned like the rest of Configure.
+
+### 12.2 Dev team (first)
+
+- [ ] Stages: Backlog, To do, In progress, Code review (tech lead), QA (tester position), Ready to release, Released.
+- [ ] The card: the branch and pull request (from the GitHub link), the tests and docs checklist, estimate and time spent, the acceptance criteria.
+- [ ] Code review: the lead sees the pull request status and checks from GitHub, approves or returns with comments; a merged pull request can move the task on by itself.
+- [ ] QA: the tester accepts what arrives, passes it or sends it back as a bug with steps to reproduce; passed work waits in Ready to release; a release groups tasks and marks them Released, with release notes.
+- [ ] Bugs and requests from other departments land in the lead's intake to triage (priority, sprint, assignee).
+
+### 12.3 Marketing, Studio and departments from templates
+
+- [ ] **Marketing**: Brief (from a request or the lead), Draft (writer or designer), Review (lead; and the requester when asked), Approved, Scheduled (channel and time on the content calendar), Published (the link), Results (reach, clicks and the other KPIs logged against the campaign).
+- [ ] **Studio**: Assigned (note, exam or deck on a grade, subject and part), Draft, Subject review (reviewer checklist), Approved, Published; a new version starts the loop again.
+- [ ] **Templates**: Support (Intake, Triage, In progress, Waiting on the requester, Resolved), Sales (Lead, Qualified, Proposal, Won or Lost), Operations, HR and Finance requests, each with its flow, checklists and guide.
+- [ ] Help: each department's chapter describes its own flow from the configuration (extends the Phase 10 chapters).
+
+## Phase 13: Assistant (a guide, not an AI)
+
+A helper in the corner of every page that explains the app and walks people through tasks, built from fixed, written flows (no language model, nothing sent outside).
+
+- [ ] **Talking to it**: a small chat panel with buttons to choose from, and a box to type in. Typed text is matched against keywords and synonyms written for each flow ("assign", "give videos to", "hand over"...). Anything it cannot match is offered the closest flows and the Help search.
+- [ ] **Doing a task with it**: a flow asks one thing at a time with pickers taken from the app (people in the team, grade, subject and unit, parts not done), shows a summary, and on Confirm runs the same action as the page would, with the same permission checks. Example for an Editing lead: "Assign videos" → choose the editor → choose grade, subject and unit → tick parts (only parts that arrived from Recording) → due date → confirm → done, with a link to see them.
+- [ ] **Show me**: instead of doing it, the assistant takes the person there and points: it dims the page, highlights the button or tab to press with a short note, waits for the click and moves to the next step (works on every page through marked elements).
+- [ ] **First flows**, per role: assign work; approve and hand over; accept arrivals and assign; start, finish and send my work; ask for leave; claim an expense; check in or correct attendance; book a studio session; review a task (departments); "where is...?" (every page by name); "what does ... mean?" (statuses and terms from Help).
+- [ ] **Monitoring** (Admin, Assistant): how often each flow is started and finished, where people give up, what people typed that matched nothing (to write new flows), by role and by week, and an export.
+- [ ] **Setup** (Admin, Assistant): flows on or off per role, the wording and the keywords of each flow, and short answers to common questions.
+
+## Phase 14: Mail, a company inbox in the app (last, before the app shell)
+
+Today Email composes, sends and keeps a sent log through the company account; there is no inbox.
+
+- [ ] **How it connects**: each person's company mailbox (cPanel or any host) over IMAP for reading and the existing account or relay for sending. Passwords are stored sealed; nobody else, Admin included, can read another person's mail. Google Workspace and Microsoft 365 mailboxes can connect through their own sign-in instead of a password.
+- [ ] **Looks and works like Gmail**: Compose button; Inbox, Starred, Snoozed, Sent, Drafts, Spam, Trash and the mailbox's own folders as labels; a list with sender, subject, preview and date; conversations grouped; reading pane; reply, reply all and forward; attachments; star, mark read or unread, archive, delete, move; search; keyboard shortcuts (c, r, a, f, e, j and k); undo send for a few seconds; scheduled sending (exists); signatures; templates (exist).
+- [ ] **Safety**: messages shown in a sandbox with scripts removed and outside pictures blocked until "Show images"; attachments downloaded on request; size limits.
+- [ ] **Syncing**: new mail checked every minute while Mail is open and with the scheduled checks; headers are kept in the app for a fast list, bodies fetched when opened.
+- [ ] **If the host blocks IMAP** (some hostings block mail ports): fall back to the mailbox's webmail link, and keep sending through the relay; the setup check (exists for SMTP) gets an IMAP check that says which case applies.
