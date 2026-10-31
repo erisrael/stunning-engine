@@ -49,6 +49,8 @@ export type Settings = {
     contentTypes: { key: string; label: string }[];
     languages: { code: string; label: string }[];
     terms: string[];
+    // Rooms the Recording lead books sessions in.
+    studios: string[];
   };
   alerts: {
     dueSoonHours: number;
@@ -143,6 +145,7 @@ export const DEFAULT_SETTINGS: Settings = {
       { code: "om", label: "Afaan Oromo" },
     ],
     terms: ["Term 1", "Term 2"],
+    studios: ["Studio A", "Studio B"],
   },
   alerts: {
     dueSoonHours: 48,

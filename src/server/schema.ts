@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 19;
+export const SCHEMA_VERSION = 20;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -1771,6 +1771,25 @@ CREATE TABLE IF NOT EXISTS att_kiosks (
   created_by TEXT,
   created_at TEXT NOT NULL
 );
+-- Studio sessions booked for several parts at once, with a camera operator.
+ALTER TABLE recording_sessions ADD COLUMN IF NOT EXISTS operator_id TEXT;
+ALTER TABLE recording_sessions ADD COLUMN IF NOT EXISTS batch_id TEXT;
+CREATE INDEX IF NOT EXISTS idx_recording_sessions_start ON recording_sessions(scheduled_start);
+
+-- Review notes pinned to a time in the master ("0:42: trim the silence"), per stage attempt.
+CREATE TABLE IF NOT EXISTS item_review_notes (
+  id TEXT PRIMARY KEY,
+  item_id TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+  attempt_id TEXT,
+  stage TEXT NOT NULL,
+  at_sec INTEGER,
+  note TEXT NOT NULL,
+  author_id TEXT,
+  created_at TEXT NOT NULL,
+  resolved_by TEXT,
+  resolved_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_review_notes_item ON item_review_notes(item_id, created_at);
 CREATE TABLE IF NOT EXISTS att_badges (
   employee_id TEXT PRIMARY KEY REFERENCES employees(id) ON DELETE CASCADE,
   pin_hash TEXT,
@@ -1908,4 +1927,5 @@ export const TABLES = [
   "att_corrections",
   "att_kiosks",
   "att_badges",
+  "item_review_notes",
 ] as const;

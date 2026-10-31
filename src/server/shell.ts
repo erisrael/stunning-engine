@@ -10,7 +10,8 @@ export async function shellCounts(user: AppUser) {
   const now = nowIso();
   const sc = scopeSql(user, "i");
   const isManager = can(user, "questions.ask");
-  const [myWork, handoffs, questions, corrections, notifications, chat] = await Promise.all([
+  const leads = user.leads;
+  const [myWork, handoffs, questions, corrections, notifications, chat, incoming, attendance] = await Promise.all([
     count(
       `SELECT COUNT(*) AS c FROM items i JOIN stage_attempts a ON a.id = i.current_attempt_id
        WHERE i.lifecycle = 'in_production' AND (a.owner_id = ? OR i.next_action_owner_id = ?) AND ${sc.sql}`,
@@ -29,6 +30,17 @@ export async function shellCounts(user: AppUser) {
     can(user, "corrections.approve") ? count("SELECT COUNT(*) AS c FROM session_corrections WHERE status = 'pending'") : Promise.resolve(0),
     unreadCount(user.id, now),
     unreadChatCount(user.id),
+    // Handover batches waiting for this person to check: sent to them, or to a team they lead.
+    count(
+      `SELECT COUNT(*) AS c FROM handovers h WHERE h.status IN ('open','partial') AND (h.to_user = ?${leads.length ? ` OR (h.to_user IS NULL AND h.to_stage IN (${leads.map(() => "?").join(",")}))` : ""})`,
+      user.id,
+      ...leads,
+    ),
+    // Attendance corrections waiting for this person's decision.
+    count(
+      `SELECT COUNT(*) AS c FROM att_corrections WHERE (status = 'pending_lead' AND approver_id = ?)${can(user, "attendance.manage") ? " OR status = 'pending_hr'" : ""}`,
+      user.id,
+    ),
   ]);
-  return { myWork, handoffs, questions, corrections, notifications, chat };
+  return { myWork, handoffs, questions, corrections, notifications, chat, incoming, attendance };
 }

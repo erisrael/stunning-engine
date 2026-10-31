@@ -40,6 +40,7 @@ import {
   UsersRoundIcon,
   WalletIcon,
   LandmarkIcon,
+  VideoIcon,
 } from "lucide-react";
 import {
   Sidebar,
@@ -115,7 +116,7 @@ export function AppSidebar({
   customDepts?: { key: string; title: string }[];
   reportsLink?: boolean;
   activeRole: Role;
-  counts: { myWork: number; notifications: number; questions: number; handoffs: number; corrections: number };
+  counts: { myWork: number; notifications: number; questions: number; handoffs: number; corrections: number; incoming: number; attendance: number };
   workspaceName: string;
   // Hidden by this person, and by Admin for the role they are viewing as.
   userHidden?: string[];
@@ -138,7 +139,7 @@ export function AppSidebar({
       items: [
         { href: "/dashboard", label: staff ? "My work" : "Home", icon: HomeIcon, badge: counts.myWork, locked: true },
         { href: "/me", label: "My record", icon: IdCardIcon },
-        { href: "/attendance", label: "Attendance", icon: ClockIcon },
+        { href: "/attendance", label: "Attendance", icon: ClockIcon, badge: counts.attendance },
         { href: "/leave", label: "Leave", icon: PlaneIcon },
         { href: "/pay", label: "Claims and pay", icon: WalletIcon },
         ...(!lead ? [{ href: "/team", label: "My effort", icon: UsersIcon, cap: "nav.team" as Capability }] : []),
@@ -152,7 +153,8 @@ export function AppSidebar({
         ...(views.length
           ? [{ id: "views", href: views[0]!.href, label: "Work views", icon: LayersIcon, keepFilters: true, also: views.map((v) => v.href), badge: has("nav.board") ? counts.handoffs : 0 }]
           : []),
-        { href: "/handovers", label: "Handovers", icon: PackageCheckIcon, cap: "nav.handovers" },
+        { href: "/handovers", label: "Handovers", icon: PackageCheckIcon, badge: counts.incoming, cap: "nav.handovers" },
+        ...(has("items.plan") || has("team.view") || activeRole === "recording" ? [{ href: "/sessions", label: "Studio sessions", icon: VideoIcon }] : []),
         { href: "/coverage", label: "Coverage", icon: GridIcon, keepFilters: true, cap: "nav.coverage" },
         { href: "/reports", label: "Reports", icon: ChartColumnIcon, keepFilters: true, cap: "reports.view" },
         ...(lead ? [{ href: "/team", label: "Team", icon: UsersIcon, badge: has("corrections.approve") ? counts.corrections : 0, cap: "team.view" as Capability }] : []),

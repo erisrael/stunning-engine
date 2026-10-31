@@ -8,6 +8,7 @@ export const SIDEBAR_ENTRIES: { key: string; label: string; group: string }[] = 
   { key: "/overview", label: "Overview", group: "Workflow" },
   { key: "views", label: "Work views (List, Sheet, Board, Calendar)", group: "Workflow" },
   { key: "/handovers", label: "Handovers", group: "Workflow" },
+  { key: "/sessions", label: "Studio sessions", group: "Workflow" },
   { key: "/coverage", label: "Coverage", group: "Workflow" },
   { key: "/reports", label: "Reports", group: "Workflow" },
   { key: "/email", label: "Email", group: "Workflow" },

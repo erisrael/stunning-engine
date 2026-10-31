@@ -8,6 +8,7 @@ import { evaluateRequirements, workChecklistItems, type Requirement } from "./wo
 import { getSettings } from "./settings";
 import { hasRole, isLeadOf, isManager, scopeSql, type AppUser } from "./users";
 import { NEXT_STAGE, STAGES, type AttemptStatus, type Stage } from "@/lib/domain";
+import { changesSinceReturn, reviewNotes, type ReviewNote } from "./review-notes";
 
 export type FlowCheck = { key: string; label: string; required: boolean; verify: boolean; checked: boolean; verified: boolean };
 export type FlowTarget = { platform: string; label: string; status: string; externalId: string | null; url: string | null; playback: boolean; metadata: boolean };
@@ -33,6 +34,11 @@ export type FlowItem = {
   targets: FlowTarget[];
   // Assigned for Recording but not started yet: Start puts it into production.
   draft: boolean;
+  // Review notes pinned to times in the master, and what changed since the lead last returned it.
+  reviewNotes: ReviewNote[];
+  // The next studio session booked for this part.
+  session: { start: string; room: string | null } | null;
+  changes: { returnedAt: string; reason: string | null; changes: { summary: string; at: string }[] } | null;
 };
 
 type Row = {
@@ -125,6 +131,16 @@ async function hydrate(rows: Row[], viewerId: string): Promise<FlowItem[]> {
       requirements: await evaluateRequirements(r.id),
       targets,
       draft: !!Number(r.draft ?? 0),
+      reviewNotes: r.attempt_id ? await reviewNotes(r.id, r.attempt_id) : [],
+      session:
+        r.stage === "recording"
+          ? await get<{ start: string; room: string | null }>(
+              "SELECT scheduled_start AS start, location AS room FROM recording_sessions WHERE item_id = ? AND status = 'scheduled' AND scheduled_start >= ? ORDER BY scheduled_start LIMIT 1",
+              r.id,
+              new Date(Date.now() - 12 * 36e5).toISOString(),
+            ) ?? null
+          : null,
+      changes: r.attempt_id ? await changesSinceReturn(r.id, r.attempt_id) : null,
     });
   }
   return out;

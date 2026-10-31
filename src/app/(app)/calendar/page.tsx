@@ -12,6 +12,8 @@ import { PageHeader } from "@/components/app/primitives";
 import { FilterBar } from "@/components/app/filter-bar";
 import { cn } from "@/lib/utils";
 import { PageImport } from "@/components/app/page-import";
+import { isManager } from "@/server/users";
+import { DayDrop, ReleaseChip } from "./drag";
 
 export const metadata = { title: "Calendar" };
 
@@ -32,7 +34,9 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
   const tz = s.workspace.timezone;
   const today = localDate(nowIso(), tz);
   const month = typeof sp.month === "string" && /^\d{4}-\d{2}$/.test(sp.month) ? sp.month : today.slice(0, 7);
-  const view = sp.view === "agenda" ? "agenda" : "month";
+  const view = sp.view === "agenda" ? "agenda" : sp.view === "plan" ? "plan" : "month";
+  // Publication and managers move scheduled releases by dragging them to another day.
+  const canMove = viewer.roles.includes("publication") || viewer.leads.includes("publication") || isManager(viewer);
   const layers = (typeof sp.layers === "string" ? sp.layers.split(",") : ["session", "release", "published", "due"]) as Ev["kind"][];
 
   const [y, m] = month.split("-").map(Number);
@@ -117,16 +121,18 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
             );
           })}
           <div className="ml-1 flex rounded-lg border bg-muted/40 p-0.5">
-            {(["month", "agenda"] as const).map((v) => (
+            {(["month", "agenda", "plan"] as const).map((v) => (
               <Link key={v} href={href({ view: v })} className={cn("rounded-md px-2.5 py-1 text-xs font-medium capitalize", view === v ? "bg-background shadow-sm" : "text-muted-foreground")}>
-                {v}
+                {v === "plan" ? "Release plan" : v}
               </Link>
             ))}
           </div>
         </div>
       </div>
 
-      {view === "month" ? (
+      {view === "plan" ? (
+        <ReleasePlan rows={rows} today={today} tz={tz} weekStartsOn={s.workspace.weekStartsOn} />
+      ) : view === "month" ? (
         <>
           <div className="hidden overflow-hidden rounded-xl border bg-card md:block">
             <div className="grid grid-cols-7 border-b bg-muted/50 text-xs font-medium text-muted-foreground">
@@ -141,7 +147,7 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
                 const wd = new Date(`${d}T00:00:00Z`).getUTCDay();
                 const off = !s.calendar.workdays.includes(wd) || holidays.has(d);
                 return (
-                  <div key={d} className={cn("min-h-28 border-r border-b p-1.5 last:border-r-0", !inMonth && "bg-muted/30 text-muted-foreground", off && inMonth && "bg-muted/20")}>
+                  <DayDrop key={d} date={d} tz={tz} className={cn("min-h-28 border-r border-b p-1.5 last:border-r-0", !inMonth && "bg-muted/30 text-muted-foreground", off && inMonth && "bg-muted/20")}>
                     <div className="mb-1 flex items-center justify-between">
                       <span className={cn("flex size-6 items-center justify-center rounded-full text-xs tabular", d === today && "bg-primary font-semibold text-primary-foreground")}>{Number(d.slice(8))}</span>
                       {holidays.has(d) && <span className="truncate text-[10px] text-muted-foreground" title={holidays.get(d)}>{holidays.get(d)}</span>}
@@ -149,10 +155,17 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
                     <ul className="space-y-0.5">
                       {ev.slice(0, 4).map((e, i) => (
                         <li key={i}>
-                          <Link href={`/items/${e.itemId}`} className={cn("block truncate rounded px-1.5 py-0.5 text-[11px]", LAYERS[e.kind].cls)} title={`${LAYERS[e.kind].label}: ${e.code} ${e.title}${e.detail ? ` (${e.detail})` : ""}`}>
-                            {e.time && <span className="tabular">{e.time} </span>}
-                            {e.title}
-                          </Link>
+                          {e.kind === "release" ? (
+                            <ReleaseChip itemId={e.itemId} time={e.time} canMove={canMove && d >= today} className={LAYERS[e.kind].cls} title={`${LAYERS[e.kind].label}: ${e.code} ${e.title}`}>
+                              {e.time && <span className="tabular">{e.time} </span>}
+                              {e.title}
+                            </ReleaseChip>
+                          ) : (
+                            <Link href={`/items/${e.itemId}`} className={cn("block truncate rounded px-1.5 py-0.5 text-[11px]", LAYERS[e.kind].cls)} title={`${LAYERS[e.kind].label}: ${e.code} ${e.title}${e.detail ? ` (${e.detail})` : ""}`}>
+                              {e.time && <span className="tabular">{e.time} </span>}
+                              {e.title}
+                            </Link>
+                          )}
                         </li>
                       ))}
                       {ev.length > 4 && (
@@ -163,7 +176,7 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
                         </li>
                       )}
                     </ul>
-                  </div>
+                  </DayDrop>
                 );
               })}
             </div>
@@ -209,6 +222,70 @@ function Agenda({ events, today, tz, className }: { events: Ev[]; today: string;
           </ul>
         </section>
       ))}
+    </div>
+  );
+}
+
+// The weekly release plan: per subject, releases scheduled (and already published) in each of the next eight weeks.
+function ReleasePlan({ rows, today, tz, weekStartsOn }: { rows: Awaited<ReturnType<typeof listItems>>["rows"]; today: string; tz: string; weekStartsOn: number }) {
+  const t = new Date(`${today}T12:00:00Z`);
+  const start = new Date(t.getTime() - ((t.getUTCDay() - weekStartsOn + 7) % 7) * 864e5);
+  const weeks = Array.from({ length: 8 }, (_, i) => new Date(start.getTime() + i * 7 * 864e5).toISOString().slice(0, 10));
+  const weekOf = (d: string) => weeks.findLast((w) => w <= d) ?? null;
+  const end = new Date(start.getTime() + 56 * 864e5).toISOString().slice(0, 10);
+  const subjects = new Map<string, { planned: Record<string, number>; live: Record<string, number> }>();
+  for (const r of rows) {
+    const scheduled = r.scheduled_publish_at && r.lifecycle === "in_production" ? localDate(r.scheduled_publish_at, tz) : null;
+    const published = r.published_at ? localDate(r.published_at, tz) : null;
+    for (const [d, kind] of [[scheduled, "planned"], [published, "live"]] as const) {
+      if (!d || d < weeks[0]! || d >= end) continue;
+      const w = weekOf(d);
+      if (!w) continue;
+      const key = r.subject_name ?? "No subject";
+      const e = subjects.get(key) ?? { planned: {}, live: {} };
+      e[kind][w] = (e[kind][w] ?? 0) + 1;
+      subjects.set(key, e);
+    }
+  }
+  const list = [...subjects.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  const fmtWeek = (w: string) => new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(`${w}T12:00:00Z`));
+  return (
+    <div className="overflow-x-auto rounded-xl border bg-card">
+      <table className="w-full min-w-[760px] text-sm">
+        <thead className="bg-muted/50 text-left text-xs text-muted-foreground">
+          <tr>
+            <th className="px-3 py-2 font-medium">Subject</th>
+            {weeks.map((w) => (
+              <th key={w} className="px-2 py-2 text-center font-medium">
+                Week of {fmtWeek(w)}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {list.map(([name, e]) => (
+            <tr key={name} className="border-t">
+              <td className="px-3 py-2 font-medium">{name}</td>
+              {weeks.map((w) => (
+                <td key={w} className="px-2 py-2 text-center tabular">
+                  {e.live[w] ? <span className="text-[var(--st-done-fg)]">{e.live[w]} live</span> : null}
+                  {e.live[w] && e.planned[w] ? " · " : null}
+                  {e.planned[w] ? <span className="text-[var(--st-scheduled-fg)]">{e.planned[w]} planned</span> : null}
+                  {!e.live[w] && !e.planned[w] ? <span className="text-muted-foreground">-</span> : null}
+                </td>
+              ))}
+            </tr>
+          ))}
+          {!list.length && (
+            <tr>
+              <td colSpan={9} className="px-3 py-8 text-center text-muted-foreground">
+                Nothing scheduled or published in the next eight weeks.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+      <p className="border-t px-3 py-2 text-xs text-muted-foreground">Planned: scheduled and not yet confirmed live. Drag a release in the month view to move it.</p>
     </div>
   );
 }

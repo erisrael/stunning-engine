@@ -31,7 +31,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { EmptyState } from "@/components/app/primitives";
-import { bulkAction, itemAction, type ItemActionInput } from "@/app/actions/items";
+import { addReviewNoteAction, bulkAction, deleteReviewNoteAction, itemAction, resolveReviewNoteAction, type ItemActionInput } from "@/app/actions/items";
 import { createHandoverAction, decideHandoverAction, verifyChecklistAction } from "@/app/actions/editorial";
 import type { FlowItem, LeadDeskData } from "@/server/team-flow";
 import { RETURN_REASON_LABELS, STAGE_LABELS, STATUS_LABELS, type Stage } from "@/lib/domain";
@@ -84,6 +84,81 @@ function Progress({ item }: { item: FlowItem }) {
   );
 }
 
+const timecode = (sec: number | null) => (sec === null ? "" : `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`);
+
+// Review notes pinned to a time in the master. The lead adds them; the person doing the work ticks them off.
+function ReviewNotes({ item, lead, canEdit }: { item: FlowItem; lead: boolean; canEdit: boolean }) {
+  const router = useRouter();
+  const [at, setAt] = React.useState("");
+  const [note, setNote] = React.useState("");
+  const run = async (p: Promise<Result>, done?: string) => {
+    const r = await p;
+    if (!r.ok) return explain(r), false;
+    if (done) toast.success(done);
+    router.refresh();
+    return true;
+  };
+  if (!item.reviewNotes.length && !lead) return null;
+  const open = item.reviewNotes.filter((n) => !n.resolved).length;
+  return (
+    <div className="space-y-1.5" data-review-notes>
+      <p className="text-xs font-medium">
+        Review notes {item.reviewNotes.length > 0 && <span className="font-normal text-muted-foreground">{open ? `${open} to fix` : "all fixed"}</span>}
+      </p>
+      {item.reviewNotes.length > 0 && (
+        <ul className="space-y-1">
+          {item.reviewNotes.map((n) => (
+            <li key={n.id} className="flex items-start gap-2 text-xs">
+              <Checkbox aria-label={`Fixed: ${n.note}`} checked={n.resolved} disabled={!canEdit && !lead} onCheckedChange={(v) => run(resolveReviewNoteAction(n.id, v === true))} className="mt-0.5" />
+              {n.atSec !== null && <span className="rounded bg-muted px-1 font-mono tabular-nums">{timecode(n.atSec)}</span>}
+              <span className={cn("flex-1", n.resolved && "text-muted-foreground line-through")}>{n.note}</span>
+              {lead && (
+                <button type="button" aria-label="Remove note" className="text-muted-foreground hover:text-foreground" onClick={() => run(deleteReviewNoteAction(n.id))}>
+                  ×
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {lead && (
+        <form
+          className="flex gap-1.5"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            if (await run(addReviewNoteAction(item.id, { at: at || null, note }), "Note added")) (setAt(""), setNote(""));
+          }}
+        >
+          <Input value={at} onChange={(e) => setAt(e.target.value)} placeholder="0:42" aria-label="Time in the video (m:ss)" className="h-8 w-16 font-mono text-xs" />
+          <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="What to change at that moment" aria-label="Review note" className="h-8 flex-1 text-xs" />
+          <Button size="sm" variant="outline" type="submit" disabled={!note.trim()}>
+            Add
+          </Button>
+        </form>
+      )}
+    </div>
+  );
+}
+
+// For the lead: what the team member changed after the work was returned.
+function Changes({ item }: { item: FlowItem }) {
+  if (!item.changes) return null;
+  return (
+    <div className="space-y-1 rounded-md bg-muted/50 p-2 text-xs" data-changes>
+      <p className="font-medium">Changed since you returned it{item.changes.reason ? ` ("${item.changes.reason}")` : ""}</p>
+      {item.changes.changes.length ? (
+        <ul className="list-disc space-y-0.5 pl-4 text-muted-foreground">
+          {item.changes.changes.map((c, i) => (
+            <li key={i}>{c.summary}</li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-muted-foreground">Nothing was changed; it was sent back as it was.</p>
+      )}
+    </div>
+  );
+}
+
 // Everything the stage needs, filled in right here: checklist, links, durations, uploads, notes.
 function WorkPanel({ item, canEdit, lead }: { item: FlowItem; canEdit: boolean; lead: boolean }) {
   const { act } = useAct();
@@ -102,6 +177,8 @@ function WorkPanel({ item, canEdit, lead }: { item: FlowItem; canEdit: boolean; 
   };
   return (
     <div className="space-y-3 border-t pt-2 text-sm">
+      {lead && <Changes item={item} />}
+      <ReviewNotes item={item} lead={lead} canEdit={canEdit} />
       {item.checks.length > 0 && (
         <ul className="space-y-1">
           {item.checks.map((c) => (
@@ -292,6 +369,12 @@ function Card({ item, open, onToggle, children, badge, select }: { item: FlowIte
       </div>
       <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
         <Progress item={item} />
+        {item.session && (
+          <span className="rounded bg-[var(--st-active-bg)] px-1.5 py-0.5 text-[11px] text-[var(--st-active-fg)]" title="Studio session booked for this part">
+            {new Date(item.session.start).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false })}
+            {item.session.room ? ` · ${item.session.room}` : ""}
+          </span>
+        )}
         {badge}
         <span className="ml-auto">
           <DueTag dueAt={item.dueAt} />
@@ -578,7 +661,15 @@ export function LeadDesk({ data }: { data: LeadDeskData }) {
                   <Button title={tip("action.leadApprove")} size="sm" disabled={busy === `${it.id}:leadApprove`} onClick={() => act(it.id, { action: "leadApprove" }, "Approved")}>
                     <CheckIcon /> Approve
                   </Button>
-                  <Button size="sm" variant="outline" onClick={() => setReturning({ id: it.id, note: "" })}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      // Notes still open become the start of the return message.
+                      const open = it.reviewNotes.filter((n) => !n.resolved).map((n) => `${n.atSec !== null ? `${timecode(n.atSec)} ` : ""}${n.note}`);
+                      setReturning({ id: it.id, note: open.join("; ") });
+                    }}
+                  >
                     <RotateCcwIcon /> Return
                   </Button>
                 </div>

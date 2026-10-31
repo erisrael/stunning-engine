@@ -9,6 +9,8 @@ import * as wf from "@/server/workflow";
 import { audit } from "@/server/workflow";
 import { REDO_LABELS, RETURN_REASON_LABELS, type AssetKind, type Stage } from "@/lib/domain";
 import { postCard, stageGroup } from "@/server/chat";
+import { managers, notify, teamLeads } from "@/server/notifications";
+import { addReviewNote, deleteReviewNote, resolveReviewNote } from "@/server/review-notes";
 
 export type ItemActionInput =
   | { action: "release"; startStage?: Stage }
@@ -101,6 +103,14 @@ export async function itemAction(itemId: string, input: ItemActionInput, opts: {
               else await wf.reopenStage(ctx, itemId, { target: input.target, reasonCategory: input.reasonCategory, note: input.note, expectedVersion: v });
               const item = await getItem(itemId);
               const label = REDO_LABELS[input.target];
+              // The team that has to redo it hears straight away, besides the card in its chat.
+              const leads = await teamLeads(input.target);
+              await notify(
+                leads.length ? leads : await managers(),
+                { type: "handoff", title: `${label}: ${item.code}`, body: `${viewer.name}: ${input.note}`, link: "/dashboard", itemId, dedupeKey: `redo:${itemId}:${nowIso()}` },
+                nowIso(),
+                viewer.id,
+              );
               await postCard(await stageGroup(input.target), viewer.id, {
                 kind: "request",
                 body: `${label} for ${item.code} (${item.title}): ${input.note}`,
@@ -314,4 +324,15 @@ export async function bulkAction(ids: string[], input: BulkInput, dryRun = false
     }
     return results;
   }, { revalidate: !dryRun });
+}
+
+// Review notes pinned to a time in the master.
+export async function addReviewNoteAction(itemId: string, input: { at?: string | null; note: string }) {
+  return wrap(async () => addReviewNote(await requireViewer(), itemId, input));
+}
+export async function resolveReviewNoteAction(id: string, resolved: boolean) {
+  return wrap(async () => resolveReviewNote(await requireViewer(), id, resolved));
+}
+export async function deleteReviewNoteAction(id: string) {
+  return wrap(async () => deleteReviewNote(await requireViewer(), id));
 }

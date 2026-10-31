@@ -16,7 +16,7 @@ import { UserAvatar } from "@/components/app/primitives";
 import { CommentThread } from "@/components/app/comment-thread";
 import { useActions, type ItemRef } from "@/components/app/action-center";
 import { useFilters } from "@/components/app/filter-bar";
-import { ExportMenu } from "@/components/app/bulk-and-export";
+import { BulkBar, ExportMenu } from "@/components/app/bulk-and-export";
 import { savePrefsAction } from "@/app/actions/admin";
 import { SHEET_BASE_COLUMNS, SHEET_COLUMNS, SHEET_PRESETS } from "@/lib/columns";
 import { progressChip, progressOf } from "@/components/app/item-cells";
@@ -93,6 +93,9 @@ export function SheetGrid({
   const [collapsed, setCollapsed] = React.useState<Set<string>>(new Set());
   const [thread, setThread] = React.useState<{ row: ItemListRow; field: string | null } | null>(null);
   const names = React.useMemo(() => Object.fromEntries(users.map((u) => [u.id, u.name])), [users]);
+  // Rows ticked in the first column, for the same bulk actions as the List view.
+  const [selected, setSelected] = React.useState<string[]>([]);
+  const toggleRow = (id: string, on: boolean) => setSelected((s) => (on ? [...new Set([...s, id])] : s.filter((x) => x !== id)));
   // Managers view; stage data changes need the override permission and planning fields need items.plan.
   const override = viewer.perms.includes("work.override");
   const planner = viewer.perms.includes("items.plan");
@@ -430,6 +433,7 @@ export function SheetGrid({
 
   return (
     <div className="space-y-3">
+      {selected.length > 0 && <BulkBar selected={selected} onClear={() => setSelected([])} users={users} perms={viewer.perms} tz={tz} rows={rows} leads={viewer.leads} />}
       <div className="flex flex-wrap items-center gap-2">
         <Select value={preset.key} onValueChange={(v) => update({ preset: v } as never, { resetPage: false })}>
           <SelectTrigger size="sm" className="h-8 w-56 text-xs" aria-label="Sheet preset">
@@ -527,7 +531,16 @@ export function SheetGrid({
                     className={cn("border-b bg-muted px-2 py-2 text-[11px] font-semibold tracking-wide whitespace-nowrap text-muted-foreground uppercase", i < frozen && "sticky z-30", i === frozen - 1 && "border-r")}
                     style={{ width: widths[i], minWidth: widths[i], left: i < frozen ? left(i) : undefined }}
                   >
-                    {SHEET_COLUMNS[c]?.label ?? c}
+                    <span className="flex items-center gap-2">
+                      {i === 0 && (
+                        <Checkbox
+                          aria-label="Select all rows"
+                          checked={rows.length > 0 && selected.length === rows.length ? true : selected.length ? "indeterminate" : false}
+                          onCheckedChange={(v) => setSelected(v ? rows.map((r) => r.id) : [])}
+                        />
+                      )}
+                      {SHEET_COLUMNS[c]?.label ?? c}
+                    </span>
                   </th>
                 ))}
               </tr>
@@ -589,6 +602,7 @@ export function SheetGrid({
                                   style={{ width: widths[i], minWidth: widths[i], maxWidth: widths[i], left: i < frozen ? left(i) : undefined }}
                                 >
                                   <div className="flex min-w-0 items-center gap-1">
+                                    {i === 0 && <Checkbox aria-label={`Select ${r.code}`} checked={selected.includes(r.id)} onCheckedChange={(v) => toggleRow(r.id, v === true)} className="mr-1 shrink-0" />}
                                     <div className="min-w-0 flex-1">{repeat(c) ? null : renderCell(r, c)}</div>
                                     {state === "saving" && <LoaderIcon className="size-3 shrink-0 animate-spin text-muted-foreground" aria-label="Saving" />}
                                     {state === "saved" && <span className="shrink-0 text-[10px] text-[var(--st-done-fg)]">Saved</span>}

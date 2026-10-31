@@ -16,7 +16,7 @@ How new work is added without disturbing what already runs:
 - [x] List view bulk bar: rename, fill field, set status, export selected, move to trash
 - [x] Deleting an item also removes its part when nothing else uses it, so Overview stops listing it
 - [x] Overview and Coverage: multi-select grade and subject filters; subjects follow the chosen grades
-- [ ] Row selection and bulk actions in Sheet view
+- [x] Row selection and bulk actions in Sheet view (Phase 10)
 
 ## Phase 2: Editorial workflow (done)
 
@@ -27,7 +27,7 @@ How new work is added without disturbing what already runs:
 - [x] Handovers (`/handovers`): send a batch to the next team (List view bulk bar or New handover); the receiver accepts what arrived or marks items missing with a note (sent back as rework to the sender and their lead); To check / Sent / All tabs, filters by status, stage, person and dates, search, sorting, CSV export, editable note, cancel before anything is checked
 - [x] Stage progress imports notify the next team, both leads and the managers
 - [x] New permissions (Admin, Roles and permissions): Handovers page, Assign work in bulk, Manage checklist templates, Verify checklist items; added to existing roles automatically
-- [ ] Unread handover count on the sidebar
+- [x] Unread handover count on the sidebar (Phase 10)
 - [x] Team flow on Home: team members work from a board of their own work (To do, In progress, Done not sent, With team lead), fill in checklists, links and lengths right on the card, mark work done and send it to the team lead one at a time or all at the end of the day
 - [x] Only team leads hand over: the lead approves or returns (with a note) what the team sends, hands over what is ready to the next team's lead, accepts what arrives and assigns it, all from the lead desk on Home
 - [x] Permissions: team members see only their own work (no Overview, lists, board, reports or item pages); team leads see the whole workflow from recording to published; publication keeps item pages and the calendar
@@ -67,7 +67,7 @@ How new work is added without disturbing what already runs:
 - [x] Owners (`/owners`): products (videos, notes, exams, decks, questions), production health, published per week, work per stage, curriculum coverage per grade, people per department, Dev and Marketing progress per project, monthly marketing KPIs
 - [x] Department reports: heads and leads (and production managers) write periodic reports with the period's numbers filled in; owners are notified and read them
 - [x] Chat: owners are hidden from people without "Start direct chats with owners" (Admin, Managers and owners have it); owners can message anyone, and those people can reply
-- [ ] Dev integrations (GitHub issues and pull requests), time tracking per task
+- [x] Dev integrations (GitHub issues and pull requests), time tracking per task (Phases 5c and 7b)
 
 ## Phase 5a: Calls with our own ringing (done)
 
@@ -321,16 +321,16 @@ Every production team runs the same loop: the lead assigns; team members start, 
 - **Members**: Start (timer), camera codes or raw links with minutes, checklist (presenter and script, audio, framing and light, board legible, files backed up), Done, Send.
 - **Hands over**: approved parts with at least one recording logged and the required checklist ticked.
 - Next:
-  - [ ] Session planning: book a studio slot, presenter and camera per part, with a day view for the lead.
-  - [ ] Retake requests from Editing or Publication land as a new Recording task with the reason.
+  - [x] Session planning: book a studio slot, presenter and camera per part, with a week view for the lead (Phase 10).
+  - [x] Retake requests from Editing or Publication land as a new Recording task with the reason (redo; Phase 10 adds a notice to the team's leads).
 
 ### Editing
 
 - **Lead**: accepts or marks missing what Recording handed over, assigns accepted parts (Home, To assign; or Assign work), reviews the master, returns with a note or approves, hands over to Uploading.
 - **Editors**: Start, edited master, captions and thumbnail links (captions and thumbnail required by default, Settings, Workflow), final length, checklist (cuts against script, audio cleaned, graphics and spelling, captions synced, export preset), Done, Send.
 - Next:
-  - [ ] Review comments pinned to a time in the master ("0:42: trim the silence").
-  - [ ] Version compare: the lead sees what changed since the last return.
+  - [x] Review comments pinned to a time in the master ("0:42: trim the silence") (Phase 10).
+  - [x] Version compare: the lead sees what changed since the last return (Phase 10).
 
 ### Uploading
 
@@ -343,7 +343,7 @@ Every production team runs the same loop: the lead assigns; team members start, 
 
 - **Lead and reviewers**: receive the handover (Handovers: Received or Missing), Start review, checklist (educational accuracy, placement, thumbnail and title, release window), Review (approve, or request changes and send back to any earlier team), Schedule, Confirm live per destination. Published when every required destination is live.
 - Next:
-  - [ ] Release calendar with drag to reschedule, and a weekly release plan per subject.
+  - [x] Release calendar with drag to reschedule, and a weekly release plan per subject (Phase 10).
 
 ### Training material (done)
 
@@ -451,3 +451,36 @@ Attendance (`/attendance`, in everyone's My space) with a kiosk at the entrance,
 
 - [ ] Absence and lateness in HR reports and performance reviews
 - [ ] Shift rotas (different shifts on different weeks) and night shifts across midnight
+
+## Phase 10: Completing the open items
+
+Everything still open across the earlier phases, in three batches, then face check-in, then the native app shell (Phase 5b) last.
+
+### Batch A: production workflow (done)
+
+- [x] Sidebar badges: handover batches waiting for you (sent to you or your team) and attendance corrections waiting for your decision
+- [x] Redo and retake requests also notify the team leads of the stage that has to redo the work
+- [x] Review notes pinned to a time in the master (m:ss): the lead adds them on the card, the person doing the work ticks them off, open notes start the return message, and the team member is told
+- [x] "Changed since you returned it": the lead sees what was done after a return (links, checklist, lengths, notes) from the history
+- [x] Studio sessions (`/sessions`): the Recording lead (or a manager) books a studio, start, length, presenter and camera operator for several parts at once; studio and operator clashes are refused; unassigned parts can go to the operator; the operator is told; sessions move by dragging to another day or with Move, and are marked recorded or cancelled; the session shows on the recorder's card; studios are listed in Settings, Lists
+- [x] Calendar: scheduled releases drag to another day (Publication and managers); Release plan view with planned and live releases per subject for the next eight weeks
+- [x] Sheet view: tick rows (or all) for the same bulk actions as the List view
+
+### Batch B: insights (next)
+
+- [ ] Finance view in the Company overview: spend against each department's budget
+- [ ] Absence and lateness in HR reports and performance reviews
+- [ ] Shift rotas and night shifts across midnight
+
+### Batch C: communication and integrations
+
+- [ ] Email copies of important notifications (per person, by type) and scheduled sending
+- [ ] Group calls of up to 4 people in the app
+- [ ] Google account connection for Meet links
+- [ ] Upload straight to YouTube with the video ID filled in
+- [ ] Help chapters for departments made from templates
+
+### Then
+
+- [ ] Face check-in at the kiosk (Phase 9, step 2), with written guidelines
+- [ ] Native app shell (Phase 5b)

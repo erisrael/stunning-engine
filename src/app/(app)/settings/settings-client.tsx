@@ -466,6 +466,11 @@ export function ListSettings({ settings }: { settings: Settings }) {
           <Input value={l.terms.join(", ")} onChange={(e) => setL({ ...l, terms: e.target.value.split(",").map((x) => x.trim()).filter(Boolean) })} />
           <p className="text-xs text-muted-foreground">Comma separated.</p>
         </div>
+        <div className="space-y-2">
+          <p className="text-sm font-semibold">Studios</p>
+          <Input value={(l.studios ?? []).join(", ")} onChange={(e) => setL({ ...l, studios: e.target.value.split(",").map((x) => x.trim()).filter(Boolean) })} aria-label="Studios" />
+          <p className="text-xs text-muted-foreground">Rooms the Recording lead books sessions in. Comma separated.</p>
+        </div>
         <div className="lg:col-span-2"><Button onClick={() => save(l, "Lists saved")}>Save lists</Button></div>
       </CardContent>
     </Card>
