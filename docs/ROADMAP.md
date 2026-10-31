@@ -44,7 +44,7 @@ How new work is added without disturbing what already runs:
 - [x] Push notifications (Web Push) on browser and phone: every notification and every chat message (except muted chats); signing keys generated automatically; installable app (Add to Home Screen, required on iPhone)
 - [x] Calls: one-click Jitsi video call, or share a Google Meet link (both open in a new tab)
 - [x] In-app calls with our own ringing (Phase 5a)
-- [ ] Connecting a Google account to create Meet links automatically
+- [x] Connecting a Google account to create Meet links automatically (Phase 10)
 
 ## Phase 4: Email (done)
 
@@ -55,7 +55,7 @@ How new work is added without disturbing what already runs:
 - [x] Templates: create, edit, delete, search; shared or private; placeholders {{first_name}}, {{name}}, {{email}}, {{role}}, {{sender_name}}, {{date}}
 - [x] Sent log with the result per recipient; search, filters (status, sender, dates, only mine), sorting, CSV export; resend to failed recipients
 - [x] Permissions: Send email (Admin and Managers by default; can be given to any role) and Manage email settings (Admin)
-- [ ] Email copies of important notifications (per person, by type) and scheduled sending
+- [x] Email copies of important notifications (per person, by type) and scheduled sending (Phase 10)
 
 ## Phase 5: Departments and new modules (done)
 
@@ -80,7 +80,7 @@ In-app voice and video calls with ringing on the other side and a clear end, bui
 - [x] Call card in the chat (Voice call 12:34, Missed voice call, Declined, No answer) with Call back
 - [x] During a call: mute, camera on/off, switch camera (phones), screen share (computers, video calls), timer, connection quality, minimise to a corner while using the app
 - [x] Media directly between the two devices (WebRTC), encrypted end to end; free public STUN, and Cloudflare's TURN relay (free for 1,000 GB a month) for networks that block direct connections, set in Settings, Calls with Test relay, or CLOUDFLARE_TURN_KEY_ID and CLOUDFLARE_TURN_API_TOKEN
-- [ ] Group calls of up to 4 people in the app
+- [x] Group calls of up to 4 people in the app (Phase 10)
 - [ ] Continuous ringing on a locked phone: comes with the native app (Phase 5b)
 
 ## Phase 5b: Native app shell (built last, after every other phase)
@@ -337,7 +337,7 @@ Every production team runs the same loop: the lead assigns; team members start, 
 - **Lead**: accepts from Editing, assigns, approves, hands over to Publication.
 - **Uploaders**: Start, the video ID or link per required destination (Settings, Destinations), processing state, playback and details checks, checklist (matches the approved master, metadata, processing finished, playback end to end, captions attached), Done, Send.
 - Next:
-  - [ ] Upload straight from the app to YouTube and the Myseed App, with the ID filled in automatically.
+  - [x] Upload straight from the app to YouTube, with the ID filled in automatically (Phase 10). The Myseed App upload needs the app's own upload API.
 
 ### Publication
 
@@ -359,7 +359,7 @@ Every production team runs the same loop: the lead assigns; team members start, 
   - Searchable; the question mark next to each page's title opens the matching chapter
 - [x] **Tooltips**: status chips, Overview cells, action buttons and the Home board columns explain themselves on hover, all written once in `src/lib/help.ts`
 - [x] **Get started**: a first-login tour per role with a short animation of how work moves, then a checklist of first steps. Saved per user (shown once per role), with "Replay tour" in Help
-- [ ] Chapters for each department created from templates, and more screenshots as screens settle
+- [x] Chapters for each department created from templates (Phase 10), and more screenshots as screens settle
 
 ## Phase 7: HR (people operations) (done)
 
@@ -473,13 +473,15 @@ Everything still open across the earlier phases, in three batches, then face che
 - [x] Night shifts that end the next morning: a check-out after midnight closes the night that started the day before, hours and overtime count across midnight, corrections and hand-made times understand it
 - [x] Rotas: one shift per week for up to four weeks, repeating from a chosen week; the board, timesheets and payroll use the shift of each day
 
-### Batch C: communication and integrations (next)
+### Batch C: communication and integrations (done)
 
-- [ ] Email copies of important notifications (per person, by type) and scheduled sending
-- [ ] Group calls of up to 4 people in the app
-- [ ] Google account connection for Meet links
-- [ ] Upload straight to YouTube with the video ID filled in
-- [ ] Help chapters for departments made from templates
+- [x] Email copies of notifications: each person chooses, per type, which notices also come by email (Notifications, Preferences). They go through an outbox in the background, tried three times, using the workspace's email account
+- [x] Send later in Email: pick a date and time in the send dialog; scheduled messages are listed with their state and can be cancelled; they go out with the scheduled checks (within about ten minutes)
+- [x] Group calls in the app for up to four people in a chat group (voice or video): a call page in its own tab, a direct connection between each pair of browsers (encrypted, no media through the server), mute, camera, leave; a Join card in the chat and a notice to the group; a fifth person is told the call is full; closing the tab leaves the call
+- [x] Google account per person (Profile, Google account), using the workspace's Google OAuth client: "Start a Google Meet" in a group chat creates the meeting and posts the link; the Uploading card uploads the master straight from the computer to YouTube (unlisted) and fills in the video ID
+- [x] Help: a chapter for every department written from its own setup (statuses, types, required fields, checklists, review, requests, KPIs), plus Attendance and Studio sessions chapters
+
+**Google setup (Admin, once).** In the Google Cloud project that holds the sign-in client (Admin, Sign-in): enable the Google Calendar API and the YouTube Data API v3; add the scopes `calendar.events` and `youtube.upload` to the OAuth consent screen; add the redirect URI `https://<your site>/api/google/callback` to the OAuth client. Until the consent screen is published, only test users added there can connect. These Google steps follow Google's documented APIs and could not be run here without a real Google account; try one Meet link and one short YouTube upload after setting it up.
 
 ### Then
 
