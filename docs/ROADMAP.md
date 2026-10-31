@@ -419,7 +419,7 @@ A Finance module (`/finance`) with Finance Manager and Accountant roles, separat
 - [x] **Payables and receivables**: bills with attachments and monthly repeats; invoices with VAT and numbering; vendors and customers
 - [x] **Revenue**: money in by product and channel, feeding the Company overview's Money section
 - [x] **Reports**: revenue, spending and net; profit and loss by department and ledger account; cost per published video (spending and payroll per video, and logged hours at the average hourly cost); payroll and tax and pension reports; Excel downloads
-- [ ] Finance view in the Company overview switcher with spend against each department's budget
+- [x] Finance view in the Company overview switcher with spend against each department's budget (Phase 10)
 
 ## Phase 9: Attendance
 
@@ -449,8 +449,8 @@ Attendance (`/attendance`, in everyone's My space) with a kiosk at the entrance,
 
 ### Later
 
-- [ ] Absence and lateness in HR reports and performance reviews
-- [ ] Shift rotas (different shifts on different weeks) and night shifts across midnight
+- [x] Absence and lateness in HR reports and performance reviews (Phase 10)
+- [x] Shift rotas (different shifts on different weeks) and night shifts across midnight (Phase 10)
 
 ## Phase 10: Completing the open items
 
@@ -466,13 +466,14 @@ Everything still open across the earlier phases, in three batches, then face che
 - [x] Calendar: scheduled releases drag to another day (Publication and managers); Release plan view with planned and live releases per subject for the next eight weeks
 - [x] Sheet view: tick rows (or all) for the same bulk actions as the List view
 
-### Batch B: insights (next)
+### Batch B: insights (done)
 
-- [ ] Finance view in the Company overview: spend against each department's budget
-- [ ] Absence and lateness in HR reports and performance reviews
-- [ ] Shift rotas and night shifts across midnight
+- [x] Finance view in the Company overview (owners and Finance only): revenue, spending, payroll and net for the year; each department's spend and payroll against its budget, with the alert level, over-budget in red and a marker for an even pace through the year; month by month; other budgets
+- [x] Absence and lateness in the HR report (per month and per department, with an absence rate; in the CSV) and in performance review evidence (days absent, late arrivals and minutes in the period)
+- [x] Night shifts that end the next morning: a check-out after midnight closes the night that started the day before, hours and overtime count across midnight, corrections and hand-made times understand it
+- [x] Rotas: one shift per week for up to four weeks, repeating from a chosen week; the board, timesheets and payroll use the shift of each day
 
-### Batch C: communication and integrations
+### Batch C: communication and integrations (next)
 
 - [ ] Email copies of important notifications (per person, by type) and scheduled sending
 - [ ] Group calls of up to 4 people in the app

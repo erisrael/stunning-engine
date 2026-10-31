@@ -122,6 +122,21 @@ export function localToIso(date: string, hhmm: string, tz: string) {
 
 export const weekday = (date: string) => new Date(`${date}T12:00:00Z`).getUTCDay();
 
+// A shift that ends after midnight (22:00 to 06:00) belongs to the day it starts.
+export const overnight = (s: Pick<Shift, "start" | "end">) => toMin(s.end) <= toMin(s.start);
+
+// The shift a person works on a day: their rota (one shift per week, repeating from the rota's first week) or
+// their single shift, else the default.
+export type ShiftAssign = { shiftKey: string | null; rota: string[] | null; rotaStart: string | null };
+export function shiftKeyOn(a: ShiftAssign | null | undefined, day: string, defaultKey: string) {
+  if (a?.rota?.length && a.rotaStart) {
+    const n = a.rota.length;
+    const weeks = Math.floor((Date.parse(`${day}T12:00:00Z`) - Date.parse(`${a.rotaStart}T12:00:00Z`)) / (7 * 864e5));
+    return a.rota[((weeks % n) + n) % n]!;
+  }
+  return a?.shiftKey ?? defaultKey;
+}
+
 export type DayEvent = { kind: "in" | "out"; minutes: number; source: Source };
 export type DayMark = { status: MarkStatus; inMin: number | null; outMin: number | null; note: string | null; source: "lead" | "hr"; reviewed: boolean };
 export type DayInput = {
@@ -155,7 +170,9 @@ export type DayResult = {
 // One person's day: a hand-made mark wins, then leave, holidays and days off, then the check-ins against the shift.
 export function computeDay(d: DayInput): DayResult {
   const start = toMin(d.shift.start);
-  const end = toMin(d.shift.end);
+  // Night shifts end the next morning: minutes past midnight count from the start day.
+  const night = overnight(d.shift);
+  const end = toMin(d.shift.end) + (night ? 24 * 60 : 0);
   const ev = [...d.events].sort((a, b) => a.minutes - b.minutes);
   const base: DayResult = {
     date: d.date,
@@ -188,7 +205,8 @@ export function computeDay(d: DayInput): DayResult {
   };
 
   if (d.mark) {
-    const m = d.mark;
+    const m = { ...d.mark };
+    if (night && m.outMin !== null && m.outMin < start) m.outMin += 24 * 60;
     const t = m.inMin !== null || m.outMin !== null ? timed(m.inMin, m.outMin) : null;
     const fullDay = Math.max(0, end - start - d.shift.breakMin);
     return {
@@ -220,8 +238,10 @@ export function computeDay(d: DayInput): DayResult {
   const lastOut = [...ev].reverse().find((e) => e.kind === "out")?.minutes ?? null;
   const t = timed(firstIn, lastOut);
   const net = worked >= 6 * 60 ? worked - d.shift.breakMin : worked;
-  const past = d.date < d.now.date;
-  const missingOut = open !== null && (past || (d.date === d.now.date && d.now.minutes > end + 4 * 60));
+  // Minutes into this day's shift right now (a night shift's day runs on past midnight), or null when it is over.
+  const nextDay = new Date(Date.parse(`${d.date}T12:00:00Z`) + 864e5).toISOString().slice(0, 10);
+  const nowRel = d.date === d.now.date ? d.now.minutes : night && nextDay === d.now.date ? d.now.minutes + 24 * 60 : null;
+  const missingOut = open !== null && (nowRel === null ? d.date < d.now.date : nowRel > end + 4 * 60);
   const workday = d.shift.workdays.includes(weekday(d.date));
 
   if (d.leave && !d.leave.half && firstIn === null) return { ...base, status: "leave" };
@@ -229,7 +249,7 @@ export function computeDay(d: DayInput): DayResult {
     if (d.holiday) return { ...base, status: "holiday", note: d.holiday };
     if (!workday) return { ...base, status: "off" };
     if (d.leave?.half) return { ...base, status: "half_day" };
-    const notYet = d.date > d.now.date || (d.date === d.now.date && d.now.minutes < end);
+    const notYet = d.date > d.now.date || (nowRel !== null && nowRel < end);
     return { ...base, status: notYet ? "not_in" : "absent" };
   }
   // Worked on a holiday or a day off: all of it is overtime.

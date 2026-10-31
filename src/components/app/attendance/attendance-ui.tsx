@@ -825,7 +825,7 @@ export function Timesheets({ rows, month }: { rows: TimesheetRow[]; month: strin
 // Setup (HR): rules, shifts, people, kiosks
 // ---------------------------------------------------------------------------
 
-type PersonSetup = { id: string; code: string; name: string; department: string | null; shift: string; hasPin: boolean; badge: string | null };
+type PersonSetup = { id: string; code: string; name: string; department: string | null; shift: string; rota: string[] | null; hasPin: boolean; badge: string | null };
 type KioskInfo = { id: string; name: string; active: boolean; lastSeenAt: string | null; paired: boolean; setupExpires: string | null; createdAt: string };
 
 function Row({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
@@ -880,7 +880,7 @@ function Rules({ cfg }: { cfg: AttendanceConfig }) {
                 <Input type="time" value={s.start} onChange={(e) => setShift(i, { start: e.target.value })} className="h-8 w-28" aria-label="Start" />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs">End</Label>
+                <Label className="text-xs">End{s.end && s.start && s.end <= s.start ? " (next day)" : ""}</Label>
                 <Input type="time" value={s.end} onChange={(e) => setShift(i, { end: e.target.value })} className="h-8 w-28" aria-label="End" />
               </div>
               <div className="space-y-1">
@@ -975,6 +975,7 @@ function People({ cfg, people }: { cfg: AttendanceConfig; people: PersonSetup[] 
   const [shift, setShift] = React.useState(cfg.defaultShift);
   const [q, setQ] = React.useState("");
   const [shownPin, setShownPin] = React.useState<{ name: string; pin: string } | null>(null);
+  const [rota, setRota] = React.useState<{ keys: string[]; start: string } | null>(null);
   const needle = q.trim().toLowerCase();
   const rows = people.filter((p) => !needle || `${p.name} ${p.code} ${p.department ?? ""}`.toLowerCase().includes(needle));
   const ids = [...picked];
@@ -1003,6 +1004,9 @@ function People({ cfg, people }: { cfg: AttendanceConfig; people: PersonSetup[] 
           </Select>
           <Button size="sm" variant="outline" disabled={busy || !ids.length} onClick={() => act(() => A.assignShiftAction(ids, shift), "Shift set")}>
             <ClockIcon /> Put on shift
+          </Button>
+          <Button size="sm" variant="outline" disabled={!ids.length} onClick={() => setRota({ keys: [cfg.shifts[0]!.key, cfg.shifts[1]?.key ?? cfg.shifts[0]!.key], start: new Date().toISOString().slice(0, 10) })}>
+            Rota
           </Button>
           <Button size="sm" variant="outline" disabled={busy || !ids.length} onClick={() => act(() => A.newBadgesAction(ids), "New badges made; print them")}>
             New badges
@@ -1040,7 +1044,7 @@ function People({ cfg, people }: { cfg: AttendanceConfig; people: PersonSetup[] 
                       {p.department ? ` · ${p.department}` : ""}
                     </p>
                   </td>
-                  <td className="text-xs">{label(p.shift)}</td>
+                  <td className="text-xs">{p.rota?.length ? `Rota: ${p.rota.map(label).join(" / ")}` : label(p.shift)}</td>
                   <td className="text-xs">{p.hasPin ? "Set" : <span className="text-muted-foreground">None</span>}</td>
                   <td className="text-xs">{p.badge ? "Made" : <span className="text-muted-foreground">None</span>}</td>
                   <td className="pr-2 text-right">
@@ -1062,6 +1066,57 @@ function People({ cfg, people }: { cfg: AttendanceConfig; people: PersonSetup[] 
           </table>
         </div>
       </CardContent>
+      <Dialog open={!!rota} onOpenChange={(o) => !o && setRota(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rota for {ids.length} {ids.length === 1 ? "person" : "people"}</DialogTitle>
+            <DialogDescription>One shift per week, repeating. Week 1 starts in the week of the date you choose.</DialogDescription>
+          </DialogHeader>
+          {rota && (
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="rota-start">Week 1 starts</Label>
+                <Input id="rota-start" type="date" value={rota.start} onChange={(e) => setRota({ ...rota, start: e.target.value })} className="w-44" />
+              </div>
+              {rota.keys.map((k, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <span className="w-16 text-sm">Week {i + 1}</span>
+                  <Select value={k} onValueChange={(v) => setRota({ ...rota, keys: rota.keys.map((x, j) => (j === i ? v : x)) })}>
+                    <SelectTrigger className="w-64" aria-label={`Week ${i + 1} shift`}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {cfg.shifts.map((s) => (
+                        <SelectItem key={s.key} value={s.key}>
+                          {s.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {rota.keys.length > 2 && (
+                    <Button size="icon-sm" variant="ghost" aria-label={`Remove week ${i + 1}`} onClick={() => setRota({ ...rota, keys: rota.keys.filter((_, j) => j !== i) })}>
+                      <Trash2Icon />
+                    </Button>
+                  )}
+                </div>
+              ))}
+              {rota.keys.length < 4 && (
+                <Button size="sm" variant="outline" onClick={() => setRota({ ...rota, keys: [...rota.keys, cfg.shifts[0]!.key] })}>
+                  <PlusIcon /> Add a week
+                </Button>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRota(null)}>
+              Cancel
+            </Button>
+            <Button disabled={busy} onClick={async () => rota && (await act(() => A.assignRotaAction(ids, rota.keys, rota.start), "Rota set")) && setRota(null)}>
+              Save rota
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <Dialog open={!!shownPin} onOpenChange={(o) => !o && setShownPin(null)}>
         <DialogContent>
           <DialogHeader>

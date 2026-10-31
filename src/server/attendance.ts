@@ -21,7 +21,9 @@ import {
   localParts,
   localToIso,
   monthTotals,
+  overnight,
   overtimeHours,
+  shiftKeyOn,
   toMin,
   unpaidDays,
   type AttendanceConfig,
@@ -32,6 +34,7 @@ import {
   type MarkStatus,
   type MonthTotals,
   type Shift,
+  type ShiftAssign,
   type Source,
 } from "@/lib/attendance";
 import { STAGES, type Stage } from "@/lib/domain";
@@ -64,7 +67,8 @@ export async function saveAttendanceConfig(user: AppUser, input: Partial<Attenda
     const label = clean(s.label, 60);
     const key = clean(s.key, 30).toLowerCase().replace(/[^a-z0-9_]/g, "_") || `shift_${i + 1}`;
     if (!label) throw new WorkflowError("VALIDATION", "Name every shift.");
-    if (!isTime(s.start) || !isTime(s.end) || toMin(s.end) <= toMin(s.start)) throw new WorkflowError("VALIDATION", `${label}: the start must be before the end (HH:MM).`);
+    // An end before the start is a night shift that ends the next morning.
+    if (!isTime(s.start) || !isTime(s.end) || toMin(s.end) === toMin(s.start)) throw new WorkflowError("VALIDATION", `${label}: give the start and end (HH:MM); they cannot be the same.`);
     const workdays = [...new Set((s.workdays ?? []).map(Number).filter((d) => d >= 0 && d <= 6))].sort();
     if (!workdays.length) throw new WorkflowError("VALIDATION", `${label}: choose the working days.`);
     return { key, label, start: s.start, end: s.end, graceMin: num(s.graceMin, 15, 0, 120), breakMin: num(s.breakMin, 60, 0, 180), workdays };
@@ -162,10 +166,15 @@ export function monthRange(month: string) {
   return { from: `${month}-01`, to: `${month}-${String(last).padStart(2, "0")}` };
 }
 
-export async function shiftOf(employeeId: string, cfg?: AttendanceConfig): Promise<Shift> {
+type AssignRow = { employee_id: string; shift_key: string | null; rota: string | null; rota_start: string | null };
+const toAssign = (r: AssignRow | undefined): ShiftAssign | null => (r ? { shiftKey: r.shift_key, rota: parseJson<string[] | null>(r.rota, null), rotaStart: r.rota_start } : null);
+const pickShift = (c: AttendanceConfig, key: string) => c.shifts.find((s) => s.key === key) ?? c.shifts.find((s) => s.key === c.defaultShift) ?? c.shifts[0]!;
+
+// The person's shift on a day (their rota week, their shift, or the default).
+export async function shiftOf(employeeId: string, cfg?: AttendanceConfig, day?: string): Promise<Shift> {
   const c = cfg ?? (await attendanceConfig());
-  const key = (await get<{ shift_key: string }>("SELECT shift_key FROM att_shift_assign WHERE employee_id = ?", employeeId))?.shift_key ?? c.defaultShift;
-  return c.shifts.find((s) => s.key === key) ?? c.shifts.find((s) => s.key === c.defaultShift) ?? c.shifts[0]!;
+  const a = toAssign(await get<AssignRow>("SELECT employee_id, shift_key, rota, rota_start FROM att_shift_assign WHERE employee_id = ?", employeeId));
+  return pickShift(c, shiftKeyOn(a, day ?? (await tzNow()).date, c.defaultShift));
 }
 
 export type EventRow = { id: string; kind: "in" | "out"; at: string; minutes: number; source: Source; offline: boolean; note: string | null; distanceM: number | null };
@@ -199,22 +208,20 @@ async function loadDays(emps: Emp[], from: string, to: string, opts: { allDays?:
       from,
       ...ids,
     ),
-    all<{ employee_id: string; shift_key: string }>(`SELECT employee_id, shift_key FROM att_shift_assign WHERE employee_id IN (${ph})`, ...ids),
+    all<AssignRow>(`SELECT employee_id, shift_key, rota, rota_start FROM att_shift_assign WHERE employee_id IN (${ph})`, ...ids),
   ]);
   const holidays = new Map(s.calendar.holidays.map((h) => [h.date, h.name]));
   const now = localParts(nowIso(), tz);
   // Nothing counts before attendance started, so nobody is absent for days before it existed.
   const countFrom = opts.allDays ? from : cfg.startDate ?? (await get<{ d: string | null }>("SELECT MIN(d) AS d FROM (SELECT MIN(day) AS d FROM att_events UNION ALL SELECT MIN(day) FROM att_marks) x"))?.d ?? now.date;
-  const shiftFor = (id: string) => {
-    const key = assigns.find((a) => a.employee_id === id)?.shift_key ?? cfg.defaultShift;
-    return cfg.shifts.find((x) => x.key === key) ?? cfg.shifts[0]!;
-  };
+  const shiftFor = (id: string, day: string) => pickShift(cfg, shiftKeyOn(toAssign(assigns.find((a) => a.employee_id === id)), day, cfg.defaultShift));
   for (const e of emps) {
-    const shift = shiftFor(e.id);
     const evByDay = new Map<string, EventRow[]>();
     for (const ev of events.filter((x) => x.employee_id === e.id)) {
       const list = evByDay.get(ev.day) ?? [];
-      list.push({ id: ev.id, kind: ev.kind, at: ev.at, minutes: localParts(ev.at, tz).minutes, source: ev.source, offline: !!ev.offline, note: ev.note, distanceM: ev.distance_m === null ? null : Number(ev.distance_m) });
+      // A night shift's check-out after midnight counts on from the day it started.
+      const lp = localParts(ev.at, tz);
+      list.push({ id: ev.id, kind: ev.kind, at: ev.at, minutes: lp.minutes + (lp.date > ev.day ? 24 * 60 : 0), source: ev.source, offline: !!ev.offline, note: ev.note, distanceM: ev.distance_m === null ? null : Number(ev.distance_m) });
       evByDay.set(ev.day, list);
     }
     const days: DayResult[] = [];
@@ -228,7 +235,7 @@ async function loadDays(emps: Emp[], from: string, to: string, opts: { allDays?:
       days.push(
         computeDay({
           date: day,
-          shift,
+          shift: shiftFor(e.id, day),
           events: (evByDay.get(day) ?? []).map((x): DayEvent => ({ kind: x.kind, minutes: x.minutes, source: x.source })),
           leave: lv ? { label: lv.label ?? "Leave", paid: lv.paid === null ? true : !!lv.paid, half: !!lv.half_day } : null,
           holiday: holidays.get(day) ?? null,
@@ -298,7 +305,15 @@ async function punch(
 ) {
   const tz = (await getSettings()).workspace.timezone;
   const at = input.at ?? nowIso();
-  const day = localParts(at, tz).date;
+  const lp = localParts(at, tz);
+  let day = lp.date;
+  // Early morning, after a night shift that started yesterday and is still open: this closes yesterday.
+  const yesterday = new Date(Date.parse(`${day}T12:00:00Z`) - 864e5).toISOString().slice(0, 10);
+  const prevShift = await shiftOf(employeeId, undefined, yesterday);
+  if (overnight(prevShift) && lp.minutes <= toMin(prevShift.end) + 4 * 60) {
+    const open = await get<{ kind: string }>("SELECT kind FROM att_events WHERE employee_id = ? AND day = ? AND voided = 0 ORDER BY at DESC LIMIT 1", employeeId, yesterday);
+    if (open?.kind === "in") day = yesterday;
+  }
   const prev = await get<{ kind: "in" | "out"; at: string }>("SELECT kind, at FROM att_events WHERE employee_id = ? AND day = ? AND voided = 0 AND at <= ? ORDER BY at DESC LIMIT 1", employeeId, day, at);
   // A second scan within a minute is the same check-in, not a check-out.
   if (prev && Math.abs(Date.parse(at) - Date.parse(prev.at)) < 60e3) return { kind: prev.kind, at: prev.at, day, duplicate: true };
@@ -365,15 +380,14 @@ export async function dailyBoard(user: AppUser, day: string) {
   const cfg = await attendanceConfig();
   // The board lists everyone on any day, so a lead can record days before the first check-in.
   const data = await loadDays(emps, day, day, { allDays: true });
-  const assigns = await all<{ employee_id: string; shift_key: string }>("SELECT employee_id, shift_key FROM att_shift_assign");
   const depts = new Map((await hrDepartments()).map((d) => [d.key, d.label]));
   const rows: BoardRow[] = [];
   for (const e of emps) {
     const d = data.get(e.id);
     const result = d?.days[0];
     if (!result) continue;
-    const key = assigns.find((a) => a.employee_id === e.id)?.shift_key ?? cfg.defaultShift;
-    rows.push({ employeeId: e.id, name: e.full_name, code: e.code, department: e.department ? (depts.get(e.department) ?? e.department) : null, jobTitle: e.job_title, shift: cfg.shifts.find((s) => s.key === key)?.label ?? key, result, events: d.events.get(day) ?? [] });
+    const shift = await shiftOf(e.id, cfg, day);
+    rows.push({ employeeId: e.id, name: e.full_name, code: e.code, department: e.department ? (depts.get(e.department) ?? e.department) : null, jobTitle: e.job_title, shift: shift.label, result, events: d.events.get(day) ?? [] });
   }
   const count = (st: string) => rows.filter((r) => r.result.status === st).length;
   return {
@@ -396,7 +410,8 @@ export async function markDay(user: AppUser, input: { employeeId: string; day: s
   const inTime = input.inTime || null;
   const outTime = input.outTime || null;
   if ((inTime && !isTime(inTime)) || (outTime && !isTime(outTime))) throw new WorkflowError("VALIDATION", "Times are HH:MM.");
-  if (inTime && outTime && toMin(outTime) <= toMin(inTime)) throw new WorkflowError("VALIDATION", "The time out is before the time in.");
+  if (inTime && outTime && toMin(outTime) <= toMin(inTime) && !overnight(await shiftOf(input.employeeId, undefined, input.day)))
+    throw new WorkflowError("VALIDATION", "The time out is before the time in.");
   const note = clean(input.note, 300) || null;
   if (!note) throw new WorkflowError("VALIDATION", "Give the reason, for example \"kiosk broken\" or \"called in sick\". HR reviews it.");
   const emp = await get<{ full_name: string; user_id: string | null }>("SELECT full_name, user_id FROM employees WHERE id = ?", input.employeeId);
@@ -494,7 +509,8 @@ export async function requestCorrection(user: AppUser, input: { day: string; inT
   const outTime = input.outTime || null;
   if (!inTime && !outTime) throw new WorkflowError("VALIDATION", "Give the right time in, time out, or both.");
   if ((inTime && !isTime(inTime)) || (outTime && !isTime(outTime))) throw new WorkflowError("VALIDATION", "Times are HH:MM.");
-  if (inTime && outTime && toMin(outTime) <= toMin(inTime)) throw new WorkflowError("VALIDATION", "The time out is before the time in.");
+  if (inTime && outTime && toMin(outTime) <= toMin(inTime) && !overnight(await shiftOf(employeeId, undefined, input.day)))
+    throw new WorkflowError("VALIDATION", "The time out is before the time in.");
   const reason = clean(input.reason, 300);
   if (!reason) throw new WorkflowError("VALIDATION", "Say what happened, for example \"forgot to check out\".");
   if (await get("SELECT 1 AS x FROM att_corrections WHERE employee_id = ? AND day = ? AND status IN ('pending_lead','pending_hr')", employeeId, input.day))
@@ -533,6 +549,10 @@ export async function decideCorrection(user: AppUser, id: string, input: { decis
   if (input.decision === "reject" && !note) throw new WorkflowError("VALIDATION", "Say why it is not approved.");
   const now = nowIso();
   const tz = (await getSettings()).workspace.timezone;
+  const shift = await shiftOf(c.employee_id, undefined, c.day);
+  const nextDay = new Date(Date.parse(`${c.day}T12:00:00Z`) + 864e5).toISOString().slice(0, 10);
+  // On a night shift, a time earlier than the start is the next morning.
+  const when = (time: string) => localToIso(overnight(shift) && toMin(time) < toMin(shift.start) ? nextDay : c.day, time, tz);
   await tx(async () => {
     await run("UPDATE att_corrections SET status = ?, decided_by = ?, decided_at = ?, decision_note = ? WHERE id = ?", input.decision === "approve" ? "approved" : "rejected", user.id, now, note, id);
     if (input.decision === "approve") {
@@ -545,7 +565,7 @@ export async function decideCorrection(user: AppUser, id: string, input: { decis
           uid("att_"),
           c.employee_id,
           kind,
-          localToIso(c.day, time, tz),
+          when(time),
           c.day,
           `Correction approved by ${user.name}: ${c.reason}`,
           user.id,
@@ -610,12 +630,12 @@ export async function payrollFeed(period: string, employeeIds: string[]) {
 export async function peopleSetup(user: AppUser) {
   needManage(user);
   const cfg = await attendanceConfig();
-  const rows = await all<{ id: string; code: string; full_name: string; department: string | null; shift_key: string | null; pin_hash: string | null; badge: string | null }>(
-    `SELECT e.id, e.code, e.full_name, e.department, s.shift_key, b.pin_hash, b.badge FROM employees e
+  const rows = await all<{ id: string; code: string; full_name: string; department: string | null; shift_key: string | null; rota: string | null; pin_hash: string | null; badge: string | null }>(
+    `SELECT e.id, e.code, e.full_name, e.department, s.shift_key, s.rota, b.pin_hash, b.badge FROM employees e
      LEFT JOIN att_shift_assign s ON s.employee_id = e.id LEFT JOIN att_badges b ON b.employee_id = e.id
      WHERE e.status <> 'left' ORDER BY e.full_name`,
   );
-  return rows.map((r) => ({ id: r.id, code: r.code, name: r.full_name, department: r.department, shift: r.shift_key ?? cfg.defaultShift, hasPin: !!r.pin_hash, badge: r.badge }));
+  return rows.map((r) => ({ id: r.id, code: r.code, name: r.full_name, department: r.department, shift: r.shift_key ?? cfg.defaultShift, rota: parseJson<string[] | null>(r.rota, null), hasPin: !!r.pin_hash, badge: r.badge }));
 }
 
 export async function assignShift(user: AppUser, employeeIds: string[], shiftKey: string) {
@@ -626,14 +646,39 @@ export async function assignShift(user: AppUser, employeeIds: string[], shiftKey
   const now = nowIso();
   for (const id of employeeIds.slice(0, 1000))
     await run(
-      `INSERT INTO att_shift_assign (employee_id, shift_key, updated_by, updated_at) VALUES (?, ?, ?, ?)
-       ON CONFLICT (employee_id) DO UPDATE SET shift_key = excluded.shift_key, updated_by = excluded.updated_by, updated_at = excluded.updated_at`,
+      `INSERT INTO att_shift_assign (employee_id, shift_key, rota, rota_start, updated_by, updated_at) VALUES (?, ?, NULL, NULL, ?, ?)
+       ON CONFLICT (employee_id) DO UPDATE SET shift_key = excluded.shift_key, rota = NULL, rota_start = NULL, updated_by = excluded.updated_by, updated_at = excluded.updated_at`,
       id,
       shiftKey,
       user.id,
       now,
     );
   await audit({ actor: user }, { action: "attendance.settings", summary: `${user.name} put ${employeeIds.length} ${employeeIds.length === 1 ? "person" : "people"} on the ${shift.label} shift` });
+}
+
+// A rota: one shift per week, repeating, from the week of the start date.
+export async function assignRota(user: AppUser, employeeIds: string[], keys: string[], startDate: string) {
+  needManage(user);
+  const cfg = await attendanceConfig();
+  const rota = keys.filter((k) => cfg.shifts.some((s) => s.key === k)).slice(0, 4);
+  if (rota.length < 2) throw new WorkflowError("VALIDATION", "A rota needs at least two weeks; for one shift, use Put on shift.");
+  if (!isDay(startDate)) throw new WorkflowError("VALIDATION", "Choose the week the rota starts.");
+  const wso = (await getSettings()).workspace.weekStartsOn;
+  const t = new Date(`${startDate}T12:00:00Z`);
+  const weekStart = new Date(t.getTime() - ((t.getUTCDay() - wso + 7) % 7) * 864e5).toISOString().slice(0, 10);
+  const now = nowIso();
+  for (const id of employeeIds.slice(0, 1000))
+    await run(
+      `INSERT INTO att_shift_assign (employee_id, shift_key, rota, rota_start, updated_by, updated_at) VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT (employee_id) DO UPDATE SET shift_key = excluded.shift_key, rota = excluded.rota, rota_start = excluded.rota_start, updated_by = excluded.updated_by, updated_at = excluded.updated_at`,
+      id,
+      rota[0]!,
+      JSON.stringify(rota),
+      weekStart,
+      user.id,
+      now,
+    );
+  await audit({ actor: user }, { action: "attendance.settings", summary: `${user.name} put ${employeeIds.length} ${employeeIds.length === 1 ? "person" : "people"} on a ${rota.length}-week rota from ${weekStart}` });
 }
 
 async function upsertBadge(employeeId: string, patch: { pinHash?: string | null; badge?: string | null }) {
@@ -853,4 +898,56 @@ export async function attendanceInbox(user: AppUser) {
     get<{ c: number }>("SELECT COUNT(*) AS c FROM att_corrections WHERE status IN ('pending_lead','pending_hr')"),
   ]);
   return { review: Number(review?.c ?? 0), corrections: Number(pending?.c ?? 0) };
+}
+
+// ---------------------------------------------------------------------------
+// HR reports and performance reviews
+// ---------------------------------------------------------------------------
+
+// One person's totals for a period (up to today), for review evidence.
+export async function attendanceTotals(employeeId: string, from: string, to: string): Promise<MonthTotals | null> {
+  const emp = await get<Emp>(`${EMP_SELECT} WHERE id = ?`, employeeId);
+  if (!emp) return null;
+  const { date } = await tzNow();
+  const end = to < date ? to : date;
+  if (end < from) return null;
+  const days = (await loadDays([emp], from, end)).get(employeeId)?.days.filter((d) => d.status !== "not_in") ?? [];
+  return days.length ? monthTotals(days) : null;
+}
+
+// Absence and lateness across the company for a year: per month and per department.
+export async function attendanceYear(year: number) {
+  const { date } = await tzNow();
+  const from = `${year}-01-01`;
+  const to = `${year}-12-31` < date ? `${year}-12-31` : date;
+  const months = Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, "0")}`);
+  const empty = { months: months.map((m) => ({ month: m, absent: 0, late: 0, lateMin: 0, halfDays: 0 })), byDepartment: [] as { key: string; label: string; people: number; absent: number; late: number; lateMin: number; workdays: number; rate: number }[] };
+  if (to < from) return empty;
+  const emps = await all<Emp>(`${EMP_SELECT} WHERE status <> 'left' OR end_date >= ?`, from);
+  const data = await loadDays(emps, from, to);
+  const depts = new Map((await hrDepartments()).map((d) => [d.key, d.label]));
+  const byDept = new Map<string, { people: number; absent: number; late: number; lateMin: number; workdays: number }>();
+  for (const e of emps) {
+    const days = data.get(e.id)?.days.filter((d) => d.status !== "not_in") ?? [];
+    for (const d of days) {
+      const m = empty.months.find((x) => x.month === d.date.slice(0, 7))!;
+      if (d.status === "absent") m.absent++;
+      if (d.status === "late") (m.late++, (m.lateMin += d.lateMin));
+      if (d.status === "half_day") m.halfDays++;
+    }
+    const key = e.department ?? "";
+    const t = monthTotals(days);
+    const g = byDept.get(key) ?? { people: 0, absent: 0, late: 0, lateMin: 0, workdays: 0 };
+    g.people++;
+    g.absent += t.absent;
+    g.late += t.late;
+    g.lateMin += t.lateMin;
+    // Days that were meant to be worked: present, late, half days and absences.
+    g.workdays += t.present + t.halfDays + t.absent;
+    byDept.set(key, g);
+  }
+  empty.byDepartment = [...byDept.entries()]
+    .map(([key, g]) => ({ key, label: depts.get(key) ?? (key || "No department"), ...g, rate: g.workdays ? Math.round((g.absent / g.workdays) * 1000) / 10 : 0 }))
+    .sort((a, b) => b.rate - a.rate);
+  return empty;
 }

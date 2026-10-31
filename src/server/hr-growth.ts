@@ -178,6 +178,10 @@ export type Evidence = {
   goalsDone?: number;
   goalsOpen?: number;
   leaveDays?: number;
+  // From Attendance, for the period.
+  absentDays?: number;
+  lateDays?: number;
+  lateMin?: number;
 };
 
 // What the person did in the period, attached when the review opens and refreshed when the manager reviews.
@@ -185,10 +189,12 @@ async function evidenceFor(employeeId: string, from: string, to: string): Promis
   const e = await get<{ user_id: string | null }>("SELECT user_id FROM employees WHERE id = ?", employeeId);
   const goals = await all<{ status: string; c: number }>("SELECT status, COUNT(*) AS c FROM hr_goals WHERE employee_id = ? GROUP BY status", employeeId);
   const leave = await get<{ d: number }>("SELECT SUM(days) AS d FROM leave_requests WHERE employee_id = ? AND status = 'approved' AND start_date >= ? AND start_date <= ?", employeeId, from, to);
+  const att = await (await import("./attendance")).attendanceTotals(employeeId, from, to);
   const out: Evidence = {
     goalsDone: n(goals.find((g) => g.status === "done")?.c),
     goalsOpen: n(goals.find((g) => g.status === "open")?.c),
     leaveDays: n(leave?.d),
+    ...(att ? { absentDays: att.absent, lateDays: att.late, lateMin: att.lateMin } : {}),
   };
   if (!e?.user_id) return out;
   const end = `${to}T23:59:59Z`;
@@ -528,5 +534,6 @@ export async function hrReport(user: AppUser, year = new Date().getUTCFullYear()
     leave: leave.map((l) => ({ label: l.label, days: n(l.days), people: n(l.people) })),
     training: training.map((t) => ({ title: t.title, assigned: n(t.assigned), done: n(t.done), overdue: n(t.overdue) })),
     hiring: { open: n(hiring?.open), applicants: n(hiring?.applicants), hired: n(hiring?.hired) },
+    attendance: await (await import("./attendance")).attendanceYear(year),
   };
 }

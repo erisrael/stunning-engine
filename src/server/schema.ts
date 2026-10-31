@@ -1776,6 +1776,10 @@ ALTER TABLE recording_sessions ADD COLUMN IF NOT EXISTS operator_id TEXT;
 ALTER TABLE recording_sessions ADD COLUMN IF NOT EXISTS batch_id TEXT;
 CREATE INDEX IF NOT EXISTS idx_recording_sessions_start ON recording_sessions(scheduled_start);
 
+-- Attendance rotas: shifts that change week by week.
+ALTER TABLE att_shift_assign ADD COLUMN IF NOT EXISTS rota TEXT;
+ALTER TABLE att_shift_assign ADD COLUMN IF NOT EXISTS rota_start TEXT;
+
 -- Review notes pinned to a time in the master ("0:42: trim the silence"), per stage attempt.
 CREATE TABLE IF NOT EXISTS item_review_notes (
   id TEXT PRIMARY KEY,

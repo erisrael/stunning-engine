@@ -100,6 +100,8 @@ function EvidenceLine({ e }: { e: Evidence }) {
     e.deptHours ? `${e.deptHours} h logged on tasks` : null,
     `${e.goalsDone ?? 0} goals done, ${e.goalsOpen ?? 0} open`,
     e.leaveDays ? `${e.leaveDays} days of leave` : null,
+    e.absentDays !== undefined ? `${e.absentDays} ${e.absentDays === 1 ? "day" : "days"} absent` : null,
+    e.lateDays ? `late ${e.lateDays} ${e.lateDays === 1 ? "time" : "times"} (${e.lateMin ?? 0} min)` : null,
   ].filter(Boolean);
   return <p className="text-xs text-muted-foreground">Evidence for the period: {parts.join(" · ")}</p>;
 }
@@ -697,6 +699,10 @@ type Report = {
   leave: { label: string; days: number; people: number }[];
   training: { title: string; assigned: number; done: number; overdue: number }[];
   hiring: { open: number; applicants: number; hired: number };
+  attendance: {
+    months: { month: string; absent: number; late: number; lateMin: number; halfDays: number }[];
+    byDepartment: { key: string; label: string; people: number; absent: number; late: number; lateMin: number; workdays: number; rate: number }[];
+  };
 };
 
 function Bars({ rows, label }: { rows: { label: string; count: number }[]; label: (k: string) => string }) {
@@ -739,6 +745,12 @@ export function Reports({ report, departments }: { report: Report; departments: 
       [],
       ["Course", "Assigned", "Done", "Overdue"],
       ...report.training.map((t) => [t.title, t.assigned, t.done, t.overdue]),
+      [],
+      ["Month", "Absent days", "Late days", "Late minutes", "Half days"],
+      ...report.attendance.months.map((m) => [m.month, m.absent, m.late, m.lateMin, m.halfDays]),
+      [],
+      ["Department", "People", "Absent days", "Absence rate %", "Late days", "Late minutes"],
+      ...report.attendance.byDepartment.map((d) => [d.label, d.people, d.absent, d.rate, d.late, d.lateMin]),
     ];
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([csv(rows)], { type: "text/csv" }));
@@ -869,7 +881,7 @@ export function Reports({ report, departments }: { report: Report; departments: 
         <Card>
           <CardHeader>
             <CardTitle>Training completion</CardTitle>
-            <CardDescription>Absenteeism and lateness join this report once Attendance is in place.</CardDescription>
+
           </CardHeader>
           <CardContent>
             <Table>
@@ -902,6 +914,67 @@ export function Reports({ report, departments }: { report: Report; departments: 
           </CardContent>
         </Card>
       </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Absence and lateness</CardTitle>
+          <CardDescription>From Attendance: days absent without leave, late arrivals and half days. The absence rate is absent days over days meant to be worked.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-6 xl:grid-cols-2">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Month</TableHead>
+                <TableHead className="text-right">Absent</TableHead>
+                <TableHead className="text-right">Late</TableHead>
+                <TableHead className="text-right">Late min</TableHead>
+                <TableHead className="text-right">Half days</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {report.attendance.months
+                .filter((m) => m.absent || m.late || m.halfDays)
+                .map((m) => (
+                  <TableRow key={m.month}>
+                    <TableCell>{m.month}</TableCell>
+                    <TableCell className="text-right tabular">{m.absent}</TableCell>
+                    <TableCell className="text-right tabular">{m.late}</TableCell>
+                    <TableCell className="text-right tabular">{m.lateMin}</TableCell>
+                    <TableCell className="text-right tabular">{m.halfDays}</TableCell>
+                  </TableRow>
+                ))}
+              {!report.attendance.months.some((m) => m.absent || m.late || m.halfDays) && (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-muted-foreground">
+                    No absences or late arrivals recorded this year.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Department</TableHead>
+                <TableHead className="text-right">People</TableHead>
+                <TableHead className="text-right">Absent</TableHead>
+                <TableHead className="text-right">Rate</TableHead>
+                <TableHead className="text-right">Late</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {report.attendance.byDepartment.map((d) => (
+                <TableRow key={d.key || "none"}>
+                  <TableCell>{d.label}</TableCell>
+                  <TableCell className="text-right tabular">{d.people}</TableCell>
+                  <TableCell className="text-right tabular">{d.absent}</TableCell>
+                  <TableCell className="text-right tabular">{d.rate}%</TableCell>
+                  <TableCell className="text-right tabular">{d.late}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
     </div>
   );
 }

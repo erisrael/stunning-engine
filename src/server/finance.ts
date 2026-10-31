@@ -997,6 +997,50 @@ export async function profitAndLoss(user: AppUser, range: Range) {
   return { byDept: byDept.sort((a, b) => b.spend + b.payroll - (a.spend + a.payroll)), byLedger: byLedger.sort((a, b) => a.code.localeCompare(b.code)) };
 }
 
+// The Company overview's Finance view: each department's spend (and payroll) for the year against its budget,
+// other budgets (projects, campaigns, production lines), and the year so far.
+export async function companyFinance(user: AppUser, year: number) {
+  need(user, "view", "see finance");
+  const t = today();
+  const to = String(year) === t.slice(0, 4) ? t : `${year}-12-31`;
+  const range = { from: `${year}-01-01`, to };
+  const [pnl, budgets, sum, s] = await Promise.all([profitAndLoss(user, range), listBudgets(user, year), summary(range), financeSettings()]);
+  const deptBudgets = budgets.filter((b) => b.scope_type === "department");
+  const keys = [...new Set([...pnl.byDept.map((d) => d.key), ...deptBudgets.map((b) => b.scope_key)])];
+  const departments = keys
+    .map((k) => {
+      const d = pnl.byDept.find((x) => x.key === k);
+      const b = deptBudgets.find((x) => x.scope_key === k);
+      const spent = b ? b.spent : round2((d?.spend ?? 0) + (d?.payroll ?? 0));
+      return {
+        key: k,
+        label: d?.label ?? b?.scope_label ?? (k || "Not assigned"),
+        budget: b ? b.amount : null,
+        spent,
+        payroll: d?.payroll ?? 0,
+        income: d?.income ?? 0,
+        pct: b && b.amount > 0 ? Math.round((spent / b.amount) * 100) : null,
+        alertPct: b ? Number(b.alert_pct) : null,
+      };
+    })
+    .sort((a, b) => (b.pct ?? -1) - (a.pct ?? -1) || b.spent - a.spent);
+  // How far through the year we are, to compare spend against an even pace.
+  const dayOfYear = Math.round((Date.parse(`${to}T12:00:00Z`) - Date.parse(`${year}-01-01T12:00:00Z`)) / 864e5) + 1;
+  const pace = Math.min(100, Math.round((dayOfYear / 365) * 100));
+  return {
+    year,
+    currency: s.currency,
+    pace,
+    revenue: sum.revenue,
+    expenses: sum.expenses,
+    payroll: sum.payroll,
+    net: round2(sum.revenue - sum.expenses),
+    byMonth: sum.byMonth,
+    departments,
+    other: budgets.filter((b) => b.scope_type !== "department").map((b) => ({ label: b.scope_label, type: b.scope_type, budget: b.amount, spent: b.spent, pct: b.amount > 0 ? Math.round((b.spent / b.amount) * 100) : null })),
+  };
+}
+
 // Cost per published video: Production's spending and payroll for the period, divided by what was published;
 // also the hours logged on production work, valued at the average hourly cost of Production's people.
 export async function costPerVideo(user: AppUser, range: Range) {

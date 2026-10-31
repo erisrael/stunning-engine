@@ -52,3 +52,6 @@ export async function pairKioskAgainAction(id: string) {
 export async function setKioskActiveAction(id: string, active: boolean) {
   return wrap(async () => att.setKioskActive(await requireViewer(), id, active));
 }
+export async function assignRotaAction(employeeIds: string[], keys: string[], startDate: string) {
+  return wrap(async () => att.assignRota(await requireViewer(), employeeIds, keys, startDate));
+}
