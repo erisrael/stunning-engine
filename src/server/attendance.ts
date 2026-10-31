@@ -90,7 +90,8 @@ export async function saveAttendanceConfig(user: AppUser, input: Partial<Attenda
     earlyLeaveMin: num(input.earlyLeaveMin ?? cur.earlyLeaveMin, 15, 0, 240),
     overtimeAfterMin: num(input.overtimeAfterMin ?? cur.overtimeAfterMin, 30, 0, 240),
     halfDayHours: num(input.halfDayHours ?? cur.halfDayHours, 4, 1, 12),
-    methods: { web: !!methods.web, kiosk: !!methods.kiosk, mobile: !!methods.mobile },
+    methods: { web: !!methods.web, kiosk: !!methods.kiosk, mobile: !!methods.mobile, face: !!methods.face },
+    faceThreshold: num(input.faceThreshold ?? cur.faceThreshold, 0.5, 0.35, 0.6),
     site: { label: clean(site.label, 60) || "Office", lat: lat !== null && Number.isFinite(lat) ? lat : null, lng: lng !== null && Number.isFinite(lng) ? lng : null, radiusM: num(site.radiusM, 200, 20, 5000) },
     kioskSilenceMin: num(input.kioskSilenceMin ?? cur.kioskSilenceMin, 30, 5, 600),
     offlineMaxHours: num(input.offlineMaxHours ?? cur.offlineMaxHours, 72, 1, 240),
@@ -273,7 +274,7 @@ async function tzNow() {
 export async function myAttendance(user: AppUser, month: string) {
   const employeeId = await myEmployeeId(user);
   const cfg = await attendanceConfig();
-  if (!employeeId) return { employeeId: null as string | null, cfg, today: null, events: [] as EventRow[], days: [] as DayResult[], totals: null as MonthTotals | null, shift: null as Shift | null, code: null as string | null, hasPin: false, corrections: [] as CorrectionRow[] };
+  if (!employeeId) return { employeeId: null as string | null, cfg, today: null, events: [] as EventRow[], days: [] as DayResult[], totals: null as MonthTotals | null, shift: null as Shift | null, code: null as string | null, hasPin: false, face: null as { enrolledAt: string; samples: number } | null, corrections: [] as CorrectionRow[] };
   const emp = (await get<Emp>(`${EMP_SELECT} WHERE id = ?`, employeeId))!;
   const { date } = await tzNow();
   const r = monthRange(month);
@@ -294,6 +295,7 @@ export async function myAttendance(user: AppUser, month: string) {
     shift: await shiftOf(employeeId, cfg),
     code: emp.code,
     hasPin: !!badge?.pin_hash,
+    face: await (await import("./attendance-face")).faceStatus(employeeId),
     corrections: (await corrections(user)).mine,
   };
 }
@@ -635,7 +637,8 @@ export async function peopleSetup(user: AppUser) {
      LEFT JOIN att_shift_assign s ON s.employee_id = e.id LEFT JOIN att_badges b ON b.employee_id = e.id
      WHERE e.status <> 'left' ORDER BY e.full_name`,
   );
-  return rows.map((r) => ({ id: r.id, code: r.code, name: r.full_name, department: r.department, shift: r.shift_key ?? cfg.defaultShift, rota: parseJson<string[] | null>(r.rota, null), hasPin: !!r.pin_hash, badge: r.badge }));
+  const faces = new Set(await (await import("./attendance-face")).enrolledIds());
+  return rows.map((r) => ({ id: r.id, code: r.code, name: r.full_name, department: r.department, shift: r.shift_key ?? cfg.defaultShift, rota: parseJson<string[] | null>(r.rota, null), hasPin: !!r.pin_hash, badge: r.badge, face: faces.has(r.id) }));
 }
 
 export async function assignShift(user: AppUser, employeeIds: string[], shiftKey: string) {
@@ -791,7 +794,7 @@ export async function kioskPing(k: KioskRow) {
   await run("UPDATE att_kiosks SET last_seen_at = ?, alerted_at = NULL WHERE id = ?", nowIso(), k.id);
   const cfg = await attendanceConfig();
   const s = await getSettings();
-  return { name: k.name, signKey: k.sign_key, kioskOn: cfg.methods.kiosk, timezone: s.workspace.timezone, workspace: s.workspace.name, offlineMaxHours: cfg.offlineMaxHours };
+  return { name: k.name, signKey: k.sign_key, kioskOn: cfg.methods.kiosk, faceOn: cfg.methods.face, timezone: s.workspace.timezone, workspace: s.workspace.name, offlineMaxHours: cfg.offlineMaxHours };
 }
 
 // Wrong PINs lock that employee number on that kiosk for ten minutes after five tries.
@@ -804,7 +807,7 @@ function normalizeCode(v: string) {
   return s;
 }
 
-export type KioskPunchInput = { badge?: string | null; code?: string | null; pin?: string | null; at?: string | null; clientId?: string | null; sig?: string | null };
+export type KioskPunchInput = { badge?: string | null; code?: string | null; pin?: string | null; face?: number[] | null; at?: string | null; clientId?: string | null; sig?: string | null };
 
 export async function kioskPunch(k: KioskRow, input: KioskPunchInput) {
   const cfg = await attendanceConfig();
@@ -826,7 +829,17 @@ export async function kioskPunch(k: KioskRow, input: KioskPunchInput) {
   }
   let emp: { id: string; full_name: string; preferred_name: string | null } | undefined;
   let source: Source;
-  if (input.badge) {
+  if (input.face) {
+    // Face check-in is live only: a saved offline check-in uses the badge or PIN.
+    if (!cfg.methods.face) throw new WorkflowError("FORBIDDEN", "Face check-in is switched off. Use your badge or PIN.");
+    if (input.at) throw new WorkflowError("VALIDATION", "Face check-in needs the network. Use your badge or PIN.");
+    const { matchFace } = await import("./attendance-face");
+    const id = await matchFace(input.face, cfg.faceThreshold);
+    if (!id) throw new WorkflowError("NOT_FOUND", "Your face was not recognised. Use your badge or PIN.");
+    emp = await get("SELECT id, full_name, preferred_name FROM employees WHERE id = ? AND status <> 'left'", id);
+    if (!emp) throw new WorkflowError("NOT_FOUND", "Your face was not recognised. Use your badge or PIN.");
+    source = "kiosk_face";
+  } else if (input.badge) {
     emp = await get("SELECT e.id, e.full_name, e.preferred_name FROM att_badges b JOIN employees e ON e.id = b.employee_id WHERE b.badge = ? AND e.status <> 'left'", clean(input.badge, 80));
     if (!emp) throw new WorkflowError("NOT_FOUND", "This badge is not recognised. Ask HR for a new one.");
     source = "kiosk_badge";

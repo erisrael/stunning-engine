@@ -19,6 +19,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { EmptyState } from "@/components/app/primitives";
 import { StatusPill, type Tone } from "@/components/app/status-pill";
 import * as A from "@/app/actions/attendance";
+import { FaceEnroll } from "./face-enroll";
 import {
   CORRECTION_STATUS_LABELS,
   DAY_STATUS_LABELS,
@@ -102,6 +103,7 @@ export function AttTabs({ tab, tabs }: { tab: string; tabs: { key: string; label
 // ---------------------------------------------------------------------------
 
 type MyData = {
+  employeeId: string | null;
   cfg: AttendanceConfig;
   today: DayResult | null;
   events: EventRow[];
@@ -110,6 +112,7 @@ type MyData = {
   shift: Shift | null;
   code: string | null;
   hasPin: boolean;
+  face: { enrolledAt: string; samples: number } | null;
   corrections: CorrectionRow[];
 };
 
@@ -216,6 +219,26 @@ export function MyAttendance({ data, month, today }: { data: MyData; month: stri
               </Button>
             </form>
             <p className="text-xs text-muted-foreground">{data.hasPin ? "A PIN is set." : "No PIN yet."} Never share it; it records your time.</p>
+            {data.cfg.methods.face && (
+              <div className="space-y-1.5 border-t pt-3">
+                <p className="text-sm font-medium">Face check-in</p>
+                {data.face ? (
+                  <>
+                    <p className="text-xs text-muted-foreground">On since {fmtDate(data.face.enrolledAt.slice(0, 10))}, with your consent. Only a face code is kept, encrypted; never a photo.</p>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={busy}
+                      onClick={() => window.confirm("Withdraw your consent and delete your face data? You can check in with your badge or PIN.") && act(() => A.deleteFaceAction(data.employeeId!, "withdrawn"), "Face data deleted")}
+                    >
+                      Withdraw consent and delete
+                    </Button>
+                  </>
+                ) : (
+                  <p className="text-xs text-muted-foreground">Not set up. It is optional: if you want it, HR sets it up with you and your written consent.</p>
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -825,7 +848,7 @@ export function Timesheets({ rows, month }: { rows: TimesheetRow[]; month: strin
 // Setup (HR): rules, shifts, people, kiosks
 // ---------------------------------------------------------------------------
 
-type PersonSetup = { id: string; code: string; name: string; department: string | null; shift: string; rota: string[] | null; hasPin: boolean; badge: string | null };
+type PersonSetup = { id: string; code: string; name: string; department: string | null; shift: string; rota: string[] | null; hasPin: boolean; badge: string | null; face: boolean };
 type KioskInfo = { id: string; name: string; active: boolean; lastSeenAt: string | null; paired: boolean; setupExpires: string | null; createdAt: string };
 
 function Row({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
@@ -935,6 +958,14 @@ function Rules({ cfg }: { cfg: AttendanceConfig }) {
           <Row label="Check in at a kiosk" hint="A tablet or laptop at the entrance: badges and PINs.">
             <Switch checked={c.methods.kiosk} onCheckedChange={(v) => setC({ ...c, methods: { ...c.methods, kiosk: v } })} aria-label="Kiosk check-in" />
           </Row>
+          <Row label="Face check-in at the kiosk" hint="Optional, only for people HR enrols with their written consent. Read docs/FACE-CHECKIN.md before switching it on.">
+            <Switch checked={c.methods.face} onCheckedChange={(v) => setC({ ...c, methods: { ...c.methods, face: v } })} aria-label="Face check-in at the kiosk" />
+          </Row>
+          {c.methods.face && (
+            <Row label="Face match strictness" hint="Lower is stricter: fewer wrong matches, more people asked to use their badge. 0.45 to 0.5 suits most kiosks.">
+              <Input type="number" min={0.35} max={0.6} step={0.01} value={c.faceThreshold} onChange={(e) => setC({ ...c, faceThreshold: Number(e.target.value) })} className="w-24" aria-label="Face match threshold" />
+            </Row>
+          )}
           <Row label="Phone at the site" hint="With app check-in off, phones can still check in, but only within the radius of the site. Location is read once, when the button is pressed.">
             <Switch checked={c.methods.mobile} onCheckedChange={(v) => setC({ ...c, methods: { ...c.methods, mobile: v } })} aria-label="Phone check-in at the site" />
           </Row>
@@ -1028,6 +1059,7 @@ function People({ cfg, people }: { cfg: AttendanceConfig; people: PersonSetup[] 
                 <th className="font-medium">Shift</th>
                 <th className="font-medium">PIN</th>
                 <th className="font-medium">Badge</th>
+                {cfg.methods.face && <th className="font-medium">Face</th>}
                 <th />
               </tr>
             </thead>
@@ -1047,6 +1079,11 @@ function People({ cfg, people }: { cfg: AttendanceConfig; people: PersonSetup[] 
                   <td className="text-xs">{p.rota?.length ? `Rota: ${p.rota.map(label).join(" / ")}` : label(p.shift)}</td>
                   <td className="text-xs">{p.hasPin ? "Set" : <span className="text-muted-foreground">None</span>}</td>
                   <td className="text-xs">{p.badge ? "Made" : <span className="text-muted-foreground">None</span>}</td>
+                  {cfg.methods.face && (
+                    <td className="text-xs">
+                      <FaceEnroll employeeId={p.id} name={p.name} enrolled={p.face} />
+                    </td>
+                  )}
                   <td className="pr-2 text-right">
                     <Button
                       size="xs"

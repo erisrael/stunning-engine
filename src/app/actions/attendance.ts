@@ -55,3 +55,11 @@ export async function setKioskActiveAction(id: string, active: boolean) {
 export async function assignRotaAction(employeeIds: string[], keys: string[], startDate: string) {
   return wrap(async () => att.assignRota(await requireViewer(), employeeIds, keys, startDate));
 }
+
+// Face check-in (docs/FACE-CHECKIN.md): HR enrols with written consent; the person or HR deletes.
+export async function enrollFaceAction(employeeId: string, input: { codes: number[][]; consent: boolean; consentNote?: string | null }) {
+  return wrap(async () => (await import("@/server/attendance-face")).enrollFace(await requireViewer(), employeeId, input));
+}
+export async function deleteFaceAction(employeeId: string, reason: "withdrawn" | "hr") {
+  return wrap(async () => (await import("@/server/attendance-face")).deleteFace(await requireViewer(), employeeId, reason));
+}

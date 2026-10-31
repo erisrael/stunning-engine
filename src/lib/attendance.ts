@@ -15,7 +15,9 @@ export type AttendanceConfig = {
   // Fewer hours than this in a day is a half day.
   halfDayHours: number;
   // How people may check in: from the app anywhere, at a kiosk, or from a phone at the site (location checked).
-  methods: { web: boolean; kiosk: boolean; mobile: boolean };
+  methods: { web: boolean; kiosk: boolean; mobile: boolean; face: boolean };
+  // How close a face must be to an enrolled one (lower is stricter). See docs/FACE-CHECKIN.md.
+  faceThreshold: number;
   site: { label: string; lat: number | null; lng: number | null; radiusM: number };
   // A kiosk that has not reported for this long during working hours raises an alert.
   kioskSilenceMin: number;
@@ -35,7 +37,8 @@ export const DEFAULT_ATTENDANCE: AttendanceConfig = {
   earlyLeaveMin: 15,
   overtimeAfterMin: 30,
   halfDayHours: 4,
-  methods: { web: true, kiosk: true, mobile: false },
+  methods: { web: true, kiosk: true, mobile: false, face: false },
+  faceThreshold: 0.5,
   site: { label: "Office", lat: null, lng: null, radiusM: 200 },
   kioskSilenceMin: 30,
   offlineMaxHours: 72,
@@ -45,6 +48,7 @@ export const DEFAULT_ATTENDANCE: AttendanceConfig = {
     "When a kiosk is broken or missing, your team lead records your day by hand. HR reviews every manual entry.",
     "If a time is wrong (for example you forgot to check out), ask for a correction. Your line manager approves it and HR sees the trail.",
     "Location is checked only at the moment you check in from your phone, and only when phone check-in is switched on. It is not tracked.",
+    "Face check-in is optional and only with your written consent. The kiosk sends a face code, never a photo; the code is encrypted, used only for attendance and deleted when you withdraw consent or leave. Badge and PIN always work instead.",
     "Attendance records are kept for payroll and labour law, and seen by you, your line manager and HR.",
   ].join("\n"),
 };
@@ -284,3 +288,11 @@ export function monthTotals(days: DayResult[]): MonthTotals {
 // Unpaid days for payroll: days absent without leave, half of each half day, and unpaid leave.
 export const unpaidDays = (t: MonthTotals) => t.absent + t.halfDays * 0.5 + t.unpaidLeave;
 export const overtimeHours = (t: MonthTotals) => Math.round((t.overtimeMin / 60) * 4) / 4;
+
+// Face check-in consent (docs/FACE-CHECKIN.md). A new version means people are asked again.
+export const FACE_CONSENT_VERSION = "2026-10";
+export const FACE_CONSENT_TEXT = [
+  "I agree that my employer uses a code made from my face to record when I check in and out at the attendance kiosk.",
+  "No photo of me is stored. The face code is encrypted, used only for attendance, never shared or exported, and deleted when I withdraw this consent or leave.",
+  "I can use my badge or PIN instead at any time, and withdraw this consent on my Attendance page or by telling HR, without any effect on my job.",
+].join(" ");

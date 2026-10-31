@@ -453,6 +453,7 @@ export const CHAPTERS: Chapter[] = [
         ],
       },
       { title: "Your PIN", text: "Set or change your kiosk PIN on your Attendance page: 4 to 6 digits, not all the same and not in a row. Never share it; it records your time." },
+      { title: "Face check-in (optional)", text: "Where HR has switched it on, you can check in by looking at the kiosk camera and blinking. It is only for people who sign the consent form with HR; no photo is kept, only an encrypted face code. Withdraw any time on your Attendance page; your badge and PIN always work." },
       { title: "A wrong or missing time", text: "On your Attendance page, press Correct next to the day, give the right times and what happened. Your line manager approves it; HR sees every correction." },
       {
         title: "Team leads: recording the day by hand",

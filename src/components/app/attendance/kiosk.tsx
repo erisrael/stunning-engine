@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { CameraIcon, CheckCircle2Icon, DeleteIcon, KeyRoundIcon, Loader2Icon, WifiOffIcon, XCircleIcon } from "lucide-react";
+import { CameraIcon, CheckCircle2Icon, DeleteIcon, KeyRoundIcon, Loader2Icon, ScanFaceIcon, WifiOffIcon, XCircleIcon } from "lucide-react";
+import { blinkWatcher, loadFaceApi, readFace } from "./face";
 import { Button } from "@/components/ui/button";
 import { DAY_STATUS_LABELS, type DayStatus } from "@/lib/attendance";
 import { cn } from "@/lib/utils";
@@ -49,7 +50,10 @@ export function KioskScreen({ initialName }: { initialName: string }) {
   const [now, setNow] = React.useState(() => new Date());
   const [online, setOnline] = React.useState(true);
   const [queued, setQueued] = React.useState(0);
-  const [mode, setMode] = React.useState<"badge" | "code" | "pin">("badge");
+  const [mode, setMode] = React.useState<"badge" | "code" | "pin" | "face">("badge");
+  const [faceOn, setFaceOn] = React.useState(false);
+  const [faceMsg, setFaceMsg] = React.useState("");
+  const faceVideo = React.useRef<HTMLVideoElement>(null);
   const [code, setCode] = React.useState("");
   const [pin, setPin] = React.useState("");
   const [scan, setScan] = React.useState("");
@@ -71,6 +75,7 @@ export function KioskScreen({ initialName }: { initialName: string }) {
         setOnline(true);
         setName(r.data.name);
         setTz(r.data.timezone);
+        setFaceOn(!!r.data.faceOn);
         signKey.current = r.data.signKey;
         try {
           localStorage.setItem("myseed-kiosk-key", r.data.signKey ?? "");
@@ -129,7 +134,7 @@ export function KioskScreen({ initialName }: { initialName: string }) {
     return () => clearTimeout(t);
   }, [outcome]);
 
-  const submit = async (cred: { badge?: string; code?: string; pin?: string }) => {
+  const submit = async (cred: { badge?: string; code?: string; pin?: string; face?: number[] }) => {
     setBusy(true);
     try {
       const r = await post({ action: "punch", ...cred });
@@ -140,8 +145,12 @@ export function KioskScreen({ initialName }: { initialName: string }) {
       } else if (r.status === 401) window.location.reload();
       else setOutcome({ ok: false, error: r.data.error ?? "Something went wrong. Try again." });
     } catch {
-      // No network: keep it with its real time, signed by this kiosk.
+      // No network: keep it with its real time, signed by this kiosk. A face needs the network; badge or PIN do not.
       setOnline(false);
+      if (cred.face) {
+        setOutcome({ ok: false, error: "No network for face check-in. Scan your badge or use your number and PIN; they are kept until the network is back." });
+        return;
+      }
       const at = new Date().toISOString();
       const clientId = crypto.randomUUID();
       const key = signKey.current;
@@ -161,6 +170,56 @@ export function KioskScreen({ initialName }: { initialName: string }) {
       setMode("badge");
     }
   };
+
+  // Face check-in: one face in view, a blink (a photo cannot blink), then only the face code is sent.
+  React.useEffect(() => {
+    if (mode !== "face") return;
+    let stop = false;
+    let stream: MediaStream | null = null;
+    (async () => {
+      try {
+        setFaceMsg("Starting the camera…");
+        const f = await loadFaceApi();
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: 640, height: 480 } });
+        const v = faceVideo.current;
+        if (!v || stop) return;
+        v.srcObject = stream;
+        await v.play();
+        const blinked = blinkWatcher();
+        const until = Date.now() + 12_000;
+        let code: number[] | null = null;
+        setFaceMsg("Look at the camera, then blink");
+        while (!stop && Date.now() < until) {
+          const r = await readFace(f, v).catch(() => null);
+          if (!r) setFaceMsg("One face in view, please");
+          else if (r.size < 0.18) setFaceMsg("Come a little closer");
+          else if (!r.centered) setFaceMsg("Move into the middle");
+          else {
+            setFaceMsg("Now blink");
+            if (r.eyes > 0.26) code = r.code;
+            if (blinked(r.eyes) && code) {
+              stop = true;
+              await submit({ face: code });
+              return;
+            }
+          }
+          await new Promise((res) => setTimeout(res, 60));
+        }
+        if (!stop) {
+          setOutcome({ ok: false, error: "Your face was not read in time. Scan your badge or use your number and PIN." });
+          setMode("badge");
+        }
+      } catch {
+        setOutcome({ ok: false, error: "The camera is not available. Scan your badge or use your number and PIN." });
+        setMode("badge");
+      }
+    })();
+    return () => {
+      stop = true;
+      stream?.getTracks().forEach((t) => t.stop());
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode]);
 
   // Camera scanning, where the browser has a barcode reader.
   React.useEffect(() => {
@@ -257,6 +316,16 @@ export function KioskScreen({ initialName }: { initialName: string }) {
               </>
             )}
           </div>
+        ) : mode === "face" ? (
+          <div className="flex w-full max-w-xl flex-col items-center gap-4">
+            <video ref={faceVideo} muted playsInline className="aspect-[4/3] w-full max-w-md -scale-x-100 rounded-2xl bg-black object-cover" aria-label="Camera" />
+            <p className="text-2xl font-semibold" role="status" aria-live="polite">
+              {faceMsg}
+            </p>
+            <Button size="lg" variant="secondary" onClick={() => setMode("badge")}>
+              Use my badge or PIN instead
+            </Button>
+          </div>
         ) : mode === "badge" ? (
           <div className="flex w-full max-w-xl flex-col items-center gap-5">
             <p className="text-3xl font-semibold">Scan your badge</p>
@@ -274,6 +343,11 @@ export function KioskScreen({ initialName }: { initialName: string }) {
             </form>
             {camera && <video ref={videoRef} muted playsInline className="aspect-video w-full max-w-md rounded-xl bg-black object-cover" />}
             <div className="flex flex-wrap justify-center gap-3">
+              {faceOn && online && (
+                <Button size="lg" onClick={() => (setCamera(false), setMode("face"))}>
+                  <ScanFaceIcon /> Check in with my face
+                </Button>
+              )}
               {canScan && (
                 <Button size="lg" variant="secondary" onClick={() => setCamera((c) => !c)}>
                   <CameraIcon /> {camera ? "Stop the camera" : "Scan with the camera"}

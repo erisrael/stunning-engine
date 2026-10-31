@@ -148,6 +148,8 @@ export async function runScheduledChecks(now = nowIso()) {
   await budgetAlerts();
   // Attendance: a kiosk that went quiet during working hours.
   await kioskSilenceChecks(now);
+  // Face data of people who have left is deleted.
+  await (await import("./attendance-face")).faceCleanup();
   // Email waiting to go out: notification copies to retry and scheduled messages now due.
   await flushOutbox(200);
   await setMeta("lastChecksAt", now);

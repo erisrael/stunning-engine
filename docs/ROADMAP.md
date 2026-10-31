@@ -440,12 +440,14 @@ Attendance (`/attendance`, in everyone's My space) with a kiosk at the entrance,
 - [x] **Payroll**: Finance, Payroll, "Fill from Attendance" sets each payslip's overtime hours and unpaid days (absent without leave, half of each half day, unpaid leave) in a draft run; still changeable by hand
 - [x] **Privacy**: a written attendance and privacy policy, editable by HR, shown to everyone on their Attendance page
 
-### Step 2: Face check-in at the kiosk (next)
+### Step 2: Face check-in at the kiosk (done)
 
-- [ ] Face recognition in the kiosk's browser (on-device face descriptors, a liveness check such as a blink or head turn); no camera images uploaded, only the match
-- [ ] Enrolment by HR with several captures, only with the person's written consent recorded in the app; anyone can choose badge or PIN instead
-- [ ] Face templates encrypted, never exported, deleted when the person leaves or withdraws consent
-- [ ] Kiosk check-in "by face" alongside badge and PIN, with the same offline signing
+Guidelines for the organisation (law, consent, enrolment, kiosk placement, trial, risks, retention, incidents): [FACE-CHECKIN.md](FACE-CHECKIN.md).
+
+- [x] Face reading in the kiosk's browser with models served by the app itself; a blink is required (liveness); only a face code (128 numbers) is sent, never a picture, and matched on the server, so enrolled codes never reach the kiosk
+- [x] Enrolment by HR with the person present: the consent text (versioned) and a tick that the form was signed, then five guided captures; captures of different people are refused; switched on per workspace with a match strictness
+- [x] Face codes sealed with the workspace key, kept out of backups, exports and the audit log; deleted when the person withdraws (their Attendance page), when HR deletes them, or automatically when they leave
+- [x] Kiosk "Check in with my face", with prompts (one face, closer, middle, blink), falling back to badge or PIN when not recognised or offline; recorded as "Kiosk, face"
 
 ### Later
 
@@ -485,5 +487,5 @@ Everything still open across the earlier phases, in three batches, then face che
 
 ### Then
 
-- [ ] Face check-in at the kiosk (Phase 9, step 2), with written guidelines
+- [x] Face check-in at the kiosk (Phase 9, step 2), with written guidelines (docs/FACE-CHECKIN.md)
 - [ ] Native app shell (Phase 5b)

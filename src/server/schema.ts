@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 21;
+export const SCHEMA_VERSION = 22;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -1775,6 +1775,20 @@ CREATE TABLE IF NOT EXISTS att_kiosks (
 ALTER TABLE recording_sessions ADD COLUMN IF NOT EXISTS operator_id TEXT;
 ALTER TABLE recording_sessions ADD COLUMN IF NOT EXISTS batch_id TEXT;
 CREATE INDEX IF NOT EXISTS idx_recording_sessions_start ON recording_sessions(scheduled_start);
+
+-- Face check-in: sealed face codes per employee, with the consent recorded. Deliberately not in the backup
+-- table list, so face data is never exported; it goes with the employee row (cascade).
+CREATE TABLE IF NOT EXISTS att_faces (
+  employee_id TEXT PRIMARY KEY REFERENCES employees(id) ON DELETE CASCADE,
+  data_enc TEXT NOT NULL,
+  samples INTEGER NOT NULL,
+  consent_at TEXT NOT NULL,
+  consent_by TEXT,
+  consent_version TEXT NOT NULL,
+  consent_note TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
 
 -- A person's own Google account (Meet links, YouTube uploads); the refresh token is sealed.
 CREATE TABLE IF NOT EXISTS google_tokens (
