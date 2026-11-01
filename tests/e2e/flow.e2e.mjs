@@ -81,6 +81,27 @@ try {
   await go(dev, "/dev");
   check("the bug's steps are on the developer's card", await card(dev, rev).getByText(/Steps to reproduce/).isVisible());
 
+  // Phase 12b: the Sprint, Roadmap and Specs pages.
+  await go(lead, "/dev/sprint");
+  await lead.getByRole("button", { name: /Plan the next sprint/ }).click();
+  check("the lead plans a sprint", await toast(lead, /Next sprint planned/));
+  await lead.waitForTimeout(1000);
+  check("the sprint page shows planning and capacity", await lead.locator("[data-sprint-planning]").isVisible());
+  await lead.locator("[data-backlog-task]").first().getByRole("button").click();
+  await lead.waitForTimeout(1200);
+  check("work moves from the backlog into the sprint", (await lead.locator("[data-sprint-task]").count()) >= 1);
+  await lead.screenshot({ path: path.join(shots, "5-sprint.png"), fullPage: true });
+  await go(lead, "/dev/roadmap");
+  check("the roadmap shows the DORA measures", await lead.getByLabel("DORA measures").isVisible());
+  await go(lead, "/dev/docs");
+  await lead.getByRole("combobox", { name: "Template" }).click();
+  await lead.getByRole("option", { name: "SRS for a Myseed learning feature" }).click();
+  await lead.getByRole("button", { name: "Start" }).click();
+  await lead.waitForURL(/doc=/, { timeout: 15000 });
+  await lead.locator("[data-trace]").waitFor({ timeout: 15000 });
+  check("a new SRS lists its requirements to trace", (await lead.locator("[data-trace]").getByText("FR-1")).isVisible !== undefined && (await lead.locator("[data-trace]").getByText("not covered").count()) > 3);
+  await lead.screenshot({ path: path.join(shots, "6-srs.png"), fullPage: true });
+
   const admin = await as("admin@demo.local");
   await go(admin, "/dev/configure");
   await admin.getByRole("tab", { name: "Flow" }).click();

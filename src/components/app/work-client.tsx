@@ -108,7 +108,7 @@ export function WorkClient({
   workspace = "",
 }: {
   dept: WorkDept;
-  tab: "dashboard" | "board" | "list" | "sheet" | "overview" | "timeline" | "team" | "report" | "projects" | "calendar" | "repos" | "accounting";
+  tab: "dashboard" | "board" | "list" | "sheet" | "overview" | "timeline" | "team" | "report" | "projects" | "calendar" | "repos" | "accounting" | "sprint" | "roadmap" | "docs";
   filter: TaskFilter;
   tasks: Task[];
   projects: Project[];
@@ -242,7 +242,7 @@ export function WorkClient({
               </Button>
             </>
           )}
-          {tab !== "dashboard" && tab !== "repos" && tab !== "accounting" && (
+          {tab !== "dashboard" && !panel && (
             <Button size="sm" variant="outline" onClick={() => exportCsv(tasks)} disabled={!tasks.length}>
               <DownloadIcon /> Export
             </Button>
@@ -260,7 +260,7 @@ export function WorkClient({
         </div>
       </div>
 
-      {tab !== "projects" && tab !== "dashboard" && tab !== "team" && tab !== "report" && tab !== "repos" && tab !== "accounting" && (
+      {tab !== "projects" && tab !== "dashboard" && tab !== "team" && tab !== "report" && !panel && (
         <div className="flex flex-wrap items-center gap-2">
           <form
             className="relative"
@@ -304,11 +304,11 @@ export function WorkClient({
         </div>
       )}
 
-      {tab !== "projects" && tab !== "dashboard" && tab !== "team" && tab !== "report" && tab !== "repos" && tab !== "accounting" && <ViewOptions dept={dept} tab={tab} config={cfg} access={access} views={views} people={people} projects={projects} />}
+      {tab !== "projects" && tab !== "dashboard" && tab !== "team" && tab !== "report" && !panel && <ViewOptions dept={dept} tab={tab} config={cfg} access={access} views={views} people={people} projects={projects} />}
 
       {tab === "dashboard" && flow && <DeptFlowHome data={flow} onOpen={openById} />}
       {tab === "dashboard" && dashboard}
-      {(tab === "repos" || tab === "accounting") && panel}
+      {panel}
       {tab === "board" && <Board dept={dept} config={cfg} people={people} tasks={tasks} viewerId={viewerId} access={access} onOpen={setEditing} onDetails={(status) => setEditing({ status })} />}
       {tab === "sheet" && <SheetView dept={dept} config={cfg} tasks={tasks} people={people} projects={projects} access={access} viewerId={viewerId} onOpen={setEditing} />}
       {tab === "overview" && <OverviewTree config={cfg} tasks={tasks} projects={projects} onOpen={setEditing} />}

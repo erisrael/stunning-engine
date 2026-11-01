@@ -20,7 +20,7 @@ import { FinanceAccounting } from "./integrations";
 import { DEPT_VIEW_LABELS, DEPT_VIEWS, deptPath, deptViewPath } from "@/lib/work";
 import { flowHome } from "@/server/dept-flow";
 
-const TABS = ["dashboard", "board", "list", "sheet", "overview", "timeline", "team", "report", "projects", "calendar", "configure", "repos", "accounting"] as const;
+const TABS = ["dashboard", "board", "list", "sheet", "overview", "timeline", "team", "report", "projects", "calendar", "configure", "repos", "accounting", "sprint", "roadmap", "docs"] as const;
 const SORTS = ["updated", "due", "priority", "code", "title", "status"] as const;
 
 // The Dev and Marketing sections share this page; their vocabulary, workflow and rights come from the configuration.
@@ -68,10 +68,26 @@ export async function WorkPage({ dept, searchParams, view }: { dept: WorkDept; s
         />
       </div>
     );
-  if (tab === "repos" || tab === "accounting") {
+  if ((tab === "sprint" && !cfg.features.sprints) || ((tab === "roadmap" || tab === "docs") && !access.view)) redirect(deptViewPath(dept, "board"));
+  if (tab === "repos" || tab === "accounting" || tab === "sprint" || tab === "roadmap" || tab === "docs") {
     const projects = await listProjects(viewer, dept);
+    const ds = await import("@/server/dev-studio");
+    const { SprintView, RoadmapView, DocsView } = await import("./dev-studio");
     const panel =
-      tab === "repos" ? (
+      tab === "sprint" ? (
+        <SprintView dept={dept} data={await ds.sprintPage(viewer, dept, sp.sprint ?? null)} viewerId={viewer.id} />
+      ) : tab === "roadmap" ? (
+        <RoadmapView data={await ds.roadmap(viewer, dept)} dora={await ds.doraMeasures(viewer, dept)} />
+      ) : tab === "docs" ? (
+        <DocsView
+          dept={dept}
+          docs={await ds.listDocs(viewer, dept)}
+          projects={projects.map((p) => ({ id: p.id, name: p.name }))}
+          people={(await deptPeople(dept)).map((p) => ({ id: p.id, name: p.name }))}
+          openId={sp.doc ?? null}
+          workspace={(await getSettings()).workspace.name}
+        />
+      ) : tab === "repos" ? (
         <GithubRepos dept={dept} data={await githubOverview(viewer, dept)} projects={projects.map((p) => ({ id: p.id, name: p.name }))} taskHref={deptPath(dept)} />
       ) : (
         <FinanceAccounting dept={dept} map={await accountingMap(viewer, dept)} types={cfg.types.map((t) => ({ key: t.key, label: t.label }))} formats={ACCOUNTING_FORMATS} canConfigure={access.rights.configure && !access.readOnly} />

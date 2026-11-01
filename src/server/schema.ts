@@ -2073,6 +2073,71 @@ CREATE TABLE IF NOT EXISTS email_verifications (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_email_verifications_user ON email_verifications(user_id);
+
+-- Phase 12b: the Dev studio. Story points and when a task joined its sprint (scope added after the start); a
+-- sprint's planned and finished amounts kept at its close; daily stand-up notes; the retrospective board; specs
+-- and documents per project with versions, reviewers and links from requirements to tasks.
+ALTER TABLE dept_tasks ADD COLUMN IF NOT EXISTS points DOUBLE PRECISION;
+ALTER TABLE dept_tasks ADD COLUMN IF NOT EXISTS sprint_added_at TEXT;
+ALTER TABLE dept_sprints ADD COLUMN IF NOT EXISTS planned_units DOUBLE PRECISION;
+ALTER TABLE dept_sprints ADD COLUMN IF NOT EXISTS done_units DOUBLE PRECISION;
+ALTER TABLE dept_sprints ADD COLUMN IF NOT EXISTS closed_at TEXT;
+ALTER TABLE dept_sprints ADD COLUMN IF NOT EXISTS review_note TEXT;
+ALTER TABLE dept_capacity ADD COLUMN IF NOT EXISTS points_per_sprint DOUBLE PRECISION;
+CREATE TABLE IF NOT EXISTS dept_standups (
+  id TEXT PRIMARY KEY,
+  sprint_id TEXT NOT NULL REFERENCES dept_sprints(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  day TEXT NOT NULL,
+  yesterday TEXT,
+  today TEXT,
+  blockers TEXT,
+  created_at TEXT NOT NULL,
+  UNIQUE (sprint_id, user_id, day)
+);
+CREATE TABLE IF NOT EXISTS dept_retro (
+  id TEXT PRIMARY KEY,
+  sprint_id TEXT NOT NULL REFERENCES dept_sprints(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,
+  text TEXT NOT NULL,
+  author_id TEXT,
+  task_id TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_dept_retro ON dept_retro(sprint_id);
+CREATE TABLE IF NOT EXISTS dept_docs (
+  id TEXT PRIMARY KEY,
+  dept TEXT NOT NULL,
+  project_id TEXT REFERENCES dept_projects(id) ON DELETE SET NULL,
+  kind TEXT NOT NULL,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'draft',
+  version INTEGER NOT NULL DEFAULT 1,
+  reviewers TEXT NOT NULL DEFAULT '[]',
+  approvals TEXT NOT NULL DEFAULT '[]',
+  created_by TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  approved_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_dept_docs ON dept_docs(dept, project_id);
+CREATE TABLE IF NOT EXISTS dept_doc_versions (
+  doc_id TEXT NOT NULL REFERENCES dept_docs(id) ON DELETE CASCADE,
+  version INTEGER NOT NULL,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,
+  status TEXT NOT NULL,
+  saved_by TEXT,
+  saved_at TEXT NOT NULL,
+  PRIMARY KEY (doc_id, version)
+);
+CREATE TABLE IF NOT EXISTS dept_doc_links (
+  doc_id TEXT NOT NULL REFERENCES dept_docs(id) ON DELETE CASCADE,
+  req TEXT NOT NULL,
+  task_id TEXT NOT NULL REFERENCES dept_tasks(id) ON DELETE CASCADE,
+  PRIMARY KEY (doc_id, req, task_id)
+);
 `;
 
 // Tables in dependency order; used to empty the workspace and to export or restore backups.
@@ -2156,6 +2221,11 @@ export const TABLES = [
   "dept_capacity",
   "dept_releases",
   "email_verifications",
+  "dept_standups",
+  "dept_retro",
+  "dept_docs",
+  "dept_doc_versions",
+  "dept_doc_links",
   "employees",
   "employee_private",
   "employee_documents",

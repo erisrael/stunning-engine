@@ -117,6 +117,7 @@ function describe(a: DeptConfig, b: DeptConfig) {
   if (JSON.stringify(a.features) !== JSON.stringify(b.features)) parts.push("changed features");
   if (JSON.stringify(a.notify) !== JSON.stringify(b.notify)) parts.push("changed notifications");
   if (JSON.stringify(a.labels) !== JSON.stringify(b.labels) || a.description !== b.description) parts.push("changed details");
+  if (JSON.stringify(a.sprint) !== JSON.stringify(b.sprint)) parts.push("changed sprints");
   if (JSON.stringify(a.flow) !== JSON.stringify(b.flow)) parts.push(a.flow.on !== b.flow.on ? (b.flow.on ? "switched the flow on" : "switched the flow off") : "changed the flow");
   return parts.join("; ") || "No changes";
 }

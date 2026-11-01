@@ -43,6 +43,7 @@ import { POSITION_LABELS } from "@/lib/domain";
 import { deptPath, type WorkDept } from "@/lib/work";
 import { cn } from "@/lib/utils";
 import { FlowEditor } from "./dept-flow-editor";
+import { SprintSettings } from "./dev-studio";
 
 type Usage = Record<"statuses" | "types" | "priorities" | "projectStatuses" | "kpis", Record<string, number>>;
 type Item = { key: string; label: string; active: boolean; color?: string };
@@ -135,6 +136,7 @@ export function DeptConfigure({
           <TabsTrigger value="templates">Templates</TabsTrigger>
           <TabsTrigger value="automations">Automations</TabsTrigger>
           <TabsTrigger value="requests">Requests</TabsTrigger>
+          <TabsTrigger value="sprints">Sprints</TabsTrigger>
           <TabsTrigger value="projects">{c.names.projects}</TabsTrigger>
           <TabsTrigger value="rights">Rights</TabsTrigger>
           <TabsTrigger value="notify">Notifications</TabsTrigger>
@@ -406,6 +408,10 @@ export function DeptConfigure({
               ))}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="sprints">
+          <SprintSettings value={c.sprint} onChange={(v) => set("sprint", v)} />
         </TabsContent>
 
         <TabsContent value="flow">

@@ -108,6 +108,7 @@ export function TaskDialog({
     sprintId: task?.sprint_id ?? "",
     recur: task?.recur ?? "",
     estimate: task?.estimate_hours != null ? String(task.estimate_hours) : "",
+    points: task?.points != null ? String(task.points) : "",
     spent: task?.spent_hours != null ? String(task.spent_hours) : "",
     progress: task?.progress ?? 0,
     startDate: task?.start_date ?? "",
@@ -164,6 +165,7 @@ export function TaskDialog({
       sprintId: f$.sprints ? f.sprintId || null : undefined,
       recur: f$.recurring ? f.recur || null : undefined,
       estimateHours: f.estimate ? Number(f.estimate) : null,
+      points: f.points ? Number(f.points) : null,
       spentHours: f.spent ? Number(f.spent) : null,
       progress: Number(f.progress),
       startDate: f.startDate || null,
@@ -348,6 +350,11 @@ export function TaskDialog({
                       ))}
                     </datalist>
                   )}
+                </Field>
+              )}
+              {f$.sprints && cfg.sprint.unit === "points" && (
+                <Field label="Story points">
+                  <Input type="number" min={0} step="1" value={f.points} onChange={(e) => setF({ ...f, points: e.target.value })} disabled={!canEdit} aria-label="Story points" />
                 </Field>
               )}
               {f$.estimates && (

@@ -393,5 +393,5 @@ export function applyFlowPreset(c: DeptConfig, key: string): DeptConfig {
     return { ...t, checklist: [...t.checklist, ...add] };
   });
   const stages = p.stages.map((s) => ({ ...blankStage(s.status, s.kind), ...s }));
-  return { ...c, statuses, fields, types, flow: { on: true, stages }, features: { ...c.features, checklists: c.features.checklists || !!p.checklist } };
+  return { ...c, statuses, fields, types, flow: { on: true, stages }, features: { ...c.features, checklists: c.features.checklists || !!p.checklist, sprints: c.features.sprints || p.key === "dev" } };
 }

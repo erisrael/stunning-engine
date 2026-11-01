@@ -17,6 +17,9 @@ export type HomeDept = {
   seeAll: boolean;
   configure: boolean;
   repos: boolean;
+  // The Dev studio views: Sprint (when sprints are on), Roadmap, Specs and docs.
+  sprints: boolean;
+  studio: boolean;
   accounting: boolean;
   position: string | null;
 };
@@ -46,7 +49,7 @@ export async function homeDepartment(user: AppUser & { activeRole: string }): Pr
   if (!key) return null;
   const a = await deptAccess(user, key);
   if (!a.view || a.readOnly) return null;
-  if (key === "studio") return { key, title: "Studio", base: "/studio", kind: "studio", seeAll: a.manage, configure: a.position === "head", repos: false, accounting: false, position: a.position };
+  if (key === "studio") return { key, title: "Studio", base: "/studio", kind: "studio", seeAll: a.manage, configure: a.position === "head", repos: false, sprints: false, studio: false, accounting: false, position: a.position };
   const cfg = await getDeptConfig(key);
   const rights = a.position ? cfg.rights[a.position] : null;
   return {
@@ -57,6 +60,8 @@ export async function homeDepartment(user: AppUser & { activeRole: string }): Pr
     seeAll: !!rights?.seeAll,
     configure: !!rights?.configure,
     repos: key === "dev" || custom?.template === "dev",
+    sprints: cfg.features.sprints,
+    studio: key === "dev" || custom?.template === "dev",
     accounting: custom?.template === "finance",
     position: a.position,
   };

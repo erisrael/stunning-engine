@@ -55,6 +55,8 @@ import {
   NotebookTextIcon,
   FileQuestionIcon,
   GalleryVerticalEndIcon,
+  TimerIcon,
+  MapIcon,
 } from "lucide-react";
 import type { HomeDept } from "@/server/nav";
 import {
@@ -180,7 +182,9 @@ function homeGroups(h: HomeDept, viewerId: string): { label: string; items: NavI
     {
       label: "Plan",
       items: [
+        ...(h.sprints ? [{ href: `${b}/sprint`, label: "Sprint", icon: TimerIcon, exact: true }] : []),
         { href: `${b}/projects`, label: "Projects", icon: FolderKanbanIcon, exact: true },
+        ...(h.studio ? [{ href: `${b}/roadmap`, label: "Roadmap", icon: MapIcon, exact: true }] : []),
         ...(h.seeAll
           ? [
               { href: `${b}/overview`, label: "Overview", icon: ListTreeIcon, exact: true },
@@ -201,6 +205,7 @@ function homeGroups(h: HomeDept, viewerId: string): { label: string; items: NavI
       label: "Tools",
       items: [
         ...(h.repos ? [{ href: `${b}/repos`, label: "Repositories", icon: GitBranchIcon, exact: true }] : []),
+        ...(h.studio ? [{ href: `${b}/docs`, label: "Specs and docs", icon: FileTextIcon, exact: true }] : []),
         ...(h.accounting ? [{ href: `${b}/accounting`, label: "Accounting", icon: CalculatorIcon, exact: true }] : []),
         { href: "/requests", label: "Requests", icon: InboxIcon },
       ],

@@ -282,6 +282,7 @@ export type Task = {
   recur: string | null;
   estimate_hours: number | null;
   spent_hours: number | null;
+  points: number | null;
   progress: number;
   start_date: string | null;
   due_date: string | null;
@@ -505,6 +506,8 @@ export type TaskInput = {
   sprintId?: string | null;
   recur?: string | null;
   estimateHours?: number | null;
+  // Story points (Configure, Sprints: estimates in points).
+  points?: number | null;
   spentHours?: number | null;
   progress?: number;
   startDate?: string | null;
@@ -739,7 +742,8 @@ export async function saveTask(user: AppUser, d: string, input: TaskInput, opts:
     const code = (input.projectId ?? null) !== old.project_id ? await nextCode(dp, cfg, input.projectId ?? null) : old.code;
     await run(
       `UPDATE dept_tasks SET code = ?, title = ?, description = ?, type = ?, status = ?, status_category = ?, priority = ?, project_id = ?, milestone_id = ?, assignee_id = ?, reviewer_id = ?,
-         parent_id = ?, sprint_id = COALESCE(?, CASE WHEN ? THEN NULL ELSE sprint_id END), recur = ?, estimate_hours = ?, spent_hours = ?, progress = ?, start_date = ?, due_date = ?, labels = ?,
+         parent_id = ?, sprint_added_at = CASE WHEN ?::text IS NOT NULL AND sprint_id IS DISTINCT FROM ?::text THEN ? ELSE sprint_added_at END,
+         sprint_id = COALESCE(?, CASE WHEN ? THEN NULL ELSE sprint_id END), recur = ?, estimate_hours = ?, points = CASE WHEN ? THEN ? ELSE points END, spent_hours = ?, progress = ?, start_date = ?, due_date = ?, labels = ?,
          fields = ?, checklist = ?, updated_at = ?, completed_at = CASE WHEN ? = 'done' THEN COALESCE(completed_at, ?) ELSE NULL END WHERE id = ?`,
       code,
       title,
@@ -754,9 +758,14 @@ export async function saveTask(user: AppUser, d: string, input: TaskInput, opts:
       reviewerId,
       parentId,
       sprintId ?? null,
+      sprintId ?? null,
+      now,
+      sprintId ?? null,
       sprintId === null,
       recur,
       estimate,
+      input.points !== undefined,
+      input.points == null || !Number.isFinite(Number(input.points)) ? null : Math.max(0, Math.min(100, Number(input.points))),
       input.spentHours ?? null,
       progress,
       day(input.startDate),
@@ -820,6 +829,8 @@ export async function saveTask(user: AppUser, d: string, input: TaskInput, opts:
     category === "done" ? now : null,
   );
   if (input.blockedBy?.length && cfg.features.dependencies) await setBlockers(dp, id, code, input.blockedBy);
+  if (input.points != null && Number.isFinite(Number(input.points))) await run("UPDATE dept_tasks SET points = ? WHERE id = ?", Math.max(0, Math.min(100, Number(input.points))), id);
+  if (sprintId) await run("UPDATE dept_tasks SET sprint_added_at = ? WHERE id = ?", now, id);
   const subtasks = cfg.features.subtasks && !parentId ? (input.subtasks ?? template?.subtasks ?? []).map((s) => s.replace(/\s+/g, " ").trim()).filter(Boolean).slice(0, 30) : [];
   for (const s of subtasks) await saveTask(user, dp, { title: s, type, parentId: id, projectId: input.projectId ?? null, milestoneId: input.milestoneId ?? null, assigneeId: input.assigneeId ?? null, sprintId: sprintId ?? null }, { automations: false });
   if (cfg.notify.assigned && input.assigneeId && input.assigneeId !== user.id)

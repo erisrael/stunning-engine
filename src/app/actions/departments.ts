@@ -276,3 +276,54 @@ export async function flowReleaseAction(dept: string, input: { ids: string[]; na
 export async function draftReleaseNotesAction(dept: string, ids: string[]) {
   return wrap(async () => flow.draftReleaseNotes(await requireViewer(), dept, ids), { revalidate: false });
 }
+
+// --- The Dev studio (Phase 12b): sprints, roadmap, specs ---
+
+export async function createNextSprintAction(dept: string, goal?: string | null) {
+  return wrap(async () => (await import("@/server/dev-studio")).createNextSprint(await requireViewer(), dept, { goal }));
+}
+export async function startSprintAction(dept: string, id: string, goal?: string | null) {
+  return wrap(async () => (await import("@/server/dev-studio")).startSprint(await requireViewer(), dept, id, goal));
+}
+export async function closeSprintAction(dept: string, id: string, note?: string | null) {
+  return wrap(async () => (await import("@/server/dev-studio")).closeSprint(await requireViewer(), dept, id, note));
+}
+export async function planTaskAction(dept: string, taskId: string, sprintId: string | null) {
+  return wrap(async () => (await import("@/server/dev-studio")).planTask(await requireViewer(), dept, taskId, sprintId));
+}
+export async function setSprintCapacityAction(dept: string, userId: string, value: number) {
+  return wrap(async () => (await import("@/server/dev-studio")).setSprintCapacity(await requireViewer(), dept, userId, value));
+}
+export async function saveStandupAction(dept: string, sprintId: string, input: { yesterday?: string | null; today?: string | null; blockers?: string | null }) {
+  return wrap(async () => (await import("@/server/dev-studio")).saveStandup(await requireViewer(), dept, sprintId, input));
+}
+export async function addRetroAction(dept: string, sprintId: string, kind: "well" | "improve" | "action", text: string) {
+  return wrap(async () => (await import("@/server/dev-studio")).addRetro(await requireViewer(), dept, sprintId, kind, text));
+}
+export async function deleteRetroAction(dept: string, id: string) {
+  return wrap(async () => (await import("@/server/dev-studio")).deleteRetro(await requireViewer(), dept, id));
+}
+export async function retroToTaskAction(dept: string, id: string, assigneeId: string | null) {
+  return wrap(async () => (await import("@/server/dev-studio")).retroToTask(await requireViewer(), dept, id, assigneeId));
+}
+export async function createDocAction(dept: string, input: Parameters<typeof import("@/server/dev-studio").createDoc>[2]) {
+  return wrap(async () => (await import("@/server/dev-studio")).createDoc(await requireViewer(), dept, input));
+}
+export async function getDocAction(dept: string, id: string) {
+  return wrap(async () => (await import("@/server/dev-studio")).getDoc(await requireViewer(), dept, id), { revalidate: false });
+}
+export async function saveDocAction(dept: string, id: string, input: { title: string; body: string; projectId?: string | null }) {
+  return wrap(async () => (await import("@/server/dev-studio")).saveDoc(await requireViewer(), dept, id, input));
+}
+export async function submitDocAction(dept: string, id: string, reviewers: string[]) {
+  return wrap(async () => (await import("@/server/dev-studio")).submitDoc(await requireViewer(), dept, id, reviewers));
+}
+export async function decideDocAction(dept: string, id: string, approve: boolean, note?: string | null) {
+  return wrap(async () => (await import("@/server/dev-studio")).decideDoc(await requireViewer(), dept, id, approve, note));
+}
+export async function linkRequirementAction(dept: string, docId: string, req: string, task: string, on: boolean) {
+  return wrap(async () => (await import("@/server/dev-studio")).linkRequirement(await requireViewer(), dept, docId, req, task, on));
+}
+export async function deleteDocAction(dept: string, id: string) {
+  return wrap(async () => (await import("@/server/dev-studio")).deleteDoc(await requireViewer(), dept, id));
+}

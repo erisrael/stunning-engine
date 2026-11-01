@@ -112,6 +112,62 @@ export type DeptField = {
 };
 export type DeptKpi = { key: string; label: string; unit: string; higherIsBetter: boolean; active: boolean };
 
+// Sprints (Configure, Sprints), for any department that switches them on.
+export const RITUALS = [
+  { key: "planning", label: "Sprint planning" },
+  { key: "standup", label: "Daily stand-up" },
+  { key: "review", label: "Sprint review" },
+  { key: "retro", label: "Retrospective" },
+] as const;
+export type RitualKey = (typeof RITUALS)[number]["key"];
+export type SprintConfig = {
+  lengthWeeks: number; // 1 to 4
+  startDay: number; // 0 Sunday ... 6 Saturday
+  naming: "number" | "date";
+  unit: "hours" | "points";
+  carryOver: "next" | "backlog";
+  workdays: number[];
+  rituals: { key: RitualKey; on: boolean; day: number | null; time: string }[];
+  // What "done" means here, shown on the sprint and each task.
+  definitionOfDone: string[];
+};
+export const DEFAULT_SPRINT: SprintConfig = {
+  lengthWeeks: 2,
+  startDay: 1,
+  naming: "number",
+  unit: "points",
+  carryOver: "next",
+  workdays: [1, 2, 3, 4, 5],
+  rituals: [
+    { key: "planning", on: true, day: 1, time: "09:30" },
+    { key: "standup", on: true, day: null, time: "09:15" },
+    { key: "review", on: true, day: 5, time: "14:00" },
+    { key: "retro", on: true, day: 5, time: "15:00" },
+  ],
+  definitionOfDone: [],
+};
+
+export function normalizeSprint(raw: unknown): SprintConfig {
+  const r = (raw && typeof raw === "object" ? raw : {}) as Partial<SprintConfig>;
+  const n = (v: unknown, lo: number, hi: number, d: number) => (typeof v === "number" && Number.isFinite(v) ? Math.min(hi, Math.max(lo, Math.round(v))) : d);
+  const time = (v: unknown, d: string) => (typeof v === "string" && /^\d{2}:\d{2}$/.test(v) ? v : d);
+  const days = Array.isArray(r.workdays) ? [...new Set(r.workdays.filter((x) => Number.isInteger(x) && x >= 0 && x <= 6))].sort() : DEFAULT_SPRINT.workdays;
+  return {
+    lengthWeeks: n(r.lengthWeeks, 1, 4, DEFAULT_SPRINT.lengthWeeks),
+    startDay: n(r.startDay, 0, 6, DEFAULT_SPRINT.startDay),
+    naming: r.naming === "date" ? "date" : "number",
+    unit: r.unit === "hours" ? "hours" : "points",
+    carryOver: r.carryOver === "backlog" ? "backlog" : "next",
+    workdays: days.length ? days : DEFAULT_SPRINT.workdays,
+    rituals: RITUALS.map((x) => {
+      const got = Array.isArray(r.rituals) ? r.rituals.find((y) => y && y.key === x.key) : undefined;
+      const d = DEFAULT_SPRINT.rituals.find((y) => y.key === x.key)!;
+      return { key: x.key, on: typeof got?.on === "boolean" ? got.on : d.on, day: got?.day === null ? null : n(got?.day, 0, 6, d.day ?? 1), time: time(got?.time, d.time) };
+    }),
+    definitionOfDone: Array.isArray(r.definitionOfDone) ? r.definitionOfDone.filter((x): x is string => typeof x === "string").map((x) => x.replace(/\s+/g, " ").trim().slice(0, 160)).filter(Boolean).slice(0, 20) : [],
+  };
+}
+
 export type DeptConfig = {
   title: string;
   description: string;
@@ -133,6 +189,7 @@ export type DeptConfig = {
   intake: { types: string[]; intro: string };
   // The stages tasks go through, with the lead's review and hand-over (Configure, Flow). Off: tasks move freely.
   flow: DeptFlow;
+  sprint: SprintConfig;
 };
 
 const PALETTE = ["#64748b", "#0ea5e9", "#7b68ee", "#f59e0b", "#22c55e", "#ef4444", "#ec4899", "#14b8a6", "#a855f7", "#f97316"];
@@ -192,6 +249,7 @@ function builtInBase(dept: "dev" | "marketing"): DeptConfig {
     automations: [],
     intake: { types: [], intro: "" },
     flow: { ...NO_FLOW },
+    sprint: structuredClone(DEFAULT_SPRINT),
   };
 }
 
@@ -269,6 +327,7 @@ export function deptTemplateConfig(template: string, title: string, codePrefix: 
     automations: [],
     intake: { types: [], intro: "" },
     flow: { ...NO_FLOW },
+    sprint: structuredClone(DEFAULT_SPRINT),
   };
   // Each template brings its ready flow (Configure, Flow), on from the start.
   return applyFlowPreset(templateBase(base, template), template);
@@ -534,6 +593,7 @@ export function normalizeConfig(raw: unknown, dept: WorkDept): DeptConfig {
     automations,
     intake: { types: Array.isArray(ii.types) ? ii.types.filter((t): t is string => typeof t === "string" && typeKeys.includes(t)) : [], intro: str(ii.intro, 300) },
     flow: normalizeFlow(r.flow ?? d.flow, statuses),
+    sprint: normalizeSprint(r.sprint ?? d.sprint),
   };
 }
 
