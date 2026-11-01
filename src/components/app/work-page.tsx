@@ -20,7 +20,7 @@ import { FinanceAccounting } from "./integrations";
 import { DEPT_VIEW_LABELS, DEPT_VIEWS, deptPath, deptViewPath } from "@/lib/work";
 import { flowHome } from "@/server/dept-flow";
 
-const TABS = ["dashboard", "board", "list", "sheet", "overview", "timeline", "team", "report", "projects", "calendar", "configure", "repos", "accounting", "sprint", "roadmap", "docs"] as const;
+const TABS = ["dashboard", "board", "list", "sheet", "overview", "timeline", "team", "report", "projects", "calendar", "configure", "repos", "accounting", "sprint", "roadmap", "docs", "present"] as const;
 const SORTS = ["updated", "due", "priority", "code", "title", "status"] as const;
 
 // The Dev and Marketing sections share this page; their vocabulary, workflow and rights come from the configuration.
@@ -68,6 +68,12 @@ export async function WorkPage({ dept, searchParams, view }: { dept: WorkDept; s
         />
       </div>
     );
+  // A presentation of the department for a meeting or an office screen (Phase 12c).
+  if (tab === "present") {
+    const { presentData } = await import("@/server/present");
+    const { DeptPresent } = await import("./dept-present");
+    return <DeptPresent dept={dept} data={await presentData(viewer, dept)} back={deptPath(dept)} />;
+  }
   if ((tab === "sprint" && !cfg.features.sprints) || ((tab === "roadmap" || tab === "docs") && !access.view)) redirect(deptViewPath(dept, "board"));
   if (tab === "repos" || tab === "accounting" || tab === "sprint" || tab === "roadmap" || tab === "docs") {
     const projects = await listProjects(viewer, dept);

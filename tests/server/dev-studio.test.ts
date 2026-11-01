@@ -118,6 +118,11 @@ async function main() {
   const dora = await ds.doraMeasures(lead, "dev");
   check("DORA counts releases and lead time", dora.releases === 1 && dora.leadTimeHours !== null, dora);
 
+  // Phase 12c: the department presentation, with sentences written from the numbers.
+  const pres = await (await import("../../src/server/present")).presentData(lead, "dev");
+  check("the presentation has the week's numbers and a plain sentence", pres.counts.open > 0 && /this week/.test(pres.say.numbers), pres.say);
+  check("the project slide names the project at risk", /Offline app/.test(pres.say.projects ?? ""), pres.say.projects);
+
   console.log(`\n${pass} passed, ${fail} failed`);
   if (fail) process.exitCode = 1;
 }

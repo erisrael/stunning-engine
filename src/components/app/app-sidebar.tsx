@@ -57,6 +57,7 @@ import {
   GalleryVerticalEndIcon,
   TimerIcon,
   MapIcon,
+  PresentationIcon,
 } from "lucide-react";
 import type { HomeDept } from "@/server/nav";
 import {
@@ -198,6 +199,7 @@ function homeGroups(h: HomeDept, viewerId: string): { label: string; items: NavI
       label: "Insights",
       items: [
         { href: `${b}/report`, label: h.seeAll ? "Report" : "My report", icon: ChartColumnIcon, exact: true },
+        ...(h.seeAll ? [{ href: `${b}/present`, label: "Present", icon: PresentationIcon, exact: true }] : []),
         ...(h.seeAll ? [{ href: `${b}/team`, label: "Team", icon: UsersIcon, exact: true }] : []),
       ],
     },

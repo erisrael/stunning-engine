@@ -231,6 +231,7 @@ export function Assistant({ ctx }: { ctx: AssistantContext }) {
   const [doing, setDoing] = React.useState<Extract<Flow, { kind: "do" }> | null>(null);
   const [showing, setShowing] = React.useState<Extract<Flow, { kind: "show" }> | null>(null);
   const base = ctx.home?.base ?? null;
+  const pathname = usePathname();
   const log = (e: Parameters<typeof logAssistantAction>[0]) => void logAssistantAction(e);
   // A "show me" that moved to another page carries on there.
   React.useEffect(() => {
@@ -291,6 +292,8 @@ export function Assistant({ ctx }: { ctx: AssistantContext }) {
     },
     [],
   );
+  // Out of the way during a presentation.
+  if (/\/present$/.test(pathname)) return null;
   return (
     <>
       {showing && <ShowMe flow={showing} base={base} onEnd={endShow} />}

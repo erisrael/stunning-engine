@@ -96,6 +96,14 @@ try {
   await dev.screenshot({ path: path.join(shots, "7-assistant-show.png") });
   await dev.getByRole("dialog", { name: "Show me" }).getByRole("button", { name: "Stop" }).click();
 
+  // Phase 12c: the department presentation.
+  await go(lead, "/dev/present");
+  check("the presentation opens with an explainer", await lead.locator("[data-explainer]").isVisible());
+  await lead.keyboard.press("ArrowRight");
+  await lead.waitForTimeout(600);
+  check("arrow keys move to the next slide", (await lead.getByText(/slide 2 of/).count()) === 1);
+  await lead.screenshot({ path: path.join(shots, "8-present.png") });
+
   // Phase 12b: the Sprint, Roadmap and Specs pages.
   await go(lead, "/dev/sprint");
   await lead.getByRole("button", { name: /Plan the next sprint/ }).click();
