@@ -252,7 +252,7 @@ export function StudioTeam({ data, onOpen }: { data: StudioTeamData; onOpen: (id
   );
 }
 
-export function StudioConfigure({ config }: { config: StudioConfig }) {
+export function StudioConfigure({ config, subjects = [], people = [] }: { config: StudioConfig; subjects?: { id: string; name: string }[]; people?: { id: string; name: string }[] }) {
   const router = useRouter();
   const [c, setC] = React.useState(config);
   const [text, setText] = React.useState("");
@@ -296,6 +296,35 @@ export function StudioConfigure({ config }: { config: StudioConfig }) {
         <label className="flex items-center gap-2 text-sm">
           <Switch checked={c.requireChecklist} onCheckedChange={(v) => setC({ ...c, requireChecklist: v })} /> Approving and publishing need every line done (and verified)
         </label>
+        <div className="space-y-2" data-subject-reviewers>
+          <p className="text-sm font-medium">Subject reviewers</p>
+          <p className="text-xs text-muted-foreground">People who approve or return work in a subject (besides heads and leads). Publishing stays with heads and leads; nobody reviews their own work.</p>
+          <div className="space-y-1.5">
+            {subjects.map((s) => (
+              <div key={s.id} className="flex flex-wrap items-center gap-1.5 text-sm">
+                <span className="w-40 shrink-0 truncate">{s.name}</span>
+                {people.map((p) => {
+                  const on = (c.subjectReviewers[s.id] ?? []).includes(p.id);
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      aria-pressed={on}
+                      aria-label={`${p.name} reviews ${s.name}`}
+                      onClick={() => {
+                        const cur = c.subjectReviewers[s.id] ?? [];
+                        setC({ ...c, subjectReviewers: { ...c.subjectReviewers, [s.id]: on ? cur.filter((x) => x !== p.id) : [...cur, p.id] } });
+                      }}
+                      className={`rounded-full border px-2 py-0.5 text-xs ${on ? "border-primary bg-primary text-primary-foreground" : "hover:bg-muted"}`}
+                    >
+                      {p.name}
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        </div>
         <Button
           disabled={!dirty || busy}
           onClick={async () => {

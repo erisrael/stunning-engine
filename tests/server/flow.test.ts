@@ -165,6 +165,33 @@ async function main() {
   r = (await row(job))!;
   check("approved at the last stage: finished", r.status === "done" && r.flow_state === null, r);
 
+  // Studio: subject reviewers, nobody reviews their own work, heads and leads publish, a new version restarts.
+  const studio = await import("../../src/server/studio");
+  const sx = await import("../../src/server/studio-extras");
+  const mkC = async (key: string) => (await loadUser((await upsertAccount({ name: key, email: `${key}@flow.local`, title: "Writer", roles: ["content"], password: "Flow-Test-2026!", mustChangePassword: false })).id))!;
+  const writer = await mkC("writer");
+  const reviewer = await mkC("reviewer");
+  const sLead = await mkC("slead");
+  await setPosition(admin, "studio", sLead.id, "lead");
+  const subject = (await get<{ id: string }>("SELECT id FROM subjects LIMIT 1"))!.id;
+  await sx.saveStudioConfig(admin, { ...(await sx.getStudioConfig()), subjectReviewers: { [subject]: [reviewer.id] } });
+  const saved = (await studio.saveResource(writer, { type: "note", title: "Cells and tissues", subjectId: subject, assigneeId: writer.id })) as unknown;
+  const resId = typeof saved === "string" ? saved : (saved as { id: string }).id;
+  check("the writer sees it on their Studio board", (await sx.studioHome(writer))!.mine.some((c) => c.id === resId && c.status === "draft"));
+  await studio.setResourceStatus(writer, resId, "submit");
+  check("the subject reviewer sees it to review", (await sx.studioHome(reviewer))!.toReview.some((c) => c.id === resId));
+  check("the writer cannot approve their own work", !!(await throws(() => studio.setResourceStatus(writer, resId, "approve"))));
+  check("the subject reviewer cannot publish", !!(await throws(() => studio.setResourceStatus(reviewer, resId, "publish"))));
+  await studio.setResourceStatus(reviewer, resId, "changes", "Add a diagram");
+  check("returned work shows the note to the writer", (await sx.studioHome(writer))!.mine.find((c) => c.id === resId)?.note === "Add a diagram");
+  await studio.setResourceStatus(writer, resId, "submit");
+  await studio.setResourceStatus(reviewer, resId, "approve");
+  check("the lead sees it to publish", (await sx.studioHome(sLead))!.toPublish.some((c) => c.id === resId));
+  await studio.setResourceStatus(sLead, resId, "publish");
+  await studio.setResourceStatus(writer, resId, "newVersion");
+  const v2 = await get<{ status: string; version: number }>("SELECT status, version FROM studio_resources WHERE id = ?", resId);
+  check("a new version starts the loop again", v2?.status === "draft" && Number(v2.version) === 2, v2);
+
   // The flow's own rules.
   const sts = ops.statuses;
   const bad = (stages: unknown[]) => {

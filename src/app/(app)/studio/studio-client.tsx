@@ -176,7 +176,7 @@ export function StudioClient({
         {current === "board" && <StudioBoard work={work} manage={access.manage} viewerId={viewerId} readOnly={access.readOnly} onOpen={openById} />}
         {current === "calendar" && <StudioCalendar work={work} onOpen={openById} />}
         {current === "team" && team && <StudioTeam data={team} onOpen={openById} />}
-        {current === "configure" && studioConfig && <StudioConfigure config={studioConfig} />}
+        {current === "configure" && studioConfig && <StudioConfigure config={studioConfig} subjects={taxonomy.subjects} people={people} />}
         {openWork && <ResourceEditor id={openWork.id} type={openWork.type} taxonomy={taxonomy} access={access} viewerId={viewerId} people={people} onClose={() => setOpenWork(null)} />}
       </div>
     );
@@ -688,6 +688,11 @@ ${examQs.map((q, i) => `<div class="q"><b>${i + 1}.</b> ${esc(q.stem)} <i>(${q.p
                 {access.manage && r.status === "published" && (
                   <Button size="sm" variant="outline" onClick={() => act("unpublish", "Unpublished")}>
                     Unpublish
+                  </Button>
+                )}
+                {(own || access.manage) && (r.status === "published" || r.status === "approved") && (
+                  <Button size="sm" variant="outline" onClick={() => act("newVersion", "A new version was started; it goes through review again")}>
+                    New version
                   </Button>
                 )}
                 {(own || access.manage) && r.status !== "archived" && (

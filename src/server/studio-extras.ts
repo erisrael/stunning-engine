@@ -9,13 +9,22 @@ import { periodRange, type Period } from "@/lib/dashboards";
 import type { ChecklistLine, TaskCheck } from "@/lib/dept-config";
 import { RESOURCE_TYPES, type ResourceType } from "@/lib/studio";
 
-export type StudioConfig = { reviewChecklist: ChecklistLine[]; requireChecklist: boolean };
-const DEFAULT: StudioConfig = { reviewChecklist: [], requireChecklist: false };
+// subjectReviewers: people (not only heads and leads) who review work in a subject (Phase 12, "Subject review").
+export type StudioConfig = { reviewChecklist: ChecklistLine[]; requireChecklist: boolean; subjectReviewers: Record<string, string[]> };
+const DEFAULT: StudioConfig = { reviewChecklist: [], requireChecklist: false, subjectReviewers: {} };
+
+const cleanReviewers = (v: unknown): Record<string, string[]> =>
+  Object.fromEntries(
+    Object.entries(v && typeof v === "object" ? (v as Record<string, unknown>) : {})
+      .filter(([k, ids]) => /^[A-Za-z0-9_-]{1,60}$/.test(k) && Array.isArray(ids))
+      .map(([k, ids]) => [k, [...new Set((ids as unknown[]).filter((x): x is string => typeof x === "string" && /^[A-Za-z0-9_-]{1,40}$/.test(x)))].slice(0, 20)] as const)
+      .filter(([, ids]) => ids.length),
+  );
 
 export async function getStudioConfig(): Promise<StudioConfig> {
   const row = await get<{ value: string }>("SELECT value FROM settings WHERE key = 'cfg.studio'");
   const v = parseJson<Partial<StudioConfig>>(row?.value, {});
-  return { reviewChecklist: Array.isArray(v.reviewChecklist) ? v.reviewChecklist : [], requireChecklist: !!v.requireChecklist };
+  return { reviewChecklist: Array.isArray(v.reviewChecklist) ? v.reviewChecklist : [], requireChecklist: !!v.requireChecklist, subjectReviewers: cleanReviewers(v.subjectReviewers ?? DEFAULT.subjectReviewers) };
 }
 
 // Studio heads and Admin set the review checklist.
@@ -30,7 +39,7 @@ export async function saveStudioConfig(user: AppUser, input: StudioConfig) {
     .map((l) => ({ text: String(l.text ?? "").replace(/\s+/g, " ").trim().slice(0, 160), verify: !!l.verify }))
     .filter((l) => l.text)
     .slice(0, 30);
-  const cfg: StudioConfig = { reviewChecklist: lines, requireChecklist: !!input.requireChecklist };
+  const cfg: StudioConfig = { reviewChecklist: lines, requireChecklist: !!input.requireChecklist, subjectReviewers: cleanReviewers(input.subjectReviewers ?? (await getStudioConfig()).subjectReviewers) };
   await run(
     "INSERT INTO settings (key, value, updated_at, updated_by) VALUES ('cfg.studio', ?, ?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by",
     JSON.stringify(cfg),
@@ -114,3 +123,61 @@ export async function studioTeam(user: AppUser, period: Period) {
   };
 }
 export type StudioTeamData = Awaited<ReturnType<typeof studioTeam>>;
+
+// ---------------------------------------------------------------------------
+// Studio's flow on Home (Phase 12): Assigned, Draft, Subject review, Approved, Published; a new version starts
+// the loop again.
+// ---------------------------------------------------------------------------
+
+export type StudioFlowCard = { id: string; type: ResourceType; title: string; status: string; version: number; place: string; dueDate: string | null; assignee: string | null; author: string | null; note: string | null; checklist: { total: number; done: number }; subjectId: string | null };
+
+export async function isSubjectReviewer(userId: string, subjectId: string | null) {
+  if (!subjectId) return false;
+  return ((await getStudioConfig()).subjectReviewers[subjectId] ?? []).includes(userId);
+}
+
+export async function studioHome(user: AppUser) {
+  const a = await deptAccess(user, "studio");
+  if (!a.view) return null;
+  const cfg = await getStudioConfig();
+  const mySubjects = Object.entries(cfg.subjectReviewers).filter(([, ids]) => ids.includes(user.id)).map(([k]) => k);
+  const rows = await all<{
+    id: string; type: ResourceType; title: string; status: string; version: number; due_date: string | null; author_id: string | null; author: string | null;
+    assignee_id: string | null; assignee: string | null; review_note: string | null; checklist: string; subject_id: string | null; grade: string | null; subject: string | null; unit: number | null;
+  }>(
+    `SELECT r.id, r.type, r.title, r.status, r.version, r.due_date, r.author_id, ua.name AS author, r.assignee_id, us.name AS assignee, r.review_note, r.checklist, r.subject_id,
+       g.name AS grade, s.name AS subject, u.number AS unit
+     FROM studio_resources r LEFT JOIN users ua ON ua.id = r.author_id LEFT JOIN users us ON us.id = r.assignee_id LEFT JOIN grades g ON g.id = r.grade_id
+     LEFT JOIN subjects s ON s.id = r.subject_id LEFT JOIN units u ON u.id = r.unit_id
+     WHERE r.status IN ('draft', 'review', 'approved') ORDER BY r.due_date IS NULL, r.due_date, r.updated_at DESC LIMIT 2000`,
+  );
+  const card = (r: (typeof rows)[number]): StudioFlowCard => {
+    const c = parseJson<TaskCheck[]>(r.checklist, []);
+    return {
+      id: r.id,
+      type: r.type,
+      title: r.title,
+      status: r.status,
+      version: Number(r.version),
+      place: [r.grade, r.subject, r.unit != null ? `Unit ${r.unit}` : null].filter(Boolean).join(" · "),
+      dueDate: r.due_date,
+      assignee: r.assignee,
+      author: r.author,
+      note: r.status === "draft" ? r.review_note : null,
+      checklist: { total: c.length, done: c.filter((x) => x.done).length },
+      subjectId: r.subject_id,
+    };
+  };
+  const mine = rows.filter((r) => r.assignee_id === user.id || (!r.assignee_id && r.author_id === user.id)).map(card);
+  const lead = a.manage && !a.readOnly;
+  const canReview = (r: (typeof rows)[number]) => r.author_id !== user.id && (lead || (!!r.subject_id && mySubjects.includes(r.subject_id)));
+  return {
+    lead,
+    reviewer: mySubjects.length > 0,
+    mine,
+    toReview: rows.filter((r) => r.status === "review" && canReview(r)).map(card),
+    toPublish: lead ? rows.filter((r) => r.status === "approved").map(card) : [],
+    unassigned: lead ? rows.filter((r) => r.status === "draft" && !r.assignee_id).map(card) : [],
+  };
+}
+export type StudioHome = NonNullable<Awaited<ReturnType<typeof studioHome>>>;

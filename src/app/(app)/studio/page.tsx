@@ -3,7 +3,8 @@ import { requireViewer } from "@/server/auth";
 import { deptAccess, deptPeople } from "@/server/departments";
 import { taxonomy } from "@/server/queries";
 import { listQuestions, listResources } from "@/server/studio";
-import { canConfigureStudio, getStudioConfig, studioTeam, studioWork } from "@/server/studio-extras";
+import { canConfigureStudio, getStudioConfig, studioHome, studioTeam, studioWork } from "@/server/studio-extras";
+import { StudioFlowHome } from "@/components/app/studio-flow";
 import { deptViews } from "@/server/work";
 import { PageHeader } from "@/components/app/primitives";
 import { POSITION_LABELS } from "@/lib/domain";
@@ -61,7 +62,7 @@ export default async function StudioPage({ searchParams }: { searchParams: Promi
           subjects: tax.subjects.map((s) => ({ id: s.id, name: s.name, code: s.code })),
           units: tax.units.map((u) => ({ id: u.id, gradeId: u.grade_id, subjectId: u.subject_id, number: u.number, title: u.title })),
         }}
-        dashboard={tab === "dashboard" ? <DeptDashboardView viewer={viewer} dept="studio" sp={sp} /> : undefined}
+        dashboard={tab === "dashboard" ? <StudioDashboard viewer={viewer} sp={sp} /> : undefined}
         work={work}
         team={team}
         studioConfig={studioConfig}
@@ -69,6 +70,17 @@ export default async function StudioPage({ searchParams }: { searchParams: Promi
         people={people.map((p) => ({ id: p.id, name: p.name }))}
         views={views}
       />
+    </div>
+  );
+}
+
+// Home: the Studio flow (my work, the review desk), then the dashboard.
+async function StudioDashboard({ viewer, sp }: { viewer: Awaited<ReturnType<typeof requireViewer>>; sp: Record<string, string | undefined> }) {
+  const home = await studioHome(viewer);
+  return (
+    <div className="space-y-6">
+      {home && <StudioFlowHome data={home} />}
+      <DeptDashboardView viewer={viewer} dept="studio" sp={sp} />
     </div>
   );
 }

@@ -492,7 +492,7 @@ Everything still open across the earlier phases, in three batches, then face che
   1. Phase 15: Foundations (sign-in, scheduled jobs, backups, tests, monitoring): done, except passkeys, slow-page timing and setting up the staging site
   2. Phase 10b: attendance by printed QR and office network: done, except SMS
   3. Phase 11: navigation by role, Profile tabs: done
-  4. Phase 12: department workflows (done, except Studio); 12b Dev studio; 12c presentation studio
+  4. Phase 12: department workflows (done); 12b Dev studio; 12c presentation studio
   5. Phase 16: Myseed's own needs (presenter releases and fees, file locations, Myseed App upload, Amharic and the Ethiopian calendar, data protection)
   6. Phase 17: KRAs, KPIs and OKRs
   7. Phase 13: assistant
@@ -602,7 +602,7 @@ Today a developer sees "Departments, Dev team" with sub-links, and every departm
 
 Built: `src/server/nav.ts` picks the person's own department from the active role (Developer: Dev, Marketing, Content: Studio) or a position in a department made in Admin; production staff and people who oversee (Admin, managers, owners, Company overview) keep today's sidebar with each department's views folded. Views live at `/dev/board`, `/marketing/list`, `/d/<key>/timeline`; `?tab=` links are redirected with their filters. Studio keeps its own tabs (they are content types) and lists them in the sidebar for Studio people. Profile has tabs Profile, My record, Leave, Pay and claims, Attendance history and Account; `/me`, `/leave` and `/pay` redirect there. `/approvals` gathers leave, claims, attendance corrections and reviews, handovers and timer corrections.
 
-## Phase 12: Department workflows as complete as production (done, except Studio)
+## Phase 12: Department workflows as complete as production (done)
 
 Production teams work as a loop: the lead assigns, members start, fill in the card, mark done and send to the lead, the lead approves or returns, and only finished work is handed over. Departments today have statuses, a review step and requests, but not this loop. The same engine is built once and set up per department.
 
@@ -631,7 +631,7 @@ Production teams work as a loop: the lead assigns, members start, fill in the ca
 ### 12.3 Marketing, Studio and departments from templates
 
 - [x] **Marketing** (the requester joining the review is not built yet; Scheduled uses the Channel and Publish on fields): Brief (from a request or the lead), Draft (writer or designer), Review (lead; and the requester when asked), Approved, Scheduled (channel and time on the content calendar), Published (the link), Results (reach, clicks and the other KPIs logged against the campaign).
-- [ ] **Studio** (not built: Studio work is notes, exams and decks with their own review, not department tasks; its loop comes with Phase 12c or later): Assigned (note, exam or deck on a grade, subject and part), Draft, Subject review (reviewer checklist), Approved, Published; a new version starts the loop again.
+- [x] **Studio**: Studio Home shows the writer's own work (to write, with the reviewer's note when returned; in review; approved) and a review desk (to review, to publish, nobody writing it). Subject reviewers (Studio, Configure) approve or return work in their subjects besides heads and leads; nobody reviews their own work; heads and leads publish. "New version" sends approved or published work back through the loop.: Assigned (note, exam or deck on a grade, subject and part), Draft, Subject review (reviewer checklist), Approved, Published; a new version starts the loop again.
 - [x] **Templates**: Support (Intake, Triage, In progress, Waiting on the requester, Resolved), Sales (Lead, Qualified, Proposal, Won or Lost), Operations, HR and Finance requests, each with its flow, checklists and guide.
 - [x] Help: each department's chapter describes its own flow from the configuration (extends the Phase 10 chapters).
 

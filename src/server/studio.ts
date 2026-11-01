@@ -59,15 +59,22 @@ export type Resource = {
 
 export type ResourceFilter = { type: ResourceType; q?: string | null; status?: string | null; gradeId?: string | null; subjectId?: string | null; unitId?: string | null; mine?: boolean; sort?: "updated" | "title" | "status"; dir?: "asc" | "desc" };
 
-function scope(user: AppUser, a: DeptAccess, alias = "r") {
+// What a member sees: their own work, published work, and work in review in the subjects they review.
+function scope(user: AppUser, a: DeptAccess, alias = "r", reviewSubjects: string[] = []) {
   if (a.manage || a.readOnly) return { sql: "1=1", params: [] as string[] };
-  return { sql: `(${alias}.author_id = ? OR ${alias}.assignee_id = ? OR ${alias}.status = 'published')`, params: [user.id, user.id] };
+  const rev = reviewSubjects.length ? ` OR (${alias}.status = 'review' AND ${alias}.subject_id IN (${reviewSubjects.map(() => "?").join(",")}))` : "";
+  return { sql: `(${alias}.author_id = ? OR ${alias}.assignee_id = ? OR ${alias}.status = 'published'${rev})`, params: [user.id, user.id, ...reviewSubjects] };
+}
+
+async function reviewSubjectsOf(userId: string) {
+  const cfg = await (await import("./studio-extras")).getStudioConfig();
+  return Object.entries(cfg.subjectReviewers).filter(([, ids]) => ids.includes(userId)).map(([k]) => k);
 }
 
 export async function listResources(user: AppUser, f: ResourceFilter): Promise<{ rows: Resource[]; access: DeptAccess }> {
   const a = await requireDept(user, "studio");
   if (!(RESOURCE_TYPES as readonly string[]).includes(f.type)) throw new WorkflowError("VALIDATION", "Unknown type.");
-  const sc = scope(user, a);
+  const sc = scope(user, a, "r", a.manage || a.readOnly ? [] : await reviewSubjectsOf(user.id));
   const where = ["r.type = ?", sc.sql];
   const params: string[] = [f.type, ...sc.params];
   for (const [col, v] of [
@@ -203,10 +210,10 @@ export async function saveResource(user: AppUser, input: ResourceInput) {
 }
 
 // Review flow: draft -> review (author) -> approved (head or lead) -> published (head or lead); changes go back to draft.
-export async function setResourceStatus(user: AppUser, id: string, action: "submit" | "approve" | "changes" | "publish" | "unpublish" | "archive" | "restore", note?: string | null) {
+export async function setResourceStatus(user: AppUser, id: string, action: "submit" | "approve" | "changes" | "publish" | "unpublish" | "archive" | "restore" | "newVersion", note?: string | null) {
   const a = await requireDept(user, "studio", "write");
-  const r = await get<{ status: ResourceStatus; title: string; type: string; author_id: string | null; assignee_id: string | null; checklist: string }>(
-    "SELECT status, title, type, author_id, assignee_id, checklist FROM studio_resources WHERE id = ?",
+  const r = await get<{ status: ResourceStatus; title: string; type: string; author_id: string | null; assignee_id: string | null; checklist: string; subject_id: string | null; version: number }>(
+    "SELECT status, title, type, author_id, assignee_id, checklist, subject_id, version FROM studio_resources WHERE id = ?",
     id,
   );
   if (!r) throw new WorkflowError("NOT_FOUND", "Not found.");
@@ -232,11 +239,24 @@ export async function setResourceStatus(user: AppUser, id: string, action: "subm
       await set("review");
       await notify(await deptManagers("studio"), { type: "approval", title: `Review: ${r.title}`, body: `${user.name} submitted a ${r.type} for review.`, link: `/studio?open=${id}`, dedupeKey: `studio-review:${id}:${now}` }, now, user.id);
       return;
+    case "newVersion": {
+      // A published piece is changed as a new version: back to draft, through review again.
+      if (!own && !a.manage) throw new WorkflowError("FORBIDDEN", "Only the author or a lead starts a new version.");
+      if (r.status !== "published" && r.status !== "approved") throw new WorkflowError("INVALID_STATE", "Only approved or published work gets a new version.");
+      const v = Number(r.version) + 1;
+      await run("UPDATE studio_resources SET version = ?, checklist = '[]', review_note = NULL, reviewer_id = NULL WHERE id = ?", v, id);
+      await set("draft");
+      await audit({ actor: user }, { action: "studio.version", summary: `${user.name} started version ${v} of ${r.type} "${r.title}"`, reason: note ?? null });
+      return;
+    }
     case "approve":
     case "changes":
     case "publish":
-    case "unpublish":
-      if (!a.manage) throw new WorkflowError("FORBIDDEN", "Only Studio heads and leads review and publish.");
+    case "unpublish": {
+      // Subject reviewers (Configure) approve or return work in their subjects; publishing stays with heads and leads.
+      const subjectReviewer = (action === "approve" || action === "changes") && (await (await import("./studio-extras")).isSubjectReviewer(user.id, r.subject_id));
+      if (!a.manage && !subjectReviewer) throw new WorkflowError("FORBIDDEN", "Only Studio heads and leads, or the subject's reviewers, review; heads and leads publish.");
+      if (!a.manage && own) throw new WorkflowError("FORBIDDEN", "Someone else reviews your own work.");
       if ((action === "approve" || action === "publish") && studioCfg.requireChecklist) {
         const open = checklist.find((c) => !c.done || (c.verify && !c.verifiedBy));
         if (open) throw new WorkflowError("VALIDATION", `Finish the review checklist first: "${open.text}"${open.done ? " needs verifying" : ""}.`);
@@ -268,6 +288,7 @@ export async function setResourceStatus(user: AppUser, id: string, action: "subm
           user.id,
         );
       return;
+    }
     case "archive":
     case "restore":
       if (!own && !a.manage) throw new WorkflowError("FORBIDDEN", "You can archive only your own work.");

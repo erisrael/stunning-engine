@@ -101,6 +101,7 @@ export async function saveResourceAction(input: studio.ResourceInput) {
   return wrap(async () => studio.saveResource(await requireViewer(), input));
 }
 export async function resourceStatusAction(id: string, action: Parameters<typeof studio.setResourceStatus>[2], note?: string | null) {
+  // (submit, approve, changes, publish, unpublish, archive, restore, newVersion)
   return wrap(async () => studio.setResourceStatus(await requireViewer(), id, action, note));
 }
 export async function deleteResourcesAction(ids: string[]) {
