@@ -176,6 +176,9 @@ function WorkPanel({ item, canEdit, lead }: { item: FlowItem; canEdit: boolean; 
     if (kind !== "raw" && !isUrl) return void toast.error("Paste the link (starting with https://).");
     if (await act(item.id, { action: "asset", kind, url: isUrl ? v : null, cameraCode: isUrl ? null : v, durationMin: durationMin ?? null }, "Added")) setLink("");
   };
+  // Handed over on an external disk: the disk's name and the folder or file on it.
+  const addDisk = async (kind: "raw" | "master" | "captions" | "thumbnail", disk: string, path: string, durationMin?: number | null) =>
+    act(item.id, { action: "asset", kind, disk, path, durationMin: durationMin ?? null }, "Recorded");
   return (
     <div className="space-y-3 border-t pt-2 text-sm">
       {lead && <Changes item={item} />}
@@ -221,9 +224,10 @@ function WorkPanel({ item, canEdit, lead }: { item: FlowItem; canEdit: boolean; 
           <p className="text-xs font-medium">Recordings</p>
           {item.assets.filter((a) => a.kind === "raw").map((a, i) => (
             <p key={i} className="text-xs text-muted-foreground">
-              {a.cameraCode ?? a.url} (v{a.version})
+              {a.disk ? `Disk ${a.disk}${a.path ? `: ${a.path}` : ""}` : (a.cameraCode ?? a.url)} (v{a.version})
             </p>
           ))}
+          {canEdit && item.transfer !== "link" && <DiskField label="Raw footage on an external disk" current={null} onSave={(d, p) => addDisk("raw", d, p, rawMin ? Number(rawMin) : null)} />}
           {canEdit && (
             <form className="flex flex-wrap gap-2" onSubmit={(e) => (e.preventDefault(), void addAsset("raw", link, rawMin ? Number(rawMin) : null))}>
               <Input value={link} onChange={(e) => setLink(e.target.value)} placeholder="Camera code or link" aria-label="Camera code or link" className="h-8 flex-1" />
@@ -241,10 +245,41 @@ function WorkPanel({ item, canEdit, lead }: { item: FlowItem; canEdit: boolean; 
 
       {item.stage === "editing" && (
         <div className="space-y-2">
-          <LinkField label="Edited master (link)" current={has("master")?.url ?? null} disabled={!canEdit} onSave={(v) => addAsset("master", v)} />
-          {needs("captions") && <LinkField label="Captions (link)" current={has("captions")?.url ?? null} disabled={!canEdit} onSave={(v) => addAsset("captions", v)} />}
-          {needs("thumbnail") && <LinkField label="Thumbnail (link)" current={has("thumbnail")?.url ?? null} disabled={!canEdit} onSave={(v) => addAsset("thumbnail", v)} />}
+          {(
+            [
+              ["master", "Edited master"],
+              ["captions", "Captions"],
+              ["thumbnail", "Thumbnail"],
+            ] as const
+          )
+            .filter(([k]) => k === "master" || needs(k))
+            .map(([k, label]) => (
+              <FileField key={k} label={label} mode={item.transfer} asset={has(k)} disabled={!canEdit} onLink={(v) => addAsset(k, v)} onDisk={(d, p) => addDisk(k, d, p)} />
+            ))}
           <NumberField label="Final length (minutes)" value={item.finalDurationMin} disabled={!canEdit} onSave={(v) => act(item.id, { action: "durations", actualDurationMin: v })} />
+        </div>
+      )}
+
+      {item.stage === "uploading" && item.assets.some((a) => a.kind !== "raw") && (
+        <div className="space-y-0.5 rounded-lg bg-muted/40 p-2 text-xs" data-handed-files>
+          <p className="font-medium">From Editing</p>
+          {item.assets
+            .filter((a) => a.kind === "master" || a.kind === "captions" || a.kind === "thumbnail")
+            .map((a) => (
+              <p key={a.kind} className="truncate">
+                <span className="text-muted-foreground">{a.kind === "master" ? "Master" : a.kind === "captions" ? "Captions" : "Thumbnail"} v{a.version}: </span>
+                {a.disk ? (
+                  <span>
+                    Disk {a.disk}
+                    {a.path ? `, ${a.path}` : ""}
+                  </span>
+                ) : a.url ? (
+                  <a href={a.url} target="_blank" rel="noreferrer" className="text-primary hover:underline">
+                    {a.url}
+                  </a>
+                ) : null}
+              </p>
+            ))}
         </div>
       )}
 
@@ -279,11 +314,11 @@ function WorkPanel({ item, canEdit, lead }: { item: FlowItem; canEdit: boolean; 
   );
 }
 
-function LinkField({ label, current, disabled, onSave }: { label: string; current: string | null; disabled: boolean; onSave: (v: string) => void }) {
+function LinkField({ label, current, disabled, onSave, bare }: { label: string; current: string | null; disabled: boolean; onSave: (v: string) => void; bare?: boolean }) {
   const [v, setV] = React.useState("");
   return (
     <form className="space-y-1" onSubmit={(e) => (e.preventDefault(), onSave(v), setV(""))}>
-      <p className="text-xs font-medium">{label}</p>
+      {!bare && <p className="text-xs font-medium">{label}</p>}
       {current && (
         <a href={current} target="_blank" rel="noreferrer" className="block truncate text-xs text-primary hover:underline">
           {current}
@@ -297,6 +332,66 @@ function LinkField({ label, current, disabled, onSave }: { label: string; curren
           </Button>
         </div>
       )}
+    </form>
+  );
+}
+
+// A file the next team needs: a link, or the external disk it is on (Settings, Workflow decides which are offered).
+function FileField({
+  label,
+  mode,
+  asset,
+  disabled,
+  onLink,
+  onDisk,
+}: {
+  label: string;
+  mode: FlowItem["transfer"];
+  asset: FlowItem["assets"][number] | undefined;
+  disabled: boolean;
+  onLink: (v: string) => void;
+  onDisk: (disk: string, path: string) => void;
+}) {
+  const [way, setWay] = React.useState<"link" | "disk">(mode === "link" ? "link" : mode === "disk" ? "disk" : asset?.url ? "link" : "disk");
+  return (
+    <div className="space-y-1" data-file-field={label}>
+      <div className="flex items-center gap-2">
+        <p className="text-xs font-medium">{label}</p>
+        {mode === "either" && !disabled && (
+          <span className="ml-auto flex gap-1 text-[11px]">
+            {(["disk", "link"] as const).map((w) => (
+              <button key={w} type="button" aria-pressed={way === w} onClick={() => setWay(w)} className={cn("rounded px-1.5 py-0.5", way === w ? "bg-primary text-primary-foreground" : "hover:bg-muted")}>
+                {w === "disk" ? "External disk" : "Link"}
+              </button>
+            ))}
+          </span>
+        )}
+      </div>
+      {asset?.disk && (
+        <p className="truncate text-xs">
+          Disk {asset.disk}
+          {asset.path ? `, ${asset.path}` : ""} <span className="text-muted-foreground">(v{asset.version})</span>
+        </p>
+      )}
+      {way === "link" ? (
+        <LinkField label={`${label} (link)`} current={asset?.url ?? null} disabled={disabled} onSave={onLink} bare />
+      ) : (
+        !disabled && <DiskField label={`${label} on an external disk`} current={asset?.disk ?? null} onSave={onDisk} />
+      )}
+    </div>
+  );
+}
+
+function DiskField({ label, current, onSave }: { label: string; current: string | null; onSave: (disk: string, path: string) => void }) {
+  const [disk, setDisk] = React.useState(current ?? "");
+  const [path, setPath] = React.useState("");
+  return (
+    <form className="flex flex-wrap gap-2" onSubmit={(e) => (e.preventDefault(), disk.trim() && onSave(disk.trim(), path.trim()))}>
+      <Input value={disk} onChange={(e) => setDisk(e.target.value)} placeholder="Disk name, e.g. Disk 3" aria-label={`${label}: disk name`} className="h-8 w-36" />
+      <Input value={path} onChange={(e) => setPath(e.target.value)} placeholder="Folder or file, e.g. G9/Biology/U2/P1" aria-label={`${label}: folder or file`} className="h-8 min-w-40 flex-1" />
+      <Button size="sm" variant="outline" type="submit" disabled={!disk.trim()}>
+        {current ? "Update" : "Save"}
+      </Button>
     </form>
   );
 }

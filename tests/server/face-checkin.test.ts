@@ -56,7 +56,7 @@ async function main() {
   const k = await att.createKiosk(admin, "Door");
   const kiosk = (await att.kioskFromToken(await att.pairKiosk(k.code)))!;
   check("face check-in is refused while switched off", /switched off/.test((await throws(() => att.kioskPunch(kiosk, { face: noisy(fD) }))) ?? ""));
-  await att.saveAttendanceConfig(admin, { methods: { web: true, kiosk: true, mobile: false, face: true } });
+  await att.saveAttendanceConfig(admin, { methods: { anywhere: true, kiosk: true, mobile: false, face: true } });
   const r = await att.kioskPunch(kiosk, { face: noisy(fD) });
   check("the kiosk checks the person in by face", r.kind === "in" && r.name === "Dawit", r);
   check("recorded as Kiosk, face", !!(await get("SELECT 1 AS x FROM att_events WHERE employee_id = ? AND source = 'kiosk_face'", eD)));

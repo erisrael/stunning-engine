@@ -112,6 +112,8 @@ export function AttTabs({ tab, tabs }: { tab: string; tabs: { key: string; label
 type MyData = {
   employeeId: string | null;
   cfg: AttendanceConfig;
+  // QR posters and the office network (Attendance, Capture).
+  capture: { qr: boolean; network: boolean };
   today: DayResult | null;
   events: EventRow[];
   days: DayResult[];
@@ -137,7 +139,9 @@ export function MyAttendance({ data, month, today, monthLink = "/attendance?mont
   const { act, busy } = useAct();
   const [pin, setPin] = React.useState("");
   const [correcting, setCorrecting] = React.useState<{ day: string; inTime: string; outTime: string; reason: string } | null>(null);
-  const canSelf = data.cfg.methods.web || data.cfg.methods.mobile;
+  // The button checks in only with proof of place: the office network, the phone's location, or "anywhere" when
+  // Admin allowed it. With QR posters alone, people scan the poster instead.
+  const canSelf = data.cfg.methods.anywhere || data.cfg.methods.mobile || data.capture.network;
   const last = data.events.at(-1);
   // One button: it ends a break or lunch, else checks in or out.
   const nextKind = toggleKind(stateAfter(last?.kind));
@@ -194,8 +198,15 @@ export function MyAttendance({ data, month, today, monthLink = "/attendance?mont
                 </Button>
               )}
             </div>
-            {!canSelf && <p className="text-sm text-muted-foreground">Check in and out at the kiosk at the entrance with your badge, or your number and PIN.</p>}
-            {canSelf && !data.cfg.methods.web && (
+            {!canSelf && (
+              <p className="text-sm text-muted-foreground" data-checkin-hint>
+                {data.capture.qr ? "Scan the QR code at the entrance with your phone to check in and out." : "Check in and out at the kiosk at the entrance with your badge, or your number and PIN."}
+              </p>
+            )}
+            {canSelf && !data.cfg.methods.anywhere && data.capture.network && !data.cfg.methods.mobile && (
+              <p className="text-xs text-muted-foreground">Only on the office Wi-Fi.</p>
+            )}
+            {canSelf && !data.cfg.methods.anywhere && data.cfg.methods.mobile && (
               <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <MapPinIcon className="size-3.5" /> From your phone, at {data.cfg.site.label} only. Your location is checked once, when you press the button.
               </p>

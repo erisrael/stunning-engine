@@ -137,9 +137,24 @@ export function WorkflowSettings({ settings }: { settings: Settings }) {
   const [c, setC] = React.useState(settings.checklists);
   const saveP = useSave("policies");
   const saveC = useSave("checklists");
-  const policy = (k: keyof Settings["policies"], label: string, hint: string) => (
+  type Flag = { [K in keyof Settings["policies"]]: Settings["policies"][K] extends boolean ? K : never }[keyof Settings["policies"]];
+  const policy = (k: Flag, label: string, hint: string) => (
     <Row label={label} hint={hint}>
       <Switch checked={p[k]} onCheckedChange={(v) => setP({ ...p, [k]: v })} aria-label={label} />
+    </Row>
+  );
+  const transfer = (k: "recordingTransfer" | "editingTransfer", label: string, hint: string) => (
+    <Row label={label} hint={hint}>
+      <Select value={p[k]} onValueChange={(v) => setP({ ...p, [k]: v as Settings["policies"][typeof k] })}>
+        <SelectTrigger className="w-56" aria-label={label}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="disk">External disk (disk name and folder)</SelectItem>
+          <SelectItem value="link">Storage link (Drive or similar)</SelectItem>
+          <SelectItem value="either">Either, chosen each time</SelectItem>
+        </SelectContent>
+      </Select>
     </Row>
   );
   return (
@@ -157,6 +172,8 @@ export function WorkflowSettings({ settings }: { settings: Settings }) {
           {policy("requireManagerApproval", "Require manager approval before release", "Adds a manager approval step to Publication. Not a sixth role.")}
           {policy("managerEmergencyRelease", "Manager emergency release", "Managers without the Publication role may confirm a release with a written reason. Always audited.")}
           {policy("autoPauseOtherSessions", "Auto-pause other timers on start", "When off, staff are asked before switching timers.")}
+          {transfer("recordingTransfer", "How Recording hands over the raw footage", "Studios copy the footage to an external disk, or upload it and paste a link. Camera codes always work.")}
+          {transfer("editingTransfer", "How Editing hands over the master, captions and thumbnail", "On an external disk carried to Uploading, or by a storage link. Uploading sees the disk and folder on the card.")}
           <div className="pt-3"><Button onClick={() => saveP(p)}>Save policies</Button></div>
         </CardContent>
       </Card>

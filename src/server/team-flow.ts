@@ -28,7 +28,10 @@ export type FlowItem = {
   running: boolean;
   rawDurationMin: number | null;
   finalDurationMin: number | null;
-  assets: { kind: string; url: string | null; cameraCode: string | null; version: number }[];
+  // disk: the external disk it was handed over on (with path, the folder or file), instead of a link.
+  assets: { kind: string; url: string | null; cameraCode: string | null; version: number; disk: string | null; path: string | null }[];
+  // How files travel at this stage (Settings, Workflow).
+  transfer: "link" | "disk" | "either";
   checks: FlowCheck[];
   requirements: Requirement[];
   targets: FlowTarget[];
@@ -87,8 +90,8 @@ async function hydrate(rows: Row[], viewerId: string): Promise<FlowItem[]> {
       ...settings.checklists[r.stage].map((c) => ({ key: c.key, label: c.label, required: c.required, verify: !!c.verify, checked: !!res(c.key)?.checked, verified: !!res(c.key)?.verified_at })),
       ...(await workChecklistItems(r.id, r.stage)).map((c) => ({ key: `wc:${c.key}`, label: c.label, required: c.required, verify: c.verify, checked: !!res(`wc:${c.key}`)?.checked, verified: !!res(`wc:${c.key}`)?.verified_at })),
     ];
-    const assets = await all<{ kind: string; url: string | null; camera_code: string | null; version_no: number }>(
-      "SELECT kind, url, camera_code, version_no FROM assets WHERE item_id = ? AND status = 'current' ORDER BY created_at",
+    const assets = await all<{ kind: string; url: string | null; camera_code: string | null; version_no: number; label: string | null; source_ref: string | null }>(
+      "SELECT kind, url, camera_code, version_no, label, source_ref FROM assets WHERE item_id = ? AND status = 'current' ORDER BY created_at",
       r.id,
     );
     const targets =
@@ -126,7 +129,11 @@ async function hydrate(rows: Row[], viewerId: string): Promise<FlowItem[]> {
       running,
       rawDurationMin: r.raw_duration_min == null ? null : Number(r.raw_duration_min),
       finalDurationMin: r.actual_duration_min == null ? null : Number(r.actual_duration_min),
-      assets: assets.map((a) => ({ kind: a.kind, url: a.url, cameraCode: a.camera_code, version: Number(a.version_no) })),
+      assets: assets.map((a) => {
+        const disk = a.label?.startsWith("disk:") ? a.label.slice(5) : null;
+        return { kind: a.kind, url: a.url, cameraCode: a.camera_code, version: Number(a.version_no), disk, path: disk ? a.source_ref : null };
+      }),
+      transfer: r.stage === "recording" ? settings.policies.recordingTransfer : settings.policies.editingTransfer,
       checks,
       requirements: await evaluateRequirements(r.id),
       targets,

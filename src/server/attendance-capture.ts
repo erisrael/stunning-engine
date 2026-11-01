@@ -159,6 +159,18 @@ export type Here = {
 };
 
 async function where(c: CaptureConfig, input: { code?: string | null; lat?: number | null; lng?: number | null; accuracy?: number | null }, employeeId: string): Promise<Here & { distance: number | null; ip: string | null; deviceOk: boolean }> {
+  // Without the poster's code, only the office-network method lets someone in: a QR-only setup needs the scan.
+  if (!input.code && !c.methods.network)
+    return {
+      ok: false,
+      reason: c.methods.qr ? "Scan the QR code at the entrance to check in." : "Check-in from your phone is switched off. Use the kiosk or ask your team lead.",
+      site: null,
+      via: "network",
+      needLocation: false,
+      distance: null,
+      ip: null,
+      deviceOk: false,
+    };
   const ip = await requestIp();
   let site: Site | null = null;
   let via: "qr" | "network" = "network";
@@ -174,7 +186,6 @@ async function where(c: CaptureConfig, input: { code?: string | null; lat?: numb
   } else {
     site = await siteForIp(c, ip);
     if (!site && c.sites.length === 1 && c.sites[0]!.checks.location) site = c.sites[0]!;
-    if (!c.methods.qr && !c.methods.network) return { ok: false, reason: "Check-in from your phone is switched off. Use the kiosk or ask your team lead.", site: null, via, needLocation: false, distance: null, ip, deviceOk: false };
   }
   if (!site) return { ok: false, reason: "Connect to the office Wi-Fi and try again.", site: null, via, needLocation: false, distance: null, ip, deviceOk: false };
   const net = site.checks.network && (await onNetwork(site, ip));

@@ -231,6 +231,8 @@ export async function saveUserAction(input: UserInput) {
         );
         if (input.password)
           await setPassword(id, input.password, input.mustChangePassword ?? false);
+        // A new address is confirmed again (Admin, Sign-in, Email verification).
+        if (String((before as { email?: string } | undefined)?.email ?? "").toLowerCase() !== email.toLowerCase()) await (await import("@/server/email-verify")).emailChanged(id);
         if (!input.active || input.password) await run("DELETE FROM sessions WHERE user_id = ? AND id <> ?", id, viewer.sessionId);
         await audit({ actor: viewer }, { action: "user.updated", summary: `${viewer.name} updated ${input.name}`, oldValue: before, newValue: { ...input, password: undefined, capacity: undefined } });
       } else {

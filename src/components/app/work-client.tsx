@@ -65,6 +65,8 @@ import { cn } from "@/lib/utils";
 import { today, usable, type Access, type Person } from "./work-shared";
 import { Board, OverviewTree, SheetView, TaskList, ViewOptions } from "./work-views";
 import { TaskDialog } from "./work-task-dialog";
+import { DeptFlowHome } from "./dept-flow";
+import type { FlowHome } from "@/server/dept-flow";
 import { TimelineView } from "./work-timeline";
 import { TeamView } from "./work-team";
 import { ReportView } from "./work-report";
@@ -94,6 +96,7 @@ export function WorkClient({
   openTaskId,
   showArchived,
   dashboard,
+  flow = null,
   extraTabs = [],
   panel,
   views = [],
@@ -116,6 +119,8 @@ export function WorkClient({
   openTaskId: string | null;
   showArchived: boolean;
   dashboard?: React.ReactNode;
+  // Home of a department with a flow: the member's board and the lead desk, above the dashboard.
+  flow?: FlowHome | null;
   // Tabs a department adds (GitHub repositories, accounting) and the panel for the open one.
   extraTabs?: { key: "repos" | "accounting"; label: string }[];
   panel?: React.ReactNode;
@@ -301,6 +306,7 @@ export function WorkClient({
 
       {tab !== "projects" && tab !== "dashboard" && tab !== "team" && tab !== "report" && tab !== "repos" && tab !== "accounting" && <ViewOptions dept={dept} tab={tab} config={cfg} access={access} views={views} people={people} projects={projects} />}
 
+      {tab === "dashboard" && flow && <DeptFlowHome data={flow} onOpen={openById} />}
       {tab === "dashboard" && dashboard}
       {(tab === "repos" || tab === "accounting") && panel}
       {tab === "board" && <Board dept={dept} config={cfg} people={people} tasks={tasks} viewerId={viewerId} access={access} onOpen={setEditing} onDetails={(status) => setEditing({ status })} />}

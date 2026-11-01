@@ -1,0 +1,95 @@
+// Phase 12 in the browser: the Dev flow on Home. The lead plans a bug from the intake and passes code review, the
+// developer starts work on their own board, the tester accepts and sends back a bug; and Configure, Flow.
+import { chromium } from "playwright-core";
+import fs from "node:fs";
+import path from "node:path";
+
+const here = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Z]:)/, "$1"));
+const shots = path.join(process.env.SHOTS_DIR ?? path.join(here, "..", "..", "test-results"), "flow");
+fs.mkdirSync(shots, { recursive: true });
+const base = process.env.BASE_URL ?? "http://localhost:3123";
+const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || undefined });
+let fails = 0;
+const check = (label, ok, extra) => (console.log(`${ok ? "PASS" : "FAIL"} ${label}${!ok && extra !== undefined ? " " + String(extra).slice(0, 300) : ""}`), ok || fails++);
+const toast = (page, re) =>
+  page
+    .locator("[data-sonner-toast]")
+    .filter({ hasText: re })
+    .first()
+    .waitFor({ timeout: 10000 })
+    .then(
+      () => true,
+      () => false,
+    );
+async function as(email) {
+  const ctx = await browser.newContext({ viewport: { width: 1360, height: 900 } });
+  const page = await ctx.newPage();
+  page.on("pageerror", (e) => check(`${email} no page error`, false, e.message));
+  await page.goto(`${base}/login`);
+  await page.fill("input[name=email]", email);
+  await page.fill("input[name=password]", "Demo-Workflow-2026");
+  await page.getByRole("button", { name: /log in/i }).click();
+  await page.waitForURL(/dashboard|dev/, { timeout: 30000 });
+  return page;
+}
+const go = async (page, p) => (await page.goto(`${base}${p}`), await page.waitForLoadState("load"), await page.waitForTimeout(800));
+const card = (page, id) => page.locator(`[data-flow-card="${id}"]`);
+
+try {
+  const { bug, feat, rev } = JSON.parse(fs.readFileSync(process.env.PREP_FILE, "utf8"));
+  const lead = await as("devlead@demo.local");
+  await go(lead, "/dev");
+  check("the lead sees the lead desk", await lead.getByRole("heading", { name: "Lead desk" }).isVisible());
+  check("the flow at a glance shows every stage", (await lead.locator("[data-flow-glance]").count()) === 6);
+  check("the bug waits in the intake", await lead.locator('[data-flow-section="intake"]').locator(`[data-flow-card="${bug}"]`).isVisible());
+  await lead.screenshot({ path: path.join(shots, "1-lead-desk.png"), fullPage: true });
+  const intake = card(lead, bug);
+  await intake.getByLabel("Person").click();
+  await lead.getByRole("option", { name: "Bereket" }).click();
+  await intake.getByRole("button", { name: /Plan into/ }).click();
+  check("planned", await toast(lead, /Planned/));
+  await lead.waitForTimeout(1000);
+  check("it left the intake", (await lead.locator('[data-flow-section="intake"]').locator(`[data-flow-card="${bug}"]`).count()) === 0);
+  await lead.locator('[data-flow-section="checks"]').locator(`[data-flow-card="${rev}"]`).getByRole("button", { name: /Pass to QA/ }).click();
+  check("code review passed to QA", await toast(lead, /passed/i));
+
+  const dev = await as("dev@demo.local");
+  await go(dev, "/dev");
+  check("the developer sees their own board", await dev.getByRole("heading", { name: "My work" }).isVisible());
+  check("both their tasks are in To do", (await dev.locator('[data-flow-column="todo"] [data-flow-card]').count()) === 2, await dev.locator('[data-flow-column="todo"] [data-flow-card]').count());
+  check("the stage guide is shown", await dev.getByText("How In progress works").isVisible());
+  await card(dev, feat).getByRole("button", { name: "Start" }).click();
+  check("started", await toast(dev, /Started/));
+  await dev.waitForTimeout(1000);
+  check("it moved to In progress", (await dev.locator(`[data-flow-column="working"] [data-flow-card="${feat}"]`).count()) === 1);
+  await card(dev, feat).getByRole("button", { name: "Done" }).click();
+  check("done is refused while the checklist is open", await toast(dev, /still needs/));
+  await dev.screenshot({ path: path.join(shots, "2-member-board.png"), fullPage: true });
+
+  const tester = await as("tester@demo.local");
+  await go(tester, "/dev");
+  check("the tester sees what arrives in QA", await tester.locator('[data-flow-section="arriving"]').locator(`[data-flow-card="${rev}"]`).isVisible());
+  await card(tester, rev).getByRole("button", { name: "Accept" }).click();
+  check("accepted", await toast(tester, /accepted/i));
+  await tester.waitForTimeout(1000);
+  await card(tester, rev).getByRole("button", { name: "Send back as a bug" }).click();
+  await card(tester, rev).getByPlaceholder(/Steps to reproduce/).fill("1. Turn off the network\n2. Open a lesson\nIt shows an empty page");
+  await card(tester, rev).getByRole("button", { name: "Send back as a bug" }).click();
+  check("sent back as a bug", await toast(tester, /Returned/));
+  await tester.screenshot({ path: path.join(shots, "3-tester.png"), fullPage: true });
+
+  await go(dev, "/dev");
+  check("the bug's steps are on the developer's card", await card(dev, rev).getByText(/Steps to reproduce/).isVisible());
+
+  const admin = await as("admin@demo.local");
+  await go(admin, "/dev/configure");
+  await admin.getByRole("tab", { name: "Flow" }).click();
+  check("Configure, Flow lists the stages", (await admin.locator("[data-flow-stage]").count()) === 6);
+  check("the path from the first stage is drawn", await admin.getByLabel("The flow from the first stage").isVisible());
+  await admin.screenshot({ path: path.join(shots, "4-configure-flow.png"), fullPage: true });
+} catch (e) {
+  check("ran without crashing", false, e?.stack ?? e);
+} finally {
+  await browser.close();
+}
+process.exit(fails ? 1 : 0);

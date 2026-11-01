@@ -173,6 +173,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
                   requests: await listSignupRequests(viewer),
                   roster: await twoStepRoster(viewer),
                   log: await signInLog(viewer, { limit: 200 }),
+                  unconfirmed: await (await import("@/server/email-verify")).unconfirmedPeople(viewer),
                 }}
               />
               <SignInAdmin google={await googleSettings()} emailReady={(await smtpSettings()).source !== "none"} />

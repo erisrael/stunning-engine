@@ -104,3 +104,11 @@ export async function decideSignupAction(id: string, approve: boolean, role?: Ro
 export async function signInLogAction(filter: { userId?: string; event?: string }) {
   return wrap(async () => signInLog(await requireViewer(), { ...filter, limit: 300 }), { revalidate: false });
 }
+
+// Email verification (Admin, Sign-in)
+export async function sendEmailConfirmationAction(userId: string) {
+  return wrap(async () => (await import("@/server/email-verify")).adminSendConfirmation(await requireViewer(), userId), { revalidate: false });
+}
+export async function markEmailConfirmedAction(userId: string) {
+  return wrap(async () => (await import("@/server/email-verify")).adminConfirm(await requireViewer(), userId));
+}

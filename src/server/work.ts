@@ -24,6 +24,7 @@ import {
   type TaskCheck,
 } from "@/lib/dept-config";
 import { deptPath, type WorkDept } from "@/lib/work";
+import { stageFor } from "@/lib/dept-flow";
 
 const OPEN_SQL = OPEN_CATEGORIES.map((c) => `'${c}'`).join(",");
 const liveProjectStatuses = (c: DeptConfig) => c.projectStatuses.filter((s) => s.category !== "done" && s.category !== "cancelled").map((s) => s.key);
@@ -296,6 +297,12 @@ export type Task = {
   updated_at: string;
   completed_at: string | null;
   comments: number;
+  // The flow (Configure, Flow): where it is inside its stage, since when, where it came from, the last return note.
+  flow_state: string | null;
+  flow_since: string | null;
+  flow_from: string | null;
+  flow_note: string | null;
+  release_id: string | null;
 };
 
 export type TaskFilter = {
@@ -369,8 +376,10 @@ export async function listTasks(user: AppUser, d: string, f: TaskFilter = {}): P
   const where = ["t.dept = ?"];
   const params: (string | number)[] = [dp];
   if (!a.rights.seeAll) {
-    where.push("(t.assignee_id = ? OR t.reporter_id = ? OR t.reviewer_id = ?)");
-    params.push(user.id, user.id, user.id);
+    // People who check a stage of the flow (testers) also see the tasks in it.
+    const checks = checkedStatuses(a, user);
+    where.push(`(t.assignee_id = ? OR t.reporter_id = ? OR t.reviewer_id = ?${checks.length ? ` OR t.status IN (${placeholders(checks.length)})` : ""})`);
+    params.push(user.id, user.id, user.id, ...checks);
   }
   if (f.status?.length) {
     where.push(`t.status IN (${placeholders(f.status.length)})`);
@@ -442,8 +451,29 @@ export async function getTask(user: AppUser, d: string, id: string) {
   const a = await workAccess(user, dp);
   const r = await get<TaskRow>(`${TASK_SELECT} WHERE t.id = ? AND t.dept = ?`, id, dp);
   if (!r) throw new WorkflowError("NOT_FOUND", "Task not found.");
-  if (!a.rights.seeAll && ![r.assignee_id, r.reporter_id, r.reviewer_id].includes(user.id)) throw new WorkflowError("FORBIDDEN", "Not your task.");
+  if (!a.rights.seeAll && ![r.assignee_id, r.reporter_id, r.reviewer_id].includes(user.id) && !checkedStatuses(a, user).includes(r.status)) throw new WorkflowError("FORBIDDEN", "Not your task.");
   return (await withLinks([r]))[0]!;
+}
+
+// Statuses of the flow stages this person checks by name (for example QA for a tester).
+export function checkedStatuses(a: WorkAccess, user: AppUser) {
+  if (!a.config.flow.on) return [];
+  return a.config.flow.stages.filter((s) => s.kind === "check" && s.checkers === "people" && s.people.includes(user.id)).map((s) => s.status);
+}
+
+// Keeps a task's place in the flow in step after it was moved by hand (the Board, the task, bulk edits, automations).
+// Into another stage: it starts there as To do (or finished, at the end). Inside a work stage: its To do status
+// means not started, its main status means started.
+export async function syncFlowAfterMove(cfg: DeptConfig, id: string, from: string, to: string, now: string) {
+  if (!cfg.flow.on || from === to) return;
+  const a = stageFor(cfg.flow, from);
+  const b = stageFor(cfg.flow, to);
+  if (!b) return void (await run("UPDATE dept_tasks SET flow_state = NULL, flow_since = ?, flow_from = ? WHERE id = ?", now, from, id));
+  if (a?.status !== b.status) {
+    const state = b.kind === "final" ? null : b.kind === "work" && b.queueStatus && to === b.status ? "working" : "todo";
+    return void (await run("UPDATE dept_tasks SET flow_state = ?, flow_since = ?, flow_from = ?, flow_note = NULL WHERE id = ?", state, now, from, id));
+  }
+  if (b.kind === "work" && b.queueStatus) await run("UPDATE dept_tasks SET flow_state = ? WHERE id = ?", to === b.queueStatus ? "todo" : "working", id);
 }
 
 async function nextLooseCode(dp: WorkDept, cfg: DeptConfig) {
@@ -604,7 +634,15 @@ async function gate(a: WorkAccess, user: AppUser, t: { id: string; code: string;
   const target = statusOf(cfg, to);
   if (!target) throw new WorkflowError("VALIDATION", "Unknown status.");
   if (from?.restricted && !a.rights.restricted) throw new WorkflowError("FORBIDDEN", `Only people with the right can move tasks out of ${from.label}.`);
-  if (cfg.features.review) {
+  // With a flow, work moves on to another stage only through its steps (Done, Send, Approve, Pass), so unfinished
+  // or returned work never shows up in the next stage. Leads can still move it by hand; anyone may cancel their own.
+  if (cfg.flow.on && !a.rights.editAll && target.category !== "cancelled") {
+    const sa = stageFor(cfg.flow, t.status);
+    const sb = stageFor(cfg.flow, to);
+    if ((sa || sb) && sa?.status !== sb?.status)
+      throw new WorkflowError("FORBIDDEN", `In ${cfg.title}, ${cfg.names.tasks.toLowerCase()} move on with the buttons on Home (Done, then Send). A lead can move ${t.code} by hand.`);
+  }
+  if (cfg.features.review && !cfg.flow.on) {
     if (from?.category === "review" && target.category !== "review" && target.category !== "cancelled" && t.reviewer_id !== user.id && !a.rights.editAll)
       throw new WorkflowError("FORBIDDEN", `${t.code} is waiting for its reviewer. The reviewer (or a lead) approves it or sends it back.`);
     if (target.category === "review" && !t.reviewer_id) throw new WorkflowError("VALIDATION", `Choose a reviewer for ${t.code} before moving it to ${target.label}.`);
@@ -736,6 +774,7 @@ export async function saveTask(user: AppUser, d: string, input: TaskInput, opts:
     if (reviewerId && reviewerId !== old.reviewer_id && reviewerId !== user.id && category === "review")
       await notify([reviewerId], { type: "approval", title: `${code} is waiting for your review`, body: title, link: `${deptPath(dp)}?task=${input.id}`, dedupeKey: `task-reviewer:${input.id}:${reviewerId}:${now}` }, now, user.id);
     await audit({ actor: user }, { itemId: input.id, action: `${dp}.task`, summary: `${user.name} updated ${code}${old.status !== status ? ` (${labelOf(cfg.statuses, old.status)} to ${labelOf(cfg.statuses, status)})` : ""}` });
+    await syncFlowAfterMove(cfg, input.id, old.status, status, now);
     if (old.status !== status) await afterStatusChange(user, a, dp, input.id, old.status, status, now, opts.automations !== false);
     return input.id;
   }
@@ -800,7 +839,7 @@ async function followers(taskId: string) {
 
 // After a status change: notices, the requester's update, the next copy of a recurring task, the parent's progress
 // and its "all subtasks done" automations, and this task's automations.
-async function afterStatusChange(user: AppUser, a: WorkAccess, dp: WorkDept, id: string, from: string, to: string, now: string, automations = true) {
+export async function afterStatusChange(user: AppUser, a: WorkAccess, dp: WorkDept, id: string, from: string, to: string, now: string, automations = true) {
   if (from === to) return;
   const t = await get<{ code: string; title: string; type: string; parent_id: string | null; recur: string | null; requested_by: string | null; reviewer_id: string | null; due_date: string | null; start_date: string | null }>(
     "SELECT code, title, type, parent_id, recur, requested_by, reviewer_id, due_date, start_date FROM dept_tasks WHERE id = ?",
@@ -916,6 +955,7 @@ async function runAutomations(user: AppUser, a: WorkAccess, dp: WorkDept, id: st
             now,
             id,
           );
+        if (s) await syncFlowAfterMove(a.config, id, cur.status, s.key, now);
       } else if (act.do === "progress" && act.value) await run("UPDATE dept_tasks SET progress = ?, updated_at = ? WHERE id = ?", Math.max(0, Math.min(100, Math.round(Number(act.value) || 0))), now, id);
       else if (act.do === "notify_reporter" && cur.reporter_id) await notify([cur.reporter_id], { type: "handoff", title: `${t.code}: ${rule.label}`, body: t.title, link, groupKey: `task:${id}` }, now, user.id);
       else if (act.do === "notify_assignee" && cur.assignee_id) await notify([cur.assignee_id], { type: "handoff", title: `${t.code}: ${rule.label}`, body: t.title, link, groupKey: `task:${id}` }, now, user.id);
@@ -962,6 +1002,7 @@ export async function moveTask(user: AppUser, d: string, id: string, status: str
   );
   if (t.status !== status) {
     await audit({ actor: user }, { itemId: id, action: `${dp}.task`, summary: `${user.name} moved ${t.code} to ${s.label}` });
+    await syncFlowAfterMove(a.config, id, t.status, status, now);
     await afterStatusChange(user, a, dp, id, t.status, status, now);
   }
 }

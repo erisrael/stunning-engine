@@ -906,9 +906,17 @@ function ActionDialog({ kind, item, preset, onClose }: { kind: DialogKind; item:
               <Input id="as-cam" value={str("cameraCode")} onChange={(e) => set("cameraCode", e.target.value.toUpperCase())} placeholder="C001" className="font-mono" />
             </Field>
           )}
-          <Field label={recording ? "Storage link (optional)" : "Storage link"} htmlFor="as-url" hint="https://, a network path, or another storage URL your team uses.">
+          <Field label="Storage link (optional when it is on a disk)" htmlFor="as-url" hint="https://, a network path, or another storage URL your team uses.">
             <Input id="as-url" value={str("url")} onChange={(e) => set("url", e.target.value)} placeholder="https://drive.example.com/..." />
           </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Or: external disk" htmlFor="as-disk" hint="When the file is carried on a disk">
+              <Input id="as-disk" value={str("disk")} onChange={(e) => set("disk", e.target.value)} placeholder="Disk 3" />
+            </Field>
+            <Field label="Folder or file on the disk" htmlFor="as-path">
+              <Input id="as-path" value={str("path")} onChange={(e) => set("path", e.target.value)} placeholder="G9/Biology/U2/P1" />
+            </Field>
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <Field label={recording ? "Title" : "Label (optional)"} htmlFor="as-label">
               <Input id="as-label" value={str("label")} onChange={(e) => set("label", e.target.value)} placeholder={recording ? "Introduction and core concepts" : "Main camera"} />
@@ -926,7 +934,7 @@ function ActionDialog({ kind, item, preset, onClose }: { kind: DialogKind; item:
       );
       confirm = {
         label: recording ? "Log recording" : "Link file",
-        disabled: recording ? !str("url").trim() && !str("cameraCode").trim() : !str("url").trim(),
+        disabled: recording ? !str("url").trim() && !str("cameraCode").trim() && !str("disk").trim() : !str("url").trim() && !str("disk").trim(),
         onClick: () =>
           submit({
             action: "asset",
@@ -936,6 +944,8 @@ function ActionDialog({ kind, item, preset, onClose }: { kind: DialogKind; item:
             label: str("label") || undefined,
             durationMin: str("duration") ? Number(str("duration")) : null,
             notes: str("notes") || undefined,
+            disk: str("disk") || null,
+            path: str("path") || null,
           }),
       };
       break;

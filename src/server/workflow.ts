@@ -999,6 +999,9 @@ export async function addAsset(
     durationMin?: number | null;
     notes?: string | null;
     sourceRef?: string | null;
+    // Handed over on an external disk instead of a link: the disk's name and the folder or file on it.
+    disk?: string | null;
+    path?: string | null;
   },
 ) {
   return await tx(async () => {
@@ -1006,12 +1009,22 @@ export async function addAsset(
       await requireView(ctx, itemId);
       const item = await getItem(itemId);
       const stage = ASSET_STAGE[input.kind];
-      const url = input.url?.trim() || null;
+      let url = input.url?.trim() || null;
       const cameraCode = input.cameraCode?.trim() || null;
-      // Recordings are identified by camera code; every other file needs a storage link.
+      const disk = input.disk?.replace(/\s+/g, " ").trim().slice(0, 80) || null;
+      const path = input.path?.trim().slice(0, 400) || null;
+      // How files travel (Settings, Workflow): a link, an external disk, or either.
+      const policies = (await getSettings()).policies;
+      const mode = stage === "recording" ? policies.recordingTransfer : policies.editingTransfer;
+      const supportingFile = input.kind === "document" || input.kind === "transcript";
+      if (disk && mode === "link") throw new WorkflowError("VALIDATION", "Files are handed over by link here (Settings, Workflow). Paste the storage link.");
+      if (url && !disk && mode === "disk" && !supportingFile)
+        throw new WorkflowError("VALIDATION", "Files are handed over on an external disk here (Settings, Workflow). Give the disk's name and the folder.");
+      if (disk) url = null;
+      // Recordings are identified by camera code; every other file needs a storage link or a disk.
       if (input.kind === "raw" || input.kind === "take_notes") {
-        if (!url && !cameraCode) throw new WorkflowError("VALIDATION", "Enter the camera code(s) or a storage link for the recording.");
-      } else if (!url) throw new WorkflowError("VALIDATION", "Provide a storage link for the file.");
+        if (!url && !cameraCode && !disk) throw new WorkflowError("VALIDATION", "Enter the camera code(s), a storage link or the disk for the recording.");
+      } else if (!url && !disk) throw new WorkflowError("VALIDATION", mode === "disk" ? "Give the external disk's name and the folder on it." : "Provide a storage link for the file.");
       if (url && !/^https?:\/\/|^\\\\|^[a-z]+:\/\//i.test(url))
         throw new WorkflowError("VALIDATION", "Use a full link such as https://drive.example.com/file or a network path.");
       const attempt = await currentAttempt(itemId);
@@ -1044,12 +1057,12 @@ export async function addAsset(
               stage,
               input.kind,
               version,
-              input.label ?? null,
+              disk ? `disk:${disk}` : (input.label ?? null),
               url,
               cameraCode,
               input.durationMin ?? null,
               input.notes ?? null,
-              input.sourceRef ?? null,
+              disk ? path : (input.sourceRef ?? null),
               actorId(ctx),
               now,
             );
@@ -1208,14 +1221,15 @@ export async function evaluateRequirements(itemId: string, attempt?: AttemptRow 
   const verified = new Set(checks.filter((c) => c.checked && c.verified_at).map((c) => c.key));
   if (a.stage === "recording") {
     const rawCount = (await get<{ c: number }>("SELECT COUNT(*) AS c FROM assets WHERE item_id = ? AND kind = 'raw' AND attempt_id = ?", itemId, a.id))?.c ?? 0;
-    reqs.push({ key: "raw", label: "At least one recording logged (camera code or link)", met: rawCount > 0 });
+    reqs.push({ key: "raw", label: `At least one recording logged (camera code${s.policies.recordingTransfer === "disk" ? " or disk" : s.policies.recordingTransfer === "link" ? " or link" : ", link or disk"})`, met: rawCount > 0 });
     if (s.policies.requireRawDuration) reqs.push({ key: "raw_duration", label: "Recorded raw duration entered", met: !!a.raw_duration_min });
   }
   if (a.stage === "editing") {
     const master = await currentAsset(itemId, "master");
-    reqs.push({ key: "master", label: "Edited master version linked", met: !!master });
-    if (s.policies.captionsRequired) reqs.push({ key: "captions", label: "Captions linked", met: !!await currentAsset(itemId, "captions") });
-    if (s.policies.thumbnailRequired) reqs.push({ key: "thumbnail", label: "Thumbnail linked", met: !!await currentAsset(itemId, "thumbnail") });
+    const how = s.policies.editingTransfer === "disk" ? "on the disk" : s.policies.editingTransfer === "link" ? "linked" : "linked or on the disk";
+    reqs.push({ key: "master", label: `Edited master version ${how}`, met: !!master });
+    if (s.policies.captionsRequired) reqs.push({ key: "captions", label: `Captions ${how}`, met: !!await currentAsset(itemId, "captions") });
+    if (s.policies.thumbnailRequired) reqs.push({ key: "thumbnail", label: `Thumbnail ${how}`, met: !!await currentAsset(itemId, "thumbnail") });
     reqs.push({ key: "final_duration", label: "Final duration recorded", met: !!item.actual_duration_min });
   }
   if (a.stage === "uploading") {

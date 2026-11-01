@@ -31,7 +31,8 @@ async function attendance() {
   await run("UPDATE employees SET manager_id = ? WHERE id = ?", hana.id, dawit.id);
   // Every day a workday, so the test works on weekends too.
   const cfg = await att.attendanceConfig();
-  await att.saveAttendanceConfig(a, { shifts: cfg.shifts.map((s) => ({ ...s, workdays: [0, 1, 2, 3, 4, 5, 6] })) });
+  // This test checks in from the Attendance page, so Admin allows "from the app anywhere" (off by default).
+  await att.saveAttendanceConfig(a, { shifts: cfg.shifts.map((s) => ({ ...s, workdays: [0, 1, 2, 3, 4, 5, 6] })), methods: { ...cfg.methods, anywhere: true } });
   const k = await att.createKiosk(a, "Main entrance");
   const pin = await att.resetPin(a, yonas.id);
   await att.newBadges(a, [hana.id]);
@@ -40,6 +41,31 @@ async function attendance() {
 }
 
 const PREPS: Record<string, () => Promise<unknown>> = {
+  // The Dev flow: a lead, a developer and a tester; a bug in the intake, a task to do, one in code review.
+  async flow() {
+    await passwordOnly();
+    const a = await admin();
+    const { setPosition } = await import("../../src/server/departments");
+    const { getDeptConfig, saveDeptConfig } = await import("../../src/server/dept-config");
+    const { saveTask } = await import("../../src/server/work");
+    const { applyFlowPreset } = await import("../../src/lib/dept-flow");
+    const mk = async (key: string, name: string) =>
+      (await loadUser((await upsertAccount({ name, email: `${key}@demo.local`, title: "Developer", roles: ["developer"], password: "Demo-Workflow-2026", mustChangePassword: false })).id))!;
+    const lead = await mk("devlead", "Tigist (tech lead)");
+    const dev = await mk("dev", "Bereket");
+    const tester = await mk("tester", "Mahlet (QA)");
+    const seen = JSON.stringify({ tour: { seen: ["member", "lead", "department", "manager", "owner"] } });
+    for (const u of [lead, dev, tester]) await run("UPDATE users SET prefs = ? WHERE id = ?", seen, u.id);
+    await setPosition(a, "dev", lead.id, "lead");
+    const cfg = applyFlowPreset(await getDeptConfig("dev"), "dev");
+    Object.assign(cfg.flow.stages.find((s) => s.status === "qa")!, { checkers: "people", people: [tester.id] });
+    cfg.features.sprints = true;
+    await saveDeptConfig(a, "dev", cfg, (await getDeptConfig("dev")).version);
+    const bug = await saveTask(lead, "dev", { title: "Login button does nothing on Android", type: "bug", description: "Reported by two students." });
+    const feat = await saveTask(lead, "dev", { title: "Dark mode for the lesson player", type: "feature", assigneeId: dev.id, status: "todo", estimateHours: 6 });
+    const rev = await saveTask(lead, "dev", { title: "Cache curriculum on the phone", type: "improvement", assigneeId: dev.id, status: "review" });
+    return { bug, feat, rev };
+  },
   async attendance() {
     await passwordOnly();
     return attendance();
@@ -47,7 +73,7 @@ const PREPS: Record<string, () => Promise<unknown>> = {
   async "face-checkin"() {
     await passwordOnly();
     const r = await attendance();
-    await att.saveAttendanceConfig(await admin(), { methods: { web: true, kiosk: true, mobile: false, face: true } });
+    await att.saveAttendanceConfig(await admin(), { methods: { anywhere: true, kiosk: true, mobile: false, face: true } });
     return r;
   },
   async "batch-a"() {

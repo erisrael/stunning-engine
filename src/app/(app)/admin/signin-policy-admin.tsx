@@ -16,7 +16,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ProviderMark } from "@/components/app/signin-ui";
 import { SignInHistory } from "@/components/app/account-security";
-import { createInviteAction, decideSignupAction, resetTwoStepAction, revokeInviteAction, saveSignInPolicyAction, signInLogAction } from "@/app/actions/signin";
+import { createInviteAction, decideSignupAction, markEmailConfirmedAction, resetTwoStepAction, revokeInviteAction, saveSignInPolicyAction, sendEmailConfirmationAction, signInLogAction } from "@/app/actions/signin";
 import { ROLE_LABELS, ROLES, type Role } from "@/lib/domain";
 import { cleanDomains, PROVIDER_IDS, SIGNIN_EVENTS, type ProviderId, type SignInPolicy, type TwoStepLevel } from "@/lib/signin-policy";
 import type { InviteRow, SignInLogRow, SignupRequestRow, TwoStepRosterRow } from "@/server/signin";
@@ -33,6 +33,8 @@ export type SignInAdminData = {
   requests: SignupRequestRow[];
   roster: TwoStepRosterRow[];
   log: SignInLogRow[];
+  // People who have not confirmed their email yet.
+  unconfirmed: { id: string; name: string; email: string; createdAt: string; fromSignup: boolean; sentAt: string | null }[];
 };
 
 function Num({ id, label, value, onChange, min = 0, max, hint, suffix }: { id: string; label: string; value: number; onChange: (n: number) => void; min?: number; max?: number; hint?: string; suffix?: string }) {
@@ -118,6 +120,7 @@ export function SignInPolicyAdmin({ data }: { data: SignInAdminData }) {
       <TabsList className="flex-wrap">
         <TabsTrigger value="rules">Rules</TabsTrigger>
         <TabsTrigger value="providers">Google, Microsoft, SSO</TabsTrigger>
+        <TabsTrigger value="verify">Email verification</TabsTrigger>
         <TabsTrigger value="signup">Sign-up {data.requests.filter((r) => r.status === "pending").length > 0 && <Badge className="ml-1">{data.requests.filter((r) => r.status === "pending").length}</Badge>}</TabsTrigger>
         <TabsTrigger value="people">Two-step by person</TabsTrigger>
         <TabsTrigger value="log">Sign-in log</TabsTrigger>
@@ -395,6 +398,12 @@ export function SignInPolicyAdmin({ data }: { data: SignInAdminData }) {
           })}
         </div>
         {saveBar}
+      </TabsContent>
+
+      <TabsContent value="verify" className="space-y-4">
+        <EmailVerifySettings p={p} set={set} emailReady={data.emailReady} />
+        {saveBar}
+        <Unconfirmed rows={data.unconfirmed} />
       </TabsContent>
 
       <TabsContent value="signup" className="space-y-4">
@@ -757,5 +766,90 @@ function LogView({ initial, people }: { initial: SignInLogRow[]; people: TwoStep
       </div>
       <SignInHistory rows={rows} everyone />
     </div>
+  );
+}
+
+function EmailVerifySettings({ p, set, emailReady }: { p: SignInPolicy; set: <K extends keyof SignInPolicy>(k: K, v: Partial<SignInPolicy[K]>) => void; emailReady: boolean }) {
+  const modes = [
+    ["off", "Off", "Nobody is asked to confirm their email."],
+    ["signup", "New people who join", "People who join by invitation or sign-up confirm their email before their first sign-in."],
+    ["all", "Everyone", "Every account confirms its email, after the grace period. Admin is never locked out."],
+  ] as const;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Email verification</CardTitle>
+        <CardDescription>
+          A link is emailed; sign-in waits until it is opened. Google, Microsoft and single sign-on count as confirmed. When Admin changes someone's email, it is confirmed again.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {!emailReady && p.emailVerify.mode !== "off" && (
+          <p className="rounded-md bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-300">No email account is set up (Admin, Email), so no link can be sent; until then nobody is held back.</p>
+        )}
+        <div className="grid gap-2 md:grid-cols-3">
+          {modes.map(([m, label, hint]) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => set("emailVerify", { mode: m })}
+              aria-pressed={p.emailVerify.mode === m}
+              className={`rounded-lg border p-3 text-left text-sm ${p.emailVerify.mode === m ? "border-primary bg-primary/5 ring-1 ring-primary" : "hover:bg-muted/50"}`}
+            >
+              <p className="font-medium">{label}</p>
+              <p className="text-xs text-muted-foreground">{hint}</p>
+            </button>
+          ))}
+        </div>
+        {p.emailVerify.mode === "all" && (
+          <Num id="ev-grace" label="Grace period for accounts" value={p.emailVerify.graceDays} min={0} max={90} suffix="days" hint="From when the account was made; 0 asks at the next sign-in." onChange={(n) => set("emailVerify", { graceDays: n })} />
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function Unconfirmed({ rows }: { rows: SignInAdminData["unconfirmed"] }) {
+  const router = useRouter();
+  const [busy, setBusy] = React.useState<string | null>(null);
+  const act = async (id: string, what: "send" | "mark") => {
+    setBusy(id);
+    const r = what === "send" ? await sendEmailConfirmationAction(id) : await markEmailConfirmedAction(id);
+    setBusy(null);
+    if (!r.ok) return void toast.error(r.error);
+    toast.success(what === "send" ? "Link sent" : "Marked as confirmed");
+    router.refresh();
+  };
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Not confirmed yet</CardTitle>
+        <CardDescription>Send the link again, or mark an address confirmed when you know it is right.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {!rows.length ? (
+          <p className="text-sm text-muted-foreground">Everyone has confirmed their email.</p>
+        ) : (
+          <ul className="divide-y text-sm">
+            {rows.map((r) => (
+              <li key={r.id} className="flex flex-wrap items-center gap-2 py-2" data-unconfirmed={r.email}>
+                <span className="font-medium">{r.name}</span>
+                <span className="text-muted-foreground">{r.email}</span>
+                {r.fromSignup && <Badge variant="secondary">joined by sign-up</Badge>}
+                {r.sentAt && <span className="text-xs text-muted-foreground">link sent {fmtDateTime(r.sentAt)}</span>}
+                <span className="ml-auto flex gap-2">
+                  <Button size="sm" variant="outline" disabled={busy === r.id} onClick={() => act(r.id, "send")}>
+                    Send the link
+                  </Button>
+                  <Button size="sm" variant="ghost" disabled={busy === r.id} onClick={() => act(r.id, "mark")}>
+                    Mark confirmed
+                  </Button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
   );
 }

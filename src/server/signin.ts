@@ -207,6 +207,12 @@ export async function passwordSignIn(email: string, password: string, next: stri
     await logSignIn({ userId: row.id, email, event: "provider_refused", method: "password", detail: only });
     return { ok: false, error: `Your account signs in with ${only}. Use the ${only} button below.` };
   }
+  // Email verification (Admin, Sign-in): a link is sent, and sign-in waits until it is opened.
+  const verify = await import("./email-verify");
+  if (await verify.mustConfirmEmail(row.id)) {
+    await verify.sendConfirmation(row.id);
+    return { ok: false, error: `Confirm your email first. We sent a link to ${row.email}; open it, then sign in again.` };
+  }
   // Passwords older than Admin's limit must be changed after signing in.
   const changed = row.password_changed_at ?? row.created_at;
   if (p.password.maxAgeDays && Date.now() - Date.parse(changed) > p.password.maxAgeDays * 864e5) await run("UPDATE users SET must_change_password = 1 WHERE id = ?", row.id);
@@ -634,6 +640,8 @@ export async function providerSignIn(provider: ProviderId, claims: { subject: st
     const u = await loadUser(userId);
     if (!u?.active) return { ok: false, error: "This account is switched off. Ask your administrator." };
     await run("UPDATE user_identities SET last_used_at = ?, email = ? WHERE provider = ? AND subject = ?", nowIso(), email, provider, claims.subject);
+    // The provider checked the address.
+    if (u.email.toLowerCase() === email) await (await import("./email-verify")).markConfirmed(userId);
     return afterFirstFactor(userId, provider, next);
   }
   if (p.signup.mode === "domain" && domainAllowed(p.signup.domains, email)) {
@@ -743,6 +751,13 @@ export async function signUpWithInvite(token: string, input: { name: string; ema
   await logSignIn({ userId: id, email, event: "invite_used", method: "invite" });
   await audit({ actor: null }, { action: "user.signed_up", summary: `${name} created their account from an invitation (${ROLE_LABELS[inv.role]})` });
   await notify(await usersWithRole("admin"), { type: "security", title: `${name} joined`, body: `From an invitation, as ${ROLE_LABELS[inv.role]}.`, link: "/admin?tab=people" }, nowIso());
+  // Email verification: the new account confirms its address before it is used.
+  await run("UPDATE users SET email_verify_required = 1 WHERE id = ?", id);
+  const verify = await import("./email-verify");
+  if (await verify.mustConfirmEmail(id)) {
+    await verify.sendConfirmation(id);
+    return { ok: false, error: `Your account is ready. Confirm your email first: we sent a link to ${email}. Open it, then sign in.` };
+  }
   return afterFirstFactor(id, "invite", "/dashboard");
 }
 
@@ -804,6 +819,9 @@ export async function decideSignup(admin: AppUser, id: string, approve: boolean,
   if (await get("SELECT 1 AS x FROM users WHERE lower(email) = ?", r.email)) throw new WorkflowError("VALIDATION", "An account already uses this email.");
   const startRole = role && ROLES.includes(role) && role !== "owner" ? role : p.signup.startRole;
   const userId = await createAccount({ name: r.name, email: r.email, passwordHash: r.password_hash, role: startRole });
+  // Joined by sign-up: confirms the email (unless a provider already checked it).
+  if (r.provider) await run("UPDATE users SET email_verified_at = ? WHERE id = ?", nowIso(), userId);
+  else await run("UPDATE users SET email_verify_required = 1 WHERE id = ?", userId);
   if (r.provider && r.subject) await run("INSERT INTO user_identities (provider, subject, user_id, email, created_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING", r.provider, r.subject, userId, r.email, nowIso());
   await run("UPDATE signup_requests SET status = 'approved', decided_by = ?, decided_at = ?, password_hash = NULL WHERE id = ?", admin.id, nowIso(), id);
   await logSignIn({ userId, email: r.email, event: "signup_approved", detail: `by ${admin.name}` });

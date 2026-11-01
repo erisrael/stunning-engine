@@ -8,6 +8,7 @@ import * as studioX from "@/server/studio-extras";
 import * as work from "@/server/work";
 import * as cfg from "@/server/dept-config";
 import * as dash from "@/server/dashboards";
+import * as flow from "@/server/dept-flow";
 import * as studio from "@/server/studio";
 import { deleteReport, reportFacts, saveReport, type ReportInput } from "@/server/owners";
 import type { Position } from "@/lib/domain";
@@ -219,4 +220,58 @@ export async function saveStudioConfigAction(input: Parameters<typeof studioX.sa
 }
 export async function setResourceChecklistAction(id: string, checklist: Parameters<typeof studioX.setResourceChecklist>[2]) {
   return wrap(async () => studioX.setResourceChecklist(await requireViewer(), id, checklist));
+}
+
+// --- The department flow (Home: member board and lead desk) ---
+
+export async function flowStartAction(dept: string, id: string) {
+  return wrap(async () => flow.flowStart(await requireViewer(), dept, id));
+}
+export async function flowPauseAction(dept: string, id: string) {
+  return wrap(async () => flow.flowPause(await requireViewer(), dept, id));
+}
+export async function flowDoneAction(dept: string, id: string) {
+  return wrap(async () => flow.flowDone(await requireViewer(), dept, id));
+}
+export async function flowReopenAction(dept: string, id: string) {
+  return wrap(async () => flow.flowReopen(await requireViewer(), dept, id));
+}
+export async function flowSendAction(dept: string, ids: string[]) {
+  return wrap(async () => flow.flowSend(await requireViewer(), dept, ids));
+}
+export async function flowApproveAction(dept: string, ids: string[]) {
+  return wrap(async () => flow.flowApprove(await requireViewer(), dept, ids));
+}
+export async function flowReturnAction(dept: string, id: string, note: string) {
+  return wrap(async () => flow.flowReturn(await requireViewer(), dept, id, note));
+}
+export async function flowHandOverAction(dept: string, ids: string[]) {
+  return wrap(async () => flow.flowHandOver(await requireViewer(), dept, ids));
+}
+export async function flowAcceptAction(dept: string, ids: string[]) {
+  return wrap(async () => flow.flowAccept(await requireViewer(), dept, ids));
+}
+export async function flowSendBackAction(dept: string, id: string, note: string) {
+  return wrap(async () => flow.flowSendBack(await requireViewer(), dept, id, note));
+}
+export async function flowPassAction(dept: string, ids: string[]) {
+  return wrap(async () => flow.flowPass(await requireViewer(), dept, ids));
+}
+export async function flowCheckReturnAction(dept: string, id: string, note: string) {
+  return wrap(async () => flow.flowCheckReturn(await requireViewer(), dept, id, note));
+}
+export async function flowPlanAction(dept: string, id: string, input: Parameters<typeof flow.flowPlan>[3]) {
+  return wrap(async () => flow.flowPlan(await requireViewer(), dept, id, input));
+}
+export async function flowDeclineAction(dept: string, id: string, note: string) {
+  return wrap(async () => flow.flowDecline(await requireViewer(), dept, id, note));
+}
+export async function flowAssignAction(dept: string, ids: string[], userId: string) {
+  return wrap(async () => flow.flowAssign(await requireViewer(), dept, ids, userId));
+}
+export async function flowReleaseAction(dept: string, input: { ids: string[]; name: string; notes: string }) {
+  return wrap(async () => flow.flowRelease(await requireViewer(), dept, input));
+}
+export async function draftReleaseNotesAction(dept: string, ids: string[]) {
+  return wrap(async () => flow.draftReleaseNotes(await requireViewer(), dept, ids), { revalidate: false });
 }

@@ -17,6 +17,9 @@ import { DEFAULT_TEAM_RULES, teamRules, type TeamRules } from "@/lib/team-rules"
 // verify: the team lead must also verify the line before the handoff.
 export type ChecklistItem = { key: string; label: string; required: boolean; verify?: boolean };
 
+export const TRANSFER_MODES = ["link", "disk", "either"] as const;
+export type TransferMode = (typeof TRANSFER_MODES)[number];
+
 export type Settings = {
   workspace: {
     name: string;
@@ -40,6 +43,10 @@ export type Settings = {
     requirePlaybackCheck: boolean;
     autoPauseOtherSessions: boolean;
     requireRawDuration: boolean;
+    // How files travel to the next team: a storage link (Drive), an external disk handed over (disk name and
+    // folder), or either. Recording: the raw footage to Editing. Editing: master, captions and thumbnail to Uploading.
+    recordingTransfer: TransferMode;
+    editingTransfer: TransferMode;
   };
   checklists: Record<Stage, ChecklistItem[]>;
   teams: Record<Stage, TeamRules>;
@@ -90,6 +97,8 @@ export const DEFAULT_SETTINGS: Settings = {
     requirePlaybackCheck: true,
     autoPauseOtherSessions: false,
     requireRawDuration: false,
+    recordingTransfer: "either",
+    editingTransfer: "either",
   },
   checklists: {
     recording: [

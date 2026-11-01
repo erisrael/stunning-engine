@@ -29,7 +29,7 @@ export type ItemActionInput =
   | { action: "reopen"; target: Stage; reasonCategory: string; note: string }
   | { action: "redo"; target: Stage; reasonCategory: string; note: string }
   | { action: "stageDate"; stage: Stage; date: string | null }
-  | { action: "asset"; kind: AssetKind; url?: string | null; cameraCode?: string | null; label?: string; durationMin?: number | null; notes?: string }
+  | { action: "asset"; kind: AssetKind; url?: string | null; cameraCode?: string | null; label?: string; durationMin?: number | null; notes?: string; disk?: string | null; path?: string | null }
   | { action: "stageNotes"; notes: string | null }
   | { action: "checklist"; key: string; checked: boolean }
   | { action: "durations"; rawDurationMin?: number | null; actualDurationMin?: number | null }

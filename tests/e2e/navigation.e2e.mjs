@@ -41,6 +41,7 @@ try {
   await d.waitForURL(/\/dev\/board$/);
   check("Board has its own address", true);
   check("the Board entry is the active one", (await sideLink(d, "Board").getAttribute("data-active")) === "true" && (await sideLink(d, "My board").getAttribute("data-active")) !== "true");
+  await d.getByRole("group", { name: "View" }).waitFor({ timeout: 20000 }).catch(() => null);
   check("the page has no tab bar, only the Board and List switch (Sheet is for leads)", (await d.getByRole("tab", { name: /Timeline|Overview|Projects/ }).count()) === 0 && (await d.getByRole("group", { name: "View" }).isVisible()) && (await d.getByRole("group", { name: "View" }).getByRole("button", { name: "Sheet" }).count()) === 0);
   await d.getByRole("group", { name: "View" }).getByRole("button", { name: "List" }).click();
   await d.waitForURL(/\/dev\/list/);

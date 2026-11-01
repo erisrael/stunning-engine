@@ -1,7 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { requireViewer } from "@/server/auth";
 import { deptPeople } from "@/server/departments";
-import { workAccess } from "@/server/dept-config";
+import { getDeptConfig, workAccess } from "@/server/dept-config";
 import { deptViews, listProjects, listTasks, type TaskFilter } from "@/server/work";
 import { PageHeader } from "@/components/app/primitives";
 import { POSITION_LABELS } from "@/lib/domain";
@@ -12,12 +12,13 @@ import { DeptDashboardView } from "./dept-dashboard-view";
 import { deptReport, listSprints, runningTimer, teamWorkload } from "@/server/work-extras";
 import { getSettings } from "@/server/settings";
 import { isPeriod } from "@/lib/dashboards";
-import { customDepartment } from "@/server/departments";
+import { customDepartment, customDepartments } from "@/server/departments";
 import { githubOverview } from "@/server/github";
 import { accountingMap, ACCOUNTING_FORMATS } from "@/server/accounting";
 import { GithubRepos } from "./github-repos";
 import { FinanceAccounting } from "./integrations";
 import { DEPT_VIEW_LABELS, DEPT_VIEWS, deptPath, deptViewPath } from "@/lib/work";
+import { flowHome } from "@/server/dept-flow";
 
 const TABS = ["dashboard", "board", "list", "sheet", "overview", "timeline", "team", "report", "projects", "calendar", "configure", "repos", "accounting"] as const;
 const SORTS = ["updated", "due", "priority", "code", "title", "status"] as const;
@@ -58,7 +59,13 @@ export async function WorkPage({ dept, searchParams, view }: { dept: WorkDept; s
     return (
       <div className="space-y-4">
         {header}
-        <DeptConfigure dept={dept} config={cfg} version={cfg.version} people={(await deptPeople(dept)).map((p) => ({ id: p.id, name: p.name }))} />
+        <DeptConfigure
+          dept={dept}
+          config={cfg}
+          version={cfg.version}
+          people={(await deptPeople(dept)).map((p) => ({ id: p.id, name: p.name }))}
+          departments={await requestDepartments(dept)}
+        />
       </div>
     );
   if (tab === "repos" || tab === "accounting") {
@@ -93,7 +100,7 @@ export async function WorkPage({ dept, searchParams, view }: { dept: WorkDept; s
     );
   }
   if (tab === "dashboard") {
-    const [projects, people] = await Promise.all([listProjects(viewer, dept), deptPeople(dept)]);
+    const [projects, people, flow] = await Promise.all([listProjects(viewer, dept), deptPeople(dept), flowHome(viewer, dept)]);
     return (
       <div className="space-y-4">
         {header}
@@ -112,6 +119,7 @@ export async function WorkPage({ dept, searchParams, view }: { dept: WorkDept; s
           sprints={sprints}
           timer={timer}
           extraTabs={extraTabs}
+          flow={flow}
           dashboard={<DeptDashboardView viewer={viewer} dept={dept} sp={sp} />}
         />
       </div>
@@ -169,4 +177,15 @@ export async function WorkPage({ dept, searchParams, view }: { dept: WorkDept; s
       />
     </div>
   );
+}
+
+// Other departments a flow stage may hand work to (those that take requests).
+async function requestDepartments(self: string) {
+  const keys = ["dev", "marketing", ...(await customDepartments()).map((c) => c.key)].filter((k) => k !== self);
+  const out: { key: string; title: string }[] = [];
+  for (const k of keys) {
+    const c = await getDeptConfig(k).catch(() => null);
+    if (c?.features.requests) out.push({ key: k, title: c.title });
+  }
+  return out;
 }

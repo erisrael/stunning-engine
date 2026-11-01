@@ -77,7 +77,10 @@ export type RepoStatus = {
   pushedAt: string | null;
   language: string | null;
   ci: { status: string; conclusion: string | null; name: string; url: string; at: string } | null;
-  openPrs: { number: number; title: string; url: string; author: string; draft: boolean; createdAt: string; branch: string; tasks: string[] }[];
+  // checks: the combined result of the pull request's check runs (success, failure, pending), for those naming tasks.
+  openPrs: { number: number; title: string; url: string; author: string; draft: boolean; createdAt: string; branch: string; tasks: string[]; checks?: "success" | "failure" | "pending" | null }[];
+  // Recently merged pull requests (for the flow: a merge can move the task on by itself).
+  mergedPrs?: { number: number; title: string; url: string; branch: string; mergedAt: string; tasks: string[] }[];
   openIssues: number;
   milestones: { title: string; open: number; closed: number; dueOn: string | null; url: string }[];
   release: { name: string; tag: string; at: string; url: string } | null;
@@ -119,12 +122,13 @@ async function fetchRepo(fullName: string, token: string | null): Promise<RepoSt
             : `GitHub said: ${repo.message}`,
     };
   const since = new Date(Date.now() - 28 * 864e5).toISOString();
-  const [prs, runs, milestones, release, commits] = await Promise.all([
-    gh<{ number: number; title: string; html_url: string; user: { login: string }; draft: boolean; created_at: string; head: { ref: string } }[]>(`/repos/${fullName}/pulls?state=open&per_page=50`, token),
+  const [prs, runs, milestones, release, commits, closed] = await Promise.all([
+    gh<{ number: number; title: string; html_url: string; user: { login: string }; draft: boolean; created_at: string; head: { ref: string; sha: string } }[]>(`/repos/${fullName}/pulls?state=open&per_page=50`, token),
     gh<{ workflow_runs: { status: string; conclusion: string | null; name: string; html_url: string; created_at: string }[] }>(`/repos/${fullName}/actions/runs?per_page=1&branch=${encodeURIComponent(repo.data.default_branch)}`, token),
     gh<{ title: string; open_issues: number; closed_issues: number; due_on: string | null; html_url: string }[]>(`/repos/${fullName}/milestones?state=open&per_page=10`, token),
     gh<{ name: string | null; tag_name: string; published_at: string; html_url: string }>(`/repos/${fullName}/releases/latest`, token),
     gh<{ sha: string; html_url: string; commit: { message: string; author: { name: string; date: string } } }[]>(`/repos/${fullName}/commits?since=${since}&per_page=100`, token),
+    gh<{ number: number; title: string; html_url: string; merged_at: string | null; head: { ref: string } }[]>(`/repos/${fullName}/pulls?state=closed&sort=updated&direction=desc&per_page=30`, token),
   ]);
   const prList = prs.ok ? prs.data : [];
   const commitList = commits.ok ? commits.data : [];
@@ -135,6 +139,22 @@ async function fetchRepo(fullName: string, token: string | null): Promise<RepoSt
   }
   const codes = (t: string) => [...new Set((t.match(/\b[A-Z][A-Z0-9]{1,9}-\d+\b/g) ?? []).map((x) => x.toUpperCase()))];
   const run0 = runs.ok ? runs.data.workflow_runs[0] : undefined;
+  // The checks of up to ten open pull requests that name a task, so the code review sees them on the card.
+  const checks = new Map<number, "success" | "failure" | "pending" | null>();
+  await Promise.all(
+    prList
+      .filter((p) => codes(`${p.title} ${p.head.ref.toUpperCase()}`).length)
+      .slice(0, 10)
+      .map(async (p) => {
+        const r = await gh<{ check_runs: { status: string; conclusion: string | null }[] }>(`/repos/${fullName}/commits/${p.head.sha}/check-runs?per_page=50`, token);
+        if (!r.ok || !r.data.check_runs.length) return checks.set(p.number, null);
+        const list = r.data.check_runs;
+        checks.set(
+          p.number,
+          list.some((c) => c.conclusion && !["success", "neutral", "skipped"].includes(c.conclusion)) ? "failure" : list.some((c) => c.status !== "completed") ? "pending" : "success",
+        );
+      }),
+  );
   return {
     ...base,
     url: repo.data.html_url,
@@ -145,7 +165,21 @@ async function fetchRepo(fullName: string, token: string | null): Promise<RepoSt
     pushedAt: repo.data.pushed_at,
     language: repo.data.language,
     ci: run0 ? { status: run0.status, conclusion: run0.conclusion, name: run0.name, url: run0.html_url, at: run0.created_at } : null,
-    openPrs: prList.map((p) => ({ number: p.number, title: p.title, url: p.html_url, author: p.user.login, draft: p.draft, createdAt: p.created_at, branch: p.head.ref, tasks: codes(`${p.title} ${p.head.ref.toUpperCase()}`) })),
+    openPrs: prList.map((p) => ({
+      number: p.number,
+      title: p.title,
+      url: p.html_url,
+      author: p.user.login,
+      draft: p.draft,
+      createdAt: p.created_at,
+      branch: p.head.ref,
+      tasks: codes(`${p.title} ${p.head.ref.toUpperCase()}`),
+      checks: checks.get(p.number) ?? null,
+    })),
+    mergedPrs: (closed.ok ? closed.data : [])
+      .filter((p) => p.merged_at)
+      .map((p) => ({ number: p.number, title: p.title, url: p.html_url, branch: p.head.ref, mergedAt: p.merged_at!, tasks: codes(`${p.title} ${p.head.ref.toUpperCase()}`) }))
+      .filter((p) => p.tasks.length),
     // GitHub counts pull requests as issues; take them out.
     openIssues: Math.max(0, repo.data.open_issues_count - prList.length),
     milestones: (milestones.ok ? milestones.data : []).map((m) => ({ title: m.title, open: m.open_issues, closed: m.closed_issues, dueOn: m.due_on, url: m.html_url })),
@@ -193,4 +227,19 @@ export async function githubOverview(user: AppUser, dept: string, opts: { force?
     for (const r of rows) tasks[r.code.toUpperCase()] = { id: r.id, title: r.title, status: r.status };
   }
   return { ...settings, repos: out, tasks };
+}
+
+// Pull requests naming each task code, from what was last fetched (no call to GitHub), for the flow cards.
+export type TaskPr = { number: number; title: string; url: string; branch: string; state: "open" | "draft" | "merged"; checks: "success" | "failure" | "pending" | null; repo: string };
+export async function cachedPrsByCode(dept: string) {
+  const rows = await all<{ data: string }>("SELECT data FROM integration_cache WHERE key LIKE ?", `gh:${dept}:%`);
+  const out = new Map<string, TaskPr[]>();
+  const add = (code: string, pr: TaskPr) => out.set(code, [...(out.get(code) ?? []).filter((x) => !(x.repo === pr.repo && x.number === pr.number)), pr]);
+  for (const r of rows) {
+    const st = parseJson<RepoStatus | null>(r.data, null);
+    if (!st) continue;
+    for (const p of st.mergedPrs ?? []) for (const c of p.tasks) add(c, { number: p.number, title: p.title, url: p.url, branch: p.branch, state: "merged", checks: null, repo: st.fullName });
+    for (const p of st.openPrs) for (const c of p.tasks) add(c, { number: p.number, title: p.title, url: p.url, branch: p.branch, state: p.draft ? "draft" : "open", checks: p.checks ?? null, repo: st.fullName });
+  }
+  return out;
 }

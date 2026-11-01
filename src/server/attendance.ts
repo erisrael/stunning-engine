@@ -59,7 +59,13 @@ export async function attendanceConfig(): Promise<AttendanceConfig> {
   return {
     ...DEFAULT_ATTENDANCE,
     ...stored,
-    methods: { ...DEFAULT_ATTENDANCE.methods, ...(stored.methods ?? {}) },
+    // Only the switches known now: an old "web" (app anywhere, once on by default) is dropped.
+    methods: {
+      anywhere: !!stored.methods?.anywhere,
+      kiosk: stored.methods?.kiosk ?? DEFAULT_ATTENDANCE.methods.kiosk,
+      mobile: !!stored.methods?.mobile,
+      face: !!stored.methods?.face,
+    },
     site: { ...DEFAULT_ATTENDANCE.site, ...(stored.site ?? {}) },
     shifts: stored.shifts?.length ? stored.shifts : DEFAULT_ATTENDANCE.shifts,
   };
@@ -110,7 +116,7 @@ export async function saveAttendanceConfig(user: AppUser, input: Partial<Attenda
     earlyLeaveMin: num(input.earlyLeaveMin ?? cur.earlyLeaveMin, 15, 0, 240),
     overtimeAfterMin: num(input.overtimeAfterMin ?? cur.overtimeAfterMin, 30, 0, 240),
     halfDayHours: num(input.halfDayHours ?? cur.halfDayHours, 4, 1, 12),
-    methods: { web: !!methods.web, kiosk: !!methods.kiosk, mobile: !!methods.mobile, face: !!methods.face },
+    methods: { anywhere: !!methods.anywhere, kiosk: !!methods.kiosk, mobile: !!methods.mobile, face: !!methods.face },
     faceThreshold: num(input.faceThreshold ?? cur.faceThreshold, 0.5, 0.35, 0.6),
     site: { label: clean(site.label, 60) || "Office", lat: lat !== null && Number.isFinite(lat) ? lat : null, lng: lng !== null && Number.isFinite(lng) ? lng : null, radiusM: num(site.radiusM, 200, 20, 5000) },
     kioskSilenceMin: num(input.kioskSilenceMin ?? cur.kioskSilenceMin, 30, 5, 600),
@@ -298,7 +304,7 @@ async function tzNow() {
 export async function myAttendance(user: AppUser, month: string) {
   const employeeId = await myEmployeeId(user);
   const cfg = await attendanceConfig();
-  if (!employeeId) return { employeeId: null as string | null, cfg, today: null, events: [] as EventRow[], days: [] as DayResult[], totals: null as MonthTotals | null, shift: null as Shift | null, code: null as string | null, hasPin: false, face: null as { enrolledAt: string; samples: number } | null, corrections: [] as CorrectionRow[] };
+  if (!employeeId) return { employeeId: null as string | null, cfg, capture: { qr: false, network: false }, today: null, events: [] as EventRow[], days: [] as DayResult[], totals: null as MonthTotals | null, shift: null as Shift | null, code: null as string | null, hasPin: false, face: null as { enrolledAt: string; samples: number } | null, corrections: [] as CorrectionRow[] };
   const emp = (await get<Emp>(`${EMP_SELECT} WHERE id = ?`, employeeId))!;
   const { date } = await tzNow();
   const r = monthRange(month);
@@ -309,9 +315,11 @@ export async function myAttendance(user: AppUser, month: string) {
   ]);
   const mine = range.get(employeeId)!;
   const t = todayData.get(employeeId)!;
+  const cap = (await (await import("./attendance-capture")).captureConfig()).methods;
   return {
     employeeId,
     cfg,
+    capture: { qr: cap.qr, network: cap.network },
     today: t.days[0] ?? null,
     events: t.events.get(date) ?? [],
     days: mine.days,
@@ -435,8 +443,20 @@ export async function punchSelf(user: AppUser, input: { lat?: number | null; lng
   let distance: number | null = null;
   if (hasLoc && cfg.site.lat !== null && cfg.site.lng !== null) distance = Math.round(distanceM({ lat: Number(input.lat), lng: Number(input.lng) }, { lat: cfg.site.lat, lng: cfg.site.lng }));
   let source: Source = "web";
-  if (!cfg.methods.web) {
-    if (!cfg.methods.mobile) throw new WorkflowError("FORBIDDEN", "Check in at the kiosk at the entrance.");
+  // Never a check-in without proof of place, unless Admin allowed "from the app anywhere": the office network (or a
+  // QR scan, on its own page), or the phone's location at the site.
+  if (!cfg.methods.anywhere) {
+    if (!cfg.methods.mobile) {
+      const cap = await import("./attendance-capture");
+      const c = await cap.captureConfig();
+      if (c.methods.network) {
+        const kind = toggleKind((await stateOf(employeeId)).state);
+        const r = await cap.selfCheckin(user, { kind, lat: input.lat ?? null, lng: input.lng ?? null, accuracy: input.accuracy ?? null });
+        const day = (await tzNow()).date;
+        return { kind: r.kind as EventKind, at: r.at, day, repeat: r.repeat, line: await dayLine(employeeId, day) };
+      }
+      throw new WorkflowError("FORBIDDEN", c.methods.qr ? "Scan the QR code at the entrance to check in." : "Check in at the kiosk at the entrance.");
+    }
     if (!hasLoc) throw new WorkflowError("VALIDATION", "Allow location so the app can check you are at the site.");
     if (distance === null || distance > cfg.site.radiusM + Math.min(100, Number(input.accuracy) || 0))
       throw new WorkflowError("VALIDATION", `You are about ${distance ?? "?"} m from ${cfg.site.label}. Check in when you are there, or at the kiosk.`);

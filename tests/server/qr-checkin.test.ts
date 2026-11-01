@@ -73,7 +73,7 @@ async function main() {
   await run("INSERT INTO role_assignments (user_id, role) VALUES (?, 'hr_officer') ON CONFLICT DO NOTHING", hrUser.id);
   const hr = (await loadUser(hrUser.id))!;
   check("HR can change the rules", !(await throws(() => att.saveAttendanceConfig(hr, { halfDayHours: 4 }))));
-  check("HR cannot change how people check in", /Only Admin/.test((await throws(() => att.saveAttendanceConfig(hr, { methods: { web: true, kiosk: true, mobile: false, face: false } }))) ?? ""));
+  check("HR cannot change how people check in", /Only Admin/.test((await throws(() => att.saveAttendanceConfig(hr, { methods: { anywhere: true, kiosk: true, mobile: false, face: false } }))) ?? ""));
   check("HR cannot set up kiosks", /Only Admin/.test((await throws(() => att.createKiosk(hr, "Door"))) ?? ""));
   const capNow = await captureConfig();
   check("HR cannot change the capture setup", /Only Admin/.test((await throws(() => saveCaptureConfig(hr, capNow))) ?? ""));
@@ -89,6 +89,15 @@ async function main() {
   check("a site is saved with an id and a poster code", !!saved.sites[0]!.id && saved.sites[0]!.posterKey.length >= 10);
   const again = await saveCaptureConfig(admin, saved);
   check("saving again keeps the poster code", again.sites[0]!.posterKey === saved.sites[0]!.posterKey);
+
+  // With QR posters only (the office-network method off), the app never checks in without the poster's code.
+  const qrOnly = await saveCaptureConfig(admin, { ...again, methods: { ...again.methods, qr: true, network: false } });
+  const { selfCheckin } = await import("../../src/server/attendance-capture");
+  const sara = (await loadUser((await get<{ id: string }>("SELECT id FROM users WHERE email = 'sara@demo.local'"))!.id))!;
+  const noScan = await throws(() => selfCheckin(sara, { kind: "in" }));
+  check("QR only: checking in without scanning is refused", /Scan the QR code/.test(noScan ?? ""), noScan);
+  check("QR only: the Attendance page button is refused too", /Scan the QR code/.test((await throws(() => att.punchSelf(sara, {}))) ?? ""));
+  void qrOnly;
 
   // Flags for HR
   await run(

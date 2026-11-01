@@ -26,8 +26,10 @@ export type AttendanceConfig = {
   overtimeAfterMin: number;
   // Fewer hours than this in a day is a half day.
   halfDayHours: number;
-  // How people may check in: from the app anywhere, at a kiosk, or from a phone at the site (location checked).
-  methods: { web: boolean; kiosk: boolean; mobile: boolean; face: boolean };
+  // How people may check in: from the app anywhere (no place check at all, off unless Admin switches it on), at a
+  // kiosk, or from a phone at the site (location checked). QR posters and the office network are set in Capture.
+  // "anywhere" replaced an older "web" switch that was on by default; the old value is ignored on purpose.
+  methods: { anywhere: boolean; kiosk: boolean; mobile: boolean; face: boolean };
   // How close a face must be to an enrolled one (lower is stricter). See docs/FACE-CHECKIN.md.
   faceThreshold: number;
   site: { label: string; lat: number | null; lng: number | null; radiusM: number };
@@ -51,7 +53,7 @@ export const DEFAULT_ATTENDANCE: AttendanceConfig = {
   earlyLeaveMin: 15,
   overtimeAfterMin: 30,
   halfDayHours: 4,
-  methods: { web: true, kiosk: true, mobile: false, face: false },
+  methods: { anywhere: false, kiosk: true, mobile: false, face: false },
   faceThreshold: 0.5,
   site: { label: "Office", lat: null, lng: null, radiusM: 200 },
   kioskSilenceMin: 30,

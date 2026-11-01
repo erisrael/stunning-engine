@@ -117,6 +117,7 @@ function describe(a: DeptConfig, b: DeptConfig) {
   if (JSON.stringify(a.features) !== JSON.stringify(b.features)) parts.push("changed features");
   if (JSON.stringify(a.notify) !== JSON.stringify(b.notify)) parts.push("changed notifications");
   if (JSON.stringify(a.labels) !== JSON.stringify(b.labels) || a.description !== b.description) parts.push("changed details");
+  if (JSON.stringify(a.flow) !== JSON.stringify(b.flow)) parts.push(a.flow.on !== b.flow.on ? (b.flow.on ? "switched the flow on" : "switched the flow off") : "changed the flow");
   return parts.join("; ") || "No changes";
 }
 
@@ -151,6 +152,12 @@ export async function saveDeptConfig(user: AppUser, d: string, raw: unknown, bas
     next = normalizeConfig(raw, dept);
   } catch (err) {
     throw new WorkflowError("VALIDATION", err instanceof Error ? err.message : String(err));
+  }
+  // A stage may hand work to another department only if that one takes requests.
+  for (const st of next.flow.stages) {
+    if (!st.nextDept) continue;
+    const other = st.nextDept === dept ? null : await getDeptConfig(st.nextDept).catch(() => null);
+    if (!other?.features.requests) throw new WorkflowError("VALIDATION", `Flow: the department ${st.nextDept} does not take requests, so work cannot be handed to it.`);
   }
   const old = await getDeptConfig(dept);
   if (old.version !== baseVersion) throw new WorkflowError("CONFLICT", "Someone else saved this configuration meanwhile. Reload to see their changes, then make yours again.");

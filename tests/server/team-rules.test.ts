@@ -87,6 +87,17 @@ async function main() {
   await wf.assignStage({ actor: meron }, p1.id, { stage: "editing", userId: yonas.id });
   const y = { actor: yonas };
   await wf.startWork(y, p1.id);
+  // Files on an external disk instead of links (Settings, Workflow).
+  const pol = (await getSettings()).policies;
+  await saveSetting("policies", { ...pol, editingTransfer: "disk" });
+  check("disk mode refuses a link for the master", /external disk/.test((await throws(() => wf.addAsset(y, p1.id, { kind: "master", url: "https://drive.example/m0" } as never))) ?? ""));
+  await wf.addAsset(y, p1.id, { kind: "master", disk: "Disk 3", path: "G9/Biology/U1/P1/master.mp4" } as never);
+  const onDisk = await get<{ url: string | null; label: string; source_ref: string }>("SELECT url, label, source_ref FROM assets WHERE item_id = ? AND kind = 'master' AND status = 'current'", p1.id);
+  check("the master is recorded on the disk with its folder", onDisk?.label === "disk:Disk 3" && onDisk.source_ref === "G9/Biology/U1/P1/master.mp4" && !onDisk.url, onDisk);
+  check("the requirement is met by the disk", (await wf.evaluateRequirements(p1.id)).find((r) => r.key === "master")?.met === true);
+  await saveSetting("policies", { ...pol, editingTransfer: "link" });
+  check("link mode refuses a disk", /by link/.test((await throws(() => wf.addAsset(y, p1.id, { kind: "master", disk: "Disk 3" } as never))) ?? ""));
+  await saveSetting("policies", pol);
   await wf.addAsset(y, p1.id, { kind: "master", url: "https://drive.example/m1" } as never);
   await wf.addAsset(y, p1.id, { kind: "captions", url: "https://drive.example/c1" } as never);
   await wf.addAsset(y, p1.id, { kind: "thumbnail", url: "https://drive.example/t1" } as never);

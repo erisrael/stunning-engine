@@ -30,12 +30,13 @@ export function departmentChapter(key: string, c: DeptConfig): Chapter {
       ],
     },
   ];
+  if (c.flow?.on) sections.push(...flowSections(c));
   if (checklists.length)
     sections.push({
       title: "Checklists",
       text: `${list(checklists.map((x) => x.label))} ${checklists.length === 1 ? "has" : "have"} a checklist. A ${t} cannot be finished with lines unticked; some lines are checked by a lead as well.`,
     });
-  if (c.features.review)
+  if (c.features.review && !c.flow?.on)
     sections.push({ title: "Review", text: `Before a ${t} is done, a reviewer approves it or sends it back with a note. Choose the reviewer when you move it to review.` });
   if (c.features.timeTracking) sections.push({ title: "Time", text: `Start the timer on a ${t} while you work on it, or add time by hand. Your hours feed the Team view and reports.` });
   if (c.features.requests)
@@ -49,4 +50,38 @@ export function departmentChapter(key: string, c: DeptConfig): Chapter {
     summary: c.description || `${c.names.projects}, ${ts} and how they move in ${c.title}.`,
     sections,
   };
+}
+
+// The department's own flow (Configure, Flow), stage by stage, as members and leads meet it on Home.
+function flowSections(c: DeptConfig): Chapter["sections"] {
+  const t = c.names.task.toLowerCase();
+  const label = (k: string | null) => (k ? (c.statuses.find((s) => s.key === k)?.label ?? k) : "");
+  const order: typeof c.flow.stages = [];
+  for (let cur: (typeof c.flow.stages)[number] | undefined = c.flow.stages[0]; cur && !order.includes(cur); cur = c.flow.stages.find((s) => s.status === cur!.next)) order.push(cur);
+  for (const s of c.flow.stages) if (!order.includes(s)) order.push(s);
+  const line = (s: (typeof order)[number]) => {
+    const name = label(s.status);
+    const then = s.next ? ` Then it goes to ${label(s.next)}.` : s.kind === "final" ? "" : " Then it is finished.";
+    const dept = s.nextDept ? " It is also handed to another department as a request." : "";
+    const target = s.days ? ` Target: ${s.days} day${s.days === 1 ? "" : "s"}.` : "";
+    switch (s.kind) {
+      case "intake":
+        return `${name}: new work, bugs and requests land here. A lead sets the priority${c.features.sprints ? ", the sprint" : ""} and the person, and plans it.${then}${dept}`;
+      case "work":
+        return `${name}: the person it is assigned to starts it, fills in the card${s.needChecklist ? " (every checklist line ticked)" : ""}, marks it done and sends it${s.review ? " to the lead, who approves it or returns it with a note" : ""}.${s.wip ? ` At most ${s.wip} in progress per person.` : ""}${s.accept ? " Work arriving here is accepted by the lead first." : ""}${then}${dept}${target}`;
+      case "check":
+        return `${name}: ${s.checkers === "people" ? "the people named for it" : "a head or lead"} ${s.accept ? "accept what arrives, then " : ""}pass it on or return it${s.returnAsBug ? " as a bug, with steps to reproduce" : " with what to change"}.${s.autoOnMerge ? " A merged pull request naming the task passes it by itself." : ""}${then}${dept}${target}`;
+      case "release":
+        return `${name}: a lead groups what is ready into a release, writes the release notes and releases it.${then}`;
+      default:
+        return `${name}: finished.`;
+    }
+  };
+  return [
+    {
+      title: "The flow",
+      text: `${c.names.tasks} go through ${list(order.map((s) => label(s.status)))}. Only finished work moves on: a ${t} reaches the next stage through Done, Send, Approve or Pass, never half done. Members see their own work as a board on Home (To do, In progress, Done not sent, With the lead); leads see a desk with what to approve, hand over, accept and assign.`,
+    },
+    { title: "Stage by stage", steps: order.map(line) },
+  ];
 }

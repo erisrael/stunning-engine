@@ -5,6 +5,7 @@
 // Dashboards and reports count by status category, so renaming or adding statuses keeps the numbers right.
 
 import { WORK_CONFIG, isBuiltInWorkDept, type WorkDept } from "./work";
+import { NO_FLOW, applyFlowPreset, normalizeFlow, type DeptFlow } from "./dept-flow";
 
 export const STATUS_CATEGORIES = ["open", "active", "review", "done", "cancelled"] as const;
 export type StatusCategory = (typeof STATUS_CATEGORIES)[number];
@@ -130,6 +131,8 @@ export type DeptConfig = {
   automations: DeptAutomation[];
   // Requests from other departments: which types people may ask for, and a note shown on the request form.
   intake: { types: string[]; intro: string };
+  // The stages tasks go through, with the lead's review and hand-over (Configure, Flow). Off: tasks move freely.
+  flow: DeptFlow;
 };
 
 const PALETTE = ["#64748b", "#0ea5e9", "#7b68ee", "#f59e0b", "#22c55e", "#ef4444", "#ec4899", "#14b8a6", "#a855f7", "#f97316"];
@@ -139,8 +142,13 @@ const ALL_RIGHTS: Rights = { seeAll: true, editAll: true, assign: true, deleteAl
 
 // Today's fixed values for Dev and Marketing, so nothing changes until someone edits the configuration. Other
 // departments start from a template (deptTemplateConfig) when they are created; this is only their fallback.
+// Dev and Marketing start with their ready flow on (Phase 12); their own statuses and types are kept alongside.
 export function defaultConfig(dept: WorkDept): DeptConfig {
   if (!isBuiltInWorkDept(dept)) return deptTemplateConfig("blank", dept, dept.toUpperCase().slice(0, 4));
+  return applyFlowPreset(builtInBase(dept), dept);
+}
+
+function builtInBase(dept: "dev" | "marketing"): DeptConfig {
   const w = WORK_CONFIG[dept];
   const marketing = dept === "marketing";
   return {
@@ -183,6 +191,7 @@ export function defaultConfig(dept: WorkDept): DeptConfig {
     templates: [],
     automations: [],
     intake: { types: [], intro: "" },
+    flow: { ...NO_FLOW },
   };
 }
 
@@ -259,7 +268,13 @@ export function deptTemplateConfig(template: string, title: string, codePrefix: 
     templates: [],
     automations: [],
     intake: { types: [], intro: "" },
+    flow: { ...NO_FLOW },
   };
+  // Each template brings its ready flow (Configure, Flow), on from the start.
+  return applyFlowPreset(templateBase(base, template), template);
+}
+
+function templateBase(base: DeptConfig, template: string): DeptConfig {
   switch (template) {
     case "support":
       return {
@@ -518,6 +533,7 @@ export function normalizeConfig(raw: unknown, dept: WorkDept): DeptConfig {
     templates,
     automations,
     intake: { types: Array.isArray(ii.types) ? ii.types.filter((t): t is string => typeof t === "string" && typeKeys.includes(t)) : [], intro: str(ii.intro, 300) },
+    flow: normalizeFlow(r.flow ?? d.flow, statuses),
   };
 }
 

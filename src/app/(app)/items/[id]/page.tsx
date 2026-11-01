@@ -680,6 +680,11 @@ export default async function ItemPage({ params, searchParams }: { params: Promi
                               <ExternalLinkIcon className="size-3.5 shrink-0" />
                               <span className="truncate">{a.label ?? a.url}</span>
                             </a>
+                          ) : a.label?.startsWith("disk:") ? (
+                            <span className="truncate" data-disk>
+                              External disk {a.label.slice(5)}
+                              {a.source_ref ? `, ${a.source_ref}` : ""}
+                            </span>
                           ) : (
                             <span className="truncate">{a.label ?? "Recording"}</span>
                           )}

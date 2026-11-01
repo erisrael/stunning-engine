@@ -162,6 +162,8 @@ export async function runScheduledChecks(now = nowIso(), opts: { trigger?: strin
     await runJob("kiosks", () => kioskSilenceChecks(now));
     // Face data of people who have left is deleted.
     await runJob("face-cleanup", async () => (await import("./attendance-face")).faceCleanup());
+    // Department flows: tasks whose GitHub pull request was merged move on, where the stage says so.
+    await runJob("flow-merges", async () => (await import("./dept-flow")).applyMergedPullRequests());
     // Email waiting to go out: notification copies to retry and scheduled messages now due.
     await runJob("outbox", () => flushOutbox(200));
     // The daily backup when it is due, and the monthly test restore.

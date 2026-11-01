@@ -42,11 +42,25 @@ import {
 import { POSITION_LABELS } from "@/lib/domain";
 import { deptPath, type WorkDept } from "@/lib/work";
 import { cn } from "@/lib/utils";
+import { FlowEditor } from "./dept-flow-editor";
 
 type Usage = Record<"statuses" | "types" | "priorities" | "projectStatuses" | "kpis", Record<string, number>>;
 type Item = { key: string; label: string; active: boolean; color?: string };
 
-export function DeptConfigure({ dept, config, version, people = [] }: { dept: WorkDept; config: DeptConfig; version: number; people?: { id: string; name: string }[] }) {
+export function DeptConfigure({
+  dept,
+  config,
+  version,
+  people = [],
+  departments = [],
+}: {
+  dept: WorkDept;
+  config: DeptConfig;
+  version: number;
+  people?: { id: string; name: string }[];
+  // Other departments that take requests, which a flow stage may hand work to.
+  departments?: { key: string; title: string }[];
+}) {
   const router = useRouter();
   const [c, setC] = React.useState<DeptConfig>(config);
   const [busy, setBusy] = React.useState(false);
@@ -113,6 +127,7 @@ export function DeptConfigure({ dept, config, version, people = [] }: { dept: Wo
         <TabsList className="w-full justify-start overflow-x-auto">
           <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="statuses">Statuses</TabsTrigger>
+          <TabsTrigger value="flow">Flow</TabsTrigger>
           <TabsTrigger value="types">Types</TabsTrigger>
           <TabsTrigger value="priorities">Priorities and labels</TabsTrigger>
           <TabsTrigger value="fields">Fields</TabsTrigger>
@@ -391,6 +406,10 @@ export function DeptConfigure({ dept, config, version, people = [] }: { dept: Wo
               ))}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="flow">
+          <FlowEditor config={c} people={people} departments={departments} github={dept === "dev"} onChange={setC} />
         </TabsContent>
 
         <TabsContent value="history">

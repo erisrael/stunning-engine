@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 25;
+export const SCHEMA_VERSION = 26;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -2039,6 +2039,40 @@ CREATE TABLE IF NOT EXISTS att_refusals (
   at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_att_refusals ON att_refusals(site_id, at);
+
+-- v26: department flows (Phase 12). Where a task is inside its stage (to do, in progress, done not sent, with the
+-- lead, ready to hand over, arriving), since when, the status it came from, and the lead's last return note.
+-- Releases group finished Dev work, with release notes.
+ALTER TABLE dept_tasks ADD COLUMN IF NOT EXISTS flow_state TEXT;
+ALTER TABLE dept_tasks ADD COLUMN IF NOT EXISTS flow_since TEXT;
+ALTER TABLE dept_tasks ADD COLUMN IF NOT EXISTS flow_from TEXT;
+ALTER TABLE dept_tasks ADD COLUMN IF NOT EXISTS flow_note TEXT;
+ALTER TABLE dept_tasks ADD COLUMN IF NOT EXISTS release_id TEXT;
+CREATE INDEX IF NOT EXISTS idx_dept_tasks_flow ON dept_tasks(dept, status, flow_state);
+CREATE TABLE IF NOT EXISTS dept_releases (
+  id TEXT PRIMARY KEY,
+  dept TEXT NOT NULL,
+  name TEXT NOT NULL,
+  notes TEXT NOT NULL DEFAULT '',
+  task_count INTEGER NOT NULL DEFAULT 0,
+  created_by TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_dept_releases ON dept_releases(dept, created_at);
+
+-- Email verification (Admin, Sign-in): when the address was confirmed, whether this account must confirm it
+-- (joined by invitation or sign-up), and the one-time links.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified_at TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verify_required INTEGER NOT NULL DEFAULT 0;
+CREATE TABLE IF NOT EXISTS email_verifications (
+  token_hash TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  email TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  used_at TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_email_verifications_user ON email_verifications(user_id);
 `;
 
 // Tables in dependency order; used to empty the workspace and to export or restore backups.
@@ -2120,6 +2154,8 @@ export const TABLES = [
   "dept_time_entries",
   "dept_sprints",
   "dept_capacity",
+  "dept_releases",
+  "email_verifications",
   "employees",
   "employee_private",
   "employee_documents",

@@ -492,7 +492,7 @@ Everything still open across the earlier phases, in three batches, then face che
   1. Phase 15: Foundations (sign-in, scheduled jobs, backups, tests, monitoring): done, except passkeys, slow-page timing and setting up the staging site
   2. Phase 10b: attendance by printed QR and office network: done, except SMS
   3. Phase 11: navigation by role, Profile tabs: done
-  4. Phase 12: department workflows; 12b Dev studio; 12c presentation studio
+  4. Phase 12: department workflows (done, except Studio); 12b Dev studio; 12c presentation studio
   5. Phase 16: Myseed's own needs (presenter releases and fees, file locations, Myseed App upload, Amharic and the Ethiopian calendar, data protection)
   6. Phase 17: KRAs, KPIs and OKRs
   7. Phase 13: assistant
@@ -548,6 +548,7 @@ No extra device is needed; in order of preference:
 - [x] **Type the short address** instead of scanning: any phone with a browser opens `myseed.app/in` (printed on the poster) and gets the same buttons; the office network check still applies.
 - [x] **Shared check-in on an office computer**: any computer already at the office (reception, a team lead's laptop) can open **Check-in for others** (allowed on the office network only). The person types their number and PIN; the computer is not signed in as them, and the check-in is recorded as theirs with "shared computer" as the way. This is the kiosk without buying a tablet.
 - [x] **The team lead checks them in**: in the app the lead scans the person's badge QR with their own phone (or picks them from the team list) and records the time; it is labelled "by the team lead" and HR reviews it, like today's hand-made days.
+- [x] **No check-in without proof of place**: the Attendance page button checks in only through the office network (Capture), the phone's location at the site, or "from the app anywhere" when Admin switches that on (now off by default; an older "on" is ignored). With QR posters alone, people scan the poster; a check-in without the poster's code needs the office-network method.
 - [ ] **Basic phones (no browser)** (not built; it needs an SMS gateway with a running cost), optional and later: check in by SMS ("IN 12 4826" to a number) through an SMS gateway; it has a running cost per message, so it is a separate choice.
 
 ### 10b.6 Stopping misuse
@@ -601,38 +602,44 @@ Today a developer sees "Departments, Dev team" with sub-links, and every departm
 
 Built: `src/server/nav.ts` picks the person's own department from the active role (Developer: Dev, Marketing, Content: Studio) or a position in a department made in Admin; production staff and people who oversee (Admin, managers, owners, Company overview) keep today's sidebar with each department's views folded. Views live at `/dev/board`, `/marketing/list`, `/d/<key>/timeline`; `?tab=` links are redirected with their filters. Studio keeps its own tabs (they are content types) and lists them in the sidebar for Studio people. Profile has tabs Profile, My record, Leave, Pay and claims, Attendance history and Account; `/me`, `/leave` and `/pay` redirect there. `/approvals` gathers leave, claims, attendance corrections and reviews, handovers and timer corrections.
 
-## Phase 12: Department workflows as complete as production
+## Phase 12: Department workflows as complete as production (done, except Studio)
 
 Production teams work as a loop: the lead assigns, members start, fill in the card, mark done and send to the lead, the lead approves or returns, and only finished work is handed over. Departments today have statuses, a review step and requests, but not this loop. The same engine is built once and set up per department.
 
 ### 12.1 One flow engine for every department
 
-- [ ] **Configure, Flow** (heads and Admin): the stages a task goes through, each mapped to a status category, and for each stage:
+- [x] **Configure, Flow** (heads and Admin): the stages a task goes through, each mapped to a status category, and for each stage:
   - who works it (a position, a role, or the assignee),
   - whether the lead reviews before it moves on (approve, or return with a note),
   - what must be done first (checklist, required fields, links),
   - where it goes next and who receives it (another stage, another position such as QA, or another department through Requests),
   - a "days to finish" target and a work-in-progress limit per person,
   - the stage's own steps, shown on Home (like "How Editing works").
-- [ ] **Member board** (Home for members): To do, In progress, Done not sent, With lead; start and pause with the timer, fill in the card (checklist, links, fields, attachments), Done, then Send one or all; returned work comes back with the lead's note.
-- [ ] **Lead desk** (Home for leads): To approve (approve or return with notes, see what changed since a return), Ready for the next stage (hand over as a batch), Arriving (accept or send back as missing), To assign (with each person's load), and the flow at a glance.
-- [ ] Only finished work moves on, as in production: unfinished or returned work never shows to the next stage.
-- [ ] Templates bring a ready flow; everything stays editable and versioned like the rest of Configure.
+- [x] **Member board** (Home for members): To do, In progress, Done not sent, With lead; start and pause with the timer, fill in the card (checklist, links, fields, attachments), Done, then Send one or all; returned work comes back with the lead's note.
+- [x] **Lead desk** (Home for leads): To approve (approve or return with notes, see what changed since a return), Ready for the next stage (hand over as a batch), Arriving (accept or send back as missing), To assign (with each person's load), and the flow at a glance.
+- [x] Only finished work moves on, as in production: unfinished or returned work never shows to the next stage.
+- [x] Templates bring a ready flow; everything stays editable and versioned like the rest of Configure.
 
 ### 12.2 Dev team (first)
 
-- [ ] Stages: Backlog, To do, In progress, Code review (tech lead), QA (tester position), Ready to release, Released.
-- [ ] The card: the branch and pull request (from the GitHub link), the tests and docs checklist, estimate and time spent, the acceptance criteria.
-- [ ] Code review: the lead sees the pull request status and checks from GitHub, approves or returns with comments; a merged pull request can move the task on by itself.
-- [ ] QA: the tester accepts what arrives, passes it or sends it back as a bug with steps to reproduce; passed work waits in Ready to release; a release groups tasks and marks them Released, with release notes.
-- [ ] Bugs and requests from other departments land in the lead's intake to triage (priority, sprint, assignee).
+- [x] Stages: Backlog, To do, In progress, Code review (tech lead), QA (tester position), Ready to release, Released.
+- [x] The card: the branch and pull request (from the GitHub link), the tests and docs checklist, estimate and time spent, the acceptance criteria.
+- [x] Code review: the lead sees the pull request status and checks from GitHub, approves or returns with comments; a merged pull request can move the task on by itself.
+- [x] QA: the tester accepts what arrives, passes it or sends it back as a bug with steps to reproduce; passed work waits in Ready to release; a release groups tasks and marks them Released, with release notes.
+- [x] Bugs and requests from other departments land in the lead's intake to triage (priority, sprint, assignee).
 
 ### 12.3 Marketing, Studio and departments from templates
 
-- [ ] **Marketing**: Brief (from a request or the lead), Draft (writer or designer), Review (lead; and the requester when asked), Approved, Scheduled (channel and time on the content calendar), Published (the link), Results (reach, clicks and the other KPIs logged against the campaign).
-- [ ] **Studio**: Assigned (note, exam or deck on a grade, subject and part), Draft, Subject review (reviewer checklist), Approved, Published; a new version starts the loop again.
-- [ ] **Templates**: Support (Intake, Triage, In progress, Waiting on the requester, Resolved), Sales (Lead, Qualified, Proposal, Won or Lost), Operations, HR and Finance requests, each with its flow, checklists and guide.
-- [ ] Help: each department's chapter describes its own flow from the configuration (extends the Phase 10 chapters).
+- [x] **Marketing** (the requester joining the review is not built yet; Scheduled uses the Channel and Publish on fields): Brief (from a request or the lead), Draft (writer or designer), Review (lead; and the requester when asked), Approved, Scheduled (channel and time on the content calendar), Published (the link), Results (reach, clicks and the other KPIs logged against the campaign).
+- [ ] **Studio** (not built: Studio work is notes, exams and decks with their own review, not department tasks; its loop comes with Phase 12c or later): Assigned (note, exam or deck on a grade, subject and part), Draft, Subject review (reviewer checklist), Approved, Published; a new version starts the loop again.
+- [x] **Templates**: Support (Intake, Triage, In progress, Waiting on the requester, Resolved), Sales (Lead, Qualified, Proposal, Won or Lost), Operations, HR and Finance requests, each with its flow, checklists and guide.
+- [x] Help: each department's chapter describes its own flow from the configuration (extends the Phase 10 chapters).
+
+Built: Configure has a **Flow** tab (`src/lib/dept-flow.ts`, `src/components/app/dept-flow-editor.tsx`). Each stage is one of the department's statuses with a kind: Intake (leads triage and plan), Work (the assignee; optional "not started" status such as To do, lead approval, accept on arrival, checklist before Done, a per-person limit), Check (heads and leads, or named people such as testers; return as a bug with steps to reproduce), Release, End. Each has a next stage, an optional hand-over to another department as a request, a target in days and its own steps. "Start from a ready flow" adds Dev, Marketing, Support, Sales, Operations, HR, Finance or Simple (statuses, fields and checklist lines it needs; nothing removed). New departments from templates start with their flow on, and so do Dev and Marketing (their ready flows are the defaults; in Dev, heads and leads do QA until testers are named). Home (`src/components/app/dept-flow.tsx`, `src/server/dept-flow.ts`) shows members their own board and leads a desk (Intake, To check, Arriving, To approve, Ready for the next stage, Ready to release with drafted release notes, To assign, the team now, the flow at a glance). Members cannot drag work into another stage on the Board; leads can, and the task's place in the flow follows. Cards show the GitHub pull request with its checks and merged state; a stage can move on by itself when the pull request is merged (scheduled checks, job "flow-merges"). Tasks keep `flow_state`, `flow_since`, `flow_from`, `flow_note` and `release_id`; releases are in `dept_releases` (schema 26). Tests: `tests/server/flow.test.ts`, `tests/e2e/flow.e2e.mjs`.
+
+### Files on an external disk (production)
+
+- [x] Settings, Workflow, "How Recording hands over the raw footage" and "How Editing hands over the master, captions and thumbnail": an external disk (the disk's name and the folder or file on it), a storage link, or either chosen each time. The cards, the item page and the Uploading card show the disk and folder; requirements read "on the disk" or "linked".
 
 ## Phase 12b: Dev studio (the software lifecycle in one place)
 
@@ -738,6 +745,7 @@ Small pieces that protect everything else: sign-in, scheduled jobs, backups, tes
   - allowed email domains per provider (for example only `@myseed.et`);
   - linking: a sign-in matches an existing account by verified email; a person can link or unlink providers on Profile, Account;
   - Admin can make a provider the only way in for some roles.
+- [x] **Email verification**, Admin chooses (Admin, Sign-in, Email verification): off, new people who join (invitation or sign-up), or everyone after a grace period. A one-time link is emailed and sign-in waits until it is opened; Google, Microsoft and single sign-on count as confirmed; a changed email is confirmed again; Admin is never locked out, can resend the link or mark an address confirmed. Nobody is held back while no email account is set up.
 - [x] **Sign-up**, Admin chooses: off (Admin creates accounts, today), invitation only (a link valid for a few days, with the role chosen by whoever invites), or open to allowed domains with Admin approval and a starting role; new people are linked to their HR record when one exists.
 - [x] **Sessions**: idle sign-out and maximum session length per role (shorter for Admin, HR, Finance); a notice by email and in the app on a sign-in from a new device (with its address; no country lookup); existing Sessions and devices page stays.
 - [x] **Sign-in log**: every sign-in, failure, lockout, two-step change and provider link, with time, device and address, for Admin; each person sees their own on Profile, Account.

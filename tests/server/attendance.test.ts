@@ -68,6 +68,9 @@ async function main() {
   check("employees exist for everyone", !!eH && !!eD && !!eY);
   check("admin manages attendance", att.managesAttendance(admin));
 
+  // By default nobody checks in from the app without proof of place (QR, office network, location, kiosk).
+  check("the app button refuses without a configured method", /kiosk|QR/.test((await throws(() => att.punchSelf(dawit, {}))) ?? ""));
+  await att.saveAttendanceConfig(admin, { methods: { anywhere: true, kiosk: true, mobile: false, face: false } });
   const p1 = await att.punchSelf(dawit, {});
   check("check in from the app", p1.kind === "in" && !p1.repeat, p1);
   const p2 = await att.punchSelf(dawit, {});
@@ -131,12 +134,12 @@ async function main() {
   check("saved check-ins older than the limit are refused", /older than/.test((await throws(() => att.kioskPunch(kiosk, { badge, at: old, clientId: "x", sig: sig2 }))) ?? ""));
 
   // Phone at the site only.
-  await att.saveAttendanceConfig(admin, { methods: { web: false, kiosk: true, mobile: true, face: false }, site: { label: "Office", lat: 9.0108, lng: 38.7613, radiusM: 200 } });
+  await att.saveAttendanceConfig(admin, { methods: { anywhere: false, kiosk: true, mobile: true, face: false }, site: { label: "Office", lat: 9.0108, lng: 38.7613, radiusM: 200 } });
   check("phone check-in needs location", /Allow location/.test((await throws(() => att.punchSelf(meron, {}))) ?? ""));
   check("too far from the site is refused", /m from Office/.test((await throws(() => att.punchSelf(meron, { lat: 9.05, lng: 38.76, accuracy: 10 }))) ?? ""));
   const near = await att.punchSelf(meron, { lat: 9.0109, lng: 38.7614, accuracy: 10 });
   check("at the site checks in from the phone", near.kind === "in", near);
-  check("saving phone check-in without a site is refused", !!(await throws(() => att.saveAttendanceConfig(admin, { methods: { web: false, kiosk: true, mobile: true, face: false }, site: { label: "x", lat: null, lng: null, radiusM: 100 } }))));
+  check("saving phone check-in without a site is refused", !!(await throws(() => att.saveAttendanceConfig(admin, { methods: { anywhere: false, kiosk: true, mobile: true, face: false }, site: { label: "x", lat: null, lng: null, radiusM: 100 } }))));
 
   // Timesheets and payroll.
   const month = yesterday.slice(0, 7);

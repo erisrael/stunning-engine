@@ -87,7 +87,7 @@ export function CaptureSetup({ att, cap, status, origin }: { att: AttendanceConf
             <Switch checked={c.methods.leadScan} onCheckedChange={(v) => setC({ ...c, methods: { ...c.methods, leadScan: v } })} aria-label="Team lead check-in" />
           </Row>
           <Row label="From the app anywhere" hint="No place check at all. Good only for people who work away from the office.">
-            <Switch checked={a.methods.web} onCheckedChange={(v) => setA({ ...a, methods: { ...a.methods, web: v } })} aria-label="Check in from the app anywhere" />
+            <Switch checked={a.methods.anywhere} onCheckedChange={(v) => setA({ ...a, methods: { ...a.methods, anywhere: v } })} aria-label="Check in from the app anywhere" />
           </Row>
           <Row label="Kiosk" hint="A tablet or laptop at the entrance with badges and PINs (Kiosks, below).">
             <Switch checked={a.methods.kiosk} onCheckedChange={(v) => setA({ ...a, methods: { ...a.methods, kiosk: v } })} aria-label="Kiosk check-in" />

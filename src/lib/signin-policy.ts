@@ -6,6 +6,9 @@ import { ROLES, type Role } from "./domain";
 export type TwoStepLevel = "off" | "optional" | "required";
 export const TWO_STEP_LEVELS: TwoStepLevel[] = ["off", "optional", "required"];
 export type SignupMode = "off" | "invite" | "domain";
+// Email verification: nobody, people who join by invitation or sign-up, or everyone (after a grace period).
+export type EmailVerifyMode = "off" | "signup" | "all";
+export const EMAIL_VERIFY_MODES: EmailVerifyMode[] = ["off", "signup", "all"];
 export const PROVIDER_IDS = ["google", "microsoft", "oidc"] as const;
 export type ProviderId = (typeof PROVIDER_IDS)[number];
 
@@ -33,6 +36,7 @@ export type SignInPolicy = {
   twoStep: { totp: boolean; email: boolean; rememberDays: number; trustProviders: boolean; default: TwoStepLevel; roles: Partial<Record<Role, TwoStepLevel>> };
   sessions: { default: SessionLimit; roles: Partial<Record<Role, SessionLimit>>; newDeviceAlert: boolean };
   signup: { mode: SignupMode; domains: string[]; startRole: Role; inviteDays: number };
+  emailVerify: { mode: EmailVerifyMode; graceDays: number };
   providers: Record<ProviderId, ProviderPolicy>;
 };
 
@@ -44,6 +48,7 @@ export const DEFAULT_SIGNIN_POLICY: SignInPolicy = {
   twoStep: { totp: true, email: true, rememberDays: 30, trustProviders: true, default: "optional", roles: Object.fromEntries(SENSITIVE.map((r) => [r, "required"])) },
   sessions: { default: { idleMinutes: 0, maxHours: 14 * 24 }, roles: Object.fromEntries(SENSITIVE.map((r) => [r, { idleMinutes: 8 * 60, maxHours: 7 * 24 }])), newDeviceAlert: true },
   signup: { mode: "off", domains: [], startRole: "recording", inviteDays: 7 },
+  emailVerify: { mode: "off", graceDays: 7 },
   providers: {
     google: { enabled: false, domains: [], onlyFor: [] },
     microsoft: { enabled: false, domains: [], onlyFor: [], tenant: "" },
@@ -102,6 +107,7 @@ export function normalizeSignInPolicy(raw: unknown): SignInPolicy {
   const ts = (r.twoStep ?? {}) as Partial<SignInPolicy["twoStep"]>;
   const se = (r.sessions ?? {}) as Partial<SignInPolicy["sessions"]>;
   const su = (r.signup ?? {}) as Partial<SignInPolicy["signup"]>;
+  const ev = (r.emailVerify ?? {}) as Partial<SignInPolicy["emailVerify"]>;
   const pr = (r.providers ?? {}) as Partial<Record<ProviderId, Partial<ProviderPolicy>>>;
   const provider = (id: ProviderId): ProviderPolicy => {
     const p = pr[id] ?? {};
@@ -144,6 +150,7 @@ export function normalizeSignInPolicy(raw: unknown): SignInPolicy {
       startRole: ROLES.includes(su.startRole as Role) && su.startRole !== "admin" && su.startRole !== "owner" ? (su.startRole as Role) : D.signup.startRole,
       inviteDays: int(su.inviteDays, 1, 60, D.signup.inviteDays),
     },
+    emailVerify: { mode: EMAIL_VERIFY_MODES.includes(ev.mode as EmailVerifyMode) ? (ev.mode as EmailVerifyMode) : D.emailVerify.mode, graceDays: int(ev.graceDays, 0, 90, D.emailVerify.graceDays) },
     providers: { google: provider("google"), microsoft: provider("microsoft"), oidc: provider("oidc") },
   };
 }
