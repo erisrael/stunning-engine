@@ -495,7 +495,7 @@ Everything still open across the earlier phases, in three batches, then face che
   4. Phase 12: department workflows (done); 12b Dev studio; 12c presentation studio
   5. Phase 16: Myseed's own needs (presenter releases and fees, file locations, Myseed App upload, Amharic and the Ethiopian calendar, data protection)
   6. Phase 17: KRAs, KPIs and OKRs
-  7. Phase 13: assistant
+  7. Phase 13: assistant (done)
   8. Phase 18: worth having
   9. Phase 14: Mail
 - [ ] Native app shell (Phase 5b), last
@@ -707,16 +707,18 @@ What exists today: the Overview's presentation mode for production, with customi
 - [ ] **Presenting**: presenter view with notes and the next slide on the presenter's screen, a laser pointer and drawing on the slide, a remote from a phone (next, previous) through the app, auto-play for a TV in the office that refreshes every minute.
 - [ ] **Sharing**: a read-only link for a set time, exports (PowerPoint with editable charts, PDF, video with the narration), and a schedule that emails the deck as PDF every week.
 
-## Phase 13: Assistant (a guide, not an AI)
+## Phase 13: Assistant (a guide, not an AI) (done; more flows to write over time)
 
 A helper in the corner of every page that explains the app and walks people through tasks, built from fixed, written flows (no language model, nothing sent outside).
 
-- [ ] **Talking to it**: a small chat panel with buttons to choose from, and a box to type in. Typed text is matched against keywords and synonyms written for each flow ("assign", "give videos to", "hand over"...). Anything it cannot match is offered the closest flows and the Help search.
-- [ ] **Doing a task with it**: a flow asks one thing at a time with pickers taken from the app (people in the team, grade, subject and unit, parts not done), shows a summary, and on Confirm runs the same action as the page would, with the same permission checks. Example for an Editing lead: "Assign videos" → choose the editor → choose grade, subject and unit → tick parts (only parts that arrived from Recording) → due date → confirm → done, with a link to see them.
-- [ ] **Show me**: instead of doing it, the assistant takes the person there and points: it dims the page, highlights the button or tab to press with a short note, waits for the click and moves to the next step (works on every page through marked elements).
-- [ ] **First flows**, per role: assign work; approve and hand over; accept arrivals and assign; start, finish and send my work; ask for leave; claim an expense; check in or correct attendance; book a studio session; review a task (departments); "where is...?" (every page by name); "what does ... mean?" (statuses and terms from Help).
-- [ ] **Monitoring** (Admin, Assistant): how often each flow is started and finished, where people give up, what people typed that matched nothing (to write new flows), by role and by week, and an export.
-- [ ] **Setup** (Admin, Assistant): flows on or off per role, the wording and the keywords of each flow, and short answers to common questions.
+- [x] **Talking to it**: a small chat panel with buttons to choose from, and a box to type in. Typed text is matched against keywords and synonyms written for each flow ("assign", "give videos to", "hand over"...). Anything it cannot match is offered the closest flows and the Help search.
+- [x] **Doing a task with it** (written so far: ask for leave, start my next task, assign work in a department with a flow; production assigning stays a "show me" for now): a flow asks one thing at a time with pickers taken from the app (people in the team, grade, subject and unit, parts not done), shows a summary, and on Confirm runs the same action as the page would, with the same permission checks. Example for an Editing lead: "Assign videos" → choose the editor → choose grade, subject and unit → tick parts (only parts that arrived from Recording) → due date → confirm → done, with a link to see them.
+- [x] **Show me**: instead of doing it, the assistant takes the person there and points: it dims the page, highlights the button or tab to press with a short note, waits for the click and moves to the next step (works on every page through marked elements).
+- [x] **First flows**, per role: assign work; approve and hand over; accept arrivals and assign; start, finish and send my work; ask for leave; claim an expense; check in or correct attendance; book a studio session; review a task (departments); "where is...?" (every page by name); "what does ... mean?" (statuses and terms from Help).
+- [x] **Monitoring** (Admin, Assistant): how often each flow is started and finished, where people give up, what people typed that matched nothing (to write new flows), by role and by week, and an export.
+- [x] **Setup** (Admin, Assistant; the built-in wording stays as written, Admin adds keywords and answers): flows on or off per role, the wording and the keywords of each flow, and short answers to common questions.
+
+Built (13): a button in the corner of every page opens the assistant (`src/components/app/assistant.tsx`), with the person's own flows as buttons and a box to type in. Flows, places ("where is ...?") and the glossary ("what does ... mean?") are written in `src/lib/assistant.ts`; typed text is scored against their keywords plus Admin's. "Do" flows ask one thing at a time with pickers from the app and run the same actions as the pages; "show me" opens the page, dims it, outlines what to press with a note and moves on when it is pressed (carrying on across pages). Admin, Assistant (/admin/assistant): flows on or off per role, extra keywords, short answers, and usage (started, finished, where people gave up, what matched nothing, per week, export). Tests: `tests/server/assistant.test.ts`, and the assistant in `tests/e2e/flow.e2e.mjs`.
 
 ## Phase 14: Mail, a company inbox in the app (last, before the app shell)
 

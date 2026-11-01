@@ -106,6 +106,11 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
                 </Link>
               </Button>
             )}
+            {manageUsers && (
+              <Button asChild variant="outline" size="sm">
+                <Link href="/admin/assistant">Assistant</Link>
+              </Button>
+            )}
             <PageImport viewer={viewer} page="admin" />
           </>
         }

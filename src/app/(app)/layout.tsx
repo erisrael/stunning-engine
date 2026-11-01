@@ -23,6 +23,8 @@ import { touchPresence } from "@/server/chat-extras";
 import { PreviewBanner } from "@/components/app/security";
 import { ROLE_LABELS } from "@/lib/domain";
 import { homeDepartment } from "@/server/nav";
+import { assistantContext } from "@/server/assistant";
+import { Assistant } from "@/components/app/assistant";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const viewer = await requireViewer();
@@ -60,6 +62,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         )}
         <main className="mx-auto w-full max-w-[1600px] min-w-0 flex-1 px-3 py-4 sm:px-6 sm:py-6">{children}</main>
         <ChatKeyBootstrap viewerId={viewer.id} />
+        {!viewer.mustChangePassword && !viewer.previewBy && <Assistant ctx={await assistantContext(viewer)} />}
         {!viewer.mustChangePassword && <GetStarted audience={audienceFor(viewer.activeRole, viewer.leads)} tour={viewer.prefs.tour ?? {}} />}
       </SidebarInset>
     </SidebarProvider>

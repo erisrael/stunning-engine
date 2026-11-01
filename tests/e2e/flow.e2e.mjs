@@ -81,6 +81,21 @@ try {
   await go(dev, "/dev");
   check("the bug's steps are on the developer's card", await card(dev, rev).getByText(/Steps to reproduce/).isVisible());
 
+  // Phase 13: the assistant.
+  await go(dev, "/dev");
+  await dev.getByRole("button", { name: "Open the assistant" }).click();
+  await dev.getByLabel("Ask the assistant").fill("where is my payslip");
+  await dev.getByRole("button", { name: "Ask", exact: true }).click();
+  check("the assistant says where a page is", await dev.getByRole("button", { name: "Open Pay and claims" }).isVisible());
+  await dev.getByLabel("Ask the assistant").fill("how do I finish and send my work");
+  await dev.getByRole("button", { name: "Ask", exact: true }).click();
+  await dev.getByRole("button", { name: "Show me" }).first().click();
+  await dev.locator("[data-assistant-show]").waitFor({ timeout: 10000 });
+  await dev.waitForTimeout(1200);
+  check("Show me dims the page and points at the board", await dev.getByRole("dialog", { name: "Show me" }).isVisible());
+  await dev.screenshot({ path: path.join(shots, "7-assistant-show.png") });
+  await dev.getByRole("dialog", { name: "Show me" }).getByRole("button", { name: "Stop" }).click();
+
   // Phase 12b: the Sprint, Roadmap and Specs pages.
   await go(lead, "/dev/sprint");
   await lead.getByRole("button", { name: /Plan the next sprint/ }).click();

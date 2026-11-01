@@ -2138,6 +2138,19 @@ CREATE TABLE IF NOT EXISTS dept_doc_links (
   task_id TEXT NOT NULL REFERENCES dept_tasks(id) ON DELETE CASCADE,
   PRIMARY KEY (doc_id, req, task_id)
 );
+
+-- Phase 13: the assistant's monitoring (flows started, finished, given up, and text that matched nothing).
+CREATE TABLE IF NOT EXISTS assistant_events (
+  id TEXT PRIMARY KEY,
+  user_id TEXT,
+  role TEXT,
+  flow TEXT,
+  event TEXT NOT NULL,
+  step INTEGER,
+  text TEXT,
+  at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_assistant_events ON assistant_events(at);
 `;
 
 // Tables in dependency order; used to empty the workspace and to export or restore backups.
@@ -2226,6 +2239,7 @@ export const TABLES = [
   "dept_docs",
   "dept_doc_versions",
   "dept_doc_links",
+  "assistant_events",
   "employees",
   "employee_private",
   "employee_documents",
