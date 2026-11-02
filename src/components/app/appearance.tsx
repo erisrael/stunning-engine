@@ -4,7 +4,16 @@ import * as React from "react";
 
 // Accent colour, corner style, text size and colourful or plain icons. Stored per browser; applied to <html> before
 // paint.
-export type Appearance = { accent: string; radius: string; text: string; icons: string };
+export type Appearance = { accent: string; radius: string; text: string; icons: string; iconPack: string; iconWeight: string; font: string; contrast: string };
+
+export const FONTS = [
+  { key: "app", label: "Jakarta (default)" },
+  { key: "inter", label: "Inter" },
+  { key: "readable", label: "Atkinson (easy to read)" },
+  { key: "rounded", label: "Nunito (rounded)" },
+  { key: "serif", label: "Lora (serif)" },
+  { key: "ethiopic", label: "Noto Ethiopic (Amharic first)" },
+];
 
 export const ACCENTS = [
   { key: "violet", label: "Violet", color: "#7b68ee" },
@@ -17,7 +26,7 @@ export const ACCENTS = [
 ];
 
 const KEY = "myseed.appearance";
-const DEFAULTS: Appearance = { accent: "violet", radius: "default", text: "normal", icons: "colour" };
+const DEFAULTS: Appearance = { accent: "violet", radius: "default", text: "normal", icons: "colour", iconPack: "lucide", iconWeight: "regular", font: "app", contrast: "normal" };
 
 export function readAppearance(): Appearance {
   try {
@@ -33,6 +42,10 @@ function apply(a: Appearance) {
   el.dataset.radius = a.radius;
   el.dataset.text = a.text;
   el.dataset.icons = a.icons;
+  el.dataset.iconPack = a.iconPack;
+  el.dataset.iconWeight = a.iconWeight;
+  el.dataset.font = a.font;
+  el.dataset.contrast = a.contrast;
 }
 
 export function useAppearance() {
@@ -52,4 +65,4 @@ export function useAppearance() {
 }
 
 // Inline script for the root layout, so the saved appearance is applied before the first paint.
-export const APPEARANCE_SCRIPT = `try{var a=JSON.parse(localStorage.getItem("${KEY}")||"{}");var d=document.documentElement;d.dataset.accent=a.accent||"violet";d.dataset.radius=a.radius||"default";d.dataset.text=a.text||"normal";d.dataset.icons=a.icons||"colour";}catch(e){}`;
+export const APPEARANCE_SCRIPT = `try{var a=JSON.parse(localStorage.getItem("${KEY}")||"{}");var d=document.documentElement;d.dataset.accent=a.accent||"violet";d.dataset.radius=a.radius||"default";d.dataset.text=a.text||"normal";d.dataset.icons=a.icons||"colour";d.dataset.iconPack=a.iconPack||"lucide";d.dataset.iconWeight=a.iconWeight||"regular";d.dataset.font=a.font||"app";d.dataset.contrast=a.contrast||"normal";}catch(e){}`;

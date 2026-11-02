@@ -22,7 +22,8 @@ export type SiteChecks = { network: boolean; location: boolean; device: boolean 
 export type Site = { id: string; name: string; networks: string[]; lat: number | null; lng: number | null; radiusM: number; checks: SiteChecks; posterKey: string; posterAt: string };
 export type CaptureConfig = {
   // The printed QR, the same buttons in the app on the office network, a shared office computer, a lead recording.
-  methods: { qr: boolean; network: boolean; shared: boolean; leadScan: boolean };
+  // scanner: a Scan button on the Attendance page reads the printed QR with the phone's camera inside the app.
+  methods: { qr: boolean; network: boolean; shared: boolean; leadScan: boolean; scanner?: boolean };
   sites: Site[];
   // A phone becomes a person's own at its first check-in ("auto") or once HR approves it ("hr"). A phone used for
   // two people within shareMinutes is flagged.
@@ -84,7 +85,7 @@ export async function saveCaptureConfig(user: AppUser, input: CaptureConfig) {
       posterAt: prev?.posterAt ?? nowIso(),
     };
   });
-  const methods = { qr: !!input.methods.qr, network: !!input.methods.network, shared: !!input.methods.shared, leadScan: !!input.methods.leadScan };
+  const methods = { qr: !!input.methods.qr, network: !!input.methods.network, shared: !!input.methods.shared, leadScan: !!input.methods.leadScan, scanner: !!input.methods.qr && !!input.methods.scanner };
   if ((methods.qr || methods.network || methods.shared) && !sites.length) throw new WorkflowError("VALIDATION", "Add a site first: QR, network and shared-computer check-in need to know the office.");
   if ((methods.network || methods.shared) && !sites.some((s) => s.networks.length)) throw new WorkflowError("VALIDATION", "Network and shared-computer check-in need the office's internet address on a site.");
   const next: CaptureConfig = {

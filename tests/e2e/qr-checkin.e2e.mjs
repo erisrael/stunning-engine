@@ -68,6 +68,13 @@ try {
   await d.reload();
   check("back from lunch", await tap(d, "Back from lunch"));
 
+  // The QR read inside the app (Admin switched "Scan the QR in the app" on).
+  await d.goto(`${base}/attendance`);
+  check("Attendance offers Scan the QR", await visible(d.getByRole("button", { name: "Scan the QR" })));
+  await d.getByRole("button", { name: "Scan the QR" }).click();
+  check("the scanner opens the camera in a dialog", await visible(d.locator("[data-qr-dialog]")));
+  await d.keyboard.press("Escape");
+
   // The same phone outside the office.
   const o = await (await ctx(OUTSIDE)).newPage();
   await login(o, "dawit@demo.local", `/in?c=${prep.code}`);

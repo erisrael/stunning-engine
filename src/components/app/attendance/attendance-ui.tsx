@@ -1,5 +1,6 @@
 "use client";
 
+import { QrScanButton } from "@/components/app/attendance/qr-scanner";
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -113,7 +114,7 @@ type MyData = {
   employeeId: string | null;
   cfg: AttendanceConfig;
   // QR posters and the office network (Attendance, Capture).
-  capture: { qr: boolean; network: boolean };
+  capture: { qr: boolean; network: boolean; scanner?: boolean };
   today: DayResult | null;
   events: EventRow[];
   days: DayResult[];
@@ -192,6 +193,7 @@ export function MyAttendance({ data, month, today, monthLink = "/attendance?mont
                 <p className="text-3xl font-semibold tabular-nums">{fmtMin(data.today?.lastOut)}</p>
               </div>
               {!!data.today?.lateMin && <p className="text-sm text-[var(--st-paused-fg)]">{data.today.lateMin} min late</p>}
+              {data.capture.qr && data.capture.scanner && <QrScanButton className={canSelf ? "" : "ml-auto"} />}
               {canSelf && (
                 <Button size="lg" className="ml-auto" disabled={busy} onClick={check}>
                   {busy ? <Loader2Icon className="animate-spin" /> : isIn ? <LogOutIcon /> : <LogInIcon />} {ACTION_LABELS[nextKind].button}

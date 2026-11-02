@@ -87,7 +87,7 @@ import { savePrefsAction } from "@/app/actions/admin";
 import { NAV_TIPS } from "@/lib/help";
 import { ROLE_LABELS, type Capability, type Role } from "@/lib/domain";
 import { scopeQueryString } from "@/lib/filters";
-import { AppIcon } from "@/components/app/app-icon";
+import { AppIcon, type Tone } from "@/components/app/app-icon";
 
 type NavItem = {
   href: string;
@@ -231,7 +231,10 @@ export function AppSidebar({
   home = null,
   viewerId = "",
   approver = false,
+  brand = {},
 }: {
+  // Admin's icons and colours per entry (Admin, Branding).
+  brand?: Record<string, { icon?: string | null; tone?: string | null }>;
   home?: HomeDept | null;
   viewerId?: string;
   // Approves something (leave, claims, attendance, handovers): shows Approvals even when nothing waits.
@@ -257,13 +260,59 @@ export function AppSidebar({
   const staff = !has("nav.overview") && !has("company.view");
   const views = VIEW_PATHS.filter((v) => has(v.cap));
 
+  // Every Admin tab, as links under Admin (the page has no tab bar of its own).
+  const adminSub = [
+    ...(has("users.manage")
+      ? [
+          { label: "People", href: "/admin" },
+          { label: "Teams", href: "/admin?tab=teams" },
+          { label: "Departments", href: "/admin?tab=departments" },
+          { label: "Roles and permissions", href: "/admin?tab=permissions" },
+          { label: "Access", href: "/admin?tab=access" },
+          { label: "Sign-in", href: "/admin?tab=signin" },
+          { label: "Sessions and devices", href: "/admin?tab=sessions" },
+          { label: "Chat", href: "/admin?tab=chat" },
+          { label: "Feedback", href: "/admin?tab=feedback" },
+          { label: "Safety reports", href: "/admin?tab=reports" },
+          { label: "Sidebar", href: "/admin?tab=sidebar" },
+          { label: "Branding", href: "/admin?tab=branding" },
+          { label: "Integrations", href: "/admin?tab=integrations" },
+          { label: "System", href: "/admin?tab=system" },
+        ]
+      : []),
+    ...(has("data.manage") ? [{ label: "Data", href: has("users.manage") ? "/admin?tab=data" : "/admin" }] : []),
+    ...(has("users.manage") ? [{ label: "Assistant", href: "/admin/assistant" }, { label: "View as", href: "/admin/preview" }] : []),
+  ];
+  // Attendance's parts for leads, HR and Admin (the page has no tab bar for them).
+  const attSub =
+    approver || has("attendance.manage") || has("attendance.capture")
+      ? [
+          { label: "Me", href: "/attendance" },
+          { label: has("attendance.manage") ? "Daily board" : "My team", href: "/attendance?tab=team" },
+          { label: "Corrections", href: "/attendance?tab=corrections" },
+          { label: "Timesheets", href: "/attendance?tab=timesheets" },
+          ...(has("attendance.manage") ? [{ label: "Review", href: "/attendance?tab=review" }, { label: "Rules", href: "/attendance?tab=setup" }] : []),
+          ...(has("attendance.capture") ? [{ label: "Capture", href: "/attendance?tab=capture" }] : []),
+        ]
+      : undefined;
+  // Email's parts, for people who send to many or set it up (an inbox alone needs no links).
+  const emailSub =
+    has("email.send") || has("email.manage")
+      ? [
+          ...(counts.mailbox ? [{ label: "Inbox", href: "/email" }] : []),
+          { label: counts.mailbox ? "Send to many" : "Compose", href: counts.mailbox ? "/email?tab=compose" : "/email" },
+          { label: "Sent log", href: "/email?tab=sent" },
+          { label: "Templates", href: "/email?tab=templates" },
+          ...(has("email.manage") ? [{ label: "Settings", href: "/email?tab=settings" }] : []),
+        ]
+      : undefined;
   const groups: { label: string; items: NavItem[] }[] = [
     {
       label: "My space",
       items: [
         // My record, Leave and Claims and pay are tabs of Profile (bottom of the sidebar and the avatar menu).
         { href: "/dashboard", label: home ? "Today" : staff ? "My work" : "Home", icon: HomeIcon, badge: home ? 0 : counts.myWork, locked: true },
-        { href: "/attendance", label: "Attendance", icon: ClockIcon },
+        { href: "/attendance", label: "Attendance", icon: ClockIcon, sub: attSub },
         ...(approver || counts.approvals > 0 ? [{ href: "/approvals", label: "Approvals", icon: CheckCheckIcon, badge: counts.approvals }] : []),
         ...(!lead && !home ? [{ href: "/team", label: "My effort", icon: UsersIcon, cap: "nav.team" as Capability }] : []),
         { href: "/questions", label: "Questions", icon: MessageCircleQuestionIcon, badge: counts.questions, cap: "nav.questions" },
@@ -283,7 +332,7 @@ export function AppSidebar({
         { href: "/coverage", label: "Coverage", icon: GridIcon, keepFilters: true, cap: "nav.coverage" },
         { href: "/reports", label: "Reports", icon: ChartColumnIcon, keepFilters: true, cap: "reports.view" },
         ...(lead ? [{ href: "/team", label: "Team", icon: UsersIcon, badge: has("corrections.approve") ? counts.corrections : 0, cap: "team.view" as Capability }] : []),
-        ...(counts.mailbox ? [{ href: "/email", label: "Email", icon: MailIcon, badge: counts.mail ?? 0 }] : [{ href: "/email", label: "Email", icon: MailIcon, cap: ["email.send", "email.manage"] as Capability[] }]),
+        ...(counts.mailbox ? [{ href: "/email", label: "Email", icon: MailIcon, badge: counts.mail ?? 0, sub: emailSub }] : [{ href: "/email", label: "Email", icon: MailIcon, cap: ["email.send", "email.manage"] as Capability[], sub: emailSub }]),
       ],
     },
     {
@@ -304,8 +353,14 @@ export function AppSidebar({
             { label: "Leave", href: "/hr?tab=leave" },
             { label: "Attendance", href: "/attendance?tab=team" },
             { label: "Hiring", href: "/hr?tab=hiring" },
+            { label: "Joiners and leavers", href: "/hr?tab=lifecycle" },
             { label: "Performance", href: "/hr?tab=performance" },
+            { label: "Training", href: "/hr?tab=training" },
+            ...(has("hr.cases") ? [{ label: "Cases", href: "/hr?tab=cases" }] : []),
             { label: "Reports", href: "/hr?tab=reports" },
+            { label: "Due soon", href: "/hr?tab=due" },
+            { label: "Org chart", href: "/hr?tab=org" },
+            { label: "Equipment", href: "/hr?tab=equipment" },
           ],
         },
         {
@@ -315,16 +370,30 @@ export function AppSidebar({
           cap: ["finance.access", "finance.view", "finance.payroll", "finance.owner_approve"],
           sub: [
             { label: "Overview", href: "/finance" },
-            { label: "Bills", href: "/finance?tab=bills" },
-            { label: "Invoices", href: "/finance?tab=invoices" },
-            { label: "Payroll", href: "/finance?tab=payroll" },
-            { label: "Budgets", href: "/finance?tab=budgets" },
-            { label: "Reports", href: "/finance?tab=reports" },
+            ...(has("finance.access") || has("finance.view")
+              ? [
+                  { label: "Transactions", href: "/finance?tab=transactions" },
+                  { label: "Bills", href: "/finance?tab=bills" },
+                  { label: "Invoices", href: "/finance?tab=invoices" },
+                  { label: "Expense claims", href: "/finance?tab=claims" },
+                  { label: "Purchasing", href: "/finance?tab=purchasing" },
+                  { label: "Budgets", href: "/finance?tab=budgets" },
+                ]
+              : []),
+            ...(has("finance.payroll") || has("finance.owner_approve") ? [{ label: "Payroll", href: "/finance?tab=payroll" }] : []),
+            ...(has("finance.access") || has("finance.view")
+              ? [
+                  { label: "Vendors and customers", href: "/finance?tab=parties" },
+                  { label: "Accounts", href: "/finance?tab=accounts" },
+                  { label: "Reports", href: "/finance?tab=reports" },
+                ]
+              : []),
+            ...(has("finance.access") || has("finance.approve") ? [{ label: "Settings", href: "/finance?tab=settings" }] : []),
           ],
         },
         { href: "/people", label: "People", icon: UsersRoundIcon },
         { href: "/requests", label: "Requests", icon: InboxIcon },
-        { href: "/owners", label: "Owners", icon: CrownIcon, cap: "owners.view" },
+        { href: "/owners", label: "Owners", icon: CrownIcon, cap: "owners.view", sub: [{ label: "Overview", href: "/owners" }, { label: "Department reports", href: "/owners?tab=reports" }] },
         ...(reportsLink ? [{ href: "/owners?tab=reports", label: "Department reports", icon: FileTextIcon }] : []),
       ],
     },
@@ -335,8 +404,8 @@ export function AppSidebar({
         { href: "/assign", label: "Assign work", icon: UserPlusIcon, cap: "assign.bulk" },
         { href: "/checklists", label: "Checklists", icon: ListChecksIcon, cap: "checklists.manage" },
         { href: "/import-export", label: "Import and export", icon: ArrowLeftRightIcon, cap: ["import.run", "import.stage", "import.tracker", "export.run", "export.report", "export.tracker", "export.audit"] },
-        { href: "/settings", label: "Settings", icon: SettingsIcon, cap: "settings.manage" },
-        { href: "/admin", label: "Admin", icon: UserCogIcon, cap: ["users.manage", "data.manage"] },
+        { href: "/settings", label: "Settings", icon: SettingsIcon, cap: "settings.manage", sub: [{ label: "Curriculum", href: "/settings" }, { label: "Workflow", href: "/settings?tab=workflow" }, { label: "Teams", href: "/settings?tab=teams" }, { label: "Destinations", href: "/settings?tab=destinations" }, { label: "Calendar and alerts", href: "/settings?tab=calendar" }, { label: "Lists", href: "/settings?tab=lists" }, { label: "Workspace", href: "/settings?tab=workspace" }, { label: "Calls", href: "/settings?tab=calls" }] },
+        { href: "/admin", label: "Admin", icon: UserCogIcon, cap: ["users.manage", "data.manage"], sub: adminSub },
         { href: "/admin/preview", label: "View as", icon: EyeIcon, cap: "users.manage" },
         { href: "/admin?tab=sessions", label: "Sessions and devices", icon: MonitorSmartphoneIcon, cap: "users.manage" },
         { href: "/admin/data", label: "Data manager", icon: DatabaseIcon, cap: "data.manage" },
@@ -358,7 +427,7 @@ export function AppSidebar({
         items: [
           { href: "/dashboard", label: "Home", icon: HomeIcon, locked: true },
           ...(counts.approvals > 0 ? [{ href: "/approvals", label: "Approvals", icon: CheckCheckIcon, badge: counts.approvals }] : []),
-          ...(counts.mailbox ? [{ href: "/email", label: "Email", icon: MailIcon, badge: counts.mail ?? 0 }] : []),
+          ...(counts.mailbox ? [{ href: "/email", label: "Email", icon: MailIcon, badge: counts.mail ?? 0, sub: emailSub }] : []),
         ],
       },
       {
@@ -370,27 +439,11 @@ export function AppSidebar({
             icon: UserCogIcon,
             cap: ["users.manage", "data.manage"],
             gather: true,
-            sub: [
-              { label: "People", href: "/admin" },
-              { label: "Teams", href: "/admin?tab=teams" },
-              { label: "Departments", href: "/admin?tab=departments" },
-              { label: "Roles and permissions", href: "/admin?tab=permissions" },
-              { label: "Access", href: "/admin?tab=access" },
-              { label: "Sign-in", href: "/admin?tab=signin" },
-              { label: "Sessions and devices", href: "/admin?tab=sessions" },
-              { label: "Chat", href: "/admin?tab=chat" },
-              { label: "Feedback", href: "/admin?tab=feedback" },
-              { label: "Safety reports", href: "/admin?tab=reports" },
-              { label: "Sidebar", href: "/admin?tab=sidebar" },
-              { label: "Integrations", href: "/admin?tab=integrations" },
-              { label: "System", href: "/admin?tab=system" },
-              { label: "Assistant", href: "/admin/assistant" },
-              { label: "View as", href: "/admin/preview" },
-            ],
+            sub: adminSub,
           },
-          { href: "/settings", label: "Settings", icon: SettingsIcon, cap: "settings.manage" },
+          { href: "/settings", label: "Settings", icon: SettingsIcon, cap: "settings.manage", sub: [{ label: "Curriculum", href: "/settings" }, { label: "Workflow", href: "/settings?tab=workflow" }, { label: "Teams", href: "/settings?tab=teams" }, { label: "Destinations", href: "/settings?tab=destinations" }, { label: "Calendar and alerts", href: "/settings?tab=calendar" }, { label: "Lists", href: "/settings?tab=lists" }, { label: "Workspace", href: "/settings?tab=workspace" }, { label: "Calls", href: "/settings?tab=calls" }] },
           { href: "/email?tab=settings", label: "Email setup", icon: MailIcon, cap: "email.manage", exact: true },
-          { href: "/attendance?tab=capture", label: "Attendance setup", icon: ClockIcon, exact: true },
+          { href: "/attendance?tab=capture", label: "Attendance setup", icon: ClockIcon, sub: attSub },
           { href: "/admin/data", label: "Data manager", icon: DatabaseIcon, cap: "data.manage" },
           { href: "/import-export", label: "Import and export", icon: ArrowLeftRightIcon, cap: ["import.run", "import.stage", "import.tracker", "export.run", "export.report", "export.tracker", "export.audit"] },
           { href: "/audit", label: "Audit log", icon: ShieldCheckIcon, cap: ["users.manage", "items.plan"] },
@@ -499,7 +552,7 @@ export function AppSidebar({
                             className="h-8 font-medium text-sidebar-foreground/85 data-[active=true]:bg-sidebar-accent data-[active=true]:font-semibold data-[active=true]:text-sidebar-accent-foreground"
                           >
                             <Link href={href} onClick={close}>
-                              <AppIcon icon={item.icon} />
+                              <AppIcon icon={item.icon} name={brand[keyOf(item)]?.icon} tone={(brand[keyOf(item)]?.tone as Tone | null | undefined) ?? null} />
                               <span>{item.label}</span>
                             </Link>
                           </SidebarMenuButton>

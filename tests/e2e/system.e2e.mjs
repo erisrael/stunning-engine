@@ -30,7 +30,8 @@ try {
   await a.waitForTimeout(1500);
 
   await a.goto(`${base}/admin`);
-  await a.getByRole("tab", { name: "System" }).click();
+  // Admin's tabs are links under Admin in the sidebar.
+  await a.locator("[data-sidebar=sidebar]").first().getByRole("link", { name: "System", exact: true }).click();
   await a.waitForURL(/tab=system/);
   check("opening the System tab loads it", await a.getByText("How the system is doing").waitFor({ timeout: 20000 }).then(() => true, () => false));
   check("health lists the database", await a.getByTestId("health-db").isVisible());

@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 28;
+export const SCHEMA_VERSION = 29;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -2167,6 +2167,18 @@ CREATE TABLE IF NOT EXISTS mail_state (
   checked_at TEXT,
   error TEXT
 );
+
+-- v29: banners at the top of each section's main page (Admin, Branding), a picture (base64) or a colour.
+CREATE TABLE IF NOT EXISTS brand_banners (
+  key TEXT PRIMARY KEY,
+  title TEXT,
+  text TEXT,
+  color TEXT,
+  mime TEXT,
+  data TEXT,
+  updated_at TEXT NOT NULL,
+  updated_by TEXT
+);
 `;
 
 // Tables in dependency order; used to empty the workspace and to export or restore backups.
@@ -2256,6 +2268,7 @@ export const TABLES = [
   "dept_doc_versions",
   "dept_doc_links",
   "assistant_events",
+  "brand_banners",
   "employees",
   "employee_private",
   "employee_documents",

@@ -304,7 +304,7 @@ async function tzNow() {
 export async function myAttendance(user: AppUser, month: string) {
   const employeeId = await myEmployeeId(user);
   const cfg = await attendanceConfig();
-  if (!employeeId) return { employeeId: null as string | null, cfg, capture: { qr: false, network: false }, today: null, events: [] as EventRow[], days: [] as DayResult[], totals: null as MonthTotals | null, shift: null as Shift | null, code: null as string | null, hasPin: false, face: null as { enrolledAt: string; samples: number } | null, corrections: [] as CorrectionRow[] };
+  if (!employeeId) return { employeeId: null as string | null, cfg, capture: { qr: false, network: false, scanner: false }, today: null, events: [] as EventRow[], days: [] as DayResult[], totals: null as MonthTotals | null, shift: null as Shift | null, code: null as string | null, hasPin: false, face: null as { enrolledAt: string; samples: number } | null, corrections: [] as CorrectionRow[] };
   const emp = (await get<Emp>(`${EMP_SELECT} WHERE id = ?`, employeeId))!;
   const { date } = await tzNow();
   const r = monthRange(month);
@@ -319,7 +319,7 @@ export async function myAttendance(user: AppUser, month: string) {
   return {
     employeeId,
     cfg,
-    capture: { qr: cap.qr, network: cap.network },
+    capture: { qr: cap.qr, network: cap.network, scanner: !!cap.scanner },
     today: t.days[0] ?? null,
     events: t.events.get(date) ?? [],
     days: mine.days,

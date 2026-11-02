@@ -734,6 +734,13 @@ Built (13b): `src/server/assistant-ai.ts` (settings, the tools, sealed proposals
 
 - [ ] Later: answers streamed word by word; reading a page's contents aloud; more actions (approve leave, hand over, book a session) once people trust the first ones; colourful icons in the Admin and department tabs.
 
+## Phase 13c: Navigation, looks and branding (done)
+
+- [x] **No tab bars on top of pages that the sidebar already lists**: Admin, HR, Finance, Settings, Owners, Email, Studio and Attendance (for leads, HR and Admin) show their parts as links under their sidebar entry, and those links switch the page (Admin's links did not switch it before).
+- [x] **Looks, per person** (account menu): colourful or one-colour icons; the icon pack (Lucide outline, Phosphor filled, Phosphor duotone); outline strokes thin, regular or bold; the font (Jakarta, Inter, Atkinson for easy reading, Nunito, Lora, Noto Ethiopic first); high contrast (darker text and borders, strong focus rings). Applied before the page shows, kept on that computer.
+- [x] **Admin, Branding**: a banner for Home, production, each department (built-in and created), HR, Finance, Attendance and People: an uploaded picture (up to 3 MB) or a colour, with a title and a line; and any sidebar entry's icon (from a pack of 90 icons, each in both packs) and colour, for everyone.
+- [x] **QR check-in inside the app**: Admin, Attendance setup, Capture: "Scan the QR in the app" (with the printed QR on); the Attendance page then has Scan the QR, which opens the camera and reads the poster on the phone (the browser's reader, or jsQR), then checks in through the usual page and checks.
+
 ## Phase 14: Mail, a company inbox in the app (core done)
 
 Each person reads and sends their company email under Email. Admin (email managers) gives the mailboxes; people never get a password, so they cannot change it, set forwarding or filters, or open webmail or a phone app with it.

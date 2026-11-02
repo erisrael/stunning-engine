@@ -27,8 +27,8 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         description="Curriculum, workflow rules, how each team works, destinations, calendar, lists and calls. People, roles and permissions are in Admin."
         actions={<PageImport viewer={viewer} page="curriculum" label="Import curriculum" />}
       />
-      <Tabs defaultValue={tab} className="gap-4">
-        <TabsList className="w-full justify-start overflow-x-auto sm:w-fit">
+      <Tabs value={tab} className="gap-4">
+        <TabsList className="hidden">
           <TabsTrigger value="taxonomy">Curriculum</TabsTrigger>
           <TabsTrigger value="workflow">Workflow</TabsTrigger>
           <TabsTrigger value="teams">Teams</TabsTrigger>

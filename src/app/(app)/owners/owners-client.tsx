@@ -63,7 +63,7 @@ export function OwnersClient({
     <div className="space-y-4">
       {isOwner && (
         <Tabs value={tab} onValueChange={(v) => go({ tab: v === "overview" ? null : v })}>
-          <TabsList>
+          <TabsList className="hidden">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="reports">Department reports</TabsTrigger>
           </TabsList>

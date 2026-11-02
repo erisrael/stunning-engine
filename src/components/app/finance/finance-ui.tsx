@@ -83,7 +83,7 @@ export function FinanceHome(props: {
   return (
     <div className="space-y-4">
       <Tabs value={tab} onValueChange={(v) => go({ tab: v === "overview" ? null : v })}>
-        <TabsList className="w-full justify-start overflow-x-auto">
+        <TabsList className="hidden">
           {FIN_TABS.filter(show).map((t) => (
             <TabsTrigger key={t} value={t}>
               {TAB_LABELS[t]}

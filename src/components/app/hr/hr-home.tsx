@@ -68,7 +68,7 @@ export function HrHome(props: {
   return (
     <div className="space-y-4">
       <Tabs value={props.tab} onValueChange={(v) => go({ tab: v === "people" ? null : v })}>
-        <TabsList className="w-full justify-start overflow-x-auto sm:w-fit">
+        <TabsList className="hidden">
           <TabsTrigger value="people">People</TabsTrigger>
           {(
             [

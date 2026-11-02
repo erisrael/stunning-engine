@@ -28,6 +28,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^1.4.0",
     "@electric-sql/pglite": "^0.5.12",
+    "@phosphor-icons/react": "^2.1.10",
     "@vladmandic/face-api": "^1.7.15",
     "class-variance-authority": "^0.7.1",
     "cmdk": "^1.1.1",
@@ -35,6 +36,7 @@
     "date-fns": "^4.4.0",
     "exceljs": "^3.4.0",
     "imapflow": "^2.10.0",
+    "jsqr": "^1.4.0",
     "lucide-react": "^1.61.0",
     "mailparser": "^3.14.1",
     "marked": "^18.1.1",

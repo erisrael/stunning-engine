@@ -77,6 +77,11 @@ export function CaptureSetup({ att, cap, status, origin }: { att: AttendanceConf
           <Row label="Printed QR at the entrance" hint={`People scan it with their phone, or type ${origin.replace(/^https?:\/\//, "")}/in. The site's checks below must pass too.`}>
             <Switch checked={c.methods.qr} onCheckedChange={(v) => setC({ ...c, methods: { ...c.methods, qr: v } })} aria-label="Printed QR check-in" />
           </Row>
+          {c.methods.qr && (
+            <Row label="Scan the QR in the app" hint="A Scan button on the Attendance page opens the camera and reads the poster inside the app (for phones whose camera app does not open links). The same checks apply.">
+              <Switch checked={!!c.methods.scanner} onCheckedChange={(v) => setC({ ...c, methods: { ...c.methods, scanner: v } })} aria-label="Scan the QR in the app" />
+            </Row>
+          )}
           <Row label="On the office network, in the app" hint="The same buttons on the Attendance page, without scanning, when the phone or computer is on the office Wi-Fi.">
             <Switch checked={c.methods.network} onCheckedChange={(v) => setC({ ...c, methods: { ...c.methods, network: v } })} aria-label="Office network check-in" />
           </Row>

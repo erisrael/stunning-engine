@@ -53,6 +53,11 @@ const PREPS: Record<string, () => Promise<unknown>> = {
     await saveAiConfig(admin, { on: true, model: "claude-opus-5-5", effort: "low", offRoles: [], dailyLimit: 0, actions: true, key: "sk-ant-e2e" });
     return {};
   },
+  // Admin's sidebar links, Branding and the icon packs.
+  async branding() {
+    await passwordOnly();
+    return {};
+  },
   // Admin, People: deactivate and delete.
   async accounts() {
     await passwordOnly();
@@ -176,7 +181,7 @@ const PREPS: Record<string, () => Promise<unknown>> = {
     const base = await captureConfig();
     const c = await saveCaptureConfig(a, {
       ...base,
-      methods: { qr: true, network: true, shared: true, leadScan: true },
+      methods: { qr: true, network: true, shared: true, leadScan: true, scanner: true },
       window: { beforeMin: 600, afterMin: 900 },
       sites: [{ id: "", name: "Head office", networks: ["196.188.10.0/24"], lat: null, lng: null, radiusM: 150, checks: { network: true, location: false, device: false }, posterKey: "", posterAt: "" }],
     });

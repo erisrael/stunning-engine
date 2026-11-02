@@ -5,8 +5,9 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
-import { BellIcon, CheckCheckIcon, ClockIcon, FlagIcon, HelpCircleIcon, IdCardIcon, LogOutIcon, MessageSquareHeartIcon, MessageCircleIcon, MonitorIcon, MoonIcon, PaletteIcon, SearchIcon, SquareIcon, SunIcon, UserIcon } from "lucide-react";
-import { ACCENTS, useAppearance } from "@/components/app/appearance";
+import { BellIcon, CheckCheckIcon, ClockIcon, FlagIcon, HelpCircleIcon, IdCardIcon, LogOutIcon, MessageSquareHeartIcon, MessageCircleIcon, MonitorIcon, MoonIcon, PaletteIcon,
+  TypeIcon, SearchIcon, SquareIcon, SunIcon, UserIcon } from "lucide-react";
+import { ACCENTS, FONTS, useAppearance } from "@/components/app/appearance";
 import { Button } from "@/components/ui/button";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
@@ -316,6 +317,41 @@ function UserMenu({ user }: { user: { name: string; email: string; avatar?: stri
             <DropdownMenuRadioGroup value={look.icons} onValueChange={(v) => setLook({ icons: v })}>
               <DropdownMenuRadioItem value="colour">Colourful</DropdownMenuRadioItem>
               <DropdownMenuRadioItem value="plain">One colour</DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="text-xs text-muted-foreground">Icon pack</DropdownMenuLabel>
+            <DropdownMenuRadioGroup value={look.iconPack} onValueChange={(v) => setLook({ iconPack: v })}>
+              <DropdownMenuRadioItem value="lucide">Outline (Lucide)</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="fill">Filled (Phosphor)</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="duotone">Duotone (Phosphor)</DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="text-xs text-muted-foreground">Outline strokes</DropdownMenuLabel>
+            <DropdownMenuRadioGroup value={look.iconWeight} onValueChange={(v) => setLook({ iconWeight: v })}>
+              <DropdownMenuRadioItem value="thin">Thin</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="regular">Regular</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="bold">Bold</DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>
+            <TypeIcon /> Font and contrast
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent>
+            <DropdownMenuLabel className="text-xs text-muted-foreground">Font</DropdownMenuLabel>
+            <DropdownMenuRadioGroup value={look.font} onValueChange={(v) => setLook({ font: v })}>
+              {FONTS.map((f) => (
+                <DropdownMenuRadioItem key={f.key} value={f.key}>
+                  {f.label}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="text-xs text-muted-foreground">Contrast</DropdownMenuLabel>
+            <DropdownMenuRadioGroup value={look.contrast} onValueChange={(v) => setLook({ contrast: v })}>
+              <DropdownMenuRadioItem value="normal">Normal</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="high">High contrast</DropdownMenuRadioItem>
             </DropdownMenuRadioGroup>
           </DropdownMenuSubContent>
         </DropdownMenuSub>

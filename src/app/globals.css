@@ -7,9 +7,9 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-app), var(--font-ethiopic), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-chosen, var(--font-app)), var(--font-ethiopic), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
-  --font-heading: var(--font-app), var(--font-ethiopic), ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-chosen, var(--font-app)), var(--font-ethiopic), ui-sans-serif, system-ui, sans-serif;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -303,3 +303,23 @@
 /* Colourful icons (components/app/app-icon.tsx); "One colour" in the account menu turns them back to the text colour. */
 :root[data-icons="plain"] .app-icon { color: inherit; }
 :root[data-icons="plain"] .app-tile { background: color-mix(in oklab, var(--primary) 10%, transparent); color: var(--primary); }
+
+/* Icon pack and stroke (account menu): every icon is drawn in each style; the chosen one shows. */
+.pk-fill, .pk-duo { display: none; }
+:root[data-icon-pack="fill"] .pk-fill, :root[data-icon-pack="duotone"] .pk-duo { display: block; }
+:root[data-icon-pack="fill"] .pk-alt, :root[data-icon-pack="duotone"] .pk-alt { display: none; }
+:root[data-icon-weight="thin"] .pk-lucide { stroke-width: 1.4; }
+:root[data-icon-weight="bold"] .pk-lucide { stroke-width: 2.6; }
+
+/* Fonts a person can choose. */
+:root[data-font="inter"] { --font-chosen: var(--font-inter); }
+:root[data-font="readable"] { --font-chosen: var(--font-readable); }
+:root[data-font="rounded"] { --font-chosen: var(--font-rounded); }
+:root[data-font="serif"] { --font-chosen: var(--font-serif); }
+:root[data-font="ethiopic"] { --font-chosen: var(--font-ethiopic); }
+
+/* High contrast: darker text and borders, stronger focus rings, underlined links. */
+:root[data-contrast="high"] { --foreground: #000; --muted-foreground: #2b2b2b; --border: #6b6b6b; --input: #6b6b6b; --sidebar-foreground: #000; --sidebar-border: #6b6b6b; }
+:root[data-contrast="high"].dark { --foreground: #fff; --muted-foreground: #e6e6e6; --border: #a3a3a3; --input: #a3a3a3; --sidebar-foreground: #fff; --sidebar-border: #a3a3a3; --background: #000; --card: #0a0a0a; --popover: #0a0a0a; }
+:root[data-contrast="high"] :is(p, li, td) > a { text-decoration: underline; text-underline-offset: 2px; }
+:root[data-contrast="high"] *:focus-visible { outline: 3px solid var(--ring) !important; outline-offset: 2px; }

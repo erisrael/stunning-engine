@@ -9,6 +9,8 @@ import { taxonomy } from "@/server/queries";
 import { can, listUsers } from "@/server/users";
 import { workspaceCounts } from "@/server/workspace-data";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { BrandingAdmin } from "./branding-admin";
+import { bannerSections, banners, navBrand } from "@/server/branding";
 import { PageHeader } from "@/components/app/primitives";
 import { ROLES, STAGES, type Role, type Stage } from "@/lib/domain";
 import { AccessAdmin, DataAdmin, PeopleAdmin, PermissionsAdmin, TeamsAdmin, type AdminUser, type TeamPerson } from "./admin-client";
@@ -115,8 +117,8 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           </>
         }
       />
-      <Tabs defaultValue={tab} className="gap-4">
-        <TabsList className="w-full justify-start overflow-x-auto sm:w-fit">
+      <Tabs value={tab} className="gap-4">
+        <TabsList className="hidden">
           {manageUsers && <TabsTrigger value="people">People ({users.filter((u) => u.active).length})</TabsTrigger>}
           {manageUsers && <TabsTrigger value="teams">Teams</TabsTrigger>}
           {manageUsers && <TabsTrigger value="departments">Departments</TabsTrigger>}
@@ -128,6 +130,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           {manageUsers && <TabsTrigger value="reports">Safety reports</TabsTrigger>}
           {manageUsers && <TabsTrigger value="signin">Sign-in</TabsTrigger>}
           {manageUsers && <TabsTrigger value="sidebar">Sidebar</TabsTrigger>}
+          {manageUsers && <TabsTrigger value="branding">Branding</TabsTrigger>}
           {manageUsers && <TabsTrigger value="integrations">Integrations</TabsTrigger>}
           {manageUsers && <TabsTrigger value="system">System</TabsTrigger>}
           {manageData && <TabsTrigger value="data">Data</TabsTrigger>}
@@ -182,6 +185,9 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
                 }}
               />
               <SignInAdmin google={await googleSettings()} emailReady={(await smtpSettings()).source !== "none"} />
+            </TabsContent>
+            <TabsContent value="branding">
+              {tab === "branding" && <BrandingAdmin sections={(await bannerSections()).map((x) => ({ key: x.key, label: x.label }))} banners={await banners()} nav={await navBrand()} />}
             </TabsContent>
             <TabsContent value="system">
               {tab !== "system" ? (

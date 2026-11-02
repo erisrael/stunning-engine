@@ -25,6 +25,8 @@ import { ROLE_LABELS } from "@/lib/domain";
 import { homeDepartment } from "@/server/nav";
 import { assistantContext } from "@/server/assistant";
 import { aiAvailable } from "@/server/assistant-ai";
+import { bannerMap, navBrand } from "@/server/branding";
+import { SectionBanner } from "@/components/app/section-banner";
 import { Assistant } from "@/components/app/assistant";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -48,7 +50,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         home={await homeDepartment(viewer)}
         viewerId={viewer.id}
         approver={viewer.leads.length > 0 || can(viewer, "team.view") || can(viewer, "attendance.manage") || can(viewer, "corrections.approve")}
-        reportsLink={!can(viewer, "owners.view") && (await reportDepartments(viewer)).length > 0} customDepts={await myCustomDepartments(viewer)} userHidden={viewer.prefs.sidebarHidden ?? []} roleHidden={(await sidebarDefaults())[viewer.activeRole] ?? []} perms={viewer.perms} activeRole={viewer.activeRole} counts={counts} workspaceName={settings.workspace.name} />
+        reportsLink={!can(viewer, "owners.view") && (await reportDepartments(viewer)).length > 0} customDepts={await myCustomDepartments(viewer)} userHidden={viewer.prefs.sidebarHidden ?? []} roleHidden={(await sidebarDefaults())[viewer.activeRole] ?? []} perms={viewer.perms} activeRole={viewer.activeRole} counts={counts} workspaceName={settings.workspace.name} brand={await navBrand()} />
       <SidebarInset className="min-w-0">
         {viewer.previewBy && <PreviewBanner name={viewer.name} role={ROLE_LABELS[viewer.activeRole]} />}
         <Topbar user={{ name: viewer.name, email: viewer.email, roles: viewer.roles, avatar: (await avatarsFor([viewer.id]))[viewer.id] ?? null }} activeRole={viewer.activeRole} unread={counts.notifications} chatUnread={counts.chat} />
@@ -61,7 +63,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             .
           </div>
         )}
-        <main className="mx-auto w-full max-w-[1600px] min-w-0 flex-1 px-3 py-4 sm:px-6 sm:py-6">{children}</main>
+        <main className="mx-auto w-full max-w-[1600px] min-w-0 flex-1 px-3 py-4 sm:px-6 sm:py-6">
+          <SectionBanner banners={await bannerMap()} />
+          {children}
+        </main>
         <ChatKeyBootstrap viewerId={viewer.id} />
         {!viewer.mustChangePassword && !viewer.previewBy && <Assistant ctx={await assistantContext(viewer)} ai={await aiAvailable(viewer)} />}
         {!viewer.mustChangePassword && <GetStarted audience={audienceFor(viewer.activeRole, viewer.leads)} tour={viewer.prefs.tour ?? {}} />}
