@@ -108,7 +108,7 @@ async function e2eTests(seedDir: string) {
       continue;
     }
     port++;
-    const env = { ...baseEnv(), PGLITE_DIR: db, PORT: String(port), MYSEED_INSECURE_COOKIES: "1", MYSEED_TIMER: "0", NODE_ENV: "production" as const, BACKUP_DIR: path.join(tmp, `backups-${t.name}`) };
+    const env = { ...baseEnv(), PGLITE_DIR: db, PORT: String(port), MYSEED_INSECURE_COOKIES: "1", MYSEED_TIMER: "0", MAIL_FAKE: "1", NODE_ENV: "production" as const, BACKUP_DIR: path.join(tmp, `backups-${t.name}`) };
     const server = spawn(process.execPath, [path.join(root, "node_modules", "next", "dist", "bin", "next"), "start", "-p", String(port)], { cwd: root, env, detached: process.platform !== "win32", stdio: ["ignore", "pipe", "pipe"] });
     let log = "";
     server.stdout?.on("data", (d) => (log += d));

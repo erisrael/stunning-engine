@@ -41,6 +41,29 @@ async function attendance() {
 }
 
 const PREPS: Record<string, () => Promise<unknown>> = {
+  // Phase 14: Dawit (a team member who cannot send bulk email) and Yonas each have a mailbox in the app; the server
+  // runs with MAIL_FAKE=1, so mail is kept in memory.
+  async mail() {
+    await passwordOnly();
+    for (const [email, address] of [
+      ["dawit@demo.local", "dawit@myseed.test"],
+      ["yonas@demo.local", "yonas@myseed.test"],
+    ] as const) {
+      const u = (await get<{ id: string; name: string }>("SELECT id, name FROM users WHERE email = ?", email))!;
+      await run(
+        "INSERT INTO email_senders (id, address, display_name, user_id, smtp_user, smtp_pass_enc, is_default, active, mailbox, managed, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 0, 1, 1, 'cpanel', ?, ?)",
+        uid("snd_"),
+        address,
+        u.name,
+        u.id,
+        address,
+        await seal("not-used-in-test-mode"),
+        nowIso(),
+        nowIso(),
+      );
+    }
+    return {};
+  },
   // The Dev flow: a lead, a developer and a tester; a bug in the intake, a task to do, one in code review.
   async flow() {
     await passwordOnly();

@@ -267,7 +267,7 @@ export function isEmail(v: string) {
 type Transport = { transporter: nodemailer.Transporter; host: string; port: number; authUser: string; fromAddress: string; fromName: string; replyTo: string };
 
 // The connection for a sender: its own login when it has one, otherwise the shared account.
-async function transportFor(sender: SenderRow | null): Promise<Transport> {
+export async function transportFor(sender: SenderRow | null): Promise<Transport> {
   const env = envSmtp();
   const s = env ? null : await storedSmtp();
   const relay = await activeRelay();
@@ -353,7 +353,7 @@ function explainSmtpError(err: unknown, host: string, port: number) {
 
 export type CheckStep = { label: string; status: "ok" | "warn" | "fail"; detail: string };
 
-function probePort(host: string, port: number, ms = 8000) {
+export function probePort(host: string, port: number, ms = 8000) {
   return new Promise<"open" | "timeout" | "refused">((resolve) => {
     const sock = net.connect({ host, port });
     const done = (r: "open" | "timeout" | "refused") => (sock.destroy(), resolve(r));
@@ -469,10 +469,10 @@ export async function checkInboxDelivery(address: string): Promise<{ domain: str
 // Sender addresses
 // ---------------------------------------------------------------------------
 
-type SenderRow = { id: string; address: string; display_name: string | null; user_id: string | null; smtp_user: string | null; smtp_pass_enc: string | null; is_default: number; active: number };
-export type Sender = { id: string; address: string; displayName: string | null; userId: string | null; userName: string | null; ownLogin: boolean; smtpUser: string | null; isDefault: boolean; active: boolean };
+export type SenderRow = { id: string; address: string; display_name: string | null; user_id: string | null; smtp_user: string | null; smtp_pass_enc: string | null; is_default: number; active: number; mailbox?: number; managed?: string | null };
+export type Sender = { id: string; address: string; displayName: string | null; userId: string | null; userName: string | null; ownLogin: boolean; smtpUser: string | null; isDefault: boolean; active: boolean; mailbox: boolean; managed: string | null };
 
-async function senderRow(id: string) {
+export async function senderRow(id: string) {
   const r = await get<SenderRow>("SELECT * FROM email_senders WHERE id = ?", id);
   if (!r) throw new WorkflowError("NOT_FOUND", "Sender address not found.");
   return r;
@@ -492,6 +492,8 @@ export async function listSenders(): Promise<Sender[]> {
     smtpUser: r.smtp_user,
     isDefault: !!r.is_default,
     active: !!r.active,
+    mailbox: !!r.mailbox,
+    managed: r.managed ?? null,
   }));
 }
 

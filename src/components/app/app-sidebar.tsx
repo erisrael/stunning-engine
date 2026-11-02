@@ -237,7 +237,7 @@ export function AppSidebar({
   customDepts?: { key: string; title: string }[];
   reportsLink?: boolean;
   activeRole: Role;
-  counts: { myWork: number; notifications: number; questions: number; handoffs: number; corrections: number; incoming: number; attendance: number; approvals: number };
+  counts: { myWork: number; notifications: number; questions: number; handoffs: number; corrections: number; incoming: number; attendance: number; approvals: number; mail?: number; mailbox?: boolean };
   workspaceName: string;
   // Hidden by this person, and by Admin for the role they are viewing as.
   userHidden?: string[];
@@ -280,7 +280,7 @@ export function AppSidebar({
         { href: "/coverage", label: "Coverage", icon: GridIcon, keepFilters: true, cap: "nav.coverage" },
         { href: "/reports", label: "Reports", icon: ChartColumnIcon, keepFilters: true, cap: "reports.view" },
         ...(lead ? [{ href: "/team", label: "Team", icon: UsersIcon, badge: has("corrections.approve") ? counts.corrections : 0, cap: "team.view" as Capability }] : []),
-        { href: "/email", label: "Email", icon: MailIcon, cap: ["email.send", "email.manage"] },
+        ...(counts.mailbox ? [{ href: "/email", label: "Email", icon: MailIcon, badge: counts.mail ?? 0 }] : [{ href: "/email", label: "Email", icon: MailIcon, cap: ["email.send", "email.manage"] as Capability[] }]),
       ],
     },
     {

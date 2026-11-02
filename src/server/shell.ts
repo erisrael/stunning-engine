@@ -2,6 +2,7 @@ import { get, nowIso } from "./db";
 import { can, scopeSql, type AppUser } from "./users";
 import { unreadChatCount } from "./chat";
 import { unreadCount } from "./notifications";
+import { unreadMail } from "./mail";
 
 const count = async (sql: string, ...params: string[]) => (await get<{ c: number }>(sql, ...params))?.c ?? 0;
 
@@ -11,7 +12,7 @@ export async function shellCounts(user: AppUser) {
   const sc = scopeSql(user, "i");
   const isManager = can(user, "questions.ask");
   const leads = user.leads;
-  const [myWork, handoffs, questions, corrections, notifications, chat, incoming, attendance, leave, claims] = await Promise.all([
+  const [myWork, handoffs, questions, corrections, notifications, chat, incoming, attendance, leave, claims, mail] = await Promise.all([
     count(
       `SELECT COUNT(*) AS c FROM items i JOIN stage_attempts a ON a.id = i.current_attempt_id
        WHERE i.lifecycle = 'in_production' AND (a.owner_id = ? OR i.next_action_owner_id = ?) AND ${sc.sql}`,
@@ -44,8 +45,9 @@ export async function shellCounts(user: AppUser) {
     // Leave and expense claims waiting for this person as line manager.
     count("SELECT COUNT(*) AS c FROM leave_requests WHERE status = 'pending_lead' AND approver_id = ?", user.id),
     count("SELECT COUNT(*) AS c FROM fin_claims WHERE status = 'submitted' AND approver_id = ?", user.id),
+    unreadMail(user.id),
   ]);
   // Everything waiting for this person's decision, for the Approvals entry.
   const approvals = Number(leave) + Number(claims) + Number(attendance) + Number(incoming) + Number(corrections);
-  return { myWork, handoffs, questions, corrections, notifications, chat, incoming, attendance, leave, claims, approvals };
+  return { myWork, handoffs, questions, corrections, notifications, chat, incoming, attendance, leave, claims, approvals, mail: mail.unread, mailbox: mail.has };
 }

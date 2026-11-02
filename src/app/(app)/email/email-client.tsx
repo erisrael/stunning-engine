@@ -78,7 +78,10 @@ function splitEmails(v: string) {
 }
 
 export function EmailClient(props: {
-  tab: "compose" | "sent" | "templates" | "settings";
+  tab: "inbox" | "compose" | "sent" | "templates" | "settings";
+  defaultTab: "inbox" | "compose";
+  inbox: React.ReactNode;
+  mailAdmin: React.ReactNode;
   canManage: boolean;
   viewer: { id: string; name: string; email: string };
   smtp: SmtpSettings;
@@ -104,14 +107,16 @@ export function EmailClient(props: {
   const [draft, setDraft] = React.useState<{ subject: string; body: string } | null>(null);
   const ready = props.smtp.source !== "none";
   return (
-    <Tabs value={props.tab} onValueChange={(v) => go({ tab: v === "compose" ? null : v })} className="gap-4">
+    <Tabs value={props.tab} onValueChange={(v) => go({ tab: v === props.defaultTab ? null : v, box: null })} className="gap-4">
       <TabsList className="w-full justify-start overflow-x-auto sm:w-fit">
-        <TabsTrigger value="compose">Compose</TabsTrigger>
-        <TabsTrigger value="sent">Sent</TabsTrigger>
+        {props.inbox && <TabsTrigger value="inbox">Inbox</TabsTrigger>}
+        <TabsTrigger value="compose">{props.inbox ? "Send to many" : "Compose"}</TabsTrigger>
+        <TabsTrigger value="sent">Sent log</TabsTrigger>
         <TabsTrigger value="templates">Templates ({props.templates.length})</TabsTrigger>
         {props.canManage && <TabsTrigger value="settings">Settings</TabsTrigger>}
       </TabsList>
-      {!ready && (
+      {props.inbox && <TabsContent value="inbox">{props.inbox}</TabsContent>}
+      {!ready && props.tab !== "inbox" && (
         <div className="rounded-lg border border-[var(--st-paused-fg)]/40 bg-[var(--st-paused-bg)] p-3 text-sm text-[var(--st-paused-fg)]">
           Email is not set up yet. {props.canManage ? "Add the SMTP account in Settings." : "Ask an administrator to add the SMTP account."}
         </div>
@@ -129,13 +134,14 @@ export function EmailClient(props: {
           canManage={props.canManage}
           onUse={(t) => {
             setDraft({ subject: t.subject, body: t.body });
-            go({ tab: null });
+            go({ tab: props.defaultTab === "compose" ? null : "compose" });
           }}
         />
       </TabsContent>
       {props.canManage && (
         <TabsContent value="settings">
           <EmailSettings smtp={props.smtp} senders={props.allSenders} people={props.people} presets={props.presets} secretSource={props.secretSource} viewerEmail={props.viewer.email} />
+          {props.mailAdmin && <div className="mt-4">{props.mailAdmin}</div>}
         </TabsContent>
       )}
     </Tabs>

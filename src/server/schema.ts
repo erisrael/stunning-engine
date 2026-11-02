@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 26;
+export const SCHEMA_VERSION = 27;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -2151,6 +2151,19 @@ CREATE TABLE IF NOT EXISTS assistant_events (
   at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_assistant_events ON assistant_events(at);
+
+-- Phase 14: Mail. A sender address with its own sign-in can also be the person's inbox in the app (mailbox = 1);
+-- managed = 'cpanel' when the app created or took over the mailbox through the cPanel API. mail_state keeps the
+-- unread count and the last check for the sidebar, without connecting to the mail server on every page.
+ALTER TABLE email_senders ADD COLUMN IF NOT EXISTS mailbox INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE email_senders ADD COLUMN IF NOT EXISTS managed TEXT;
+CREATE TABLE IF NOT EXISTS mail_state (
+  sender_id TEXT PRIMARY KEY,
+  unread INTEGER NOT NULL DEFAULT 0,
+  last_uid INTEGER NOT NULL DEFAULT 0,
+  checked_at TEXT,
+  error TEXT
+);
 `;
 
 // Tables in dependency order; used to empty the workspace and to export or restore backups.

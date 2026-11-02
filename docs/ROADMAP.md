@@ -497,7 +497,7 @@ Everything still open across the earlier phases, in three batches, then face che
   6. Phase 17: KRAs, KPIs and OKRs
   7. Phase 13: assistant (done)
   8. Phase 18: worth having
-  9. Phase 14: Mail
+  9. Phase 14: Mail (core done)
 - [ ] Native app shell (Phase 5b), last
 
 ## Phase 10b: Attendance by printed QR and office network (done, except SMS)
@@ -721,15 +721,22 @@ A helper in the corner of every page that explains the app and walks people thro
 
 Built (13): a button in the corner of every page opens the assistant (`src/components/app/assistant.tsx`), with the person's own flows as buttons and a box to type in. Flows, places ("where is ...?") and the glossary ("what does ... mean?") are written in `src/lib/assistant.ts`; typed text is scored against their keywords plus Admin's. "Do" flows ask one thing at a time with pickers from the app and run the same actions as the pages; "show me" opens the page, dims it, outlines what to press with a note and moves on when it is pressed (carrying on across pages). Admin, Assistant (/admin/assistant): flows on or off per role, extra keywords, short answers, and usage (started, finished, where people gave up, what matched nothing, per week, export). Tests: `tests/server/assistant.test.ts`, and the assistant in `tests/e2e/flow.e2e.mjs`.
 
-## Phase 14: Mail, a company inbox in the app (last, before the app shell)
+## Phase 14: Mail, a company inbox in the app (core done)
 
-Today Email composes, sends and keeps a sent log through the company account; there is no inbox.
+Each person reads and sends their company email under Email. Admin (email managers) gives the mailboxes; people never get a password, so they cannot change it, set forwarding or filters, or open webmail or a phone app with it.
 
-- [ ] **How it connects**: each person's company mailbox (cPanel or any host) over IMAP for reading and the existing account or relay for sending. Passwords are stored sealed; nobody else, Admin included, can read another person's mail. Google Workspace and Microsoft 365 mailboxes can connect through their own sign-in instead of a password.
-- [ ] **Looks and works like Gmail**: Compose button; Inbox, Starred, Snoozed, Sent, Drafts, Spam, Trash and the mailbox's own folders as labels; a list with sender, subject, preview and date; conversations grouped; reading pane; reply, reply all and forward; attachments; star, mark read or unread, archive, delete, move; search; keyboard shortcuts (c, r, a, f, e, j and k); undo send for a few seconds; scheduled sending (exists); signatures; templates (exist).
-- [ ] **Safety**: messages shown in a sandbox with scripts removed and outside pictures blocked until "Show images"; attachments downloaded on request; size limits.
-- [ ] **Syncing**: new mail checked every minute while Mail is open and with the scheduled checks; headers are kept in the app for a fast list, bodies fetched when opened.
-- [ ] **If the host blocks IMAP** (some hostings block mail ports): fall back to the mailbox's webmail link, and keep sending through the relay; the setup check (exists for SMTP) gets an IMAP check that says which case applies.
+- [x] **How it connects**: a mailbox is a sender address with its own sign-in and "Inbox" on (Email, Settings, Who has a mailbox). Reading over IMAP (cPanel: the incoming server, port 993 with SSL; set once in Email, Settings, Mailboxes), sending through the same account or the web API relay when the hosting blocks SMTP, with a copy put in Sent.
+- [x] **The cPanel connection** (recommended): cPanel address, user name and an API token (Security, Manage API Tokens), sealed. With it Admin, from the app:
+  - **creates** a mailbox on the company domain for a person, with a space limit, and a long random password nobody sees;
+  - **takes over** an existing mailbox: its password is changed to one nobody sees, so old phones and webmail sign-ins stop;
+  - sets a **new password** at any time, turns the inbox in the app off or on, and **removes** it (optionally deleting the mailbox and its mail at cPanel).
+  Without the token, a mailbox can still be connected by typing its password.
+- [x] **Private by default**: nobody reads another person's mail. Admin can allow email managers to open a mailbox read-only; each opening is recorded in the audit log and the person gets a notice; nothing is marked read, moved or sent from it.
+- [x] **Looks and works like webmail**: Compose; Inbox, Drafts, Sent, Archive (made when first used), Junk, Trash and the mailbox's own folders with unread counts; the list with sender, subject, attachment and date; filters Unread and Starred; search (sender, subject, text); the message beside the list; reply, reply all, forward (with the attachments); attachments to open or download; star, read or unread, archive, junk or not junk, delete (to Trash, then for good), move; pages of 50; keyboard c, j, k, Enter, u, r, a, f, e, #, s and /; a few seconds to undo sending; drafts saved on close and opened again.
+- [x] **Safety**: messages shown in a frame with no scripts (scripts, frames, forms and event handlers also removed), outside pictures blocked until "Show images", links in a new tab; attachments fetched when asked, pictures and PDFs opened, everything else downloaded; 20 MB of attachments per message.
+- [x] **Syncing**: new mail checked every minute while Email is open; the scheduled checks keep the unread count on the sidebar and notify "New email" (one notice that counts up). Mailbox mail is not added to the sent log, which email managers read.
+- [x] **Setup check**: "Check the server" finds the server and tries the IMAP and SMTP ports from the app's server (says when the hosting blocks them), "Check cPanel" signs in to the API, and "Check" per mailbox signs in to it.
+- [ ] Conversations grouped in the list, a preview line under the subject, signatures, formatting in the message, scheduled sending from the mailbox, and Google Workspace or Microsoft 365 mailboxes through their own sign-in.
 
 ## Phase 15: Foundations (first, before Phase 10b)
 
