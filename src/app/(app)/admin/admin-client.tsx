@@ -141,6 +141,7 @@ export function PeopleAdmin({ users, grades, subjects, viewerId }: { users: Admi
   const [edit, setEdit] = React.useState<AdminUser | null>(null);
   const [secret, setSecret] = React.useState<{ email: string; password: string } | null>(null);
   const [deleting, setDeleting] = React.useState<AdminUser | null>(null);
+  const [resetting, setResetting] = React.useState<AdminUser | null>(null);
   const [q, setQ] = React.useState("");
   const [role, setRole] = React.useState<Role | "all">("all");
   const [showInactive, setShowInactive] = React.useState(true);
@@ -236,11 +237,8 @@ export function PeopleAdmin({ users, grades, subjects, viewerId }: { users: Admi
                       size="xs"
                       variant="ghost"
                       title="Reset password"
-                      onClick={async () => {
-                        const r = await resetPasswordAction(u.id);
-                        if (!r.ok) return toast.error(r.error);
-                        setSecret({ email: u.email, password: (r.data as { tempPassword: string }).tempPassword });
-                      }}
+                      aria-label={`Reset the password of ${u.name}`}
+                      onClick={() => setResetting(u)}
                     >
                       <KeyRoundIcon />
                     </Button>
@@ -310,8 +308,58 @@ export function PeopleAdmin({ users, grades, subjects, viewerId }: { users: Admi
         />
       )}
       <SecretDialog secret={secret} onClose={() => setSecret(null)} />
+      {resetting && (
+        <ResetPasswordDialog
+          user={resetting}
+          onClose={() => setResetting(null)}
+          onDone={(password) => {
+            setSecret({ email: resetting.email, password });
+            setResetting(null);
+            router.refresh();
+          }}
+        />
+      )}
       {deleting && <DeleteAccountDialog user={deleting} onClose={() => setDeleting(null)} onDone={() => (setDeleting(null), router.refresh())} />}
     </Card>
+  );
+}
+
+function ResetPasswordDialog({ user, onClose, onDone }: { user: AdminUser; onClose: () => void; onDone: (password: string) => void }) {
+  const [typed, setTyped] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-md" data-reset-password>
+        <DialogHeader>
+          <DialogTitle>Reset {user.name}&apos;s password?</DialogTitle>
+          <DialogDescription>
+            They get a temporary password, shown to you once, and must choose their own at the next sign-in. They are signed out everywhere now.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-1">
+          <Label htmlFor="reset-confirm">Type RESET to confirm</Label>
+          <Input id="reset-confirm" value={typed} onChange={(e) => setTyped(e.target.value)} autoComplete="off" />
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            variant="destructive"
+            disabled={busy || typed.trim() !== "RESET"}
+            onClick={async () => {
+              setBusy(true);
+              const r = await resetPasswordAction(user.id, typed);
+              setBusy(false);
+              if (!r.ok) return toast.error(r.error);
+              onDone((r.data as { tempPassword: string }).tempPassword);
+            }}
+          >
+            Reset password
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

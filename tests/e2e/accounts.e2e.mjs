@@ -23,6 +23,26 @@ try {
   await page.getByRole("button", { name: /log in/i }).click();
   await page.waitForURL(/dashboard/, { timeout: 30000 });
   await page.goto(`${base}/admin`);
+  // The short Admin sidebar: Admin's tabs fold out under Admin; production pages under one entry.
+  const side = page.locator("[data-sidebar=sidebar]").first();
+  const groups = (await side.locator("[data-sidebar=group-label]").allInnerTexts()).map((t) => t.trim().toLowerCase());
+  check("the Admin sidebar is short", groups.join() === "my space,administration,production,departments", groups);
+  check("Admin's tabs fold out under Admin", await side.getByRole("link", { name: "Sign-in", exact: true }).isVisible());
+  check("no Workflow list for Admin", (await side.getByRole("link", { name: "Handovers", exact: true }).count()) === 0);
+  await page.screenshot({ path: path.join(shots, "0-admin-sidebar.png") });
+
+  await page.getByRole("button", { name: "Reset the password of Liya" }).click();
+  const rd = page.locator("[data-reset-password]");
+  const go = rd.getByRole("button", { name: "Reset password" });
+  check("reset waits for RESET", await go.isDisabled());
+  await rd.getByLabel("Type RESET to confirm").fill("reset");
+  check("lower case is not enough", await go.isDisabled());
+  await rd.getByLabel("Type RESET to confirm").fill("RESET");
+  await go.click();
+  check("the temporary password is shown", await page.getByText(/Myseed-[0-9a-f]{8}/).first().waitFor({ timeout: 10000 }).then(() => true, () => false));
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(500);
+
   await page.getByRole("button", { name: "Deactivate Liya" }).click();
   check("deactivated from the row", await toast(page, /Liya deactivated/));
   await page.getByRole("button", { name: "Reactivate Liya" }).waitFor({ timeout: 10000 });

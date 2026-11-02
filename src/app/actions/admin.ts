@@ -266,9 +266,11 @@ export async function saveUserAction(input: UserInput) {
   });
 }
 
-export async function resetPasswordAction(userId: string) {
+// Admin types RESET to confirm, so a password is never reset by a stray click.
+export async function resetPasswordAction(userId: string, confirm: string) {
   return wrap(async () => {
     const viewer = await requireCapability("users.manage");
+    if (confirm.trim() !== "RESET") throw new WorkflowError("VALIDATION", "Type RESET to confirm.");
     const temp = `Myseed-${crypto.randomBytes(4).toString("hex")}`;
     await run("UPDATE users SET password_hash = ?, must_change_password = 1 WHERE id = ?", hashPassword(temp), userId);
     await run("DELETE FROM sessions WHERE user_id = ?", userId);

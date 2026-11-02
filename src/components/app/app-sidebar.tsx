@@ -101,6 +101,8 @@ type NavItem = {
   also?: string[];
   // Links shown under the entry while you are in that section.
   sub?: { label: string; href: string }[];
+  // The sub links open while you are on any of their pages (entries that gather pages from several paths).
+  gather?: boolean;
   locked?: boolean;
   // Matched on the whole address (path and query), for department views that share a path prefix.
   exact?: boolean;
@@ -343,6 +345,82 @@ export function AppSidebar({
   ];
   // People with their own department sidebar do not get the Departments heading.
   if (home) groups.splice(groups.findIndex((g) => g.label === "Departments"), 1);
+  // Viewing as Admin: a short sidebar. Production pages fold under one entry, the Admin tabs under Admin, and the
+  // workspace setup pages sit together; departments stay as they are.
+  if (activeRole === "admin" && !home) {
+    const dept = groups.find((g) => g.label === "Departments")!;
+    groups.splice(
+      0,
+      groups.length,
+      {
+        label: "My space",
+        items: [
+          { href: "/dashboard", label: "Home", icon: HomeIcon, locked: true },
+          ...(counts.approvals > 0 ? [{ href: "/approvals", label: "Approvals", icon: CheckCheckIcon, badge: counts.approvals }] : []),
+          ...(counts.mailbox ? [{ href: "/email", label: "Email", icon: MailIcon, badge: counts.mail ?? 0 }] : []),
+        ],
+      },
+      {
+        label: "Administration",
+        items: [
+          {
+            href: "/admin",
+            label: "Admin",
+            icon: UserCogIcon,
+            cap: ["users.manage", "data.manage"],
+            gather: true,
+            sub: [
+              { label: "People", href: "/admin" },
+              { label: "Teams", href: "/admin?tab=teams" },
+              { label: "Departments", href: "/admin?tab=departments" },
+              { label: "Roles and permissions", href: "/admin?tab=permissions" },
+              { label: "Access", href: "/admin?tab=access" },
+              { label: "Sign-in", href: "/admin?tab=signin" },
+              { label: "Sessions and devices", href: "/admin?tab=sessions" },
+              { label: "Chat", href: "/admin?tab=chat" },
+              { label: "Feedback", href: "/admin?tab=feedback" },
+              { label: "Safety reports", href: "/admin?tab=reports" },
+              { label: "Sidebar", href: "/admin?tab=sidebar" },
+              { label: "Integrations", href: "/admin?tab=integrations" },
+              { label: "System", href: "/admin?tab=system" },
+              { label: "Assistant", href: "/admin/assistant" },
+              { label: "View as", href: "/admin/preview" },
+            ],
+          },
+          { href: "/settings", label: "Settings", icon: SettingsIcon, cap: "settings.manage" },
+          { href: "/email?tab=settings", label: "Email setup", icon: MailIcon, cap: "email.manage", exact: true },
+          { href: "/attendance?tab=capture", label: "Attendance setup", icon: ClockIcon, exact: true },
+          { href: "/admin/data", label: "Data manager", icon: DatabaseIcon, cap: "data.manage" },
+          { href: "/import-export", label: "Import and export", icon: ArrowLeftRightIcon, cap: ["import.run", "import.stage", "import.tracker", "export.run", "export.report", "export.tracker", "export.audit"] },
+          { href: "/audit", label: "Audit log", icon: ShieldCheckIcon, cap: ["users.manage", "items.plan"] },
+        ],
+      },
+      {
+        label: "Production",
+        items: [
+          {
+            href: "/overview",
+            label: "Production",
+            icon: ListTreeIcon,
+            cap: "nav.overview",
+            gather: true,
+            sub: [
+              { label: "Overview", href: "/overview" },
+              ...views.map((v) => ({ label: v.href === "/content" ? "List" : v.href === "/sheet" ? "Sheet" : v.href === "/pipeline" ? "Board" : "Calendar", href: v.href })),
+              { label: "Handovers", href: "/handovers" },
+              { label: "Studio sessions", href: "/sessions" },
+              { label: "Coverage", href: "/coverage" },
+              { label: "Reports", href: "/reports" },
+              { label: "Team", href: "/team" },
+              { label: "Checklists", href: "/checklists" },
+              { label: "Assign work", href: "/assign" },
+            ],
+          },
+        ],
+      },
+      { ...dept, items: dept.items.filter((i) => !["/people", "/requests"].includes(i.href)) },
+    );
+  }
   const keyOf = (i: NavItem) => i.id ?? i.href;
   const hidden = new Set([...roleHidden, ...userHidden]);
   const visible = (i: NavItem) => allowed(i.cap) && (i.locked || !hidden.has(keyOf(i)));
@@ -398,7 +476,8 @@ export function AppSidebar({
                   <SidebarMenu className="gap-0.5">
                     {items.map((item) => {
                       const active = isActive(item);
-                      const inSection = pathname === item.href.split("?")[0] || pathname.startsWith(item.href.split("?")[0] + "/");
+                      const inSection =
+                        pathname === item.href.split("?")[0] || pathname.startsWith(item.href.split("?")[0] + "/") || (!!item.gather && !!item.sub?.some((s) => pathname === s.href.split("?")[0]));
                       const href = item.keepFilters ? item.href + scopeQueryString(search) : item.href;
                       const tip = NAV_TIPS[keyOf(item)] ?? NAV_TIPS[item.href.split("?")[0]!];
                       return (
