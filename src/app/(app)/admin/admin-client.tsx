@@ -14,7 +14,9 @@ import {
   ShieldIcon,
   Trash2Icon,
   UploadIcon,
+  UserCheckIcon,
   UserPlusIcon,
+  UserXIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -28,11 +30,14 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { UserAvatar } from "@/components/app/primitives";
 import {
+  deleteAccountAction,
+  deletePreviewAction,
   emptyWorkspaceAction,
   importCurriculumAction,
   resetPasswordAction,
   savePermissionsAction,
   saveUserAction,
+  setAccountActiveAction,
   setOwnWorkOnlyAction,
   setTeamLeadAction,
   signOutUserAction,
@@ -135,6 +140,7 @@ export function PeopleAdmin({ users, grades, subjects, viewerId }: { users: Admi
   const router = useRouter();
   const [edit, setEdit] = React.useState<AdminUser | null>(null);
   const [secret, setSecret] = React.useState<{ email: string; password: string } | null>(null);
+  const [deleting, setDeleting] = React.useState<AdminUser | null>(null);
   const [q, setQ] = React.useState("");
   const [role, setRole] = React.useState<Role | "all">("all");
   const [showInactive, setShowInactive] = React.useState(true);
@@ -253,6 +259,28 @@ export function PeopleAdmin({ users, grades, subjects, viewerId }: { users: Admi
                         <LogOutIcon />
                       </Button>
                     )}
+                    {u.id !== viewerId && (
+                      <>
+                        <Button
+                          size="xs"
+                          variant="ghost"
+                          title={u.active ? "Deactivate" : "Reactivate"}
+                          aria-label={`${u.active ? "Deactivate" : "Reactivate"} ${u.name}`}
+                          onClick={async () => {
+                            if (u.active && !window.confirm(`Deactivate ${u.name}? They are signed out everywhere and cannot sign in until reactivated. Nothing is deleted.`)) return;
+                            const r = await setAccountActiveAction(u.id, !u.active);
+                            if (!r.ok) return toast.error(r.error);
+                            toast.success(`${u.name} ${u.active ? "deactivated" : "reactivated"}`);
+                            router.refresh();
+                          }}
+                        >
+                          {u.active ? <UserXIcon /> : <UserCheckIcon />}
+                        </Button>
+                        <Button size="xs" variant="ghost" className="text-destructive" title="Delete" aria-label={`Delete ${u.name}`} onClick={() => setDeleting(u)}>
+                          <Trash2Icon />
+                        </Button>
+                      </>
+                    )}
                   </div>
                 </td>
               </tr>
@@ -282,7 +310,71 @@ export function PeopleAdmin({ users, grades, subjects, viewerId }: { users: Admi
         />
       )}
       <SecretDialog secret={secret} onClose={() => setSecret(null)} />
+      {deleting && <DeleteAccountDialog user={deleting} onClose={() => setDeleting(null)} onDone={() => (setDeleting(null), router.refresh())} />}
     </Card>
+  );
+}
+
+function DeleteAccountDialog({ user, onClose, onDone }: { user: AdminUser; onClose: () => void; onDone: () => void }) {
+  const [preview, setPreview] = React.useState<{ mode: "remove" | "anonymise"; history: { label: string; count: number }[]; blocked: string | null } | null>(null);
+  const [typed, setTyped] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  React.useEffect(() => {
+    void deletePreviewAction(user.id).then((r) => (r.ok ? setPreview(r.data!) : (toast.error(r.error), onClose())));
+  }, [user.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-md" data-delete-account>
+        <DialogHeader>
+          <DialogTitle>Delete {user.name}?</DialogTitle>
+          <DialogDescription>This cannot be undone. To stop someone signing in for now, deactivate the account instead.</DialogDescription>
+        </DialogHeader>
+        {!preview ? (
+          <p className="text-sm text-muted-foreground">Checking their history…</p>
+        ) : preview.blocked ? (
+          <p className="text-sm text-destructive">{preview.blocked}</p>
+        ) : (
+          <div className="space-y-3 text-sm">
+            {preview.mode === "remove" ? (
+              <p>{user.name} has no work or records in the workspace, so the account is removed completely.</p>
+            ) : (
+              <>
+                <p>
+                  {user.name} has history: {preview.history.map((h) => `${h.count} ${h.label}`).join(", ")}.
+                </p>
+                <p className="text-muted-foreground">
+                  So that this stays intact, the account becomes &ldquo;Deleted person&rdquo;: their name, email, password, roles, profile, mailbox in the app and notifications are removed, and the email can be used for a new
+                  account. Their open tasks go back to unassigned; the HR record stays with HR.
+                </p>
+              </>
+            )}
+            <div className="space-y-1">
+              <Label htmlFor="del-confirm">Type {user.email} to confirm</Label>
+              <Input id="del-confirm" value={typed} onChange={(e) => setTyped(e.target.value)} autoComplete="off" />
+            </div>
+          </div>
+        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            variant="destructive"
+            disabled={busy || !preview || !!preview.blocked || typed.trim().toLowerCase() !== user.email.toLowerCase()}
+            onClick={async () => {
+              setBusy(true);
+              const r = await deleteAccountAction(user.id, typed);
+              setBusy(false);
+              if (!r.ok) return toast.error(r.error);
+              toast.success(`${user.name}'s account was deleted`);
+              onDone();
+            }}
+          >
+            Delete for good
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

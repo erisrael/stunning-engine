@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 27;
+export const SCHEMA_VERSION = 28;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -2157,6 +2157,9 @@ CREATE INDEX IF NOT EXISTS idx_assistant_events ON assistant_events(at);
 -- unread count and the last check for the sidebar, without connecting to the mail server on every page.
 ALTER TABLE email_senders ADD COLUMN IF NOT EXISTS mailbox INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE email_senders ADD COLUMN IF NOT EXISTS managed TEXT;
+-- v28: deleted accounts with history are kept anonymised, marked here and left out of Admin, People.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS deleted_at TEXT;
+
 CREATE TABLE IF NOT EXISTS mail_state (
   sender_id TEXT PRIMARY KEY,
   unread INTEGER NOT NULL DEFAULT 0,

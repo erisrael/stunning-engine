@@ -41,6 +41,11 @@ async function attendance() {
 }
 
 const PREPS: Record<string, () => Promise<unknown>> = {
+  // Admin, People: deactivate and delete.
+  async accounts() {
+    await passwordOnly();
+    return {};
+  },
   // Phase 14: Dawit (a team member who cannot send bulk email) and Yonas each have a mailbox in the app; the server
   // runs with MAIL_FAKE=1, so mail is kept in memory.
   async mail() {

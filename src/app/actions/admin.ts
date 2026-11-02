@@ -196,7 +196,9 @@ export async function saveUserAction(input: UserInput) {
     const email = input.email.trim().toLowerCase();
     if (!input.name.trim()) throw new WorkflowError("VALIDATION", "Name is required.");
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new WorkflowError("VALIDATION", "Enter a valid email.");
-    if (!input.roles.length) throw new WorkflowError("VALIDATION", "Give the person at least one role.");
+    // Someone only in a created department (for example Customer Support) may have no role.
+    if (!input.roles.length && !(input.id && (await get("SELECT 1 AS x FROM department_positions WHERE user_id = ?", input.id))))
+      throw new WorkflowError("VALIDATION", "Give the person at least one role.");
     if (input.roles.some((r) => !ROLES.includes(r))) throw new WorkflowError("VALIDATION", "Unknown role.");
     if (input.id === viewer.id && !input.roles.some((r) => r === "admin" || r === "manager"))
       throw new WorkflowError("VALIDATION", "You cannot remove your own Admin or Manager role.");
@@ -427,6 +429,16 @@ export async function listViews(page?: string) {
 // ---------------------------------------------------------------------------
 // Teams: leads per stage and own-work-only members (Admin, Teams)
 // ---------------------------------------------------------------------------
+
+export async function setAccountActiveAction(id: string, active: boolean) {
+  return wrap(async () => (await import("@/server/account-delete")).setAccountActive(await requireCapability("users.manage"), id, active));
+}
+export async function deletePreviewAction(id: string) {
+  return wrap(async () => (await import("@/server/account-delete")).deletePreview(await requireCapability("users.manage"), id));
+}
+export async function deleteAccountAction(id: string, confirmEmail: string) {
+  return wrap(async () => (await import("@/server/account-delete")).deleteAccount(await requireCapability("users.manage"), id, confirmEmail));
+}
 
 export async function setTeamLeadAction(stage: Stage, userId: string, lead: boolean) {
   return wrap(async () => {

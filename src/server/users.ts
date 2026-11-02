@@ -121,7 +121,7 @@ export function can(user: AppUser, cap: Capability) {
 
 export async function listUsers(opts: { includeInactive?: boolean } = {}) {
   const rows = await all<UserRow>(
-      `SELECT * FROM users ${opts.includeInactive ? "" : "WHERE active = 1"} ORDER BY name`,
+      `SELECT * FROM users ${opts.includeInactive ? "WHERE deleted_at IS NULL" : "WHERE active = 1"} ORDER BY name`,
     );
   const rel = await related(rows.map((r) => r.id));
   return Promise.all(rows.map((r) => hydrate(r, rel)));
