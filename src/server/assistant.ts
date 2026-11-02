@@ -8,6 +8,9 @@ import { can, type AppUser } from "./users";
 import { homeDepartment } from "./nav";
 import { flowHome } from "./dept-flow";
 import { leaveTypes } from "./leave";
+import { deptPeople, myDepartments } from "./departments";
+import { myEmployeeId } from "./hr";
+import { stateOf } from "./attendance";
 import { DEFAULT_ASSISTANT, FLOWS, flowsFor, type AssistantConfig } from "@/lib/assistant";
 import { STAGES } from "@/lib/domain";
 
@@ -42,7 +45,7 @@ export async function assistantContext(user: AppUser & { activeRole: string }) {
   const home = await homeDepartment(user);
   const production = (STAGES as readonly string[]).includes(user.activeRole);
   const lead = user.leads.length > 0 || !!home?.seeAll || can(user, "users.manage");
-  const who = { role: user.activeRole, lead, department: !!home, production, hr: can(user, "attendance.manage"), admin: can(user, "users.manage") };
+  const who = { role: user.activeRole, lead, department: !!home, production, hr: can(user, "attendance.manage"), finance: can(user, "finance.access"), admin: can(user, "users.manage") };
   const cfg = await assistantConfig();
   return { who, home: home ? { key: home.key, base: home.base, title: home.title, kind: home.kind } : null, flows: flowsFor(who, cfg), cfg };
 }
@@ -53,6 +56,21 @@ export async function assistantData(user: AppUser & { activeRole: string }, flow
   const ctx = await assistantContext(user);
   if (!ctx.flows.some((f) => f.key === flow)) throw new WorkflowError("FORBIDDEN", "This is not open to you.");
   if (flow === "do.leave") return { types: (await leaveTypes()).map((t) => ({ key: t.key, label: t.label })) };
+  // A task in any department the person may add to (not the Studio, which has its own kinds of work).
+  if (flow === "do.task") {
+    const ds = (await myDepartments(user)).filter((d) => !d.readOnly && d.dept !== "studio");
+    return {
+      depts: await Promise.all(
+        ds.map(async (d) => ({ id: d.dept, label: d.title, people: (await deptPeople(d.dept)).map((p) => ({ id: p.id, label: p.id === user.id ? `${p.name} (me)` : p.name })) })),
+      ),
+    };
+  }
+  if (flow === "do.checkin") {
+    const emp = await myEmployeeId(user);
+    if (!emp) throw new WorkflowError("NOT_FOUND", "You do not have an HR record yet. Ask HR to add you.");
+    const s = await stateOf(emp);
+    return { state: s.state, since: s.since };
+  }
   if (!ctx.home || ctx.home.kind !== "work") throw new WorkflowError("INVALID_STATE", "This works in a department with a flow.");
   const h = await flowHome(user, ctx.home.key);
   if (!h) throw new WorkflowError("INVALID_STATE", "Your department does not use a flow yet (Configure, Flow).");
@@ -67,8 +85,8 @@ export async function assistantData(user: AppUser & { activeRole: string }, flow
 }
 
 // Monitoring: started, finished, given up (with the step), and typed text that matched nothing.
-export async function logAssistant(user: AppUser & { activeRole: string }, e: { flow?: string | null; event: "start" | "finish" | "abandon" | "nomatch" | "show"; step?: number | null; text?: string | null }) {
-  if (!["start", "finish", "abandon", "nomatch", "show"].includes(e.event)) return;
+export async function logAssistant(user: AppUser & { activeRole: string }, e: { flow?: string | null; event: "start" | "finish" | "abandon" | "nomatch" | "show" | "voice"; step?: number | null; text?: string | null }) {
+  if (!["start", "finish", "abandon", "nomatch", "show", "voice"].includes(e.event)) return;
   await run(
     "INSERT INTO assistant_events (id, user_id, role, flow, event, step, text, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
     uid("ase_"),

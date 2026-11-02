@@ -3,7 +3,7 @@
 // does the task with pickers and a summary ("do"), takes the person there and points at what to press ("show"),
 // or answers ("answer"). Admin can switch flows off per role, add keywords and write short answers.
 
-export type Audience = "everyone" | "member" | "lead" | "department" | "production" | "hr" | "admin";
+export type Audience = "everyone" | "member" | "lead" | "department" | "production" | "hr" | "finance" | "admin";
 
 export type ShowStep = { href?: string; selector?: string; text?: string; note: string };
 
@@ -16,6 +16,8 @@ export type Flow =
 export const FLOWS: Flow[] = [
   { key: "do.leave", kind: "do", title: "Ask for leave", hint: "Choose the type and the days; it goes to your manager", audience: ["everyone"], keywords: ["leave", "holiday", "vacation", "day off", "sick", "absent", "time off", "annual leave"] },
   { key: "do.start", kind: "do", title: "Start my next task", hint: "Pick from your To do; the timer starts", audience: ["department"], keywords: ["start", "begin", "work on", "my task", "next task", "timer"] },
+  { key: "do.task", kind: "do", title: "Create a task", hint: "In any department you work in, for you or someone", audience: ["everyone"], keywords: ["create task", "new task", "add task", "add a task", "make a task", "todo", "to do", "remind me to", "bug", "ticket", "issue"] },
+  { key: "do.checkin", kind: "do", title: "Check in or out now", hint: "Records the time now", audience: ["everyone"], keywords: ["check in", "check me in", "check out", "check me out", "clock in", "clock out", "i am here", "arrived", "going home", "leaving"] },
   { key: "do.assign", kind: "do", title: "Assign work", hint: "Pick work nobody has, then the person", audience: ["lead"], keywords: ["assign", "give", "give videos to", "allocate", "hand out", "delegate", "who does"] },
   {
     key: "show.send",
@@ -101,6 +103,60 @@ export const FLOWS: Flow[] = [
     keywords: ["sprint", "plan the sprint", "capacity", "burndown", "velocity", "standup", "stand-up", "retro"],
     steps: [{ href: "{home}/sprint", selector: "[data-sprint-planning], [data-sprint-view]", note: "Add work from the backlog; capacity per person fills as you go." }],
   },
+  {
+    key: "show.request",
+    kind: "show",
+    title: "Ask another department",
+    hint: "Requests",
+    audience: ["everyone"],
+    keywords: ["request", "ask dev", "ask marketing", "ask studio", "need help from", "another department", "design request", "feature request"],
+    steps: [{ href: "/requests", text: "New request", note: "Press New request, choose the department and say what you need; you can follow it here." }],
+  },
+  {
+    key: "show.email",
+    kind: "show",
+    title: "Read and write my email",
+    hint: "Email, your company inbox",
+    audience: ["everyone"],
+    keywords: ["email", "mail", "inbox", "reply", "compose", "send an email", "my mail"],
+    steps: [{ href: "/email", text: "Compose", note: "Your inbox is here. Press Compose to write; open a message to reply or forward." }],
+  },
+  {
+    key: "show.chat",
+    kind: "show",
+    title: "Message a colleague",
+    hint: "Chat",
+    audience: ["everyone"],
+    keywords: ["message", "chat", "talk to", "text", "dm", "call", "group"],
+    steps: [{ href: "/chat", selector: "main", note: "Pick a conversation, or start a new one with the person's name." }],
+  },
+  {
+    key: "show.approvals",
+    kind: "show",
+    title: "Approve leave, claims and corrections",
+    hint: "Approvals",
+    audience: ["lead", "hr", "finance"],
+    keywords: ["approve leave", "approvals", "pending approval", "approve claim", "approve correction", "reject"],
+    steps: [{ href: "/approvals", selector: "main", note: "Everything waiting for your decision is here. Open one to approve or reject it with a note." }],
+  },
+  {
+    key: "show.hr_people",
+    kind: "show",
+    title: "Add or update an employee",
+    hint: "HR, People",
+    audience: ["hr"],
+    keywords: ["employee", "add employee", "new hire", "contract", "hr record", "onboarding", "salary", "probation"],
+    steps: [{ href: "/hr", selector: "main", note: "HR's people are here. Open a person to change their record, or add someone new." }],
+  },
+  {
+    key: "show.finance",
+    kind: "show",
+    title: "Record a bill, payment or claim",
+    hint: "Finance",
+    audience: ["finance"],
+    keywords: ["bill", "invoice", "payment", "pay supplier", "budget", "expense", "payroll", "finance"],
+    steps: [{ href: "/finance", selector: "main", note: "Finance's work is in these tabs: bills, invoices, payments, claims, budgets and payroll." }],
+  },
 ];
 
 // "Where is ...?": every main page by name.
@@ -126,6 +182,16 @@ export const PLACES: { name: string; href: string; words: string[] }[] = [
   { name: "Specs and docs", href: "{home}/docs", words: ["docs", "srs", "spec", "requirements", "documents"] },
   { name: "Configure", href: "{home}/configure", words: ["configure", "settings of the department", "flow", "statuses"] },
   { name: "Admin", href: "/admin", words: ["admin", "users", "roles", "sign-in settings"] },
+  { name: "HR", href: "/hr", words: ["hr", "human resources", "employees", "staff records"] },
+  { name: "Finance", href: "/finance", words: ["finance", "accounts", "bills", "invoices", "budget"] },
+  { name: "Dev team", href: "/dev", words: ["dev", "developers", "dev team", "software"] },
+  { name: "Marketing", href: "/marketing", words: ["marketing", "campaigns", "social media"] },
+  { name: "Studio", href: "/studio", words: ["studio", "content studio", "notes", "exams", "flash cards", "question bank"] },
+  { name: "Handovers", href: "/handovers", words: ["handovers", "batches", "incoming work"] },
+  { name: "Coverage", href: "/coverage", words: ["coverage", "curriculum", "what is missing"] },
+  { name: "Reports", href: "/reports", words: ["reports", "statistics", "numbers"] },
+  { name: "Calendar", href: "/calendar", words: ["calendar", "schedule", "events"] },
+  { name: "Company", href: "/company", words: ["company", "owners", "whole company"] },
 ];
 
 // "What does ... mean?": the app's words.
@@ -163,14 +229,29 @@ const norm = (s: string) =>
     .replace(/[^a-z0-9ሀ-፿]+/g, " ")
     .trim()} `;
 
-// Scores a phrase against keywords: a whole keyword counts most, single shared words a little.
+// Two words alike enough to be a typo of each other (one letter added, missing, changed or swapped).
+export function nearly(a: string, b: string) {
+  if (a === b) return true;
+  if (Math.abs(a.length - b.length) > 1 || Math.min(a.length, b.length) < 4) return false;
+  let i = 0;
+  while (i < a.length && a[i] === b[i]) i++;
+  if (a.length === b.length) return a.slice(i + 1) === b.slice(i + 1) || (a[i] === b[i + 1] && a[i + 1] === b[i] && a.slice(i + 2) === b.slice(i + 2));
+  return a.length > b.length ? a.slice(i + 1) === b.slice(i) : a.slice(i) === b.slice(i + 1);
+}
+
+// Scores a phrase against keywords: a whole keyword counts most, single shared words a little, and words with a
+// typo ("leav", "assgin") count almost as much as the right spelling.
 export function score(text: string, words: string[]) {
   const t = norm(text);
+  const tokens = t.trim().split(" ").filter(Boolean);
   let s = 0;
   for (const w of words) {
     const k = norm(w);
-    if (k.trim() && t.includes(k)) s += 3 + k.trim().split(" ").length;
-    else for (const part of k.trim().split(" ")) if (part.length > 3 && t.includes(` ${part} `)) s += 1;
+    const parts = k.trim().split(" ").filter(Boolean);
+    if (!parts.length) continue;
+    if (t.includes(k)) s += 3 + parts.length;
+    else if (parts.every((p) => tokens.some((x) => nearly(x, p)))) s += 2 + parts.length;
+    else for (const part of parts) if (part.length > 3 && tokens.some((x) => nearly(x, part))) s += 1;
   }
   return s;
 }
@@ -195,9 +276,9 @@ export function matchText(text: string, flows: Flow[], cfg: AssistantConfig): Ma
 }
 
 // The flows open to someone: by their audience, minus what Admin switched off for their role.
-export function flowsFor(who: { role: string; lead: boolean; department: boolean; production: boolean; hr: boolean; admin: boolean }, cfg: AssistantConfig): Flow[] {
+export function flowsFor(who: { role: string; lead: boolean; department: boolean; production: boolean; hr: boolean; finance?: boolean; admin: boolean }, cfg: AssistantConfig): Flow[] {
   const has = (a: Audience) =>
-    a === "everyone" || (a === "lead" && who.lead) || (a === "member" && !who.lead) || (a === "department" && who.department) || (a === "production" && who.production) || (a === "hr" && who.hr) || (a === "admin" && who.admin);
+    a === "everyone" || (a === "lead" && who.lead) || (a === "member" && !who.lead) || (a === "department" && who.department) || (a === "production" && who.production) || (a === "hr" && who.hr) || (a === "finance" && !!who.finance) || (a === "admin" && who.admin);
   return FLOWS.filter((f) => f.audience.some(has)).filter((f) => {
     const off = cfg.off[f.key] ?? [];
     return !off.includes("*") && !off.includes(who.role);

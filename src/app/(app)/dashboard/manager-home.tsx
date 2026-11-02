@@ -18,6 +18,7 @@ import { can } from "@/server/users";
 import { StructureDashboard } from "@/components/app/structure-dashboard";
 import { PageHeader } from "@/components/app/primitives";
 import { cn } from "@/lib/utils";
+import { IconTile } from "@/components/app/app-icon";
 
 // Manager and admin home: the Overview insights and quick actions, nothing else.
 export async function ManagerHome({ viewer, timezone, greeting }: { viewer: Viewer; timezone: string; greeting: string }) {
@@ -46,9 +47,7 @@ export async function ManagerHome({ viewer, timezone, greeting }: { viewer: View
             href={a.href}
             className={cn("group flex flex-col gap-2 rounded-xl border bg-card p-3 transition-colors hover:border-primary/50 hover:bg-accent/40")}
           >
-            <span className="flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary group-hover:bg-primary group-hover:text-primary-foreground">
-              <a.icon className="size-4.5" />
-            </span>
+            <IconTile icon={a.icon} iconClassName="size-4.5" className="transition-transform group-hover:scale-105" />
             <span>
               <span className="block text-sm font-semibold">{a.label}</span>
               <span className="block text-xs text-muted-foreground">{a.hint}</span>

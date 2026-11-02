@@ -87,6 +87,7 @@ import { savePrefsAction } from "@/app/actions/admin";
 import { NAV_TIPS } from "@/lib/help";
 import { ROLE_LABELS, type Capability, type Role } from "@/lib/domain";
 import { scopeQueryString } from "@/lib/filters";
+import { AppIcon } from "@/components/app/app-icon";
 
 type NavItem = {
   href: string;
@@ -498,7 +499,7 @@ export function AppSidebar({
                             className="h-8 font-medium text-sidebar-foreground/85 data-[active=true]:bg-sidebar-accent data-[active=true]:font-semibold data-[active=true]:text-sidebar-accent-foreground"
                           >
                             <Link href={href} onClick={close}>
-                              <item.icon />
+                              <AppIcon icon={item.icon} />
                               <span>{item.label}</span>
                             </Link>
                           </SidebarMenuButton>
@@ -537,7 +538,7 @@ export function AppSidebar({
             <SidebarMenuItem>
               <SidebarMenuButton asChild isActive={pathname === "/profile"} tooltip="Profile: my record, leave, pay and claims, account" className="h-8 font-medium">
                 <Link href="/profile" onClick={close}>
-                  <CircleUserIcon />
+                  <AppIcon icon={CircleUserIcon} />
                   <span>Profile</span>
                 </Link>
               </SidebarMenuButton>

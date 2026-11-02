@@ -2,8 +2,9 @@
 
 import * as React from "react";
 
-// Accent colour, corner style and text size. Stored per browser; applied to <html> before paint.
-export type Appearance = { accent: string; radius: string; text: string };
+// Accent colour, corner style, text size and colourful or plain icons. Stored per browser; applied to <html> before
+// paint.
+export type Appearance = { accent: string; radius: string; text: string; icons: string };
 
 export const ACCENTS = [
   { key: "violet", label: "Violet", color: "#7b68ee" },
@@ -16,7 +17,7 @@ export const ACCENTS = [
 ];
 
 const KEY = "myseed.appearance";
-const DEFAULTS: Appearance = { accent: "violet", radius: "default", text: "normal" };
+const DEFAULTS: Appearance = { accent: "violet", radius: "default", text: "normal", icons: "colour" };
 
 export function readAppearance(): Appearance {
   try {
@@ -31,6 +32,7 @@ function apply(a: Appearance) {
   el.dataset.accent = a.accent;
   el.dataset.radius = a.radius;
   el.dataset.text = a.text;
+  el.dataset.icons = a.icons;
 }
 
 export function useAppearance() {
@@ -50,4 +52,4 @@ export function useAppearance() {
 }
 
 // Inline script for the root layout, so the saved appearance is applied before the first paint.
-export const APPEARANCE_SCRIPT = `try{var a=JSON.parse(localStorage.getItem("${KEY}")||"{}");var d=document.documentElement;d.dataset.accent=a.accent||"violet";d.dataset.radius=a.radius||"default";d.dataset.text=a.text||"normal";}catch(e){}`;
+export const APPEARANCE_SCRIPT = `try{var a=JSON.parse(localStorage.getItem("${KEY}")||"{}");var d=document.documentElement;d.dataset.accent=a.accent||"violet";d.dataset.radius=a.radius||"default";d.dataset.text=a.text||"normal";d.dataset.icons=a.icons||"colour";}catch(e){}`;

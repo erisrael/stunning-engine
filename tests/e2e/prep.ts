@@ -41,6 +41,18 @@ async function attendance() {
 }
 
 const PREPS: Record<string, () => Promise<unknown>> = {
+  // Phase 13b: the AI assistant on (the server runs with AI_FAKE=1, a stand-in model), for a developer.
+  async "assistant-ai"() {
+    await passwordOnly();
+    const { saveAiConfig } = await import("../../src/server/assistant-ai");
+    const { setPosition } = await import("../../src/server/departments");
+    const admin = (await loadUser((await get<{ id: string }>("SELECT id FROM users WHERE email = 'admin@demo.local'"))!.id))!;
+    const u = await upsertAccount({ name: "Abebe", email: "abebe@demo.local", title: "Developer", roles: ["developer"], password: "Demo-Workflow-2026", mustChangePassword: false });
+    await setPosition(admin, "dev", u.id, "member");
+    await run("UPDATE users SET prefs = ? WHERE id = ?", JSON.stringify({ tour: { seen: ["member", "lead", "publication", "manager", "owner", "department", "hr", "finance"] } }), u.id);
+    await saveAiConfig(admin, { on: true, model: "claude-opus-5-5", effort: "low", offRoles: [], dailyLimit: 0, actions: true, key: "sk-ant-e2e" });
+    return {};
+  },
   // Admin, People: deactivate and delete.
   async accounts() {
     await passwordOnly();

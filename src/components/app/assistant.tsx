@@ -1,25 +1,30 @@
 "use client";
 
-// The assistant (Phase 13) in the corner of every page: buttons for the person's own flows and a box to type in.
-// Typed text is matched against written keywords (no language model, nothing sent outside). A flow either does
-// the task with pickers, a summary and Confirm (the same actions as the pages), or shows the way: it opens the
-// page, dims it, rings what to press with a short note, and moves on when it is pressed.
+// The assistant (Phase 13, 13b) in the corner of every page: buttons for the person's own flows, a box to type in
+// and a microphone. Without AI, typed or spoken text is matched against written keywords (typos allowed); with AI
+// answers on (Admin, Assistant), it goes to Claude, which answers from the person's own data and prepares actions
+// shown with Confirm. Simple voice commands (open a page, go back, scroll, close) work at once either way. A flow
+// either does the task with pickers, a summary and Confirm (the same actions as the pages), or shows the way: it
+// opens the page, dims it, rings what to press with a short note, and moves on when it is pressed.
 
 import * as React from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { CompassIcon, Loader2Icon, SendIcon, SparklesIcon, XIcon } from "lucide-react";
+import { CheckIcon, Loader2Icon, MicIcon, MicOffIcon, RotateCcwIcon, SendIcon, SparklesIcon, Volume2Icon, VolumeXIcon, XIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { assistantDataAction, logAssistantAction } from "@/app/actions/assistant";
+import { askAiAction, assistantDataAction, confirmProposalAction, logAssistantAction } from "@/app/actions/assistant";
+import { punchAction } from "@/app/actions/attendance";
+import { saveTaskAction } from "@/app/actions/departments";
 import { requestLeaveAction } from "@/app/actions/leave";
 import { flowAssignAction, flowStartAction } from "@/app/actions/departments";
-import { matchText, type Flow, type Match, type ShowStep } from "@/lib/assistant";
+import { matchText, PLACES, score, type Flow, type Match, type ShowStep } from "@/lib/assistant";
 import type { AssistantContext } from "@/server/assistant";
+import type { Proposal } from "@/server/assistant-ai";
 import { cn } from "@/lib/utils";
 
-type Msg = { from: "me" | "bot"; text: string; actions?: { label: string; run: () => void }[] };
+type Msg = { from: "me" | "bot"; text: string; actions?: { label: string; run: () => void }[]; proposal?: Proposal; busy?: boolean; settled?: string };
 type Opt = { id: string; label: string; note?: string | null };
 const KEY = "myseed.assistant.show";
 
@@ -131,7 +136,7 @@ function ShowMe({ flow, base, onEnd }: { flow: Extract<Flow, { kind: "show" }>; 
 // A task done here, one question at a time, then a summary and Confirm.
 function DoFlow({ flow, ctx, onEnd }: { flow: Extract<Flow, { kind: "do" }>; ctx: AssistantContext; onEnd: (finished: boolean, step: number, text?: string) => void }) {
   const router = useRouter();
-  const [data, setData] = React.useState<{ types?: Opt[]; tasks?: Opt[]; people?: Opt[]; dept?: string } | null>(null);
+  const [data, setData] = React.useState<{ types?: Opt[]; tasks?: Opt[]; people?: Opt[]; dept?: string; depts?: (Opt & { people: Opt[] })[]; state?: string; since?: string | null } | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [step, setStep] = React.useState(0);
   const [v, setV] = React.useState<Record<string, string>>({});
@@ -139,7 +144,7 @@ function DoFlow({ flow, ctx, onEnd }: { flow: Extract<Flow, { kind: "do" }>; ctx
   React.useEffect(() => {
     void assistantDataAction(flow.key).then((r) => {
       if (!r.ok) return setError(r.error ?? "Not possible now.");
-      const d = r.data as { types?: { key: string; label: string }[]; tasks?: Opt[]; people?: Opt[]; dept?: string };
+      const d = r.data as { types?: { key: string; label: string }[]; tasks?: Opt[]; people?: Opt[]; dept?: string; depts?: (Opt & { people: Opt[] })[]; state?: string; since?: string | null };
       setData({ ...d, types: d.types?.map((t) => ({ id: t.key, label: t.label })) });
     });
   }, [flow.key]);
@@ -219,20 +224,172 @@ function DoFlow({ flow, ctx, onEnd }: { flow: Extract<Flow, { kind: "do" }>; ctx
     if (step === 1) return pick("person", data.people ?? [], "To whom?", "Nobody is in the department.");
     return summary([v.taskLabel!, `To ${v.personLabel}`], () => confirm(() => flowAssignAction(data.dept!, [v.task!], v.person!), "Assigned"));
   }
+  if (flow.key === "do.task") {
+    const ds = data.depts ?? [];
+    if (step === 0) return pick("dept", ds, "In which department?", "You are not in a department with tasks.");
+    if (step === 1)
+      return (
+        <div className="space-y-2 text-sm">
+          <p>What is the task?</p>
+          <Input aria-label="Task title" autoFocus placeholder="Title" value={v.title ?? ""} onChange={(e) => setV({ ...v, title: e.target.value })} />
+          <Input type="date" aria-label="Due date (optional)" value={v.due ?? ""} onChange={(e) => setV({ ...v, due: e.target.value })} />
+          <Button size="sm" disabled={!v.title?.trim()} onClick={() => setStep(2)}>
+            Next
+          </Button>
+        </div>
+      );
+    if (step === 2) {
+      const people = ds.find((d) => d.id === v.dept)?.people ?? [];
+      return (
+        <div className="space-y-1.5">
+          {pick("person", people, "For whom?", "Nobody is in this department yet.")}
+          <Button size="xs" variant="outline" onClick={() => (setV({ ...v, person: "", personLabel: "Nobody yet" }), setStep(3))}>
+            Leave unassigned
+          </Button>
+        </div>
+      );
+    }
+    return summary([`${v.title}`, `In ${v.deptLabel}`, `For ${v.personLabel}`, ...(v.due ? [`Due ${v.due}`] : [])], () =>
+      confirm(() => saveTaskAction(v.dept!, { title: v.title!.trim(), assigneeId: v.person || null, dueDate: v.due || null }), "Task created"),
+    );
+  }
+  if (flow.key === "do.checkin") {
+    const inNow = data.state === "in";
+    const back = data.state === "break" || data.state === "lunch";
+    return summary([inNow ? "Check out now" : back ? "Back from your break now" : "Check in now", ...(data.since ? [`Last change at ${new Date(data.since).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`] : [])], () =>
+      confirm(() => punchAction({}), inNow ? "Checked out" : "Checked in"),
+    );
+  }
   void ctx;
   return null;
 }
 
-export function Assistant({ ctx }: { ctx: AssistantContext }) {
+// Speech in the browser (Chrome, Edge, Safari): what is said becomes the question; answers can be read aloud.
+type Rec = { lang: string; interimResults: boolean; continuous: boolean; start(): void; stop(): void; abort(): void; onresult: ((e: { results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal: boolean }> }) => void) | null; onend: (() => void) | null; onerror: ((e: { error: string }) => void) | null };
+const VOICE_KEY = "myseed.assistant.voice";
+const LANGS = [
+  { id: "en-US", label: "English" },
+  { id: "am-ET", label: "አማርኛ" },
+];
+function readVoice(): { lang: string; speak: boolean } {
+  try {
+    return { lang: "en-US", speak: false, ...JSON.parse(localStorage.getItem(VOICE_KEY) ?? "{}") };
+  } catch {
+    return { lang: "en-US", speak: false };
+  }
+}
+function useSpeech(lang: string, onFinal: (text: string) => void) {
+  const [supported, setSupported] = React.useState(false);
+  const [listening, setListening] = React.useState(false);
+  const [interim, setInterim] = React.useState("");
+  const rec = React.useRef<Rec | null>(null);
+  const final = React.useRef(onFinal);
+  React.useEffect(() => {
+    final.current = onFinal;
+  });
+  React.useEffect(() => {
+    const w = window as unknown as { SpeechRecognition?: new () => Rec; webkitSpeechRecognition?: new () => Rec };
+    setSupported(!!(w.SpeechRecognition || w.webkitSpeechRecognition));
+  }, []);
+  const stop = React.useCallback(() => rec.current?.stop(), []);
+  const start = React.useCallback(() => {
+    const w = window as unknown as { SpeechRecognition?: new () => Rec; webkitSpeechRecognition?: new () => Rec };
+    const C = w.SpeechRecognition || w.webkitSpeechRecognition;
+    if (!C) return void toast.error("This browser cannot listen. Use Chrome or Edge, or type instead.");
+    rec.current?.abort();
+    const r = new C();
+    r.lang = lang;
+    r.interimResults = true;
+    r.continuous = false;
+    let said = "";
+    r.onresult = (e) => {
+      let live = "";
+      said = "";
+      for (let i = 0; i < e.results.length; i++) {
+        const res = e.results[i]!;
+        if (res.isFinal) said += res[0]!.transcript;
+        else live += res[0]!.transcript;
+      }
+      setInterim(said + live);
+    };
+    r.onerror = (e) => {
+      if (e.error === "not-allowed" || e.error === "service-not-allowed") toast.error("The microphone is blocked. Allow it in the browser's address bar.");
+      else if (e.error !== "no-speech" && e.error !== "aborted") toast.error(`Could not hear that (${e.error}).`);
+    };
+    r.onend = () => {
+      setListening(false);
+      setInterim("");
+      if (said.trim()) final.current(said.trim());
+    };
+    rec.current = r;
+    setListening(true);
+    r.start();
+  }, [lang]);
+  return { supported, listening, interim, start, stop };
+}
+function speak(text: string, lang: string) {
+  try {
+    if (!("speechSynthesis" in window)) return;
+    window.speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text.replace(/\*\*/g, "").replace(/^- /gm, "").slice(0, 600));
+    u.lang = lang;
+    const v = window.speechSynthesis.getVoices().find((x) => x.lang.toLowerCase().startsWith(lang.slice(0, 2).toLowerCase()));
+    if (v) u.voice = v;
+    window.speechSynthesis.speak(u);
+  } catch {}
+}
+
+type Command = { kind: "go"; href: string; name: string } | { kind: "back" | "forward" | "up" | "down" | "top" | "close" | "clear" };
+
+// Spoken (or typed) commands handled here at once, without the AI: open a page, go back, scroll, close.
+export function localCommand(text: string, base: string | null): Command | null {
+  const t = text.toLowerCase().replace(/[.!?]+$/, "").trim();
+  if (/^(go )?back$/.test(t)) return { kind: "back" };
+  if (/^(go )?forward$/.test(t)) return { kind: "forward" };
+  if (/^scroll( down)?$|^(page )?down$/.test(t)) return { kind: "down" };
+  if (/^scroll up$|^(page )?up$/.test(t)) return { kind: "up" };
+  if (/^(scroll to the |go to the )?top$/.test(t)) return { kind: "top" };
+  if (/^(close|stop|cancel|never ?mind|ዝጋ)$/.test(t)) return { kind: "close" };
+  if (/^(clear|new conversation|start again)$/.test(t)) return { kind: "clear" };
+  const m = t.match(/^(?:please )?(?:open|go to|take me to|navigate to|ክፈት)\s+(?:the |my )?(.+?)(?: page)?$/);
+  if (m) {
+    const want = m[1]!;
+    const best = PLACES.map((p) => ({ p, s: score(want, [...p.words, p.name]) })).sort((x, y) => y.s - x.s)[0];
+    if (best && best.s >= 3) return { kind: "go", href: fill(best.p.href, base), name: best.p.name };
+  }
+  return null;
+}
+
+const plain = (s: string) => s.replace(/\*\*(.+?)\*\*/g, "$1");
+
+export function Assistant({ ctx, ai = false }: { ctx: AssistantContext; ai?: boolean }) {
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
   const [text, setText] = React.useState("");
   const [msgs, setMsgs] = React.useState<Msg[]>([]);
+  const [history, setHistory] = React.useState<{ role: "user" | "assistant"; text: string }[]>([]);
+  const [thinking, setThinking] = React.useState(false);
   const [doing, setDoing] = React.useState<Extract<Flow, { kind: "do" }> | null>(null);
   const [showing, setShowing] = React.useState<Extract<Flow, { kind: "show" }> | null>(null);
+  const [voice, setVoice] = React.useState<{ lang: string; speak: boolean }>({ lang: "en-US", speak: false });
   const base = ctx.home?.base ?? null;
   const pathname = usePathname();
+  const end = React.useRef<HTMLDivElement>(null);
+  const viaVoice = React.useRef(false);
   const log = (e: Parameters<typeof logAssistantAction>[0]) => void logAssistantAction(e);
+  React.useEffect(() => {
+    setVoice(readVoice());
+  }, []);
+  const saveVoice = (v: { lang: string; speak: boolean }) => {
+    setVoice(v);
+    try {
+      localStorage.setItem(VOICE_KEY, JSON.stringify(v));
+    } catch {}
+  };
+  // A block body: newer browsers return a promise from scrollIntoView, which must not become the effect's cleanup.
+  React.useEffect(() => {
+    end.current?.scrollIntoView({ block: "end" });
+  }, [msgs, thinking, doing]);
   // A "show me" that moved to another page carries on there.
   React.useEffect(() => {
     try {
@@ -241,11 +398,16 @@ export function Assistant({ ctx }: { ctx: AssistantContext }) {
       if (f) setShowing(f as Extract<Flow, { kind: "show" }>);
     } catch {}
   }, [ctx.flows]);
+  const say = (m: Msg) => {
+    setMsgs((x) => [...x, m]);
+    if (m.from === "bot" && viaVoice.current && voice.speak) speak(m.text, voice.lang);
+  };
   const startFlow = (f: Flow) => {
     log({ flow: f.key, event: f.kind === "show" ? "show" : "start" });
     if (f.kind === "do") {
+      setOpen(true);
       setDoing(f);
-      setMsgs((m) => [...m, { from: "bot", text: `${f.title}. ${f.hint}.` }]);
+      say({ from: "bot", text: `${f.title}. ${f.hint}.` });
     } else if (f.kind === "show") {
       try {
         sessionStorage.setItem(KEY, JSON.stringify({ flow: f.key, step: 0 }));
@@ -260,49 +422,158 @@ export function Assistant({ ctx }: { ctx: AssistantContext }) {
     if (m.type === "term") return { from: "bot", text: `${m.term.term}: ${m.term.meaning}` };
     return { from: "bot", text: m.answer.a };
   };
-  const ask = (q: string) => {
-    const t = q.trim();
-    if (!t) return;
+  const keywordAnswer = (t: string) => {
     const found = matchText(t, ctx.flows, ctx.cfg);
-    setMsgs((m) => [...m, { from: "me", text: t }]);
     if (!found.length) {
       log({ event: "nomatch", text: t });
-      setMsgs((m) => [
-        ...m,
-        {
-          from: "bot",
-          text: "I could not find that. These may help, or search Help:",
-          actions: [...ctx.flows.slice(0, 3).map((f) => ({ label: f.title, run: () => startFlow(f) })), { label: "Search Help", run: () => router.push(`/profile/help?q=${encodeURIComponent(t)}`) }],
-        },
-      ]);
-    } else setMsgs((m) => [...m, reply(found[0]!), ...found.slice(1, 3).filter((x) => x.type === "flow").map((x) => ({ ...reply(x), text: `Or: ${reply(x).text}` }))]);
-    setText("");
+      say({
+        from: "bot",
+        text: "I could not find that. These may help, or search Help:",
+        actions: [...ctx.flows.slice(0, 3).map((f) => ({ label: f.title, run: () => startFlow(f) })), { label: "Search Help", run: () => router.push(`/profile/help?q=${encodeURIComponent(t)}`) }],
+      });
+    } else {
+      say(reply(found[0]!));
+      for (const x of found.slice(1, 3).filter((x) => x.type === "flow")) setMsgs((m) => [...m, { ...reply(x), text: `Or: ${reply(x).text}` }]);
+    }
   };
+  const confirmProposal = async (p: Proposal, idx: number) => {
+    setMsgs((m) => m.map((x, i) => (i === idx ? { ...x, busy: true } : x)));
+    const r = await confirmProposalAction(p.token);
+    if (!r.ok) {
+      setMsgs((m) => m.map((x, i) => (i === idx ? { ...x, busy: false } : x)));
+      return void toast.error(r.error);
+    }
+    const done = r.data?.done ?? "Done";
+    setMsgs((m) => m.map((x, i) => (i === idx ? { ...x, busy: false, settled: done } : x)));
+    toast.success(done);
+    setHistory((h) => [...h, { role: "user", text: `(I confirmed: ${p.title}.)` }, { role: "assistant", text: `${done}.` }]);
+    router.refresh();
+  };
+  const askAi = async (t: string) => {
+    setThinking(true);
+    const r = await askAiAction({ history, text: t, page: pathname });
+    setThinking(false);
+    if (!r.ok || !r.data) {
+      say({ from: "bot", text: (!r.ok && r.error) || "The AI could not answer." });
+      keywordAnswer(t);
+      return;
+    }
+    const d = r.data;
+    setHistory((h) => [...h, { role: "user", text: t }, { role: "assistant", text: d.text }]);
+    const flow = d.show ? ctx.flows.find((f) => f.key === d.show) : null;
+    say({
+      from: "bot",
+      text: plain(d.text),
+      actions: [...d.links.map((l) => ({ label: `Open ${l.label}`, run: () => router.push(l.href) })), ...(flow ? [{ label: "Show me", run: () => startFlow(flow) }] : [])],
+    });
+    for (const p of d.proposals) setMsgs((m) => [...m, { from: "bot", text: p.title, proposal: p }]);
+    // Asked by voice to go somewhere: go.
+    if (viaVoice.current && d.links.length === 1 && /\b(open|go to|take me|show me)\b/i.test(t)) router.push(d.links[0]!.href);
+  };
+  const ask = (q: string, spoken = false) => {
+    const t = q.trim();
+    if (!t) return;
+    viaVoice.current = spoken;
+    setText("");
+    const cmd = localCommand(t, base);
+    if (cmd) {
+      if (spoken) log({ event: "voice", text: t });
+      if (cmd.kind === "go") {
+        setMsgs((m) => [...m, { from: "me", text: t }, { from: "bot", text: `Opening ${cmd.name}.` }]);
+        router.push(cmd.href);
+      } else if (cmd.kind === "back") router.back();
+      else if (cmd.kind === "forward") router.forward();
+      else if (cmd.kind === "down") window.scrollBy({ top: window.innerHeight * 0.8, behavior: "smooth" });
+      else if (cmd.kind === "up") window.scrollBy({ top: -window.innerHeight * 0.8, behavior: "smooth" });
+      else if (cmd.kind === "top") window.scrollTo({ top: 0, behavior: "smooth" });
+      else if (cmd.kind === "close") setOpen(false);
+      else {
+        setMsgs([]);
+        setHistory([]);
+      }
+      return;
+    }
+    setMsgs((m) => [...m, { from: "me", text: t }]);
+    if (ai) void askAi(t);
+    else keywordAnswer(t);
+  };
+  const speech = useSpeech(voice.lang, (t) => ask(t, true));
+  const listen = () => {
+    setOpen(true);
+    if (speech.listening) speech.stop();
+    else speech.start();
+  };
+  // Keyboard: Alt+A opens or closes the assistant, Alt+V talks to it.
+  const listenRef = React.useRef(listen);
+  React.useEffect(() => {
+    listenRef.current = listen;
+  });
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!e.altKey || e.ctrlKey || e.metaKey) return;
+      if (e.code === "KeyA") {
+        e.preventDefault();
+        setOpen((o) => !o);
+      } else if (e.code === "KeyV") {
+        e.preventDefault();
+        listenRef.current();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   const endDo = (finished: boolean, step: number, done?: string) => {
     log({ flow: doing?.key, event: finished ? "finish" : "abandon", step });
-    if (finished && done) setMsgs((m) => [...m, { from: "bot", text: `${done}.` }]);
+    if (finished && done) say({ from: "bot", text: `${done}.` });
     setDoing(null);
   };
-  const endShow = React.useCallback(
-    (finished: boolean, step: number) => {
-      setShowing((f) => {
-        if (f) void logAssistantAction({ flow: f.key, event: finished ? "finish" : "abandon", step });
-        return null;
-      });
-    },
-    [],
-  );
+  const endShow = React.useCallback((finished: boolean, step: number) => {
+    setShowing((f) => {
+      if (f) void logAssistantAction({ flow: f.key, event: finished ? "finish" : "abandon", step });
+      return null;
+    });
+  }, []);
   // Out of the way during a presentation.
   if (/\/present$/.test(pathname)) return null;
+  const suggestions = ai ? ["What should I work on today?", "How many leave days do I have?", "What is waiting for me?"] : [];
   return (
     <>
       {showing && <ShowMe flow={showing} base={base} onEnd={endShow} />}
       <div className="no-print fixed right-4 bottom-4 z-50 flex flex-col items-end gap-2" data-assistant>
         {open && (
-          <section role="dialog" aria-label="Assistant" className="flex max-h-[min(36rem,calc(100vh-6rem))] w-[22rem] max-w-[calc(100vw-2rem)] flex-col rounded-xl border bg-popover shadow-xl">
-            <header className="flex items-center gap-2 border-b px-3 py-2">
-              <CompassIcon className="size-4 text-primary" />
-              <p className="flex-1 text-sm font-semibold">Assistant</p>
+          <section role="dialog" aria-label="Assistant" className="flex max-h-[min(40rem,calc(100vh-6rem))] w-[24rem] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl border bg-popover shadow-2xl">
+            <header className="flex items-center gap-1.5 border-b bg-gradient-to-r from-[#4285F4]/10 via-[#9334E6]/10 to-[#EA4335]/10 px-3 py-2">
+              <SparklesIcon className="size-4 shrink-0 text-[#9334E6] dark:text-[#C58AF9]" />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold">Assistant</p>
+                <p className="truncate text-[11px] text-muted-foreground">{ai ? "AI on" : "Type or speak"} · Alt+V to talk</p>
+              </div>
+              {msgs.length > 0 && (
+                <Button size="icon" variant="ghost" className="size-7" aria-label="New conversation" title="New conversation" onClick={() => (setMsgs([]), setHistory([]), setDoing(null))}>
+                  <RotateCcwIcon />
+                </Button>
+              )}
+              <Button
+                size="icon"
+                variant="ghost"
+                className="size-7"
+                aria-label={voice.speak ? "Stop reading answers aloud" : "Read answers aloud"}
+                aria-pressed={voice.speak}
+                title={voice.speak ? "Answers to spoken questions are read aloud" : "Read answers aloud"}
+                onClick={() => {
+                  if (voice.speak) window.speechSynthesis?.cancel();
+                  saveVoice({ ...voice, speak: !voice.speak });
+                }}
+              >
+                {voice.speak ? <Volume2Icon className="text-[#1E8E3E] dark:text-[#81C995]" /> : <VolumeXIcon />}
+              </Button>
+              <select aria-label="Voice language" className="h-7 rounded-md border bg-background px-1 text-xs" value={voice.lang} onChange={(e) => saveVoice({ ...voice, lang: e.target.value })}>
+                {LANGS.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.label}
+                  </option>
+                ))}
+              </select>
               <Button size="icon" variant="ghost" className="size-7" aria-label="Close the assistant" onClick={() => (doing && endDo(false, 0), setOpen(false))}>
                 <XIcon />
               </Button>
@@ -310,7 +581,16 @@ export function Assistant({ ctx }: { ctx: AssistantContext }) {
             <div className="flex-1 space-y-2 overflow-y-auto p-3 text-sm">
               {!msgs.length && !doing && (
                 <>
-                  <p className="text-muted-foreground">What would you like to do? Pick one, or type it in your own words.</p>
+                  <p className="text-muted-foreground">What would you like to do? Pick one, type it in your own words, or press the microphone and say it.</p>
+                  {suggestions.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {suggestions.map((s) => (
+                        <button key={s} type="button" onClick={() => ask(s)} className="rounded-full border border-[#9334E6]/30 bg-[#9334E6]/5 px-2.5 py-1 text-xs hover:bg-[#9334E6]/10" data-assistant-suggest>
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   <div className="flex flex-wrap gap-1.5">
                     {ctx.flows.map((f) => (
                       <button key={f.key} type="button" onClick={() => startFlow(f)} className="rounded-full border px-2.5 py-1 text-xs hover:bg-muted" data-assistant-flow={f.key}>
@@ -318,22 +598,55 @@ export function Assistant({ ctx }: { ctx: AssistantContext }) {
                       </button>
                     ))}
                   </div>
+                  <p className="text-[11px] text-muted-foreground">Say &quot;open leave&quot;, &quot;go back&quot;, &quot;scroll down&quot; or ask a question.</p>
                 </>
               )}
-              {msgs.map((m, i) => (
-                <div key={i} className={cn("max-w-[90%] rounded-lg px-2.5 py-1.5", m.from === "me" ? "ml-auto bg-primary text-primary-foreground" : "bg-muted")}>
-                  <p>{m.text}</p>
-                  {m.actions && (
-                    <div className="mt-1.5 flex flex-wrap gap-1.5">
-                      {m.actions.map((a) => (
-                        <Button key={a.label} size="xs" variant="outline" onClick={a.run}>
-                          {a.label}
-                        </Button>
+              {msgs.map((m, i) =>
+                m.proposal ? (
+                  <div key={i} className="rounded-lg border border-[#1A73E8]/40 bg-[#1A73E8]/5 p-2.5" data-assistant-proposal>
+                    <p className="font-medium">{m.proposal.title}</p>
+                    <ul className="mt-1 list-disc pl-5 text-xs">
+                      {m.proposal.lines.map((l) => (
+                        <li key={l}>{l}</li>
                       ))}
-                    </div>
-                  )}
+                    </ul>
+                    {m.settled ? (
+                      <p className="mt-2 flex items-center gap-1 text-xs text-[#1E8E3E] dark:text-[#81C995]">
+                        <CheckIcon className="size-3.5" /> {m.settled}
+                      </p>
+                    ) : m.settled === "" ? (
+                      <p className="mt-2 text-xs text-muted-foreground">Cancelled</p>
+                    ) : (
+                      <div className="mt-2 flex gap-2">
+                        <Button size="xs" disabled={m.busy} onClick={() => void confirmProposal(m.proposal!, i)}>
+                          {m.busy && <Loader2Icon className="animate-spin" />} Confirm
+                        </Button>
+                        <Button size="xs" variant="ghost" disabled={m.busy} onClick={() => setMsgs((x) => x.map((y, j) => (j === i ? { ...y, settled: "" } : y)))}>
+                          Cancel
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div key={i} className={cn("max-w-[90%] rounded-2xl px-3 py-1.5", m.from === "me" ? "ml-auto rounded-br-sm bg-primary text-primary-foreground" : "rounded-bl-sm bg-muted")} data-assistant-msg={m.from}>
+                    <p className="whitespace-pre-wrap">{m.text}</p>
+                    {m.actions && m.actions.length > 0 && (
+                      <div className="mt-1.5 flex flex-wrap gap-1.5">
+                        {m.actions.map((a) => (
+                          <Button key={a.label} size="xs" variant="outline" onClick={a.run}>
+                            {a.label}
+                          </Button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ),
+              )}
+              {thinking && (
+                <div className="flex w-fit items-center gap-2 rounded-2xl rounded-bl-sm bg-muted px-3 py-1.5 text-muted-foreground" data-assistant-thinking>
+                  <Loader2Icon className="size-3.5 animate-spin" /> Looking…
                 </div>
-              ))}
+              )}
               {doing && (
                 <div className="rounded-lg border p-2.5" data-assistant-do={doing.key}>
                   <DoFlow flow={doing} ctx={ctx} onEnd={endDo} />
@@ -342,20 +655,55 @@ export function Assistant({ ctx }: { ctx: AssistantContext }) {
                   </Button>
                 </div>
               )}
+              <div ref={end} />
             </div>
-            <form className="flex gap-2 border-t p-2" onSubmit={(e) => (e.preventDefault(), ask(text))}>
-              <Input value={text} onChange={(e) => setText(e.target.value)} placeholder="For example: assign videos, where is leave" aria-label="Ask the assistant" className="h-8" />
-              <Button size="icon" className="size-8" type="submit" aria-label="Ask" disabled={!text.trim()}>
+            <form className="flex items-center gap-2 border-t p-2" onSubmit={(e) => (e.preventDefault(), ask(text))}>
+              {speech.supported && (
+                <Button
+                  size="icon"
+                  type="button"
+                  variant={speech.listening ? "destructive" : "outline"}
+                  className={cn("size-8 shrink-0 rounded-full", speech.listening && "animate-pulse")}
+                  aria-label={speech.listening ? "Stop listening" : "Speak to the assistant"}
+                  title="Speak (Alt+V)"
+                  onClick={listen}
+                  data-assistant-mic
+                >
+                  {speech.listening ? <MicOffIcon /> : <MicIcon className="text-[#EA4335]" />}
+                </Button>
+              )}
+              <Input
+                value={speech.listening ? speech.interim || "Listening…" : text}
+                readOnly={speech.listening}
+                onChange={(e) => setText(e.target.value)}
+                placeholder={ai ? "Ask anything about your work" : "For example: assign videos, where is leave"}
+                aria-label="Ask the assistant"
+                className="h-8"
+              />
+              <Button size="icon" className="size-8 shrink-0" type="submit" aria-label="Ask" disabled={!text.trim() || thinking}>
                 <SendIcon />
               </Button>
             </form>
           </section>
         )}
-        <Button size="icon" className="size-11 rounded-full shadow-lg" aria-label={open ? "Close the assistant" : "Open the assistant"} aria-expanded={open} onClick={() => setOpen(!open)}>
-          <SparklesIcon />
-        </Button>
+        <div className="flex items-center gap-2">
+          {!open && speech.supported && (
+            <Button size="icon" variant="outline" className="size-9 rounded-full bg-background shadow-md" aria-label="Speak to the assistant" title="Speak (Alt+V)" onClick={listen}>
+              <MicIcon className="text-[#EA4335]" />
+            </Button>
+          )}
+          <Button
+            size="icon"
+            className="size-11 rounded-full bg-gradient-to-br from-[#4285F4] via-[#9334E6] to-[#EA4335] text-white shadow-lg hover:opacity-90"
+            aria-label={open ? "Close the assistant" : "Open the assistant"}
+            aria-expanded={open}
+            title="Assistant (Alt+A)"
+            onClick={() => setOpen(!open)}
+          >
+            <SparklesIcon />
+          </Button>
+        </div>
       </div>
     </>
   );
 }
-

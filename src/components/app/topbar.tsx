@@ -295,7 +295,7 @@ function UserMenu({ user }: { user: { name: string; email: string; avatar?: stri
         </DropdownMenuSub>
         <DropdownMenuSub>
           <DropdownMenuSubTrigger>
-            <SquareIcon /> Corners and text
+            <SquareIcon /> Corners, text and icons
           </DropdownMenuSubTrigger>
           <DropdownMenuSubContent>
             <DropdownMenuLabel className="text-xs text-muted-foreground">Corners</DropdownMenuLabel>
@@ -310,6 +310,12 @@ function UserMenu({ user }: { user: { name: string; email: string; avatar?: stri
               <DropdownMenuRadioItem value="small">Small</DropdownMenuRadioItem>
               <DropdownMenuRadioItem value="normal">Normal</DropdownMenuRadioItem>
               <DropdownMenuRadioItem value="large">Large</DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="text-xs text-muted-foreground">Icons</DropdownMenuLabel>
+            <DropdownMenuRadioGroup value={look.icons} onValueChange={(v) => setLook({ icons: v })}>
+              <DropdownMenuRadioItem value="colour">Colourful</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="plain">One colour</DropdownMenuRadioItem>
             </DropdownMenuRadioGroup>
           </DropdownMenuSubContent>
         </DropdownMenuSub>

@@ -26,6 +26,7 @@
     "db:bulk-restore": "tsx scripts/bulk-restore.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.4.0",
     "@electric-sql/pglite": "^0.5.12",
     "@vladmandic/face-api": "^1.7.15",
     "class-variance-authority": "^0.7.1",

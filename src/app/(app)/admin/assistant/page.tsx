@@ -4,6 +4,8 @@ import { PageHeader } from "@/components/app/primitives";
 import { ROLES, ROLE_LABELS } from "@/lib/domain";
 import { FLOWS } from "@/lib/assistant";
 import { AssistantAdmin } from "./assistant-admin";
+import { AiAdmin } from "./ai-admin";
+import { AI_MODELS, aiConfig, aiUsage } from "@/server/assistant-ai";
 
 export const metadata = { title: "Assistant" };
 
@@ -11,10 +13,11 @@ export const metadata = { title: "Assistant" };
 // assistant is used: flows started and finished, where people give up, what matched nothing.
 export default async function AssistantAdminPage() {
   const viewer = await requireCapability("users.manage");
-  const [cfg, stats] = await Promise.all([assistantConfig(), assistantStats(viewer)]);
+  const [cfg, stats, ai, usage] = await Promise.all([assistantConfig(), assistantStats(viewer), aiConfig(), aiUsage(viewer)]);
   return (
     <div className="space-y-4">
-      <PageHeader title="Assistant" description="The guide in the corner of every page. It follows written flows (no AI, nothing sent outside); here you choose them per role and see how they are used." />
+      <PageHeader title="Assistant" description="The guide in the corner of every page, by typing or by voice. It follows written flows; with AI answers on, Claude also answers questions from each person's own data and prepares actions they confirm." />
+      <AiAdmin config={ai} usage={usage} models={AI_MODELS.map((m) => ({ id: m.id, label: m.label }))} roles={ROLES.map((r) => ({ key: r, label: ROLE_LABELS[r] }))} />
       <AssistantAdmin config={cfg} stats={stats} flows={FLOWS.map((f) => ({ key: f.key, title: f.title, keywords: f.keywords }))} roles={ROLES.map((r) => ({ key: r, label: ROLE_LABELS[r] }))} />
     </div>
   );

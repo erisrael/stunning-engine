@@ -299,3 +299,7 @@
 
 /* Overview presentation: the bar under a slide fills while it is shown. */
 @keyframes viz-progress { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+/* Colourful icons (components/app/app-icon.tsx); "One colour" in the account menu turns them back to the text colour. */
+:root[data-icons="plain"] .app-icon { color: inherit; }
+:root[data-icons="plain"] .app-tile { background: color-mix(in oklab, var(--primary) 10%, transparent); color: var(--primary); }

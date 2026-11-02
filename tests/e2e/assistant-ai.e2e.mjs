@@ -1,0 +1,85 @@
+// Phase 13b in the browser: colourful sidebar icons (and "One colour"), the AI assistant answering with a page to
+// open and a proposal confirmed by the person, typed voice commands, Alt+A, and Admin's AI card.
+import { chromium } from "playwright-core";
+import fs from "node:fs";
+import path from "node:path";
+
+const here = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Z]:)/, "$1"));
+const shots = path.join(process.env.SHOTS_DIR ?? path.join(here, "..", "..", "test-results"), "assistant-ai");
+fs.mkdirSync(shots, { recursive: true });
+const base = process.env.BASE_URL ?? "http://localhost:3123";
+const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || undefined });
+let fails = 0;
+const check = (label, ok, extra) => (console.log(`${ok ? "PASS" : "FAIL"} ${label}${!ok && extra !== undefined ? " " + String(extra).slice(0, 300) : ""}`), ok || fails++);
+const toast = (page, re) => page.locator("[data-sonner-toast]").filter({ hasText: re }).first().waitFor({ timeout: 10000 }).then(() => true, () => false);
+async function as(email, home = /dashboard|dev/) {
+  const ctx = await browser.newContext({ viewport: { width: 1360, height: 900 } });
+  const page = await ctx.newPage();
+  page.on("pageerror", (e) => check(`${email} no page error`, false, e.message));
+  await page.goto(`${base}/login`);
+  await page.fill("input[name=email]", email);
+  await page.fill("input[name=password]", "Demo-Workflow-2026");
+  await page.getByRole("button", { name: /log in/i }).click();
+  await page.waitForURL(home, { timeout: 30000 });
+  return page;
+}
+
+try {
+  const dev = await as("abebe@demo.local");
+  await dev.goto(`${base}/dev`);
+  await dev.waitForLoadState("load");
+  // Colourful icons in the sidebar.
+  const side = dev.locator("[data-sidebar=sidebar]").first();
+  const colours = await side.locator("svg.app-icon").evaluateAll((els) => els.map((e) => getComputedStyle(e).color));
+  check("sidebar icons are drawn with AppIcon", colours.length >= 5, colours.length);
+  check("in several colours", new Set(colours).size >= 4, [...new Set(colours)].join(" "));
+  await dev.screenshot({ path: path.join(shots, "1-colourful-sidebar.png") });
+  await dev.evaluate(() => (document.documentElement.dataset.icons = "plain"));
+  const plain = await side.locator("svg.app-icon").evaluateAll((els) => els.map((e) => getComputedStyle(e).color));
+  check("'One colour' turns them back", new Set(plain).size <= 3 && new Set(plain).size < new Set(colours).size, [...new Set(plain)].join(" "));
+  await dev.evaluate(() => (document.documentElement.dataset.icons = "colour"));
+
+  // Alt+A opens the assistant.
+  await dev.keyboard.press("Alt+KeyA");
+  const panel = dev.getByRole("dialog", { name: "Assistant" });
+  check("Alt+A opens the assistant", await panel.waitFor({ timeout: 5000 }).then(() => true, () => false));
+  check("AI suggestions are offered", (await dev.locator("[data-assistant-suggest]").count()) === 3);
+  check("Create a task is offered to a developer", await dev.locator('[data-assistant-flow="do.task"]').isVisible());
+
+  // An AI answer with a page to open.
+  await dev.getByLabel("Ask the assistant").fill("where is attendance");
+  await dev.getByRole("button", { name: "Ask", exact: true }).click();
+  check("the AI offers the page", await dev.getByRole("button", { name: "Open Attendance" }).waitFor({ timeout: 15000 }).then(() => true, () => false));
+
+  // A proposal, confirmed by the person.
+  await dev.getByLabel("Ask the assistant").fill("create task Write the API guide in dev");
+  await dev.getByRole("button", { name: "Ask", exact: true }).click();
+  const prop = dev.locator("[data-assistant-proposal]").first();
+  check("the AI proposes the task", await prop.waitFor({ timeout: 15000 }).then(() => true, () => false));
+  check("the proposal says what will happen", /Write the API guide/.test(await prop.innerText()));
+  await dev.screenshot({ path: path.join(shots, "2-proposal.png") });
+  await prop.getByRole("button", { name: "Confirm" }).click();
+  check("Confirm creates it", await toast(dev, /Created/));
+  check("the card shows it is done", await prop.getByText("Created").waitFor({ timeout: 5000 }).then(() => true, () => false));
+
+  // A typed voice command runs at once.
+  await dev.getByLabel("Ask the assistant").fill("open leave");
+  await dev.getByRole("button", { name: "Ask", exact: true }).click();
+  check("'open leave' opens Leave", await dev.waitForURL(/profile\?tab=leave/, { timeout: 15000 }).then(() => true, () => false));
+  check("voice controls are there (read aloud, language)", (await dev.getByLabel("Voice language").count()) === 1 && (await dev.getByRole("button", { name: "Read answers aloud" }).count()) === 1);
+  await dev.getByRole("button", { name: "Close the assistant" }).first().click();
+
+  // Admin's AI card.
+  const admin = await as("admin@demo.local");
+  await admin.goto(`${base}/admin/assistant`);
+  const card = admin.locator("[data-ai-admin]");
+  check("Admin sees the AI card", await card.waitFor({ timeout: 10000 }).then(() => true, () => false));
+  check("it is on, with the key kept sealed", (await card.getByRole("switch", { name: "Use AI answers" }).getAttribute("aria-checked")) === "true" && /Saved \(sealed\)/.test((await card.getByLabel("Anthropic API key").getAttribute("placeholder")) ?? ""));
+  check("usage is counted", /[1-9]\d* questions/.test(await card.locator("[data-ai-usage]").innerText()));
+  await admin.screenshot({ path: path.join(shots, "3-admin-ai.png"), fullPage: true });
+} catch (e) {
+  check("ran without crashing", false, e?.stack ?? e);
+} finally {
+  await browser.close();
+}
+process.exit(fails ? 1 : 0);
