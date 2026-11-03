@@ -767,7 +767,8 @@ Each person reads and sends their company email under Email. Admin (email manage
 - [x] **Safety**: messages shown in a frame with no scripts (scripts, frames, forms and event handlers also removed), outside pictures blocked until "Show images", links in a new tab; attachments fetched when asked, pictures and PDFs opened, everything else downloaded; 20 MB of attachments per message.
 - [x] **Syncing**: new mail checked every minute while Email is open; the scheduled checks keep the unread count on the sidebar and notify "New email" (one notice that counts up). Mailbox mail is not added to the sent log, which email managers read.
 - [x] **Setup check**: "Check the server" finds the server and tries the IMAP and SMTP ports from the app's server (says when the hosting blocks them), "Check cPanel" signs in to the API, and "Check" per mailbox signs in to it.
-- [ ] Conversations grouped in the list, a preview line under the subject, signatures, formatting in the message, scheduled sending from the mailbox, and Google Workspace or Microsoft 365 mailboxes through their own sign-in.
+- [x] Conversations grouped in the list (same subject, without Re: and Fwd:, with a switch), a preview line under each subject, a signature per mailbox added to new messages and replies, and **Send later** from the mailbox: checked when written, sent by the scheduled jobs, listed until it goes, cancelling puts it back in Drafts, and the person is told if it fails (schema 44).
+- [ ] Still open: formatting in the message (bold, lists, links), and Google Workspace or Microsoft 365 mailboxes through their own sign-in.
 
 ## Phase 15: Foundations (first, before Phase 10b)
 

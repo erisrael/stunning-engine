@@ -54,6 +54,23 @@ try {
   check("the attachment is offered", await dawit.getByRole("link", { name: "report.csv" }).isVisible());
   await dawit.screenshot({ path: path.join(shots, "1-inbox.png") });
 
+  check("each message shows its first words", (await dawit.locator("[data-mail-preview]").count()) >= 2);
+  // A signature, and a message sent later.
+  await dawit.locator("[data-edit-signature]").click();
+  await dawit.locator("[data-signature-form]").getByLabel("Signature").fill("Dawit, Recording");
+  await dawit.locator("[data-signature-form]").getByRole("button", { name: "Save" }).click();
+  check("a signature is saved", await toast(dawit, /Signature saved/));
+  await dawit.keyboard.press("c");
+  const sl = dawit.getByRole("dialog");
+  await sl.waitFor();
+  check("new messages start with the signature", (await sl.getByLabel("Message", { exact: true }).inputValue()).includes("Dawit, Recording"));
+  await sl.getByLabel("To", { exact: true }).fill("yonas@myseed.test");
+  await sl.getByLabel("Subject", { exact: true }).fill("Reminder for Friday");
+  await sl.getByRole("button", { name: "Send later" }).click();
+  await sl.getByRole("button", { name: "Schedule" }).click();
+  check("a message is scheduled", await toast(dawit, /Scheduled for/));
+  check("and listed until it goes", await dawit.locator("[data-scheduled]").getByText("Reminder for Friday").waitFor({ timeout: 10000 }).then(() => true, () => false));
+
   await dawit.getByRole("button", { name: "Archive" }).first().click();
   check("archived", await toast(dawit, /Archived/));
   check("Archive appears", await dawit.locator('[data-folder="archive"]').waitFor({ timeout: 10000 }).then(() => true, () => false));

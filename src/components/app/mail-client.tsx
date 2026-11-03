@@ -40,11 +40,29 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { mailActAction, mailDraftAction, mailFoldersAction, mailHomeAction, mailListAction, mailMessageAction, mailSaveDraftAction, mailSendAction } from "@/app/actions/mail";
+import { cancelScheduledAction, mailActAction, mailDraftAction, mailFoldersAction, mailHomeAction, mailListAction, mailMessageAction, mailSaveDraftAction, mailScheduleAction, mailSendAction, myScheduledAction, mySignatureAction, saveSignatureAction } from "@/app/actions/mail";
 import type { FolderRole, MailAction, MailCompose, MailFolder, MailMessage } from "@/server/mail";
 import { cn, pollMs } from "@/lib/utils";
 
-type Row = { uid: number; seen: boolean; flagged: boolean; answered: boolean; draft: boolean; size: number; date: string; subject: string; from: { name: string; address: string } | null; to: string[]; attachments: boolean };
+type Row = { uid: number; seen: boolean; flagged: boolean; answered: boolean; draft: boolean; size: number; date: string; subject: string; from: { name: string; address: string } | null; to: string[]; attachments: boolean; preview?: string; thread?: number[] };
+// Messages with the same subject (without Re: and Fwd:) are one conversation in the list.
+const threadKey = (subject: string) => subject.replace(/^((re|fwd?|aw|sv)\s*:\s*)+/i, "").trim().toLowerCase();
+function group(rows: Row[]): Row[] {
+  const out: Row[] = [];
+  const at = new Map<string, number>();
+  for (const r of rows) {
+    const k = threadKey(r.subject);
+    const i = k ? at.get(k) : undefined;
+    if (i === undefined) {
+      if (k) at.set(k, out.length);
+      out.push({ ...r, thread: [r.uid] });
+    } else {
+      const t = out[i]!;
+      out[i] = { ...t, seen: t.seen && r.seen, flagged: t.flagged || r.flagged, attachments: t.attachments || r.attachments, thread: [...(t.thread ?? [t.uid]), r.uid] };
+    }
+  }
+  return out;
+}
 type Draft = { to: string; cc: string; bcc: string; subject: string; text: string; inReplyTo: string | null; references: string[]; attachments: { name: string; type: string; base64: string }[]; draftUid: number | null; replied: { folder: string; uid: number } | null; forward: { folder: string; uid: number; names: string[] } | null; showCc: boolean };
 const EMPTY: Draft = { to: "", cc: "", bcc: "", subject: "", text: "", inReplyTo: null, references: [], attachments: [], draftUid: null, replied: null, forward: null, showCc: false };
 const ICON: Record<FolderRole, React.ComponentType<{ className?: string }>> = { inbox: InboxIcon, drafts: FileIcon, sent: SendIcon, archive: ArchiveIcon, junk: OctagonAlertIcon, trash: Trash2Icon };
@@ -89,8 +107,23 @@ export function MailClient({ ownBox, others, initialBox, tz }: { ownBox: { id: s
   const [open, setOpen] = React.useState<MailMessage | null>(null);
   const [opening, setOpening] = React.useState<number | null>(null);
   const [compose, setCompose] = React.useState<Draft | null>(null);
+  const [threads, setThreads] = React.useState(true);
+  const [signature, setSignature] = React.useState("");
+  const [editSig, setEditSig] = React.useState<string | null>(null);
+  const [scheduled, setScheduled] = React.useState<{ id: string; subject: string; recipients: string; send_at: string; status: string; error: string | null }[]>([]);
+  const loadScheduled = React.useCallback(async () => {
+    const r = await myScheduledAction();
+    if (r.ok) setScheduled(r.data!);
+  }, []);
+  React.useEffect(() => {
+    void mySignatureAction().then((r) => r.ok && setSignature(r.data ?? ""));
+    void loadScheduled();
+  }, [loadScheduled]);
+  const sig = signature.trim() ? `\n\n-- \n${signature.trim()}` : "";
+  const newMessage = () => setCompose({ ...EMPTY, text: sig });
   const searchRef = React.useRef<HTMLInputElement>(null);
   const current = folders?.find((f) => f.path === folder);
+  const shown = React.useMemo(() => (threads && current?.role !== "drafts" ? group(rows) : rows), [threads, rows, current?.role]);
 
   const loadFolders = React.useCallback(async () => {
     const r = await mailFoldersAction(box);
@@ -216,7 +249,7 @@ export function MailClient({ ownBox, others, initialBox, tz }: { ownBox: { id: s
       cc: cc.join(", "),
       showCc: cc.length > 0,
       subject: /^re:/i.test(m.subject) ? m.subject : `Re: ${m.subject}`,
-      text: `\n\n${quoteHead}\n${quoted}`,
+      text: `${sig}\n\n${quoteHead}\n${quoted}`,
       inReplyTo: m.messageId,
       references: m.references,
       replied: { folder: m.folder, uid: m.uid },
@@ -227,10 +260,10 @@ export function MailClient({ ownBox, others, initialBox, tz }: { ownBox: { id: s
   React.useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (typing(e) || compose || e.metaKey || e.ctrlKey || e.altKey) return;
-      const row = rows[cursor];
-      if (e.key === "c" && !readOnly) (e.preventDefault(), setCompose({ ...EMPTY }));
+      const row = shown[cursor];
+      if (e.key === "c" && !readOnly) (e.preventDefault(), newMessage());
       else if (e.key === "/") (e.preventDefault(), searchRef.current?.focus());
-      else if (e.key === "j") setCursor((c) => Math.min(rows.length - 1, c + 1));
+      else if (e.key === "j") setCursor((c) => Math.min(shown.length - 1, c + 1));
       else if (e.key === "k") setCursor((c) => Math.max(0, c - 1));
       else if ((e.key === "Enter" || e.key === "o") && row) void openMessage(row);
       else if (e.key === "u") setOpen(null);
@@ -288,9 +321,47 @@ export function MailClient({ ownBox, others, initialBox, tz }: { ownBox: { id: s
       <div className="grid gap-3 md:grid-cols-[13rem_minmax(0,1fr)]">
         <nav aria-label="Mail folders" className="space-y-2">
           {!readOnly && (
-            <Button className="w-full justify-start" onClick={() => setCompose({ ...EMPTY })}>
+            <Button className="w-full justify-start" onClick={newMessage}>
               <PencilIcon /> Compose
             </Button>
+          )}
+          {!readOnly && (
+            <div className="flex gap-1 text-xs">
+              <button type="button" className="text-primary hover:underline" onClick={() => setEditSig(signature)} data-edit-signature>
+                Signature
+              </button>
+              <span className="text-muted-foreground">·</span>
+              <label className="flex items-center gap-1">
+                <input type="checkbox" checked={threads} onChange={(e) => setThreads(e.target.checked)} /> Conversations
+              </label>
+            </div>
+          )}
+          {editSig !== null && (
+            <div className="space-y-1 rounded-lg border p-2" data-signature-form>
+              <Textarea aria-label="Signature" rows={4} value={editSig} onChange={(e) => setEditSig(e.target.value)} placeholder={"Abebe Kebede\nEditing lead, Myseed"} />
+              <div className="flex gap-1">
+                <Button size="xs" onClick={async () => { const r = await saveSignatureAction(editSig); if (!r.ok) return void toast.error(r.error); setSignature(editSig); setEditSig(null); toast.success("Signature saved"); }}>
+                  Save
+                </Button>
+                <Button size="xs" variant="ghost" onClick={() => setEditSig(null)}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+          {scheduled.length > 0 && (
+            <div className="space-y-1 rounded-lg border p-2 text-xs" data-scheduled>
+              <p className="font-medium">Scheduled ({scheduled.length})</p>
+              {scheduled.map((m) => (
+                <div key={m.id} className="space-y-0.5">
+                  <p className="truncate">{m.subject}</p>
+                  <p className={m.status === "failed" ? "text-destructive" : "text-muted-foreground"}>{m.status === "failed" ? `Not sent: ${m.error}` : `${new Date(m.send_at).toLocaleString([], { dateStyle: "short", timeStyle: "short", timeZone: tz })} to ${m.recipients}`}</p>
+                  <button type="button" className="text-primary hover:underline" onClick={async () => { const r = await cancelScheduledAction(m.id); if (!r.ok) return void toast.error(r.error); toast.success("Not sent; it is back in Drafts"); void loadScheduled(); void loadFolders(); }}>
+                    Cancel and keep as draft
+                  </button>
+                </div>
+              ))}
+            </div>
           )}
           <ul className="flex gap-1 overflow-x-auto md:flex-col md:overflow-visible">
             {(folders ?? []).map((f) => {
@@ -371,14 +442,14 @@ export function MailClient({ ownBox, others, initialBox, tz }: { ownBox: { id: s
               <p className="p-6 text-center text-sm text-muted-foreground">{query || only ? "Nothing matches." : `${current?.name ?? "This folder"} is empty.`}</p>
             ) : (
               <ul className="divide-y" data-mail-list>
-                {rows.map((r, i) => (
+                {shown.map((r, i) => (
                   <li
                     key={r.uid}
                     data-mail-row={r.uid}
                     className={cn("group flex cursor-pointer items-center gap-2 px-2 py-2 text-sm hover:bg-muted/60", !r.seen && "bg-primary/[0.03]", open?.uid === r.uid && "bg-primary/10", i === cursor && "ring-1 ring-primary/40 ring-inset")}
                     onClick={() => (setCursor(i), void openMessage(r))}
                   >
-                    <Checkbox aria-label="Select" checked={checked.includes(r.uid)} disabled={readOnly} onClick={(e) => e.stopPropagation()} onCheckedChange={(v) => setChecked((c) => (v ? [...c, r.uid] : c.filter((x) => x !== r.uid)))} />
+                    <Checkbox aria-label="Select" checked={checked.includes(r.uid)} disabled={readOnly} onClick={(e) => e.stopPropagation()} onCheckedChange={(v) => setChecked((c) => (v ? [...c, ...(r.thread ?? [r.uid])] : c.filter((x) => !(r.thread ?? [r.uid]).includes(x))))} />
                     <button
                       type="button"
                       aria-label={r.flagged ? "Remove star" : "Star"}
@@ -398,6 +469,8 @@ export function MailClient({ ownBox, others, initialBox, tz }: { ownBox: { id: s
                         <span className={cn("min-w-0 flex-1 truncate", !r.seen ? "font-semibold" : "text-muted-foreground")}>
                           {r.draft && role !== "drafts" && <span className="mr-1 text-destructive">Draft</span>}
                           {r.subject || "(no subject)"}
+                          {(r.thread?.length ?? 1) > 1 && <span className="ml-1 rounded bg-muted px-1 text-xs font-normal text-muted-foreground" data-thread-count>{r.thread!.length}</span>}
+                          {r.preview && <span className="ml-2 font-normal text-muted-foreground" data-mail-preview> {r.preview}</span>}
                         </span>
                         {r.attachments && <PaperclipIcon className="size-3.5 shrink-0 text-muted-foreground" aria-label="Has attachments" />}
                         <span className={cn("hidden shrink-0 text-xs tabular-nums", !open && "sm:inline", !r.seen ? "font-semibold" : "text-muted-foreground")}>{when(r.date, tz)}</span>
@@ -449,6 +522,7 @@ export function MailClient({ ownBox, others, initialBox, tz }: { ownBox: { id: s
           onClose={() => setCompose(null)}
           onDone={() => (void loadFolders(), current?.role === "sent" || current?.role === "drafts" ? void loadList(true) : null)}
           onReopen={(d) => setCompose(d)}
+          onScheduled={() => void loadScheduled()}
         />
       )}
     </div>
@@ -658,8 +732,9 @@ function Reader({
   );
 }
 
-function Compose({ initial, box, from, draftsPath, onClose, onDone, onReopen }: { initial: Draft; box: string | null; from: string; draftsPath: string | null; onClose: () => void; onDone: () => void; onReopen: (d: Draft) => void }) {
+function Compose({ initial, box, from, draftsPath, onClose, onDone, onReopen, onScheduled }: { initial: Draft; box: string | null; from: string; draftsPath: string | null; onClose: () => void; onDone: () => void; onReopen: (d: Draft) => void; onScheduled?: () => void }) {
   const [d, setD] = React.useState<Draft>(initial);
+  const [later, setLater] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState<"draft" | null>(null);
   const fileRef = React.useRef<HTMLInputElement>(null);
   const set = (patch: Partial<Draft>) => setD((x) => ({ ...x, ...patch }));
@@ -790,9 +865,34 @@ function Compose({ initial, box, from, draftsPath, onClose, onDone, onReopen }: 
               Discard
             </Button>
           </div>
-          <Button onClick={send}>
-            <SendIcon /> Send
-          </Button>
+          <div className="flex flex-wrap items-center gap-1" data-send-later>
+            {later !== null ? (
+              <>
+                <Input type="datetime-local" aria-label="Send at" className="h-9 w-52" value={later} onChange={(e) => setLater(e.target.value)} />
+                <Button
+                  variant="outline"
+                  disabled={!later}
+                  onClick={async () => {
+                    const r = await mailScheduleAction(payload(d), new Date(later).toISOString());
+                    if (!r.ok) return void toast.error(r.error);
+                    toast.success(`Scheduled for ${new Date(r.data!.sendAt).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}`);
+                    onClose();
+                    onDone();
+                    onScheduled?.();
+                  }}
+                >
+                  Schedule
+                </Button>
+              </>
+            ) : (
+              <Button variant="ghost" onClick={() => setLater(new Date(Date.now() + 36e5 - new Date().getTimezoneOffset() * 60e3).toISOString().slice(0, 16))}>
+                Send later
+              </Button>
+            )}
+            <Button onClick={send}>
+              <SendIcon /> Send
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

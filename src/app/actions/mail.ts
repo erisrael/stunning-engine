@@ -62,3 +62,20 @@ export async function setMailboxOnAction(id: string, on: boolean) {
 export async function removeMailboxAction(id: string, atHost: boolean) {
   return wrap(async () => mail.removeMailbox(await requireViewer(), id, atHost));
 }
+
+// Signatures and sending later.
+export async function mySignatureAction() {
+  return wrap(async () => mail.mySignature(await requireViewer()), { revalidate: false });
+}
+export async function saveSignatureAction(text: string) {
+  return wrap(async () => mail.saveSignature(await requireViewer(), text), { revalidate: false });
+}
+export async function mailScheduleAction(input: mail.MailCompose, sendAt: string) {
+  return wrap(async () => mail.mailSchedule(await requireViewer(), input, sendAt), { revalidate: false });
+}
+export async function myScheduledAction() {
+  return wrap(async () => mail.myScheduled(await requireViewer()), { revalidate: false });
+}
+export async function cancelScheduledAction(id: string) {
+  return wrap(async () => mail.cancelScheduled(await requireViewer(), id), { revalidate: false });
+}

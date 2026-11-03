@@ -139,6 +139,22 @@ async function main() {
   const fw = (await mail.mailList(abebe, { folder: "INBOX" })).rows.find((r) => r.subject === "Fwd: Lesson plan")!;
   check("forwarding keeps the attachments", (await mail.mailMessage(abebe, { folder: "INBOX", uid: fw.uid })).attachments.some((x) => x.name === "plan.txt"));
 
+  // Phase 14 extras: the preview line, a signature, sending later.
+  check("the list shows the first words of each message", (await mail.mailList(sara, { folder: "INBOX" })).rows.find((r) => r.subject === "Lesson plan")?.preview === "Here it is.");
+  await mail.saveSignature(abebe, "Abebe Kebede, Editing lead");
+  check("a signature is kept per mailbox", (await mail.mySignature(abebe)) === "Abebe Kebede, Editing lead");
+  check("sending later needs a time ahead", !!(await throws(() => mail.mailSchedule(abebe, { to: ["old.box@myseed.test"], subject: "Later", text: "x" }, new Date().toISOString()))));
+  check("and checks the addresses now", !!(await throws(() => mail.mailSchedule(abebe, { to: ["nope"], subject: "Later", text: "x" }, new Date(Date.now() + 36e5).toISOString()))));
+  const sch = await mail.mailSchedule(abebe, { to: ["old.box@myseed.test"], subject: "Weekly plan", text: "For Monday" }, new Date(Date.now() + 36e5).toISOString());
+  check("scheduled messages are listed", (await mail.myScheduled(abebe)).some((m) => m.id === sch.id));
+  check("not sent before their time", (await mail.sendScheduledMail()).sent === 0);
+  check("sent when the time comes", (await mail.sendScheduledMail(new Date(Date.now() + 2 * 36e5).toISOString())).sent === 1 && (await mail.mailList(sara, { folder: "INBOX" })).rows.some((r) => r.subject === "Weekly plan"));
+  check("and only once", (await mail.sendScheduledMail(new Date(Date.now() + 2 * 36e5).toISOString())).sent === 0);
+  const sch2 = await mail.mailSchedule(abebe, { to: ["old.box@myseed.test"], subject: "Maybe not", text: "draft me" }, new Date(Date.now() + 36e5).toISOString());
+  await mail.cancelScheduled(abebe, sch2.id);
+  const drafts = (await mail.mailFolders(abebe)).find((f) => f.role === "drafts")!;
+  check("a cancelled one goes back to Drafts", (await mail.mailList(abebe, { folder: drafts.path })).rows.some((r) => r.subject === "Maybe not") && !(await mail.myScheduled(abebe)).some((m) => m.id === sch2.id));
+
   // Privacy
   check("a person cannot open someone else's mailbox", /private/.test((await throws(() => mail.mailHome(sara, a.id))) ?? ""));
   check("nor can an email manager while Admin has not allowed it", /private/.test((await throws(() => mail.mailHome(admin, a.id))) ?? ""));

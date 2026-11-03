@@ -187,6 +187,8 @@ export async function runScheduledChecks(now = nowIso(), opts: { trigger?: strin
     // Mail: unread counts for the sidebar and a notice for new mail.
     await runJob("mail-check", async () => (await import("./mail")).checkAllMailboxes());
     await runJob("flow-merges", async () => (await import("./dept-flow")).applyMergedPullRequests());
+    // Mail from people's mailboxes scheduled for now.
+    await runJob("mail-scheduled", async () => (await import("./mail")).sendScheduledMail(now));
     // Email waiting to go out: notification copies to retry and scheduled messages now due.
     await runJob("outbox", () => flushOutbox(200));
     // The daily backup when it is due, and the monthly test restore.

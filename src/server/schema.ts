@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 43;
+export const SCHEMA_VERSION = 44;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -2159,6 +2159,8 @@ CREATE INDEX IF NOT EXISTS idx_assistant_events ON assistant_events(at);
 -- unread count and the last check for the sidebar, without connecting to the mail server on every page.
 ALTER TABLE email_senders ADD COLUMN IF NOT EXISTS mailbox INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE email_senders ADD COLUMN IF NOT EXISTS managed TEXT;
+-- (v44) a mailbox's signature, added to new messages and replies.
+ALTER TABLE email_senders ADD COLUMN IF NOT EXISTS signature TEXT;
 -- v28: deleted accounts with history are kept anonymised, marked here and left out of Admin, People.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS deleted_at TEXT;
 
@@ -2169,6 +2171,21 @@ CREATE TABLE IF NOT EXISTS mail_state (
   checked_at TEXT,
   error TEXT
 );
+
+-- v44: mail written now and sent from the person's mailbox later.
+CREATE TABLE IF NOT EXISTS mail_scheduled (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  subject TEXT NOT NULL,
+  recipients TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  send_at TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'waiting',
+  error TEXT,
+  created_at TEXT NOT NULL,
+  sent_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_mail_scheduled ON mail_scheduled(status, send_at);
 
 -- v43: how long pages take to open, per section and day (Admin, Usage: slowest pages).
 CREATE TABLE IF NOT EXISTS page_timings (
@@ -2872,6 +2889,7 @@ export const TABLES = [
   "okr_checkins",
   "user_passkeys",
   "page_timings",
+  "mail_scheduled",
   "pres_decks",
   "pres_shares",
   "sup_apps",

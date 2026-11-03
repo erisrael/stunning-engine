@@ -156,7 +156,18 @@ export async function checkCpanel(user: AppUser): Promise<CheckStep[]> {
 
 export type FolderRole = "inbox" | "drafts" | "sent" | "junk" | "trash" | "archive";
 type RawFolder = { path: string; name: string; specialUse?: string; delimiter: string; unread: number; total: number };
-type ListRow = { uid: number; seen: boolean; flagged: boolean; answered: boolean; draft: boolean; size: number; date: string; subject: string; from: { name: string; address: string } | null; to: string[]; attachments: boolean };
+type ListRow = { uid: number; seen: boolean; flagged: boolean; answered: boolean; draft: boolean; size: number; date: string; subject: string; from: { name: string; address: string } | null; to: string[]; attachments: boolean; preview?: string };
+
+// The first words of a message for the list (from its start: enough for the text, without loading attachments).
+async function previewOf(raw: Buffer | undefined | null) {
+  if (!raw) return "";
+  try {
+    const p = await simpleParser(raw);
+    return (p.text ?? "").replace(/^>.*$/gm, "").replace(/\s+/g, " ").trim().slice(0, 140);
+  } catch {
+    return "";
+  }
+}
 type ListOpts = { page: number; size: number; q?: string | null; only?: "unread" | "starred" | null };
 
 interface MailStore {
@@ -270,7 +281,7 @@ class ImapStore implements MailStore {
       const total = uids ? uids.length : exists;
       const from = o.page * o.size;
       let fetched: FetchMessageObject[];
-      const q = { uid: true, flags: true, envelope: true, size: true, internalDate: true, bodyStructure: true } as const;
+      const q = { uid: true, flags: true, envelope: true, size: true, internalDate: true, bodyStructure: true, source: { start: 0, maxLength: 6000 } } as const;
       if (uids) {
         const slice = uids.slice(from, from + o.size);
         fetched = slice.length ? await c.fetchAll(slice.join(","), q, { uid: true }) : [];
@@ -280,8 +291,10 @@ class ImapStore implements MailStore {
         const lo = Math.max(1, hi - o.size + 1);
         fetched = await c.fetchAll(`${lo}:${hi}`, q);
       }
+      const previews = await Promise.all(fetched.map((m) => previewOf(m.source)));
       const rows = fetched
-        .map((m) => ({
+        .map((m, i) => ({
+          preview: previews[i] ?? "",
           uid: m.uid,
           seen: !!m.flags?.has("\\Seen"),
           flagged: !!m.flags?.has("\\Flagged"),
@@ -418,6 +431,7 @@ class MemStore implements MailStore {
         from: addr(p.from?.value[0]),
         to: ((p.to as AddressObject | undefined)?.value ?? []).map((a) => a.name || a.address || ""),
         attachments: p.attachments.some((a) => a.contentDisposition === "attachment"),
+        preview: (p.text ?? "").replace(/^>.*$/gm, "").replace(/\s+/g, " ").trim().slice(0, 140),
       });
     }
     return { total: msgs.length, rows };
@@ -1103,4 +1117,84 @@ export async function deliverForTest(address: string, input: { from: string; fro
   if (!fake()) throw new Error("Only with fake mail.");
   const c = new MailComposer({ from: { name: input.fromName ?? "", address: input.from }, to: address, subject: input.subject, text: input.text, messageId: input.messageId ?? `<${crypto.randomUUID()}@example.com>`, inReplyTo: input.inReplyTo ?? undefined, date: new Date() });
   return new MemStore(address).append("INBOX", await c.compile().build(), []);
+}
+
+// ---------------------------------------------------------------------------
+// Signatures and sending later (Phase 14)
+// ---------------------------------------------------------------------------
+
+export async function mySignature(user: AppUser) {
+  const row = await myMailbox(user.id);
+  return row ? ((await get<{ signature: string | null }>("SELECT signature FROM email_senders WHERE id = ?", row.id))?.signature ?? "") : "";
+}
+
+export async function saveSignature(user: AppUser, text: string) {
+  const row = await myMailbox(user.id);
+  if (!row) throw new WorkflowError("NOT_FOUND", "You do not have a mailbox in the app yet.");
+  await run("UPDATE email_senders SET signature = ? WHERE id = ?", String(text ?? "").slice(0, 2000) || null, row.id);
+}
+
+// A message written now and sent from the person's own mailbox at a set time (checked by the scheduled jobs).
+export async function mailSchedule(user: AppUser, input: MailCompose, sendAt: string) {
+  const at = new Date(sendAt);
+  if (Number.isNaN(at.getTime())) throw new WorkflowError("VALIDATION", "Choose when to send it.");
+  if (at.getTime() < Date.now() + 60e3) throw new WorkflowError("VALIDATION", "Choose a time at least a minute from now.");
+  if (at.getTime() > Date.now() + 90 * 864e5) throw new WorkflowError("VALIDATION", "Messages can be scheduled up to 90 days ahead.");
+  const b = await open(user, input.box);
+  readOnly(b);
+  // Checked now, so a wrong address is found while the person is still here.
+  mailOptions(b.row, input, "<check@local>");
+  const id = crypto.randomUUID();
+  const to = [...(input.to ?? []), ...(input.cc ?? []), ...(input.bcc ?? [])].join(", ").slice(0, 500);
+  await run(
+    "INSERT INTO mail_scheduled (id, user_id, subject, recipients, payload, send_at, status, created_at) VALUES (?, ?, ?, ?, ?, ?, 'waiting', ?)",
+    id,
+    user.id,
+    (input.subject || "(no subject)").slice(0, 300),
+    to,
+    JSON.stringify({ ...input, box: null, draftUid: null }),
+    at.toISOString(),
+    nowIso(),
+  );
+  if (input.draftUid) await b.store.expunge(await folderFor(b, "drafts"), [input.draftUid]).catch(() => null);
+  return { id, sendAt: at.toISOString() };
+}
+
+export async function myScheduled(user: AppUser) {
+  return all<{ id: string; subject: string; recipients: string; send_at: string; status: string; error: string | null }>(
+    "SELECT id, subject, recipients, send_at, status, error FROM mail_scheduled WHERE user_id = ? AND (status = 'waiting' OR (status = 'failed' AND send_at > ?)) ORDER BY send_at",
+    user.id,
+    new Date(Date.now() - 7 * 864e5).toISOString(),
+  );
+}
+
+export async function cancelScheduled(user: AppUser, id: string) {
+  const r = await get<{ payload: string }>("SELECT payload FROM mail_scheduled WHERE id = ? AND user_id = ? AND status IN ('waiting','failed')", id, user.id);
+  if (!r) throw new WorkflowError("NOT_FOUND", "That message was already sent or removed.");
+  await run("DELETE FROM mail_scheduled WHERE id = ?", id);
+  // Back to Drafts, so nothing written is lost.
+  await mailSaveDraft(user, { ...(JSON.parse(r.payload) as MailCompose), draftUid: null }).catch(() => null);
+}
+
+export async function sendScheduledMail(now = nowIso()) {
+  const due = await all<{ id: string; user_id: string; payload: string; subject: string }>("SELECT id, user_id, payload, subject FROM mail_scheduled WHERE status = 'waiting' AND send_at <= ? ORDER BY send_at LIMIT 50", now);
+  const { loadUser } = await import("./users");
+  let sent = 0;
+  for (const m of due) {
+    // Claimed first, so two runs never send the same message.
+    const claimed = await run("UPDATE mail_scheduled SET status = 'sending' WHERE id = ? AND status = 'waiting'", m.id);
+    if (!claimed.changes) continue;
+    try {
+      const user = await loadUser(m.user_id);
+      if (!user) throw new Error("The account is gone.");
+      await mailSend(user, JSON.parse(m.payload) as MailCompose);
+      await run("UPDATE mail_scheduled SET status = 'sent', sent_at = ? WHERE id = ?", nowIso(), m.id);
+      sent++;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      await run("UPDATE mail_scheduled SET status = 'failed', error = ? WHERE id = ?", msg.slice(0, 300), m.id);
+      await notify([m.user_id], { type: "mail", title: "A scheduled email was not sent", body: `${m.subject}: ${msg}`, link: "/email" }, nowIso());
+    }
+  }
+  return { sent };
 }
