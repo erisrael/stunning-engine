@@ -361,6 +361,7 @@ export function AppSidebar({
       label: "Departments",
       items: [
         { href: "/company", label: "Company overview", icon: Building2Icon, cap: "company.view" },
+        { href: "/present", label: "Company presentation", icon: PresentationIcon, cap: "company.view" },
         { href: "/dev", label: "Dev team", icon: CodeIcon, cap: ["dev.access", "owners.view"], sub: deptViews("/dev", [{ label: "Repositories", view: "repos" }, { label: "Roadmap", view: "roadmap" }, { label: "Specs and docs", view: "docs" }, { label: "Releases and quality", view: "tools" }], has("users.manage")) },
         { href: "/studio", label: "Studio", icon: BookOpenIcon, cap: ["studio.access", "owners.view"] },
         { href: "/marketing", label: "Marketing", icon: MegaphoneIcon, cap: ["marketing.access", "owners.view"], sub: deptViews("/marketing", [], has("users.manage")) },

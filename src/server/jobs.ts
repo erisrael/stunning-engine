@@ -173,6 +173,8 @@ export async function runScheduledChecks(now = nowIso(), opts: { trigger?: strin
     await runJob("attendance-rules", async () => (await import("./attendance-admin")).ruleChecks(now));
     // Customer support: missed targets, solved tickets closed, waiting tickets given out, old recordings deleted.
     await runJob("support", async () => (await import("./support-desk")).supportChecks(now));
+    // Presentation decks emailed as a summary on their weekday.
+    await runJob("deck-emails", async () => (await import("./decks")).weeklyDeckEmails(now));
     // Recognition: last month's badges once it is over (when switched on).
     await runJob("recognition", async () => (await import("./recognition")).recognitionJob());
     // Attendance: a kiosk that went quiet during working hours.

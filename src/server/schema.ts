@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 38;
+export const SCHEMA_VERSION = 39;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -2168,6 +2168,36 @@ CREATE TABLE IF NOT EXISTS mail_state (
   error TEXT
 );
 
+-- v39: presentation studio: decks saved for a team, and read-only share links with a copy of the slides.
+CREATE TABLE IF NOT EXISTS pres_decks (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  scope TEXT NOT NULL,
+  slides TEXT NOT NULL DEFAULT '[]',
+  minutes TEXT NOT NULL DEFAULT '{}',
+  theme TEXT NOT NULL DEFAULT '{}',
+  shared INTEGER NOT NULL DEFAULT 0,
+  email_to TEXT NOT NULL DEFAULT '[]',
+  email_day INTEGER,
+  last_emailed_on TEXT,
+  last_meeting_at TEXT,
+  owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pres_decks_scope ON pres_decks(scope);
+CREATE TABLE IF NOT EXISTS pres_shares (
+  token TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  slides TEXT NOT NULL,
+  theme TEXT NOT NULL DEFAULT '{}',
+  expires_at TEXT NOT NULL,
+  views INTEGER NOT NULL DEFAULT 0,
+  created_by TEXT,
+  created_at TEXT NOT NULL,
+  revoked INTEGER NOT NULL DEFAULT 0
+);
+
 -- v38: customer support: queues, tickets and messages, customers of connected apps (SDK), calls with recordings,
 -- agent status and activity, saved replies.
 CREATE TABLE IF NOT EXISTS sup_apps (
@@ -2659,6 +2689,8 @@ export const TABLES = [
   "presenter_releases",
   "presenter_statements",
   "link_checks",
+  "pres_decks",
+  "pres_shares",
   "sup_apps",
   "sup_queues",
   "sup_customers",

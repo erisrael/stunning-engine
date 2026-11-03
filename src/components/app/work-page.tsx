@@ -70,9 +70,10 @@ export async function WorkPage({ dept, searchParams, view }: { dept: WorkDept; s
     );
   // A presentation of the department for a meeting or an office screen (Phase 12c).
   if (tab === "present") {
-    const { presentData } = await import("@/server/present");
-    const { DeptPresent } = await import("./dept-present");
-    return <DeptPresent dept={dept} data={await presentData(viewer, dept)} back={deptPath(dept)} />;
+    const { deckPage } = await import("@/server/deck-page");
+    const { Deck } = await import("./deck/deck-client");
+    const pg = await deckPage(viewer, `dept:${dept}`, sp.deck ?? null);
+    return <Deck scope={`dept:${dept}`} {...pg} back={deptPath(dept)} presenter={sp.presenter === "1"} />;
   }
   if ((tab === "sprint" && !cfg.features.sprints) || ((tab === "roadmap" || tab === "docs") && !access.view)) redirect(deptViewPath(dept, "board"));
   if (tab === "tools" && !access.view) redirect(deptViewPath(dept, "board"));

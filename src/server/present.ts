@@ -10,7 +10,7 @@ import type { AppUser } from "./users";
 const DAY = 864e5;
 const n = (v: unknown) => Number(v ?? 0);
 
-export async function presentData(user: AppUser, d: string) {
+export async function presentData(user: AppUser, d: string, opts: { since?: string | null } = {}) {
   const a = await workAccess(user, d);
   const cfg = a.config;
   const dp = a.dept;
@@ -46,9 +46,9 @@ export async function presentData(user: AppUser, d: string) {
     weeks.push({ week: to.slice(5, 10), done: n(r?.done), created: n(r?.created) });
   }
   const recent = await all<{ code: string; title: string; who: string | null }>(
-    "SELECT t.code, t.title, u.name AS who FROM dept_tasks t LEFT JOIN users u ON u.id = t.assignee_id WHERE t.dept = ? AND t.status_category = 'done' AND t.completed_at >= ? ORDER BY t.completed_at DESC LIMIT 8",
+    "SELECT t.code, t.title, u.name AS who FROM dept_tasks t LEFT JOIN users u ON u.id = t.assignee_id WHERE t.dept = ? AND t.status_category = 'done' AND t.completed_at >= ? ORDER BY t.completed_at DESC LIMIT 12",
     dp,
-    weekAgo,
+    opts.since ?? weekAgo,
   );
   const flow = cfg.flow.on ? await flowHome(user, dp) : null;
   const glance = flow?.desk?.glance ?? null;

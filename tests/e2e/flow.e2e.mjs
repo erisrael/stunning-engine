@@ -103,6 +103,28 @@ try {
   await lead.waitForTimeout(600);
   check("arrow keys move to the next slide", (await lead.getByText(/slide 2 of/).count()) === 1);
   await lead.screenshot({ path: path.join(shots, "8-present.png") });
+  // The studio: a deck for the team, a meeting with an action that becomes a task, a share link.
+  await lead.getByRole("button", { name: "Deck", exact: true }).click();
+  await lead.locator("[data-deck-panel]").getByRole("button", { name: "Weekly team meeting" }).click();
+  await lead.locator("[data-deck-panel]").getByLabel("For the whole team").check().catch(() => null);
+  await lead.locator("[data-deck-panel]").getByRole("button", { name: "Save as a deck" }).click();
+  check("a deck saved for the team", await toast(lead, /Deck saved/));
+  await lead.waitForURL(/deck=/, { timeout: 10000 }).catch(() => null);
+  await lead.waitForTimeout(800);
+  await lead.getByRole("button", { name: "Start meeting" }).click();
+  check("the meeting timer runs", await lead.locator("[data-meeting-timer]").isVisible());
+  await lead.locator("[data-meeting-panel]").getByLabel("Action").fill("Write the release notes");
+  await lead.locator("[data-meeting-panel]").getByRole("button", { name: "Add" }).click();
+  await lead.locator("[data-meeting-panel]").getByRole("button", { name: "End the meeting" }).click();
+  check("the meeting's action became a task", await toast(lead, /1 task made/));
+  await lead.getByRole("button", { name: "Share" }).click();
+  await lead.locator("[data-share-panel]").getByRole("button", { name: "Make the link" }).click();
+  const shareUrl = await lead.locator("[data-share-link]").innerText({ timeout: 10000 }).catch(() => "");
+  check("a share link is made", /\/p\//.test(shareUrl), shareUrl);
+  const outsider = await (await browser.newContext()).newPage();
+  await outsider.goto(shareUrl);
+  check("the link opens without signing in", await outsider.locator("[data-explainer]").isVisible({ timeout: 10000 }).catch(() => false));
+  await outsider.screenshot({ path: path.join(shots, "8b-shared.png") });
 
   // Phase 12b: the Sprint, Roadmap and Specs pages.
   await go(lead, "/dev/sprint");
@@ -131,6 +153,12 @@ try {
   check("Configure, Flow lists the stages", (await admin.locator("[data-flow-stage]").count()) === 6);
   check("the path from the first stage is drawn", await admin.getByLabel("The flow from the first stage").isVisible());
   await admin.screenshot({ path: path.join(shots, "4-configure-flow.png"), fullPage: true });
+
+  // The company deck.
+  await go(admin, "/present");
+  check("the company deck opens", await admin.locator("[data-explainer]").isVisible());
+  check("with the departments slide", (await admin.locator('[data-deck="company"]').count()) === 1);
+  await admin.screenshot({ path: path.join(shots, "9-company-deck.png") });
 
   // Tools: releases, incidents, tests, epics and baseline, portfolio, templates, integrations.
   await go(admin, "/dev/tools");
