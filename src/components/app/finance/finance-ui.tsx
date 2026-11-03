@@ -24,6 +24,8 @@ import {
   PARTY_KINDS,
   PAYROLL_STATUSES,
   PURCHASE_STATUSES,
+  PENSION_LAW,
+  TAX_LAWS,
   type FinanceSettings,
   type PayLine,
 } from "@/lib/finance";
@@ -1088,7 +1090,19 @@ function Payroll({ ctx, runs, structures, open, openId }: { ctx: Ctx; runs: RunR
         <Card>
           <CardHeader>
             <CardTitle>Salaries</CardTitle>
-            <CardDescription>Basic salary, allowances (taxable or not) and regular deductions per person. New runs copy these.</CardDescription>
+            <CardDescription>
+              Everyone with an account is on payroll (new accounts are added each day). Enter each person&apos;s basic salary, allowances (taxable or not) and regular deductions; new runs copy these.{" "}
+              {structures.filter((x) => x.basic === null || x.basic <= 0).length > 0 && (
+                <span className="font-medium text-[var(--st-paused-fg)]" data-salary-not-set>
+                  {structures.filter((x) => x.basic === null || x.basic <= 0).length} without a salary yet.
+                </span>
+              )}
+            </CardDescription>
+            <CardAction>
+              <Button size="sm" variant="outline" disabled={busy} onClick={() => run(() => A.enrolEveryoneAction(), "Everyone with an account is on payroll")}>
+                <PlusIcon /> Add everyone to payroll
+              </Button>
+            </CardAction>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto rounded-lg border">
@@ -1487,7 +1501,7 @@ function SettingsTab({ ctx, settings, ledger, periods }: { ctx: Ctx; settings: F
       <Card>
         <CardHeader>
           <CardTitle>Rules</CardTitle>
-          <CardDescription>{can ? "Check the tax brackets against the current Proclamation before the first payroll." : "Only the Finance Manager changes these."}</CardDescription>
+          <CardDescription>{can ? "Choose the income tax law; its brackets fill in. Change a bracket only if the law changes before an update." : "Only the Finance Manager changes these."}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4 text-sm">
           <div className="grid gap-3 sm:grid-cols-3">
@@ -1502,6 +1516,39 @@ function SettingsTab({ ctx, settings, ledger, periods }: { ctx: Ctx; settings: F
             {n("fiscalStartMonth", "Fiscal year starts (month)", "7 = July (Hamle).")}
             {n("daysPerMonth", "Days per month", "For daily rates and unpaid days.")}
             {n("hoursPerDay", "Hours per day", "For overtime.")}
+          </div>
+          <div className="space-y-1" data-tax-law>
+            <Label htmlFor="fs-law">Income tax law</Label>
+            <select id="fs-law" disabled={!can} className="h-9 w-full rounded-md border bg-background px-2" value={s.taxLaw} onChange={(e) => setS({ ...s, taxLaw: e.target.value, taxBrackets: TAX_LAWS[e.target.value]?.brackets ?? s.taxBrackets })}>
+              {Object.entries(TAX_LAWS).map(([k, l]) => (
+                <option key={k} value={k}>
+                  {l.label}
+                </option>
+              ))}
+              {s.taxLaw === "custom" && <option value="custom">Custom brackets (changed by hand)</option>}
+            </select>
+            <p className="text-xs text-muted-foreground">{TAX_LAWS[s.taxLaw]?.note ?? "Brackets entered by hand."} Pension: {PENSION_LAW}.</p>
+          </div>
+          <div className="space-y-1">
+            <Label>Overtime rates (Labour Proclamation 1156/2019)</Label>
+            <div className="grid gap-2 sm:grid-cols-4">
+              {(
+                [
+                  ["normal", "Working day"],
+                  ["night", "Night, 10 pm to 6 am"],
+                  ["rest", "Weekly rest day"],
+                  ["holiday", "Public holiday"],
+                ] as const
+              ).map(([k, label]) => (
+                <div key={k} className="space-y-1">
+                  <Label htmlFor={`fs-ot-${k}`} className="text-xs font-normal text-muted-foreground">
+                    {label}
+                  </Label>
+                  <Input id={`fs-ot-${k}`} type="number" step="0.05" disabled={!can} value={s.overtimeRates[k]} onChange={(e) => setS({ ...s, overtimeRates: { ...s.overtimeRates, [k]: Number(e.target.value) } })} />
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">Times the hourly rate. Payslips start at the working-day rate; change a payslip&apos;s rate for nights, rest days or holidays.</p>
           </div>
           <div className="space-y-1">
             <Label>Monthly income tax brackets</Label>

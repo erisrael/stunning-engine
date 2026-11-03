@@ -55,9 +55,45 @@ export type FinanceSettings = {
   hoursPerDay: number;
   // Claims and purchases above this need the Finance Manager (below, an accountant may approve).
   approvalLimit: number;
+  // Which law the brackets follow: a key of TAX_LAWS, or "custom" once the brackets are changed by hand.
+  taxLaw: string;
+  // Overtime multipliers of the Labour Proclamation 1156/2019, art. 68: working days until 10 pm, nights (10 pm to
+  // 6 am), the weekly rest day, public holidays. Payslips start at the working-day rate.
+  overtimeRates: { normal: number; night: number; rest: number; holiday: number };
 };
 
-// Monthly brackets of Proclamation 979/2016. Check against the current law and change them in Finance, Settings.
+// Monthly employment income brackets (rate x taxable income - deduction). Check against the gazetted text.
+export const TAX_LAWS: Record<string, { label: string; note: string; brackets: TaxBracket[] }> = {
+  "1395/2025": {
+    label: "Income Tax (Amendment) Proclamation No. 1395/2025",
+    note: "From July 2025: the first 2,000 birr a month is free of tax; 15% to 35% above it.",
+    brackets: [
+      { upTo: 2000, rate: 0, deduct: 0 },
+      { upTo: 4000, rate: 15, deduct: 300 },
+      { upTo: 7000, rate: 20, deduct: 500 },
+      { upTo: 10000, rate: 25, deduct: 850 },
+      { upTo: 14000, rate: 30, deduct: 1350 },
+      { upTo: null, rate: 35, deduct: 2050 },
+    ],
+  },
+  "979/2016": {
+    label: "Federal Income Tax Proclamation No. 979/2016",
+    note: "Until June 2025: the first 600 birr a month is free of tax; 10% to 35% above it.",
+    brackets: [
+      { upTo: 600, rate: 0, deduct: 0 },
+      { upTo: 1650, rate: 10, deduct: 60 },
+      { upTo: 3200, rate: 15, deduct: 142.5 },
+      { upTo: 5250, rate: 20, deduct: 302.5 },
+      { upTo: 7800, rate: 25, deduct: 565 },
+      { upTo: 10900, rate: 30, deduct: 955 },
+      { upTo: null, rate: 35, deduct: 1500 },
+    ],
+  },
+};
+export const PENSION_LAW = "Private Organization Employees' Social Security Proclamation No. 1268/2022 (7% employee, 11% employer)";
+export const DEFAULT_OVERTIME_RATES = { normal: 1.5, night: 1.75, rest: 2, holiday: 2.5 };
+
+// Brackets of Proclamation 1395/2025 (TAX_LAWS). Change them in Finance, Settings when the law changes.
 export const DEFAULT_FINANCE_SETTINGS: FinanceSettings = {
   currency: "ETB",
   fiscalStartMonth: 7,
@@ -65,17 +101,18 @@ export const DEFAULT_FINANCE_SETTINGS: FinanceSettings = {
   pensionEmployee: 7,
   pensionEmployer: 11,
   taxBrackets: [
-    { upTo: 600, rate: 0, deduct: 0 },
-    { upTo: 1650, rate: 10, deduct: 60 },
-    { upTo: 3200, rate: 15, deduct: 142.5 },
-    { upTo: 5250, rate: 20, deduct: 302.5 },
-    { upTo: 7800, rate: 25, deduct: 565 },
-    { upTo: 10900, rate: 30, deduct: 955 },
-    { upTo: null, rate: 35, deduct: 1500 },
+    { upTo: 2000, rate: 0, deduct: 0 },
+    { upTo: 4000, rate: 15, deduct: 300 },
+    { upTo: 7000, rate: 20, deduct: 500 },
+    { upTo: 10000, rate: 25, deduct: 850 },
+    { upTo: 14000, rate: 30, deduct: 1350 },
+    { upTo: null, rate: 35, deduct: 2050 },
   ],
   daysPerMonth: 30,
   hoursPerDay: 8,
   approvalLimit: 10000,
+  taxLaw: "1395/2025",
+  overtimeRates: { normal: 1.5, night: 1.75, rest: 2, holiday: 2.5 },
 };
 
 export const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;

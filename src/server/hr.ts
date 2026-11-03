@@ -444,6 +444,39 @@ export async function updateOwnContact(user: AppUser, input: { preferredName?: s
 }
 
 // Creates a record for every active account that has none, with the department taken from their roles.
+// An HR record for every active account that has none (payroll needs one per person). No rights check: callers
+// check theirs (HR's sync, Finance's "Add everyone to payroll", the daily job).
+export async function ensureEmployeeRecords(actorId: string | null) {
+  const users = await listUsers();
+  const linked = new Set((await all<{ user_id: string }>("SELECT user_id FROM employees WHERE user_id IS NOT NULL")).map((r) => r.user_id));
+  const positions = await all<{ department: string; user_id: string }>("SELECT department, user_id FROM department_positions");
+  let added = 0;
+  for (const u of users) {
+    if (linked.has(u.id)) continue;
+    const dept =
+      (Object.keys(DEPARTMENT_ROLES) as Department[]).find((d) => DEPARTMENT_ROLES[d].some((r) => u.roles.includes(r))) ??
+      (u.roles.some((r) => r === "hr_manager" || r === "hr_officer") ? "hr" : null) ??
+      positions.find((p) => p.user_id === u.id)?.department ??
+      (u.roles.includes("owner") || u.roles.includes("admin") ? "management" : null);
+    const now = nowIso();
+    await run(
+      "INSERT INTO employees (id, code, user_id, full_name, email, department, job_title, status, created_at, updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)",
+      uid("emp_"),
+      await nextCode(),
+      u.id,
+      u.name,
+      u.email,
+      dept,
+      u.roles.map((r) => ROLE_LABELS[r]).join(", ") || null,
+      now,
+      now,
+      actorId,
+    );
+    added++;
+  }
+  return added;
+}
+
 export async function syncFromUsers(user: AppUser) {
   needHr(user);
   const users = await listUsers();

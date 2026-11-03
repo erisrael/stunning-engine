@@ -192,7 +192,7 @@ try {
   await s.getByRole("link", { name: "Continue with Mock SSO" }).click();
   check("SSO signs Meron in (matched by email; the provider counts as both steps)", await signedIn(s));
   await s.goto(`${base}/profile?tab=account`);
-  check("Profile shows the linked account", await s.getByRole("button", { name: "Unlink" }).isVisible().catch(() => false));
+  check("Profile shows the linked account", await s.getByRole("button", { name: "Unlink" }).waitFor({ timeout: 15000 }).then(() => true, () => false));
   await s.screenshot({ path: path.join(shots, "4-profile.png"), fullPage: true });
   const s2 = await fresh();
   identity = { sub: "u-x", email: "yonas@demo.local", email_verified: false, name: "X" };

@@ -12,6 +12,9 @@ import { STAGES, DEPARTMENT_LABELS, type Department } from "@/lib/domain";
 import {
   ACCOUNT_KINDS,
   DEFAULT_FINANCE_SETTINGS,
+  DEFAULT_OVERTIME_RATES,
+  TAX_LAWS,
+  type TaxBracket,
   DEFAULT_LEDGER,
   LEDGER_TYPES,
   PARTY_KINDS,
@@ -53,14 +56,20 @@ async function financeIds(cap: "finance.approve" | "finance.access" | "finance.o
 // ---------------------------------------------------------------------------
 
 export async function financeSettings(): Promise<FinanceSettings> {
-  return { ...DEFAULT_FINANCE_SETTINGS, ...parseJson<Partial<FinanceSettings>>((await get<{ value: string }>("SELECT value FROM settings WHERE key = 'cfg.finance'"))?.value, {}) };
+  const stored = parseJson<Partial<FinanceSettings>>((await get<{ value: string }>("SELECT value FROM settings WHERE key = 'cfg.finance'"))?.value, {});
+  // Settings saved before the law choice existed keep their brackets, marked by the law they match (or custom).
+  const law = stored.taxLaw ?? (stored.taxBrackets ? lawOf(stored.taxBrackets) : DEFAULT_FINANCE_SETTINGS.taxLaw);
+  return { ...DEFAULT_FINANCE_SETTINGS, ...stored, taxLaw: law, overtimeRates: { ...DEFAULT_OVERTIME_RATES, ...(stored.overtimeRates ?? {}) } };
 }
+const lawOf = (b: TaxBracket[]) => Object.keys(TAX_LAWS).find((k) => JSON.stringify(TAX_LAWS[k]!.brackets) === JSON.stringify(b.map((x) => ({ upTo: x.upTo, rate: x.rate, deduct: x.deduct })))) ?? "custom";
 
 export async function saveFinanceSettings(user: AppUser, input: Partial<FinanceSettings>) {
   need(user, "approve", "change finance settings");
   const cur = await financeSettings();
   const num = (v: unknown, d: number, min = 0, max = 1e9) => (Number.isFinite(Number(v)) ? Math.min(max, Math.max(min, Number(v))) : d);
-  const brackets = (input.taxBrackets ?? cur.taxBrackets)
+  // Choosing a law brings its brackets; brackets changed by hand make it "custom".
+  const pickedLaw = input.taxLaw && input.taxLaw !== cur.taxLaw && TAX_LAWS[input.taxLaw] ? input.taxLaw : null;
+  const brackets = (pickedLaw ? TAX_LAWS[pickedLaw]!.brackets : (input.taxBrackets ?? cur.taxBrackets))
     .map((b) => ({ upTo: b.upTo === null || b.upTo === undefined || (b.upTo as unknown) === "" ? null : num(b.upTo, 0), rate: num(b.rate, 0, 0, 100), deduct: num(b.deduct, 0) }))
     .sort((a, b) => (a.upTo ?? Infinity) - (b.upTo ?? Infinity));
   if (!brackets.length || brackets[brackets.length - 1]!.upTo !== null) throw new WorkflowError("VALIDATION", "The last tax bracket must have no upper limit.");
@@ -74,7 +83,15 @@ export async function saveFinanceSettings(user: AppUser, input: Partial<FinanceS
     daysPerMonth: num(input.daysPerMonth ?? cur.daysPerMonth, 30, 1, 31),
     hoursPerDay: num(input.hoursPerDay ?? cur.hoursPerDay, 8, 1, 24),
     approvalLimit: num(input.approvalLimit ?? cur.approvalLimit, 10000),
+    taxLaw: "custom",
+    overtimeRates: {
+      normal: num(input.overtimeRates?.normal ?? cur.overtimeRates.normal, 1.5, 1, 5),
+      night: num(input.overtimeRates?.night ?? cur.overtimeRates.night, 1.75, 1, 5),
+      rest: num(input.overtimeRates?.rest ?? cur.overtimeRates.rest, 2, 1, 5),
+      holiday: num(input.overtimeRates?.holiday ?? cur.overtimeRates.holiday, 2.5, 1, 5),
+    },
   };
+  next.taxLaw = lawOf(next.taxBrackets);
   await run(
     "INSERT INTO settings (key, value, updated_at, updated_by) VALUES ('cfg.finance', ?, ?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by",
     JSON.stringify(next),
@@ -741,13 +758,28 @@ async function recompute(slipId: string) {
   );
 }
 
+// Every active account is on payroll: people without an HR record get one (HR fills in the rest), and anyone
+// without a salary shows as "not set" in Payroll, Salaries until Finance or HR enters it. Also run daily.
+export async function enrolEveryone(user: AppUser | null) {
+  if (user) need(user, "payroll", "add people to payroll");
+  const { ensureEmployeeRecords } = await import("./hr");
+  const added = await ensureEmployeeRecords(user?.id ?? null);
+  const notSet = Number(
+    (await get<{ c: number }>("SELECT COUNT(*) AS c FROM employees e LEFT JOIN fin_pay_structures s ON s.employee_id = e.id WHERE e.status <> 'left' AND (s.basic IS NULL OR s.basic <= 0)"))?.c ?? 0,
+  );
+  if (user && added) await audit({ actor: user }, { action: "finance.payroll", summary: `${user.name} added ${added} ${added === 1 ? "account" : "accounts"} to payroll` });
+  return { added, notSet };
+}
+
 export async function createPayrollRun(user: AppUser, period: string) {
   need(user, "payroll", "prepare payroll");
   if (!/^\d{4}-\d{2}$/.test(period)) throw new WorkflowError("VALIDATION", "Choose the month.");
   await needOpen(`${period}-01`);
   if (await get("SELECT 1 AS x FROM fin_payroll_runs WHERE period = ?", period)) throw new WorkflowError("VALIDATION", `${period} already has a payroll run.`);
+  await enrolEveryone(user);
   const people = (await payStructures(user)).filter((p) => p.basic !== null && p.basic > 0);
   if (!people.length) throw new WorkflowError("VALIDATION", "Set salaries in Payroll, Salaries first.");
+  const otRate = (await financeSettings()).overtimeRates.normal;
   const id = uid("prl_");
   const now = nowIso();
   await tx(async () => {
@@ -755,13 +787,14 @@ export async function createPayrollRun(user: AppUser, period: string) {
     for (const p of people) {
       const sid = uid("psl_");
       await run(
-        "INSERT INTO fin_payslips (id, run_id, employee_id, basic, allowances, deductions) VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO fin_payslips (id, run_id, employee_id, basic, allowances, deductions, overtime_rate) VALUES (?, ?, ?, ?, ?, ?, ?)",
         sid,
         id,
         p.employeeId,
         p.basic,
         JSON.stringify(p.allowances),
         JSON.stringify(p.deductions),
+        otRate,
       );
       await recompute(sid);
     }

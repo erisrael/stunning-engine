@@ -1,0 +1,439 @@
+"use client";
+
+// Customer support setup (Admin and support leads): the on and off switch and rules, queues with their agents and
+// targets, connected apps with the SDK snippet, saved replies; and the monitor of agents' activity.
+import * as React from "react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import { CircleIcon, CopyIcon, KeyRoundIcon, PlusIcon } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
+import * as A from "@/app/actions/support-desk";
+import type { SupportConfig } from "@/lib/support";
+import { cn } from "@/lib/utils";
+
+type Res = { ok: boolean; error?: string; data?: unknown };
+function useAct() {
+  const router = useRouter();
+  const [busy, setBusy] = React.useState(false);
+  const act = async (fn: () => Promise<Res>, done?: string) => {
+    setBusy(true);
+    const r = await fn();
+    setBusy(false);
+    if (!r.ok) return void toast.error(r.error ?? "Something went wrong.");
+    if (done) toast.success(done);
+    router.refresh();
+    return r.data ?? true;
+  };
+  return { act, busy };
+}
+const select = "h-9 rounded-md border bg-background px-2 text-sm";
+type Person = { id: string; name: string };
+type Queue = { id: string; name: string; description: string | null; keywords: string[]; members: string[]; strategy: string; slaFirstMin: number; slaResolveMin: number; active: boolean };
+type App = { id: string; name: string; publicKey: string; origins: string[]; queueId: string | null; verifyIdentity: boolean; greeting: string | null; color: string | null; active: boolean };
+
+function People({ all, value, onChange, label }: { all: Person[]; value: string[]; onChange: (v: string[]) => void; label: string }) {
+  return (
+    <div className="flex max-h-40 flex-wrap gap-1 overflow-y-auto rounded-md border p-2" aria-label={label}>
+      {all.map((p) => (
+        <label key={p.id} className={cn("flex cursor-pointer items-center gap-1 rounded-full border px-2 py-0.5 text-xs", value.includes(p.id) && "border-primary bg-primary/10")}>
+          <input type="checkbox" className="sr-only" checked={value.includes(p.id)} onChange={(e) => onChange(e.target.checked ? [...value, p.id] : value.filter((x) => x !== p.id))} />
+          {p.name}
+        </label>
+      ))}
+    </div>
+  );
+}
+
+export function SupportSettings({ cfg, people, admin }: { cfg: SupportConfig; people: Person[]; admin: boolean }) {
+  const { act, busy } = useAct();
+  const [c, setC] = React.useState(cfg);
+  const sw = (k: keyof SupportConfig, label: string, hint: string) => (
+    <label className="flex items-start gap-3">
+      <Switch checked={!!c[k]} onCheckedChange={(v) => setC({ ...c, [k]: v })} aria-label={label} disabled={!admin} />
+      <span>
+        <b>{label}</b>
+        <span className="block text-xs text-muted-foreground">{hint}</span>
+      </span>
+    </label>
+  );
+  const num = (k: keyof SupportConfig, label: string) => (
+    <div className="space-y-1">
+      <Label htmlFor={`sc-${k}`}>{label}</Label>
+      <Input id={`sc-${k}`} type="number" disabled={!admin} value={Number(c[k])} onChange={(e) => setC({ ...c, [k]: Number(e.target.value) })} />
+    </div>
+  );
+  return (
+    <Card data-support-settings>
+      <CardHeader>
+        <CardTitle className="text-base">Customer support</CardTitle>
+        <CardDescription>Switch the help desk on, choose who leads it, and how tickets and calls are handled.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4 text-sm">
+        {sw("enabled", "Customer support on", "Off: the desk is hidden and connected apps show that support is not available.")}
+        {sw("autoAssign", "Give out tickets automatically", "Each new ticket goes to an online agent of its queue at once (least busy, or in turn, as the queue says).")}
+        {sw("requireCheckin", "Only agents checked in at work", "An agent must be checked in (Attendance) to be given tickets and calls.")}
+        {sw("recordCalls", "Record calls", "Calls from the app are recorded after the customer agrees; agents' recordings are kept with the ticket.")}
+        <div className="space-y-1">
+          <Label htmlFor="sc-notice">What the customer is told before a recorded call</Label>
+          <Textarea id="sc-notice" disabled={!admin} value={c.recordingNotice} onChange={(e) => setC({ ...c, recordingNotice: e.target.value })} />
+        </div>
+        <div className="grid gap-3 sm:grid-cols-3">
+          {num("recordingDays", "Keep recordings (days)")}
+          {num("autoCloseDays", "Close solved tickets after (days)")}
+          {num("ringSeconds", "A call rings for (seconds)")}
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-1">
+            <Label htmlFor="sc-hours">Opening hours (shown in the app)</Label>
+            <Input id="sc-hours" disabled={!admin} value={c.hours} onChange={(e) => setC({ ...c, hours: e.target.value })} />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="sc-away">When nobody is online</Label>
+            <Input id="sc-away" disabled={!admin} value={c.awayMessage} onChange={(e) => setC({ ...c, awayMessage: e.target.value })} />
+          </div>
+        </div>
+        <div className="space-y-1">
+          <Label>Support leads (set up queues, see every ticket, monitor agents, listen to recordings)</Label>
+          <People all={people} value={c.leads} onChange={(v) => setC({ ...c, leads: v })} label="Support leads" />
+        </div>
+        {admin && (
+          <Button disabled={busy} onClick={() => act(() => A.saveSupportConfigAction(c), "Saved")}>
+            Save
+          </Button>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+export function Queues({ queues, people }: { queues: Queue[]; people: Person[] }) {
+  const { act, busy } = useAct();
+  const blank = { id: null as string | null, name: "", description: "", keywords: "", members: [] as string[], strategy: "least_busy", slaFirstMin: 60, slaResolveMin: 1440, active: true };
+  const [q, setQ] = React.useState<typeof blank | null>(null);
+  return (
+    <Card data-support-queues>
+      <CardHeader>
+        <CardTitle className="text-base">Queues</CardTitle>
+        <CardDescription>A queue is a team of agents for a kind of question. Keywords route a ticket to it; the targets set when it must be answered and solved (urgent ones in a quarter of the time, high in half).</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3 text-sm">
+        {queues.map((x) => (
+          <div key={x.id} className="flex flex-wrap items-center gap-2 rounded-lg border p-2" data-queue={x.name}>
+            <span className="font-medium">{x.name}</span>
+            <span className="text-xs text-muted-foreground">
+              {x.members.length} agents · {x.strategy === "least_busy" ? "least busy first" : x.strategy === "round_robin" ? "in turn" : "by hand"} · answer in {x.slaFirstMin} min, solve in {Math.round(x.slaResolveMin / 60)} h
+              {x.keywords.length ? ` · ${x.keywords.join(", ")}` : ""}
+              {!x.active && " · off"}
+            </span>
+            <Button size="xs" variant="outline" className="ml-auto" onClick={() => setQ({ ...x, description: x.description ?? "", keywords: x.keywords.join(", ") })}>
+              Edit
+            </Button>
+          </div>
+        ))}
+        {!q && (
+          <Button size="sm" variant="outline" onClick={() => setQ(blank)}>
+            <PlusIcon /> New queue
+          </Button>
+        )}
+        {q && (
+          <div className="space-y-2 rounded-lg border border-primary/30 p-3" data-queue-form>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <Input aria-label="Queue name" placeholder="Name, e.g. App and account" value={q.name} onChange={(e) => setQ({ ...q, name: e.target.value })} />
+              <Input aria-label="Keywords" placeholder="Keywords, comma separated: password, login" value={q.keywords} onChange={(e) => setQ({ ...q, keywords: e.target.value })} />
+              <select aria-label="How tickets are given out" className={select} value={q.strategy} onChange={(e) => setQ({ ...q, strategy: e.target.value })}>
+                <option value="least_busy">Least busy agent first</option>
+                <option value="round_robin">In turn</option>
+                <option value="manual">By hand (a lead assigns)</option>
+              </select>
+              <div className="flex gap-2">
+                <Input aria-label="Answer within (minutes)" type="number" value={q.slaFirstMin} onChange={(e) => setQ({ ...q, slaFirstMin: Number(e.target.value) })} />
+                <Input aria-label="Solve within (minutes)" type="number" value={q.slaResolveMin} onChange={(e) => setQ({ ...q, slaResolveMin: Number(e.target.value) })} />
+              </div>
+            </div>
+            <Label>Agents</Label>
+            <People all={people} value={q.members} onChange={(v) => setQ({ ...q, members: v })} label="Agents" />
+            <label className="flex items-center gap-2">
+              <input type="checkbox" checked={q.active} onChange={(e) => setQ({ ...q, active: e.target.checked })} /> Active
+            </label>
+            <div className="flex gap-2">
+              <Button size="sm" disabled={busy || !q.name.trim()} onClick={async () => (await act(() => A.saveQueueAction({ ...q, keywords: q.keywords.split(",").map((k) => k.trim()) }), "Queue saved")) && setQ(null)}>
+                Save queue
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setQ(null)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+export function Apps({ apps, queues, origin, admin }: { apps: App[]; queues: Queue[]; origin: string; admin: boolean }) {
+  const { act, busy } = useAct();
+  const [a, setA] = React.useState<{ id: string | null; name: string; origins: string; queueId: string; verifyIdentity: boolean; greeting: string; color: string; active: boolean } | null>(null);
+  const [secret, setSecret] = React.useState<{ app: string; secret: string } | null>(null);
+  const copy = (t: string) => void navigator.clipboard.writeText(t).then(() => toast.success("Copied"));
+  const snippet = (x: App) => `<script src="${origin}/support-sdk.js"></script>
+<script>
+  MyseedSupport.init({
+    appKey: "${x.publicKey}",
+    user: { id: "123", name: "Abebe Kebede", email: "abebe@example.com"${x.verifyIdentity ? ', hash: "<HMAC-SHA256 of the id with the app secret, from your server>"' : ""} },
+  });
+</script>`;
+  return (
+    <Card data-support-apps>
+      <CardHeader>
+        <CardTitle className="text-base">Connected apps (SDK)</CardTitle>
+        <CardDescription>Each app that lets its customers reach support (the Myseed App, a website). Add the snippet to the app; mobile apps use the API or open the widget page. See docs/SUPPORT-SDK.md.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3 text-sm">
+        {secret && (
+          <div className="rounded-lg border border-[#E8710A]/40 bg-[#E8710A]/5 p-2" data-app-secret>
+            <p className="font-medium">Secret for {secret.app}: shown once. Keep it on the app&apos;s server only.</p>
+            <code className="break-all">{secret.secret}</code>
+            <Button size="xs" variant="ghost" onClick={() => copy(secret.secret)}>
+              <CopyIcon /> Copy
+            </Button>
+          </div>
+        )}
+        {apps.map((x) => (
+          <div key={x.id} className="space-y-2 rounded-lg border p-2" data-app={x.name}>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-medium">{x.name}</span>
+              <code className="text-xs">{x.publicKey}</code>
+              <span className="text-xs text-muted-foreground">
+                {x.origins.length ? x.origins.join(", ") : "any web address"} {x.verifyIdentity && "· customers signed by the app"} {!x.active && "· off"}
+              </span>
+              {admin && (
+                <span className="ml-auto flex gap-1">
+                  <Button size="xs" variant="outline" onClick={() => setA({ id: x.id, name: x.name, origins: x.origins.join(", "), queueId: x.queueId ?? "", verifyIdentity: x.verifyIdentity, greeting: x.greeting ?? "", color: x.color ?? "", active: x.active })}>
+                    Edit
+                  </Button>
+                  <Button size="xs" variant="ghost" disabled={busy} onClick={async () => window.confirm("Make a new secret? Customers of this app sign in again.") && setSecret({ app: x.name, secret: String(await act(() => A.newAppSecretAction(x.id))) })}>
+                    <KeyRoundIcon /> New secret
+                  </Button>
+                </span>
+              )}
+            </div>
+            <pre className="overflow-x-auto rounded bg-muted p-2 text-xs" data-snippet>
+              {snippet(x)}
+            </pre>
+            <div className="flex flex-wrap gap-2">
+              <Button size="xs" variant="outline" onClick={() => copy(snippet(x))}>
+                <CopyIcon /> Copy the snippet
+              </Button>
+              <a className="text-xs text-primary hover:underline" href={`/support-widget?key=${x.publicKey}&name=Test%20customer&id=test-1`} target="_blank" rel="noreferrer">
+                Try the widget as a customer
+              </a>
+            </div>
+          </div>
+        ))}
+        {admin && !a && (
+          <Button size="sm" variant="outline" onClick={() => setA({ id: null, name: "", origins: "", queueId: "", verifyIdentity: false, greeting: "", color: "", active: true })}>
+            <PlusIcon /> Connect an app
+          </Button>
+        )}
+        {a && (
+          <div className="grid gap-2 rounded-lg border border-primary/30 p-3 sm:grid-cols-2" data-app-form>
+            <Input aria-label="App name" placeholder="Myseed App" value={a.name} onChange={(e) => setA({ ...a, name: e.target.value })} />
+            <Input aria-label="Allowed web addresses" placeholder="https://app.myseed.et, https://myseed.et (empty: any)" value={a.origins} onChange={(e) => setA({ ...a, origins: e.target.value })} />
+            <select aria-label="First queue" className={select} value={a.queueId} onChange={(e) => setA({ ...a, queueId: e.target.value })}>
+              <option value="">Queue by keywords, else the first</option>
+              {queues.map((q) => (
+                <option key={q.id} value={q.id}>
+                  {q.name}
+                </option>
+              ))}
+            </select>
+            <Input aria-label="Greeting" placeholder="Greeting, e.g. Hi! How can we help with your lessons?" value={a.greeting} onChange={(e) => setA({ ...a, greeting: e.target.value })} />
+            <Input aria-label="Colour" placeholder="#1A73E8" value={a.color} onChange={(e) => setA({ ...a, color: e.target.value })} />
+            <label className="flex items-center gap-2">
+              <input type="checkbox" checked={a.verifyIdentity} onChange={(e) => setA({ ...a, verifyIdentity: e.target.checked })} /> The app signs who the customer is (recommended for signed-in customers)
+            </label>
+            <label className="flex items-center gap-2">
+              <input type="checkbox" checked={a.active} onChange={(e) => setA({ ...a, active: e.target.checked })} /> Active
+            </label>
+            <div className="flex gap-2 sm:col-span-2">
+              <Button
+                size="sm"
+                disabled={busy || !a.name.trim()}
+                onClick={async () => {
+                  const r = (await act(() => A.saveAppAction({ ...a, origins: a.origins.split(",").map((o) => o.trim()).filter(Boolean), queueId: a.queueId || null, color: a.color || null }), "Saved")) as { secret: string | null } | undefined;
+                  if (r) {
+                    if (r.secret) setSecret({ app: a.name, secret: r.secret });
+                    setA(null);
+                  }
+                }}
+              >
+                Save app
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setA(null)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+export function Canned({ list }: { list: { id: string; title: string; body: string }[] }) {
+  const { act, busy } = useAct();
+  const [c, setC] = React.useState({ title: "", body: "" });
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Saved replies</CardTitle>
+        <CardDescription>Answers agents add to a reply with one click.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-2 text-sm">
+        {list.map((x) => (
+          <div key={x.id} className="flex items-start gap-2 rounded border p-2">
+            <div className="min-w-0 flex-1">
+              <p className="font-medium">{x.title}</p>
+              <p className="whitespace-pre-wrap text-xs text-muted-foreground">{x.body}</p>
+            </div>
+            <Button size="xs" variant="ghost" disabled={busy} onClick={() => act(() => A.deleteCannedAction(x.id), "Removed")}>
+              Remove
+            </Button>
+          </div>
+        ))}
+        <Input aria-label="Saved reply title" placeholder="Title, e.g. Reset password" value={c.title} onChange={(e) => setC({ ...c, title: e.target.value })} />
+        <Textarea aria-label="Saved reply text" placeholder="The answer" value={c.body} onChange={(e) => setC({ ...c, body: e.target.value })} />
+        <Button size="sm" disabled={busy || !c.title.trim() || !c.body.trim()} onClick={async () => (await act(() => A.saveCannedAction(c), "Saved")) && setC({ title: "", body: "" })}>
+          Add saved reply
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+type Mon = {
+  agents: { userId: string; name: string; status: string; statusSince: string | null; lastSeen: string | null; maxOpen: number; open: number; solved: number; replies: number; firstResponseMin: number | null; resolveMin: number | null; calls: number; callMin: number; missed: number; rating: number | null; ratings: number; breached: number; lastActivity: { at: string; kind: string } | null }[];
+  queues: { id: string; name: string; waiting: number; oldestWaitMin: number | null; open: number; online: number; agents: number }[];
+  log: { at: string; kind: string; detail: string | null; who: string | null; ticket_id: string | null; number: number | null }[];
+  recordings: { id: string; ticket_id: string; number: number; agent: string | null; customer: string | null; started_at: string; duration_s: number | null; recording_size: number | null }[];
+  totals: { created: number; solved: number; csat: number | null };
+};
+
+export function Monitor({ m, from, to }: { m: Mon; from: string; to: string }) {
+  const router = useRouter();
+  const { act } = useAct();
+  const fmtMin = (n: number | null) => (n === null ? "-" : n < 60 ? `${n} min` : `${Math.round(n / 6) / 10} h`);
+  return (
+    <div className="space-y-4" data-support-monitor>
+      <div className="flex flex-wrap items-end gap-2">
+        <div className="space-y-1">
+          <Label htmlFor="mon-from">From</Label>
+          <Input id="mon-from" type="date" value={from} onChange={(e) => router.push(`/support?tab=monitor&from=${e.target.value}&to=${to}`)} />
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor="mon-to">To</Label>
+          <Input id="mon-to" type="date" value={to} onChange={(e) => router.push(`/support?tab=monitor&from=${from}&to=${e.target.value}`)} />
+        </div>
+        <p className="ml-auto text-sm">
+          <b>{m.totals.created}</b> tickets opened · <b>{m.totals.solved}</b> solved · customer rating <b>{m.totals.csat ?? "-"}</b> of 5
+        </p>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        {m.queues.map((q) => (
+          <Card key={q.id}>
+            <CardContent className="py-3 text-sm">
+              <p className="font-medium">{q.name}</p>
+              <p className={cn("text-2xl font-semibold tabular-nums", q.waiting ? "text-[#E8710A]" : "")}>{q.waiting}</p>
+              <p className="text-xs text-muted-foreground">
+                waiting{q.oldestWaitMin !== null ? `, oldest ${fmtMin(q.oldestWaitMin)}` : ""} · {q.open} open · {q.online} of {q.agents} agents free
+              </p>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Agents</CardTitle>
+        </CardHeader>
+        <CardContent className="overflow-x-auto">
+          <table className="w-full text-xs" data-agents-table>
+            <thead>
+              <tr className="text-left text-muted-foreground">
+                {["Agent", "Status", "Open", "Limit", "Solved", "Replies", "First answer", "Solve time", "Calls", "Missed", "Rating", "Late", "Last activity"].map((h) => (
+                  <th key={h} className="py-1 pr-2 font-medium">
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {m.agents.map((a) => (
+                <tr key={a.userId} className="border-t">
+                  <td className="py-1 pr-2 font-medium">{a.name}</td>
+                  <td className="pr-2">
+                    <CircleIcon className={cn("mr-1 inline size-2.5 fill-current", a.status === "online" ? "text-[#188038]" : a.status === "away" ? "text-[#F9AB00]" : "text-muted-foreground")} />
+                    {a.status}
+                  </td>
+                  <td className="pr-2 tabular-nums">{a.open}</td>
+                  <td className="pr-2">
+                    <Input aria-label={`Limit for ${a.name}`} type="number" className="h-6 w-14 text-xs" defaultValue={a.maxOpen} onBlur={(e) => Number(e.target.value) !== a.maxOpen && act(() => A.setAgentLimitAction(a.userId, Number(e.target.value)), "Limit saved")} />
+                  </td>
+                  <td className="pr-2 tabular-nums">{a.solved}</td>
+                  <td className="pr-2 tabular-nums">{a.replies}</td>
+                  <td className="pr-2">{fmtMin(a.firstResponseMin)}</td>
+                  <td className="pr-2">{fmtMin(a.resolveMin)}</td>
+                  <td className="pr-2">
+                    {a.calls} ({a.callMin} min)
+                  </td>
+                  <td className="pr-2">{a.missed}</td>
+                  <td className="pr-2">{a.rating === null ? "-" : `${a.rating} (${a.ratings})`}</td>
+                  <td className={cn("pr-2", a.breached && "text-[#D93025]")}>{a.breached}</td>
+                  <td className="pr-2 text-muted-foreground">{a.lastActivity ? `${a.lastActivity.kind.replace(/_/g, " ")}, ${new Date(a.lastActivity.at).toLocaleString([], { dateStyle: "short", timeStyle: "short" })}` : "-"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </CardContent>
+      </Card>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Call recordings</CardTitle>
+            <CardDescription>Each listen is logged.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2 text-xs">
+            {m.recordings.length === 0 && <p className="text-muted-foreground">No recordings in this period.</p>}
+            {m.recordings.map((r) => (
+              <div key={r.id} className="space-y-1 rounded border p-1.5">
+                <p>
+                  #{r.number} · {r.customer ?? "Customer"} with {r.agent ?? "-"} · {new Date(r.started_at).toLocaleString([], { dateStyle: "short", timeStyle: "short" })}
+                  {r.duration_s !== null && ` · ${Math.floor(r.duration_s / 60)}:${String(r.duration_s % 60).padStart(2, "0")}`}
+                </p>
+                <audio controls preload="none" src={`/api/support/recording/${r.id}`} className="h-8 w-full" />
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Activity</CardTitle>
+          </CardHeader>
+          <CardContent className="max-h-96 space-y-1 overflow-y-auto text-xs" data-activity>
+            {m.log.map((l, i) => (
+              <p key={i}>
+                <span className="text-muted-foreground">{new Date(l.at).toLocaleString([], { dateStyle: "short", timeStyle: "short" })}</span> {l.who ?? "System"}: {l.kind.replace(/_/g, " ")}
+                {l.number ? ` #${l.number}` : ""}
+                {l.detail ? `, ${l.detail}` : ""}
+              </p>
+            ))}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}

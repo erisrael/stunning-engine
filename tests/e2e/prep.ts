@@ -169,6 +169,33 @@ const PREPS: Record<string, () => Promise<unknown>> = {
     await run("INSERT INTO department_positions (department, user_id, position) VALUES ('dev', ?, 'lead') ON CONFLICT DO NOTHING", leul);
     await syncFromUsers(await admin());
   },
+  // Customer support on: Liya leads, Sara answers the App queue, an app without signed customers.
+  async support() {
+    await passwordOnly();
+    const a = await admin();
+    const sd = await import("../../src/server/support-desk");
+    const id = async (email: string) => (await get<{ id: string }>("SELECT id FROM users WHERE email = ?", email))!.id;
+    await sd.saveSupportConfig(a, { enabled: true, leads: [await id("liya@demo.local")], ringSeconds: 60 });
+    const q = await sd.saveQueue(a, { name: "App and account", keywords: ["login"], members: [await id("sara@demo.local")], slaFirstMin: 30, slaResolveMin: 480 });
+    await sd.saveApp(a, { name: "Myseed App", origins: [], queueId: q, verifyIdentity: false, greeting: "Selam! How can we help?" });
+    return { key: (await sd.listApps(a))[0]!.publicKey };
+  },
+  // Attendance kept by hand, employee rules, payroll for everyone, recognition: Admin is also Finance Manager, QR is on
+  // (so the scanner shows in the top bar), and Sara has finished work this month.
+  async "people-ops"() {
+    await passwordOnly();
+    const a = await admin();
+    await syncFromUsers(a);
+    await run("INSERT INTO role_assignments (user_id, role) VALUES (?, 'finance_manager') ON CONFLICT DO NOTHING", a.id);
+    const { saveCaptureConfig, captureConfig } = await import("../../src/server/attendance-capture");
+    const base = await captureConfig();
+    await saveCaptureConfig(a, { ...base, methods: { ...base.methods, qr: true }, sites: [{ id: "", name: "Head office", networks: ["196.188.10.0/24"], lat: null, lng: null, radiusM: 150, checks: { network: true, location: false, device: false }, posterKey: "", posterAt: "" }] });
+    const sara = (await get<{ id: string }>("SELECT id FROM users WHERE email = 'sara@demo.local'"))!.id;
+    for (let i = 0; i < 3; i++)
+      await run("INSERT INTO dept_tasks (id, dept, code, title, status, status_category, assignee_id, due_date, created_at, updated_at, completed_at) VALUES (?, 'dev', ?, 'Done work', 'done', 'done', ?, '2099-01-01', ?, ?, ?)", uid("tsk_"), `PO-${i}`, sara, nowIso(), nowIso(), nowIso());
+    const dawit = (await get<{ id: string }>("SELECT e.id FROM employees e JOIN users u ON u.id = e.user_id WHERE u.email = 'dawit@demo.local'"))!.id;
+    return { dawit };
+  },
   // A site on 196.188.10.0/24 (the test sends that address as the proxy would), QR, network, shared computer and
   // lead recording on, a shift covering the whole day, Hana as Dawit's lead, and a PIN for Yonas.
   async "qr-checkin"() {

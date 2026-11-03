@@ -61,6 +61,8 @@ import {
   TimerIcon,
   MapIcon,
   PresentationIcon,
+  TrophyIcon,
+  HeadsetIcon,
 } from "lucide-react";
 import type { HomeDept } from "@/server/nav";
 import {
@@ -236,7 +238,13 @@ export function AppSidebar({
   viewerId = "",
   approver = false,
   brand = {},
+  recognition = false,
+  support = false,
 }: {
+  // Recognition switched on (Admin, Recognition): the leaderboard, badges and kudos for everyone.
+  recognition?: boolean;
+  // Customer support: the agent desk for agents and leads (Admin, Support).
+  support?: boolean;
   // Admin's icons and colours per entry (Admin, Branding).
   brand?: Record<string, { icon?: string | null; tone?: string | null }>;
   home?: HomeDept | null;
@@ -298,7 +306,7 @@ export function AppSidebar({
           { label: has("attendance.manage") ? "Daily board" : "My team", href: "/attendance?tab=team" },
           { label: "Corrections", href: "/attendance?tab=corrections" },
           { label: "Timesheets", href: "/attendance?tab=timesheets" },
-          ...(has("attendance.manage") ? [{ label: "Review", href: "/attendance?tab=review" }, { label: "Rules", href: "/attendance?tab=setup" }] : []),
+          ...(has("attendance.manage") ? [{ label: "Review", href: "/attendance?tab=review" }, { label: "Edit records", href: "/attendance?tab=records" }, { label: "Employee rules", href: "/attendance?tab=rules" }, { label: "Shifts and settings", href: "/attendance?tab=setup" }] : []),
           ...(has("attendance.capture") ? [{ label: "Capture", href: "/attendance?tab=capture" }] : []),
         ]
       : undefined;
@@ -322,6 +330,8 @@ export function AppSidebar({
         { href: "/attendance", label: "Attendance", icon: ClockIcon, sub: attSub },
         { href: "/routines", label: "Routines", icon: ZapIcon, badge: counts.routines ?? 0 },
         { href: "/announcements", label: "Announcements", icon: MegaphoneIcon },
+        ...(recognition ? [{ href: "/recognition", label: "Recognition", icon: TrophyIcon }] : []),
+        ...(support ? [{ href: "/support", label: "Customer support", icon: HeadsetIcon }] : []),
         ...(approver || counts.approvals > 0 ? [{ href: "/approvals", label: "Approvals", icon: CheckCheckIcon, badge: counts.approvals }] : []),
         ...(!lead && !home ? [{ href: "/team", label: "My effort", icon: UsersIcon, cap: "nav.team" as Capability }] : []),
         { href: "/questions", label: "Questions", icon: MessageCircleQuestionIcon, badge: counts.questions, cap: "nav.questions" },
@@ -439,6 +449,8 @@ export function AppSidebar({
         items: [
           { href: "/dashboard", label: "Home", icon: HomeIcon, locked: true },
           { href: "/announcements", label: "Announcements", icon: MegaphoneIcon },
+          ...(recognition ? [{ href: "/recognition", label: "Recognition", icon: TrophyIcon }] : []),
+          ...(support ? [{ href: "/support", label: "Customer support", icon: HeadsetIcon }] : []),
           ...(counts.approvals > 0 ? [{ href: "/approvals", label: "Approvals", icon: CheckCheckIcon, badge: counts.approvals }] : []),
           ...(counts.routines ? [{ href: "/routines", label: "Routines", icon: ZapIcon, badge: counts.routines }] : []),
           ...(counts.mailbox ? [{ href: "/email", label: "Email", icon: MailIcon, badge: counts.mail ?? 0, sub: emailSub }] : []),
@@ -458,6 +470,8 @@ export function AppSidebar({
           { href: "/settings", label: "Settings", icon: SettingsIcon, cap: "settings.manage", sub: [{ label: "Curriculum", href: "/settings" }, { label: "Workflow", href: "/settings?tab=workflow" }, { label: "Teams", href: "/settings?tab=teams" }, { label: "Destinations", href: "/settings?tab=destinations" }, { label: "Calendar and alerts", href: "/settings?tab=calendar" }, { label: "Lists", href: "/settings?tab=lists" }, { label: "Workspace", href: "/settings?tab=workspace" }, { label: "Calls", href: "/settings?tab=calls" }] },
           { href: "/email?tab=settings", label: "Email setup", icon: MailIcon, cap: "email.manage", exact: true },
           { href: "/attendance?tab=capture", label: "Attendance setup", icon: ClockIcon, sub: attSub },
+          { href: "/recognition?tab=settings", label: "Recognition setup", icon: TrophyIcon, cap: "users.manage", exact: true },
+          { href: "/support?tab=settings", label: "Support setup", icon: HeadsetIcon, cap: "users.manage", exact: true },
           { href: "/admin/data", label: "Data manager", icon: DatabaseIcon, cap: "data.manage" },
           { href: "/import-export", label: "Import and export", icon: ArrowLeftRightIcon, cap: ["import.run", "import.stage", "import.tracker", "export.run", "export.report", "export.tracker", "export.audit"] },
           { href: "/audit", label: "Audit log", icon: ShieldCheckIcon, cap: ["users.manage", "items.plan"] },

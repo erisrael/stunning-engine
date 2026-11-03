@@ -21,6 +21,7 @@ import { canCapture, captureConfig, captureStatus, checkinView, flaggedEvents, l
 import { CaptureSetup } from "@/components/app/attendance/capture-ui";
 import { DevicesPanel, FlaggedPanel, LeadCheckin } from "@/components/app/attendance/capture-review";
 import { CheckinPad } from "@/components/app/attendance/checkin-pad";
+import { EmployeeRules, RecordsPanel } from "@/components/app/attendance/records-ui";
 import { appOrigin } from "@/server/password-reset";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -43,7 +44,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
     ...(lead ? [{ key: "team", label: hr ? "Daily board" : "My team" }] : []),
     ...(lead || corr.toDecide.length ? [{ key: "corrections", label: "Corrections", badge: corr.toDecide.length }] : []),
     ...(lead ? [{ key: "timesheets", label: "Timesheets" }] : []),
-    ...(hr ? [{ key: "review", label: "Review", badge: inbox?.review }, { key: "setup", label: "Rules" }] : []),
+    ...(hr ? [{ key: "review", label: "Review", badge: inbox?.review }, { key: "records", label: "Edit records" }, { key: "rules", label: "Employee rules" }, { key: "setup", label: "Shifts and settings" }] : []),
     ...(admin ? [{ key: "capture", label: "Capture" }] : []),
   ];
   const tab = tabs.some((t) => t.key === sp.tab) ? sp.tab! : (tabs[0]?.key ?? "me");
@@ -96,7 +97,16 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
         <DevicesPanel rows={await listDevices(viewer)} tz={tz} />
       </div>
     );
-  else if (tab === "setup") {
+  else if (tab === "records") {
+    const aa = await import("@/server/attendance-admin");
+    const people = (await peopleSetup(viewer)).map((p) => ({ id: p.id, name: p.name, code: p.code }));
+    const emp = sp.emp && people.some((p) => p.id === sp.emp) ? sp.emp : null;
+    panel = <RecordsPanel people={people} employeeId={emp} day={day} today={today} events={emp ? await aa.dayEvents(viewer, emp, day) : null} />;
+  } else if (tab === "rules") {
+    const aa = await import("@/server/attendance-admin");
+    const { get } = await import("@/server/db");
+    panel = <EmployeeRules rules={await aa.attendanceRules()} text={await aa.rulesText()} published={!!(await get("SELECT 1 AS x FROM settings WHERE key = 'cfg.attendance.rulesAnnouncement'"))} />;
+  } else if (tab === "setup") {
     const [cfg, people] = await Promise.all([attendanceConfig(), peopleSetup(viewer)]);
     panel = <Setup cfg={cfg} people={people} />;
   } else if (tab === "capture") {

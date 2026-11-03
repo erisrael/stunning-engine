@@ -614,6 +614,11 @@ export async function requestCorrection(user: AppUser, input: { day: string; inT
   if (!reason) throw new WorkflowError("VALIDATION", "Say what happened, for example \"forgot to check out\".");
   if (await get("SELECT 1 AS x FROM att_corrections WHERE employee_id = ? AND day = ? AND status IN ('pending_lead','pending_hr')", employeeId, input.day))
     throw new WorkflowError("VALIDATION", "You already asked for a correction of this day.");
+  {
+    const { attendanceRules, correctionsThisMonth } = await import("./attendance-admin");
+    const max = (await attendanceRules()).maxCorrections;
+    if (max && (await correctionsThisMonth(employeeId, input.day)) >= max) throw new WorkflowError("VALIDATION", `The attendance rules allow ${max} corrections a month. Talk to HR.`);
+  }
   const mgr = await get<{ user_id: string | null; status: string }>("SELECT m.user_id, m.status FROM employees e JOIN employees m ON m.id = e.manager_id WHERE e.id = ?", employeeId);
   const approver = mgr?.user_id && mgr.status !== "left" && mgr.user_id !== user.id ? mgr.user_id : null;
   const id = uid("atc_");
@@ -714,6 +719,13 @@ async function sheetFor(emps: Emp[], month: string): Promise<TimesheetRow[]> {
   });
 }
 
+// The month's timesheet rows for some employees (rules checks).
+export async function monthSheet(employeeIds: string[], month: string) {
+  if (!employeeIds.length) return [];
+  const emps = await all<Emp>(`${EMP_SELECT} WHERE id IN (${employeeIds.map(() => "?").join(",")})`, ...employeeIds);
+  return sheetFor(emps, month);
+}
+
 // What payroll takes for a month: overtime hours and unpaid days per employee.
 export async function payrollFeed(period: string, employeeIds: string[]) {
   if (!employeeIds.length) return new Map<string, { overtimeHours: number; unpaidDays: number }>();
@@ -723,8 +735,11 @@ export async function payrollFeed(period: string, employeeIds: string[]) {
   // Unpaid break overruns, when HR switched them on, as parts of a day of the default shift.
   const def = cfg.shifts.find((s) => s.key === cfg.defaultShift) ?? cfg.shifts[0]!;
   const dayMin = Math.max(60, toMin(def.end) + (overnight(def) ? 24 * 60 : 0) - toMin(def.start) - def.breakMin);
+  // Repeated lateness costs pay when the attendance rules say so.
+  const { attendanceRules, lateDeduction } = await import("./attendance-admin");
+  const rules = await attendanceRules();
   return new Map(
-    rows.map((r) => [r.employeeId, { overtimeHours: r.overtimeHours, unpaidDays: Math.round((r.unpaidDays + (cfg.deductBreakOverrun ? r.totals.breakOverMin / dayMin : 0)) * 100) / 100 }]),
+    rows.map((r) => [r.employeeId, { overtimeHours: r.overtimeHours, unpaidDays: Math.round((r.unpaidDays + (cfg.deductBreakOverrun ? r.totals.breakOverMin / dayMin : 0) + lateDeduction(r.totals.late, rules)) * 100) / 100 }]),
   );
 }
 

@@ -77,6 +77,9 @@ export async function createPayrollRunAction(period: string) {
 export async function updatePayslipAction(id: string, input: Parameters<typeof f.updatePayslip>[2]) {
   return wrap(async () => f.updatePayslip(await requireViewer(), id, input));
 }
+export async function enrolEveryoneAction() {
+  return wrap(async () => f.enrolEveryone(await requireViewer()));
+}
 export async function fillFromAttendanceAction(runId: string) {
   return wrap(async () => f.fillFromAttendance(await requireViewer(), runId));
 }

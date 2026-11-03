@@ -26,13 +26,19 @@ export function checkinCodeFrom(text: string, origin: string): string | null {
 
 type Detector = { detect(src: CanvasImageSource): Promise<{ rawValue: string }[]> };
 
-export function QrScanButton({ label = "Scan the QR", className }: { label?: string; className?: string }) {
+export function QrScanButton({ label = "Scan the QR", className, compact }: { label?: string; className?: string; compact?: boolean }) {
   const [open, setOpen] = React.useState(false);
   return (
     <>
-      <Button size="lg" variant="outline" className={className} onClick={() => setOpen(true)} data-qr-scan>
-        <QrCodeIcon /> {label}
-      </Button>
+      {compact ? (
+        <Button size="icon" variant="ghost" className={className} onClick={() => setOpen(true)} aria-label="Check in with the QR" title="Check in with the QR" data-qr-scan-top>
+          <QrCodeIcon />
+        </Button>
+      ) : (
+        <Button size="lg" variant="outline" className={className} onClick={() => setOpen(true)} data-qr-scan>
+          <QrCodeIcon /> {label}
+        </Button>
+      )}
       {open && <QrScanDialog onClose={() => setOpen(false)} />}
     </>
   );

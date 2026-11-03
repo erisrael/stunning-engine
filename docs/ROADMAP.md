@@ -917,3 +917,70 @@ One system for "what each person and team is responsible for, how it is measured
 - [x] **Phones and slow connections**: every main page checked at phone width (390 px) by a browser test (`tests/e2e/mobile.e2e.mjs`); a Light mode in the account menu (no animations, no banner pictures, background checks three times less often).
 - [x] **Usage view** (Admin, Usage): page visits per section and per role over 30 days, people using the app each day, and who has not signed in for 14 days or more. Only the section of each visit is kept (no ids, nothing on the page).
 - [x] **Speed with years of data**: `npm run perf:big` fills a throwaway workspace with five years of data (20,000 parts, 40,000 tasks, 1,000,000 attendance events) and times the queries behind the busiest pages; all were under 30 ms on a laptop (limit 300 ms).
+
+## Phase 19: App shell (the employee app on phones)
+
+Phase 5b made the web app installable and prepared the native shell. This phase finishes the app staff carry every day, so the things they do on a phone feel native. Steps for the native builds are in [APP-SHELL.md](APP-SHELL.md).
+
+- [x] **QR check-in inside the app**: a scan button in the top bar (and on Attendance, Me) opens the camera and reads the entrance poster. The phone's own reader is used when there is one, else jsQR. It is on whenever the printed QR is on, and Admin can switch it off in Capture.
+- [ ] **Native builds**: the Android APK (then Google Play) and the iPhone build (TestFlight), from `capacitor.config.json`. These need a machine with Android Studio and Xcode.
+- [ ] **Native camera scanner** in the shell (Capacitor barcode scanner) for older phones without a usable web camera. It uses the same code check, so the site's office network and location rules still apply.
+- [ ] **Check-in without signal**: a check-in made offline is kept on the phone, signed, and sent when the network is back, with its real time. Kiosks already do this.
+- [ ] **Reliable notifications and ringing**: Firebase on Android and PushKit with CallKit on iPhone, for calls and urgent notices, including incoming customer support calls for agents.
+- [ ] **Biometric sign-in**: fingerprint or face to open the app, with the password kept in the phone's secure storage.
+- [ ] **Deep links**: links in emails and notifications open the right page in the app.
+- [ ] **Customer support in the Myseed App**: the student app embeds the support widget (Phase 20) through its web view or calls the API, so students and parents reach support without leaving the app.
+
+## Phase 20: Customer support (done; the Myseed App still to connect)
+
+A real help desk for the customers of Myseed's apps, inside this workspace. It was built here rather than as a separate system so that agents, attendance, notifications, recognition and Admin all stay in one place. Other apps connect with an SDK and an API ([SUPPORT-SDK.md](SUPPORT-SDK.md)).
+
+- [x] **Setup** (Admin, Support setup):
+  - an on and off switch, support leads, automatic assignment, and "only agents checked in at work";
+  - call recording with the notice customers agree to, how long recordings are kept, auto close of solved tickets, ring time, opening hours and the away message.
+- [x] **Queues**: a team of agents per kind of question. Keywords route tickets to a queue. Tickets are given to the least busy agent or in turn, or assigned by hand. Each queue has a target for the first answer and for solving; urgent tickets get a quarter of that time and high-priority tickets half.
+- [x] **Assignment by the system**: a new ticket goes at once to an agent of its queue who is online in the desk and under their limit of open tickets. If nobody is free it waits, leads are told, and it is given out as soon as an agent comes online or at the next scheduled check. An agent who closes the desk drops out of assignment within three minutes.
+- [x] **The desk** (/support):
+  - Views: mine, unassigned, all open, late, per queue, solved, with search.
+  - Each ticket has the conversation, replies and internal notes, saved replies, status, priority, queue and assignment, the customer with their app details and other tickets, calls with their recordings, and the activity.
+  - Agents open tickets for phone calls, email or walk-ins.
+- [x] **The SDK and API**:
+  - `public/support-sdk.js` adds a Help button and panel to any web app. Mobile apps can open `/support-widget` in a web view or use `/api/support/v1`.
+  - Each connected app has a public key, allowed web addresses, its first queue, a greeting and a colour, and can sign who the customer is (HMAC with the app secret).
+  - Customers ask, follow answers, rate the help (1 to 5) and call.
+- [x] **Calls and recordings**:
+  - Customers call from the widget in the browser, with no phone number. The call rings for the ticket's agent or for every free agent of the queue; unanswered calls become "missed" and the ticket says so.
+  - Calls are recorded in the agent's browser (both voices) after the customer agrees, and kept with the ticket. Each listen is logged, and old recordings are deleted after the days set.
+  - Phone calls made outside the app are logged with their length and notes.
+- [x] **Monitoring** (leads):
+  - per agent: status, open and solved tickets, replies, average first answer and solve time, calls and minutes, missed calls, customer rating, late tickets and last activity; each agent's limit;
+  - per queue: what waits and for how long;
+  - the activity log and the call recordings.
+- [x] **Recognition**: solved tickets count as finished work in the monthly score (on time when within the target); ratings of 1 or 2 count as work sent back.
+- [ ] **Connect the Myseed App**: add the SDK or the API with the app's real key and sign its customers from its server.
+- [ ] **Email into tickets**: the support mailbox (Phase 14) opening and replying to tickets.
+- [ ] **Telegram and SMS** as channels, and a knowledge base customers search before asking.
+
+Built: `src/server/support-desk.ts`, `src/lib/support.ts`, `src/app/(app)/support`, `src/components/app/support`, `src/app/support-widget`, `src/app/api/support` (schema 38). Tests: `tests/server/support-desk.test.ts` (53 checks), and `tests/e2e/support.e2e.mjs`, which covers the SDK on another site, assignment, a reply, and a real browser call that is recorded.
+
+## Phase 21: Attendance kept by hand, payroll for everyone, and recognition (done)
+
+- [x] **Attendance by HR and Admin** (Attendance, Edit records):
+  - log a check-in someone missed, change a check-in's time, remove a wrong one, and clear a person's (or everyone's) days for a date range;
+  - each change needs a reason; the person is told; the old entry stays, voided and struck through; everything is in the audit log.
+  - Day records with in and out times (team leads and HR) remain as before.
+- [x] **Employee rules** (Attendance, Employee rules):
+  - warnings to the person and HR after repeated lateness or absence in a month;
+  - pay deducted for every so many late days (taken in payroll with the unpaid days);
+  - a monthly limit on corrections, a reminder the next morning of a missing check-out, and the notice for absence.
+  - The written rules are drafted from the shifts and these settings, edited by HR and published as a policy everyone confirms (Announcements).
+- [x] **Payroll for everyone**:
+  - Every active account gets an HR record and shows in Payroll, Salaries ("Add everyone to payroll", and a daily job for new accounts). Salaries are then set by Finance or HR; people without one are counted.
+  - Income tax follows **Proclamation No. 1395/2025** by default (2,000 birr a month free of tax, then 15% to 35%). 979/2016 is still a choice, and hand-edited brackets show as custom. Pension follows Proclamation 1268/2022 (7% and 11%).
+  - Overtime rates follow the Labour Proclamation 1156/2019 (1.5, 1.75 at night, 2 on the rest day, 2.5 on holidays).
+- [x] **Recognition** (/recognition; Admin switches it on, off by default):
+  - A monthly score from attendance, delivery on time, quality (nothing sent back) and teamwork (kudos), with weights Admin sets.
+  - The leaderboard: everyone sees the top and their own place; HR, Admin and owners see everyone and who needs support. Admin can hide scores or show the board to managers only.
+  - Badges by fixed rules each month (top performer, department star, rising star, perfect attendance, always on time, zero returns, team player). Titles such as "Employee of the month" are given by HR or Admin. Kudos between colleagues come with a monthly limit.
+
+Built: `src/server/attendance-admin.ts`, `src/components/app/attendance/records-ui.tsx`, `src/server/recognition.ts`, `src/lib/recognition.ts`, `src/app/(app)/recognition`, payroll changes in `src/server/finance.ts` and `src/lib/finance.ts` (schema 37). Tests: `tests/server/attendance-admin.test.ts`, `tests/server/recognition.test.ts` and `tests/e2e/people-ops.e2e.mjs`.

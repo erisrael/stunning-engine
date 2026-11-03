@@ -63,3 +63,26 @@ export async function enrollFaceAction(employeeId: string, input: { codes: numbe
 export async function deleteFaceAction(employeeId: string, reason: "withdrawn" | "hr") {
   return wrap(async () => (await import("@/server/attendance-face")).deleteFace(await requireViewer(), employeeId, reason));
 }
+
+// Records kept by hand and the employee rules (HR and Admin; src/server/attendance-admin.ts).
+export async function dayEventsAction(employeeId: string, day: string) {
+  return wrap(async () => (await import("@/server/attendance-admin")).dayEvents(await requireViewer(), employeeId, day), { revalidate: false });
+}
+export async function logEventAction(input: Parameters<typeof import("@/server/attendance-admin").logEvent>[1]) {
+  return wrap(async () => (await import("@/server/attendance-admin")).logEvent(await requireViewer(), input));
+}
+export async function editEventAction(eventId: string, input: { time: string; note: string }) {
+  return wrap(async () => (await import("@/server/attendance-admin")).editEvent(await requireViewer(), eventId, input));
+}
+export async function removeEventAction(eventId: string, note: string) {
+  return wrap(async () => (await import("@/server/attendance-admin")).removeEvent(await requireViewer(), eventId, note));
+}
+export async function clearAttendanceAction(input: { employeeId: string | null; from: string; to: string; note: string }) {
+  return wrap(async () => (await import("@/server/attendance-admin")).clearAttendance(await requireViewer(), input));
+}
+export async function saveAttendanceRulesAction(input: Partial<import("@/server/attendance-admin").AttendanceRules>) {
+  return wrap(async () => (await import("@/server/attendance-admin")).saveAttendanceRules(await requireViewer(), input));
+}
+export async function publishRulesAction(text: string) {
+  return wrap(async () => (await import("@/server/attendance-admin")).publishRules(await requireViewer(), text));
+}

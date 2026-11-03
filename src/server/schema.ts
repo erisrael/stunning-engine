@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 36;
+export const SCHEMA_VERSION = 38;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -2168,6 +2168,176 @@ CREATE TABLE IF NOT EXISTS mail_state (
   error TEXT
 );
 
+-- v38: customer support: queues, tickets and messages, customers of connected apps (SDK), calls with recordings,
+-- agent status and activity, saved replies.
+CREATE TABLE IF NOT EXISTS sup_apps (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  public_key TEXT NOT NULL UNIQUE,
+  secret TEXT NOT NULL,
+  origins TEXT NOT NULL DEFAULT '[]',
+  queue_id TEXT,
+  verify_identity INTEGER NOT NULL DEFAULT 0,
+  greeting TEXT,
+  color TEXT,
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS sup_queues (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT,
+  keywords TEXT NOT NULL DEFAULT '[]',
+  members TEXT NOT NULL DEFAULT '[]',
+  strategy TEXT NOT NULL DEFAULT 'least_busy',
+  sla_first_min INTEGER NOT NULL DEFAULT 60,
+  sla_resolve_min INTEGER NOT NULL DEFAULT 1440,
+  last_assigned TEXT,
+  sort INTEGER NOT NULL DEFAULT 0,
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS sup_customers (
+  id TEXT PRIMARY KEY,
+  app_id TEXT,
+  external_id TEXT,
+  name TEXT NOT NULL,
+  email TEXT,
+  phone TEXT,
+  meta TEXT NOT NULL DEFAULT '{}',
+  verified INTEGER NOT NULL DEFAULT 0,
+  token_hash TEXT,
+  created_at TEXT NOT NULL,
+  last_seen_at TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_sup_customers_ext ON sup_customers(app_id, external_id);
+CREATE INDEX IF NOT EXISTS idx_sup_customers_token ON sup_customers(token_hash);
+CREATE TABLE IF NOT EXISTS sup_tickets (
+  id TEXT PRIMARY KEY,
+  number INTEGER NOT NULL UNIQUE,
+  queue_id TEXT,
+  customer_id TEXT REFERENCES sup_customers(id) ON DELETE SET NULL,
+  app_id TEXT,
+  subject TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'new',
+  priority TEXT NOT NULL DEFAULT 'normal',
+  channel TEXT NOT NULL DEFAULT 'widget',
+  assignee_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+  tags TEXT NOT NULL DEFAULT '[]',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  assigned_at TEXT,
+  first_response_at TEXT,
+  solved_at TEXT,
+  sla_first_due TEXT,
+  sla_resolve_due TEXT,
+  breached INTEGER NOT NULL DEFAULT 0,
+  rating INTEGER,
+  rating_comment TEXT,
+  last_customer_at TEXT,
+  last_agent_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_sup_tickets_status ON sup_tickets(status, queue_id);
+CREATE INDEX IF NOT EXISTS idx_sup_tickets_assignee ON sup_tickets(assignee_id, status);
+CREATE INDEX IF NOT EXISTS idx_sup_tickets_customer ON sup_tickets(customer_id);
+CREATE TABLE IF NOT EXISTS sup_messages (
+  id TEXT PRIMARY KEY,
+  ticket_id TEXT NOT NULL REFERENCES sup_tickets(id) ON DELETE CASCADE,
+  author_kind TEXT NOT NULL,
+  author_id TEXT,
+  body TEXT NOT NULL,
+  internal INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sup_messages_ticket ON sup_messages(ticket_id, created_at);
+CREATE TABLE IF NOT EXISTS sup_calls (
+  id TEXT PRIMARY KEY,
+  ticket_id TEXT REFERENCES sup_tickets(id) ON DELETE CASCADE,
+  customer_id TEXT REFERENCES sup_customers(id) ON DELETE SET NULL,
+  agent_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+  direction TEXT NOT NULL DEFAULT 'inbound',
+  kind TEXT NOT NULL DEFAULT 'web',
+  status TEXT NOT NULL DEFAULT 'ringing',
+  offer TEXT,
+  answer TEXT,
+  customer_ice TEXT NOT NULL DEFAULT '[]',
+  agent_ice TEXT NOT NULL DEFAULT '[]',
+  consent INTEGER NOT NULL DEFAULT 0,
+  started_at TEXT NOT NULL,
+  answered_at TEXT,
+  ended_at TEXT,
+  duration_s INTEGER,
+  recording_id TEXT,
+  recording_storage TEXT,
+  recording_mime TEXT,
+  recording_size INTEGER,
+  notes TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_sup_calls_status ON sup_calls(status, started_at);
+CREATE TABLE IF NOT EXISTS sup_agents (
+  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'offline',
+  max_open INTEGER NOT NULL DEFAULT 10,
+  skills TEXT NOT NULL DEFAULT '[]',
+  status_since TEXT NOT NULL,
+  last_seen_at TEXT
+);
+CREATE TABLE IF NOT EXISTS sup_activity (
+  id TEXT PRIMARY KEY,
+  user_id TEXT,
+  ticket_id TEXT,
+  kind TEXT NOT NULL,
+  detail TEXT,
+  at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sup_activity_user ON sup_activity(user_id, at);
+CREATE INDEX IF NOT EXISTS idx_sup_activity_ticket ON sup_activity(ticket_id, at);
+-- Recordings kept in the database when there is no file storage (Supabase keeps them in its bucket).
+CREATE TABLE IF NOT EXISTS sup_blobs (
+  id TEXT PRIMARY KEY,
+  data TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS sup_canned (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,
+  created_by TEXT,
+  created_at TEXT NOT NULL
+);
+
+-- v37: recognition: monthly scores, badges and titles, and kudos between colleagues.
+CREATE TABLE IF NOT EXISTS recog_scores (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  period TEXT NOT NULL,
+  score DOUBLE PRECISION NOT NULL,
+  parts TEXT NOT NULL DEFAULT '{}',
+  rank INTEGER,
+  computed_at TEXT NOT NULL,
+  PRIMARY KEY (user_id, period)
+);
+CREATE TABLE IF NOT EXISTS recog_awards (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  badge TEXT NOT NULL,
+  title TEXT NOT NULL,
+  period TEXT NOT NULL,
+  reason TEXT,
+  auto INTEGER NOT NULL DEFAULT 1,
+  awarded_by TEXT,
+  created_at TEXT NOT NULL,
+  UNIQUE (user_id, badge, period)
+);
+CREATE INDEX IF NOT EXISTS idx_recog_awards_user ON recog_awards(user_id, created_at);
+CREATE TABLE IF NOT EXISTS recog_kudos (
+  id TEXT PRIMARY KEY,
+  from_user TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  to_user TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  value TEXT NOT NULL,
+  message TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_recog_kudos_to ON recog_kudos(to_user, created_at);
+
 -- v36: project templates per department, and saved baselines of task dates (Phases 12b.2 and 12b.4).
 CREATE TABLE IF NOT EXISTS dept_project_templates (
   id TEXT PRIMARY KEY,
@@ -2489,6 +2659,19 @@ export const TABLES = [
   "presenter_releases",
   "presenter_statements",
   "link_checks",
+  "sup_apps",
+  "sup_queues",
+  "sup_customers",
+  "sup_tickets",
+  "sup_messages",
+  "sup_calls",
+  "sup_agents",
+  "sup_activity",
+  "sup_canned",
+  "sup_blobs",
+  "recog_scores",
+  "recog_awards",
+  "recog_kudos",
   "dev_merge_requests",
   "dev_deployments",
   "dev_incidents",

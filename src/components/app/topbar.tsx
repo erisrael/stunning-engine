@@ -1,5 +1,6 @@
 "use client";
 
+import { QrScanButton } from "@/components/app/attendance/qr-scanner";
 import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -87,7 +88,7 @@ const TITLES: Record<string, string> = {
   checklists: "Checklists",
 };
 
-export function Topbar({ user, activeRole, unread, chatUnread }: { user: { name: string; email: string; roles: Role[]; avatar?: string | null }; activeRole: Role; unread: number; chatUnread: number }) {
+export function Topbar({ user, activeRole, unread, chatUnread, qrScan }: { user: { name: string; email: string; roles: Role[]; avatar?: string | null }; activeRole: Role; unread: number; chatUnread: number; qrScan?: boolean }) {
   const pathname = usePathname();
   const parts = pathname.split("/").filter(Boolean);
   const [searchOpen, setSearchOpen] = React.useState(false);
@@ -166,6 +167,7 @@ export function Topbar({ user, activeRole, unread, chatUnread }: { user: { name:
         </Button>
         </Hint>
         <RoleSwitcher roles={user.roles} active={activeRole} />
+        {qrScan && <QrScanButton compact />}
         <Hint title="Chat" tip={NAV_TIPS["top.chat"]}>
         <Button variant="ghost" size="icon" className={cn("relative", pathname === "/chat" && "bg-accent")} aria-label={`Chat, ${chat} unread`} asChild>
           <Link href="/chat">

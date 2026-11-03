@@ -165,8 +165,16 @@ export async function runScheduledChecks(now = nowIso(), opts: { trigger?: strin
     await runJob("releases", () => releaseChecks());
     // File links that no longer open, once a week (Phase 16.2).
     await runJob("links", () => weeklyLinkCheck());
+    // Payroll: every new account gets an HR record, so it shows in Payroll, Salaries.
+    await runJob("payroll-enrol", async () => (await import("./finance")).enrolEveryone(null));
     // Finance: budgets passing their alert level.
     await runJob("budgets", () => budgetAlerts());
+    // Attendance rules: warnings after repeated lateness or absence, a reminder of a missing check-out.
+    await runJob("attendance-rules", async () => (await import("./attendance-admin")).ruleChecks(now));
+    // Customer support: missed targets, solved tickets closed, waiting tickets given out, old recordings deleted.
+    await runJob("support", async () => (await import("./support-desk")).supportChecks(now));
+    // Recognition: last month's badges once it is over (when switched on).
+    await runJob("recognition", async () => (await import("./recognition")).recognitionJob());
     // Attendance: a kiosk that went quiet during working hours.
     await runJob("kiosks", () => kioskSilenceChecks(now));
     // Face data of people who have left is deleted.

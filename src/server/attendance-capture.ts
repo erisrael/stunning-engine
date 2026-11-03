@@ -47,7 +47,8 @@ function needCapture(u: AppUser) {
 export async function captureConfig(): Promise<CaptureConfig> {
   const s = parseJson<Partial<CaptureConfig>>((await get<{ value: string }>("SELECT value FROM settings WHERE key = 'cfg.attendance.capture'"))?.value, {});
   return {
-    methods: { ...DEFAULT_CAPTURE.methods, ...(s.methods ?? {}) },
+    // The in-app scanner shows whenever the QR is on, unless Admin switched it off.
+    methods: { ...DEFAULT_CAPTURE.methods, ...(s.methods ?? {}), scanner: s.methods?.scanner !== false },
     sites: s.sites ?? [],
     devices: { ...DEFAULT_CAPTURE.devices, ...(s.devices ?? {}) },
     window: { ...DEFAULT_CAPTURE.window, ...(s.window ?? {}) },
@@ -85,7 +86,7 @@ export async function saveCaptureConfig(user: AppUser, input: CaptureConfig) {
       posterAt: prev?.posterAt ?? nowIso(),
     };
   });
-  const methods = { qr: !!input.methods.qr, network: !!input.methods.network, shared: !!input.methods.shared, leadScan: !!input.methods.leadScan, scanner: !!input.methods.qr && !!input.methods.scanner };
+  const methods = { qr: !!input.methods.qr, network: !!input.methods.network, shared: !!input.methods.shared, leadScan: !!input.methods.leadScan, scanner: input.methods.scanner !== false };
   if ((methods.qr || methods.network || methods.shared) && !sites.length) throw new WorkflowError("VALIDATION", "Add a site first: QR, network and shared-computer check-in need to know the office.");
   if ((methods.network || methods.shared) && !sites.some((s) => s.networks.length)) throw new WorkflowError("VALIDATION", "Network and shared-computer check-in need the office's internet address on a site.");
   const next: CaptureConfig = {
