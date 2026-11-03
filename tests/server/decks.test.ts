@@ -22,6 +22,14 @@ const throws = async (fn: () => Promise<unknown>) => {
   }
 };
 
+// Today's weekday in the workspace's time zone (as the weekly email reads it), not in UTC.
+async function workspaceWeekday() {
+  const { getSettings } = await import("../../src/server/settings");
+  const { localParts } = await import("../../src/lib/attendance");
+  const p = localParts(new Date().toISOString(), (await getSettings()).workspace.timezone);
+  return new Date(`${p.date}T12:00:00Z`).getUTCDay();
+}
+
 async function main() {
   const by = async (email: string) => (await loadUser((await get<{ id: string }>("SELECT id FROM users WHERE email = ?", email))!.id))!;
   const admin = await by("admin@demo.local");
@@ -59,7 +67,7 @@ async function main() {
   // Decks.
   check("a member saves their own deck", !!(await d.saveDeck(M, { name: "Mine", scope: "dept:dev", slides: ["numbers", "recent"] })));
   check("but not one for the team", !!(await throws(() => d.saveDeck(M, { name: "Team", scope: "dept:dev", slides: ["numbers"], shared: true }))));
-  const team = await d.saveDeck(H, { name: "Weekly team meeting", scope: "dept:dev", slides: ["numbers", "flow", "recent", "nope"], minutes: { numbers: 5, recent: 3 }, shared: true, theme: { bigText: true }, emailTo: [H.id], emailDay: new Date().getUTCDay() });
+  const team = await d.saveDeck(H, { name: "Weekly team meeting", scope: "dept:dev", slides: ["numbers", "flow", "recent", "nope"], minutes: { numbers: 5, recent: 3 }, shared: true, theme: { bigText: true }, emailTo: [H.id], emailDay: await workspaceWeekday() });
   const seen = await d.listDecks(M, "dept:dev");
   check("the team deck is seen by members, the private one only by its owner", seen.some((x) => x.id === team) && (await d.listDecks(H, "dept:dev")).every((x) => x.name !== "Mine"));
   const t = seen.find((x) => x.id === team)!;

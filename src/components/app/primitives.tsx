@@ -42,7 +42,7 @@ export function PageHeader({
             )}
             {explainer && <ShowMeHow id={explainer} />}
           </h1>
-          {description && <p className="mt-1 max-w-3xl text-sm text-muted-foreground">{description}</p>}
+          {description && <p className="mt-1 max-w-3xl text-sm text-muted-foreground" data-detail>{description}</p>}
         </div>
         {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
       </div>

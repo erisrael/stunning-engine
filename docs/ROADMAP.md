@@ -1152,3 +1152,11 @@ Built: `src/server/connectors.ts`, `src/lib/connector-match.ts`, `src/server/not
 - [x] **System health**: a score out of 100 from every check, plus database speed, memory, disk, processor load, the email queue, connected platforms, API errors, failing or late jobs, and the slowest pages.
 
 Built: `src/server/platform.ts`, `src/app/(app)/admin/platform`, `src/app/api/openapi.json`, `src/app/actions/platform.ts`, API counting in the routes (schema 51). Tests: `tests/server/platform.test.ts`, `tests/e2e/platform.e2e.mjs`.
+
+## Phase 29: Designed for phones (done)
+
+- [x] **A bottom tab bar**, as in a phone app: Home, Work (the person's department or production), Chat and Alerts with their counts, and More, which opens the full menu.
+- [x] **A compact view** by default: page explanations, card descriptions and table columns after the fourth (the last one, usually actions, stays) are left out. The **Details** switch in the top bar shows everything, and the choice stays on the phone.
+- [x] **Touch-friendly**: bigger buttons, no zooming when typing, the assistant's button above the tab bar, and the chat button moved from the top bar to the tab bar.
+
+Built: `src/components/app/mobile-nav.tsx`, phone styles in `src/app/globals.css`. Tests: the phone checks in `tests/e2e/mobile.e2e.mjs`.

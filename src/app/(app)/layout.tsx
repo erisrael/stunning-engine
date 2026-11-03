@@ -35,6 +35,7 @@ import { Localizer } from "@/components/app/localizer";
 import { EthiopianDatePicker } from "@/components/app/ethiopian-picker";
 import { Assistant } from "@/components/app/assistant";
 import { OfflineCheckinSync } from "@/components/app/attendance/offline-sync";
+import { MobileNav } from "@/components/app/mobile-nav";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const viewer = await requireViewer();
@@ -71,11 +72,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             .
           </div>
         )}
-        <main className="mx-auto w-full max-w-[1600px] min-w-0 flex-1 px-3 py-4 sm:px-6 sm:py-6">
+        <main className="mx-auto w-full max-w-[1600px] min-w-0 flex-1 px-3 pt-4 pb-24 sm:px-6 sm:py-6 md:pb-6">
           {!viewer.mustChangePassword && <AnnouncementStrip pending={await pendingAnnouncements(viewer)} />}
           <SectionBanner banners={await bannerMap()} />
           {children}
         </main>
+        {await (async () => {
+          const h = await homeDepartment(viewer);
+          return <MobileNav work={h ? { href: h.base, label: h.kind === "studio" ? "Studio" : "Work" } : (viewer.leads.length || viewer.roles.some((r) => ["recording", "editing", "uploading", "publication"].includes(r))) ? { href: "/overview", label: "Work" } : null} chat={counts.chat} alerts={counts.notifications} />;
+        })()}
         <ChatKeyBootstrap viewerId={viewer.id} />
         <Localizer defaultCalendar={settings.workspace.calendarDisplay} />
         <EthiopianDatePicker defaultCalendar={settings.workspace.calendarDisplay} />

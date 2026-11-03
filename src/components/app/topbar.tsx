@@ -1,5 +1,6 @@
 "use client";
 
+import { MobileDetails } from "./mobile-nav";
 import { QrScanButton } from "@/components/app/attendance/qr-scanner";
 import * as React from "react";
 import Link from "next/link";
@@ -166,10 +167,11 @@ export function Topbar({ user, activeRole, unread, chatUnread, qrScan }: { user:
           <kbd className="ml-auto hidden rounded border bg-muted px-1 font-mono text-[10px] lg:inline">Ctrl K</kbd>
         </Button>
         </Hint>
+        <MobileDetails />
         <RoleSwitcher roles={user.roles} active={activeRole} />
         {qrScan && <QrScanButton compact />}
         <Hint title="Chat" tip={NAV_TIPS["top.chat"]}>
-        <Button variant="ghost" size="icon" className={cn("relative", pathname === "/chat" && "bg-accent")} aria-label={`Chat, ${chat} unread`} asChild>
+        <Button variant="ghost" size="icon" className={cn("relative hidden md:inline-flex", pathname === "/chat" && "bg-accent")} aria-label={`Chat, ${chat} unread`} asChild>
           <Link href="/chat">
             <MessageCircleIcon />
             {chat > 0 && (

@@ -334,3 +334,26 @@
     padding-right: 26rem;
   }
 }
+
+/* Phones (Phase 29): touch-sized controls, no zoom on typing, and a compact view that leaves out long
+   explanations and extra table columns (the Details switch in the top bar shows everything). */
+@media (max-width: 767px) {
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+  [data-slot="button"]:not([data-size="icon"]):not([data-size="xs"]) {
+    min-height: 2.5rem;
+  }
+  html:not(.m-full) [data-detail],
+  html:not(.m-full) [data-slot="card-description"],
+  html:not(.m-full) main table th:nth-child(n + 5):not(:last-child),
+  html:not(.m-full) main table td:nth-child(n + 5):not(:last-child) {
+    display: none !important;
+  }
+  html:not(.m-full) main [data-slot="card"] {
+    border-radius: 1rem;
+  }
+  main h1 {
+    font-size: 1.35rem;
+  }
+}

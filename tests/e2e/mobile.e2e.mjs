@@ -32,6 +32,22 @@ try {
     if (over > 2) await page.screenshot({ path: path.join(shots, `${p.replace(/[/?=]/g, "_")}.png`), fullPage: false });
   }
   check("no page errors", errors.length === 0, errors.join(" | "));
+  // Phase 29: a bottom tab bar, a compact view with a Details switch.
+  await page.goto(`${base}/admin`);
+  await page.waitForLoadState("load");
+  check("a bottom tab bar on phones", await page.locator("[data-mobile-nav]").isVisible() && (await page.locator("[data-mobile-tab]").count()) >= 4);
+  const desc = page.locator("main main [data-detail]").first();
+  check("long explanations are left out", (await desc.count()) > 0 && !(await desc.isVisible()));
+  await page.locator("[data-mobile-details]").click();
+  check("the Details switch shows them", await desc.isVisible());
+  await page.locator("[data-mobile-details]").click();
+  await page.locator('[data-mobile-tab="More"]').click();
+  check("More opens the full menu", await page.locator("[data-sidebar=sidebar]").first().isVisible());
+  await page.keyboard.press("Escape");
+  const nav = await page.locator("[data-mobile-nav]").boundingBox();
+  const fab = await page.locator("[data-assistant]").boundingBox();
+  check("the assistant sits above the tab bar", !!nav && !!fab && fab.y + fab.height <= nav.y + 1, JSON.stringify({ nav, fab }));
+  await page.screenshot({ path: path.join(shots, "phone-admin.png") });
   // Phase 5b: installable with shortcuts; without a network the offline page shows (not the browser's error).
   const man = await (await page.request.get(`${base}/manifest.webmanifest`)).json();
   check("the app can be installed with shortcuts", man.display === "standalone" && man.shortcuts?.some((x) => x.url === "/attendance"));

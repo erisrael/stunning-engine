@@ -672,7 +672,7 @@ export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantCo
       <RoutineRunner />
       {rec.recording && <RecordBar count={rec.steps.length} onStop={() => setToSave(rec.stop())} onCancel={() => rec.stop()} />}
       {toSave && <SaveRoutineDialog steps={toSave} sharing onClose={() => setToSave(null)} onSaved={() => (setToSave(null), loadRoutines())} />}
-      <div className={cn("no-print fixed z-50 flex flex-col items-end gap-2", dock && open ? "inset-y-0 right-0" : "right-4 bottom-4")} data-assistant data-docked={dock && open ? "1" : undefined}>
+      <div className={cn("no-print fixed z-50 flex flex-col items-end gap-2", dock && open ? "inset-y-0 right-0" : "right-4 bottom-20 md:bottom-4")} data-assistant data-docked={dock && open ? "1" : undefined}>
         {open && (
           <section
             role="dialog"
