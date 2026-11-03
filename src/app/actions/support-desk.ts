@@ -66,3 +66,11 @@ export async function agentEndCallAction(callId: string, notes?: string | null) 
 export async function iceAction() {
   return wrap(async () => (await requireViewer(), sd.iceConfig()), { revalidate: false });
 }
+
+// Knowledge base and channels.
+export async function saveArticleAction(input: Parameters<typeof import("@/server/support-channels").saveArticle>[1]) {
+  return wrap(async () => (await import("@/server/support-channels")).saveArticle(await requireViewer(), input));
+}
+export async function connectTelegramAction(token: string) {
+  return wrap(async () => (await import("@/server/support-channels")).connectTelegram(await requireViewer(), token, await (await import("@/server/password-reset")).appOrigin()));
+}

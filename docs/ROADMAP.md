@@ -956,7 +956,7 @@ Phase 5b made the web app installable and prepared the native shell. This phase 
 - [ ] **Deep links**: links in emails and notifications open the right page in the app.
 - [ ] **Customer support in the Myseed App**: the student app embeds the support widget (Phase 20) through its web view or calls the API, so students and parents reach support without leaving the app.
 
-## Phase 20: Customer support (done; the Myseed App still to connect)
+## Phase 20: Customer support (done; the Myseed App still to connect, SMS later)
 
 A real help desk for the customers of Myseed's apps, inside this workspace. It was built here rather than as a separate system so that agents, attendance, notifications, recognition and Admin all stay in one place. Other apps connect with an SDK and an API ([SUPPORT-SDK.md](SUPPORT-SDK.md)).
 
@@ -983,10 +983,15 @@ A real help desk for the customers of Myseed's apps, inside this workspace. It w
   - the activity log and the call recordings.
 - [x] **Recognition**: solved tickets count as finished work in the monthly score (on time when within the target); ratings of 1 or 2 count as work sent back.
 - [ ] **Connect the Myseed App**: add the SDK or the API with the app's real key and sign its customers from its server.
-- [ ] **Email into tickets**: the support mailbox (Phase 14) opening and replying to tickets.
-- [ ] **Telegram and SMS** as channels, and a knowledge base customers search before asking.
+- [x] **Email into tickets**: a mailbox in the app chosen in Support setup. New mail opens a ticket (from the next message on, not its old mail). Replies continue the ticket by [#number] in the subject or by the email headers, but only from the same customer, and quoted text is cut off. Agents' replies go out from that mailbox.
+- [x] **Telegram**: Admin pastes the bot token, and the app sets Telegram's webhook to itself. Messages to the bot open or continue a ticket, the customer is told its number, and agents' replies go back to the chat.
+- [x] **Knowledge base**:
+  - agents write articles and leads publish them;
+  - customers search them in the widget, and see suggestions while typing a question; each article counts reads and "did this help?" votes;
+  - agents link articles in replies (`/help/<id>`); the API has `articles`.
+- [ ] **SMS** as a channel (needs a paid SMS gateway).
 
-Built: `src/server/support-desk.ts`, `src/lib/support.ts`, `src/app/(app)/support`, `src/components/app/support`, `src/app/support-widget`, `src/app/api/support` (schema 38). Tests: `tests/server/support-desk.test.ts` (53 checks), and `tests/e2e/support.e2e.mjs`, which covers the SDK on another site, assignment, a reply, and a real browser call that is recorded.
+Built: `src/server/support-desk.ts`, `src/server/support-channels.ts` (email, Telegram, knowledge base; schema 41), `src/lib/support.ts`, `src/app/(app)/support`, `src/components/app/support`, `src/app/support-widget`, `src/app/api/support` (schema 38). Tests: `tests/server/support-desk.test.ts` (53 checks), and `tests/e2e/support.e2e.mjs`, which covers the SDK on another site, assignment, a reply, and a real browser call that is recorded.
 
 ## Phase 21: Attendance kept by hand, payroll for everyone, and recognition (done)
 

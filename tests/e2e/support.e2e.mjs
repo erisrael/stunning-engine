@@ -37,6 +37,17 @@ try {
   await sara.locator('[data-status="online"]').click();
   check("online", await toast(sara, /You are online/));
 
+  // A lead publishes a help article.
+  const liya = await as("liya@demo.local");
+  await liya.goto(`${base}/support?tab=kb`);
+  await liya.getByRole("button", { name: "New article" }).click();
+  await liya.locator("[data-article-form]").getByLabel("Article title").fill("My login code expired");
+  await liya.locator("[data-article-form]").getByLabel("Keywords").fill("login code sms expired");
+  await liya.locator("[data-article-form]").getByLabel("Answer").fill("Close the app, open it again and press Send a new code. Codes last ten minutes.");
+  await liya.locator("[data-article-form]").getByRole("checkbox").check();
+  await liya.locator("[data-article-form]").getByRole("button", { name: "Save article" }).click();
+  check("a lead publishes a help article", await toast(liya, /Article saved/));
+
   // The SDK on another site: the launcher opens the widget.
   const cctx = await browser.newContext({ viewport: { width: 1000, height: 820 }, permissions: ["microphone"] });
   const site = await cctx.newPage();
@@ -49,9 +60,12 @@ try {
   const w = site.frameLocator('[data-myseed-support="panel"] iframe');
   check("the SDK opens the widget with the app's greeting", await visible(w.getByText("Selam! How can we help?"), 20000));
   check("it says the team is online", await visible(w.getByText("We are online")));
+  await w.locator("[data-help-search]").getByLabel("Search help").fill("login code");
+  check("the customer finds the help article", await visible(w.locator("[data-help-result]").getByText("My login code expired")));
   await w.locator("[data-new-question]").click();
   await w.getByLabel("Subject").fill("Cannot login");
   await w.getByLabel("Your question").fill("The app says my login code expired.");
+  check("articles are suggested while typing the question", await visible(w.locator("[data-suggested]").getByText("My login code expired")));
   await w.getByRole("button", { name: "Send" }).click();
   check("the conversation opens", await visible(w.locator("[data-thread]").getByText("login code expired")));
   await site.screenshot({ path: path.join(shots, "1-sdk-widget.png") });
@@ -90,7 +104,6 @@ try {
   check("the call and its recording are on the ticket", await visible(sara.locator("[data-recording-player]"), 15000));
 
   // The lead's monitor.
-  const liya = await as("liya@demo.local");
   await liya.goto(`${base}/support?tab=monitor`);
   check("the lead sees the agents", await visible(liya.locator("[data-agents-table]").getByText("Sara")));
   check("and the activity", await visible(liya.locator("[data-activity]").getByText(/call answered/)));

@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 40;
+export const SCHEMA_VERSION = 41;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -2168,6 +2168,23 @@ CREATE TABLE IF NOT EXISTS mail_state (
   error TEXT
 );
 
+-- v41: customer support: the knowledge base, and email and Telegram threads on tickets.
+CREATE TABLE IF NOT EXISTS sup_articles (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,
+  category TEXT,
+  keywords TEXT NOT NULL DEFAULT '',
+  published INTEGER NOT NULL DEFAULT 0,
+  views INTEGER NOT NULL DEFAULT 0,
+  helpful INTEGER NOT NULL DEFAULT 0,
+  not_helpful INTEGER NOT NULL DEFAULT 0,
+  created_by TEXT,
+  updated_by TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 -- v40: performance management (Phase 17): the KPI library, KRA templates per role and position, targets per
 -- person, values (computed, typed or corrected), monthly periods and frozen scorecards; OKR cycles, objectives,
 -- key results and check-ins.
@@ -2400,6 +2417,9 @@ CREATE TABLE IF NOT EXISTS sup_messages (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_sup_messages_ticket ON sup_messages(ticket_id, created_at);
+-- (v41) the email a message came in as or went out as, to thread replies.
+ALTER TABLE sup_messages ADD COLUMN IF NOT EXISTS email_id TEXT;
+CREATE INDEX IF NOT EXISTS idx_sup_messages_email ON sup_messages(email_id);
 CREATE TABLE IF NOT EXISTS sup_calls (
   id TEXT PRIMARY KEY,
   ticket_id TEXT REFERENCES sup_tickets(id) ON DELETE CASCADE,
@@ -2830,6 +2850,7 @@ export const TABLES = [
   "sup_agents",
   "sup_activity",
   "sup_canned",
+  "sup_articles",
   "sup_blobs",
   "recog_scores",
   "recog_awards",

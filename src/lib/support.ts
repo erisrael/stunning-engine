@@ -10,7 +10,7 @@ export const PRIORITIES = ["low", "normal", "high", "urgent"] as const;
 export type Priority = (typeof PRIORITIES)[number];
 export const PRIORITY_LABELS: Record<Priority, string> = { low: "Low", normal: "Normal", high: "High", urgent: "Urgent" };
 
-export const CHANNEL_LABELS: Record<string, string> = { widget: "App chat", call: "App call", phone: "Phone", email: "Email", walk_in: "In person", agent: "Opened by an agent", social: "Social media", api: "API" };
+export const CHANNEL_LABELS: Record<string, string> = { telegram: "Telegram", widget: "App chat", call: "App call", phone: "Phone", email: "Email", walk_in: "In person", agent: "Opened by an agent", social: "Social media", api: "API" };
 
 export type SupportConfig = {
   enabled: boolean;
@@ -30,6 +30,10 @@ export type SupportConfig = {
   // Shown in the widget, for example "Monday to Friday, 8:30 to 17:30".
   hours: string;
   awayMessage: string;
+  // A mailbox in the app (Email) whose mail becomes tickets, and from which agents' replies go out.
+  mailbox: string | null;
+  // Customers write to the support Telegram bot (the token is kept sealed, apart from these settings).
+  telegram: boolean;
 };
 
 export const DEFAULT_SUPPORT: SupportConfig = {
@@ -44,4 +48,6 @@ export const DEFAULT_SUPPORT: SupportConfig = {
   ringSeconds: 45,
   hours: "Monday to Friday, 8:30 to 17:30",
   awayMessage: "No one can take your call right now. Leave a message and we will answer as soon as we can.",
+  mailbox: null,
+  telegram: false,
 };

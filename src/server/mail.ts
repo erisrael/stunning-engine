@@ -1036,3 +1036,71 @@ export async function unreadMail(userId: string): Promise<{ has: boolean; unread
   const r = await get<{ unread: number | null }>("SELECT m.unread FROM email_senders s LEFT JOIN mail_state m ON m.sender_id = s.id WHERE s.user_id = ? AND s.mailbox = 1 AND s.active = 1", userId);
   return r ? { has: true, unread: Number(r.unread ?? 0) } : { has: false, unread: 0 };
 }
+
+// ---------------------------------------------------------------------------
+// A shared mailbox read and answered by the app itself (customer support, Phase 20)
+// ---------------------------------------------------------------------------
+
+export type IncomingMail = { uid: number; messageId: string | null; inReplyTo: string | null; references: string[]; subject: string; fromName: string; fromAddress: string; text: string; date: string };
+
+async function rowByAddress(address: string) {
+  const row = await get<SenderRow>("SELECT * FROM email_senders WHERE LOWER(address) = LOWER(?) AND mailbox = 1 AND active = 1", address);
+  if (!row) throw new WorkflowError("NOT_FOUND", `${address} is not a mailbox in the app (Email, Settings, Mailboxes).`);
+  return row;
+}
+
+// New messages in a mailbox's inbox after a uid (oldest first), with the plain text of each.
+export async function mailboxNewMessages(address: string, afterUid: number, max = 30): Promise<{ messages: IncomingMail[]; lastUid: number }> {
+  const store = await storeFor(await rowByAddress(address));
+  const list = await store.list("INBOX", { page: 0, size: 100 });
+  const fresh = list.rows.filter((r) => r.uid > afterUid).sort((a, b) => a.uid - b.uid).slice(0, max);
+  const out: IncomingMail[] = [];
+  for (const r of fresh) {
+    const m = await store.raw("INBOX", r.uid);
+    if (!m) continue;
+    const p = await simpleParser(m.raw);
+    const from = (p.from?.value ?? [])[0];
+    const refs = Array.isArray(p.references) ? p.references : p.references ? [p.references] : [];
+    out.push({ uid: r.uid, messageId: p.messageId ?? null, inReplyTo: p.inReplyTo ?? null, references: refs, subject: p.subject ?? "", fromName: from?.name || from?.address || "", fromAddress: (from?.address ?? "").toLowerCase(), text: (p.text ?? "").trim(), date: (p.date ?? new Date()).toISOString() });
+  }
+  return { messages: out, lastUid: fresh.length ? fresh[fresh.length - 1]!.uid : afterUid };
+}
+
+// The newest message's uid, so a mailbox connected to support starts from now, not from its old mail.
+export async function mailboxTopUid(address: string) {
+  return (await (await storeFor(await rowByAddress(address))).inbox()).uidNext - 1;
+}
+
+// Sends from a shared mailbox (not a person's), keeping a copy in its Sent folder.
+export async function sendFromMailbox(address: string, input: { to: string[]; subject: string; text: string; inReplyTo?: string | null; references?: string[] }) {
+  const row = await rowByAddress(address);
+  const messageId = `<${crypto.randomUUID()}@${row.address.split("@")[1]}>`;
+  const o = mailOptions(row, { to: input.to, subject: input.subject, text: input.text, inReplyTo: input.inReplyTo ?? null, references: input.references ?? [] }, messageId);
+  if (fake()) {
+    for (const rcpt of [...o.to]) {
+      const target = await get<SenderRow>("SELECT * FROM email_senders WHERE address = ? AND mailbox = 1", rcpt);
+      if (target) await new MemStore(target.address).append("INBOX", await build(o, false), []);
+    }
+    await memOutbox.push({ to: o.to, subject: o.subject, text: o.text, messageId, inReplyTo: input.inReplyTo ?? null });
+  } else {
+    const t = await transportFor(row);
+    await t.transporter.sendMail(o);
+  }
+  const store = await storeFor(row);
+  const sent = (await store.folders()).find((f) => f.specialUse === "\Sent")?.path ?? "Sent";
+  await store.append(sent, await build(o, true), ["\Seen"]).catch(() => null);
+  return { messageId };
+}
+
+// In tests (fake mail), what the app sent from shared mailboxes, and a way to drop a message into a mailbox.
+export const memOutbox = {
+  list: [] as { to: string[]; subject: string; text: string; messageId: string; inReplyTo: string | null }[],
+  async push(m: { to: string[]; subject: string; text: string; messageId: string; inReplyTo: string | null }) {
+    this.list.push(m);
+  },
+};
+export async function deliverForTest(address: string, input: { from: string; fromName?: string; subject: string; text: string; inReplyTo?: string | null; messageId?: string }) {
+  if (!fake()) throw new Error("Only with fake mail.");
+  const c = new MailComposer({ from: { name: input.fromName ?? "", address: input.from }, to: address, subject: input.subject, text: input.text, messageId: input.messageId ?? `<${crypto.randomUUID()}@example.com>`, inReplyTo: input.inReplyTo ?? undefined, date: new Date() });
+  return new MemStore(address).append("INBOX", await c.compile().build(), []);
+}

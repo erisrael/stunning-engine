@@ -295,7 +295,7 @@ export function Inbox({ rows, view, views, q, openId }: { rows: Row[]; view: str
 // A ticket
 // ---------------------------------------------------------------------------
 
-export function TicketView({ d, agents, queues, canned, me, lead }: { d: Detail; agents: { id: string; name: string }[]; queues: { id: string; name: string }[]; canned: { id: string; title: string; body: string }[]; me: string; lead: boolean }) {
+export function TicketView({ d, agents, queues, canned, me, lead, articles = [], origin = "" }: { d: Detail; agents: { id: string; name: string }[]; queues: { id: string; name: string }[]; canned: { id: string; title: string; body: string }[]; me: string; lead: boolean; articles?: { id: string; title: string }[]; origin?: string }) {
   const { act, busy } = useAct();
   const t = d.ticket as { id: string; number: number; subject: string; status: TicketStatus; priority: Priority; channel: string; queue_id: string | null; assignee_id: string | null; assignee: string | null; created_at: string; rating: number | null; rating_comment: string | null; tags: string };
   const [body, setBody] = React.useState("");
@@ -401,6 +401,24 @@ export function TicketView({ d, agents, queues, canned, me, lead }: { d: Detail;
                 <Button size="xs" variant={internal ? "default" : "outline"} onClick={() => setInternal(true)}>
                   <LockIcon /> Internal note
                 </Button>
+                {articles.length > 0 && !internal && (
+                  <select
+                    aria-label="Help article"
+                    className={cn(select, "h-7 text-xs")}
+                    value=""
+                    onChange={(e) => {
+                      const x = articles.find((y) => y.id === e.target.value);
+                      if (x) setBody((b) => `${b}${b ? "\n\n" : ""}${x.title}: ${origin}/help/${x.id}`);
+                    }}
+                  >
+                    <option value="">Link an article…</option>
+                    {articles.map((x) => (
+                      <option key={x.id} value={x.id}>
+                        {x.title}
+                      </option>
+                    ))}
+                  </select>
+                )}
                 {canned.length > 0 && (
                   <select aria-label="Saved reply" className={cn(select, "h-7 text-xs")} value="" onChange={(e) => setBody((b) => `${b}${b ? "\n" : ""}${canned.find((c) => c.id === e.target.value)?.body ?? ""}`)}>
                     <option value="">Saved replies…</option>

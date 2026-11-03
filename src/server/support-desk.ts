@@ -92,7 +92,16 @@ export async function saveSupportConfig(user: AppUser, input: Partial<SupportCon
     ringSeconds: n(input.ringSeconds ?? cur.ringSeconds, 45, 15, 180),
     hours: clean(input.hours ?? cur.hours, 200),
     awayMessage: clean(input.awayMessage ?? cur.awayMessage, 400),
+    mailbox: input.mailbox === undefined ? cur.mailbox : input.mailbox ? clean(input.mailbox, 200).toLowerCase() : null,
+    telegram: input.telegram ?? cur.telegram,
   };
+  if (next.mailbox && next.mailbox !== cur.mailbox && !(await get("SELECT 1 AS x FROM email_senders WHERE LOWER(address) = ? AND mailbox = 1", next.mailbox)))
+    throw new WorkflowError("VALIDATION", `${next.mailbox} is not a mailbox in the app yet (Email, Settings, Mailboxes).`);
+  // A newly chosen mailbox becomes tickets from its next message on, not its old mail.
+  if (next.mailbox && next.mailbox !== cur.mailbox) {
+    const top = await (await import("./mail")).mailboxTopUid(next.mailbox).catch(() => 0);
+    await run("INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at", `sup.mail.${next.mailbox}`, JSON.stringify(top), nowIso());
+  }
   await run(
     "INSERT INTO settings (key, value, updated_at, updated_by) VALUES ('cfg.support', ?, ?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by",
     JSON.stringify(next),
@@ -422,7 +431,7 @@ async function nextNumber() {
 }
 const SLA_FACTOR: Record<Priority, number> = { urgent: 0.25, high: 0.5, normal: 1, low: 2 };
 
-async function createTicketRow(input: { subject: string; body: string; customerId: string | null; appId: string | null; appQueue: string | null; channel: string; priority?: Priority; authorKind: "customer" | "agent"; authorId: string | null; queueId?: string | null; internal?: boolean }) {
+async function createTicketRow(input: { subject: string; body: string; customerId: string | null; appId: string | null; appQueue: string | null; channel: string; priority?: Priority; authorKind: "customer" | "agent"; authorId: string | null; queueId?: string | null; internal?: boolean; emailId?: string | null }) {
   const subject = clean(input.subject, 160) || clean(input.body, 80) || "Help";
   const body = clean(input.body, 8000);
   if (!body) throw new WorkflowError("VALIDATION", "Write the question or problem.");
@@ -450,7 +459,7 @@ async function createTicketRow(input: { subject: string; body: string; customerI
       minutesFrom(now, (q?.slaResolveMin ?? 1440) * SLA_FACTOR[priority]),
       input.authorKind === "customer" ? now : null,
     );
-    await run("INSERT INTO sup_messages (id, ticket_id, author_kind, author_id, body, internal, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)", uid("smg_"), id, input.authorKind, input.authorId, body, input.internal ? 1 : 0, now);
+    await run("INSERT INTO sup_messages (id, ticket_id, author_kind, author_id, body, internal, created_at, email_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", uid("smg_"), id, input.authorKind, input.authorId, body, input.internal ? 1 : 0, now, input.emailId ?? null);
   });
   await activity(input.authorKind === "agent" ? input.authorId : null, id, "created", `${input.channel}${q ? `, queue ${q.name}` : ""}`);
   return id;
@@ -464,6 +473,16 @@ export async function customerCreateTicket(app: AppFull, token: string, input: {
     const leads = (await supportConfig()).leads;
     const t = await get<{ number: number; subject: string }>("SELECT number, subject FROM sup_tickets WHERE id = ?", id);
     await notify(leads, { type: "assignment", title: `Ticket #${t?.number} waits: no agent is free`, body: t?.subject ?? "", link: `/support?ticket=${id}`, dedupeKey: `sup-wait-${id}` }, nowIso());
+  }
+  return id;
+}
+
+// A ticket from email or Telegram (src/server/support-channels.ts), given out as any other.
+export async function createTicketFromChannel(input: { subject: string; body: string; customerId: string; channel: "email" | "telegram"; emailId?: string | null; appQueue: string | null }) {
+  const id = await createTicketRow({ subject: input.subject, body: input.body, customerId: input.customerId, appId: null, appQueue: input.appQueue, channel: input.channel, authorKind: "customer", authorId: input.customerId, emailId: input.emailId ?? null });
+  if (!(await autoAssign(id))) {
+    const t = await get<{ number: number; subject: string }>("SELECT number, subject FROM sup_tickets WHERE id = ?", id);
+    await notify((await supportConfig()).leads, { type: "assignment", title: `Ticket #${t?.number} waits: no agent is free`, body: t?.subject ?? "", link: `/support?ticket=${id}`, dedupeKey: `sup-wait-${id}` }, nowIso());
   }
   return id;
 }
@@ -592,7 +611,17 @@ export async function agentReply(user: AppUser, ticketId: string, input: { body:
   const body = clean(input.body, 8000);
   if (!body) throw new WorkflowError("VALIDATION", "Write the reply.");
   const now = nowIso();
-  await run("INSERT INTO sup_messages (id, ticket_id, author_kind, author_id, body, internal, created_at) VALUES (?, ?, 'agent', ?, ?, ?, ?)", uid("smg_"), t.id, user.id, body, input.internal ? 1 : 0, now);
+  const msgId = uid("smg_");
+  await run("INSERT INTO sup_messages (id, ticket_id, author_kind, author_id, body, internal, created_at) VALUES (?, ?, 'agent', ?, ?, ?, ?)", msgId, t.id, user.id, body, input.internal ? 1 : 0, now);
+  // Email and Telegram tickets: the reply goes back the same way.
+  if (!input.internal) {
+    try {
+      const sent = await (await import("./support-channels")).deliverReply(t.id, body, user.name);
+      if (sent && sent !== "telegram") await run("UPDATE sup_messages SET email_id = ? WHERE id = ?", sent, msgId);
+    } catch (e) {
+      await run("INSERT INTO sup_messages (id, ticket_id, author_kind, author_id, body, internal, created_at) VALUES (?, ?, 'system', NULL, ?, 1, ?)", uid("smg_"), t.id, `The reply could not be sent to the customer: ${e instanceof Error ? e.message : String(e)}`, nowIso());
+    }
+  }
   if (!input.internal) {
     // The first public reply answers the ticket (the first response target); an unassigned ticket becomes the replier's.
     await run(
@@ -997,6 +1026,8 @@ export async function supportChecks(now = nowIso()) {
   const cfg = await supportConfig();
   if (!cfg.enabled) return { breached: 0, closed: 0, assigned: 0 };
   await expireRinging();
+  // New mail in the support mailbox becomes tickets or replies.
+  if (cfg.mailbox) await (await import("./support-channels")).pollSupportMailbox().catch((e) => console.error("support mailbox", e));
   const late = await all<{ id: string; number: number; subject: string; assignee_id: string | null; first_response_at: string | null }>(
     `SELECT id, number, subject, assignee_id, first_response_at FROM sup_tickets WHERE breached = 0 AND status NOT IN ('solved','closed','pending','on_hold')
      AND ((first_response_at IS NULL AND sla_first_due < ?) OR sla_resolve_due < ?)`,

@@ -6,7 +6,9 @@ import { appOrigin } from "@/server/password-reset";
 import * as sd from "@/server/support-desk";
 import { EmptyState, PageHeader } from "@/components/app/primitives";
 import { Desk, Inbox, NewTicket, TicketView } from "@/components/app/support/desk";
-import { Apps, Canned, Monitor, Queues, SupportSettings } from "@/components/app/support/setup";
+import { Apps, Canned, KnowledgeBase, Monitor, Queues, SupportSettings } from "@/components/app/support/setup";
+import * as ch from "@/server/support-channels";
+import { all } from "@/server/db";
 import { cn } from "@/lib/utils";
 
 export const metadata = { title: "Customer support" };
@@ -26,8 +28,8 @@ export default async function SupportPage({ searchParams }: { searchParams: Prom
         <EmptyState title={cfg.enabled ? "You are not a support agent" : "Customer support is switched off"} description={cfg.enabled ? "A support lead adds agents to the queues." : "Admin switches it on in Support setup."} />
       </div>
     );
-  const tabs = [...(cfg.enabled && agent ? ["desk"] : []), ...(lead && cfg.enabled ? ["monitor"] : []), ...(lead ? ["queues", "apps"] : []), ...(admin || lead ? ["settings"] : [])];
-  const LABELS: Record<string, string> = { desk: "Desk", monitor: "Monitor", queues: "Queues and replies", apps: "Apps and SDK", settings: "Settings" };
+  const tabs = [...(cfg.enabled && agent ? ["desk", "kb"] : []), ...(lead && cfg.enabled ? ["monitor"] : []), ...(lead ? ["queues", "apps"] : []), ...(admin || lead ? ["settings"] : [])];
+  const LABELS: Record<string, string> = { kb: "Knowledge base", desk: "Desk", monitor: "Monitor", queues: "Queues and replies", apps: "Apps and SDK", settings: "Settings" };
   const tab = tabs.includes(sp.tab ?? "") ? sp.tab! : tabs[0]!;
   const people = (await userDirectory()).map((u) => ({ id: u.id, name: u.name }));
   const queues = await sd.listQueues();
@@ -56,7 +58,7 @@ export default async function SupportPage({ searchParams }: { searchParams: Prom
         <div className="grid gap-4 lg:grid-cols-[22rem_1fr]">
           <Inbox rows={rows} view={view} views={views} q={sp.q ?? ""} openId={sp.ticket ?? null} />
           {detail ? (
-            <TicketView d={detail as Parameters<typeof TicketView>[0]["d"]} agents={agents} queues={queues.map((q) => ({ id: q.id, name: q.name }))} canned={await sd.cannedReplies()} me={viewer.id} lead={lead} />
+            <TicketView d={detail as Parameters<typeof TicketView>[0]["d"]} agents={agents} queues={queues.map((q) => ({ id: q.id, name: q.name }))} canned={await sd.cannedReplies()} me={viewer.id} lead={lead} articles={(await ch.listArticles(viewer)).filter((x) => x.published).map((x) => ({ id: x.id, title: x.title }))} origin={await appOrigin()} />
           ) : (
             <EmptyState title="Choose a ticket" description="Go online to be given new tickets and calls. Tickets that wait because nobody is free are given out as agents come online." />
           )}
@@ -76,7 +78,9 @@ export default async function SupportPage({ searchParams }: { searchParams: Prom
       </div>
     );
   else if (tab === "apps") panel = <Apps apps={await sd.listApps(viewer)} queues={queues} origin={await appOrigin()} admin={admin} />;
-  else if (tab === "settings") panel = <SupportSettings cfg={cfg} people={people} admin={admin} />;
+  else if (tab === "settings")
+    panel = <SupportSettings cfg={cfg} people={people} admin={admin} mailboxes={(await all<{ address: string }>("SELECT address FROM email_senders WHERE mailbox = 1 AND active = 1 ORDER BY address")).map((m) => m.address)} telegram={await ch.telegramInfo()} />;
+  else if (tab === "kb") panel = <KnowledgeBase list={await ch.listArticles(viewer)} lead={lead} origin={await appOrigin()} />;
 
   return (
     <div className="space-y-4">

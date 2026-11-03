@@ -103,6 +103,7 @@ export function SupportWidget({ appKey, initialUser, waitForParent }: { appKey: 
               <PlusIcon /> Ask a question
             </Button>
             {s.online && <CallButton api={api} s={s} ticketId={null} color={color} onTicket={(id) => (setOpen(id), void reload())} />}
+            <HelpSearch api={api} onOpen={(id) => setOpen(`a:${id}`)} />
             {tickets.length > 0 && <p className="pt-2 text-xs font-medium text-muted-foreground">Your conversations</p>}
             <ul className="space-y-1">
               {tickets.map((t) => (
@@ -118,8 +119,9 @@ export function SupportWidget({ appKey, initialUser, waitForParent }: { appKey: 
             </ul>
           </div>
         )}
-        {open === "new" && <NewQuestion api={api} color={color} onDone={(id) => (setOpen(id), void reload())} />}
-        {open && open !== "new" && <Thread key={open} api={api} s={s} id={open} color={color} />}
+        {open === "new" && <NewQuestion api={api} color={color} onDone={(id) => (setOpen(id), void reload())} onArticle={(id) => setOpen(`a:${id}`)} />}
+        {open?.startsWith("a:") && <ArticleView api={api} id={open.slice(2)} onAsk={() => setOpen("new")} />}
+        {open && open !== "new" && !open.startsWith("a:") && <Thread key={open} api={api} s={s} id={open} color={color} />}
       </div>
     </div>
   );
@@ -127,14 +129,87 @@ export function SupportWidget({ appKey, initialUser, waitForParent }: { appKey: 
 
 type Api = <T>(path: string, body?: unknown) => Promise<T>;
 
-function NewQuestion({ api, color, onDone }: { api: Api; color: string; onDone: (id: string) => void }) {
+type Found = { id: string; title: string; category: string | null; snippet: string };
+
+// Help articles matching what the customer types (the knowledge base), so many questions answer themselves.
+function useArticles(api: Api, q: string) {
+  const [found, setFound] = React.useState<Found[]>([]);
+  React.useEffect(() => {
+    if (q.trim().length < 4) return void setFound([]);
+    const t = window.setTimeout(() => void api<Found[]>(`articles?q=${encodeURIComponent(q)}`).then(setFound).catch(() => setFound([])), 400);
+    return () => window.clearTimeout(t);
+  }, [api, q]);
+  return found;
+}
+
+function HelpSearch({ api, onOpen }: { api: Api; onOpen: (id: string) => void }) {
+  const [q, setQ] = React.useState("");
+  const found = useArticles(api, q);
+  return (
+    <div className="space-y-1 pt-2" data-help-search>
+      <Input aria-label="Search help" placeholder="Search help articles" value={q} onChange={(e) => setQ(e.target.value)} />
+      {found.map((a) => (
+        <button key={a.id} type="button" className="block w-full rounded-lg border p-2 text-left text-sm hover:bg-muted" onClick={() => onOpen(a.id)} data-help-result>
+          <span className="font-medium">{a.title}</span>
+          <span className="block truncate text-xs text-muted-foreground">{a.snippet}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ArticleView({ api, id, onAsk }: { api: Api; id: string; onAsk: () => void }) {
+  const [a, setA] = React.useState<{ title: string; body: string; category: string | null } | null>(null);
+  const [voted, setVoted] = React.useState<boolean | null>(null);
+  React.useEffect(() => void api<{ title: string; body: string; category: string | null }>(`articles/${id}`).then(setA).catch(() => null), [api, id]);
+  if (!a) return <Loader2Icon className="m-6 size-5 animate-spin text-muted-foreground" />;
+  return (
+    <div className="space-y-3 p-4 text-sm" data-help-article>
+      {a.category && <p className="text-xs text-muted-foreground">{a.category}</p>}
+      <p className="text-base font-semibold">{a.title}</p>
+      <p className="whitespace-pre-wrap">{a.body}</p>
+      {voted === null ? (
+        <div className="flex items-center gap-2 border-t pt-2">
+          <span className="text-xs">Did this help?</span>
+          <Button size="xs" variant="outline" onClick={() => (setVoted(true), void api(`articles/${id}/vote`, { helpful: true }))}>
+            Yes
+          </Button>
+          <Button size="xs" variant="outline" onClick={() => (setVoted(false), void api(`articles/${id}/vote`, { helpful: false }))}>
+            No
+          </Button>
+        </div>
+      ) : voted ? (
+        <p className="border-t pt-2 text-xs text-muted-foreground">Glad it helped.</p>
+      ) : (
+        <div className="border-t pt-2">
+          <Button size="sm" variant="outline" onClick={onAsk}>
+            Ask our team instead
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function NewQuestion({ api, color, onDone, onArticle }: { api: Api; color: string; onDone: (id: string) => void; onArticle: (id: string) => void }) {
   const [f, setF] = React.useState({ subject: "", message: "" });
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState<string | null>(null);
+  const suggested = useArticles(api, `${f.subject} ${f.message}`);
   return (
     <div className="space-y-2 p-4">
       <Input aria-label="Subject" placeholder="Subject (optional)" value={f.subject} onChange={(e) => setF({ ...f, subject: e.target.value })} />
       <Textarea aria-label="Your question" placeholder="Tell us what you need" className="min-h-32" value={f.message} onChange={(e) => setF({ ...f, message: e.target.value })} />
+      {suggested.length > 0 && (
+        <div className="space-y-1 rounded-lg bg-muted/50 p-2" data-suggested>
+          <p className="text-xs text-muted-foreground">These may answer it:</p>
+          {suggested.slice(0, 3).map((a) => (
+            <button key={a.id} type="button" className="block w-full text-left text-sm text-primary hover:underline" onClick={() => onArticle(a.id)}>
+              {a.title}
+            </button>
+          ))}
+        </div>
+      )}
       {err && <p className="text-xs text-[#D93025]">{err}</p>}
       <Button
         className="w-full text-white"

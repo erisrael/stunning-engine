@@ -49,9 +49,10 @@ function People({ all, value, onChange, label }: { all: Person[]; value: string[
   );
 }
 
-export function SupportSettings({ cfg, people, admin }: { cfg: SupportConfig; people: Person[]; admin: boolean }) {
+export function SupportSettings({ cfg, people, admin, mailboxes = [], telegram = { connected: false, bot: null } }: { cfg: SupportConfig; people: Person[]; admin: boolean; mailboxes?: string[]; telegram?: { connected: boolean; bot: string | null } }) {
   const { act, busy } = useAct();
   const [c, setC] = React.useState(cfg);
+  const [token, setToken] = React.useState("");
   const sw = (k: keyof SupportConfig, label: string, hint: string) => (
     <label className="flex items-start gap-3">
       <Switch checked={!!c[k]} onCheckedChange={(v) => setC({ ...c, [k]: v })} aria-label={label} disabled={!admin} />
@@ -95,6 +96,35 @@ export function SupportSettings({ cfg, people, admin }: { cfg: SupportConfig; pe
           <div className="space-y-1">
             <Label htmlFor="sc-away">When nobody is online</Label>
             <Input id="sc-away" disabled={!admin} value={c.awayMessage} onChange={(e) => setC({ ...c, awayMessage: e.target.value })} />
+          </div>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-1">
+            <Label htmlFor="sc-mailbox">Support mailbox (email becomes tickets)</Label>
+            <select id="sc-mailbox" disabled={!admin} className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={c.mailbox ?? ""} onChange={(e) => setC({ ...c, mailbox: e.target.value || null })}>
+              <option value="">No mailbox</option>
+              {mailboxes.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-muted-foreground">A mailbox from Email, Settings, Mailboxes (for example support@). New mail opens a ticket; replies keep [#number] in the subject; agents&apos; replies go out from it.</p>
+          </div>
+          <div className="space-y-1" data-telegram>
+            <Label htmlFor="sc-tg">Telegram bot</Label>
+            {telegram.connected ? (
+              <p className="text-sm">
+                Connected: <b>@{telegram.bot}</b>. Customers write to it; agents answer in the desk.
+              </p>
+            ) : (
+              <div className="flex gap-2">
+                <Input id="sc-tg" disabled={!admin} placeholder="Bot token from @BotFather" value={token} onChange={(e) => setToken(e.target.value)} />
+                <Button size="sm" variant="outline" disabled={!admin || busy || !token.trim()} onClick={async () => (await act(() => A.connectTelegramAction(token), "Telegram connected")) && setToken("")}>
+                  Connect
+                </Button>
+              </div>
+            )}
           </div>
         </div>
         <div className="space-y-1">
@@ -435,5 +465,73 @@ export function Monitor({ m, from, to }: { m: Mon; from: string; to: string }) {
         </Card>
       </div>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// The knowledge base: agents write, leads publish; customers search it in the app before asking
+// ---------------------------------------------------------------------------
+
+type Art = { id: string; title: string; body: string; category: string | null; keywords: string; published: boolean; views: number; helpful: number; not_helpful: number; updated_at: string };
+
+export function KnowledgeBase({ list, lead, origin }: { list: Art[]; lead: boolean; origin: string }) {
+  const { act, busy } = useAct();
+  const [a, setA] = React.useState<{ id: string | null; title: string; body: string; category: string; keywords: string; published: boolean } | null>(null);
+  return (
+    <Card data-kb>
+      <CardHeader>
+        <CardTitle className="text-base">Knowledge base</CardTitle>
+        <CardDescription>Answers customers find in the app before asking (and you link in replies). Agents write drafts; leads publish. Each shows how often it was read and found helpful.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-2 text-sm">
+        {list.map((x) => (
+          <div key={x.id} className="flex flex-wrap items-center gap-2 rounded border p-2" data-article={x.title}>
+            <span className="flex-1">
+              <span className="font-medium">{x.title}</span> {x.category && <span className="text-xs text-muted-foreground">· {x.category}</span>}
+              {!x.published && <span className="ml-1 rounded bg-muted px-1 text-[10px]">draft</span>}
+            </span>
+            <span className="text-xs text-muted-foreground">
+              {x.views} reads · {x.helpful} helpful · {x.not_helpful} not
+            </span>
+            {x.published && (
+              <a className="text-xs text-primary hover:underline" href={`${origin}/help/${x.id}`} target="_blank" rel="noreferrer">
+                Open
+              </a>
+            )}
+            <Button size="xs" variant="ghost" onClick={() => setA({ id: x.id, title: x.title, body: x.body, category: x.category ?? "", keywords: x.keywords, published: x.published })}>
+              Edit
+            </Button>
+          </div>
+        ))}
+        {!list.length && <p className="text-muted-foreground">No articles yet. Start with the questions customers ask most.</p>}
+        {a ? (
+          <div className="space-y-2 rounded-lg border border-primary/30 p-2" data-article-form>
+            <Input aria-label="Article title" placeholder="How do I reset my password?" value={a.title} onChange={(e) => setA({ ...a, title: e.target.value })} />
+            <div className="grid gap-2 sm:grid-cols-2">
+              <Input aria-label="Category" placeholder="Category, e.g. Account" value={a.category} onChange={(e) => setA({ ...a, category: e.target.value })} />
+              <Input aria-label="Keywords" placeholder="Other words people use: login, sign in, forgot" value={a.keywords} onChange={(e) => setA({ ...a, keywords: e.target.value })} />
+            </div>
+            <Textarea aria-label="Answer" className="min-h-40" placeholder="The answer, step by step" value={a.body} onChange={(e) => setA({ ...a, body: e.target.value })} />
+            {lead && (
+              <label className="flex items-center gap-2">
+                <input type="checkbox" checked={a.published} onChange={(e) => setA({ ...a, published: e.target.checked })} /> Published (customers see it)
+              </label>
+            )}
+            <div className="flex gap-2">
+              <Button size="sm" disabled={busy || !a.title.trim() || !a.body.trim()} onClick={async () => (await act(() => A.saveArticleAction(a), "Article saved")) && setA(null)}>
+                Save article
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setA(null)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <Button size="sm" variant="outline" onClick={() => setA({ id: null, title: "", body: "", category: "", keywords: "", published: false })}>
+            <PlusIcon /> New article
+          </Button>
+        )}
+      </CardContent>
+    </Card>
   );
 }

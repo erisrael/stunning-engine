@@ -11,6 +11,8 @@ import { WorkflowError } from "@/server/workflow";
 //   GET  tickets/<id>/messages        ?since=<iso>                                  -> { ticket, messages }
 //   POST tickets/<id>/messages        { body }
 //   POST tickets/<id>/rating          { rating: 1..5, comment? }
+//   GET  articles?q=                  help articles matching the words (the knowledge base)
+//   GET  articles/<id>                one article; POST articles/<id>/vote { helpful: true|false }
 //   GET  ice                          STUN and TURN servers for a call
 //   POST calls                        { ticketId?, offer, consent }                 -> { callId, ticketId }
 //   GET  calls/<id>                   -> { status, answer, ice, agent }
@@ -54,6 +56,9 @@ async function handle(request: Request, ctx: Ctx, method: "GET" | "POST") {
     else if (a === "tickets" && id && b === "messages" && method === "GET") out = await sd.customerMessages(app, token, id, new URL(request.url).searchParams.get("since"));
     else if (a === "tickets" && id && b === "messages" && method === "POST") out = (await sd.customerReply(app, token, id, s(body.body)), { ok: true });
     else if (a === "tickets" && id && b === "rating" && method === "POST") out = (await sd.customerRate(app, token, id, Number(body.rating), s(body.comment)), { ok: true });
+    else if (a === "articles" && !id && method === "GET") out = await (await import("@/server/support-channels")).searchArticles(new URL(request.url).searchParams.get("q") ?? "");
+    else if (a === "articles" && id && !b && method === "GET") out = await (await import("@/server/support-channels")).readArticle(id);
+    else if (a === "articles" && id && b === "vote" && method === "POST") out = (await (await import("@/server/support-channels")).voteArticle(id, body.helpful === true), { ok: true });
     else if (a === "ice" && method === "GET") out = (await sd.customerByToken(app, token), await sd.iceConfig());
     else if (a === "calls" && !id && method === "POST") out = await sd.customerStartCall(app, token, { ticketId: s(body.ticketId) || null, offer: s(body.offer), consent: body.consent === true });
     else if (a === "calls" && id && !b && method === "GET") out = await sd.customerPollCall(app, token, id);

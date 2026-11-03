@@ -75,6 +75,9 @@ All requests go to `https://YOUR-WORKSPACE/api/support/v1/...`. They send the he
 | `GET tickets/<id>/messages`      | `?since=<ISO time>`                     | `{ ticket, messages }`                            |
 | `POST tickets/<id>/messages`     | `{ body }`                              |                                                   |
 | `POST tickets/<id>/rating`       | `{ rating: 1-5, comment }`              | allowed once the ticket is solved                 |
+| `GET articles?q=<words>`         |                                         | help articles matching the words, best first     |
+| `GET articles/<id>`              |                                         | one article (title, body, category)               |
+| `POST articles/<id>/vote`        | `{ helpful: true or false }`            |                                                   |
 | `GET ice`                        |                                         | STUN and TURN servers for calls                   |
 | `POST calls`                     | `{ ticketId, offer, consent }`          | `{ callId, ticketId }`                            |
 | `GET calls/<id>`                 |                                         | `{ status, answer, agent }`                       |
@@ -101,3 +104,22 @@ Errors come back as `{ error }` with these codes:
 - **Calls**: the call rings for the ticket's agent, or for every free agent of the queue, for the ring time set by Admin. It is recorded in the agent's browser (both voices) when recording is on. The recording is kept with the ticket for the days Admin sets, and each listen is logged. Agents can also log phone calls made outside the app.
 - **Monitoring** (leads): each agent's status, open and solved tickets, replies, average first answer and solve time, calls and minutes, missed calls, customer rating and late tickets, plus the activity log and the recordings.
 - **Recognition**: solved tickets count as finished work in the monthly score (on time when within the target). Ratings of 1 or 2 count as work sent back.
+
+## 7. Email and Telegram
+
+Customers who do not use the app can still reach support in two other ways.
+
+**Email.** Admin chooses a mailbox in Support setup, for example `support@...`. It must already be a mailbox in the app (Email, Settings, Mailboxes).
+- Mail sent to it opens a ticket. Mail that was already there before the mailbox was chosen is left alone.
+- A customer's reply continues the same ticket. The app matches it by the `[#1234]` in the subject or by the email headers, and only when the reply comes from that ticket's customer.
+- Agents' replies are sent from the support mailbox.
+
+**Telegram.** Admin creates a bot with @BotFather and pastes its token in Support setup. The app then tells Telegram to send the bot's messages to it. This needs a public https address.
+- Customers write to the bot. They get their ticket number, and agents' replies arrive in the same chat.
+
+## 8. The knowledge base
+
+Agents write help articles in Customer support, Knowledge base, and leads publish them.
+- Customers search published articles in the widget, and see matching articles while typing a question.
+- Each article has an "Ask our team instead" button, and reads and "did this help?" votes are counted.
+- Agents link articles in their replies. Each article has a public page at `/help/<id>`.
