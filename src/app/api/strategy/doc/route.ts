@@ -5,7 +5,7 @@ import { DOC_KINDS, DOC_STYLES, type DocKind, type DocStyle } from "@/lib/strate
 // Strategy documents as Word files, and the indicator tracking table as Excel:
 // ?plan=<id>&kind=plan|meplan|report|kpis|evaluation|logframe|tracking&style=myseed|international&period=2026-Q1
 // &evaluation=<id>&narrative=1 (the AI writes the report's narrative when it is on).
-export async function GET(request: Request) {
+async function _GET(request: Request) {
   const viewer = await getViewer();
   if (!viewer) return new Response("Sign in required", { status: 401 });
   const q = new URL(request.url).searchParams;
@@ -29,3 +29,6 @@ export async function GET(request: Request) {
     return new Response(e instanceof Error ? e.message : "Failed", { status: 403 });
   }
 }
+
+// Counted in Admin, Platform, API usage.
+export const GET = (...a: Parameters<typeof _GET>) => import("@/server/platform").then((p) => p.tracked("strategy-docs", () => _GET(...a)));

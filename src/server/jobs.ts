@@ -207,6 +207,7 @@ export async function runScheduledChecks(now = nowIso(), opts: { trigger?: strin
 
 // Called on page loads; runs the checks at most every 10 minutes.
 export async function maybeRunScheduledChecks() {
+  void import("./platform").then((p) => p.noteDeploy()).catch(() => null);
   const last = await getMeta("lastChecksAt");
   if (last && Date.now() - new Date(last).getTime() < 10 * 60e3) return;
   try {

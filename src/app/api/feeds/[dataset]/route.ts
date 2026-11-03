@@ -2,7 +2,7 @@ import { datasetRows, isDataset, toCsv, userForToken } from "@/server/feeds";
 
 // Power BI, Excel and other tools read data here with an API key from Admin, Integrations:
 //   /api/feeds/<dataset>?key=msk_...&format=csv   (or the header Authorization: Bearer msk_...)
-export async function GET(request: Request, { params }: { params: Promise<{ dataset: string }> }) {
+async function _GET(request: Request, { params }: { params: Promise<{ dataset: string }> }) {
   const { dataset } = await params;
   if (!isDataset(dataset)) return Response.json({ error: "Unknown dataset." }, { status: 404 });
   const url = new URL(request.url);
@@ -15,3 +15,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ data
     return new Response(toCsv(rows), { headers: { ...headers, "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `inline; filename="${dataset}.csv"` } });
   return Response.json(rows, { headers });
 }
+
+// Counted in Admin, Platform, API usage.
+export const GET = (...a: Parameters<typeof _GET>) => import("@/server/platform").then((p) => p.tracked("feeds", () => _GET(...a)));

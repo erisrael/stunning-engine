@@ -297,6 +297,11 @@ export function AppSidebar({
           { label: "Files and publishing", href: "/admin?tab=files" },
           { label: "Integrations", href: "/admin?tab=integrations" },
           { label: "System", href: "/admin?tab=system" },
+          { label: "Database", href: "/admin/platform?tab=database" },
+          { label: "API usage", href: "/admin/platform?tab=api" },
+          { label: "Status and deploys", href: "/admin/platform?tab=status" },
+          { label: "Developer integration", href: "/admin/platform?tab=developer" },
+          { label: "System health", href: "/admin/platform?tab=health" },
         ]
       : []),
     ...(has("data.manage") ? [{ label: "Data", href: has("users.manage") ? "/admin?tab=data" : "/admin" }] : []),

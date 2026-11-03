@@ -73,5 +73,7 @@ async function handle(request: Request, ctx: Ctx, method: "GET" | "POST") {
   }
 }
 
-export const GET = (r: Request, c: Ctx) => handle(r, c, "GET");
-export const POST = (r: Request, c: Ctx) => handle(r, c, "POST");
+// Counted in Admin, Platform, API usage.
+const count = (r: Request, c: Ctx, m: "GET" | "POST") => import("@/server/platform").then((p) => p.tracked("support-sdk", () => handle(r, c, m)));
+export const GET = (r: Request, c: Ctx) => count(r, c, "GET");
+export const POST = (r: Request, c: Ctx) => count(r, c, "POST");

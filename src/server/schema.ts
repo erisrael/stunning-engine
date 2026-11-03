@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 50;
+export const SCHEMA_VERSION = 51;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -2172,6 +2172,27 @@ CREATE TABLE IF NOT EXISTS mail_state (
   last_uid INTEGER NOT NULL DEFAULT 0,
   checked_at TEXT,
   error TEXT
+);
+
+-- v51: calls to the app's own APIs per day and route, and each deploy (a new build starting).
+CREATE TABLE IF NOT EXISTS api_usage (
+  day TEXT NOT NULL,
+  route TEXT NOT NULL,
+  calls INTEGER NOT NULL DEFAULT 0,
+  errors INTEGER NOT NULL DEFAULT 0,
+  total_ms DOUBLE PRECISION NOT NULL DEFAULT 0,
+  max_ms DOUBLE PRECISION NOT NULL DEFAULT 0,
+  PRIMARY KEY (day, route)
+);
+CREATE TABLE IF NOT EXISTS sys_deploys (
+  id TEXT PRIMARY KEY,
+  version TEXT NOT NULL,
+  build TEXT NOT NULL,
+  commit_sha TEXT,
+  message TEXT,
+  host TEXT,
+  node TEXT,
+  started_at TEXT NOT NULL
 );
 
 -- v50: platforms connected by their API (SMS, email, payments, webhooks...), and every call made to them.

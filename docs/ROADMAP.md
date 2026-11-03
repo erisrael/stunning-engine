@@ -1136,3 +1136,19 @@ Built: `src/server/dev-library.ts`, `src/components/app/doc-library.tsx`, `src/a
   - Every call is logged without secrets or message text.
 
 Built: `src/server/connectors.ts`, `src/lib/connector-match.ts`, `src/server/notion.ts`, `src/server/office.ts`, `src/app/api/office/[dataset]`, `src/components/app/integrations-hub.tsx`, `src/app/actions/connect.ts` (schema 50). Tests: `tests/server/integrations.test.ts`, `tests/e2e/integrations.e2e.mjs`.
+
+## Phase 28: Admin, Platform: database, API usage, status and deploys, developer integration, system health (done)
+
+- [x] **Database**:
+  - what it is and its version, size, speed, connections and schema version;
+  - every table with its rows and size, and whether backups include it;
+  - a read-only query console: SELECT, WITH, EXPLAIN or SHOW, one statement, read-only transaction, stopped after 5 seconds, 500 rows. Passwords, keys, tokens and file contents are hidden, and every query is audited.
+- [x] **API usage**: calls to the app's own APIs (data feeds, the support SDK, Office and strategy downloads, health, cron) per day and per API, with errors, average and slowest time. Also calls out to connected platforms, AI questions, and when each feed key was last used.
+- [x] **Status and deploys**:
+  - the running version, build, commit, host, Next.js and Node, and how long it has run;
+  - each part's status: database, jobs, backups, errors, email, storage, Google, encryption key, cron, AI and each connected platform;
+  - errors per day over two weeks, and the history of deploys, noted each time a new build starts.
+- [x] **Developer integration**: every API with its method and purpose, the app's own OpenAPI file (`/api/openapi.json`, for Postman, Swagger UI or code generators), copyable examples (feeds, support from another app, the widget, uptime checks), the feed keys and the support apps' keys.
+- [x] **System health**: a score out of 100 from every check, plus database speed, memory, disk, processor load, the email queue, connected platforms, API errors, failing or late jobs, and the slowest pages.
+
+Built: `src/server/platform.ts`, `src/app/(app)/admin/platform`, `src/app/api/openapi.json`, `src/app/actions/platform.ts`, API counting in the routes (schema 51). Tests: `tests/server/platform.test.ts`, `tests/e2e/platform.e2e.mjs`.

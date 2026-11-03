@@ -4,7 +4,7 @@ import { get } from "@/server/db";
 // database answer, 503 when not. Says nothing else about the system.
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+async function _GET() {
   const t0 = Date.now();
   try {
     await get("SELECT 1 AS x");
@@ -13,3 +13,6 @@ export async function GET() {
     return Response.json({ ok: false }, { status: 503, headers: { "cache-control": "no-store" } });
   }
 }
+
+// Counted in Admin, Platform, API usage.
+export const GET = (...a: Parameters<typeof _GET>) => import("@/server/platform").then((p) => p.tracked("health", () => _GET(...a)));
