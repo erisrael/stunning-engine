@@ -914,7 +914,7 @@ One system for "what each person and team is responsible for, how it is measured
 - [x] Performance reviews (Phase 7) attach the period's scorecard and OKR results as evidence; HR can run a calibration view (spread of ratings per department).
 - [x] Notifications: check-in reminders, KPIs turning red, targets changed, periods closing.
 - [x] Permissions (configurable in the matrix): HR manages the library, templates, scoring and cycles; heads and leads set targets and OKRs for their teams within the rules; everyone sees their own; owners see the company.
-- [x] Exports: a spreadsheet per period (CSV for Excel). (The Power BI feed: still open.)
+- [x] Exports: a spreadsheet per period (CSV for Excel), and two Power BI feeds: closed months' scorecards (a row per person and KPI) and OKRs (objectives everyone may see, with their key results).
 
 
 Built (17), with the plan's suggested decisions as settings HR can change (Performance, Periods and settings):
@@ -938,7 +938,7 @@ Rules and screens:
 - Weekly check-in reminders, and KPIs turning red.
 - Company deck slides (scorecards, objectives); scorecards on HR reviews.
 
-Code: `src/server/performance.ts`, `src/lib/performance.ts`, `/performance` (schema 40, permissions `perf.library` and `perf.view_company`). Tests: `tests/server/performance.test.ts`, `tests/e2e/performance.e2e.mjs`. The Power BI feed does not include scorecards yet.
+Code: `src/server/performance.ts`, `src/lib/performance.ts`, `/performance` (schema 40, permissions `perf.library` and `perf.view_company`). Tests: `tests/server/performance.test.ts`, `tests/e2e/performance.e2e.mjs`.
 ## Phase 18: Worth having (done)
 
 - [x] **Announcements and policies**: Admin, HR managers and owners announce to everyone, departments or roles; a department's head to their own department. News or a policy to confirm, pinned, with an end date. Shown at the top of every page until read ("Got it") or confirmed ("I have read this"), and as a notice. The author sees who has read or confirmed and who has not, and reminds them. Page: /announcements.

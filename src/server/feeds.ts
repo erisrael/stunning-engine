@@ -16,6 +16,8 @@ export const DATASETS = {
   finance_items: { label: "Finance department: payments, invoices and expenses", needs: "company.view" },
   headcount: { label: "HR: employees (no salary, ID or bank details)", needs: "hr.access" },
   leave: { label: "HR: approved and requested leave", needs: "hr.access" },
+  scorecards: { label: "Performance: closed months' scorecards, by person and KPI", needs: "perf.view_company" },
+  okrs: { label: "Performance: objectives and key results", needs: "perf.view_company" },
 } as const;
 export type Dataset = keyof typeof DATASETS;
 export const isDataset = (k: string): k is Dataset => k in DATASETS;
@@ -113,6 +115,23 @@ export async function datasetRows(user: AppUser, dataset: Dataset): Promise<Row[
     }
     case "headcount":
       return all<Row>("SELECT code, full_name AS name, department, job_title, employment_type, status, start_date, probation_end, contract_end, end_date FROM employees ORDER BY code");
+    case "scorecards": {
+      // The frozen scorecards of closed months, one row per person and KPI.
+      const cards = await all<{ subject: string; period: string; detail: string }>("SELECT subject, period, detail FROM perf_scorecards WHERE frozen = 1 ORDER BY period DESC LIMIT 20000");
+      const out: Row[] = [];
+      for (const c of cards) {
+        const d = parseJson<{ name?: string; template?: string | null; score?: number | null; rating?: string | null; kras?: { name: string; weight: number; score: number | null; kpis: { kpi: string; name: string; value: number | null; target: number; score: number | null; weight: number }[] }[] }>(c.detail, {});
+        for (const k of d.kras ?? [])
+          for (const x of k.kpis) out.push({ month: c.period, person: d.name ?? c.subject, template: d.template ?? null, overall: d.score ?? null, rating: d.rating ?? null, kra: k.name, kra_weight: k.weight, kra_score: k.score, kpi: x.name, kpi_key: x.kpi, kpi_weight: x.weight, actual: x.value, target: x.target, kpi_score: x.score });
+      }
+      return out;
+    }
+    case "okrs":
+      return all<Row>(
+        `SELECT c.name AS cycle, o.level, o.scope, u.name AS owner, o.title AS objective, o.visibility, o.score AS objective_score, k.title AS key_result, k.kind, k.start_value, k.target, k.current, k.unit, k.confidence, k.updated_at
+         FROM okr_objectives o JOIN okr_cycles c ON c.id = o.cycle_id LEFT JOIN users u ON u.id = o.owner_id LEFT JOIN okr_key_results k ON k.objective_id = o.id
+         WHERE o.visibility = 'everyone' ORDER BY c.start_date DESC, o.level, o.title`,
+      );
     case "leave":
       return all<Row>(
         "SELECT e.code, e.full_name AS name, e.department, r.type_key AS leave_type, r.start_date, r.end_date, r.days, r.status, r.created_at FROM leave_requests r JOIN employees e ON e.id = r.employee_id ORDER BY r.start_date DESC",

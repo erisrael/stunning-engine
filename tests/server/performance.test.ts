@@ -131,6 +131,8 @@ async function main() {
   const pv = (await pf.pendingChanges(admin)).values[0]!;
   await pf.decideChange(admin, "value", pv.id, true);
   check("approved: the frozen scorecard is redone", (await pf.myScorecard(dev, dev.id, last)).card.kras.flatMap((x) => x.kpis).find((x) => x.kpi === manualKey)?.value === 3);
+  const feed = await (await import("../../src/server/feeds")).datasetRows(admin, "scorecards");
+  check("the Power BI feed has the closed month's scorecards, a row per KPI", feed.some((r) => r.month === last && r.person === "Perf Dev" && r.kpi_key === manualKey));
   check("HR reviews get the scorecards as evidence", (await pf.scorecardEvidence(dev.id, `${last}-01`, `${last}-28`)).length === 1);
 
   // OKRs.
@@ -157,6 +159,7 @@ async function main() {
   check("tasks linked to a key result", (await pf.okrTree(dev, cyc)).find((o) => o.id === po)!.krs.find((k) => k.id === kr1)!.tasks.done === 1);
   check("closing an objective keeps its score and reflection", (await pf.closeObjective(dev, po, "Good quarter")) !== null);
 
+  check("the OKR feed lists objectives everyone may see, without private ones", (await (await import("../../src/server/feeds")).datasetRows(admin, "okrs")).some((r) => r.objective === "Ship the quiz feature") && !(await (await import("../../src/server/feeds")).datasetRows(admin, "okrs")).some((r) => r.objective === "Grow as a developer"));
   // Job and slides.
   const j = await pf.performanceJob();
   check("the scheduled job runs", typeof j.red === "number");
