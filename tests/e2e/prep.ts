@@ -78,6 +78,13 @@ const PREPS: Record<string, () => Promise<unknown>> = {
     await run("UPDATE users SET prefs = ? WHERE id = ?", JSON.stringify({ tour: { seen: ["member", "lead", "publication", "manager", "owner", "department", "hr", "finance"] } }), a.id);
     return {};
   },
+  // Phase 25: strategy and M&E (Admin plans).
+  async strategy() {
+    await passwordOnly();
+    const a = await admin();
+    await run("UPDATE users SET prefs = ? WHERE id = ?", JSON.stringify({ tour: { seen: ["member", "lead", "publication", "manager", "owner", "department", "hr", "finance"] } }), a.id);
+    return {};
+  },
   // The main pages on a phone.
   async mobile() {
     await passwordOnly();

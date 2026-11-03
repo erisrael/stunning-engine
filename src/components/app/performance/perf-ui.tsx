@@ -469,7 +469,7 @@ function ObjectiveCard({ o, tree, depth, measures }: { o: Obj; tree: Obj[]; dept
 export function Library({ kpis, templates, measures }: { kpis: KpiDef[]; templates: Template[]; measures: { key: string; name: string; area: string }[] }) {
   const { act, busy } = useAct();
   const [t, setT] = React.useState<{ id: string | null; name: string; appliesTo: string; kras: TemplateKra[] } | null>(null);
-  const [k, setK] = React.useState<{ name: string; source: "measure" | "manual"; measure: string; unit: string; direction: "up" | "down"; quality: boolean } | null>(null);
+  const [k, setK] = React.useState<{ name: string; source: "measure" | "manual"; measure: string; unit: string; direction: "up" | "down"; quality: boolean; meta?: Record<string, string | null> } | null>(null);
   return (
     <div className="grid gap-4 xl:grid-cols-2" data-library>
       <Card>
@@ -600,6 +600,29 @@ export function Library({ kpis, templates, measures }: { kpis: KpiDef[]; templat
               <label className="flex items-center gap-1 text-xs">
                 <input type="checkbox" checked={k.quality} onChange={(e) => setK({ ...k, quality: e.target.checked })} /> quality
               </label>
+              <details className="w-full text-xs" data-kpi-sheet>
+                <summary className="cursor-pointer">Reference sheet (international KPI dictionary)</summary>
+                <div className="mt-1 grid gap-1.5 sm:grid-cols-2">
+                  <select aria-label="Perspective" className={cn(select, "h-8")} value={k.meta?.perspective ?? ""} onChange={(e) => setK({ ...k, meta: { ...k.meta, perspective: e.target.value || null } })}>
+                    <option value="">Balanced Scorecard perspective</option>
+                    <option value="financial">Financial and sustainability</option>
+                    <option value="customer">Learners, schools and partners</option>
+                    <option value="process">Internal processes</option>
+                    <option value="learning">People, learning and growth</option>
+                  </select>
+                  <select aria-label="Frequency" className={cn(select, "h-8")} value={k.meta?.frequency ?? ""} onChange={(e) => setK({ ...k, meta: { ...k.meta, frequency: e.target.value || null } })}>
+                    <option value="">How often it is reported</option>
+                    <option value="monthly">Monthly</option>
+                    <option value="quarterly">Quarterly</option>
+                    <option value="semiannual">Every six months</option>
+                    <option value="annual">Yearly</option>
+                  </select>
+                  <Input aria-label="Formula" placeholder="Formula, e.g. on-time tasks ÷ tasks with a due date × 100" className="h-8" value={k.meta?.formula ?? ""} onChange={(e) => setK({ ...k, meta: { ...k.meta, formula: e.target.value } })} />
+                  <Input aria-label="Data source" placeholder="Data source, e.g. the work app" className="h-8" value={k.meta?.dataSource ?? ""} onChange={(e) => setK({ ...k, meta: { ...k.meta, dataSource: e.target.value } })} />
+                  <Input aria-label="KPI owner" placeholder="Owner (role), e.g. Head of production" className="h-8" value={k.meta?.owner ?? ""} onChange={(e) => setK({ ...k, meta: { ...k.meta, owner: e.target.value } })} />
+                  <Input aria-label="Why it matters" placeholder="Why it matters" className="h-8" value={k.meta?.rationale ?? ""} onChange={(e) => setK({ ...k, meta: { ...k.meta, rationale: e.target.value } })} />
+                </div>
+              </details>
               <Button size="xs" disabled={busy || !k.name.trim()} onClick={async () => (await act(() => A.saveKpiAction(k), "KPI saved")) && setK(null)}>
                 Save
               </Button>

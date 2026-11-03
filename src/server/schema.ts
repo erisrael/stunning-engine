@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 47;
+export const SCHEMA_VERSION = 48;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -2172,6 +2172,114 @@ CREATE TABLE IF NOT EXISTS mail_state (
   error TEXT
 );
 
+-- v48: strategic planning, monitoring and evaluation: plans, the results chain (goal, outcomes, outputs,
+-- activities), indicators with their reference sheet and targets, results per period, risks and evaluations.
+CREATE TABLE IF NOT EXISTS sp_plans (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  start_date TEXT NOT NULL,
+  end_date TEXT NOT NULL,
+  vision TEXT,
+  mission TEXT,
+  values_json TEXT NOT NULL DEFAULT '[]',
+  pillars TEXT NOT NULL DEFAULT '[]',
+  status TEXT NOT NULL DEFAULT 'draft',
+  rag_green INTEGER NOT NULL DEFAULT 90,
+  rag_amber INTEGER NOT NULL DEFAULT 70,
+  created_by TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS sp_nodes (
+  id TEXT PRIMARY KEY,
+  plan_id TEXT NOT NULL REFERENCES sp_plans(id) ON DELETE CASCADE,
+  parent_id TEXT REFERENCES sp_nodes(id) ON DELETE CASCADE,
+  level TEXT NOT NULL,
+  code TEXT NOT NULL,
+  title TEXT NOT NULL,
+  description TEXT,
+  pillar TEXT,
+  perspective TEXT,
+  owner_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+  assumptions TEXT,
+  status TEXT NOT NULL DEFAULT 'planned',
+  start_date TEXT,
+  end_date TEXT,
+  budget DOUBLE PRECISION,
+  sort DOUBLE PRECISION NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sp_nodes ON sp_nodes(plan_id, parent_id);
+CREATE TABLE IF NOT EXISTS sp_indicators (
+  id TEXT PRIMARY KEY,
+  node_id TEXT NOT NULL REFERENCES sp_nodes(id) ON DELETE CASCADE,
+  code TEXT NOT NULL,
+  name TEXT NOT NULL,
+  definition TEXT,
+  unit TEXT NOT NULL DEFAULT 'number',
+  direction TEXT NOT NULL DEFAULT 'up',
+  baseline DOUBLE PRECISION,
+  baseline_date TEXT,
+  frequency TEXT NOT NULL DEFAULT 'quarterly',
+  data_source TEXT,
+  method TEXT,
+  verification TEXT,
+  responsible_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+  formula TEXT,
+  disaggregation TEXT,
+  measure TEXT,
+  kpi_key TEXT,
+  targets TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sp_indicators ON sp_indicators(node_id);
+CREATE TABLE IF NOT EXISTS sp_actuals (
+  id TEXT PRIMARY KEY,
+  indicator_id TEXT NOT NULL REFERENCES sp_indicators(id) ON DELETE CASCADE,
+  period TEXT NOT NULL,
+  value DOUBLE PRECISION NOT NULL,
+  note TEXT,
+  source TEXT NOT NULL DEFAULT 'manual',
+  entered_by TEXT,
+  entered_at TEXT NOT NULL,
+  verified_by TEXT,
+  verified_at TEXT,
+  UNIQUE (indicator_id, period)
+);
+CREATE TABLE IF NOT EXISTS sp_risks (
+  id TEXT PRIMARY KEY,
+  plan_id TEXT NOT NULL REFERENCES sp_plans(id) ON DELETE CASCADE,
+  node_id TEXT REFERENCES sp_nodes(id) ON DELETE SET NULL,
+  title TEXT NOT NULL,
+  category TEXT NOT NULL DEFAULT 'Operational',
+  likelihood INTEGER NOT NULL DEFAULT 1,
+  impact INTEGER NOT NULL DEFAULT 1,
+  mitigation TEXT,
+  owner_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+  status TEXT NOT NULL DEFAULT 'open',
+  review_date TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS sp_evaluations (
+  id TEXT PRIMARY KEY,
+  plan_id TEXT NOT NULL REFERENCES sp_plans(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'annual',
+  period TEXT,
+  scores TEXT NOT NULL DEFAULT '{}',
+  summary TEXT,
+  findings TEXT,
+  lessons TEXT,
+  recommendations TEXT NOT NULL DEFAULT '[]',
+  status TEXT NOT NULL DEFAULT 'draft',
+  created_by TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 -- v47: presentation templates made in the app or imported from PowerPoint, Google Slides, Keynote or Canva.
 CREATE TABLE IF NOT EXISTS pres_templates (
   id TEXT PRIMARY KEY,
@@ -2309,6 +2417,8 @@ CREATE TABLE IF NOT EXISTS perf_kpis (
   active INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL
 );
+-- (v48) the KPI's reference sheet: Balanced Scorecard perspective, formula, data source, frequency, owner, rationale.
+ALTER TABLE perf_kpis ADD COLUMN IF NOT EXISTS meta TEXT NOT NULL DEFAULT '{}';
 CREATE TABLE IF NOT EXISTS perf_templates (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -2951,6 +3061,12 @@ export const TABLES = [
   "mail_scheduled",
   "ai_conversations",
   "pres_templates",
+  "sp_plans",
+  "sp_nodes",
+  "sp_indicators",
+  "sp_actuals",
+  "sp_risks",
+  "sp_evaluations",
   "ai_agent_log",
   "dept_task_moves",
   "pres_decks",

@@ -128,6 +128,7 @@ export const JOB_LABELS: Record<string, string> = {
   "deck-emails": "Presentation summaries by email",
   performance: "Scorecards, OKR reminders and periods",
   "mail-scheduled": "Mailbox messages sent later",
+  strategy: "Strategy and M&E: results from the app, reminders",
   support: "Customer support targets and assignment",
   "chat-retention": "Chat retention",
   retention: "Retention schedule (Admin, Privacy)",

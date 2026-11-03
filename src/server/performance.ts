@@ -27,6 +27,7 @@ import {
   ratingOf,
   type Confidence,
   type KpiDef,
+  type KpiMeta,
   type KpiLine,
   type KraLine,
   type OkrLevel,
@@ -113,7 +114,7 @@ async function manages(user: AppUser, userId: string) {
 // The library
 // ---------------------------------------------------------------------------
 
-type KpiRow = { key: string; name: string; description: string | null; unit: string; direction: string; source: string; measure: string | null; scoring: string; bands: string; min_sample: number; quality: number; active: number };
+type KpiRow = { key: string; name: string; description: string | null; unit: string; direction: string; source: string; measure: string | null; scoring: string; bands: string; min_sample: number; quality: number; active: number; meta?: string | null };
 const kpiOf = (r: KpiRow): KpiDef => ({
   key: r.key,
   name: r.name,
@@ -127,6 +128,7 @@ const kpiOf = (r: KpiRow): KpiDef => ({
   minSample: Number(r.min_sample),
   quality: !!Number(r.quality),
   active: !!Number(r.active),
+  meta: parseJson<KpiMeta>(r.meta, {}),
 });
 
 // The first time it is used, the library gets a KPI per measure and the ready templates.
@@ -177,9 +179,13 @@ export async function saveKpi(user: AppUser, input: Partial<KpiDef> & { name: st
     input.quality ? 1 : 0,
     input.active === false ? 0 : 1,
   ];
+  const m = input.meta ?? {};
+  const meta = JSON.stringify(Object.fromEntries((["perspective", "formula", "dataSource", "frequency", "owner", "rationale"] as const).map((k) => [k, clean(m[k] ?? "", 300) || null])));
+  if (await get("SELECT 1 AS x FROM perf_kpis WHERE key = ?", key)) await run("UPDATE perf_kpis SET meta = ? WHERE key = ?", meta, key).catch(() => null);
   if (await get("SELECT 1 AS x FROM perf_kpis WHERE key = ?", key))
     await run("UPDATE perf_kpis SET name = ?, description = ?, unit = ?, direction = ?, source = ?, measure = ?, scoring = ?, bands = ?, min_sample = ?, quality = ?, active = ? WHERE key = ?", ...vals, key);
   else await run("INSERT INTO perf_kpis (name, description, unit, direction, source, measure, scoring, bands, min_sample, quality, active, id, key, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", ...vals, uid("kpi_"), key, nowIso());
+  await run("UPDATE perf_kpis SET meta = ? WHERE key = ?", meta, key);
   await audit({ actor: user }, { action: "perf.library", summary: `${user.name} saved the KPI ${name}` });
   return key;
 }

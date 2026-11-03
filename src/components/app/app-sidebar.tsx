@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import {
+import { CompassIcon,
   WrenchIcon,
   MicIcon,
   ZapIcon,
@@ -336,6 +336,7 @@ export function AppSidebar({
         { href: "/announcements", label: "Announcements", icon: MegaphoneIcon },
         ...(recognition ? [{ href: "/recognition", label: "Recognition", icon: TrophyIcon }] : []),
         { href: "/performance", label: "Performance", icon: TargetIcon },
+        { href: "/strategy", label: "Strategy and M&E", icon: CompassIcon, cap: ["perf.library", "perf.view_company", "users.manage", "owners.view"] as Capability[] },
         ...(support ? [{ href: "/support", label: "Customer support", icon: HeadsetIcon }] : []),
         ...(approver || counts.approvals > 0 ? [{ href: "/approvals", label: "Approvals", icon: CheckCheckIcon, badge: counts.approvals }] : []),
         ...(!lead && !home ? [{ href: "/team", label: "My effort", icon: UsersIcon, cap: "nav.team" as Capability }] : []),
@@ -457,6 +458,7 @@ export function AppSidebar({
           { href: "/announcements", label: "Announcements", icon: MegaphoneIcon },
           ...(recognition ? [{ href: "/recognition", label: "Recognition", icon: TrophyIcon }] : []),
           { href: "/performance", label: "Performance", icon: TargetIcon },
+          { href: "/strategy", label: "Strategy and M&E", icon: CompassIcon, cap: ["perf.library", "perf.view_company", "users.manage", "owners.view"] as Capability[] },
           ...(support ? [{ href: "/support", label: "Customer support", icon: HeadsetIcon }] : []),
           ...(counts.approvals > 0 ? [{ href: "/approvals", label: "Approvals", icon: CheckCheckIcon, badge: counts.approvals }] : []),
           ...(counts.routines ? [{ href: "/routines", label: "Routines", icon: ZapIcon, badge: counts.routines }] : []),

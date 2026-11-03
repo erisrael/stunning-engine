@@ -1,6 +1,9 @@
 // Phase 17 (shared by the server and the pages): KRA templates, scoring, ratings and settings.
 
-export type KpiDef = { key: string; name: string; description: string | null; unit: string; direction: "up" | "down"; source: "measure" | "manual"; measure: string | null; scoring: "percent" | "bands" | "pass"; bands: { green?: number; amber?: number }; minSample: number; quality: boolean; active: boolean };
+// meta: the KPI's reference sheet (Phase 25): Balanced Scorecard perspective, how it is worked out, where the data
+// comes from, how often, who owns it and why it matters.
+export type KpiMeta = { perspective?: string | null; formula?: string | null; dataSource?: string | null; frequency?: string | null; owner?: string | null; rationale?: string | null };
+export type KpiDef = { key: string; name: string; description: string | null; unit: string; direction: "up" | "down"; source: "measure" | "manual"; measure: string | null; scoring: "percent" | "bands" | "pass"; bands: { green?: number; amber?: number }; minSample: number; quality: boolean; active: boolean; meta?: KpiMeta };
 export type TemplateKpi = { kpi: string; weight: number; target: number };
 export type TemplateKra = { name: string; weight: number; kpis: TemplateKpi[] };
 export type Template = { id: string; name: string; appliesTo: string[]; kras: TemplateKra[]; active: boolean };

@@ -1079,3 +1079,33 @@ Built: `src/server/team-insights.ts`, `src/components/app/team-analyzer.tsx`, `s
 - [x] **Write slides by hand** in a deck: section title, bullet points, text, quote, picture, two columns, timeline, big numbers and closing. They are kept with the saved deck and go with share links.
 
 Built: `src/lib/deck-templates.ts`, `src/server/deck-templates.ts`, `src/components/app/deck/pptx-export.ts`, `src/app/(app)/admin/templates-admin.tsx`, changes in `deck-player.tsx`, `decks.ts` and `deck-page.ts` (schema 47). Tests: `tests/server/presentations.test.ts`, `tests/e2e/presentations.e2e.mjs`.
+
+## Phase 25: Strategic planning, monitoring and evaluation, to international practice (done)
+
+- [x] **The plan** (Strategy and M&E): vision, mission, values, strategic pillars, dates, and the Red/Amber/Green thresholds (on track from 90% of the target, needs attention from 70%, by default). Start from a complete example and change it.
+- [x] **The results chain (logical framework)**:
+  - a goal (impact), then outcomes, outputs and activities, coded as in a logframe (G1, G1.O2, G1.O2.P1, G1.O2.P1.A3);
+  - each result tagged with a Balanced Scorecard perspective and a pillar, with an owner and its assumptions;
+  - activities carry their dates, status and budget.
+- [x] **Indicators with a full reference sheet**:
+  - definition, unit, which direction is better, calculation, disaggregation, data source, collection method, means of verification, frequency (monthly to yearly), who reports it, baseline and date, and a target for each period;
+  - every indicator is checked against SMART and shows what is missing;
+  - indicators can be read from the app (production, tasks, attendance, support...).
+- [x] **Monitoring**:
+  - the person responsible enters results each period, with a comment, and is reminded when a period ends without one;
+  - a second person verifies each result (data quality), and a changed result needs verifying again;
+  - achievement is measured from the baseline to the target, then rated Red, Amber or Green;
+  - summaries for the whole plan, by pillar, by Balanced Scorecard perspective and by level.
+- [x] **Risks**: a register with category, likelihood × impact (5 × 5), mitigation, owner, status and review date, shown on a heat map.
+- [x] **Evaluations** by the OECD-DAC criteria (relevance, coherence, effectiveness, efficiency, impact, sustainability), each rated on a 4-point scale with evidence. Each has a summary, findings and lessons, and recommendations with the management response, owner, due date and status.
+- [x] **Documents** (Word), in Myseed's look (colourful, brand banner) or an international format (formal cover, contents, numbered sections, "Page x of y"):
+  - the strategic plan;
+  - the M&E plan (logframe matrix, indicator reference sheets, data collection plan, reporting and data quality);
+  - the performance report for a period, with results coloured by status and a narrative by the AI when it is on;
+  - the KPI dictionary;
+  - an evaluation report;
+  - the logical framework on its own (landscape);
+  - and the indicator tracking table and risk register in Excel.
+- [x] **KPI library**: each KPI gets a reference sheet (Balanced Scorecard perspective, formula, data source, frequency, owner, why it matters), listed in the KPI dictionary.
+
+Built: `src/lib/strategy.ts`, `src/server/strategy.ts`, `src/server/strategy-docs.ts`, `src/app/(app)/strategy`, `src/components/app/strategy/strategy-client.tsx`, `src/app/api/strategy/doc` (schema 48). Tests: `tests/server/strategy.test.ts`, `tests/e2e/strategy.e2e.mjs`.
