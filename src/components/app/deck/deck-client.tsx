@@ -8,7 +8,7 @@ type P = Omit<Parameters<typeof DeckPlayer>[0], "actions"> & { presenter?: boole
 
 export function Deck(p: P) {
   if (p.presenter) return <PresenterView scope={p.scope} slides={p.slides} />;
-  return <DeckPlayer {...p} actions={{ save: A.saveDeckAction, remove: A.deleteDeckAction, endMeeting: A.endMeetingAction, share: A.shareDeckAction }} />;
+  return <DeckPlayer {...p} actions={{ save: A.saveDeckAction, remove: A.deleteDeckAction, endMeeting: A.endMeetingAction, share: A.shareDeckAction, remote: A.createRemoteAction }} />;
 }
 
 export function SharedDeck(p: Pick<P, "title" | "slides" | "theme">) {

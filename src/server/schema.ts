@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 44;
+export const SCHEMA_VERSION = 45;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -2170,6 +2170,17 @@ CREATE TABLE IF NOT EXISTS mail_state (
   last_uid INTEGER NOT NULL DEFAULT 0,
   checked_at TEXT,
   error TEXT
+);
+
+-- v45: a phone as the remote of a presentation (next, previous), for a few hours.
+CREATE TABLE IF NOT EXISTS pres_remotes (
+  token TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  steps INTEGER NOT NULL DEFAULT 0,
+  title TEXT,
+  position TEXT,
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL
 );
 
 -- v44: mail written now and sent from the person's mailbox later.

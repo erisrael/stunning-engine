@@ -20,3 +20,6 @@ export async function shareDeckAction(input: Parameters<typeof d.createShare>[1]
 export async function revokeShareAction(token: string) {
   return wrap(async () => d.revokeShare(await requireViewer(), token));
 }
+export async function createRemoteAction() {
+  return wrap(async () => d.createRemote(await requireViewer()), { revalidate: false });
+}

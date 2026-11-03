@@ -92,6 +92,16 @@ async function main() {
   const mail = await get<{ subject: string; text: string }>("SELECT subject, text FROM email_outbox WHERE user_id = ? ORDER BY created_at DESC LIMIT 1", H.id);
   check("with each slide's sentence", !!mail?.subject.startsWith("Weekly team meeting") && mail.text.includes("Since the last meeting"));
 
+  // The phone remote.
+  const tok = await d.createRemote(H);
+  await d.remoteMove(tok, 1);
+  await d.remoteMove(tok, 1);
+  await d.remoteMove(tok, -1);
+  check("the phone's moves add up for the deck", (await d.remoteState(tok)).steps === 1);
+  check("the deck tells the phone the slide", (await d.remoteState(tok, { title: "Projects", position: "3 of 5" })).title === "Projects" && (await d.remoteState(tok)).position === "3 of 5");
+  await run("UPDATE pres_remotes SET expires_at = ? WHERE token = ?", new Date(Date.now() - 1000).toISOString(), tok);
+  check("an ended remote is refused", !!(await throws(() => d.remoteMove(tok, 1))));
+
   await d.deleteDeck(H, team);
   check("removed", (await d.listDecks(H, "dept:dev")).every((x) => x.id !== team));
 

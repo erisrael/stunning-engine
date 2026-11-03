@@ -39,6 +39,7 @@ import { Input } from "@/components/ui/input";
 import { BarsChart, LinesChart } from "@/components/app/charts";
 import { CAT } from "@/lib/chart-colors";
 import { DEFAULT_THEME, type DeckTheme, type MeetingAction, type SavedDeck, type Slide, type SlideBody } from "@/lib/deck";
+import { SmartphoneIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type Res = { ok: boolean; error?: string; data?: unknown };
@@ -47,6 +48,7 @@ export type DeckActions = {
   remove: (id: string) => Promise<Res>;
   endMeeting: (input: { scope: string; deckId?: string | null; actions: MeetingAction[] }) => Promise<Res>;
   share: (input: { scope: string; name: string; slideKeys: string[]; days: number; theme?: Partial<DeckTheme> }) => Promise<Res>;
+  remote?: () => Promise<Res>;
 };
 
 type Props = {
@@ -211,6 +213,13 @@ async function toPowerPoint(title: string, slides: Slide[]) {
   const pres = new PptxGenJS();
   pres.layout = "LAYOUT_WIDE";
   const cover = pres.addSlide();
+  // The company's logo and colour on the cover (the logo of the app's branding, the theme's primary colour).
+  try {
+    const svg = await (await fetch("/brand/myseed-logo.svg")).text();
+    cover.addImage({ data: `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`, x: 0.6, y: 1.2, w: 1, h: 1 });
+  } catch {}
+  const primary = getComputedStyle(document.documentElement).getPropertyValue("--primary").trim();
+  cover.addShape(pres.ShapeType.rect, { x: 0, y: 7.2, w: 13.33, h: 0.3, fill: { color: /^#?[0-9a-f]{6}$/i.test(primary) ? primary.replace("#", "") : "0B7A3B" } });
   cover.addText(title, { x: 0.6, y: 2.4, w: 12, h: 1.2, fontSize: 40, bold: true });
   cover.addText(new Date().toLocaleDateString(), { x: 0.6, y: 3.6, w: 12, h: 0.6, fontSize: 18, color: "666666" });
   const colors = CAT.map((c) => c.replace("#", ""));
@@ -275,6 +284,22 @@ export function DeckPlayer(props: Props) {
   const [tool, setTool] = React.useState<null | "laser" | "draw">(null);
   const go = React.useCallback((d: number) => setI((x) => (x + d + slides.length) % Math.max(1, slides.length)), [slides.length]);
   const s = slides[Math.min(i, slides.length - 1)];
+
+  // A phone as the remote: its Next and Previous arrive as steps; the phone is told which slide shows.
+  const [remote, setRemote] = React.useState<{ token: string; qr: string } | null>(null);
+  const seen = React.useRef(0);
+  React.useEffect(() => {
+    if (!remote) return;
+    const t = window.setInterval(async () => {
+      const r = await fetch(`/api/present/remote/${remote.token}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: s?.title ?? "", position: `${Math.min(i, slides.length - 1) + 1} of ${slides.length}` }) }).catch(() => null);
+      const j = r && r.ok ? ((await r.json()) as { steps: number }) : null;
+      if (j && j.steps !== seen.current) {
+        go(j.steps - seen.current);
+        seen.current = j.steps;
+      }
+    }, 800);
+    return () => window.clearInterval(t);
+  }, [remote, go, s?.title, i, slides.length]);
 
   // Presenter view in another window, kept in step through the browser.
   const chan = React.useRef<BroadcastChannel | null>(null);
@@ -401,6 +426,26 @@ export function DeckPlayer(props: Props) {
               <LinkIcon /> Share
             </Button>
           )}
+          {!props.readOnly && props.actions?.remote && (
+            <Button
+              size="sm"
+              variant="ghost"
+              aria-label="Phone remote"
+              title="Use your phone as the remote"
+              onClick={async () => {
+                if (remote) return setRemote(null);
+                const r = await props.actions!.remote!();
+                if (!r.ok) return void toast.error(r.error);
+                const token = r.data as string;
+                const QR = (await import("qrcode")).default;
+                seen.current = 0;
+                setRemote({ token, qr: await QR.toDataURL(`${window.location.origin}/remote/${token}`, { margin: 1, width: 180 }) });
+              }}
+              data-remote-button
+            >
+              <SmartphoneIcon />
+            </Button>
+          )}
           <Button size="sm" variant="ghost" aria-label="PowerPoint" title="Download as PowerPoint" onClick={() => toPowerPoint(saved?.name ?? props.title, slides).catch(() => toast.error("Could not make the file."))}>
             <DownloadIcon />
           </Button>
@@ -413,6 +458,16 @@ export function DeckPlayer(props: Props) {
         </span>
       </header>
 
+      {remote && (
+        <div className="mx-6 flex items-center gap-3 rounded-lg border p-2 text-sm print:hidden" data-remote-qr>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={remote.qr} alt="QR code for the phone remote" className="size-28" data-remote-link={`/remote/${remote.token}`} />
+          <p>Scan with your phone to move the slides from it (Next, Previous). It works for four hours.</p>
+          <Button size="xs" variant="ghost" onClick={() => setRemote(null)}>
+            Close
+          </Button>
+        </div>
+      )}
       {panel === "deck" && props.actions && <DeckPanel {...props} order={order} setOrder={(o) => (setOrder(o), setI(0), remember(o, theme))} minutes={minutes} setMinutes={setMinutes} theme={theme} setTheme={(t) => (setTheme(t), remember(order, t))} saved={saved} onClose={() => setPanel(null)} />}
       {panel === "meeting" && meeting && props.actions && (
         <MeetingPanel
@@ -441,6 +496,10 @@ export function DeckPlayer(props: Props) {
             {s.next && <p className="font-medium">{s.next}</p>}
           </div>
           {notes && s.note && <p className="rounded-lg border border-dashed p-3 text-base text-muted-foreground">Notes: {s.note}</p>}
+          <p className="flex items-center gap-2 text-xs text-muted-foreground" data-slide-brand>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/brand/myseed-logo.svg" alt="" className="size-4" /> {props.title} · {new Date().toLocaleDateString()}
+          </p>
           {tool && <Overlay tool={tool} />}
         </main>
       )}

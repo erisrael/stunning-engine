@@ -125,6 +125,18 @@ try {
   await outsider.goto(shareUrl);
   check("the link opens without signing in", await outsider.locator("[data-explainer]").isVisible({ timeout: 10000 }).catch(() => false));
   await outsider.screenshot({ path: path.join(shots, "8b-shared.png") });
+  // A phone as the remote.
+  await lead.locator("[data-remote-button]").click();
+  const remoteLink = await lead.locator("[data-remote-link]").getAttribute("data-remote-link", { timeout: 10000 }).catch(() => null);
+  check("a QR for the phone remote", !!remoteLink);
+  const before = await lead.getByText(/slide \d+ of/).first().innerText();
+  const phone = await (await browser.newContext({ viewport: { width: 390, height: 800 } })).newPage();
+  await phone.goto(`${base}${remoteLink}`);
+  await phone.locator("[data-remote-next]").click();
+  await lead.waitForTimeout(2500);
+  const after = await lead.getByText(/slide \d+ of/).first().innerText();
+  check("the phone's Next moves the slides", before !== after, `${before} / ${after}`);
+  check("the phone shows the slide's title", await phone.locator("[data-remote]").getByText(/of \d+/).isVisible().catch(() => false));
 
   // Phase 12b: the Sprint, Roadmap and Specs pages.
   await go(lead, "/dev/sprint");

@@ -537,3 +537,34 @@ export async function weeklyDeckEmails(now = nowIso()) {
   }
   return { sent };
 }
+
+// ---------------------------------------------------------------------------
+// A phone as the remote: the deck shows a QR; the phone's Next and Previous move it (for 4 hours)
+// ---------------------------------------------------------------------------
+
+export async function createRemote(user: AppUser) {
+  const token = crypto.randomBytes(16).toString("base64url");
+  await run("DELETE FROM pres_remotes WHERE expires_at < ?", nowIso());
+  await run("INSERT INTO pres_remotes (token, user_id, steps, expires_at, created_at) VALUES (?, ?, 0, ?, ?)", token, user.id, new Date(Date.now() + 4 * 36e5).toISOString(), nowIso());
+  return token;
+}
+
+async function remoteRow(token: string) {
+  const r = await get<{ steps: number; title: string | null; position: string | null; expires_at: string }>("SELECT steps, title, position, expires_at FROM pres_remotes WHERE token = ?", token);
+  return r && r.expires_at > nowIso() ? r : null;
+}
+
+// The phone: one step forward or back.
+export async function remoteMove(token: string, d: 1 | -1) {
+  if (!(await remoteRow(token))) throw new WorkflowError("NOT_FOUND", "This remote has ended. Make a new one from the presentation.");
+  await run("UPDATE pres_remotes SET steps = steps + ? WHERE token = ?", d === -1 ? -1 : 1, token);
+  return remoteState(token);
+}
+
+// The deck reads the steps (and tells the phone which slide is showing).
+export async function remoteState(token: string, show?: { title: string; position: string } | null) {
+  const r = await remoteRow(token);
+  if (!r) throw new WorkflowError("NOT_FOUND", "This remote has ended.");
+  if (show) await run("UPDATE pres_remotes SET title = ?, position = ? WHERE token = ?", show.title.slice(0, 200), show.position.slice(0, 20), token);
+  return { steps: Number(r.steps), title: show?.title ?? r.title, position: show?.position ?? r.position };
+}
