@@ -278,6 +278,7 @@ export function AppSidebar({
           { label: "Sidebar", href: "/admin?tab=sidebar" },
           { label: "Branding", href: "/admin?tab=branding" },
           { label: "Usage", href: "/admin?tab=usage" },
+          { label: "Privacy", href: "/admin?tab=privacy" },
           { label: "Integrations", href: "/admin?tab=integrations" },
           { label: "System", href: "/admin?tab=system" },
         ]

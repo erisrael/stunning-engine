@@ -95,6 +95,22 @@ try {
   check("the author sees who confirmed", /^1 of \d+ confirmed/.test(await page.locator("[data-announcement-status]").innerText()), await page.locator("[data-announcement-status]").innerText().catch(() => ""));
   await page.goto(`${base}/admin?tab=usage`);
   check("Admin, Usage shows visits", await visible(page.locator("[data-usage-admin]")) && !/No visits recorded/.test(await page.locator("[data-usage-admin]").innerText()));
+
+  // Phase 16.5: the privacy notice, accepted before anything else; Download my data.
+  await page.goto(`${base}/admin?tab=privacy`);
+  const pa = page.locator("[data-privacy-admin]");
+  await pa.getByRole("button", { name: "Start from a template" }).click();
+  await pa.getByRole("button", { name: "Save", exact: true }).click();
+  check("notice saved as version 1", await toast(page, /version 1/));
+  await other.goto(`${base}/dashboard`);
+  const gate = other.locator("[data-privacy-gate]");
+  check("the notice comes first", await visible(gate) && /Myseed keeps the information/.test(await gate.innerText()));
+  await other.screenshot({ path: path.join(shots, "4-privacy.png") });
+  await gate.getByRole("button", { name: "I have read it and accept" }).click();
+  check("accepted, it goes away", await gate.waitFor({ state: "detached", timeout: 10000 }).then(() => true, () => false));
+  const res = await other.request.get(`${base}/api/me/data`);
+  const body = await res.json().catch(() => ({}));
+  check("Download my data gives the person's own data", res.ok() && body.account?.email === "liya@demo.local" && !JSON.stringify(body).includes("password_hash"));
 } catch (e) {
   check("ran without crashing", false, e?.stack ?? e);
 } finally {

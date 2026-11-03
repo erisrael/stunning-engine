@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 31;
+export const SCHEMA_VERSION = 32;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -2168,6 +2168,23 @@ CREATE TABLE IF NOT EXISTS mail_state (
   error TEXT
 );
 
+-- v32: data protection (Phase 16.5): who accepted which version of the privacy notice, and who opened whose HR or
+-- salary record.
+CREATE TABLE IF NOT EXISTS privacy_acceptances (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  version INTEGER NOT NULL,
+  accepted_at TEXT NOT NULL,
+  PRIMARY KEY (user_id, version)
+);
+CREATE TABLE IF NOT EXISTS record_access_log (
+  id TEXT PRIMARY KEY,
+  viewer_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  employee_id TEXT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  what TEXT NOT NULL,
+  at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS record_access_emp ON record_access_log (employee_id, at);
+
 -- v31: announcements and policies (with "I have read this"), and page visits per day for Admin's usage view.
 CREATE TABLE IF NOT EXISTS announcements (
   id TEXT PRIMARY KEY,
@@ -2332,6 +2349,8 @@ export const TABLES = [
   "announcements",
   "announcement_reads",
   "page_visits",
+  "privacy_acceptances",
+  "record_access_log",
   "employees",
   "employee_private",
   "employee_documents",

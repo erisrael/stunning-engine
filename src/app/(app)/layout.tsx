@@ -29,6 +29,8 @@ import { bannerMap, navBrand } from "@/server/branding";
 import { SectionBanner } from "@/components/app/section-banner";
 import { AnnouncementStrip } from "@/components/app/announcement-strip";
 import { pendingAnnouncements } from "@/server/announcements";
+import { privacyToAccept } from "@/server/privacy";
+import { PrivacyGate } from "@/components/app/privacy-gate";
 import { Assistant } from "@/components/app/assistant";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -72,6 +74,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </main>
         <ChatKeyBootstrap viewerId={viewer.id} />
         {!viewer.mustChangePassword && !viewer.previewBy && <Assistant ctx={await assistantContext(viewer)} ai={await aiAvailable(viewer)} />}
+        {!viewer.previewBy && await privacyToAccept(viewer).then((p) => (p ? <PrivacyGate notice={p.notice} version={p.version} updatedAt={p.updatedAt} /> : null))}
         {!viewer.mustChangePassword && <GetStarted audience={audienceFor(viewer.activeRole, viewer.leads)} tour={viewer.prefs.tour ?? {}} />}
       </SidebarInset>
     </SidebarProvider>

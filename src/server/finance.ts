@@ -2,6 +2,7 @@
 // purchasing, budgets, payroll and reports. Whoever prepares something is never the one who approves it, and
 // nothing changes in a locked period. Every change is in the audit log.
 
+import { logRecordAccess } from "./privacy";
 import { all, get, nowIso, parseJson, run, tx, uid } from "./db";
 import { audit, WorkflowError } from "./workflow";
 import { notify } from "./notifications";
@@ -904,7 +905,7 @@ export async function myPayslips(user: AppUser) {
 }
 
 export async function payslip(user: AppUser, id: string) {
-  const s = await get<{ id: string; run_id: string; period: string; status: string; user_id: string | null; code: string; name: string; job_title: string | null; department: string | null; basic: number; allowances: string; deductions: string; overtime_hours: number; overtime_rate: number; unpaid_days: number; gross: number; taxable: number; income_tax: number; pension_employee: number; pension_employer: number; other_deductions: number; net: number; tin: string | null; pension_no: string | null; bank_name: string | null; bank_account: string | null }>(
+  const s = await get<{ id: string; run_id: string; employee_id: string; period: string; status: string; user_id: string | null; code: string; name: string; job_title: string | null; department: string | null; basic: number; allowances: string; deductions: string; overtime_hours: number; overtime_rate: number; unpaid_days: number; gross: number; taxable: number; income_tax: number; pension_employee: number; pension_employer: number; other_deductions: number; net: number; tin: string | null; pension_no: string | null; bank_name: string | null; bank_account: string | null }>(
     `SELECT s.*, r.period, r.status, e.user_id, e.code, e.full_name AS name, e.job_title, e.department, p.tin, p.pension_no, p.bank_name, p.bank_account
      FROM fin_payslips s JOIN fin_payroll_runs r ON r.id = s.run_id JOIN employees e ON e.id = s.employee_id LEFT JOIN employee_private p ON p.employee_id = e.id WHERE s.id = ?`,
     id,
@@ -912,6 +913,7 @@ export async function payslip(user: AppUser, id: string) {
   if (!s) return null;
   const own = s.user_id === user.id && ["paid", "locked"].includes(s.status);
   if (!own && !rights(user).payroll) return null;
+  if (!own) await logRecordAccess(user, s.employee_id, "payslip");
   const set = await financeSettings();
   return { ...s, allowances: parseJson<PayLine[]>(s.allowances, []), deductions: parseJson<PayLine[]>(s.deductions, []), currency: set.currency, settings: set };
 }

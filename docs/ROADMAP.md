@@ -842,12 +842,12 @@ Done in step 1: Admin, Sign-in has tabs Rules, Google, Microsoft, SSO, Sign-up, 
 - [ ] The interface in Amharic and English (and Afaan Oromo later), chosen per person; every label, message and email from one set of translations.
 - [ ] Dates shown in the Ethiopian calendar as an option per person and per workspace (Settings already has the switch marked "planned"), in date pickers too; holidays and payroll months follow it where chosen.
 
-### 16.5 Data protection for everyone's records
+### 16.5 Data protection for everyone's records (done)
 
-- [ ] A privacy notice for staff, shown at first sign-in and when it changes, with acceptance recorded.
-- [ ] A retention schedule set by Admin and HR (for example attendance 5 years, chat 1 year, applicants 6 months) applied automatically, with what was removed logged.
-- [ ] **Download my data** for each person (their record, leave, pay, attendance, profile and messages they sent).
-- [ ] An access log of who opened HR and salary records, for HR managers and Admin.
+- [x] A privacy notice for staff (Admin, Privacy; a template to start from), shown before anything else at sign-in and again when it changes (a new version), with acceptance recorded and a list of who has not accepted.
+- [x] A retention schedule set by Admin and HR managers (attendance, applicants not hired, read notifications, page visits, assistant records, audit and access logs) applied every day by the scheduled checks, or now by a button, with what was removed written to the audit log. Chat keeps its own retention (Admin, Chat).
+- [x] **Download my data** (Profile, and from the notice): account, roles, profile, HR record and documents list, leave, attendance and corrections, payslips, claims, tasks, comments, notifications, sign-ins, routines, as one JSON file; never the password. Chat messages are end-to-end encrypted, so they stay in Chat.
+- [x] An access log of who opened someone else's HR record or payslip (one line per person and record each hour), for HR managers and Admin (Admin, Privacy).
 
 ## Phase 17: Performance management: KRAs, KPIs and OKRs
 

@@ -2,6 +2,7 @@
 // HR (hr.access) sees and edits everyone; salary, ID, tax and bank details need hr.sensitive. Each person sees their
 // own record and can update their contact details; line managers see their team's job and contact details only.
 
+import { logRecordAccess } from "./privacy";
 import { all, get, nowIso, parseJson, run, uid } from "./db";
 import { audit, WorkflowError } from "./workflow";
 import { notify } from "./notifications";
@@ -221,6 +222,8 @@ export async function getEmployee(user: AppUser, id: string): Promise<EmployeeDe
   if (!view) return null;
   const e = await get<EmployeeRow>("SELECT * FROM employees WHERE id = ?", id);
   if (!e) return null;
+  // Who opened whose record (Phase 16.5), not one's own.
+  await logRecordAccess(user, id, "hr_record");
   const rights = hrRights(user);
   const manager = e.manager_id ? await get<{ full_name: string; preferred_name: string | null }>("SELECT full_name, preferred_name FROM employees WHERE id = ?", e.manager_id) : null;
   const personal = view !== "team";

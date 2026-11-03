@@ -1,4 +1,5 @@
 import { all, get, nowIso, run } from "./db";
+import { applyRetention } from "./privacy";
 import { getMeta, getSettings, setMeta } from "./settings";
 import { managers, notify } from "./notifications";
 import { purgeTrash } from "./trash";
@@ -156,6 +157,8 @@ export async function runScheduledChecks(now = nowIso(), opts: { trigger?: strin
     await runJob("hr-reminders", async () => (await hrReminderChecks(now), await trainingReminders(now)));
     // Chat messages and files past the retention set in Admin, Chat.
     await runJob("chat-retention", () => applyChatRetention(now));
+    // Records past the retention set in Admin, Privacy (Phase 16.5).
+    await runJob("retention", () => applyRetention());
     // Finance: budgets passing their alert level.
     await runJob("budgets", () => budgetAlerts());
     // Attendance: a kiosk that went quiet during working hours.

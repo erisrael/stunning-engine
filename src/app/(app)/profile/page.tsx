@@ -165,6 +165,15 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
         <h3 className="font-semibold">Your recent sign-ins</h3>
         <p className="text-sm text-muted-foreground">If you see something you did not do, change your password and tell your administrator.</p>
         <SignInHistory rows={await signInLog(viewer, { userId: viewer.id, limit: 20 })} />
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border p-4 text-sm" data-my-data>
+          <div>
+            <p className="font-medium">My data</p>
+            <p className="text-muted-foreground">Everything the app keeps about you (account, HR record, leave, attendance, pay, claims, work), as one file.</p>
+          </div>
+          <a href="/api/me/data" className="rounded-md border px-3 py-1.5 font-medium hover:bg-muted">
+            Download my data
+          </a>
+        </div>
       </div>
       </>
       )}

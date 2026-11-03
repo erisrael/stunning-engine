@@ -11,6 +11,8 @@ import { workspaceCounts } from "@/server/workspace-data";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BrandingAdmin } from "./branding-admin";
 import { UsageAdmin } from "./usage-admin";
+import { PrivacyAdmin } from "./privacy-admin";
+import { acceptanceReport, accessLog, privacyConfig } from "@/server/privacy";
 import { usageReport } from "@/server/announcements";
 import { ROLE_LABELS } from "@/lib/domain";
 import { bannerSections, banners, navBrand } from "@/server/branding";
@@ -135,6 +137,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           {manageUsers && <TabsTrigger value="sidebar">Sidebar</TabsTrigger>}
           {manageUsers && <TabsTrigger value="branding">Branding</TabsTrigger>}
           {manageUsers && <TabsTrigger value="usage">Usage</TabsTrigger>}
+          {manageUsers && <TabsTrigger value="privacy">Privacy</TabsTrigger>}
           {manageUsers && <TabsTrigger value="integrations">Integrations</TabsTrigger>}
           {manageUsers && <TabsTrigger value="system">System</TabsTrigger>}
           {manageData && <TabsTrigger value="data">Data</TabsTrigger>}
@@ -189,6 +192,9 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
                 }}
               />
               <SignInAdmin google={await googleSettings()} emailReady={(await smtpSettings()).source !== "none"} />
+            </TabsContent>
+            <TabsContent value="privacy">
+              {tab === "privacy" && <PrivacyAdmin config={await privacyConfig()} report={await acceptanceReport(viewer)} log={await accessLog(viewer)} />}
             </TabsContent>
             <TabsContent value="usage">
               {tab === "usage" && <UsageAdmin report={await usageReport(viewer)} roleLabel={ROLE_LABELS as Record<string, string>} />}
