@@ -387,7 +387,7 @@ export async function getDoc(user: AppUser, d: string, id: string) {
 }
 export type DocView = Awaited<ReturnType<typeof getDoc>>;
 
-export async function createDoc(user: AppUser, d: string, input: { kind: DocKind; title?: string | null; projectId?: string | null; template?: string | null }) {
+export async function createDoc(user: AppUser, d: string, input: { kind: DocKind; title?: string | null; projectId?: string | null; template?: string | null; folderId?: string | null }) {
   const a = await workAccess(user, d, "write");
   if (!DOC_KINDS.some((k) => k.key === input.kind)) throw new WorkflowError("VALIDATION", "Choose the kind of document.");
   if (input.projectId && !(await get("SELECT 1 AS x FROM dept_projects WHERE id = ? AND dept = ?", input.projectId, a.dept))) throw new WorkflowError("VALIDATION", "Unknown project.");
@@ -395,7 +395,8 @@ export async function createDoc(user: AppUser, d: string, input: { kind: DocKind
   const id = uid("doc_");
   const now = nowIso();
   const title = input.title?.trim().slice(0, 160) || t.title;
-  await run("INSERT INTO dept_docs (id, dept, project_id, kind, title, body, status, version, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'draft', 1, ?, ?, ?)", id, a.dept, input.projectId || null, input.kind, title, t.body, user.id, now, now);
+  const folder = input.folderId ? ((await get<{ id: string }>("SELECT id FROM dept_folders WHERE id = ? AND dept = ?", input.folderId, a.dept))?.id ?? null) : null;
+  await run("INSERT INTO dept_docs (id, dept, project_id, folder_id, kind, title, body, status, version, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'draft', 1, ?, ?, ?)", id, a.dept, input.projectId || null, folder, input.kind, title, t.body, user.id, now, now);
   await audit({ actor: user }, { action: `${a.dept}.doc`, summary: `${user.name} started the document "${title}"` });
   return id;
 }

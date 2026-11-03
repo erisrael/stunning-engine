@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 48;
+export const SCHEMA_VERSION = 49;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -2124,6 +2124,8 @@ CREATE TABLE IF NOT EXISTS dept_docs (
   approved_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_dept_docs ON dept_docs(dept, project_id);
+-- (v49) the folder a document is in (none: the library's top).
+ALTER TABLE dept_docs ADD COLUMN IF NOT EXISTS folder_id TEXT;
 CREATE TABLE IF NOT EXISTS dept_doc_versions (
   doc_id TEXT NOT NULL REFERENCES dept_docs(id) ON DELETE CASCADE,
   version INTEGER NOT NULL,
@@ -2170,6 +2172,35 @@ CREATE TABLE IF NOT EXISTS mail_state (
   last_uid INTEGER NOT NULL DEFAULT 0,
   checked_at TEXT,
   error TEXT
+);
+
+-- v49: the department document library: folders, files in them, and documents pinned by each person.
+CREATE TABLE IF NOT EXISTS dept_folders (
+  id TEXT PRIMARY KEY,
+  dept TEXT NOT NULL,
+  parent_id TEXT REFERENCES dept_folders(id) ON DELETE SET NULL,
+  name TEXT NOT NULL,
+  created_by TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_dept_folders ON dept_folders(dept, parent_id);
+CREATE TABLE IF NOT EXISTS dept_folder_files (
+  id TEXT PRIMARY KEY,
+  dept TEXT NOT NULL,
+  folder_id TEXT REFERENCES dept_folders(id) ON DELETE SET NULL,
+  name TEXT NOT NULL,
+  mime TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  data TEXT NOT NULL,
+  uploaded_by TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_dept_folder_files ON dept_folder_files(dept, folder_id);
+CREATE TABLE IF NOT EXISTS dept_doc_pins (
+  doc_id TEXT NOT NULL REFERENCES dept_docs(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (doc_id, user_id)
 );
 
 -- v48: strategic planning, monitoring and evaluation: plans, the results chain (goal, outcomes, outputs,
@@ -3067,6 +3098,9 @@ export const TABLES = [
   "sp_actuals",
   "sp_risks",
   "sp_evaluations",
+  "dept_folders",
+  "dept_folder_files",
+  "dept_doc_pins",
   "ai_agent_log",
   "dept_task_moves",
   "pres_decks",

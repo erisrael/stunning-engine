@@ -22,6 +22,7 @@ import { DOC_KINDS, DOC_STATUS_LABELS, DOC_TEMPLATES, type DocKind } from "@/lib
 import { RITUALS } from "@/lib/dept-config";
 import { deptViewPath } from "@/lib/work";
 import { cn } from "@/lib/utils";
+import { DocLibrary } from "./doc-library";
 
 type R = { ok: boolean; error?: string; data?: unknown };
 function useRun() {
@@ -506,7 +507,7 @@ export function DocsView({ dept, docs, projects, people, openId, workspace }: { 
           <Button
             disabled={busy === "new"}
             onClick={async () => {
-              const id = await run("new", () => A.createDocAction(dept, { kind: t.kind, template: t.key, projectId: project === "none" ? null : project }), "Document started");
+              const id = await run("new", () => A.createDocAction(dept, { kind: t.kind, template: t.key, projectId: project === "none" ? null : project, folderId: new URLSearchParams(window.location.search).get("folder") }), "Document started");
               if (typeof id === "string") router.push(deptViewPath(dept, "docs", `doc=${id}`));
             }}
           >
@@ -514,24 +515,7 @@ export function DocsView({ dept, docs, projects, people, openId, workspace }: { 
           </Button>
         </CardContent>
       </Card>
-      <ul className="divide-y rounded-lg border bg-card">
-        {docs.map((d) => (
-          <li key={d.id}>
-            <a href={deptViewPath(dept, "docs", `doc=${d.id}`)} className="flex flex-wrap items-center gap-2 px-3 py-2 text-sm hover:bg-muted/50" data-doc={d.title}>
-              <span className="font-medium">{d.title}</span>
-              <Badge variant="secondary">{DOC_KINDS.find((k) => k.key === d.kind)?.label ?? d.kind}</Badge>
-              <span className="text-xs text-muted-foreground">
-                v{d.version} · {DOC_STATUS_LABELS[d.status] ?? d.status}
-                {d.project ? ` · ${d.project}` : ""}
-              </span>
-              <span className="ml-auto text-xs text-muted-foreground">
-                {d.author} · {d.updatedAt.slice(0, 10)}
-              </span>
-            </a>
-          </li>
-        ))}
-        {!docs.length && <li className="px-3 py-3 text-sm text-muted-foreground">No documents yet.</li>}
-      </ul>
+      <DocLibrary dept={dept} />
     </div>
   );
 }
@@ -570,13 +554,6 @@ function DocEditor({ dept, id, people, workspace, onBack }: { dept: string; id: 
   if (!d) return <Loader2Icon className="animate-spin" />;
   const dirty = title !== d.title || body !== d.body;
   const save = async () => (await run("save", () => A.saveDocAction(dept, id, { title, body }), d.status === "draft" ? "Saved" : "Saved as a new version")) && load();
-  const download = () => {
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([docHtml({ ...d, title, body }, workspace)], { type: "application/msword" }));
-    a.download = `${title.replace(/[^\w\- ]+/g, "").trim() || "document"}.doc`;
-    a.click();
-    URL.revokeObjectURL(a.href);
-  };
   const print = () => {
     const w = window.open("", "_blank");
     if (!w) return;
@@ -595,8 +572,15 @@ function DocEditor({ dept, id, people, workspace, onBack }: { dept: string; id: 
           v{d.version} · {DOC_STATUS_LABELS[d.status] ?? d.status}
         </Badge>
         <span className="ml-auto flex gap-2">
-          <Button size="sm" variant="outline" onClick={download}>
-            <DownloadIcon /> Word
+          <Button asChild size="sm" variant="outline">
+            <a href={`/api/dept-docs/${d.id}?dept=${dept}&format=docx`} data-doc-export="docx">
+              <DownloadIcon /> Word
+            </a>
+          </Button>
+          <Button asChild size="sm" variant="ghost">
+            <a href={`/api/dept-docs/${d.id}?dept=${dept}&format=md`} data-doc-export="md">
+              Markdown
+            </a>
           </Button>
           <Button size="sm" variant="outline" onClick={print}>
             <PrinterIcon /> PDF (print)

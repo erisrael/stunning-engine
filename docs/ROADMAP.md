@@ -1109,3 +1109,14 @@ Built: `src/lib/deck-templates.ts`, `src/server/deck-templates.ts`, `src/compone
 - [x] **KPI library**: each KPI gets a reference sheet (Balanced Scorecard perspective, formula, data source, frequency, owner, why it matters), listed in the KPI dictionary.
 
 Built: `src/lib/strategy.ts`, `src/server/strategy.ts`, `src/server/strategy-docs.ts`, `src/app/(app)/strategy`, `src/components/app/strategy/strategy-client.tsx`, `src/app/api/strategy/doc` (schema 48). Tests: `tests/server/strategy.test.ts`, `tests/e2e/strategy.e2e.mjs`.
+
+## Phase 26: The document library for Dev and every department (done)
+
+- [x] **Folders** inside folders, with the path shown and a tree on the side. A folder cannot go inside itself, and no two in one place share a name. Removing a folder keeps what is in it (it moves up).
+- [x] **Documents and files together**: documents are started in the open folder from the templates. Any file (designs, PDFs, spreadsheets, exports, up to 15 MB) can be added, renamed, moved and deleted; only whoever added a file, or a head, deletes it.
+- [x] **Search** through titles, the text inside documents (with the matching words shown), and file and folder names.
+- [x] **Pinned** documents (each person's own) and **recent** documents on the side. Any document can be duplicated.
+- [x] **Import**: a Word (.docx), Markdown, text or web page file becomes a document, with its headings and lists kept.
+- [x] **Export**: a real Word file (.docx with headings, lists, tables, bold and code), Markdown or HTML, from the list or the editor.
+
+Built: `src/server/dev-library.ts`, `src/components/app/doc-library.tsx`, `src/app/api/dept-library/[id]`, `src/app/api/dept-docs/[id]` (schema 49). Tests: `tests/server/library.test.ts`, `tests/e2e/library.e2e.mjs`.

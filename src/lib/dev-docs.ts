@@ -11,6 +11,7 @@ export const DOC_KINDS = [
   { key: "release", label: "Release notes" },
   { key: "runbook", label: "Runbook" },
   { key: "postmortem", label: "Postmortem" },
+  { key: "note", label: "Note or imported document" },
 ] as const;
 export type DocKind = (typeof DOC_KINDS)[number]["key"];
 export const DOC_STATUS_LABELS: Record<string, string> = { draft: "Draft", review: "In review", approved: "Approved" };
@@ -227,4 +228,5 @@ export const DOC_TEMPLATES: { key: string; kind: DocKind; label: string; title: 
   { key: "release", kind: "release", label: "Release notes and checklist", title: "Release notes", body: RELEASE },
   { key: "runbook", kind: "runbook", label: "Runbook", title: "Runbook", body: RUNBOOK },
   { key: "postmortem", kind: "postmortem", label: "Postmortem", title: "Postmortem", body: POSTMORTEM },
+  { key: "note", kind: "note", label: "Blank document", title: "Untitled document", body: "" },
 ];

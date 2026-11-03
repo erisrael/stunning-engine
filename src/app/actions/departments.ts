@@ -327,3 +327,38 @@ export async function linkRequirementAction(dept: string, docId: string, req: st
 export async function deleteDocAction(dept: string, id: string) {
   return wrap(async () => (await import("@/server/dev-studio")).deleteDoc(await requireViewer(), dept, id));
 }
+
+// The document library (Phase 26): folders, files, search, pins, moving, duplicating and importing.
+export async function libraryAction(dept: string, folderId: string | null) {
+  return wrap(async () => (await import("@/server/dev-library")).library(await requireViewer(), dept, folderId), { revalidate: false });
+}
+export async function saveFolderAction(dept: string, input: { id?: string | null; name: string; parentId?: string | null }) {
+  return wrap(async () => (await import("@/server/dev-library")).saveFolder(await requireViewer(), dept, input), { revalidate: false });
+}
+export async function deleteFolderAction(dept: string, id: string) {
+  return wrap(async () => (await import("@/server/dev-library")).deleteFolder(await requireViewer(), dept, id), { revalidate: false });
+}
+export async function moveLibraryItemAction(dept: string, input: { kind: "doc" | "file"; id: string; folderId: string | null }) {
+  return wrap(async () => (await import("@/server/dev-library")).moveItem(await requireViewer(), dept, input), { revalidate: false });
+}
+export async function uploadLibraryFileAction(dept: string, input: { folderId: string | null; name: string; mime: string; base64: string }) {
+  return wrap(async () => (await import("@/server/dev-library")).uploadFile(await requireViewer(), dept, input), { revalidate: false });
+}
+export async function deleteLibraryFileAction(dept: string, id: string) {
+  return wrap(async () => (await import("@/server/dev-library")).deleteFile(await requireViewer(), dept, id), { revalidate: false });
+}
+export async function renameLibraryFileAction(dept: string, id: string, name: string) {
+  return wrap(async () => (await import("@/server/dev-library")).renameFile(await requireViewer(), dept, id, name), { revalidate: false });
+}
+export async function togglePinAction(dept: string, docId: string) {
+  return wrap(async () => (await import("@/server/dev-library")).togglePin(await requireViewer(), dept, docId), { revalidate: false });
+}
+export async function duplicateDocAction(dept: string, id: string) {
+  return wrap(async () => (await import("@/server/dev-library")).duplicateDoc(await requireViewer(), dept, id), { revalidate: false });
+}
+export async function searchLibraryAction(dept: string, q: string) {
+  return wrap(async () => (await import("@/server/dev-library")).searchLibrary(await requireViewer(), dept, q), { revalidate: false });
+}
+export async function importDocumentAction(dept: string, input: { folderId: string | null; name: string; base64: string }) {
+  return wrap(async () => (await import("@/server/dev-library")).importDocument(await requireViewer(), dept, input), { revalidate: false });
+}

@@ -85,6 +85,16 @@ const PREPS: Record<string, () => Promise<unknown>> = {
     await run("UPDATE users SET prefs = ? WHERE id = ?", JSON.stringify({ tour: { seen: ["member", "lead", "publication", "manager", "owner", "department", "hr", "finance"] } }), a.id);
     return {};
   },
+  // Phase 26: the Dev team's document library, for a developer.
+  async library() {
+    await passwordOnly();
+    const { setPosition } = await import("../../src/server/departments");
+    const a = await admin();
+    const u = await upsertAccount({ name: "Abebe", email: "abebe@demo.local", title: "Developer", roles: ["developer"], password: "Demo-Workflow-2026", mustChangePassword: false });
+    await setPosition(a, "dev", u.id, "member");
+    await run("UPDATE users SET prefs = ? WHERE id = ?", JSON.stringify({ tour: { seen: ["member", "lead", "publication", "manager", "owner", "department", "hr", "finance"] } }), u.id);
+    return {};
+  },
   // The main pages on a phone.
   async mobile() {
     await passwordOnly();
