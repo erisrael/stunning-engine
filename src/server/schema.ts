@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 45;
+export const SCHEMA_VERSION = 46;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -2172,6 +2172,41 @@ CREATE TABLE IF NOT EXISTS mail_state (
   error TEXT
 );
 
+-- v46: the assistant's saved conversations (side panel history), what the agent did on its own, and every status
+-- move of a department task (for the team analyzer: time in each status, cycle time, bottlenecks).
+CREATE TABLE IF NOT EXISTS ai_conversations (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  mode TEXT NOT NULL DEFAULT 'ask',
+  messages TEXT NOT NULL DEFAULT '[]',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ai_conversations ON ai_conversations(user_id, updated_at);
+CREATE TABLE IF NOT EXISTS ai_agent_log (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  conversation_id TEXT,
+  kind TEXT NOT NULL,
+  title TEXT NOT NULL,
+  result TEXT,
+  ok INTEGER NOT NULL DEFAULT 1,
+  at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ai_agent_log ON ai_agent_log(user_id, at);
+CREATE TABLE IF NOT EXISTS dept_task_moves (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL REFERENCES dept_tasks(id) ON DELETE CASCADE,
+  dept TEXT NOT NULL,
+  from_status TEXT,
+  to_status TEXT NOT NULL,
+  by_id TEXT,
+  at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_dept_task_moves ON dept_task_moves(dept, at);
+CREATE INDEX IF NOT EXISTS idx_dept_task_moves_task ON dept_task_moves(task_id, at);
+
 -- v45: a phone as the remote of a presentation (next, previous), for a few hours.
 CREATE TABLE IF NOT EXISTS pres_remotes (
   token TEXT PRIMARY KEY,
@@ -2901,6 +2936,9 @@ export const TABLES = [
   "user_passkeys",
   "page_timings",
   "mail_scheduled",
+  "ai_conversations",
+  "ai_agent_log",
+  "dept_task_moves",
   "pres_decks",
   "pres_shares",
   "sup_apps",

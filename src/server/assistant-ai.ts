@@ -49,9 +49,12 @@ export type AiConfig = {
   dailyLimit: number;
   // Whether it may propose actions (always confirmed by the person).
   actions: boolean;
+  // Agent mode: the person may let it do the allowed actions itself (each one logged), up to agentMax per question.
+  agent: boolean;
+  agentMax: number;
 };
 type Stored = AiConfig & { keyEnc?: string | null };
-const DEFAULT: AiConfig = { on: false, model: "claude-opus-5-5", effort: "low", offRoles: [], dailyLimit: 60, actions: true };
+const DEFAULT: AiConfig = { on: false, model: "claude-opus-5-5", effort: "low", offRoles: [], dailyLimit: 60, actions: true, agent: true, agentMax: 8 };
 
 const fake = () => process.env.AI_FAKE === "1";
 
@@ -82,6 +85,8 @@ export async function saveAiConfig(user: AppUser, input: Partial<AiConfig> & { k
     offRoles: (input.offRoles ?? cur.offRoles).map(String).slice(0, 30),
     dailyLimit: Math.max(0, Math.min(1000, Math.round(Number(input.dailyLimit ?? cur.dailyLimit)))),
     actions: input.actions ?? cur.actions,
+    agent: input.agent ?? cur.agent,
+    agentMax: Math.max(1, Math.min(25, Math.round(Number(input.agentMax ?? cur.agentMax) || 8))),
     keyEnc: input.clearKey ? null : input.key?.trim() ? await seal(input.key.trim()) : (cur.keyEnc ?? null),
   };
   await run(
@@ -101,12 +106,22 @@ export async function aiAvailable(user: AppUser & { activeRole: string }) {
   return fake() || !!(c.keyEnc || process.env.ANTHROPIC_API_KEY);
 }
 
+// Whether this person may switch to Agent mode (Admin's switch, their role's option, and actions allowed at all).
+export async function agentAvailable(user: AppUser & { activeRole: string }) {
+  if (!(await aiAvailable(user))) return false;
+  const c = await stored();
+  if (!c.agent || !c.actions) return false;
+  const ro = await roleOptions(user.activeRole);
+  return ro.agent && (await allowedOps(user as Viewer, c)).length > 0;
+}
+
 // ---------------------------------------------------------------------------
 // The tools: reads with the person's own permissions, and proposals
 // ---------------------------------------------------------------------------
 
 type Viewer = AppUser & { activeRole: string };
-type Out = { text: string; proposals: Proposal[]; links: { label: string; href: string }[]; show: string | null };
+export type AgentStep = { kind: string; title: string; lines: string[]; ok: boolean; result: string; href: string | null };
+type Out = { text: string; proposals: Proposal[]; links: { label: string; href: string }[]; show: string | null; done: AgentStep[]; conversationId: string | null };
 export type Proposal = { token: string; title: string; lines: string[] };
 
 const short = (s: string | null | undefined, n = 300) => (s ? (s.length > n ? `${s.slice(0, n)}…` : s) : null);
@@ -193,16 +208,40 @@ const T = {
     description: "The person's routines (recorded ways of doing something in the app) and the ones shared with them, with their ids (for run_routine).",
     input: z.object({}),
   },
+  search_everything: {
+    description: "Search across the app at once: production parts, department tasks the person may see (any department), people and help pages. Use when the person names something and you do not know where it is.",
+    input: z.object({ text: z.string() }),
+  },
+  my_scorecard: {
+    description: "The person's KPI scorecard for this month (or a month YYYY-MM): score, rating, each KRA and KPI with target and actual, and the trend of the last six months. With person (a name), a team member's scorecard if the person leads them.",
+    input: z.object({ period: z.string().optional(), person: z.string().optional() }),
+  },
+  team_insights: {
+    description: "For leads: how work flows in one of their departments over the last weeks. Throughput, cycle time, where work waits (bottleneck), each member's load, pace and on-time rate, and the risks (overdue, stuck, blocked, urgent without an owner). Use for 'how is my team doing', 'who is overloaded', 'what is stuck'.",
+    input: z.object({ department: z.string(), weeks: z.number().optional() }),
+  },
+  support_tickets: {
+    description: "For customer support agents: their open tickets (or the queue's waiting ones with waiting=true), with ids, subjects, priority and status.",
+    input: z.object({ waiting: z.boolean().optional() }),
+  },
+  leaderboard: {
+    description: "The recognition leaderboard for this month (when recognition is on): ranks, scores, badges and titles.",
+    input: z.object({ period: z.string().optional() }),
+  },
   propose: {
     description: `Prepare an action for the person to confirm (nothing happens until they press Confirm). kind and its args: ${OPS.map((o) => `${o.key} {${o.args}}`).join("; ")}. Dates as YYYY-MM-DD, times as HH:MM. Look up ids first with the other tools.`,
+    input: z.object({ kind: z.enum(OP_KEYS as [string, ...string[]]), args: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])).optional() }),
+  },
+  do_action: {
+    description: `Agent mode: do an action now for the person, with their own permissions (the same checks as the pages). kind and its args: ${OPS.map((o) => `${o.key} {${o.args}}`).join("; ")}. Dates as YYYY-MM-DD, times as HH:MM. Look up ids first with the other tools. Each call is logged and shown to the person.`,
     input: z.object({ kind: z.enum(OP_KEYS as [string, ...string[]]), args: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])).optional() }),
   },
 } as const;
 type ToolName = keyof typeof T;
 
-function toolDefs(allowed: string[]): Anthropic.Beta.BetaTool[] {
+function toolDefs(allowed: string[], agent = false): Anthropic.Beta.BetaTool[] {
   return (Object.keys(T) as ToolName[])
-    .filter((n) => allowed.length > 0 || n !== "propose")
+    .filter((n) => (n === "propose" ? allowed.length > 0 && !agent : n === "do_action" ? allowed.length > 0 && agent : true))
     .map((name) => {
       const schema = z.toJSONSchema(T[name].input) as { properties?: Record<string, unknown>; required?: string[] };
       return { name, description: T[name].description, input_schema: { type: "object" as const, properties: schema.properties ?? {}, required: schema.required ?? [] } };
@@ -233,9 +272,9 @@ export async function confirmProposal(user: Viewer, token: string) {
   return r;
 }
 
-async function runTool(user: Viewer, name: string, input: unknown, out: Out, allowed: string[]): Promise<unknown> {
+async function runTool(user: Viewer, name: string, input: unknown, out: Out, allowed: string[], agent: { on: boolean; max: number } = { on: false, max: 0 }): Promise<unknown> {
   const tool = T[name as ToolName];
-  if (!tool || (name === "propose" && !allowed.length)) return { error: "Unknown tool." };
+  if (!tool || ((name === "propose" || name === "do_action") && !allowed.length) || (name === "do_action" && !agent.on)) return { error: "Unknown tool." };
   const parsed = tool.input.safeParse(input ?? {});
   if (!parsed.success) return { error: `Invalid input: ${parsed.error.message}` };
   const a = parsed.data as Record<string, string | boolean | undefined>;
@@ -313,7 +352,8 @@ async function runTool(user: Viewer, name: string, input: unknown, out: Out, all
     }
     case "find_people": {
       const q = `%${String(a.text).trim()}%`;
-      const rows = await all<{ id: string; name: string; title: string | null }>("SELECT id, name, title FROM users WHERE active = 1 AND deleted_at IS NULL AND (name ILIKE ? OR title ILIKE ?) ORDER BY name LIMIT 10", q, q);
+      const hidden = await (await import("./profiles")).hiddenFrom(user);
+      const rows = (await all<{ id: string; name: string; title: string | null }>("SELECT id, name, title FROM users WHERE active = 1 AND deleted_at IS NULL AND (name ILIKE ? OR title ILIKE ?) ORDER BY name LIMIT 20", q, q)).filter((r) => !hidden.has(r.id)).slice(0, 10);
       const out2 = [];
       for (const r of rows) {
         const ds = await all<{ department: string; position: string }>("SELECT department, position FROM department_positions WHERE user_id = ?", r.id);
@@ -359,6 +399,98 @@ async function runTool(user: Viewer, name: string, input: unknown, out: Out, all
       return await all("SELECT title, created_at AS at, link FROM notifications WHERE user_id = ? AND read_at IS NULL ORDER BY created_at DESC LIMIT 10", user.id);
     case "list_routines":
       return (await routinesOpen(user)) ? (await listRoutines(user)).map((r) => ({ id: r.id, name: r.name, description: r.description, steps: r.steps.length, owner: r.ownerName })) : { note: "Routines are not on for this person." };
+    case "search_everything": {
+      const term = String(a.text).trim();
+      if (term.length < 2) return { error: "Give at least two letters." };
+      const like = `%${term}%`;
+      const sc = scopeSql(user, "i");
+      const parts = await all(`SELECT i.code, i.title, i.stage, i.stage_status FROM items i WHERE ${sc.sql} AND (i.code ILIKE ? OR i.title ILIKE ? OR i.teacher ILIKE ?) ORDER BY i.updated_at DESC LIMIT 8`, ...sc.params, like, like, like);
+      const tasks: unknown[] = [];
+      for (const d of await depts(user)) {
+        try {
+          const r = await listTasks(user, d.dept, { q: term, open: false, sort: "updated", dir: "desc" });
+          for (const t of r.tasks.slice(0, 6)) tasks.push({ department: d.title, dept: d.dept, id: t.id, code: t.code, title: t.title, status: t.status, assignee: t.assignee_name });
+        } catch {
+          // Departments without tasks.
+        }
+      }
+      const people = await all<{ name: string; title: string | null }>("SELECT name, title FROM users WHERE active = 1 AND deleted_at IS NULL AND (name ILIKE ? OR title ILIKE ?) ORDER BY name LIMIT 6", like, like);
+      const help = (await runTool(user, "search_help", { text: term }, out, allowed)) as unknown[];
+      return { production_parts: parts, tasks: tasks.slice(0, 20), people, help: Array.isArray(help) ? help.slice(0, 3) : [] };
+    }
+    case "my_scorecard": {
+      const pf = await import("./performance");
+      let who = user.id;
+      if (a.person) {
+        const q = `%${String(a.person).trim()}%`;
+        const p = await get<{ id: string }>("SELECT id FROM users WHERE active = 1 AND name ILIKE ? ORDER BY name LIMIT 1", q);
+        if (!p) return { error: `Nobody called "${a.person}".` };
+        who = p.id;
+      }
+      try {
+        const r = await pf.myScorecard(user, who, (a.period as string) || null);
+        return {
+          name: r.card.name,
+          period: r.card.period,
+          score: r.card.score,
+          rating: r.card.rating,
+          kras: r.card.kras.map((k) => ({ kra: k.name, weight: k.weight, score: k.score, kpis: k.kpis.map((x) => ({ kpi: x.name, unit: x.unit, target: x.target, actual: x.value, score: x.score })) })),
+          trend: r.trend,
+        };
+      } catch (e) {
+        return { error: e instanceof Error ? e.message : String(e) };
+      }
+    }
+    case "team_insights": {
+      const d = await needDept(user, String(a.department));
+      const ti = await import("./team-insights");
+      try {
+        const r = await ti.teamInsights(user, d.dept, { weeks: typeof a.weeks === "number" ? a.weeks : undefined });
+        out.links.push({ href: `${d.dept === "dev" || d.dept === "marketing" ? `/${d.dept}` : `/d/${d.dept}`}/analyze`, label: `${d.title} analyzer` });
+        return { department: r.title, weeks: r.weeks, totals: r.totals, cycle_days: r.cycle, lead_days: r.lead, statuses: r.statuses, bottleneck: r.bottleneck, members: r.members, insights: r.insights, risks: { overdue: r.risks.overdue.slice(0, 8), stuck: r.risks.stuck.slice(0, 8), blocked: r.risks.blocked.slice(0, 8), unowned: r.risks.unowned.slice(0, 8) } };
+      } catch (e) {
+        return { error: e instanceof Error ? e.message : String(e) };
+      }
+    }
+    case "support_tickets": {
+      const sd = await import("./support-desk");
+      if (!(await sd.isAgent(user))) return { note: "This person is not a customer support agent." };
+      const rows = a.waiting
+        ? await all("SELECT id, number, subject, priority, status, created_at FROM sup_tickets WHERE assignee_id IS NULL AND status IN ('new','open') ORDER BY created_at LIMIT 20")
+        : await all("SELECT id, number, subject, priority, status, created_at FROM sup_tickets WHERE assignee_id = ? AND status NOT IN ('solved','closed') ORDER BY created_at LIMIT 20", user.id);
+      out.links.push({ href: "/support", label: "Customer support" });
+      return rows;
+    }
+    case "leaderboard": {
+      const rc = await import("./recognition");
+      try {
+        const r = await rc.leaderboard(user, (a.period as string) || undefined);
+        return r;
+      } catch (e) {
+        return { error: e instanceof Error ? e.message : String(e) };
+      }
+    }
+    case "do_action": {
+      const d = parsed.data as { kind: string; args?: Record<string, unknown> };
+      if (!allowed.includes(d.kind)) return { error: `This person may not have "${d.kind}" done by the assistant. Tell them to do it on the page, or ask Admin.` };
+      if (out.done.length >= agent.max) return { error: `The limit of ${agent.max} actions for one request is reached. Tell the person what is left.` };
+      let pr: Awaited<ReturnType<typeof prepareOp>> | null = null;
+      try {
+        pr = await prepareOp(user, d.kind, (d.args ?? {}) as Record<string, string>);
+        const r = await executeOp(user, pr.params);
+        const step: AgentStep = { kind: d.kind, title: pr.title, lines: pr.lines, ok: true, result: r.done, href: r.href };
+        out.done.push(step);
+        await agentLog(user, out.conversationId, step);
+        if (r.routine) out.links.push({ href: "/routines", label: "Routines" });
+        return { ok: true, done: r.done };
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        const step: AgentStep = { kind: d.kind, title: pr?.title ?? d.kind, lines: pr?.lines ?? [], ok: false, result: msg, href: null };
+        out.done.push(step);
+        await agentLog(user, out.conversationId, step);
+        return { error: msg };
+      }
+    }
     case "propose": {
       const d = parsed.data as { kind: string; args?: Record<string, unknown> };
       if (!allowed.includes(d.kind)) return { error: `This person may not have "${d.kind}" prepared. Tell them to do it on the page, or ask Admin.` };
@@ -405,7 +537,7 @@ async function usedToday(userId: string) {
 
 // One question: the conversation so far (text only), the page the person is on. Tools run here; the answer, any
 // proposals, page buttons and a walk-through come back.
-export async function askAi(user: Viewer, input: { history: Turn[]; text: string; page?: string | null }): Promise<Out> {
+export async function askAi(user: Viewer, input: { history: Turn[]; text: string; page?: string | null; mode?: "ask" | "agent"; conversationId?: string | null }): Promise<Out> {
   const cfg = await stored();
   if (!(await aiAvailable(user))) throw new WorkflowError("FORBIDDEN", "The AI assistant is not on for you.");
   const text = String(input.text ?? "").trim().slice(0, 2000);
@@ -423,15 +555,23 @@ export async function askAi(user: Viewer, input: { history: Turn[]; text: string
     .map((t) => ({ role: t.role, content: String(t.text).slice(0, 4000) }));
   while (history.length && history[0]!.role !== "user") history.shift();
   const messages: Anthropic.Beta.BetaMessageParam[] = [...history, { role: "user", content: `${who}\n\n${text}` }];
-  const out: Out = { text: "", proposals: [], links: [], show: null };
   const allowed = await allowedOps(user, cfg);
-  const tools = toolDefs(allowed);
+  const agentOn = input.mode === "agent" && (await agentAvailable(user));
+  if (input.mode === "agent" && !agentOn) throw new WorkflowError("FORBIDDEN", "Agent mode is not on for you. Ask Admin, or use Ask mode.");
+  const conversationId = await ensureConversation(user, input.conversationId ?? null, text, agentOn ? "agent" : "ask");
+  const out: Out = { text: "", proposals: [], links: [], show: null, done: [], conversationId };
+  const tools = toolDefs(allowed, agentOn);
+  const system = agentOn ? `${SYSTEM}\n\n${AGENT}` : SYSTEM;
   const call = fake() ? fakeModel : await realModel(cfg);
-  for (let i = 0; i < 8; i++) {
-    const res = await call({ system: SYSTEM, tools, messages });
+  const finish = async () => {
+    await appendConversation(user, conversationId, text, out);
+    return out;
+  };
+  for (let i = 0; i < (agentOn ? 16 : 8); i++) {
+    const res = await call({ system, tools, messages });
     if (res.stop_reason === "refusal") {
       out.text = "I cannot help with that one. Try the Help search, or ask your lead.";
-      return out;
+      return await finish();
     }
     messages.push({ role: "assistant", content: res.content });
     const uses = res.content.filter((b): b is Anthropic.Beta.BetaToolUseBlock => b.type === "tool_use");
@@ -443,14 +583,14 @@ export async function askAi(user: Viewer, input: { history: Turn[]; text: string
     if (res.stop_reason === "pause_turn") continue;
     if (!uses.length || res.stop_reason !== "tool_use") {
       out.text = said || (out.proposals.length ? "Check it, then press Confirm." : "Done.");
-      return out;
+      return await finish();
     }
     const results: Anthropic.Beta.BetaToolResultBlockParam[] = [];
     for (const u of uses) {
       let content: string;
       let isError = false;
       try {
-        content = JSON.stringify(await runTool(user, u.name, u.input, out, allowed)).slice(0, 20000);
+        content = JSON.stringify(await runTool(user, u.name, u.input, out, allowed, { on: agentOn, max: cfg.agentMax })).slice(0, 20000);
       } catch (e) {
         content = e instanceof Error ? e.message : String(e);
         isError = true;
@@ -460,7 +600,95 @@ export async function askAi(user: Viewer, input: { history: Turn[]; text: string
     messages.push({ role: "user", content: results });
   }
   out.text = out.text || "That took too many steps. Try asking in smaller parts.";
-  return out;
+  return await finish();
+}
+
+// The extra instructions in Agent mode.
+const AGENT = `Agent mode is on: the person asked you to do things for them. Use do_action to do each step yourself, with their own permissions, instead of proposing. Before acting, look up what you need (ids, statuses, people). Do only what they asked; when a request is unclear or would change other people's work in a way they did not ask for, ask first. After acting, say in one or two lines what you did and anything that failed. Never claim something was done when do_action returned an error.`;
+
+// ---------------------------------------------------------------------------
+// Conversations (the side panel's history) and the agent's log
+// ---------------------------------------------------------------------------
+
+type SavedMsg = { from: "me" | "bot"; text: string; done?: AgentStep[]; at: string };
+
+async function ensureConversation(user: Viewer, id: string | null, first: string, mode: string) {
+  if (id) {
+    const c = await get<{ id: string }>("SELECT id FROM ai_conversations WHERE id = ? AND user_id = ?", id, user.id);
+    if (c) {
+      await run("UPDATE ai_conversations SET mode = ? WHERE id = ?", mode, id);
+      return c.id;
+    }
+  }
+  const nid = uid("aic_");
+  await run("INSERT INTO ai_conversations (id, user_id, title, mode, messages, created_at, updated_at) VALUES (?, ?, ?, ?, '[]', ?, ?)", nid, user.id, first.replace(/\s+/g, " ").slice(0, 80), mode, nowIso(), nowIso());
+  return nid;
+}
+
+async function appendConversation(user: Viewer, id: string, asked: string, out: Out) {
+  const c = await get<{ messages: string }>("SELECT messages FROM ai_conversations WHERE id = ? AND user_id = ?", id, user.id);
+  if (!c) return;
+  const msgs = parseJson<SavedMsg[]>(c.messages, []);
+  msgs.push({ from: "me", text: asked.slice(0, 2000), at: nowIso() }, { from: "bot", text: out.text.slice(0, 6000), ...(out.done.length ? { done: out.done } : {}), at: nowIso() });
+  await run("UPDATE ai_conversations SET messages = ?, updated_at = ? WHERE id = ?", JSON.stringify(msgs.slice(-80)), nowIso(), id);
+  // Each person keeps their 40 latest conversations.
+  await run("DELETE FROM ai_conversations WHERE user_id = ? AND id NOT IN (SELECT id FROM ai_conversations WHERE user_id = ? ORDER BY updated_at DESC LIMIT 40)", user.id, user.id);
+}
+
+export async function listConversations(user: AppUser) {
+  return (await all<{ id: string; title: string; mode: string; updated_at: string; messages: string }>("SELECT id, title, mode, updated_at, messages FROM ai_conversations WHERE user_id = ? ORDER BY updated_at DESC LIMIT 40", user.id)).map((c) => ({
+    id: c.id,
+    title: c.title,
+    mode: c.mode,
+    updatedAt: c.updated_at,
+    count: parseJson<SavedMsg[]>(c.messages, []).length,
+  }));
+}
+
+export async function loadConversation(user: AppUser, id: string) {
+  const c = await get<{ id: string; title: string; mode: string; messages: string }>("SELECT id, title, mode, messages FROM ai_conversations WHERE id = ? AND user_id = ?", id, user.id);
+  if (!c) throw new WorkflowError("NOT_FOUND", "That conversation is gone.");
+  return { id: c.id, title: c.title, mode: c.mode, messages: parseJson<SavedMsg[]>(c.messages, []) };
+}
+
+export async function deleteConversation(user: AppUser, id: string) {
+  await run("DELETE FROM ai_conversations WHERE id = ? AND user_id = ?", id, user.id);
+}
+
+async function agentLog(user: Viewer, conversationId: string | null, s: AgentStep) {
+  await run("INSERT INTO ai_agent_log (id, user_id, conversation_id, kind, title, result, ok, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", uid("aal_"), user.id, conversationId, s.kind, s.title.slice(0, 300), s.result.slice(0, 500), s.ok ? 1 : 0, nowIso());
+  await logAi(user, `confirm:${s.kind}`);
+  if (s.ok) await audit({ actor: user }, { action: "assistant.agent", summary: `The assistant (Agent mode) did for ${user.name}: ${s.title}` });
+}
+
+// What the agent did, for the person (their own) and Admin (everyone).
+export async function agentActivity(user: AppUser, opts: { everyone?: boolean; limit?: number } = {}) {
+  const everyone = !!opts.everyone && can(user, "users.manage");
+  return await all<{ id: string; user_name: string; kind: string; title: string; result: string | null; ok: number; at: string }>(
+    `SELECT l.id, u.name AS user_name, l.kind, l.title, l.result, l.ok, l.at FROM ai_agent_log l JOIN users u ON u.id = l.user_id ${everyone ? "" : "WHERE l.user_id = ?"} ORDER BY l.at DESC LIMIT ${Math.max(1, Math.min(200, opts.limit ?? 50))}`,
+    ...(everyone ? [] : [user.id]),
+  );
+}
+
+// One write-up from data the app worked out (the team analyzer, an import check, an M&E report): no tools, the
+// person's own data only. Counts as one question. Without the AI, null (the page shows its own summary).
+export async function askAnalysis(user: Viewer, input: { task: string; data: unknown; question?: string | null }): Promise<string | null> {
+  if (!(await aiAvailable(user))) return null;
+  const cfg = await stored();
+  const ro = await roleOptions(user.activeRole);
+  const limit = ro.dailyLimit ?? cfg.dailyLimit;
+  if (limit && (await usedToday(user.id)) >= limit) throw new WorkflowError("VALIDATION", `You reached today's ${limit} questions.`);
+  await logAi(user, `analysis: ${input.task}`.slice(0, 200));
+  const prompt = `${input.task}\n\n${input.question ? `The person asks: ${String(input.question).slice(0, 1000)}\n\n` : ""}The data (worked out by the app):\n${JSON.stringify(input.data).slice(0, 40000)}`;
+  if (fake() && /JSON only/.test(input.task)) return "[]";
+  if (fake()) return `Analysis: ${input.task.slice(0, 60)}. ${input.question ? `On "${input.question}": ` : ""}the data has ${Object.keys((input.data ?? {}) as object).length} parts.`;
+  const call = await realModel(cfg);
+  const res = await call({ system: SYSTEM, tools: [], messages: [{ role: "user", content: prompt }] });
+  return res.content
+    .filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === "text")
+    .map((b) => b.text)
+    .join("")
+    .trim();
 }
 
 type ModelCall = (r: { system: string; tools: Anthropic.Beta.BetaTool[]; messages: Anthropic.Beta.BetaMessageParam[] }) => Promise<{ stop_reason: string | null; content: Anthropic.Beta.BetaContentBlock[] }>;
@@ -477,11 +705,10 @@ async function realModel(cfg: Stored): Promise<ModelCall> {
         betas: ["server-side-fallback-2026-07-01"],
         fallbacks: "default",
         output_config: { effort: cfg.effort },
-        system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
+        system: system === SYSTEM ? [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }] : [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }, { type: "text", text: system.slice(SYSTEM.length).trim() }],
         tools,
         messages,
       });
-      void system;
       return { stop_reason: res.stop_reason, content: res.content };
     } catch (e) {
       if (e instanceof Anthropic.AuthenticationError) throw new WorkflowError("INVALID_STATE", "The AI key was refused. Admin checks it in Admin, Assistant, AI.");
@@ -520,7 +747,7 @@ export async function aiUsage(user: AppUser, days = 30) {
 }
 
 // For tests and the browser checks (AI_FAKE=1): a stand-in that picks a tool from words, then answers from the result.
-const fakeModel: ModelCall = async ({ messages }) => {
+const fakeModel: ModelCall = async ({ messages, tools }) => {
   const last = messages[messages.length - 1]!;
   const block = (b: Record<string, unknown>) => b as unknown as Anthropic.Beta.BetaContentBlock;
   if (Array.isArray(last.content) && (last.content as { type: string }[]).some((b) => b.type === "tool_result")) {
@@ -531,8 +758,14 @@ const fakeModel: ModelCall = async ({ messages }) => {
   const q = said.toLowerCase();
   const use = (name: string, input: object) => ({ stop_reason: "tool_use", content: [block({ type: "tool_use", id: `toolu_${Math.random().toString(36).slice(2, 10)}`, name, input, caller: { type: "direct" } })] });
   if (/leave|balance/.test(q) && !/ask for/.test(q)) return use("my_leave", {});
+  const agent = tools.some((t) => t.name === "do_action");
   const create = said.match(/create (?:a )?task (.+?) in (\w+)/i);
-  if (create) return use("propose", { kind: "create_task", args: { department: create[2], title: create[1] } });
+  if (create) return use(agent ? "do_action" : "propose", { kind: "create_task", args: { department: create[2], title: create[1] } });
+  const team = said.match(/how is (?:my )?team (?:in )?(\w+)/i);
+  if (team) return use("team_insights", { department: team[1] });
+  if (/scorecard|my kpi/.test(q)) return use("my_scorecard", {});
+  const look = said.match(/^search (.+)$/i);
+  if (look) return use("search_everything", { text: look[1] });
   if (/waiting for my (approval|decision)|to approve/.test(q)) return use("my_approvals", {});
   const runIt = said.match(/^run (?:my )?routine (rtn_\w+)/i);
   if (runIt) return use("propose", { kind: "run_routine", args: { routine_id: runIt[1] } });

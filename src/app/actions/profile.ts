@@ -14,3 +14,8 @@ export async function addProfileFileAction(input: { kind: string; title?: string
 export async function deleteProfileFileAction(id: string) {
   return wrap(async () => prof.deleteProfileFile(await requireViewer(), id));
 }
+
+// Admin: who regular members see in People.
+export async function savePeopleVisibilityAction(input: Partial<prof.PeopleVisibility>) {
+  return wrap(async () => prof.savePeopleVisibility(await requireViewer(), input));
+}

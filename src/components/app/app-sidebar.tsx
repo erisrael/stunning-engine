@@ -134,6 +134,7 @@ const deptViews = (base: string, extra: { label: string; view: string }[] = [], 
   { label: "Projects", href: `${base}/projects` },
   { label: "Team", href: `${base}/team` },
   { label: "Report", href: `${base}/report` },
+  { label: "Analyze", href: `${base}/analyze` },
   ...extra.map((e) => ({ label: e.label, href: `${base}/${e.view}` })),
   ...(configure ? [{ label: "Configure", href: `${base}/configure` }] : []),
 ];
@@ -210,6 +211,7 @@ function homeGroups(h: HomeDept, viewerId: string): { label: string; items: NavI
         { href: `${b}/report`, label: h.seeAll ? "Report" : "My report", icon: ChartColumnIcon, exact: true },
         ...(h.seeAll ? [{ href: `${b}/present`, label: "Present", icon: PresentationIcon, exact: true }] : []),
         ...(h.seeAll ? [{ href: `${b}/team`, label: "Team", icon: UsersIcon, exact: true }] : []),
+        ...(h.seeAll ? [{ href: `${b}/analyze`, label: "Analyze", icon: ChartColumnIcon, exact: true }] : []),
       ],
     },
     {

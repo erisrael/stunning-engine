@@ -22,7 +22,7 @@ export async function saveAssistantConfigAction(input: AssistantConfig) {
 // confirms, run by the pages' own functions.
 import * as ai from "@/server/assistant-ai";
 
-export async function askAiAction(input: { history: { role: "user" | "assistant"; text: string }[]; text: string; page?: string | null }) {
+export async function askAiAction(input: { history: { role: "user" | "assistant"; text: string }[]; text: string; page?: string | null; mode?: "ask" | "agent"; conversationId?: string | null }) {
   return wrap(async () => ai.askAi(await requireViewer(), input), { revalidate: false });
 }
 export async function confirmProposalAction(token: string) {
@@ -64,4 +64,18 @@ export async function saveRoutinesConfigAction(input: Partial<rt.RoutinesConfig>
 }
 export async function saveRoleOptionsAction(input: Record<string, Partial<asst.RoleOptions>>) {
   return wrap(async () => asst.saveRoleOptions(await requireViewer(), input));
+}
+
+// The side panel's history and the agent's log.
+export async function listConversationsAction() {
+  return wrap(async () => ai.listConversations(await requireViewer()), { revalidate: false });
+}
+export async function loadConversationAction(id: string) {
+  return wrap(async () => ai.loadConversation(await requireViewer(), id), { revalidate: false });
+}
+export async function deleteConversationAction(id: string) {
+  return wrap(async () => ai.deleteConversation(await requireViewer(), id), { revalidate: false });
+}
+export async function agentActivityAction(everyone = false) {
+  return wrap(async () => ai.agentActivity(await requireViewer(), { everyone }), { revalidate: false });
 }

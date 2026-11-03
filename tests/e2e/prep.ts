@@ -53,6 +53,24 @@ const PREPS: Record<string, () => Promise<unknown>> = {
     await saveAiConfig(admin, { on: true, model: "claude-opus-5-5", effort: "low", offRoles: [], dailyLimit: 0, actions: true, key: "sk-ant-e2e" });
     return {};
   },
+  // Phases 22-23: Agent mode in the docked assistant, the team analyzer for a lead, who members see in People.
+  async agent() {
+    await passwordOnly();
+    const { saveAiConfig } = await import("../../src/server/assistant-ai");
+    const { setPosition } = await import("../../src/server/departments");
+    const { saveTask } = await import("../../src/server/work");
+    const a = await admin();
+    const seen = JSON.stringify({ tour: { seen: ["member", "lead", "publication", "manager", "owner", "department", "hr", "finance"] } });
+    const u = await upsertAccount({ name: "Abebe", email: "abebe@demo.local", title: "Developer", roles: ["developer"], password: "Demo-Workflow-2026", mustChangePassword: false });
+    const l = await upsertAccount({ name: "Lena Lead", email: "lena@demo.local", title: "Dev lead", roles: ["developer"], password: "Demo-Workflow-2026", mustChangePassword: false });
+    await setPosition(a, "dev", u.id, "member");
+    await setPosition(a, "dev", l.id, "lead");
+    for (const id of [u.id, l.id, a.id]) await run("UPDATE users SET prefs = ? WHERE id = ?", seen, id);
+    const lead = (await loadUser(l.id))!;
+    for (let i = 0; i < 4; i++) await saveTask(lead, "dev", { title: `Analyzer task ${i}`, assigneeId: u.id, status: i < 2 ? "in_progress" : "todo", dueDate: i === 0 ? "2020-01-01" : null, priority: i === 3 ? "urgent" : "normal" });
+    await saveAiConfig(a, { on: true, model: "claude-opus-5-5", effort: "low", offRoles: [], dailyLimit: 0, actions: true, agent: true, key: "sk-ant-e2e" });
+    return {};
+  },
   // The main pages on a phone.
   async mobile() {
     await passwordOnly();

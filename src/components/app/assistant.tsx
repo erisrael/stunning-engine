@@ -10,11 +10,11 @@
 import * as React from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { CheckIcon, CircleDotIcon, ExternalLinkIcon, Loader2Icon, MicIcon, MicOffIcon, PlayIcon, RotateCcwIcon, SendIcon, SparklesIcon, Volume2Icon, VolumeXIcon, XIcon } from "lucide-react";
+import { BotIcon, CheckIcon, CircleDotIcon, ExternalLinkIcon, HistoryIcon, Loader2Icon, MessageSquareIcon, MicIcon, MicOffIcon, PanelRightCloseIcon, PanelRightOpenIcon, PlayIcon, RotateCcwIcon, SendIcon, SparklesIcon, Trash2Icon, TriangleAlertIcon, Volume2Icon, VolumeXIcon, XIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { askAiAction, assistantDataAction, confirmProposalAction, listRoutinesAction, logAssistantAction, requestRunAction } from "@/app/actions/assistant";
+import { askAiAction, assistantDataAction, confirmProposalAction, deleteConversationAction, listConversationsAction, listRoutinesAction, loadConversationAction, logAssistantAction, requestRunAction } from "@/app/actions/assistant";
 import { askedSteps, beginRun, RecordBar, RoutineRunner, SaveRoutineDialog, useRecorder } from "@/components/app/routines-client";
 import type { Routine, RoutineStep } from "@/server/routines";
 import { punchAction } from "@/app/actions/attendance";
@@ -23,10 +23,50 @@ import { requestLeaveAction } from "@/app/actions/leave";
 import { flowAssignAction, flowStartAction } from "@/app/actions/departments";
 import { matchText, PLACES, score, type Flow, type Match, type ShowStep } from "@/lib/assistant";
 import type { AssistantContext } from "@/server/assistant";
-import type { Proposal } from "@/server/assistant-ai";
+import type { AgentStep, Proposal } from "@/server/assistant-ai";
 import { cn } from "@/lib/utils";
 
-type Msg = { from: "me" | "bot"; text: string; actions?: { label: string; run: () => void }[]; proposal?: Proposal; busy?: boolean; settled?: string };
+type Msg = { from: "me" | "bot"; text: string; actions?: { label: string; run: () => void }[]; proposal?: Proposal; busy?: boolean; settled?: string; done?: AgentStep[] };
+type Convo = { id: string; title: string; mode: string; updatedAt: string; count: number };
+const DOCK_KEY = "myseed.assistant.dock";
+const MODE_KEY = "myseed.assistant.mode";
+const readLocal = (k: string) => {
+  try {
+    return localStorage.getItem(k);
+  } catch {
+    return null;
+  }
+};
+const writeLocal = (k: string, v: string) => {
+  try {
+    localStorage.setItem(k, v);
+  } catch {}
+};
+
+// What the agent did on its own, one line per action, with a link to the result.
+function AgentSteps({ steps, onOpen }: { steps: AgentStep[]; onOpen: (href: string) => void }) {
+  return (
+    <div className="space-y-1 rounded-lg border border-[#188038]/30 bg-[#188038]/5 p-2" data-agent-steps>
+      <p className="flex items-center gap-1 text-xs font-medium">
+        <BotIcon className="size-3.5" /> Done by the agent ({steps.filter((s) => s.ok).length} of {steps.length})
+      </p>
+      {steps.map((s, i) => (
+        <div key={i} className="flex items-start gap-1.5 text-xs" data-agent-step={s.ok ? "ok" : "failed"}>
+          {s.ok ? <CheckIcon className="mt-0.5 size-3.5 shrink-0 text-[#188038]" /> : <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0 text-destructive" />}
+          <div className="min-w-0">
+            <p className="font-medium">{s.title}</p>
+            <p className={s.ok ? "text-muted-foreground" : "text-destructive"}>{s.result}</p>
+            {s.href && (
+              <button type="button" className="text-primary hover:underline" onClick={() => onOpen(s.href!)}>
+                Open
+              </button>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 type Opt = { id: string; label: string; note?: string | null };
 const KEY = "myseed.assistant.show";
 
@@ -364,9 +404,49 @@ export function localCommand(text: string, base: string | null): Command | null 
 
 const plain = (s: string) => s.replace(/\*\*(.+?)\*\*/g, "$1");
 
-export function Assistant({ ctx, ai = false }: { ctx: AssistantContext; ai?: boolean }) {
+export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantContext; ai?: boolean; agent?: boolean }) {
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
+  // Docked: a full-height panel on the right that stays open while moving between pages (the page makes room on
+  // wide screens). Agent mode: it does the allowed actions itself instead of proposing them.
+  const [dock, setDock] = React.useState(false);
+  const [mode, setMode] = React.useState<"ask" | "agent">("ask");
+  const [convId, setConvId] = React.useState<string | null>(null);
+  const [convos, setConvos] = React.useState<Convo[] | null>(null);
+  const [showConvos, setShowConvos] = React.useState(false);
+  React.useEffect(() => {
+    const d = readLocal(DOCK_KEY) === "1";
+    setDock(d);
+    if (d && readLocal(DOCK_KEY + ".open") === "1") setOpen(true);
+    if (agent && readLocal(MODE_KEY) === "agent") setMode("agent");
+  }, [agent]);
+  React.useEffect(() => {
+    const on = dock && open;
+    document.documentElement.classList.toggle("asst-docked", on);
+    if (dock) writeLocal(DOCK_KEY + ".open", open ? "1" : "0");
+    return () => document.documentElement.classList.remove("asst-docked");
+  }, [dock, open]);
+  const toggleDock = () => {
+    writeLocal(DOCK_KEY, dock ? "0" : "1");
+    setDock(!dock);
+  };
+  const pickMode = (m: "ask" | "agent") => {
+    writeLocal(MODE_KEY, m);
+    setMode(m);
+  };
+  const loadConvos = async () => {
+    const r = await listConversationsAction();
+    if (r.ok) setConvos(r.data ?? []);
+  };
+  const openConvo = async (id: string) => {
+    const r = await loadConversationAction(id);
+    if (!r.ok || !r.data) return void toast.error((!r.ok && r.error) || "Could not open it.");
+    setConvId(r.data.id);
+    setMsgs(r.data.messages.map((m) => ({ from: m.from, text: m.text, done: m.done })));
+    setHistory(r.data.messages.map((m) => ({ role: m.from === "me" ? ("user" as const) : ("assistant" as const), text: m.text })));
+    if (r.data.mode === "agent" && agent) pickMode("agent");
+    setShowConvos(false);
+  };
   const [text, setText] = React.useState("");
   const [msgs, setMsgs] = React.useState<Msg[]>([]);
   const [history, setHistory] = React.useState<{ role: "user" | "assistant"; text: string }[]>([]);
@@ -488,7 +568,7 @@ export function Assistant({ ctx, ai = false }: { ctx: AssistantContext; ai?: boo
   };
   const askAi = async (t: string) => {
     setThinking(true);
-    const r = await askAiAction({ history, text: t, page: pathname });
+    const r = await askAiAction({ history, text: t, page: pathname, mode: agent ? mode : "ask", conversationId: convId });
     setThinking(false);
     if (!r.ok || !r.data) {
       say({ from: "bot", text: (!r.ok && r.error) || "The AI could not answer." });
@@ -496,6 +576,11 @@ export function Assistant({ ctx, ai = false }: { ctx: AssistantContext; ai?: boo
       return;
     }
     const d = r.data;
+    if (d.conversationId) setConvId(d.conversationId);
+    if (d.done.length) {
+      setMsgs((m) => [...m, { from: "bot", text: "", done: d.done }]);
+      if (d.done.some((s) => s.ok)) router.refresh();
+    }
     setHistory((h) => [...h, { role: "user", text: t }, { role: "assistant", text: d.text }]);
     const flow = d.show ? ctx.flows.find((f) => f.key === d.show) : null;
     say({
@@ -587,20 +672,35 @@ export function Assistant({ ctx, ai = false }: { ctx: AssistantContext; ai?: boo
       <RoutineRunner />
       {rec.recording && <RecordBar count={rec.steps.length} onStop={() => setToSave(rec.stop())} onCancel={() => rec.stop()} />}
       {toSave && <SaveRoutineDialog steps={toSave} sharing onClose={() => setToSave(null)} onSaved={() => (setToSave(null), loadRoutines())} />}
-      <div className="no-print fixed right-4 bottom-4 z-50 flex flex-col items-end gap-2" data-assistant>
+      <div className={cn("no-print fixed z-50 flex flex-col items-end gap-2", dock && open ? "inset-y-0 right-0" : "right-4 bottom-4")} data-assistant data-docked={dock && open ? "1" : undefined}>
         {open && (
-          <section role="dialog" aria-label="Assistant" className="flex max-h-[min(40rem,calc(100vh-6rem))] w-[24rem] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl border bg-popover shadow-2xl">
+          <section
+            role="dialog"
+            aria-label="Assistant"
+            className={cn(
+              "flex flex-col overflow-hidden bg-popover",
+              dock ? "h-dvh w-screen border-l shadow-xl sm:w-[26rem]" : "max-h-[min(40rem,calc(100vh-6rem))] w-[24rem] max-w-[calc(100vw-2rem)] rounded-2xl border shadow-2xl",
+            )}
+          >
             <header className="flex items-center gap-1.5 border-b bg-gradient-to-r from-[#4285F4]/10 via-[#9334E6]/10 to-[#EA4335]/10 px-3 py-2">
               <SparklesIcon className="size-4 shrink-0 text-[#9334E6] dark:text-[#C58AF9]" />
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold">Assistant</p>
-                <p className="truncate text-[11px] text-muted-foreground">{ai ? "AI on" : "Type or speak"} · Alt+V to talk</p>
+                <p className="truncate text-[11px] text-muted-foreground">{ai ? (mode === "agent" && agent ? "Agent: does it for you" : "AI on") : "Type or speak"} · Alt+V to talk</p>
               </div>
               {msgs.length > 0 && (
-                <Button size="icon" variant="ghost" className="size-7" aria-label="New conversation" title="New conversation" onClick={() => (setMsgs([]), setHistory([]), setDoing(null))}>
+                <Button size="icon" variant="ghost" className="size-7" aria-label="New conversation" title="New conversation" onClick={() => (setMsgs([]), setHistory([]), setDoing(null), setConvId(null))}>
                   <RotateCcwIcon />
                 </Button>
               )}
+              {ai && (
+                <Button size="icon" variant="ghost" className="size-7" aria-label="Earlier conversations" aria-pressed={showConvos} title="Earlier conversations" onClick={() => (setShowConvos(!showConvos), void loadConvos())} data-assistant-history>
+                  <HistoryIcon />
+                </Button>
+              )}
+              <Button size="icon" variant="ghost" className="hidden size-7 sm:inline-flex" aria-label={dock ? "Float the assistant" : "Dock the assistant on the side"} title={dock ? "Float" : "Dock on the side"} onClick={toggleDock} data-assistant-dock>
+                {dock ? <PanelRightCloseIcon /> : <PanelRightOpenIcon />}
+              </Button>
               <Button
                 size="icon"
                 variant="ghost"
@@ -626,6 +726,57 @@ export function Assistant({ ctx, ai = false }: { ctx: AssistantContext; ai?: boo
                 <XIcon />
               </Button>
             </header>
+            {agent && (
+              <div className="flex items-center gap-1 border-b px-3 py-1.5 text-xs" role="radiogroup" aria-label="Assistant mode" data-assistant-mode={mode}>
+                {(["ask", "agent"] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    role="radio"
+                    aria-checked={mode === m}
+                    onClick={() => pickMode(m)}
+                    className={cn("flex items-center gap-1 rounded-full border px-2.5 py-0.5", mode === m ? (m === "agent" ? "border-[#188038] bg-[#188038] text-white" : "border-primary bg-primary text-primary-foreground") : "hover:bg-muted")}
+                  >
+                    {m === "agent" ? <BotIcon className="size-3" /> : <MessageSquareIcon className="size-3" />}
+                    {m === "agent" ? "Agent" : "Ask"}
+                  </button>
+                ))}
+                <span className="ml-1 truncate text-muted-foreground">{mode === "agent" ? "Does the allowed actions itself, as you" : "Answers and prepares actions to confirm"}</span>
+              </div>
+            )}
+            {showConvos && (
+              <div className="max-h-64 overflow-y-auto border-b p-2 text-xs" data-assistant-convos>
+                {!convos ? (
+                  <p className="text-muted-foreground">Loading…</p>
+                ) : !convos.length ? (
+                  <p className="text-muted-foreground">No earlier conversations yet.</p>
+                ) : (
+                  convos.map((c) => (
+                    <div key={c.id} className={cn("group flex items-center gap-1 rounded px-1.5 py-1 hover:bg-muted", c.id === convId && "bg-muted")}>
+                      <button type="button" className="min-w-0 flex-1 text-left" onClick={() => void openConvo(c.id)}>
+                        <span className="block truncate font-medium">
+                          {c.mode === "agent" && <BotIcon className="mr-1 inline size-3 text-[#188038]" />}
+                          {c.title}
+                        </span>
+                        <span className="text-muted-foreground">{new Date(c.updatedAt).toLocaleString([], { dateStyle: "short", timeStyle: "short" })} · {c.count} messages</span>
+                      </button>
+                      <button
+                        type="button"
+                        aria-label="Delete conversation"
+                        className="opacity-60 hover:opacity-100"
+                        onClick={async () => {
+                          await deleteConversationAction(c.id);
+                          if (c.id === convId) (setConvId(null), setMsgs([]), setHistory([]));
+                          void loadConvos();
+                        }}
+                      >
+                        <Trash2Icon className="size-3.5" />
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
             <div className="flex-1 space-y-2 overflow-y-auto p-3 text-sm">
               {guide && (
                 <div className="rounded-lg border p-2.5" data-assistant-guide={guide.flow.key}>
@@ -735,7 +886,9 @@ export function Assistant({ ctx, ai = false }: { ctx: AssistantContext; ai?: boo
                 </>
               )}
               {msgs.map((m, i) =>
-                m.proposal ? (
+                m.done && m.done.length ? (
+                  <AgentSteps key={i} steps={m.done} onOpen={(h) => router.push(h)} />
+                ) : m.proposal ? (
                   <div key={i} className="rounded-lg border border-[#1A73E8]/40 bg-[#1A73E8]/5 p-2.5" data-assistant-proposal>
                     <p className="font-medium">{m.proposal.title}</p>
                     <ul className="mt-1 list-disc pl-5 text-xs">
@@ -809,7 +962,7 @@ export function Assistant({ ctx, ai = false }: { ctx: AssistantContext; ai?: boo
                 value={speech.listening ? speech.interim || "Listening…" : text}
                 readOnly={speech.listening}
                 onChange={(e) => setText(e.target.value)}
-                placeholder={ai ? "Ask anything about your work" : "For example: assign videos, where is leave"}
+                placeholder={ai ? (mode === "agent" && agent ? "Tell the agent what to do" : "Ask anything about your work") : "For example: assign videos, where is leave"}
                 aria-label="Ask the assistant"
                 className="h-8"
               />

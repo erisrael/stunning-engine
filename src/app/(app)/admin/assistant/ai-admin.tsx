@@ -19,7 +19,7 @@ type Usage = { questions: number; confirmed: number; people: number; byRole: { r
 // they confirm. Off until a key is saved and it is switched on.
 export function AiAdmin({ config, usage, models, roles }: { config: AiConfigView; usage: Usage; models: { id: string; label: string }[]; roles: { key: string; label: string }[] }) {
   const router = useRouter();
-  const [c, setC] = React.useState({ on: config.on, model: config.model, effort: config.effort, offRoles: config.offRoles, dailyLimit: config.dailyLimit, actions: config.actions });
+  const [c, setC] = React.useState({ on: config.on, model: config.model, effort: config.effort, offRoles: config.offRoles, dailyLimit: config.dailyLimit, actions: config.actions, agent: config.agent, agentMax: config.agentMax });
   const [key, setKey] = React.useState("");
   const [busy, setBusy] = React.useState<string | null>(null);
   const keyed = config.hasKey || config.envKey || config.fake;
@@ -89,6 +89,15 @@ export function AiAdmin({ config, usage, models, roles }: { config: AiConfigView
         <div className="flex items-center gap-2">
           <Switch id="ai-actions" checked={c.actions} onCheckedChange={(actions) => setC({ ...c, actions })} />
           <Label htmlFor="ai-actions">May prepare actions (always confirmed by the person, with the same permission checks as the pages)</Label>
+        </div>
+        <div className="flex flex-wrap items-center gap-2" data-ai-agent>
+          <Switch id="ai-agent" checked={c.agent} disabled={!c.actions} onCheckedChange={(agent) => setC({ ...c, agent })} />
+          <Label htmlFor="ai-agent">Agent mode: people may let it do the allowed actions itself, as them (each action is logged)</Label>
+          <span className="flex items-center gap-1 text-xs text-muted-foreground">
+            up to
+            <Input aria-label="Actions per request" type="number" min={1} max={25} className="h-7 w-16" value={c.agentMax} onChange={(e) => setC({ ...c, agentMax: Number(e.target.value) })} />
+            actions per request
+          </span>
         </div>
         <div className="space-y-1">
           <p className="font-medium">Roles that keep the keyword assistant only</p>

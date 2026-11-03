@@ -24,7 +24,7 @@ import { PreviewBanner } from "@/components/app/security";
 import { ROLE_LABELS } from "@/lib/domain";
 import { homeDepartment } from "@/server/nav";
 import { assistantContext } from "@/server/assistant";
-import { aiAvailable } from "@/server/assistant-ai";
+import { agentAvailable, aiAvailable } from "@/server/assistant-ai";
 import { bannerMap, navBrand } from "@/server/branding";
 import { SectionBanner } from "@/components/app/section-banner";
 import { AnnouncementStrip } from "@/components/app/announcement-strip";
@@ -51,7 +51,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       isManager={isManager(viewer)}
       timezone={settings.workspace.timezone}
     >
-    <CallLayer>
+    <CallLayer disabled={!!viewer.previewBy}>
     <SidebarProvider defaultOpen={sidebarCookie !== "false"}>
       <AppSidebar
         home={await homeDepartment(viewer)}
@@ -79,7 +79,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <ChatKeyBootstrap viewerId={viewer.id} />
         <Localizer defaultCalendar={settings.workspace.calendarDisplay} />
         <EthiopianDatePicker defaultCalendar={settings.workspace.calendarDisplay} />
-        {!viewer.mustChangePassword && !viewer.previewBy && <Assistant ctx={await assistantContext(viewer)} ai={await aiAvailable(viewer)} />}
+        {!viewer.mustChangePassword && !viewer.previewBy && <Assistant ctx={await assistantContext(viewer)} ai={await aiAvailable(viewer)} agent={await agentAvailable(viewer)} />}
         {!viewer.previewBy && await privacyToAccept(viewer).then((p) => (p ? <PrivacyGate notice={p.notice} version={p.version} updatedAt={p.updatedAt} /> : null))}
         {!viewer.mustChangePassword && <GetStarted audience={audienceFor(viewer.activeRole, viewer.leads)} tour={viewer.prefs.tour ?? {}} />}
       </SidebarInset>

@@ -44,6 +44,8 @@ import { backupConfig, backupRuns, defaultBackupDir, listBackups } from "@/serve
 import { googleConnection, GOOGLE_SCOPES } from "@/server/google";
 import { smtpSettings } from "@/server/email";
 import { SignInAdmin } from "./signin-admin";
+import { PeopleVisibilityAdmin } from "./people-visibility-admin";
+import { peopleVisibility } from "@/server/profiles";
 import { ChatAdmin, FeedbackAdmin, ReportsAdmin } from "./support-admin";
 import { chatConfig, chatUsage } from "@/server/chat-extras";
 import { maxUploadBytes } from "@/server/storage";
@@ -147,8 +149,9 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
         </TabsList>
         {manageUsers && (
           <>
-            <TabsContent value="people">
+            <TabsContent value="people" className="space-y-4">
               <PeopleAdmin users={users} grades={grades} subjects={subjects} viewerId={viewer.id} />
+              <PeopleVisibilityAdmin config={await peopleVisibility()} roles={ROLES.map((r) => ({ key: r, label: ROLE_LABELS[r] }))} />
             </TabsContent>
             <TabsContent value="teams">
               <TeamsAdmin people={team} />

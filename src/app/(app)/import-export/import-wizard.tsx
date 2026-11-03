@@ -12,6 +12,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { parseImportFileAction, runImportAction } from "@/app/actions/imports";
 import type { ImportMode, ImportResult, ParsedSheet, TemplateKey } from "@/server/importer";
 import { cn } from "@/lib/utils";
+import { ImportHelper } from "./import-helper";
 
 export type TemplateInfo = {
   key: TemplateKey;
@@ -284,6 +285,9 @@ export function ImportWizard({ templates, initial, className, title = "Import wi
                 </button>
               ))}
             </div>
+            {step === 3 && sheet && preview && (counts.error > 0 || counts.skip > 0) && (
+              <ImportHelper template={tpl} mode={mode} sheet={sheet} mapping={mapping} fileName={fileName} fields={t.fields} preview={preview} onSheet={setSheet} onPreview={setPreview} />
+            )}
             <div className="max-h-[50vh] overflow-auto rounded-lg border">
               <table className="w-full text-sm">
                 <thead className="sticky top-0 bg-muted text-xs text-muted-foreground">

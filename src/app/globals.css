@@ -327,3 +327,10 @@
 /* Light mode for slow connections: no animations or transitions, no banner pictures (their colour stays). */
 :root[data-lite="on"] *, :root[data-lite="on"] *::before, :root[data-lite="on"] *::after { animation: none !important; transition: none !important; }
 :root[data-lite="on"] [data-section-banner] { background-image: none !important; background-color: var(--primary) !important; }
+
+/* The assistant docked on the side: the page makes room on wide screens. */
+@media (min-width: 1024px) {
+  html.asst-docked body {
+    padding-right: 26rem;
+  }
+}

@@ -20,7 +20,7 @@ import { FinanceAccounting } from "./integrations";
 import { DEPT_VIEW_LABELS, DEPT_VIEWS, deptPath, deptViewPath } from "@/lib/work";
 import { flowHome } from "@/server/dept-flow";
 
-const TABS = ["dashboard", "board", "list", "sheet", "overview", "timeline", "team", "report", "projects", "calendar", "configure", "repos", "accounting", "sprint", "roadmap", "docs", "present", "tools"] as const;
+const TABS = ["dashboard", "board", "list", "sheet", "overview", "timeline", "team", "report", "projects", "calendar", "configure", "repos", "accounting", "sprint", "roadmap", "docs", "present", "tools", "analyze"] as const;
 const SORTS = ["updated", "due", "priority", "code", "title", "status"] as const;
 
 // The Dev and Marketing sections share this page; their vocabulary, workflow and rights come from the configuration.
@@ -39,7 +39,7 @@ export async function WorkPage({ dept, searchParams, view }: { dept: WorkDept; s
   }
   // The dashboard is the department's home; a link to a task opens the board with it.
   const tab = (view ?? "dashboard") as (typeof TABS)[number];
-  if ((tab === "configure" && !access.rights.configure) || (tab === "team" && !access.rights.seeAll)) redirect(deptViewPath(dept, "board"));
+  if ((tab === "configure" && !access.rights.configure) || ((tab === "team" || tab === "analyze") && !access.rights.seeAll)) redirect(deptViewPath(dept, "board"));
   // Department-specific tabs: GitHub for the Dev team, accounting exports for a Finance department.
   const template = (await customDepartment(dept))?.template ?? null;
   const extraTabs: { key: "repos" | "accounting"; label: string }[] = [
@@ -77,12 +77,20 @@ export async function WorkPage({ dept, searchParams, view }: { dept: WorkDept; s
   }
   if ((tab === "sprint" && !cfg.features.sprints) || ((tab === "roadmap" || tab === "docs") && !access.view)) redirect(deptViewPath(dept, "board"));
   if (tab === "tools" && !access.view) redirect(deptViewPath(dept, "board"));
-  if (tab === "repos" || tab === "accounting" || tab === "sprint" || tab === "roadmap" || tab === "docs" || tab === "tools") {
+  if (tab === "repos" || tab === "accounting" || tab === "sprint" || tab === "roadmap" || tab === "docs" || tab === "tools" || tab === "analyze") {
     const projects = await listProjects(viewer, dept);
     const ds = await import("@/server/dev-studio");
     const { SprintView, RoadmapView, DocsView } = await import("./dev-studio");
     const panel =
-      tab === "sprint" ? (
+      tab === "analyze" ? (
+        await (async () => {
+          const { teamInsights } = await import("@/server/team-insights");
+          const { aiAvailable } = await import("@/server/assistant-ai");
+          const { TeamAnalyzer } = await import("./team-analyzer");
+          const weeks = Number(sp.weeks) || 8;
+          return <TeamAnalyzer dept={dept} data={await teamInsights(viewer, dept, { weeks })} ai={await aiAvailable(viewer)} taskHref={deptViewPath(dept, "board")} />;
+        })()
+      ) : tab === "sprint" ? (
         <SprintView dept={dept} data={await ds.sprintPage(viewer, dept, sp.sprint ?? null)} viewerId={viewer.id} />
       ) : tab === "roadmap" ? (
         <RoadmapView data={await ds.roadmap(viewer, dept)} dora={await ds.doraMeasures(viewer, dept)} />

@@ -15,7 +15,7 @@ import type { RoleOptions } from "@/server/assistant";
 import type { RoutinesConfig } from "@/server/routines";
 import { cn } from "@/lib/utils";
 
-const DEFAULT: RoleOptions = { ai: true, voice: true, routines: true, actions: null, suggestions: [], dailyLimit: null };
+const DEFAULT: RoleOptions = { ai: true, voice: true, routines: true, agent: true, actions: null, suggestions: [], dailyLimit: null };
 
 // Admin, Assistant, per role: AI answers, voice, routines, which actions the AI may prepare, the suggestions shown
 // first, and a daily limit. And how routine runs are approved.
@@ -65,11 +65,11 @@ export function RolesAdmin({ roles, ops, options, routines }: { roles: { key: st
               </button>
             ))}
           </div>
-          <div className="grid gap-3 sm:grid-cols-3">
-            {(["ai", "voice", "routines"] as const).map((k) => (
+          <div className="grid gap-3 sm:grid-cols-2">
+            {(["ai", "voice", "routines", "agent"] as const).map((k) => (
               <div key={k} className="flex items-center gap-2">
                 <Switch id={`ro-${k}`} checked={o[k]} onCheckedChange={(v) => set({ [k]: v })} />
-                <Label htmlFor={`ro-${k}`}>{k === "ai" ? "AI answers" : k === "voice" ? "Voice (microphone)" : "Routines"}</Label>
+                <Label htmlFor={`ro-${k}`}>{k === "ai" ? "AI answers" : k === "voice" ? "Voice (microphone)" : k === "agent" ? "Agent mode (does the allowed actions itself)" : "Routines"}</Label>
               </div>
             ))}
           </div>

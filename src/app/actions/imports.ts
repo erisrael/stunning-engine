@@ -85,3 +85,11 @@ export async function importTrackerAction(formData: FormData) {
     return await importCurriculumBackup(data, { actorId: viewer.id, fileName: file.name, createItems: true, markRecorded: true });
   });
 }
+
+// The import helper: safe fixes and a checklist, and the AI's suggestions for cells still in error.
+export async function assistImportAction(input: { template: TemplateKey; mode: ImportMode; sheet: ParsedSheet; mapping: Record<string, string>; fileName: string }) {
+  return wrap(async () => (await import("@/server/import-assist")).assistImport(await requireViewer(), input), { revalidate: false });
+}
+export async function aiFixImportAction(input: { template: TemplateKey; mode: ImportMode; sheet: ParsedSheet; mapping: Record<string, string>; fileName: string }) {
+  return wrap(async () => (await import("@/server/import-assist")).aiFixImport(await requireViewer(), input), { revalidate: false });
+}

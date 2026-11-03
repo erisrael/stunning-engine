@@ -89,6 +89,7 @@ async function canSeeFiles(viewer: AppUser, userId: string) {
 }
 
 export async function getProfile(viewer: AppUser, userId: string): Promise<Profile | null> {
+  if ((await hiddenFrom(viewer)).has(userId)) return null;
   const u = await loadUser(userId);
   if (!u?.active && viewer.id !== userId) return null;
   if (!u) return null;
@@ -245,10 +246,85 @@ export async function avatarsFor(ids: string[]): Promise<Record<string, string>>
 }
 
 // Everyone in the workspace with a headline and top skills, for the people directory.
-export async function directory() {
-  const rows = await all<{ id: string; name: string; title: string | null; headline: string | null; avatar: string | null; skills: string | null; cover: string | null }>(
-    "SELECT u.id, u.name, u.title, p.headline, p.avatar, p.skills, p.cover FROM users u LEFT JOIN profiles p ON p.user_id = u.id WHERE u.active = 1 ORDER BY u.name",
+// ---------------------------------------------------------------------------
+// Who regular members see in People (Admin, People, Who members see)
+// ---------------------------------------------------------------------------
+// A regular member has none of the "sees everyone" roles and leads nobody. When the rule is on, they see other
+// regular members only: people with a hidden role (owners, managers, Admin...) and leads are left out of People
+// and their profiles, except the member's own lead and line manager when Admin keeps those.
+export type PeopleVisibility = { enabled: boolean; hiddenRoles: string[]; seeAllRoles: string[]; hideLeads: boolean; showOwnLeads: boolean };
+export const DEFAULT_PEOPLE_VISIBILITY: PeopleVisibility = {
+  enabled: true,
+  hiddenRoles: ["owner", "admin", "manager", "hr_manager", "finance_manager"],
+  seeAllRoles: ["owner", "admin", "manager", "hr_manager", "hr_officer", "finance_manager"],
+  hideLeads: true,
+  showOwnLeads: true,
+};
+
+export async function peopleVisibility(): Promise<PeopleVisibility> {
+  const v = parseJson<Partial<PeopleVisibility>>((await get<{ value: string }>("SELECT value FROM settings WHERE key = 'cfg.people.visibility'"))?.value, {});
+  return { ...DEFAULT_PEOPLE_VISIBILITY, ...v };
+}
+
+export async function savePeopleVisibility(user: AppUser, input: Partial<PeopleVisibility>) {
+  if (!can(user, "users.manage")) throw new WorkflowError("FORBIDDEN", "Only Admin changes who members see.");
+  const roles = (x: unknown) => (Array.isArray(x) ? x.map(String).filter((r) => /^[a-z_]{2,30}$/.test(r)).slice(0, 30) : []);
+  const cur = await peopleVisibility();
+  const next: PeopleVisibility = {
+    enabled: input.enabled ?? cur.enabled,
+    hiddenRoles: input.hiddenRoles ? roles(input.hiddenRoles) : cur.hiddenRoles,
+    seeAllRoles: input.seeAllRoles ? roles(input.seeAllRoles) : cur.seeAllRoles,
+    hideLeads: input.hideLeads ?? cur.hideLeads,
+    showOwnLeads: input.showOwnLeads ?? cur.showOwnLeads,
+  };
+  await run(
+    "INSERT INTO settings (key, value, updated_at, updated_by) VALUES ('cfg.people.visibility', ?, ?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by",
+    JSON.stringify(next),
+    nowIso(),
+    user.id,
   );
+  await audit({ actor: user }, { action: "settings.people.visibility", summary: `${user.name} ${next.enabled ? "set" : "turned off"} who regular members see in People` });
+}
+
+// Leads of anything: production stage leads and department heads or leads.
+async function leaderIds() {
+  const rows = await all<{ user_id: string }>("SELECT user_id FROM team_leads UNION SELECT user_id FROM department_positions WHERE position IN ('head','lead')");
+  return new Set(rows.map((r) => r.user_id));
+}
+
+// The ids this viewer may not see in People (empty when they see everyone).
+export async function hiddenFrom(viewer: AppUser): Promise<Set<string>> {
+  const cfg = await peopleVisibility();
+  if (!cfg.enabled || can(viewer, "users.manage")) return new Set();
+  const leaders = await leaderIds();
+  if (viewer.roles.some((r) => cfg.seeAllRoles.includes(r)) || viewer.leads.length > 0 || leaders.has(viewer.id)) return new Set();
+  const roles = await all<{ user_id: string; role: string }>("SELECT user_id, role FROM role_assignments");
+  const hidden = new Set<string>();
+  for (const r of roles) if (cfg.hiddenRoles.includes(r.role)) hidden.add(r.user_id);
+  if (cfg.hideLeads) for (const id of leaders) hidden.add(id);
+  if (cfg.showOwnLeads) {
+    // The person's own leads: their stage's lead, their department's head or lead, and their line manager.
+    // (Members of built-in departments belong by their role, so their departments come from myDepartments.)
+    const depts = (await (await import("./departments")).myDepartments(viewer)).map((d) => d.dept);
+    const mine = await all<{ id: string }>(
+      `SELECT tl.user_id AS id FROM team_leads tl WHERE tl.stage IN (SELECT role FROM role_assignments WHERE user_id = ?)
+       UNION SELECT m.user_id AS id FROM employees e JOIN employees m ON m.id = e.manager_id WHERE e.user_id = ? AND m.user_id IS NOT NULL
+       ${depts.length ? `UNION SELECT user_id AS id FROM department_positions WHERE position IN ('head','lead') AND department IN (${depts.map(() => "?").join(",")})` : ""}`,
+      viewer.id,
+      viewer.id,
+      ...depts,
+    );
+    for (const m of mine) hidden.delete(m.id);
+  }
+  hidden.delete(viewer.id);
+  return hidden;
+}
+
+export async function directory(viewer?: AppUser) {
+  const hidden = viewer ? await hiddenFrom(viewer) : new Set<string>();
+  const rows = (await all<{ id: string; name: string; title: string | null; headline: string | null; avatar: string | null; skills: string | null; cover: string | null }>(
+    "SELECT u.id, u.name, u.title, p.headline, p.avatar, p.skills, p.cover FROM users u LEFT JOIN profiles p ON p.user_id = u.id WHERE u.active = 1 ORDER BY u.name",
+  )).filter((r) => !hidden.has(r.id));
   return rows.map((r) => ({ id: r.id, name: r.name, headline: r.headline ?? r.title, avatar: r.avatar, cover: (r.cover ?? "emerald") as Cover, skills: parseJson<Skill[]>(r.skills, []).slice(0, 5).map((s) => s.name) }));
 }
 

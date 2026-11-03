@@ -853,6 +853,8 @@ async function followers(taskId: string) {
 // and its "all subtasks done" automations, and this task's automations.
 export async function afterStatusChange(user: AppUser, a: WorkAccess, dp: WorkDept, id: string, from: string, to: string, now: string, automations = true) {
   if (from === to) return;
+  // Kept for the team analyzer (time in each status, cycle time).
+  await run("INSERT INTO dept_task_moves (id, task_id, dept, from_status, to_status, by_id, at) VALUES (?, ?, ?, ?, ?, ?, ?)", uid("mv_"), id, dp, from, to, user.id, now).catch(() => null);
   void get<{ code: string; title: string }>("SELECT code, title FROM dept_tasks WHERE id = ?", id)
     .then((t) => t && import("./dev-tools").then((m) => m.emitDev(dp, "task.status", { code: t.code, title: t.title, from, to }, `${t.code} moved to ${a.config.statuses.find((s) => s.key === to)?.label ?? to}`)))
     .catch(() => {});

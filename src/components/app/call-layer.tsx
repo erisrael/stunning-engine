@@ -156,7 +156,7 @@ async function closeCallNotification(id: string) {
   }
 }
 
-export function CallLayer({ children }: { children: React.ReactNode }) {
+export function CallLayer({ children, disabled = false }: { children: React.ReactNode; disabled?: boolean }) {
   const [phase, setPhaseState] = React.useState<Phase>("idle");
   const [call, setCall] = React.useState<CallView | null>(null);
   const [ended, setEnded] = React.useState("");
@@ -381,6 +381,7 @@ export function CallLayer({ children }: { children: React.ReactNode }) {
   };
 
   const start = async (groupId: string, media: CallMedia) => {
+    if (disabled) return void toast.info("Calls are paused while you view the app as someone else. Leave View as to call.");
     if (callRef.current) return void toast.error("You are already in a call.");
     try {
       const stream = await getMedia(media);
@@ -448,6 +449,8 @@ export function CallLayer({ children }: { children: React.ReactNode }) {
       url.searchParams.delete("answer");
       window.history.replaceState(null, "", url.toString());
     }
+    // View as: no polling at all (no incoming calls are shown for the person being viewed).
+    if (disabled) return;
     let stop = false;
     let t = 0;
     const loop = async () => {
@@ -475,7 +478,7 @@ export function CallLayer({ children }: { children: React.ReactNode }) {
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("pagehide", onUnload);
     };
-  }, []);
+  }, [disabled]);
 
   React.useEffect(() => {
     if (phase !== "active") return;

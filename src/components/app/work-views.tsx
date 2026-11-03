@@ -45,6 +45,7 @@ import type { DeptView, Project, Task, TaskFilter, TaskInput } from "@/server/wo
 import type { WorkDept } from "@/lib/work";
 import { fieldEmpty, fieldShown, formatField, labelOf, statusOf, type DeptConfig, type DeptField, type FieldValue } from "@/lib/dept-config";
 import { cn } from "@/lib/utils";
+import { closestOption, normalizeDate } from "@/lib/import-fix";
 import { BulkPick, PriorityDot, Tone, canEditTask, finished, taskInput, today, usable, type Access, type Person } from "./work-shared";
 
 type Go = (patch: Record<string, string | null>) => void;
@@ -1064,7 +1065,7 @@ export function SheetView({ dept, config, tasks, people, projects, access, viewe
           </tbody>
         </table>
       </div>
-      {pasting && <PasteRows dept={dept} config={config} cols={cols} onClose={() => setPasting(false)} />}
+      {pasting && <PasteRows dept={dept} config={config} cols={cols} people={people} onClose={() => setPasting(false)} />}
     </div>
   );
 }
@@ -1092,7 +1093,8 @@ function AddRow({ placeholder, onAdd }: { placeholder: string; onAdd: (title: st
 // Rows copied from Excel or Google Sheets (tab separated), in the order of the visible columns.
 const IMPORT_KEY: Record<string, string> = { title: "title", type: "type", status: "status", priority: "priority", assignee: "assignee", project: "project_key", due: "due_date", start: "start_date", estimate: "estimate_hours", labels: "labels" };
 
-function PasteRows({ dept, config, cols, onClose }: { dept: WorkDept; config: DeptConfig; cols: Col[]; onClose: () => void }) {
+function PasteRows({ dept, config, cols, people, onClose }: { dept: WorkDept; config: DeptConfig; cols: Col[]; people: Person[]; onClose: () => void }) {
+  const [fixes, setFixes] = React.useState(true);
   const router = useRouter();
   // Pasted columns line up with the visible ones; those that cannot be set (code, dates of change) are skipped.
   const importable = (c: Col) => !!(IMPORT_KEY[c.key] || c.field);
@@ -1105,7 +1107,7 @@ function PasteRows({ dept, config, cols, onClose }: { dept: WorkDept; config: De
   // A first row matching the column names is a header.
   const header = rows[0] && rows[0].every((cell, i) => !cell.trim() || cell.trim().toLowerCase() === cols[i]?.label.toLowerCase());
   const data = header ? rows.slice(1) : rows;
-  const records = data.map((r) =>
+  const raw = data.map((r) =>
     Object.fromEntries(
       cols.flatMap((c, i) => {
         if (!importable(c)) return [];
@@ -1115,6 +1117,44 @@ function PasteRows({ dept, config, cols, onClose }: { dept: WorkDept; config: De
       }),
     ),
   );
+  // The import helper for pasted rows: statuses, types, priorities and people matched to the closest known one,
+  // dates rewritten as YYYY-MM-DD, and what is still wrong per row (fixed before anything is added).
+  const checked = raw.map((rec) => {
+    const out: Record<string, string> = { ...rec };
+    const issues: string[] = [];
+    const fixed: string[] = [];
+    const pick = (key: string, list: { key: string; label: string }[], what: string) => {
+      const v = out[key];
+      if (!v) return;
+      if (list.some((x) => x.key === v.toLowerCase() || x.label.toLowerCase() === v.toLowerCase())) return;
+      const c = closestOption(v, list.map((x) => x.label));
+      if (c && fixes) (out[key] = c), fixed.push(`${what} "${v}" → ${c}`);
+      else issues.push(`unknown ${what} "${v}"`);
+    };
+    pick("status", config.statuses, "status");
+    pick("type", config.types, "type");
+    pick("priority", config.priorities, "priority");
+    if (out.assignee) {
+      const v = out.assignee.toLowerCase();
+      if (!people.some((p) => p.name.toLowerCase() === v)) {
+        const c = closestOption(out.assignee, people.map((p) => p.name));
+        if (c && fixes) (fixed.push(`person "${out.assignee}" → ${c}`), (out.assignee = c));
+        else issues.push(`${out.assignee} is not in this department`);
+      }
+    }
+    for (const k of ["due_date", "start_date"]) {
+      if (!out[k]) continue;
+      const d = normalizeDate(out[k]!);
+      if (!d) issues.push(`${k === "due_date" ? "due" : "start"} date "${out[k]}" not understood`);
+      else if (d !== out[k] && fixes) (fixed.push(`date ${out[k]} → ${d}`), (out[k] = d));
+    }
+    if (out.estimate_hours && fixes) out.estimate_hours = out.estimate_hours.replace(/[^\d.]/g, "");
+    if (!out.title) issues.push("no title");
+    return { rec: out, issues, fixed };
+  });
+  const records = checked.map((c) => c.rec);
+  const withIssues = checked.filter((c) => c.issues.length).length;
+  const fixedCount = checked.reduce((n, c) => n + c.fixed.length, 0);
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-2xl">
@@ -1130,6 +1170,23 @@ function PasteRows({ dept, config, cols, onClose }: { dept: WorkDept; config: De
           {data.length} row{data.length === 1 ? "" : "s"}
           {header ? " (header row skipped)" : ""}.
         </p>
+        {data.length > 0 && (
+          <div className="space-y-1 rounded-lg border p-2 text-xs" data-paste-check>
+            <label className="flex items-center gap-1.5 font-medium">
+              <input type="checkbox" checked={fixes} onChange={(e) => setFixes(e.target.checked)} /> Fix close matches and dates ({fixedCount} fixes)
+            </label>
+            <p className={withIssues ? "text-[#D93025]" : "text-[#188038]"}>{withIssues ? `${withIssues} rows still have problems:` : "Every row looks right."}</p>
+            <ul className="max-h-28 overflow-y-auto">
+              {checked.map((c, i) =>
+                c.issues.length || c.fixed.length ? (
+                  <li key={i}>
+                    Row {i + 1}: {c.fixed.length > 0 && <span className="text-muted-foreground">{c.fixed.join("; ")}</span>} {c.issues.length > 0 && <span className="text-[#D93025]">{c.issues.join("; ")}</span>}
+                  </li>
+                ) : null,
+              )}
+            </ul>
+          </div>
+        )}
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
             Cancel

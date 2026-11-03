@@ -1020,3 +1020,42 @@ Built: `src/server/support-desk.ts`, `src/server/support-channels.ts` (email, Te
   - Badges by fixed rules each month (top performer, department star, rising star, perfect attendance, always on time, zero returns, team player). Titles such as "Employee of the month" are given by HR or Admin. Kudos between colleagues come with a monthly limit.
 
 Built: `src/server/attendance-admin.ts`, `src/components/app/attendance/records-ui.tsx`, `src/server/recognition.ts`, `src/lib/recognition.ts`, `src/app/(app)/recognition`, payroll changes in `src/server/finance.ts` and `src/lib/finance.ts` (schema 37). Tests: `tests/server/attendance-admin.test.ts`, `tests/server/recognition.test.ts` and `tests/e2e/people-ops.e2e.mjs`.
+
+## Phase 22: The assistant as an agent, on the side (done)
+
+- [x] **Docked on the side**: the assistant can be docked as a full-height panel on the right. It stays open between pages, and the page makes room for it on wide screens. It can float again in the corner at any time.
+- [x] **Agent mode** (beside Ask mode):
+  - it does what the person asks itself, with the person's own permissions and the pages' own checks: tasks, leave, check-in, corrections, claims, approvals, routines;
+  - every action is shown in the panel as done or failed, kept in the agent log, and written to the audit log;
+  - Admin turns it on or off for everyone (Admin, Assistant, AI) or per role (Roles: Agent mode), and limits the actions per request (8 by default);
+  - Ask mode still only prepares actions to confirm.
+- [x] **Earlier conversations**: every conversation is saved, listed under the history button, and can be opened again or deleted (40 per person).
+- [x] **More it can read**: a search across production, every department's tasks, people and help; the person's KPI scorecard (or their team's); the team analyzer for leads; support tickets for agents; and the recognition leaderboard.
+- [x] **People, as regular members see it** (Admin, People, "Who regular members see in People"):
+  - a regular member sees other regular members only;
+  - owners, Admin, managers and the chosen roles are hidden, and so are leads, except the member's own lead and line manager when Admin keeps those;
+  - leads and the roles Admin picks see everyone;
+  - it applies in People, on profiles and in the assistant.
+- [x] **Calls in View as**: they pause quietly instead of showing an error.
+
+Built: `src/server/assistant-ai.ts` (agent, conversations, write-ups), `src/components/app/assistant.tsx`, `src/server/profiles.ts` (visibility), `src/app/(app)/admin/people-visibility-admin.tsx` (schema 46). Tests: `tests/server/agent.test.ts`, `tests/e2e/agent.e2e.mjs`.
+
+## Phase 23: The team analyzer and the import helper (done)
+
+- [x] **Analyze** (a department's Analyze tab, for its leads, heads and Admin):
+  - created against finished work per week;
+  - cycle and lead time (median and 85th percentile);
+  - open work in each status and how long it has waited there (the bottleneck), and where finished work waited longest;
+  - each member's open work, work in progress, overdue tasks, pace, on-time rate and load against capacity;
+  - the risks: overdue, stuck for a week or more, blocked, and urgent work without an owner.
+  - Written insights come from the app's own rules. With the AI on, **Explain with AI** writes it up and answers a question. Every status move is now kept for this.
+- [x] **Import helper** (in the import wizard's preview, when rows have errors):
+  - it fixes what it safely can: spaces, hidden characters, dates in other formats or as Excel numbers, numbers with commas or units, yes/no words, emails, links, values close to an allowed one, and list separators;
+  - empty and repeated rows are removed;
+  - it lists every change and shows a checklist of what is still wrong;
+  - the rows can be edited in a table and checked again;
+  - with the AI on, **Ask AI to fix the rest** suggests values for the cells still in error, to accept one by one or all.
+  - Nothing is saved until the import is confirmed.
+- [x] **Paste rows** (department sheets): statuses, types, priorities and people are matched to the closest known one, dates are rewritten, and each row's problems are shown before anything is added.
+
+Built: `src/server/team-insights.ts`, `src/components/app/team-analyzer.tsx`, `src/server/import-assist.ts`, `src/lib/import-fix.ts`, `src/app/(app)/import-export/import-helper.tsx`.

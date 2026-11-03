@@ -7,12 +7,17 @@ import { WorkflowError } from "@/server/workflow";
 export async function POST(req: Request) {
   const viewer = await getViewer();
   if (!viewer) return Response.json({ ok: false, error: "Sign in again." }, { status: 401 });
-  if (viewer.previewBy) return Response.json({ ok: false, error: "Calls are not available in View as." }, { status: 403 });
   let body: { op?: string; callId?: string; groupId?: string; media?: string; afterSeq?: number; to?: string; kind?: string; payload?: string };
   try {
     body = JSON.parse(await req.text());
   } catch {
     return Response.json({ ok: false, error: "Bad request." }, { status: 400 });
+  }
+  // View as: nothing rings and nothing is sent as the person; polling gets an empty answer instead of an error.
+  if (viewer.previewBy) {
+    if (body.op === "poll") return Response.json({ ok: true, data: { participants: [], signals: [], status: "ended", preview: true } }, { headers: { "Cache-Control": "no-store" } });
+    if (body.op === "hangup" || body.op === "leave" || body.op === "decline") return Response.json({ ok: true, data: null });
+    return Response.json({ ok: false, error: "Calls are paused while you view the app as someone else. Leave View as to call.", code: "PREVIEW" });
   }
   try {
     const id = String(body.callId ?? "");

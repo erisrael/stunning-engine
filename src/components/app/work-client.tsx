@@ -111,7 +111,7 @@ export function WorkClient({
   // The saved plan of each task (Tools, Epics and baseline), drawn under its bar on the Timeline.
   baselines?: Record<string, { start: string | null; due: string | null; savedAt: string }>;
   dept: WorkDept;
-  tab: "dashboard" | "board" | "list" | "sheet" | "overview" | "timeline" | "team" | "report" | "projects" | "calendar" | "repos" | "accounting" | "sprint" | "roadmap" | "docs" | "tools";
+  tab: "dashboard" | "board" | "list" | "sheet" | "overview" | "timeline" | "team" | "report" | "projects" | "calendar" | "repos" | "accounting" | "sprint" | "roadmap" | "docs" | "tools" | "analyze";
   filter: TaskFilter;
   tasks: Task[];
   projects: Project[];
