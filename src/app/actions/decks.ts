@@ -23,3 +23,22 @@ export async function revokeShareAction(token: string) {
 export async function createRemoteAction() {
   return wrap(async () => d.createRemote(await requireViewer()), { revalidate: false });
 }
+
+// Presentation templates (Admin): made in the app, or imported from PowerPoint, Google Slides, Keynote or Canva.
+export async function saveTemplateAction(input: Parameters<typeof import("@/server/deck-templates").saveTemplate>[1]) {
+  return wrap(async () => (await import("@/server/deck-templates")).saveTemplate(await requireViewer(), input));
+}
+export async function deleteTemplateAction(id: string) {
+  return wrap(async () => (await import("@/server/deck-templates")).deleteTemplate(await requireViewer(), id));
+}
+export async function defaultTemplateAction(id: string) {
+  return wrap(async () => (await import("@/server/deck-templates")).setDefaultTemplate(await requireViewer(), id));
+}
+export async function importTemplateAction(formData: FormData) {
+  return wrap(async () => {
+    const viewer = await requireViewer();
+    const file = formData.get("file");
+    if (!(file instanceof File)) throw new Error("Choose a file.");
+    return (await import("@/server/deck-templates")).importTemplate(viewer, file.name, await file.arrayBuffer());
+  });
+}

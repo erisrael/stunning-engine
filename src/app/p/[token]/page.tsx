@@ -14,5 +14,7 @@ export default async function SharedPage({ params }: { params: Promise<{ token: 
         <p>This presentation link has ended or was stopped. Ask the person who shared it for a new one.</p>
       </div>
     );
-  return <SharedDeck title={s.name} slides={s.slides} theme={s.theme} />;
+  const { templates, defaultId } = await (await import("@/server/deck-templates")).listTemplates();
+  const workspace = (await (await import("@/server/settings")).getSettings()).workspace.name;
+  return <SharedDeck title={s.name} slides={s.slides} theme={s.theme} templates={templates} defaultTemplate={defaultId} workspace={workspace} />;
 }

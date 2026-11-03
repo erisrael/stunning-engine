@@ -140,6 +140,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           {manageUsers && <TabsTrigger value="signin">Sign-in</TabsTrigger>}
           {manageUsers && <TabsTrigger value="sidebar">Sidebar</TabsTrigger>}
           {manageUsers && <TabsTrigger value="branding">Branding</TabsTrigger>}
+          {manageUsers && <TabsTrigger value="presentations">Presentation templates</TabsTrigger>}
           {manageUsers && <TabsTrigger value="usage">Usage</TabsTrigger>}
           {manageUsers && <TabsTrigger value="privacy">Privacy</TabsTrigger>}
           {manageUsers && <TabsTrigger value="files">Files and publishing</TabsTrigger>}
@@ -210,6 +211,15 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
             </TabsContent>
             <TabsContent value="branding">
               {tab === "branding" && <BrandingAdmin sections={(await bannerSections()).map((x) => ({ key: x.key, label: x.label }))} banners={await banners()} nav={await navBrand()} />}
+            </TabsContent>
+            <TabsContent value="presentations">
+              {tab === "presentations" &&
+                (await (async () => {
+                  const { listTemplates } = await import("@/server/deck-templates");
+                  const { TemplatesAdmin } = await import("./templates-admin");
+                  const t = await listTemplates();
+                  return <TemplatesAdmin templates={t.templates} defaultId={t.defaultId} />;
+                })())}
             </TabsContent>
             <TabsContent value="system">
               {tab !== "system" ? (

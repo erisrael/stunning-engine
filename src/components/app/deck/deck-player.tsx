@@ -38,16 +38,18 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { BarsChart, LinesChart } from "@/components/app/charts";
 import { CAT } from "@/lib/chart-colors";
-import { DEFAULT_THEME, type DeckTheme, type MeetingAction, type SavedDeck, type Slide, type SlideBody } from "@/lib/deck";
+import { CUSTOM_KINDS, DEFAULT_THEME, type DeckTheme, type MeetingAction, type SavedDeck, type Slide, type SlideBody } from "@/lib/deck";
+import { BUILT_IN_TEMPLATES, DEFAULT_TEMPLATE_ID, onColor, type DeckTemplate } from "@/lib/deck-templates";
+import { exportPowerPoint } from "./pptx-export";
 import { SmartphoneIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type Res = { ok: boolean; error?: string; data?: unknown };
 export type DeckActions = {
-  save: (input: { id?: string | null; name: string; scope: string; slides: string[]; minutes?: Record<string, number>; theme?: Partial<DeckTheme>; shared?: boolean; emailTo?: string[]; emailDay?: number | null }) => Promise<Res>;
+  save: (input: { id?: string | null; name: string; scope: string; slides: string[]; minutes?: Record<string, number>; theme?: Partial<DeckTheme>; shared?: boolean; emailTo?: string[]; emailDay?: number | null; custom?: Slide[] }) => Promise<Res>;
   remove: (id: string) => Promise<Res>;
   endMeeting: (input: { scope: string; deckId?: string | null; actions: MeetingAction[] }) => Promise<Res>;
-  share: (input: { scope: string; name: string; slideKeys: string[]; days: number; theme?: Partial<DeckTheme> }) => Promise<Res>;
+  share: (input: { scope: string; name: string; slideKeys: string[]; days: number; theme?: Partial<DeckTheme>; custom?: Slide[] }) => Promise<Res>;
   remote?: () => Promise<Res>;
 };
 
@@ -65,6 +67,10 @@ type Props = {
   readOnly?: boolean;
   theme?: DeckTheme;
   actions?: DeckActions;
+  // Presentation templates (Phase 24) and the workspace's default one.
+  templates?: DeckTemplate[];
+  defaultTemplate?: string;
+  workspace?: string;
 };
 
 // ---------------------------------------------------------------------------
@@ -99,14 +105,80 @@ function CountUp({ value }: { value: number }) {
 
 const TONE = { good: "text-emerald-600 dark:text-emerald-400", bad: "text-destructive", neutral: "text-amber-700 dark:text-amber-300" };
 
-export function SlideView({ body, big }: { body: SlideBody; big?: boolean }) {
+export function SlideView({ body, big, colors }: { body: SlideBody; big?: boolean; colors?: string[] }) {
   const h = big ? 460 : 360;
+  const CC = colors?.length ? colors : CAT;
   switch (body.kind) {
+    case "section":
+      return body.subtitle ? <p className={cn("text-muted-foreground", big ? "text-4xl" : "text-2xl")}>{body.subtitle}</p> : null;
+    case "bullets":
+      return (
+        <ul className={cn("space-y-3", big ? "text-4xl" : "text-2xl")}>
+          {body.items.map((t, i) => (
+            <li key={i} className="flex gap-3 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-left-2" style={{ animationDelay: `${i * 120}ms`, animationFillMode: "both" }}>
+              <span className="mt-[0.45em] size-3 shrink-0 rounded-full" style={{ background: CC[i % CC.length] }} />
+              {t}
+            </li>
+          ))}
+        </ul>
+      );
+    case "quote":
+      return (
+        <blockquote className="border-l-8 pl-6" style={{ borderColor: "var(--deck-accent)" }}>
+          <p className={cn("italic", big ? "text-5xl" : "text-3xl")}>“{body.text}”</p>
+          {body.by && <footer className={cn("mt-3 text-muted-foreground", big ? "text-2xl" : "text-lg")}>— {body.by}</footer>}
+        </blockquote>
+      );
+    case "image":
+      return (
+        <figure className="flex flex-col items-center gap-2">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={body.src} alt={body.caption ?? ""} className="max-h-[55vh] rounded-xl object-contain" />
+          {body.caption && <figcaption className="text-muted-foreground">{body.caption}</figcaption>}
+        </figure>
+      );
+    case "columns":
+      return (
+        <div className="grid gap-6 md:grid-cols-2">
+          {[body.left, body.right].map((c, i) => (
+            <div key={i} className="rounded-2xl border-t-8 bg-card p-5" style={{ borderColor: CC[i % CC.length] }}>
+              <h3 className={cn("mb-2 font-semibold", big ? "text-4xl" : "text-2xl")} style={{ color: CC[i % CC.length] }}>
+                {c.title}
+              </h3>
+              <p className={cn("whitespace-pre-wrap", big ? "text-3xl" : "text-xl")}>{c.text}</p>
+            </div>
+          ))}
+        </div>
+      );
+    case "timeline":
+      return (
+        <ol className="relative grid gap-4" style={{ gridTemplateColumns: `repeat(${Math.max(1, body.items.length)}, minmax(0, 1fr))` }}>
+          <span className="absolute top-[1.1rem] right-0 left-0 h-1 rounded bg-muted" aria-hidden />
+          {body.items.map((it, i) => (
+            <li key={i} className="relative flex flex-col items-center gap-2 text-center">
+              <span className="z-10 size-9 rounded-full border-4 border-background" style={{ background: it.done ? "#1E8E3E" : CC[i % CC.length] }} />
+              <span className={cn("font-semibold", big ? "text-2xl" : "text-base")} style={{ color: CC[i % CC.length] }}>
+                {it.date}
+              </span>
+              <span className={big ? "text-2xl" : "text-base"}>{it.label}</span>
+            </li>
+          ))}
+        </ol>
+      );
+    case "closing":
+      return (
+        <div className="flex flex-col items-center gap-3 py-10 text-center">
+          <p className={cn("font-semibold", big ? "text-8xl" : "text-6xl")} style={{ color: "var(--deck-primary)" }}>
+            {body.text}
+          </p>
+          {body.contact && <p className={cn("text-muted-foreground", big ? "text-3xl" : "text-xl")}>{body.contact}</p>}
+        </div>
+      );
     case "numbers":
       return (
         <div className={cn("grid gap-4", body.items.length > 4 ? "sm:grid-cols-3" : "sm:grid-cols-2 lg:grid-cols-4")}>
-          {body.items.map((x) => (
-            <div key={x.label} className="rounded-2xl border bg-card p-6" data-big-number>
+          {body.items.map((x, i) => (
+            <div key={x.label} className="rounded-2xl border border-t-8 bg-card p-6" style={{ borderTopColor: CC[i % CC.length] }} data-big-number>
               <p className={cn("text-muted-foreground", big ? "text-2xl" : "text-lg")}>{x.label}</p>
               <p className={cn("font-semibold tabular-nums", big ? "text-8xl" : "text-6xl", x.tone && (x.tone !== "bad" || x.value > 0) && TONE[x.tone])}>
                 <CountUp value={x.value} />
@@ -118,14 +190,14 @@ export function SlideView({ body, big }: { body: SlideBody; big?: boolean }) {
         </div>
       );
     case "bars":
-      return <BarsChart data={body.data} xKey={body.x} series={body.series.map((s, i) => ({ ...s, color: CAT[i % CAT.length]! }))} stacked={body.stacked} unit={body.unit} height={h} />;
+      return <BarsChart data={body.data} xKey={body.x} series={body.series.map((s, i) => ({ ...s, color: CC[i % CC.length]! }))} stacked={body.stacked} unit={body.unit} height={h} />;
     case "lines":
-      return <LinesChart data={body.data} xKey={body.x} series={body.series.map((s, i) => ({ ...s, color: CAT[(i * 3) % CAT.length]! }))} height={h} />;
+      return <LinesChart data={body.data} xKey={body.x} series={body.series.map((s, i) => ({ ...s, color: CC[i % CC.length]! }))} height={h} />;
     case "stages":
       return (
         <div className="flex flex-wrap gap-3">
           {body.items.map((g, i) => (
-            <div key={g.label} className="min-w-36 flex-1 rounded-2xl border bg-card p-4 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2" style={{ borderTop: `6px solid ${g.color ?? CAT[i % CAT.length]}`, animationDelay: `${i * 80}ms`, animationFillMode: "both" }}>
+            <div key={g.label} className="min-w-36 flex-1 rounded-2xl border bg-card p-4 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2" style={{ borderTop: `6px solid ${g.color ?? CC[i % CC.length]}`, animationDelay: `${i * 80}ms`, animationFillMode: "both" }}>
               <p className={cn("text-muted-foreground", big && "text-xl")}>{g.label}</p>
               <p className={cn("font-semibold tabular-nums", big ? "text-7xl" : "text-5xl")}>
                 <CountUp value={g.value} />
@@ -208,52 +280,16 @@ function Progress({ items, big }: { items: { label: string; value: number; tag?:
 // Exports
 // ---------------------------------------------------------------------------
 
-async function toPowerPoint(title: string, slides: Slide[]) {
-  const PptxGenJS = (await import("pptxgenjs")).default;
-  const pres = new PptxGenJS();
-  pres.layout = "LAYOUT_WIDE";
-  const cover = pres.addSlide();
-  // The company's logo and colour on the cover (the logo of the app's branding, the theme's primary colour).
-  try {
-    const svg = await (await fetch("/brand/myseed-logo.svg")).text();
-    cover.addImage({ data: `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`, x: 0.6, y: 1.2, w: 1, h: 1 });
-  } catch {}
-  const primary = getComputedStyle(document.documentElement).getPropertyValue("--primary").trim();
-  cover.addShape(pres.ShapeType.rect, { x: 0, y: 7.2, w: 13.33, h: 0.3, fill: { color: /^#?[0-9a-f]{6}$/i.test(primary) ? primary.replace("#", "") : "0B7A3B" } });
-  cover.addText(title, { x: 0.6, y: 2.4, w: 12, h: 1.2, fontSize: 40, bold: true });
-  cover.addText(new Date().toLocaleDateString(), { x: 0.6, y: 3.6, w: 12, h: 0.6, fontSize: 18, color: "666666" });
-  const colors = CAT.map((c) => c.replace("#", ""));
-  for (const s of slides) {
-    const p = pres.addSlide();
-    p.addText(s.title, { x: 0.5, y: 0.3, w: 12.3, h: 0.8, fontSize: 28, bold: true });
-    const b = s.body;
-    const box = { x: 0.5, y: 1.2, w: 12.3, h: 4.6 };
-    if (b.kind === "bars" || b.kind === "lines")
-      p.addChart(b.kind === "bars" ? pres.ChartType.bar : pres.ChartType.line, b.series.map((se) => ({ name: se.label, labels: b.data.map((d) => String(d[b.x] ?? "")), values: b.data.map((d) => Number(d[se.key] ?? 0)) })), { ...box, chartColors: colors, showLegend: true, legendPos: "b", barGrouping: b.kind === "bars" && b.stacked ? "stacked" : "clustered" });
-    else if (b.kind === "stages") p.addChart(pres.ChartType.bar, [{ name: "Now", labels: b.items.map((i) => i.label), values: b.items.map((i) => i.value) }], { ...box, chartColors: colors });
-    else if (b.kind === "progress") p.addChart(pres.ChartType.bar, [{ name: "% done", labels: b.items.map((i) => i.label), values: b.items.map((i) => i.value) }], { ...box, barDir: "bar", chartColors: colors, valAxisMaxVal: 100 });
-    else if (b.kind === "numbers")
-      b.items.forEach((x, i) => {
-        const col = i % 3;
-        const row = Math.floor(i / 3);
-        p.addText([{ text: `${x.value}${x.unit ?? ""}\n`, options: { fontSize: 44, bold: true } }, { text: x.label, options: { fontSize: 16, color: "666666" } }], { x: 0.5 + col * 4.1, y: 1.3 + row * 2.2, w: 3.9, h: 2, align: "center", fill: { color: "F3F4F6" } });
-      });
-    else if (b.kind === "table") p.addTable([b.columns.map((c) => ({ text: c, options: { bold: true } })), ...b.rows.map((r) => r.map((c) => ({ text: String(c) })))], { ...box, fontSize: 16 });
-    else if (b.kind === "list") p.addText(b.items.length ? b.items.map((i) => ({ text: `${i.text}${i.meta ? ` · ${i.meta}` : ""}`, options: { bullet: true } })) : (b.empty ?? ""), { ...box, fontSize: 18, valign: "top" });
-    else p.addText(b.text, { ...box, fontSize: 24 });
-    p.addText([s.say, s.why, s.next].filter(Boolean).join("\n"), { x: 0.5, y: 6.0, w: 12.3, h: 1.2, fontSize: 16, fill: { color: "F3F4F6" } });
-    if (s.note) p.addNotes(s.note);
-  }
-  await pres.writeFile({ fileName: `${title.replace(/[^\w -]/g, "")}.pptx` });
-}
-
 // ---------------------------------------------------------------------------
 // The player
 // ---------------------------------------------------------------------------
 
 export function DeckPlayer(props: Props) {
   const router = useRouter();
-  const all = props.slides;
+  // Hand-written slides: those of the saved deck, plus any written now (kept when the deck is saved).
+  const savedFirst = props.decks?.find((d) => d.id === props.deckId) ?? null;
+  const [custom, setCustom] = React.useState<Slide[]>(savedFirst?.custom ?? []);
+  const all = React.useMemo(() => [...props.slides.filter((s) => !s.key.startsWith("custom:")), ...custom], [props.slides, custom]);
   const storeKey = `myseed.deck.${props.scope}`;
   const saved = props.decks?.find((d) => d.id === props.deckId) ?? null;
   const [order, setOrder] = React.useState<string[]>(() => saved?.slides.filter((k) => all.some((s) => s.key === k)) ?? all.map((s) => s.key));
@@ -357,12 +393,26 @@ export function DeckPlayer(props: Props) {
   const slideSpent = meeting ? Date.now() - meeting.slideStarted : 0;
 
   const big = theme.bigText;
+  const templates = props.templates?.length ? props.templates : BUILT_IN_TEMPLATES;
+  const tpl = templates.find((x) => x.id === (theme.template || props.defaultTemplate || DEFAULT_TEMPLATE_ID)) ?? templates[0]!;
+  const tplVars = {
+    "--deck-primary": tpl.colors.primary,
+    "--deck-secondary": tpl.colors.secondary,
+    "--deck-accent": tpl.colors.accent,
+    "--deck-surface": tpl.colors.surface,
+    fontFamily: `"${tpl.fonts.body}", system-ui, sans-serif`,
+  } as React.CSSProperties;
+  const darkTpl = onColor(tpl.colors.background) === "#FFFFFF";
+  const download = () =>
+    exportPowerPoint({ title: saved?.name ?? props.title, slides, template: tpl, workspace: props.workspace ?? "Myseed" })
+      .then(() => toast.success(`Downloaded with the ${tpl.name} template`))
+      .catch(() => toast.error("Could not make the file."));
   const anim = theme.transition === "none" ? "" : theme.transition === "slide" ? "motion-safe:animate-in motion-safe:slide-in-from-right-8 motion-safe:fade-in" : theme.transition === "zoom" ? "motion-safe:animate-in motion-safe:zoom-in-95 motion-safe:fade-in" : "motion-safe:animate-in motion-safe:fade-in";
 
   return (
-    <div className={cn("fixed inset-0 z-50 flex flex-col bg-background", big && "text-[1.15rem]")} data-deck={props.scope}>
-      <div className="h-1 bg-muted" aria-hidden>
-        <div className="h-1 bg-primary transition-[width] motion-reduce:transition-none" style={{ width: `${((Math.min(i, slides.length - 1) + 1) / Math.max(1, slides.length)) * 100}%` }} />
+    <div className={cn("fixed inset-0 z-50 flex flex-col bg-background", big && "text-[1.15rem]", darkTpl && "dark")} style={{ ...tplVars, background: tpl.background ? `url(${tpl.background}) center/cover` : tpl.colors.background, color: tpl.colors.text }} data-deck={props.scope} data-deck-template={tpl.id}>
+      <div className="flex h-1.5" aria-hidden>
+        <div className="h-1.5 transition-[width] motion-reduce:transition-none" style={{ width: `${((Math.min(i, slides.length - 1) + 1) / Math.max(1, slides.length)) * 100}%`, background: `linear-gradient(90deg, ${tpl.colors.primary}, ${tpl.colors.secondary}, ${tpl.colors.accent})` }} />
       </div>
       <header className="flex flex-wrap items-center gap-1 px-6 py-2 text-sm print:hidden">
         <Button asChild size="sm" variant="ghost">
@@ -446,7 +496,7 @@ export function DeckPlayer(props: Props) {
               <SmartphoneIcon />
             </Button>
           )}
-          <Button size="sm" variant="ghost" aria-label="PowerPoint" title="Download as PowerPoint" onClick={() => toPowerPoint(saved?.name ?? props.title, slides).catch(() => toast.error("Could not make the file."))}>
+          <Button size="sm" variant="ghost" aria-label="PowerPoint" title={`Download as PowerPoint (${tpl.name} template)`} onClick={download} data-export-pptx>
             <DownloadIcon />
           </Button>
           <Button size="sm" variant="ghost" aria-label="PDF" title="Print or save as PDF" onClick={() => window.print()}>
@@ -468,7 +518,24 @@ export function DeckPlayer(props: Props) {
           </Button>
         </div>
       )}
-      {panel === "deck" && props.actions && <DeckPanel {...props} order={order} setOrder={(o) => (setOrder(o), setI(0), remember(o, theme))} minutes={minutes} setMinutes={setMinutes} theme={theme} setTheme={(t) => (setTheme(t), remember(order, t))} saved={saved} onClose={() => setPanel(null)} />}
+      {panel === "deck" && props.actions && (
+        <DeckPanel
+          {...props}
+          slides={all}
+          templates={templates}
+          custom={custom}
+          addCustom={(sl) => (setCustom((c) => [...c.filter((x) => x.key !== sl.key), sl]), setOrder((o) => (o.includes(sl.key) ? o : [...o, sl.key])))}
+          removeCustom={(k) => (setCustom((c) => c.filter((x) => x.key !== k)), setOrder((o) => o.filter((x) => x !== k)))}
+          order={order}
+          setOrder={(o) => (setOrder(o), setI(0), remember(o, theme))}
+          minutes={minutes}
+          setMinutes={setMinutes}
+          theme={theme}
+          setTheme={(t) => (setTheme(t), remember(order, t))}
+          saved={saved}
+          onClose={() => setPanel(null)}
+        />
+      )}
       {panel === "meeting" && meeting && props.actions && (
         <MeetingPanel
           {...props}
@@ -482,23 +549,37 @@ export function DeckPlayer(props: Props) {
           onEnd={() => (setMeeting(null), setPanel(null))}
         />
       )}
-      {panel === "share" && props.actions && <SharePanel {...props} order={order} theme={theme} name={saved?.name ?? props.title} />}
+      {panel === "share" && props.actions && <SharePanel {...props} order={order} theme={{ ...theme, template: tpl.id }} name={saved?.name ?? props.title} custom={custom} />}
 
       {s && (
-        <main key={s.key} className={cn("relative flex flex-1 flex-col gap-6 overflow-y-auto px-10 py-6 print:hidden motion-safe:duration-500", anim)} data-slide={s.key}>
-          <h1 className={cn("font-semibold", big ? "text-6xl" : "text-4xl")}>{s.title}</h1>
-          <div className="flex-1">
-            <SlideView body={s.body} big={big} />
+        <main
+          key={s.key}
+          className={cn("relative flex flex-1 flex-col gap-6 overflow-y-auto px-10 py-6 print:hidden motion-safe:duration-500", anim, (s.body.kind === "section" || s.body.kind === "closing") && "justify-center")}
+          style={s.body.kind === "section" ? { background: tpl.colors.primary, color: onColor(tpl.colors.primary) } : undefined}
+          data-slide={s.key}
+          data-slide-kind={s.body.kind}
+        >
+          <div className="flex items-center gap-3">
+            <span className="h-10 w-2 shrink-0 rounded-full" style={{ background: s.body.kind === "section" ? tpl.colors.accent : `linear-gradient(${tpl.colors.primary}, ${tpl.colors.secondary})` }} aria-hidden />
+            <h1 className={cn("font-semibold", big ? "text-6xl" : "text-4xl", s.body.kind === "section" && (big ? "text-8xl" : "text-6xl"))} style={{ fontFamily: `"${tpl.fonts.heading}", system-ui, sans-serif`, color: s.body.kind === "section" ? undefined : tpl.colors.primary }}>
+              {s.title}
+            </h1>
+            <span className="ml-auto text-sm opacity-70">{s.group}</span>
           </div>
-          <div className={cn("rounded-2xl bg-muted/50 p-4", big ? "text-3xl" : "text-xl")} data-explainer>
+          <div className={cn(s.body.kind !== "section" && "flex-1")}>
+            <SlideView body={s.body} big={big} colors={tpl.colors.chart} />
+          </div>
+          {(s.say || s.why || s.next) && (
+          <div className={cn("rounded-2xl border-l-8 p-4", big ? "text-3xl" : "text-xl")} style={{ background: tpl.colors.surface, borderColor: tpl.colors.accent, color: onColor(tpl.colors.surface) }} data-explainer>
             <p>{s.say}</p>
             {s.why && <p className="text-muted-foreground">{s.why}</p>}
             {s.next && <p className="font-medium">{s.next}</p>}
           </div>
+          )}
           {notes && s.note && <p className="rounded-lg border border-dashed p-3 text-base text-muted-foreground">Notes: {s.note}</p>}
           <p className="flex items-center gap-2 text-xs text-muted-foreground" data-slide-brand>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/brand/myseed-logo.svg" alt="" className="size-4" /> {props.title} · {new Date().toLocaleDateString()}
+            <img src={tpl.logo ?? "/brand/myseed-logo.svg"} alt="" className="size-4 object-contain" /> {tpl.footer || props.workspace || "Myseed"} · {props.title} · {new Date().toLocaleDateString()}
           </p>
           {tool && <Overlay tool={tool} />}
         </main>
@@ -508,7 +589,7 @@ export function DeckPlayer(props: Props) {
         {slides.map((x) => (
           <section key={x.key} className="break-after-page p-8">
             <h1 className="mb-4 text-3xl font-semibold">{x.title}</h1>
-            <SlideView body={x.body} />
+            <SlideView body={x.body} colors={tpl.colors.chart} />
             <div className="mt-4 rounded-xl bg-muted/50 p-3 text-lg">
               <p>{x.say}</p>
               {x.why && <p>{x.why}</p>}
@@ -580,9 +661,112 @@ function Overlay({ tool }: { tool: "laser" | "draw" }) {
 // Deck: choose, order, minutes, look; save for yourself or the team; weekly email
 // ---------------------------------------------------------------------------
 
+// Writing a slide by hand: a section title, bullets, text, a quote, a picture, two columns, a timeline, big numbers
+// or a closing slide. It joins the deck and is kept when the deck is saved.
+function SlideWriter({ onAdd }: { onAdd: (s: Slide) => void }) {
+  const [kind, setKind] = React.useState<keyof typeof CUSTOM_KINDS>("bullets");
+  const [title, setTitle] = React.useState("");
+  const [text, setText] = React.useState("");
+  const [extra, setExtra] = React.useState("");
+  const [left, setLeft] = React.useState({ title: "", text: "" });
+  const [right, setRight] = React.useState({ title: "", text: "" });
+  const [src, setSrc] = React.useState<string | null>(null);
+  const [say, setSay] = React.useState("");
+  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  const body = (): SlideBody | null => {
+    switch (kind) {
+      case "section":
+        return { kind: "section", subtitle: text.trim() };
+      case "bullets":
+        return lines.length ? { kind: "bullets", items: lines } : null;
+      case "text":
+        return text.trim() ? { kind: "text", text: text.trim() } : null;
+      case "quote":
+        return text.trim() ? { kind: "quote", text: text.trim(), by: extra.trim() } : null;
+      case "image":
+        return src ? { kind: "image", src, caption: text.trim() } : null;
+      case "columns":
+        return { kind: "columns", left, right };
+      case "timeline":
+        return lines.length ? { kind: "timeline", items: lines.map((l) => { const [d, ...rest] = l.split(/[:|-]/); const done = /\(done\)|✓/i.test(l); return { date: (d ?? "").trim(), label: rest.join("-").replace(/\(done\)|✓/gi, "").trim(), done }; }) } : null;
+      case "numbers":
+        return lines.length ? { kind: "numbers", items: lines.slice(0, 6).map((l) => { const m = l.match(/^(.*?)[:=]\s*([\d.,]+)\s*(\S*)$/); return { label: (m?.[1] ?? l).trim(), value: Number((m?.[2] ?? "0").replace(/,/g, "")) || 0, unit: m?.[3] ?? "" }; }) } : null;
+      case "closing":
+        return { kind: "closing", text: text.trim() || "Thank you", contact: extra.trim() };
+    }
+  };
+  const hint: Record<string, string> = {
+    section: "Subtitle (optional)",
+    bullets: "One point per line",
+    text: "The text",
+    quote: "The quote",
+    image: "Caption (optional)",
+    timeline: "One per line: date: what (add (done) when it is done)",
+    numbers: "One per line: label: number unit, e.g. Videos published: 120",
+    closing: "Thank you",
+  };
+  return (
+    <div className="space-y-2 rounded-lg border border-dashed p-2" data-slide-writer>
+      <div className="flex flex-wrap gap-1">
+        {(Object.keys(CUSTOM_KINDS) as (keyof typeof CUSTOM_KINDS)[]).map((k) => (
+          <button key={k} type="button" aria-pressed={kind === k} onClick={() => setKind(k)} className={cn("rounded-full border px-2 py-0.5 text-xs", kind === k ? "border-primary bg-primary text-primary-foreground" : "hover:bg-muted")}>
+            {CUSTOM_KINDS[k]}
+          </button>
+        ))}
+      </div>
+      <Input aria-label="Slide title" placeholder="Slide title" value={title} onChange={(e) => setTitle(e.target.value)} />
+      {kind === "columns" ? (
+        <div className="grid gap-2 sm:grid-cols-2">
+          {([
+            [left, setLeft, "Left"],
+            [right, setRight, "Right"],
+          ] as const).map(([v, set, label]) => (
+            <div key={label} className="space-y-1">
+              <Input aria-label={`${label} heading`} placeholder={`${label} heading`} value={v.title} onChange={(e) => set({ ...v, title: e.target.value })} />
+              <textarea aria-label={`${label} text`} className="min-h-20 w-full rounded-md border bg-background p-2 text-sm" value={v.text} onChange={(e) => set({ ...v, text: e.target.value })} />
+            </div>
+          ))}
+        </div>
+      ) : (
+        <textarea aria-label="Slide text" placeholder={hint[kind]} className="min-h-24 w-full rounded-md border bg-background p-2 text-sm" value={text} onChange={(e) => setText(e.target.value)} />
+      )}
+      {(kind === "quote" || kind === "closing") && <Input aria-label={kind === "quote" ? "Who said it" : "Contact line"} placeholder={kind === "quote" ? "Who said it" : "Contact line, e.g. info@myseed.et"} value={extra} onChange={(e) => setExtra(e.target.value)} />}
+      {kind === "image" && (
+        <input
+          type="file"
+          accept="image/png,image/jpeg,image/gif,image/webp"
+          aria-label="Picture"
+          className="text-xs"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (!f) return;
+            if (f.size > 2_000_000) return void toast.error("Pictures up to 2 MB.");
+            const r = new FileReader();
+            r.onload = () => setSrc(String(r.result));
+            r.readAsDataURL(f);
+          }}
+        />
+      )}
+      <Input aria-label="What it says" placeholder="What it says, in one sentence (optional)" value={say} onChange={(e) => setSay(e.target.value)} />
+      <Button
+        size="xs"
+        onClick={() => {
+          const b = body();
+          if (!b) return void toast.error("Fill in the slide first.");
+          onAdd({ key: `custom:${Math.random().toString(36).slice(2, 10)}`, group: "Written in the deck", title: title.trim() || CUSTOM_KINDS[kind], body: b, say: say.trim() });
+        }}
+        data-add-slide
+      >
+        <PlusIcon /> Add the slide
+      </Button>
+    </div>
+  );
+}
+
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
-function DeckPanel(p: Props & { order: string[]; setOrder: (o: string[]) => void; minutes: Record<string, number>; setMinutes: (m: Record<string, number>) => void; theme: DeckTheme; setTheme: (t: DeckTheme) => void; saved: SavedDeck | null; onClose: () => void }) {
+function DeckPanel(p: Props & { templates: DeckTemplate[]; custom: Slide[]; addCustom: (s: Slide) => void; removeCustom: (key: string) => void; order: string[]; setOrder: (o: string[]) => void; minutes: Record<string, number>; setMinutes: (m: Record<string, number>) => void; theme: DeckTheme; setTheme: (t: DeckTheme) => void; saved: SavedDeck | null; onClose: () => void }) {
+  const [writing, setWriting] = React.useState(false);
   const router = useRouter();
   const [name, setName] = React.useState(p.saved?.name ?? "");
   const [shared, setShared] = React.useState(p.saved?.shared ?? false);
@@ -599,7 +783,7 @@ function DeckPanel(p: Props & { order: string[]; setOrder: (o: string[]) => void
   };
   const save = async (asNew: boolean) => {
     setBusy(true);
-    const r = await p.actions!.save({ id: asNew ? null : (p.saved?.id ?? null), name, scope: p.scope, slides: p.order, minutes: p.minutes, theme: p.theme, shared, emailTo, emailDay });
+    const r = await p.actions!.save({ id: asNew ? null : (p.saved?.id ?? null), name, scope: p.scope, slides: p.order, minutes: p.minutes, theme: p.theme, shared, emailTo, emailDay, custom: p.custom.filter((c) => p.order.includes(c.key)) });
     setBusy(false);
     if (!r.ok) return void toast.error(r.error ?? "Could not save.");
     toast.success("Deck saved");
@@ -645,6 +829,20 @@ function DeckPanel(p: Props & { order: string[]; setOrder: (o: string[]) => void
             );
           })}
         </ol>
+        <div className="flex flex-wrap items-center gap-1">
+          <Button size="xs" variant={writing ? "default" : "outline"} onClick={() => setWriting(!writing)} data-write-slide>
+            <PencilIcon /> Write a slide
+          </Button>
+          {p.custom.map((c) => (
+            <span key={c.key} className="flex items-center gap-0.5 rounded-full border px-2 py-0.5 text-xs" data-custom-slide={c.key}>
+              {c.title}
+              <button type="button" aria-label={`Delete ${c.title}`} onClick={() => p.removeCustom(c.key)}>
+                <XIcon className="size-3" />
+              </button>
+            </span>
+          ))}
+        </div>
+        {writing && <SlideWriter onAdd={(sl) => (p.addCustom(sl), setWriting(false), toast.success("Slide added at the end"))} />}
         {p.slides.some((s) => !p.order.includes(s.key)) && (
           <div className="space-y-1">
             <p className="text-xs text-muted-foreground">Add:</p>
@@ -664,6 +862,22 @@ function DeckPanel(p: Props & { order: string[]; setOrder: (o: string[]) => void
         )}
       </div>
       <div className="space-y-2">
+        <label className="block space-y-1 text-xs">
+          Template (colours, fonts and logo on screen and in PowerPoint)
+          <select aria-label="Template" className="h-8 w-full rounded-md border bg-background px-2" value={p.theme.template || p.defaultTemplate || DEFAULT_TEMPLATE_ID} onChange={(e) => p.setTheme({ ...p.theme, template: e.target.value })} data-template-pick>
+            {p.templates.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+                {t.id === (p.defaultTemplate || DEFAULT_TEMPLATE_ID) ? " (default)" : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="flex gap-1" aria-hidden>
+          {(p.templates.find((t) => t.id === (p.theme.template || p.defaultTemplate || DEFAULT_TEMPLATE_ID)) ?? p.templates[0]!).colors.chart.slice(0, 8).map((col) => (
+            <span key={col} className="h-3 flex-1 rounded" style={{ background: col }} />
+          ))}
+        </div>
         <div className="grid grid-cols-2 gap-2">
           <label className="space-y-1 text-xs">
             Transition
@@ -822,7 +1036,7 @@ function MeetingPanel(p: Props & { slides: Slide[]; current: number; minutes: Re
   );
 }
 
-function SharePanel(p: Props & { order: string[]; theme: DeckTheme; name: string }) {
+function SharePanel(p: Props & { order: string[]; theme: DeckTheme; name: string; custom: Slide[] }) {
   const [days, setDays] = React.useState(7);
   const [link, setLink] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
@@ -836,7 +1050,7 @@ function SharePanel(p: Props & { order: string[]; theme: DeckTheme; name: string
         disabled={busy}
         onClick={async () => {
           setBusy(true);
-          const r = await p.actions!.share({ scope: p.scope, name: p.name, slideKeys: p.order, days, theme: p.theme });
+          const r = await p.actions!.share({ scope: p.scope, name: p.name, slideKeys: p.order, days, theme: p.theme, custom: p.custom.filter((c) => p.order.includes(c.key)) });
           setBusy(false);
           if (!r.ok) return void toast.error(r.error);
           const url = `${window.location.origin}/p/${(r.data as { token: string }).token}`;

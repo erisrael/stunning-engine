@@ -71,6 +71,13 @@ const PREPS: Record<string, () => Promise<unknown>> = {
     await saveAiConfig(a, { on: true, model: "claude-opus-5-5", effort: "low", offRoles: [], dailyLimit: 0, actions: true, agent: true, key: "sk-ant-e2e" });
     return {};
   },
+  // Phase 24: presentation templates and hand-written slides (Admin presents the company deck).
+  async presentations() {
+    await passwordOnly();
+    const a = await admin();
+    await run("UPDATE users SET prefs = ? WHERE id = ?", JSON.stringify({ tour: { seen: ["member", "lead", "publication", "manager", "owner", "department", "hr", "finance"] } }), a.id);
+    return {};
+  },
   // The main pages on a phone.
   async mobile() {
     await passwordOnly();

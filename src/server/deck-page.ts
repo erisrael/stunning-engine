@@ -7,7 +7,12 @@ import { userDirectory } from "./users";
 export async function deckPage(user: AppUser, scope: string, deckId: string | null) {
   const decks = await d.listDecks(user, scope);
   const deck = deckId ? (decks.find((x) => x.id === deckId) ?? null) : null;
-  const { title, slides } = await d.slidesFor(user, scope, { since: deck?.lastMeetingAt ?? null });
+  const { title, slides: made } = await d.slidesFor(user, scope, { since: deck?.lastMeetingAt ?? null });
+  // The deck's own hand-written slides join the made ones.
+  const slides = [...made, ...(deck?.custom ?? [])];
+  const { templates, defaultId } = await (await import("./deck-templates")).listTemplates();
+  const { getSettings } = await import("./settings");
+  const workspace = (await getSettings()).workspace.name;
   const people = (await userDirectory()).map((u) => ({ id: u.id, name: u.name }));
   let canShare = false;
   try {
@@ -18,5 +23,5 @@ export async function deckPage(user: AppUser, scope: string, deckId: string | nu
       canShare = a.rights.projects || a.rights.configure || a.rights.seeAll;
     }
   } catch {}
-  return { title, slides, decks, deckId: deck?.id ?? null, ready: d.readyDecks(scope, slides.map((s) => s.key)), people, canShare };
+  return { title, slides, decks, deckId: deck?.id ?? null, ready: d.readyDecks(scope, made.map((s) => s.key)), people, canShare, templates, defaultTemplate: defaultId, workspace };
 }

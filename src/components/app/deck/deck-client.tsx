@@ -11,6 +11,6 @@ export function Deck(p: P) {
   return <DeckPlayer {...p} actions={{ save: A.saveDeckAction, remove: A.deleteDeckAction, endMeeting: A.endMeetingAction, share: A.shareDeckAction, remote: A.createRemoteAction }} />;
 }
 
-export function SharedDeck(p: Pick<P, "title" | "slides" | "theme">) {
-  return <DeckPlayer scope="shared" title={p.title} slides={p.slides} theme={p.theme} back="/" readOnly />;
+export function SharedDeck(p: Pick<P, "title" | "slides" | "theme" | "templates" | "defaultTemplate" | "workspace">) {
+  return <DeckPlayer scope="shared" title={p.title} slides={p.slides} theme={p.theme} templates={p.templates} defaultTemplate={p.defaultTemplate} workspace={p.workspace} back="/" readOnly />;
 }

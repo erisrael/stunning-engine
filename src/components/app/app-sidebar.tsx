@@ -291,6 +291,7 @@ export function AppSidebar({
           { label: "Safety reports", href: "/admin?tab=reports" },
           { label: "Sidebar", href: "/admin?tab=sidebar" },
           { label: "Branding", href: "/admin?tab=branding" },
+          { label: "Presentation templates", href: "/admin?tab=presentations" },
           { label: "Usage", href: "/admin?tab=usage" },
           { label: "Privacy", href: "/admin?tab=privacy" },
           { label: "Files and publishing", href: "/admin?tab=files" },

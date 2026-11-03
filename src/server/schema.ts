@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 46;
+export const SCHEMA_VERSION = 47;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -2172,6 +2172,17 @@ CREATE TABLE IF NOT EXISTS mail_state (
   error TEXT
 );
 
+-- v47: presentation templates made in the app or imported from PowerPoint, Google Slides, Keynote or Canva.
+CREATE TABLE IF NOT EXISTS pres_templates (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  data TEXT NOT NULL,
+  source TEXT NOT NULL DEFAULT 'custom',
+  created_by TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 -- v46: the assistant's saved conversations (side panel history), what the agent did on its own, and every status
 -- move of a department task (for the team analyzer: time in each status, cycle time, bottlenecks).
 CREATE TABLE IF NOT EXISTS ai_conversations (
@@ -2417,6 +2428,8 @@ CREATE TABLE IF NOT EXISTS pres_decks (
   updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_pres_decks_scope ON pres_decks(scope);
+-- (v47) slides written by hand in the deck (sections, bullets, quotes, pictures, columns, timelines).
+ALTER TABLE pres_decks ADD COLUMN IF NOT EXISTS custom TEXT NOT NULL DEFAULT '[]';
 CREATE TABLE IF NOT EXISTS pres_shares (
   token TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -2937,6 +2950,7 @@ export const TABLES = [
   "page_timings",
   "mail_scheduled",
   "ai_conversations",
+  "pres_templates",
   "ai_agent_log",
   "dept_task_moves",
   "pres_decks",

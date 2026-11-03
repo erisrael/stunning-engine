@@ -1060,3 +1060,22 @@ Built: `src/server/assistant-ai.ts` (agent, conversations, write-ups), `src/comp
 - [x] **Paste rows** (department sheets): statuses, types, priorities and people are matched to the closest known one, dates are rewritten, and each row's problems are shown before anything is added.
 
 Built: `src/server/team-insights.ts`, `src/components/app/team-analyzer.tsx`, `src/server/import-assist.ts`, `src/lib/import-fix.ts`, `src/app/(app)/import-export/import-helper.tsx`.
+
+## Phase 24: Presentations in the company's colours, with templates (done)
+
+- [x] **Templates** (Admin, Presentation templates):
+  - built in: Myseed (the brand, colourful), Myseed dark, International (formal, for partners and donors), Ocean and Sunrise;
+  - Admin copies one to change its colours, chart colours, fonts, logo, cover (colourful circles, one colour, split or a picture), slide background, footer and slide numbers;
+  - one is the default for every deck, and each deck can choose its own.
+- [x] **Import a template** from PowerPoint, Google Slides (File, Download, .pptx), Keynote (Export to PowerPoint) or Canva (Download, PPTX). The app reads the file's theme: its twelve colours, heading and body fonts, the background picture and the logo on the slide master. .potx and Office .thmx theme files work too.
+- [x] **On screen**: the deck shows in its template's colours and fonts (title marker, progress bar, chart colours, boxes, background, logo and footer).
+- [x] **PowerPoint export in the template**:
+  - a colourful cover with the logo;
+  - an agenda made from the groups, and a coloured section slide at each group;
+  - a master with the brand bars, logo, footer and slide numbers;
+  - coloured number tiles and stage tiles, progress bars, editable charts in the template's colours, tables with a coloured header and banded rows, the explainer box;
+  - a closing slide.
+  - It opens in PowerPoint, Google Slides, Keynote and LibreOffice.
+- [x] **Write slides by hand** in a deck: section title, bullet points, text, quote, picture, two columns, timeline, big numbers and closing. They are kept with the saved deck and go with share links.
+
+Built: `src/lib/deck-templates.ts`, `src/server/deck-templates.ts`, `src/components/app/deck/pptx-export.ts`, `src/app/(app)/admin/templates-admin.tsx`, changes in `deck-player.tsx`, `decks.ts` and `deck-page.ts` (schema 47). Tests: `tests/server/presentations.test.ts`, `tests/e2e/presentations.e2e.mjs`.

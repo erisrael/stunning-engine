@@ -10,6 +10,7 @@ import { getSettings } from "./settings";
 import { can, loadUser, type AppUser } from "./users";
 import { canSeeCompany } from "./company";
 import { DEFAULT_THEME, type DeckTheme, type MeetingAction, type SavedDeck, type Slide } from "@/lib/deck";
+import { cleanCustomSlide } from "@/lib/deck";
 import { localParts } from "@/lib/attendance";
 
 const DAY = 864e5;
@@ -324,7 +325,7 @@ export async function slidesFor(user: AppUser, scope: string, opts: { since?: st
   return scope === "company" ? companySlides(user) : deptSlides(user, scope.slice(5), opts);
 }
 
-type DeckRow = { id: string; name: string; scope: string; slides: string; minutes: string; theme: string; shared: number; email_to: string; email_day: number | null; last_meeting_at: string | null; owner_id: string; owner_name: string | null };
+type DeckRow = { id: string; name: string; scope: string; slides: string; minutes: string; theme: string; shared: number; email_to: string; email_day: number | null; last_meeting_at: string | null; owner_id: string; owner_name: string | null; custom: string | null };
 const deckOf = (r: DeckRow): SavedDeck => ({
   id: r.id,
   name: r.name,
@@ -338,6 +339,7 @@ const deckOf = (r: DeckRow): SavedDeck => ({
   lastMeetingAt: r.last_meeting_at,
   ownerId: r.owner_id,
   ownerName: r.owner_name,
+  custom: parseJson<Slide[]>(r.custom, []),
 });
 
 export async function listDecks(user: AppUser, scope: string) {
@@ -352,7 +354,8 @@ export async function getDeck(user: AppUser, id: string) {
   return deckOf(r);
 }
 
-export async function saveDeck(user: AppUser, input: { id?: string | null; name: string; scope: string; slides: string[]; minutes?: Record<string, number>; theme?: Partial<DeckTheme>; shared?: boolean; emailTo?: string[]; emailDay?: number | null }) {
+export async function saveDeck(user: AppUser, input: { id?: string | null; name: string; scope: string; slides: string[]; minutes?: Record<string, number>; theme?: Partial<DeckTheme>; shared?: boolean; emailTo?: string[]; emailDay?: number | null; custom?: Partial<Slide>[] }) {
+  const custom = (input.custom ?? []).slice(0, 30).map(cleanCustomSlide).filter((s): s is Slide => !!s);
   const rights = await scopeRights(user, input.scope);
   const name = String(input.name ?? "").trim().slice(0, 80);
   if (!name) throw new WorkflowError("VALIDATION", "Name the deck, for example \"Weekly team meeting\".");
@@ -364,6 +367,7 @@ export async function saveDeck(user: AppUser, input: { id?: string | null; name:
   theme.seconds = Math.max(5, Math.min(600, Number(theme.seconds) || 15));
   if (!["fade", "slide", "zoom", "none"].includes(theme.transition)) theme.transition = "fade";
   theme.bigText = !!theme.bigText;
+  theme.template = typeof theme.template === "string" && /^[\w-]{2,40}$/.test(theme.template) ? theme.template : null;
   const emailTo = [...new Set((input.emailTo ?? []).map(String))].slice(0, 50);
   const emailDay = input.emailDay === null || input.emailDay === undefined || !emailTo.length ? null : Math.max(0, Math.min(6, Math.round(Number(input.emailDay))));
   const now = nowIso();
@@ -372,7 +376,7 @@ export async function saveDeck(user: AppUser, input: { id?: string | null; name:
     if (!cur) throw new WorkflowError("NOT_FOUND", "Deck not found.");
     if (cur.owner_id !== user.id && !(Number(cur.shared) && rights.share)) throw new WorkflowError("FORBIDDEN", "Only its owner or a lead changes this deck.");
     await run(
-      "UPDATE pres_decks SET name = ?, slides = ?, minutes = ?, theme = ?, shared = ?, email_to = ?, email_day = ?, updated_at = ? WHERE id = ?",
+      "UPDATE pres_decks SET name = ?, slides = ?, minutes = ?, theme = ?, shared = ?, email_to = ?, email_day = ?, custom = ?, updated_at = ? WHERE id = ?",
       name,
       JSON.stringify(slides),
       JSON.stringify(minutes),
@@ -380,6 +384,7 @@ export async function saveDeck(user: AppUser, input: { id?: string | null; name:
       input.shared ? 1 : 0,
       JSON.stringify(emailTo),
       emailDay,
+      JSON.stringify(custom),
       now,
       input.id,
     );
@@ -387,7 +392,7 @@ export async function saveDeck(user: AppUser, input: { id?: string | null; name:
   }
   const id = uid("dck_");
   await run(
-    "INSERT INTO pres_decks (id, name, scope, slides, minutes, theme, shared, email_to, email_day, owner_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO pres_decks (id, name, scope, slides, minutes, theme, shared, email_to, email_day, owner_id, created_at, updated_at, custom) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     id,
     name,
     input.scope,
@@ -400,6 +405,7 @@ export async function saveDeck(user: AppUser, input: { id?: string | null; name:
     user.id,
     now,
     now,
+    JSON.stringify(custom),
   );
   return id;
 }
@@ -451,10 +457,10 @@ export async function endMeeting(user: AppUser, input: { scope: string; deckId?:
 // Share links (a copy of the slides, read only, until a date)
 // ---------------------------------------------------------------------------
 
-export async function createShare(user: AppUser, input: { scope: string; name: string; slideKeys: string[]; days: number; theme?: Partial<DeckTheme> }) {
+export async function createShare(user: AppUser, input: { scope: string; name: string; slideKeys: string[]; days: number; theme?: Partial<DeckTheme>; custom?: Partial<Slide>[] }) {
   const rights = await scopeRights(user, input.scope);
   if (!rights.share) throw new WorkflowError("FORBIDDEN", "Only heads, leads and owners share a deck outside the app.");
-  const all_ = (await slidesFor(user, input.scope)).slides;
+  const all_ = [...(await slidesFor(user, input.scope)).slides, ...(input.custom ?? []).slice(0, 30).map(cleanCustomSlide).filter((s): s is Slide => !!s)];
   const slides = input.slideKeys.length ? input.slideKeys.map((k) => all_.find((s) => s.key === k)).filter((s): s is Slide => !!s) : all_;
   if (!slides.length) throw new WorkflowError("VALIDATION", "Choose at least one slide.");
   const days = Math.max(1, Math.min(90, Math.round(Number(input.days) || 7)));
