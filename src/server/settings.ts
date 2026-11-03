@@ -26,7 +26,7 @@ export type Settings = {
     timezone: string;
     weekStartsOn: number;
     codePrefix: string;
-    calendarDisplay: "gregorian" | "ethiopian";
+    calendarDisplay: "gregorian" | "ethiopian" | "both";
   };
   calendar: {
     workdays: number[];

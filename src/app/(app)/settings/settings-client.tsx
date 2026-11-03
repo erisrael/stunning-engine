@@ -83,12 +83,13 @@ export function WorkspaceSettings({ settings }: { settings: Settings }) {
           <Row label="Item code prefix" hint="Readable codes look like MY-G08-MATH-U02-L04. Existing codes never change.">
             <Input value={w.codePrefix} onChange={(e) => setW({ ...w, codePrefix: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "") })} className="w-32" />
           </Row>
-          <Row label="Calendar display" hint="Ethiopian calendar display is reserved for a later release; stored instants are unaffected.">
-            <Select value={w.calendarDisplay} onValueChange={(v) => setW({ ...w, calendarDisplay: v as "gregorian" })}>
+          <Row label="Calendar display" hint="How dates show for people who have not chosen for themselves (account menu, Language and calendar). Stored times are unaffected.">
+            <Select value={w.calendarDisplay} onValueChange={(v) => setW({ ...w, calendarDisplay: v as "gregorian" | "ethiopian" | "both" })}>
               <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="gregorian">Gregorian, 24-hour</SelectItem>
-                <SelectItem value="ethiopian" disabled>Ethiopian (planned)</SelectItem>
+                <SelectItem value="ethiopian">Ethiopian</SelectItem>
+                <SelectItem value="both">Both</SelectItem>
               </SelectContent>
             </Select>
           </Row>

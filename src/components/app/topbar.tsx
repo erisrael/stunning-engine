@@ -6,7 +6,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
 import { BellIcon, CheckCheckIcon, ClockIcon, FlagIcon, HelpCircleIcon, IdCardIcon, LogOutIcon, MessageSquareHeartIcon, MessageCircleIcon, MonitorIcon, MoonIcon, PaletteIcon,
-  TypeIcon, SearchIcon, SquareIcon, SunIcon, UserIcon } from "lucide-react";
+  TypeIcon,
+  LanguagesIcon, SearchIcon, SquareIcon, SunIcon, UserIcon } from "lucide-react";
 import { ACCENTS, FONTS, useAppearance } from "@/components/app/appearance";
 import { Button } from "@/components/ui/button";
 import { SidebarTrigger } from "@/components/ui/sidebar";
@@ -358,6 +359,26 @@ function UserMenu({ user }: { user: { name: string; email: string; avatar?: stri
             <DropdownMenuRadioGroup value={look.lite} onValueChange={(v) => setLook({ lite: v })}>
               <DropdownMenuRadioItem value="off">Normal</DropdownMenuRadioItem>
               <DropdownMenuRadioItem value="on">Light mode (no animations, fewer refreshes)</DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>
+            <LanguagesIcon /> Language and calendar
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent>
+            <DropdownMenuLabel className="text-xs text-muted-foreground">Language</DropdownMenuLabel>
+            <DropdownMenuRadioGroup value={look.lang} onValueChange={(v) => setLook({ lang: v })}>
+              <DropdownMenuRadioItem value="en">English</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="am">አማርኛ (Amharic)</DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="text-xs text-muted-foreground">Dates</DropdownMenuLabel>
+            <DropdownMenuRadioGroup value={look.calendar} onValueChange={(v) => setLook({ calendar: v })}>
+              <DropdownMenuRadioItem value="">As set for the workspace</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="gregorian">Gregorian (3 Nov 2026)</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="ethiopian">Ethiopian (ጥቅምት 24, 2019)</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="both">Both</DropdownMenuRadioItem>
             </DropdownMenuRadioGroup>
           </DropdownMenuSubContent>
         </DropdownMenuSub>

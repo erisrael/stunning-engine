@@ -837,10 +837,11 @@ Done in step 1: Admin, Sign-in has tabs Rules, Google, Microsoft, SSO, Sign-up, 
 
 - [ ] The Uploading card uploads to the Myseed App through its API (as for YouTube), filling in the ID and checking playback; Publication confirms live through the same API.
 
-### 16.4 Amharic and the Ethiopian calendar
+### 16.4 Amharic and the Ethiopian calendar (started)
 
-- [ ] The interface in Amharic and English (and Afaan Oromo later), chosen per person; every label, message and email from one set of translations.
-- [ ] Dates shown in the Ethiopian calendar as an option per person and per workspace (Settings already has the switch marked "planned"), in date pickers too; holidays and payroll months follow it where chosen.
+- [x] **Dates in the Ethiopian calendar**, per person (account menu, Language and calendar: Gregorian, Ethiopian or both) and per workspace (Settings, Calendar display, for people who have not chosen). Every date the pages show is converted ("ጥቅምት 24, 2019"), checked against known dates over 20 years (`src/lib/ethiopian.ts`). Ethiopian public holidays were already in Leave.
+- [x] **Amharic for the interface, first part**, per person (account menu): the sidebar, the top bar, page titles, tabs, common buttons, statuses and the assistant (about 180 labels in `src/lib/amharic.ts`; a label is shown in Amharic when its text has an entry, so more are added by adding lines).
+- [ ] Still open: every remaining label, message and email in Amharic (and Afaan Oromo later); date pickers that pick Ethiopian dates (they show Gregorian; the chosen date then shows in both); payroll months following the Ethiopian calendar.
 
 ### 16.5 Data protection for everyone's records (done)
 

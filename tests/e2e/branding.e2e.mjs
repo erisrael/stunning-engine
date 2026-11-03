@@ -111,6 +111,25 @@ try {
   const res = await other.request.get(`${base}/api/me/data`);
   const body = await res.json().catch(() => ({}));
   check("Download my data gives the person's own data", res.ok() && body.account?.email === "liya@demo.local" && !JSON.stringify(body).includes("password_hash"));
+
+  // Phase 16.4: Amharic labels and Ethiopian dates (as the account menu sets them).
+  await page.goto(`${base}/announcements`);
+  await page.evaluate(() => {
+    document.documentElement.dataset.lang = "am";
+    document.documentElement.dataset.calendar = "both";
+  });
+  await page.waitForTimeout(800);
+  check("the sidebar in Amharic", await visible(side.getByRole("link", { name: "መነሻ" })) && await visible(side.getByText("አስተዳደር")));
+  const mainText = await page.locator("main").first().innerText();
+  const month = ["መስከረም", "ጥቅምት", "ኅዳር", "ታኅሣሥ", "ጥር", "የካቲት", "መጋቢት", "ሚያዝያ", "ግንቦት", "ሰኔ", "ሐምሌ", "ነሐሴ", "ጳጉሜ"].some((m) => mainText.includes(m));
+  check("dates also in the Ethiopian calendar", month, mainText.slice(0, 300));
+  await page.screenshot({ path: path.join(shots, "5-amharic.png") });
+  await page.evaluate(() => {
+    document.documentElement.dataset.lang = "en";
+    document.documentElement.dataset.calendar = "gregorian";
+  });
+  await page.waitForTimeout(500);
+  check("and back to English", await visible(side.getByRole("link", { name: "Home", exact: true })));
 } catch (e) {
   check("ran without crashing", false, e?.stack ?? e);
 } finally {

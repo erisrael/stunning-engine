@@ -47,6 +47,8 @@ export async function savePrivacy(user: AppUser, input: { notice?: string; reten
     nowIso(),
     user.id,
   );
+  // Whoever wrote it has read it.
+  if (next.notice && next.version) await run("INSERT INTO privacy_acceptances (user_id, version, accepted_at) VALUES (?, ?, ?) ON CONFLICT (user_id, version) DO NOTHING", user.id, next.version, nowIso());
   await audit({ actor: user }, { action: "settings.privacy", summary: `${user.name} changed the privacy notice or retention (version ${next.version})` });
   return next.version;
 }
