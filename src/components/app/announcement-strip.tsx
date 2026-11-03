@@ -15,9 +15,26 @@ export function AnnouncementStrip({ pending }: { pending: Announcement[] }) {
   const router = useRouter();
   const pathname = usePathname();
   const [hidden, setHidden] = React.useState<string[]>([]);
+  // How long the page took: a full load from the browser's own timing, a move inside the app from the click.
   React.useEffect(() => {
-    void recordVisitAction(pathname);
+    const w = window as unknown as { __navStart?: number; __firstDone?: boolean };
+    let ms: number | null = null;
+    if (!w.__firstDone) {
+      w.__firstDone = true;
+      const nav = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
+      if (nav) ms = Math.round(performance.now() - nav.startTime);
+    } else if (w.__navStart && performance.now() - w.__navStart < 30000) ms = Math.round(performance.now() - w.__navStart);
+    w.__navStart = undefined;
+    void recordVisitAction(pathname, ms);
   }, [pathname]);
+  React.useEffect(() => {
+    const click = (e: MouseEvent) => {
+      const a = (e.target as Element | null)?.closest?.("a[href]") as HTMLAnchorElement | null;
+      if (a && a.origin === window.location.origin && a.pathname !== window.location.pathname) (window as unknown as { __navStart?: number }).__navStart = performance.now();
+    };
+    document.addEventListener("click", click, true);
+    return () => document.removeEventListener("click", click, true);
+  }, []);
   const list = pending.filter((a) => !hidden.includes(a.id));
   if (!list.length || pathname === "/announcements") return null;
   const a = list[0]!;

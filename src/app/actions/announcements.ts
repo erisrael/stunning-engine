@@ -20,10 +20,11 @@ export async function announcementStatusAction(id: string) {
 export async function remindAnnouncementAction(id: string) {
   return wrap(async () => an.remindAnnouncement(await requireViewer(), id), { revalidate: false });
 }
-export async function recordVisitAction(path: string) {
+export async function recordVisitAction(path: string, ms?: number | null) {
   return wrap(async () => {
     const v = await requireViewer();
     if (v.previewBy) return;
     await an.recordVisit(v.id, v.activeRole, String(path).slice(0, 300));
+    if (typeof ms === "number") await an.recordTiming(String(path).slice(0, 300), ms);
   }, { revalidate: false });
 }

@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 42;
+export const SCHEMA_VERSION = 43;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -2170,6 +2170,17 @@ CREATE TABLE IF NOT EXISTS mail_state (
   error TEXT
 );
 
+-- v43: how long pages take to open, per section and day (Admin, Usage: slowest pages).
+CREATE TABLE IF NOT EXISTS page_timings (
+  day TEXT NOT NULL,
+  section TEXT NOT NULL,
+  samples INTEGER NOT NULL DEFAULT 0,
+  total_ms DOUBLE PRECISION NOT NULL DEFAULT 0,
+  slow INTEGER NOT NULL DEFAULT 0,
+  max_ms DOUBLE PRECISION NOT NULL DEFAULT 0,
+  PRIMARY KEY (day, section)
+);
+
 -- v42: passkeys (fingerprint, face or a security key, WebAuthn) as a second step at sign-in.
 CREATE TABLE IF NOT EXISTS user_passkeys (
   id TEXT PRIMARY KEY,
@@ -2860,6 +2871,7 @@ export const TABLES = [
   "okr_key_results",
   "okr_checkins",
   "user_passkeys",
+  "page_timings",
   "pres_decks",
   "pres_shares",
   "sup_apps",

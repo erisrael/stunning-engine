@@ -52,6 +52,40 @@ export function UsageAdmin({ report, roleLabel }: { report: UsageReport; roleLab
           </div>
         </CardContent>
       </Card>
+      <Card data-slow-pages>
+        <CardHeader>
+          <CardTitle className="text-base">Slowest pages</CardTitle>
+          <CardDescription>How long each section takes to open, on average, and how often it takes more than 2 seconds (as people use it).</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {report.timings.length ? (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-muted-foreground">
+                  <th className="py-1">Section</th>
+                  <th>Average</th>
+                  <th>Over 2 s</th>
+                  <th>Slowest</th>
+                  <th>Opened</th>
+                </tr>
+              </thead>
+              <tbody>
+                {report.timings.map((t) => (
+                  <tr key={t.section} className="border-t">
+                    <td className="py-1">{t.section}</td>
+                    <td className={t.avgMs > 2000 ? "text-[#D93025]" : t.avgMs > 1000 ? "text-[#B06000]" : ""}>{(t.avgMs / 1000).toFixed(1)} s</td>
+                    <td>{t.slowPct}%</td>
+                    <td>{(t.maxMs / 1000).toFixed(1)} s</td>
+                    <td>{t.samples}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <p className="text-sm text-muted-foreground">No timings yet.</p>
+          )}
+        </CardContent>
+      </Card>
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Not signed in for 14 days or more</CardTitle>

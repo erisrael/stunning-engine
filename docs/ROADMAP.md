@@ -820,7 +820,7 @@ Done in step 1: Admin, Sign-in has tabs Rules, Google, Microsoft, SSO, Sign-up, 
 - [x] Alerts to Admin on new errors, failed backups and failing jobs: the bell always, email and Telegram (free bot) when set up; a test button.
 - [x] Uptime: `/api/health` for any checker; the GitHub schedule checks it every 10 minutes and GitHub emails when it fails.
 - [x] Admin, System, Health: database, scheduled jobs, backups, errors, email, file storage, Google, encryption key, outside schedule, server memory.
-- [ ] Slow pages: timing per page (with Phase 18's speed work).
+- [x] Slow pages: how long each section takes to open as people use it (a full load from the browser's timing, a move inside the app from the click), shown in Admin, Usage as the slowest pages with their average, share over 2 seconds and slowest time; only the section and the time are kept (`page_timings`, schema 43).
 
 ## Phase 16: Myseed's own needs
 

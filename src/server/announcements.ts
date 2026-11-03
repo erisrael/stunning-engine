@@ -180,6 +180,23 @@ export async function recordVisit(userId: string, role: string, path: string) {
   );
 }
 
+// How long a page took to open (from the click or the address to the page showing), per section. Over 2 seconds
+// counts as slow. Only the section and the time are kept.
+export async function recordTiming(path: string, ms: number) {
+  if (!Number.isFinite(ms) || ms <= 0 || ms > 120000) return;
+  const day = nowIso().slice(0, 10);
+  await run(
+    `INSERT INTO page_timings (day, section, samples, total_ms, slow, max_ms) VALUES (?, ?, 1, ?, ?, ?)
+     ON CONFLICT (day, section) DO UPDATE SET samples = page_timings.samples + 1, total_ms = page_timings.total_ms + excluded.total_ms,
+       slow = page_timings.slow + excluded.slow, max_ms = GREATEST(page_timings.max_ms, excluded.max_ms)`,
+    day,
+    sectionOf(path).slice(0, 80),
+    Math.round(ms),
+    ms > 2000 ? 1 : 0,
+    Math.round(ms),
+  );
+}
+
 export async function usageReport(user: AppUser, days = 30) {
   if (!can(user, "users.manage")) throw new WorkflowError("FORBIDDEN", "Only Admin sees this.");
   const since = new Date(Date.now() - days * 864e5).toISOString().slice(0, 10);
@@ -199,6 +216,15 @@ export async function usageReport(user: AppUser, days = 30) {
     "SELECT id, name, last_login_at FROM users WHERE active = 1 AND deleted_at IS NULL AND (last_login_at IS NULL OR last_login_at < ?) ORDER BY last_login_at NULLS FIRST, name LIMIT 100",
     new Date(Date.now() - 14 * 864e5).toISOString(),
   );
-  return { days, sections: sum((r) => r.section).slice(0, 40), roles: sum((r) => r.role), daily: sum((r) => r.day).sort((x, y) => x.key.localeCompare(y.key)), quiet };
+  const timings = (
+    await all<{ section: string; samples: number; total: number; slow: number; max: number }>(
+      "SELECT section, SUM(samples) AS samples, SUM(total_ms) AS total, SUM(slow) AS slow, MAX(max_ms) AS max FROM page_timings WHERE day >= ? GROUP BY section",
+      since,
+    )
+  )
+    .map((t) => ({ section: t.section, samples: Number(t.samples), avgMs: Math.round(Number(t.total) / Math.max(1, Number(t.samples))), slowPct: Math.round((Number(t.slow) / Math.max(1, Number(t.samples))) * 100), maxMs: Number(t.max) }))
+    .sort((a, b) => b.avgMs - a.avgMs)
+    .slice(0, 20);
+  return { days, sections: sum((r) => r.section).slice(0, 40), roles: sum((r) => r.role), daily: sum((r) => r.day).sort((x, y) => x.key.localeCompare(y.key)), quiet, timings };
 }
 export type UsageReport = Awaited<ReturnType<typeof usageReport>>;

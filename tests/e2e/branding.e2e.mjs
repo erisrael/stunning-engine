@@ -95,6 +95,7 @@ try {
   check("the author sees who confirmed", /^1 of \d+ confirmed/.test(await page.locator("[data-announcement-status]").innerText()), await page.locator("[data-announcement-status]").innerText().catch(() => ""));
   await page.goto(`${base}/admin?tab=usage`);
   check("Admin, Usage shows visits", await visible(page.locator("[data-usage-admin]")) && !/No visits recorded/.test(await page.locator("[data-usage-admin]").innerText()));
+  check("and how long pages take to open", await visible(page.locator("[data-slow-pages] table")));
 
   // Phase 16.5: the privacy notice, accepted before anything else; Download my data.
   await page.goto(`${base}/admin?tab=privacy`);

@@ -66,6 +66,12 @@ async function main() {
   check("visits counted by section and role", u.sections.find((s) => s.key === "/dev/list")?.visits === 2 && u.roles.some((r) => r.key === "marketing"), u.sections);
   check("people not signed in are listed", u.quiet.some((p) => p.id === mkt.id));
   check("only Admin sees usage", !!(await throws(() => an.usageReport(dev))));
+  await an.recordTiming("/dev/list", 800);
+  await an.recordTiming("/dev/list", 3200);
+  await an.recordTiming("/hr", 400);
+  const t = (await an.usageReport(admin)).timings;
+  const dl = t.find((x) => x.section === "/dev/list");
+  check("page timings: average, share over 2 seconds, slowest first", dl?.avgMs === 2000 && dl.slowPct === 50 && dl.maxMs === 3200 && t[0]!.section === "/dev/list", t);
 
   console.log(`\n${pass} passed, ${fail} failed`);
   if (fail) process.exitCode = 1;
