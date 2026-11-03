@@ -10,6 +10,7 @@ import { ChevronRightIcon, CopyIcon, DownloadIcon, FileIcon, FileTextIcon, FileU
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import * as A from "@/app/actions/departments";
+import { docToNotionAction, notionToDocAction } from "@/app/actions/connect";
 import type { Library } from "@/server/dev-library";
 import { deptViewPath } from "@/lib/work";
 import { cn } from "@/lib/utils";
@@ -164,6 +165,22 @@ export function DocLibrary({ dept }: { dept: string }) {
             <Button size="sm" variant="outline" disabled={busy} onClick={() => imp.current?.click()}>
               <FileUpIcon /> Import Word or Markdown
             </Button>
+            {lib.notion && (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busy}
+                onClick={async () => {
+                  const page = window.prompt("Link of the Notion page to bring in (shared with the integration)");
+                  if (!page) return;
+                  const id = await doIt(() => notionToDocAction(dept, { page, folderId }), "Brought in from Notion");
+                  if (typeof id === "string") openDoc(id);
+                }}
+                data-from-notion
+              >
+                From Notion
+              </Button>
+            )}
             {lib.folder && (
               <Button size="sm" variant="ghost" onClick={() => window.confirm(`Remove the folder "${lib.folder!.name}"? What is in it moves up.`) && void doIt(() => A.deleteFolderAction(dept, lib.folder!.id), "Folder removed").then(() => go(lib.folder!.parentId))}>
                 <Trash2Icon /> Remove this folder
@@ -241,6 +258,19 @@ export function DocLibrary({ dept }: { dept: string }) {
                       <DownloadIcon />
                     </a>
                   </Button>
+                  {lib.notion && (
+                    <Button
+                      size="xs"
+                      variant="ghost"
+                      aria-label={`Send ${d.title} to Notion`}
+                      onClick={async () => {
+                        const r = await doIt(() => docToNotionAction(dept, d.id));
+                        if (r && typeof r === "object" && "url" in r) toast.success("Sent to Notion", { action: { label: "Open", onClick: () => window.open(String((r as { url: string }).url), "_blank") } });
+                      }}
+                    >
+                      Notion
+                    </Button>
+                  )}
                   {lib.canWrite && (
                     <>
                       <Button size="icon" variant="ghost" className="size-7" aria-label={`Duplicate ${d.title}`} onClick={() => doIt(() => A.duplicateDocAction(dept, d.id), "Copied")}>

@@ -1120,3 +1120,19 @@ Built: `src/lib/strategy.ts`, `src/server/strategy.ts`, `src/server/strategy-doc
 - [x] **Export**: a real Word file (.docx with headings, lists, tables, bold and code), Markdown or HTML, from the list or the editor.
 
 Built: `src/server/dev-library.ts`, `src/components/app/doc-library.tsx`, `src/app/api/dept-library/[id]`, `src/app/api/dept-docs/[id]` (schema 49). Tests: `tests/server/library.test.ts`, `tests/e2e/library.e2e.mjs`.
+
+## Phase 27: Integrations: Office, Power BI, Notion, and any platform by its API (done)
+
+- [x] **Microsoft Office**: any dataset downloads as an Excel workbook (a formatted table with filters), a Word document or a PowerPoint deck, in Myseed's colours. Documents, strategy reports and presentations already export to Word and PowerPoint from their own pages.
+- [x] **Power BI, live Excel and Google Sheets**: each new feed key gives a Power BI data source file (.pbids, opens Power BI Desktop on the feed), the Excel Power Query, and a Google Sheets IMPORTDATA formula.
+- [x] **Notion**: Admin connects an internal integration and a page. Library documents go to Notion as pages (headings, lists, code, quotes) and Notion pages come back as documents; datasets go to Notion as databases.
+- [x] **Integrate a platform** (no code, no AI):
+  - give the address of a provider's API documentation, its OpenAPI or Swagger file (JSON or YAML), or paste it;
+  - the app finds the spec from the page (Swagger UI, Redoc, the usual addresses) or reads the page's curl examples;
+  - it chooses the operation that fits (send an SMS, send an email, start a payment), matches its fields to the app's, and sets up the sign-in (API key, bearer, basic or OAuth client credentials);
+  - Admin reviews it, adds the keys (kept sealed), sends a real test, and switches it on.
+  - Ready presets: AfroMessage, Africa's Talking, Twilio, SendGrid, Brevo, Mailgun, Chapa, Paystack, Stripe.
+  - Once on: the app sends SMS, the app's own email can go through an email provider instead of SMTP, and Finance and Admin can make payment links.
+  - Every call is logged without secrets or message text.
+
+Built: `src/server/connectors.ts`, `src/lib/connector-match.ts`, `src/server/notion.ts`, `src/server/office.ts`, `src/app/api/office/[dataset]`, `src/components/app/integrations-hub.tsx`, `src/app/actions/connect.ts` (schema 50). Tests: `tests/server/integrations.test.ts`, `tests/e2e/integrations.e2e.mjs`.

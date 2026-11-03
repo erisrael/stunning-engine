@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 49;
+export const SCHEMA_VERSION = 50;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -2174,6 +2174,36 @@ CREATE TABLE IF NOT EXISTS mail_state (
   error TEXT
 );
 
+-- v50: platforms connected by their API (SMS, email, payments, webhooks...), and every call made to them.
+CREATE TABLE IF NOT EXISTS int_connectors (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  capability TEXT NOT NULL,
+  draft TEXT NOT NULL,
+  operations TEXT NOT NULL DEFAULT '[]',
+  secrets TEXT,
+  status TEXT NOT NULL DEFAULT 'draft',
+  is_default INTEGER NOT NULL DEFAULT 0,
+  use_for_system INTEGER NOT NULL DEFAULT 0,
+  last_test TEXT,
+  created_by TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS int_calls (
+  id TEXT PRIMARY KEY,
+  connector_id TEXT REFERENCES int_connectors(id) ON DELETE CASCADE,
+  capability TEXT NOT NULL,
+  ok INTEGER NOT NULL,
+  status INTEGER NOT NULL DEFAULT 0,
+  ms INTEGER NOT NULL DEFAULT 0,
+  summary TEXT NOT NULL,
+  error TEXT,
+  test INTEGER NOT NULL DEFAULT 0,
+  at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_int_calls ON int_calls(at);
+
 -- v49: the department document library: folders, files in them, and documents pinned by each person.
 CREATE TABLE IF NOT EXISTS dept_folders (
   id TEXT PRIMARY KEY,
@@ -3101,6 +3131,7 @@ export const TABLES = [
   "dept_folders",
   "dept_folder_files",
   "dept_doc_pins",
+  "int_connectors",
   "ai_agent_log",
   "dept_task_moves",
   "pres_decks",

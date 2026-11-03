@@ -252,6 +252,23 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
                 datasets={Object.fromEntries(Object.entries(DATASETS).map(([k, v]) => [k, v.label])) as Record<Dataset, string>}
                 origin={`${(await headers()).get("x-forwarded-proto") ?? "https"}://${(await headers()).get("host") ?? "localhost"}`}
               />
+              {tab === "integrations" &&
+                (await (async () => {
+                  const C = await import("@/server/connectors");
+                  const { notionStatus } = await import("@/server/notion");
+                  const { IntegrationsHub } = await import("@/components/app/integrations-hub");
+                  return (
+                    <div className="mt-4">
+                      <IntegrationsHub
+                        datasets={Object.entries(DATASETS).map(([k, v]) => ({ key: k, label: v.label }))}
+                        notion={await notionStatus()}
+                        connectors={await C.listConnectors(viewer)}
+                        presets={C.PRESETS.map((x) => ({ key: x.key, name: x.name, capability: x.capability, region: x.region, docsUrl: x.docsUrl ?? null, secrets: x.secrets }))}
+                        calls={await C.callLog(viewer, 40)}
+                      />
+                    </div>
+                  );
+                })())}
             </TabsContent>
           </>
         )}

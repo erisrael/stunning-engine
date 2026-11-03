@@ -136,6 +136,33 @@ export function IntegrationsAdmin({ tokens, datasets, origin }: { tokens: ApiTok
                       <CopyIcon />
                     </Button>
                   </div>
+                  <div className="flex flex-wrap gap-1 text-[11px]" data-feed-tools={d}>
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      onClick={() => {
+                        // A Power BI data source file: opens Power BI Desktop with this feed as a Web source.
+                        const pbids = { version: "0.1", connections: [{ details: { protocol: "http", address: { url: url(d, fresh, "csv") } }, options: {}, mode: "Import" }] };
+                        const a = document.createElement("a");
+                        a.href = URL.createObjectURL(new Blob([JSON.stringify(pbids, null, 2)], { type: "application/json" }));
+                        a.download = `${d}.pbids`;
+                        a.click();
+                        URL.revokeObjectURL(a.href);
+                      }}
+                    >
+                      Power BI file (.pbids)
+                    </Button>
+                    <Button size="xs" variant="outline" onClick={() => copy(`let
+    Source = Csv.Document(Web.Contents("${url(d, fresh, "csv")}"), [Delimiter = ",", Encoding = 65001, QuoteStyle = QuoteStyle.Csv]),
+    Table = Table.PromoteHeaders(Source, [PromoteAllScalars = true])
+in
+    Table`)}>
+                      Excel Power Query
+                    </Button>
+                    <Button size="xs" variant="outline" onClick={() => copy(`=IMPORTDATA("${url(d, fresh, "csv")}")`)}>
+                      Google Sheets formula
+                    </Button>
+                  </div>
                 </div>
               ))}
             </div>

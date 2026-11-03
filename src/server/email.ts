@@ -854,6 +854,13 @@ export async function resendFailed(user: AppUser, id: string, workspace: string)
 
 // A message from the workspace itself (password reset links), through the default account or web API.
 export async function sendSystemEmail(to: string, subject: string, text: string, html?: string) {
+  // A provider connected by its API (Admin, Integrations) and chosen for the app's own email goes first.
+  const { emailConnectorForSystem, sendEmailViaConnector } = await import("./connectors");
+  const c = await emailConnectorForSystem().catch(() => null);
+  if (c) {
+    const s = await smtpSettings().catch(() => null);
+    return sendEmailViaConnector(c, { to, subject, text, html, from: s?.fromAddress || "no-reply@myseed.local", fromName: s?.fromName || "Myseed" });
+  }
   const t = await transportFor(null);
   try {
     await t.transporter.sendMail({ from: { name: t.fromName, address: t.fromAddress }, to, subject, text, html, replyTo: t.replyTo || undefined });

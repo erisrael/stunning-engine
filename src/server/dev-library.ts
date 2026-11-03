@@ -57,6 +57,7 @@ export async function library(user: AppUser, d: string, folderId: string | null)
     pins: pins.map((p) => ({ id: p.id, title: p.title })),
     recent: recent.map((r) => ({ id: r.id, title: r.title, updatedAt: r.updated_at })),
     canWrite: !a.readOnly,
+    notion: (await (await import("./notion")).notionStatus()).connected,
   };
 }
 export type Library = Awaited<ReturnType<typeof library>>;
