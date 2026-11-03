@@ -107,6 +107,17 @@ export function Topbar({ user, activeRole, unread, chatUnread }: { user: { name:
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+  // The installed app (Phase 5b): the offline page and notifications need the service worker; the app's icon shows
+  // the number of unread notifications and messages (where the system supports badges).
+  React.useEffect(() => {
+    if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) void navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => {});
+  }, []);
+  React.useEffect(() => {
+    const n = count + chat;
+    const nav = navigator as Navigator & { setAppBadge?: (n?: number) => Promise<void>; clearAppBadge?: () => Promise<void> };
+    if (n > 0) void nav.setAppBadge?.(n).catch(() => {});
+    else void nav.clearAppBadge?.().catch(() => {});
+  }, [count, chat]);
   // Light polling keeps the bell current without a refresh; it never creates notifications.
   React.useEffect(() => {
     const id = window.setInterval(async () => {

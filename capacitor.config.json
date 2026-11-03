@@ -1,0 +1,18 @@
+{
+  "appId": "et.myseed.app",
+  "appName": "Myseed",
+  "webDir": "public",
+  "server": {
+    "url": "https://app.myseed.com.et",
+    "cleartext": false,
+    "errorPath": "offline.html"
+  },
+  "android": {
+    "allowMixedContent": false
+  },
+  "plugins": {
+    "PushNotifications": {
+      "presentationOptions": ["badge", "sound", "alert"]
+    }
+  }
+}

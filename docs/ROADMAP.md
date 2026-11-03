@@ -83,7 +83,9 @@ In-app voice and video calls with ringing on the other side and a clear end, bui
 - [x] Group calls of up to 4 people in the app (Phase 10)
 - [ ] Continuous ringing on a locked phone: comes with the native app (Phase 5b)
 
-## Phase 5b: Native app shell (built last, after every other phase)
+## Phase 5b: Native app shell (web part done; native builds to do on a machine with Android Studio and Xcode)
+
+Done: installable with shortcuts (Check in, Chat, Email, Announcements), an offline page in English and Amharic instead of the browser's error, the unread count on the app's icon, the service worker for everyone, and `capacitor.config.json` ready for the native shell. The steps for the native Android and iPhone shells (Firebase and ConnectionService on Android, PushKit and CallKit on iPhone) are in [APP-SHELL.md](APP-SHELL.md).
 
 The same app inside a small native app for Android and iPhone, so calls ring like a phone call and notifications are reliable. The pages stay the web app; nothing is built twice.
 
@@ -851,6 +853,8 @@ Done in step 1: Admin, Sign-in has tabs Rules, Google, Microsoft, SSO, Sign-up, 
 - [x] An access log of who opened someone else's HR record or payslip (one line per person and record each hour), for HR managers and Admin (Admin, Privacy).
 
 ## Phase 17: Performance management: KRAs, KPIs and OKRs
+
+The detailed plan (data model, the measure catalogue from the app's own data, scoring, screens, permissions, the decisions to make first and the order of work) is in [PHASE-17-PLAN.md](PHASE-17-PLAN.md).
 
 One system for "what each person and team is responsible for, how it is measured, and what we are trying to achieve this quarter", fed by the work already in the app, so most numbers fill themselves in. Everything is configurable by HR and Admin, with department heads setting their own within the rules.
 

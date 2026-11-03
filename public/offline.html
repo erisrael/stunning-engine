@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Offline - Myseed</title>
+    <style>
+      :root { color-scheme: light dark; --bg: #ffffff; --fg: #1e1f21; --muted: #5f6368; --primary: #0b7a3b; }
+      @media (prefers-color-scheme: dark) { :root { --bg: #1e1f21; --fg: #f1f3f4; --muted: #bdc1c6; --primary: #81c995; } }
+      html, body { height: 100%; margin: 0; }
+      body { background: var(--bg); color: var(--fg); font-family: system-ui, -apple-system, "Segoe UI", "Noto Sans Ethiopic", sans-serif; display: flex; align-items: center; justify-content: center; padding: 16px; box-sizing: border-box; }
+      main { max-width: 26rem; text-align: center; }
+      h1 { font-size: 1.25rem; margin: 16px 0 8px; }
+      p { color: var(--muted); line-height: 1.5; margin: 0 0 16px; }
+      button { background: var(--primary); color: #fff; border: 0; border-radius: 10px; padding: 10px 18px; font-size: 1rem; cursor: pointer; }
+      img { width: 56px; height: 56px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <img src="/brand/myseed-logo.svg" alt="" />
+      <h1>No connection</h1>
+      <p>Myseed needs the internet. Check your Wi-Fi or mobile data; this page tries again by itself.</p>
+      <p lang="am">ኢንተርኔት የለም። ዋይፋይ ወይም የሞባይል ዳታ ያረጋግጡ፤ ገጹ በራሱ እንደገና ይሞክራል።</p>
+      <button type="button" onclick="location.reload()">Try again</button>
+    </main>
+    <script>
+      window.addEventListener("online", () => location.reload());
+      setInterval(() => navigator.onLine && fetch("/api/health", { cache: "no-store" }).then((r) => r.ok && location.reload()).catch(() => {}), 10000);
+    </script>
+  </body>
+</html>

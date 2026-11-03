@@ -1,7 +1,25 @@
 // Service worker: shows push notifications and opens the right page when one is tapped. Incoming calls show a
 // notification that stays until answered, declined or replaced by "Missed call" (same tag).
-self.addEventListener("install", () => self.skipWaiting());
-self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));
+// Also keeps a small offline page, shown when a page cannot be opened because there is no network (Phase 5b).
+const OFFLINE = "myseed-offline-v1";
+self.addEventListener("install", (event) => {
+  event.waitUntil(caches.open(OFFLINE).then((c) => c.addAll(["/offline.html", "/brand/myseed-logo.svg"])).catch(() => {}));
+  self.skipWaiting();
+});
+self.addEventListener("activate", (event) =>
+  event.waitUntil(
+    caches
+      .keys()
+      .then((keys) => Promise.all(keys.filter((k) => k.startsWith("myseed-offline-") && k !== OFFLINE).map((k) => caches.delete(k))))
+      .then(() => self.clients.claim()),
+  ),
+);
+// Only page loads: when the network fails, the offline page shows instead of the browser's error. Nothing else is
+// cached, so people always see current data.
+self.addEventListener("fetch", (event) => {
+  if (event.request.mode !== "navigate") return;
+  event.respondWith(fetch(event.request).catch(() => caches.match("/offline.html")));
+});
 
 self.addEventListener("push", (event) => {
   let data = {};
