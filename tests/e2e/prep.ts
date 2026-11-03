@@ -169,6 +169,15 @@ const PREPS: Record<string, () => Promise<unknown>> = {
     await run("INSERT INTO department_positions (department, user_id, position) VALUES ('dev', ?, 'lead') ON CONFLICT DO NOTHING", leul);
     await syncFromUsers(await admin());
   },
+  // Performance: HR records for everyone; Dawit (recording) reports to Hana (recording lead).
+  async performance() {
+    await passwordOnly();
+    const a = await admin();
+    await syncFromUsers(a);
+    const emp = async (email: string) => (await get<{ id: string }>("SELECT e.id FROM employees e JOIN users u ON u.id = e.user_id WHERE u.email = ?", email))!.id;
+    await run("UPDATE employees SET manager_id = ? WHERE id = ?", await emp("hana@demo.local"), await emp("dawit@demo.local"));
+    return {};
+  },
   // Customer support on: Liya leads, Sara answers the App queue, an app without signed customers.
   async support() {
     await passwordOnly();

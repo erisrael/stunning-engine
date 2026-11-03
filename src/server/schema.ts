@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 39;
+export const SCHEMA_VERSION = 40;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -2168,6 +2168,126 @@ CREATE TABLE IF NOT EXISTS mail_state (
   error TEXT
 );
 
+-- v40: performance management (Phase 17): the KPI library, KRA templates per role and position, targets per
+-- person, values (computed, typed or corrected), monthly periods and frozen scorecards; OKR cycles, objectives,
+-- key results and check-ins.
+CREATE TABLE IF NOT EXISTS perf_kpis (
+  id TEXT PRIMARY KEY,
+  key TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  description TEXT,
+  unit TEXT NOT NULL DEFAULT 'count',
+  direction TEXT NOT NULL DEFAULT 'up',
+  source TEXT NOT NULL DEFAULT 'measure',
+  measure TEXT,
+  scoring TEXT NOT NULL DEFAULT 'percent',
+  bands TEXT NOT NULL DEFAULT '{}',
+  min_sample INTEGER NOT NULL DEFAULT 0,
+  quality INTEGER NOT NULL DEFAULT 0,
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS perf_templates (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  applies_to TEXT NOT NULL DEFAULT '[]',
+  kras TEXT NOT NULL DEFAULT '[]',
+  active INTEGER NOT NULL DEFAULT 1,
+  version INTEGER NOT NULL DEFAULT 1,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS perf_targets (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kpi_key TEXT NOT NULL,
+  period TEXT NOT NULL,
+  target DOUBLE PRECISION NOT NULL,
+  reason TEXT,
+  status TEXT NOT NULL DEFAULT 'approved',
+  set_by TEXT,
+  decided_by TEXT,
+  created_at TEXT NOT NULL,
+  UNIQUE (user_id, kpi_key, period)
+);
+CREATE TABLE IF NOT EXISTS perf_values (
+  id TEXT PRIMARY KEY,
+  subject TEXT NOT NULL,
+  kpi_key TEXT NOT NULL,
+  period TEXT NOT NULL,
+  value DOUBLE PRECISION NOT NULL,
+  sample INTEGER,
+  source TEXT NOT NULL DEFAULT 'manual',
+  note TEXT,
+  status TEXT NOT NULL DEFAULT 'approved',
+  entered_by TEXT,
+  decided_by TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_perf_values ON perf_values(subject, period);
+CREATE TABLE IF NOT EXISTS perf_periods (
+  period TEXT PRIMARY KEY,
+  status TEXT NOT NULL DEFAULT 'open',
+  closed_at TEXT,
+  closed_by TEXT
+);
+CREATE TABLE IF NOT EXISTS perf_scorecards (
+  subject TEXT NOT NULL,
+  period TEXT NOT NULL,
+  score DOUBLE PRECISION,
+  rating TEXT,
+  detail TEXT NOT NULL DEFAULT '{}',
+  computed_at TEXT NOT NULL,
+  frozen INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (subject, period)
+);
+CREATE TABLE IF NOT EXISTS okr_cycles (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  start_date TEXT NOT NULL,
+  end_date TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'open',
+  max_objectives INTEGER NOT NULL DEFAULT 5,
+  max_krs INTEGER NOT NULL DEFAULT 5,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS okr_objectives (
+  id TEXT PRIMARY KEY,
+  cycle_id TEXT NOT NULL REFERENCES okr_cycles(id) ON DELETE CASCADE,
+  level TEXT NOT NULL,
+  scope TEXT,
+  owner_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+  title TEXT NOT NULL,
+  parent_id TEXT,
+  visibility TEXT NOT NULL DEFAULT 'everyone',
+  score DOUBLE PRECISION,
+  reflection TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_okr_objectives ON okr_objectives(cycle_id);
+CREATE TABLE IF NOT EXISTS okr_key_results (
+  id TEXT PRIMARY KEY,
+  objective_id TEXT NOT NULL REFERENCES okr_objectives(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'number',
+  start_value DOUBLE PRECISION NOT NULL DEFAULT 0,
+  target DOUBLE PRECISION NOT NULL DEFAULT 1,
+  current DOUBLE PRECISION NOT NULL DEFAULT 0,
+  unit TEXT,
+  kpi_key TEXT,
+  confidence TEXT,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS okr_checkins (
+  id TEXT PRIMARY KEY,
+  kr_id TEXT NOT NULL REFERENCES okr_key_results(id) ON DELETE CASCADE,
+  value DOUBLE PRECISION NOT NULL,
+  confidence TEXT NOT NULL,
+  note TEXT,
+  by_id TEXT,
+  at TEXT NOT NULL
+);
+ALTER TABLE dept_tasks ADD COLUMN IF NOT EXISTS key_result_id TEXT;
+
 -- v39: presentation studio: decks saved for a team, and read-only share links with a copy of the slides.
 CREATE TABLE IF NOT EXISTS pres_decks (
   id TEXT PRIMARY KEY,
@@ -2689,6 +2809,16 @@ export const TABLES = [
   "presenter_releases",
   "presenter_statements",
   "link_checks",
+  "perf_kpis",
+  "perf_templates",
+  "perf_targets",
+  "perf_values",
+  "perf_periods",
+  "perf_scorecards",
+  "okr_cycles",
+  "okr_objectives",
+  "okr_key_results",
+  "okr_checkins",
   "pres_decks",
   "pres_shares",
   "sup_apps",

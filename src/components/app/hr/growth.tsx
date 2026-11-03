@@ -88,6 +88,7 @@ export type Growth = {
     canLead: boolean;
     selfDue: string | null;
     leadDue: string | null;
+    scorecards?: { period: string; score: number | null; rating: string | null }[];
   }[];
   trainings: { id: string; title: string; status: string; dueDate: string | null; completedOn: string | null; expiresOn: string | null; mandatory: boolean }[];
 };
@@ -197,6 +198,11 @@ export function GrowthSection({ employeeId, growth }: { employeeId: string; grow
                   </p>
                 )}
                 <EvidenceLine e={r.evidence} />
+                {!!r.scorecards?.length && (
+                  <p className="text-xs text-muted-foreground" data-review-scorecards>
+                    Scorecards: {r.scorecards.map((c) => `${c.period} ${c.score ?? "-"}${c.rating ? ` (${c.rating})` : ""}`).join(" · ")}
+                  </p>
+                )}
               </div>
             ))}
           </section>

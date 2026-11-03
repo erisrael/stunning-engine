@@ -297,6 +297,9 @@ export async function companySlides(user: AppUser): Promise<{ title: string; sli
       });
   }
 
+  // Scorecards and objectives (Phase 17).
+  slides.push(...(await (await import("./performance")).companyPerformanceSlides(user).catch(() => [])));
+
   if (!slides.length) slides.push({ key: "empty", group: "Company", title: ws.name, body: { kind: "text", text: "Nothing to show yet." }, say: "There are no numbers to show yet." });
   return { title: ws.name, slides };
 }

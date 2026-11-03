@@ -126,6 +126,7 @@ export const JOB_LABELS: Record<string, string> = {
   "attendance-rules": "Attendance rules warnings",
   recognition: "Monthly badges",
   "deck-emails": "Presentation summaries by email",
+  performance: "Scorecards, OKR reminders and periods",
   support: "Customer support targets and assignment",
   "chat-retention": "Chat retention",
   retention: "Retention schedule (Admin, Privacy)",

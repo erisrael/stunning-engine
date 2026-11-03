@@ -86,6 +86,11 @@ export async function growthFor(user: AppUser, employeeId: string) {
     "SELECT t.id, c.title, t.status, t.due_date, t.completed_on, t.expires_on, c.mandatory FROM trainings t JOIN courses c ON c.id = t.course_id WHERE t.employee_id = ? ORDER BY t.status, t.due_date NULLS LAST",
     employeeId,
   );
+  // Phase 17: the months' scorecards in each review's period, as evidence beside the rating (they do not set it).
+  const empUser = (await get<{ user_id: string | null }>("SELECT user_id FROM employees WHERE id = ?", employeeId))?.user_id ?? null;
+  const { scorecardEvidence } = await import("./performance");
+  const cards = new Map<string, { period: string; score: number | null; rating: string | null }[]>();
+  for (const r of reviews) cards.set(r.id, empUser ? await scorecardEvidence(empUser, r.period_start, r.period_end) : []);
   return {
     relation: rel,
     goals: goals.map((g) => ({ id: g.id, title: g.title, detail: g.detail, dueDate: g.due_date, progress: n(g.progress), status: g.status, createdAt: g.created_at })),
@@ -105,6 +110,7 @@ export async function growthFor(user: AppUser, employeeId: string) {
       canLead: r.status === "lead" && (r.reviewer_user_id === user.id || rel === "hr"),
       selfDue: r.self_due,
       leadDue: r.lead_due,
+      scorecards: cards.get(r.id) ?? [],
     })),
     trainings: trainings.map((t) => ({ id: t.id, title: t.title, status: t.status, dueDate: t.due_date, completedOn: t.completed_on, expiresOn: t.expires_on, mandatory: !!t.mandatory })),
   };

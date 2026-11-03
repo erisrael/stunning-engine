@@ -85,6 +85,8 @@ export const CAPABILITIES = [
   { key: "hr.cases", label: "Confidential disciplinary and grievance cases", group: "HR" },
   { key: "attendance.manage", label: "Attendance for everyone: shifts, breaks and rules, badges and PINs, reviewing manual entries, flagged check-ins and corrections, reports", group: "HR" },
   { key: "attendance.capture", label: "Attendance capture setup: how people check in (QR posters, office networks, kiosks, phones)", group: "HR" },
+  { key: "perf.library", label: "Performance: the KPI library, KRA templates, periods, corrections and calibration", group: "HR" },
+  { key: "perf.view_company", label: "Performance: every department's and person's scorecard", group: "HR" },
   { key: "finance.access", label: "Finance section: record bills, invoices, payments, claims and purchases", group: "Finance" },
   { key: "finance.approve", label: "Approve payments, claims, purchases and payroll checks; close periods", group: "Finance" },
   { key: "finance.payroll", label: "Prepare payroll (salaries, allowances, deductions)", group: "Finance" },
@@ -114,11 +116,11 @@ export const DEFAULT_PERMISSIONS: Record<Role, Capability[]> = {
   // Managers follow delivery: they view everything but do not edit item data.
   manager: [...FULL_VIEW, "export.run", "export.report", "export.tracker", "export.audit", "reports.view", "team.view", "corrections.approve", "chat.manage", "chat.channels", "chat.contact_owners", "email.send", "questions.ask", "settings.manage", "company.view"],
   // Department roles see their own section only; Admin can widen this in Roles and permissions.
-  owner: ["owners.view", "company.view", "finance.view", "finance.owner_approve", "items.detail", "nav.overview", "nav.coverage", "reports.view", "team.view", "export.run", "export.report", "chat.channels", "chat.contact_owners", "email.send"],
+  owner: ["perf.view_company", "owners.view", "company.view", "finance.view", "finance.owner_approve", "items.detail", "nav.overview", "nav.coverage", "reports.view", "team.view", "export.run", "export.report", "chat.channels", "chat.contact_owners", "email.send"],
   developer: ["dev.access"],
   content: ["studio.access"],
   marketing: ["marketing.access", "email.send"],
-  hr_manager: ["hr.access", "hr.manage", "hr.sensitive", "hr.cases", "attendance.manage", "finance.payroll", "nav.questions", "email.send", "chat.channels"],
+  hr_manager: ["perf.library", "perf.view_company", "hr.access", "hr.manage", "hr.sensitive", "hr.cases", "attendance.manage", "finance.payroll", "nav.questions", "email.send", "chat.channels"],
   hr_officer: ["hr.access", "attendance.manage", "nav.questions", "email.send"],
   finance_manager: ["finance.access", "finance.approve", "finance.payroll", "finance.view", "nav.questions", "email.send", "chat.channels", "company.view"],
   accountant: ["finance.access", "finance.view", "nav.questions", "email.send"],
@@ -153,6 +155,8 @@ export const DEFAULT_PERMISSIONS: Record<Role, Capability[]> = {
     "hr.manage",
     "attendance.manage",
     "attendance.capture",
+    "perf.library",
+    "perf.view_company",
     ...EDITORIAL_CAPABILITIES,
   ],
 };

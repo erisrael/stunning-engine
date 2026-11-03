@@ -62,6 +62,7 @@ import {
   MapIcon,
   PresentationIcon,
   TrophyIcon,
+  TargetIcon,
   HeadsetIcon,
 } from "lucide-react";
 import type { HomeDept } from "@/server/nav";
@@ -331,6 +332,7 @@ export function AppSidebar({
         { href: "/routines", label: "Routines", icon: ZapIcon, badge: counts.routines ?? 0 },
         { href: "/announcements", label: "Announcements", icon: MegaphoneIcon },
         ...(recognition ? [{ href: "/recognition", label: "Recognition", icon: TrophyIcon }] : []),
+        { href: "/performance", label: "Performance", icon: TargetIcon },
         ...(support ? [{ href: "/support", label: "Customer support", icon: HeadsetIcon }] : []),
         ...(approver || counts.approvals > 0 ? [{ href: "/approvals", label: "Approvals", icon: CheckCheckIcon, badge: counts.approvals }] : []),
         ...(!lead && !home ? [{ href: "/team", label: "My effort", icon: UsersIcon, cap: "nav.team" as Capability }] : []),
@@ -451,6 +453,7 @@ export function AppSidebar({
           { href: "/dashboard", label: "Home", icon: HomeIcon, locked: true },
           { href: "/announcements", label: "Announcements", icon: MegaphoneIcon },
           ...(recognition ? [{ href: "/recognition", label: "Recognition", icon: TrophyIcon }] : []),
+          { href: "/performance", label: "Performance", icon: TargetIcon },
           ...(support ? [{ href: "/support", label: "Customer support", icon: HeadsetIcon }] : []),
           ...(counts.approvals > 0 ? [{ href: "/approvals", label: "Approvals", icon: CheckCheckIcon, badge: counts.approvals }] : []),
           ...(counts.routines ? [{ href: "/routines", label: "Routines", icon: ZapIcon, badge: counts.routines }] : []),

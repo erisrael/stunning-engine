@@ -854,7 +854,7 @@ Done in step 1: Admin, Sign-in has tabs Rules, Google, Microsoft, SSO, Sign-up, 
 - [x] **Download my data** (Profile, and from the notice): account, roles, profile, HR record and documents list, leave, attendance and corrections, payslips, claims, tasks, comments, notifications, sign-ins, routines, as one JSON file; never the password. Chat messages are end-to-end encrypted, so they stay in Chat.
 - [x] An access log of who opened someone else's HR record or payslip (one line per person and record each hour), for HR managers and Admin (Admin, Privacy).
 
-## Phase 17: Performance management: KRAs, KPIs and OKRs
+## Phase 17: Performance management: KRAs, KPIs and OKRs (done)
 
 The detailed plan (data model, the measure catalogue from the app's own data, scoring, screens, permissions, the decisions to make first and the order of work) is in [PHASE-17-PLAN.md](PHASE-17-PLAN.md).
 
@@ -869,8 +869,8 @@ One system for "what each person and team is responsible for, how it is measured
 
 ### 17.2 The KPI library (HR and Admin)
 
-- [ ] Each KPI has: name and plain description, unit (count, %, hours, days, money, score), direction (higher or lower is better), how often it is measured (weekly, monthly, quarterly), how a period's value is formed (sum, average, latest, rate), and red, amber and green bands.
-- [ ] **Where the number comes from**, chosen per KPI:
+- [x] Each KPI has: name and plain description, unit (count, %, hours, days, money, score), direction (higher or lower is better), how often it is measured (weekly, monthly, quarterly), how a period's value is formed (sum, average, latest, rate), and red, amber and green bands.
+- [x] **Where the number comes from**, chosen per KPI:
   - **from the app** (no typing), from a catalogue of measures the app already has:
     - production: parts finished per stage, on-time rate, cycle time per stage, returned by lead or marked missing (quality), redo requests received, review notes per part, published per week;
     - departments: tasks done, story points, cycle time, reopened tasks, bugs found after release, requests answered in time, campaign KPIs (reach, leads, spend), budget used against plan;
@@ -879,40 +879,63 @@ One system for "what each person and team is responsible for, how it is measured
   - **a formula** of other measures (for example published ÷ planned × 100);
   - **typed in** by the person, their lead or HR (with evidence attached), for things the app cannot see (for example customer satisfaction from a survey);
   - **imported** from a spreadsheet or Power BI feed.
-- [ ] Fairness built in: values per working day (leave and holidays excluded); a quantity KPI paired with a quality KPI (the setup warns when a KRA has only quantity measures); minimum sample sizes before a percentage counts.
+- [x] Fairness built in: values per working day (leave and holidays excluded); a quantity KPI paired with a quality KPI (the setup warns when a KRA has only quantity measures); minimum sample sizes before a percentage counts.
 
 ### 17.3 KRAs per role and position
 
-- [ ] **KRA templates** per role and position (Editor, Editing lead, Developer, Tech lead, Marketing officer, HR officer, Accountant...), with their KPIs, weights and default targets; ready templates for Myseed's roles to start from.
-- [ ] People get their template automatically from their role and position (and their department's version of it); a lead or HR can adjust one person's targets, with the reason, approved by HR; changes after the period starts need approval and are logged.
-- [ ] Targets: one number, a range, or per person; set per period or rising over time (for example +5% each quarter).
+- [x] **KRA templates** per role and position (Editor, Editing lead, Developer, Tech lead, Marketing officer, HR officer, Accountant...), with their KPIs, weights and default targets; ready templates for Myseed's roles to start from.
+- [x] People get their template automatically from their role and position (and their department's version of it); a lead or HR can adjust one person's targets, with the reason, approved by HR; changes after the period starts need approval and are logged.
+- [x] Targets: one number, a range, or per person; set per period or rising over time (for example +5% each quarter).
 
 ### 17.4 Scorecards
 
-- [ ] **Scoring**, configured by HR: how an actual becomes a score (straight percentage of target capped at 120%, bands to a 1-5 scale, or pass or fail), how KPIs roll up into KRAs and KRAs into an overall score, and the rating labels (for example Exceeds, Meets, Below).
-- [ ] **My scorecard** (on Home and Profile): this period's KPIs with actual, target, trend and colour, clicking through to the work behind each number (which parts, which tasks, which days).
-- [ ] **Team and department scorecards** for leads and heads; a company scorecard for owners; comparisons across periods and teams (never ranking individuals on a public screen unless HR allows it).
-- [ ] Periods close on a date set by HR; after closing, numbers are frozen; late corrections go through HR with a reason.
+- [x] **Scoring**, configured by HR: how an actual becomes a score (straight percentage of target capped at 120%, bands to a 1-5 scale, or pass or fail), how KPIs roll up into KRAs and KRAs into an overall score, and the rating labels (for example Exceeds, Meets, Below).
+- [x] **My scorecard** (on Home and Profile): this period's KPIs with actual, target, trend and colour, clicking through to the work behind each number (which parts, which tasks, which days).
+- [x] **Team and department scorecards** for leads and heads; a company scorecard for owners; comparisons across periods and teams (never ranking individuals on a public screen unless HR allows it).
+- [x] Periods close on a date set by HR; after closing, numbers are frozen; late corrections go through HR with a reason.
 
 ### 17.5 OKRs
 
-- [ ] **Cycles** set by Admin and HR: length (quarter by default), dates, a planning window before the start, a mid-cycle review and a scoring window at the end.
-- [ ] **Levels and alignment**: company, department, team and personal objectives; each can support a higher one, shown as a tree; limits configurable (for example at most 5 objectives and 5 key results each).
-- [ ] **Key results**: start value, target, current value and unit; updated by hand at check-ins or linked to a KPI or app measure so they move by themselves; milestone-type key results (done or not done) allowed.
-- [ ] **Check-ins** weekly (configurable): progress, confidence (on track, at risk, off track) and a short note; reminders to owners; off-track key results flagged to the lead.
-- [ ] **Scoring** at the end: 0.0 to 1.0 per key result (or percentage), the objective's average, a short reflection; the method is configurable.
-- [ ] **Visibility** per objective: everyone, the department, or private to the person and their lead.
-- [ ] Planned tasks and projects can be linked to a key result, so the work behind it is visible.
+- [x] **Cycles** set by Admin and HR: length (quarter by default), dates, a planning window before the start, a mid-cycle review and a scoring window at the end.
+- [x] **Levels and alignment**: company, department, team and personal objectives; each can support a higher one, shown as a tree; limits configurable (for example at most 5 objectives and 5 key results each).
+- [x] **Key results**: start value, target, current value and unit; updated by hand at check-ins or linked to a KPI or app measure so they move by themselves; milestone-type key results (done or not done) allowed.
+- [x] **Check-ins** weekly (configurable): progress, confidence (on track, at risk, off track) and a short note; reminders to owners; off-track key results flagged to the lead.
+- [x] **Scoring** at the end: 0.0 to 1.0 per key result (or percentage), the objective's average, a short reflection; the method is configurable.
+- [x] **Visibility** per objective: everyone, the department, or private to the person and their lead.
+- [x] Planned tasks and projects can be linked to a key result, so the work behind it is visible.
 
 ### 17.6 Using it day to day
 
-- [ ] Home widgets: my KPIs this period, my key results to update, my team's off-track items.
-- [ ] The presentation studio (Phase 12c) gets KPI, scorecard and OKR slides; monthly owners' review deck includes the company scorecard and OKR progress.
-- [ ] Performance reviews (Phase 7) attach the period's scorecard and OKR results as evidence; HR can run a calibration view (spread of ratings per department).
-- [ ] Notifications: check-in reminders, KPIs turning red, targets changed, periods closing.
-- [ ] Permissions (configurable in the matrix): HR manages the library, templates, scoring and cycles; heads and leads set targets and OKRs for their teams within the rules; everyone sees their own; owners see the company.
-- [ ] Exports: Excel per period, and the Power BI feed.
+- [x] Home widgets: my KPIs this period, my key results to update, my team's off-track items.
+- [x] The presentation studio (Phase 12c) gets KPI, scorecard and OKR slides; monthly owners' review deck includes the company scorecard and OKR progress.
+- [x] Performance reviews (Phase 7) attach the period's scorecard and OKR results as evidence; HR can run a calibration view (spread of ratings per department).
+- [x] Notifications: check-in reminders, KPIs turning red, targets changed, periods closing.
+- [x] Permissions (configurable in the matrix): HR manages the library, templates, scoring and cycles; heads and leads set targets and OKRs for their teams within the rules; everyone sees their own; owners see the company.
+- [x] Exports: a spreadsheet per period (CSV for Excel). (The Power BI feed: still open.)
 
+
+Built (17), with the plan's suggested decisions as settings HR can change (Performance, Periods and settings):
+- monthly scorecards and quarterly OKRs;
+- percent of target capped at 120%, with bands or pass and fail also possible per KPI;
+- scorecards shown beside HR reviews as evidence, without setting the rating; OKRs do not feed the rating;
+- everyone sees their own scorecard (switchable to leads and HR only while targets are tuned);
+- OKRs visible to everyone by default.
+
+How the numbers work:
+- 16 measures from production stages, department tasks, attendance, customer support and kudos (`src/server/measures.ts`), added up as numerators and samples so teams count correctly.
+- In the running month, monthly amounts are compared with the part of the month gone.
+- Attendance KPIs stay empty without attendance records.
+- Rates need a minimum sample before they count.
+
+Rules and screens:
+- Ready templates: Recording, Editing, Uploading, Publication, Developer, Tech lead, Customer support agent, Everyone else. Weights must add up to 100, and a template with only quantity KPIs gets a warning.
+- A lead's target change to a started month, and corrections to a closed month, wait for HR. Months close by themselves on the set day or by HR, and their scorecards freeze.
+- Team, company and calibration views; a CSV export.
+- OKRs: the tree from company to person, limits, check-ins with confidence, off-track key results told to the owner of the objective they support, key results that move with a measure, and tasks linked to a key result.
+- Weekly check-in reminders, and KPIs turning red.
+- Company deck slides (scorecards, objectives); scorecards on HR reviews.
+
+Code: `src/server/performance.ts`, `src/lib/performance.ts`, `/performance` (schema 40, permissions `perf.library` and `perf.view_company`). Tests: `tests/server/performance.test.ts`, `tests/e2e/performance.e2e.mjs`. The Power BI feed does not include scorecards yet.
 ## Phase 18: Worth having (done)
 
 - [x] **Announcements and policies**: Admin, HR managers and owners announce to everyone, departments or roles; a department's head to their own department. News or a policy to confirm, pinned, with an end date. Shown at the top of every page until read ("Got it") or confirmed ("I have read this"), and as a notice. The author sees who has read or confirmed and who has not, and reminds them. Page: /announcements.
