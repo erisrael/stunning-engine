@@ -1,4 +1,6 @@
 import { all, get, nowIso, run } from "./db";
+import { weeklyLinkCheck } from "./files-publishing";
+import { releaseChecks } from "./presenters";
 import { applyRetention } from "./privacy";
 import { getMeta, getSettings, setMeta } from "./settings";
 import { managers, notify } from "./notifications";
@@ -159,6 +161,10 @@ export async function runScheduledChecks(now = nowIso(), opts: { trigger?: strin
     await runJob("chat-retention", () => applyChatRetention(now));
     // Records past the retention set in Admin, Privacy (Phase 16.5).
     await runJob("retention", () => applyRetention());
+    // Presenter releases ending soon or ended (Phase 16.1).
+    await runJob("releases", () => releaseChecks());
+    // File links that no longer open, once a week (Phase 16.2).
+    await runJob("links", () => weeklyLinkCheck());
     // Finance: budgets passing their alert level.
     await runJob("budgets", () => budgetAlerts());
     // Attendance: a kiosk that went quiet during working hours.

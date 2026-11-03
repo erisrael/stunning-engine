@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import {
+  MicIcon,
   ZapIcon,
   ArrowLeftRightIcon,
   BookOpenIcon,
@@ -279,6 +280,7 @@ export function AppSidebar({
           { label: "Branding", href: "/admin?tab=branding" },
           { label: "Usage", href: "/admin?tab=usage" },
           { label: "Privacy", href: "/admin?tab=privacy" },
+          { label: "Files and publishing", href: "/admin?tab=files" },
           { label: "Integrations", href: "/admin?tab=integrations" },
           { label: "System", href: "/admin?tab=system" },
         ]
@@ -334,6 +336,9 @@ export function AppSidebar({
           : []),
         { href: "/handovers", label: "Handovers", icon: PackageCheckIcon, badge: counts.incoming, cap: "nav.handovers" },
         ...(has("items.plan") || has("team.view") || activeRole === "recording" ? [{ href: "/sessions", label: "Studio sessions", icon: VideoIcon }] : []),
+        ...(has("items.plan") || has("hr.access") || has("finance.access") || (activeRole === "recording" && lead)
+          ? [{ href: "/presenters", label: "Presenters", icon: MicIcon, sub: [{ label: "Presenters", href: "/presenters" }, { label: "Fees", href: "/presenters?tab=fees" }] }]
+          : []),
         { href: "/coverage", label: "Coverage", icon: GridIcon, keepFilters: true, cap: "nav.coverage" },
         { href: "/reports", label: "Reports", icon: ChartColumnIcon, keepFilters: true, cap: "reports.view" },
         ...(lead ? [{ href: "/team", label: "Team", icon: UsersIcon, badge: has("corrections.approve") ? counts.corrections : 0, cap: "team.view" as Capability }] : []),
@@ -470,6 +475,7 @@ export function AppSidebar({
               ...views.map((v) => ({ label: v.href === "/content" ? "List" : v.href === "/sheet" ? "Sheet" : v.href === "/pipeline" ? "Board" : "Calendar", href: v.href })),
               { label: "Handovers", href: "/handovers" },
               { label: "Studio sessions", href: "/sessions" },
+              { label: "Presenters", href: "/presenters" },
               { label: "Coverage", href: "/coverage" },
               { label: "Reports", href: "/reports" },
               { label: "Team", href: "/team" },

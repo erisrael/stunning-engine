@@ -1,4 +1,5 @@
 import { all, get, nowIso, run, tx, uid, parseJson } from "./db";
+import { releaseRequirement } from "./presenters";
 import { getSettings, rulesFor } from "./settings";
 import { handoverStatuses } from "@/lib/team-rules";
 import { can, canViewItem, hasRole, isLeadOf, isManager, type AppUser } from "./users";
@@ -1223,6 +1224,10 @@ export async function evaluateRequirements(itemId: string, attempt?: AttemptRow 
     const rawCount = (await get<{ c: number }>("SELECT COUNT(*) AS c FROM assets WHERE item_id = ? AND kind = 'raw' AND attempt_id = ?", itemId, a.id))?.c ?? 0;
     reqs.push({ key: "raw", label: `At least one recording logged (camera code${s.policies.recordingTransfer === "disk" ? " or disk" : s.policies.recordingTransfer === "link" ? " or link" : ", link or disk"})`, met: rawCount > 0 });
     if (s.policies.requireRawDuration) reqs.push({ key: "raw_duration", label: "Recorded raw duration entered", met: !!a.raw_duration_min });
+    // A signed release for the presenter, when required (Presenters, Phase 16.1).
+    const onSession = (await get<{ presenter: string | null }>("SELECT presenter FROM recording_sessions WHERE item_id = ? AND presenter IS NOT NULL AND status <> 'cancelled' ORDER BY scheduled_start DESC LIMIT 1", itemId))?.presenter ?? null;
+    const rel = await releaseRequirement(item, onSession);
+    if (rel) reqs.push(rel);
   }
   if (a.stage === "editing") {
     const master = await currentAsset(itemId, "master");

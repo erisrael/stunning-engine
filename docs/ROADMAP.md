@@ -820,22 +820,22 @@ Done in step 1: Admin, Sign-in has tabs Rules, Google, Microsoft, SSO, Sign-up, 
 
 ## Phase 16: Myseed's own needs
 
-### 16.1 Presenter and teacher releases and fees
+### 16.1 Presenter and teacher releases and fees (done)
 
-- [ ] **Presenters** as people in the app (teachers and guests, with or without an account): contact, subjects, a signed **release** (consent to be filmed and for the videos to be used, where, for how long), the scanned form, its expiry.
-- [ ] A session or part cannot move past Recording without a valid release for its presenter (switchable); expiring releases warn HR and the Recording lead.
-- [ ] **Fees**: a rate per session, per part or per hour; recorded sessions build a monthly statement per presenter; Finance pays it as a bill (with withholding tax set in Finance).
-- [ ] Students or others appearing in videos: a release per person, linked to the parts.
+- [x] **Presenters** (Production, Presenters; HR, managers and the Recording lead): teachers, guests and students with contact, subjects and the other names they appear under on parts (Teacher) and sessions (Presenter); a signed **release** (signed on, valid until, where the videos may be used) with the scanned form.
+- [x] With "Releases required" on, a part cannot leave Recording without a valid release for its presenter (a Recording requirement like the others); releases ending within the warning days (default 30) or ended warn HR and the Recording leads, once each.
+- [x] **Fees** per session, part or hour; a monthly statement per presenter from the sessions marked recorded; sent to Finance, who make it a bill for the presenter as a vendor with one press. (Withholding tax follows Finance's own bill rules.)
+- [x] Students or others in videos are presenters of kind Student with their own release, linked to parts by name.
 
-### 16.2 Where the files live
+### 16.2 Where the files live (done)
 
-- [ ] Admin sets the company storage locations (a shared Google Drive, a NAS path, a cloud bucket) and the folder pattern (grade, subject, unit, part); links outside the allowed places are flagged on the card.
-- [ ] A weekly **link check**: raw, master, captions and thumbnail links that no longer open are listed for the team leads.
-- [ ] When someone leaves, the leaver checklist lists the files still in their personal storage.
+- [x] Admin, Files and publishing: the company's storage places (Drive folder, NAS path, bucket) and the folder pattern (grade, subject, unit, code); links on parts outside those places are listed there.
+- [x] A weekly **link check** of every current raw, master, captions and thumbnail link; the ones that no longer open are listed and the team leads are told.
+- [x] Links outside the company's places can be listed per person (for a leaver), from the same function as the Admin list.
 
-### 16.3 Publishing to the Myseed App
+### 16.3 Publishing to the Myseed App (done, needs the app's real API address)
 
-- [ ] The Uploading card uploads to the Myseed App through its API (as for YouTube), filling in the ID and checking playback; Publication confirms live through the same API.
+- [x] The Uploading card ("Record upload", destination Myseed App) has Send to the Myseed App: the approved master with the part's details goes to the app's API (POST /videos, key sealed in Admin, Files and publishing), and the app's ID is recorded as the upload; Check the app (GET /videos/ID) records the upload complete and playback checked when it plays, and live with the app's link when the app says it is live. Tested against a stand-in app; the real app must answer in that shape.
 
 ### 16.4 Amharic and the Ethiopian calendar (started)
 

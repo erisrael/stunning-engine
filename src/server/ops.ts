@@ -124,6 +124,8 @@ export const JOB_LABELS: Record<string, string> = {
   "hr-reminders": "HR and training reminders",
   "chat-retention": "Chat retention",
   retention: "Retention schedule (Admin, Privacy)",
+  releases: "Presenter releases ending",
+  links: "File links check (weekly)",
   budgets: "Budget alerts",
   kiosks: "Silent kiosk alerts",
   "face-cleanup": "Face data of leavers",

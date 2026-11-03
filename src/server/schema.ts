@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 32;
+export const SCHEMA_VERSION = 34;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -2168,6 +2168,53 @@ CREATE TABLE IF NOT EXISTS mail_state (
   error TEXT
 );
 
+-- v34: the weekly file link check (Phase 16.2): the last result per file.
+CREATE TABLE IF NOT EXISTS link_checks (
+  asset_id TEXT PRIMARY KEY,
+  url TEXT NOT NULL,
+  status INTEGER NOT NULL,
+  ok INTEGER NOT NULL,
+  checked_at TEXT NOT NULL
+);
+
+-- v33: presenters (Phase 16.1): teachers and guests on camera, their signed releases, and monthly fee statements.
+CREATE TABLE IF NOT EXISTS presenters (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'teacher',
+  phone TEXT,
+  email TEXT,
+  subjects TEXT,
+  aliases TEXT NOT NULL DEFAULT '[]',
+  rate_kind TEXT,
+  rate DOUBLE PRECISION,
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS presenter_releases (
+  id TEXT PRIMARY KEY,
+  presenter_id TEXT NOT NULL REFERENCES presenters(id) ON DELETE CASCADE,
+  signed_on TEXT NOT NULL,
+  expires_on TEXT,
+  scope TEXT,
+  file_name TEXT,
+  file_mime TEXT,
+  file_data TEXT,
+  created_by TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS presenter_statements (
+  presenter_id TEXT NOT NULL REFERENCES presenters(id) ON DELETE CASCADE,
+  month TEXT NOT NULL,
+  amount DOUBLE PRECISION NOT NULL,
+  status TEXT NOT NULL,
+  sent_by TEXT,
+  sent_at TEXT,
+  bill_id TEXT,
+  PRIMARY KEY (presenter_id, month)
+);
+
 -- v32: data protection (Phase 16.5): who accepted which version of the privacy notice, and who opened whose HR or
 -- salary record.
 CREATE TABLE IF NOT EXISTS privacy_acceptances (
@@ -2351,6 +2398,10 @@ export const TABLES = [
   "page_visits",
   "privacy_acceptances",
   "record_access_log",
+  "presenters",
+  "presenter_releases",
+  "presenter_statements",
+  "link_checks",
   "employees",
   "employee_private",
   "employee_documents",

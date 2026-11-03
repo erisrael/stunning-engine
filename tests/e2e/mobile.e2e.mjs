@@ -11,7 +11,7 @@ const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH 
 let fails = 0;
 const check = (label, ok, extra) => (console.log(`${ok ? "PASS" : "FAIL"} ${label}${!ok && extra !== undefined ? " " + String(extra).slice(0, 300) : ""}`), ok || fails++);
 
-const PAGES = ["/dashboard", "/attendance", "/announcements", "/routines", "/notifications", "/chat", "/people", "/requests", "/overview", "/dev", "/dev/list", "/dev/sprint", "/studio", "/marketing", "/hr", "/finance", "/admin", "/admin?tab=branding", "/admin/assistant", "/settings", "/profile", "/email"];
+const PAGES = ["/dashboard", "/attendance", "/announcements", "/routines", "/notifications", "/chat", "/people", "/requests", "/overview", "/dev", "/dev/list", "/dev/sprint", "/studio", "/marketing", "/hr", "/finance", "/admin", "/admin?tab=branding", "/admin/assistant", "/admin?tab=privacy", "/admin?tab=files", "/presenters", "/presenters?tab=fees", "/settings", "/profile", "/email"];
 
 try {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });

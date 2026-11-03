@@ -16,6 +16,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Combobox } from "@/components/app/multi-select";
 import { itemAction, requirementsAction, type ItemActionInput } from "@/app/actions/items";
 import { askQuestionAction } from "@/app/actions/collab";
+import { checkAppAction, publishToAppAction } from "@/app/actions/files-publishing";
 import {
   ASSET_KIND_LABELS,
   BLOCKER_CAUSE_LABELS,
@@ -309,6 +310,7 @@ function RequirementList({ list }: { list: Requirement[] }) {
 
 function ActionDialog({ kind, item, preset, onClose }: { kind: DialogKind; item: ItemRef; preset?: Record<string, unknown>; onClose: () => void }) {
   const { run, users, destinations, isManager, timezone } = useActions();
+  const router = useRouter();
   const needsInfo = ["submit", "accept", "live", "upload", "releaseFailed", "review", "schedule", "reopen", "block", "assign", "redo"].includes(kind);
   const info = useReq(item.id, needsInfo);
   const [busy, setBusy] = React.useState(false);
@@ -747,6 +749,37 @@ function ActionDialog({ kind, item, preset, onClose }: { kind: DialogKind; item:
               </Select>
             </Field>
           </div>
+          {platform === "myseed_app" && (
+            <div className="flex flex-wrap items-center gap-2 rounded-lg border border-[#1A73E8]/30 bg-[#1A73E8]/5 p-2 text-sm" data-app-publish>
+              <span className="flex-1">Or let the app do it: send the approved master to the Myseed App now.</span>
+              <Button
+                size="sm"
+                type="button"
+                onClick={async () => {
+                  const r = await publishToAppAction(item.id);
+                  if (!r.ok) return void toast.error(r.error);
+                  toast.success(`Sent to the Myseed App (${r.data?.id})`);
+                  onClose();
+                  router.refresh();
+                }}
+              >
+                Send to the Myseed App
+              </Button>
+              <Button
+                size="sm"
+                type="button"
+                variant="outline"
+                onClick={async () => {
+                  const r = await checkAppAction(item.id);
+                  if (!r.ok) return void toast.error(r.error);
+                  toast.success(`Myseed App: ${r.data?.status}${r.data?.playable ? ", plays" : ""}`);
+                  router.refresh();
+                }}
+              >
+                Check the app
+              </Button>
+            </div>
+          )}
           <Field label="Destination item ID" htmlFor="up-id">
             <Input id="up-id" value={str("externalId")} onChange={(e) => set("externalId", e.target.value)} placeholder="YT-482910" />
           </Field>
