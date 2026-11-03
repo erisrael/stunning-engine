@@ -106,7 +106,10 @@ export function WorkClient({
   report = null,
   period = "30d",
   workspace = "",
+  baselines,
 }: {
+  // The saved plan of each task (Tools, Epics and baseline), drawn under its bar on the Timeline.
+  baselines?: Record<string, { start: string | null; due: string | null; savedAt: string }>;
   dept: WorkDept;
   tab: "dashboard" | "board" | "list" | "sheet" | "overview" | "timeline" | "team" | "report" | "projects" | "calendar" | "repos" | "accounting" | "sprint" | "roadmap" | "docs" | "tools";
   filter: TaskFilter;
@@ -312,7 +315,7 @@ export function WorkClient({
       {tab === "board" && <Board dept={dept} config={cfg} people={people} tasks={tasks} viewerId={viewerId} access={access} onOpen={setEditing} onDetails={(status) => setEditing({ status })} />}
       {tab === "sheet" && <SheetView dept={dept} config={cfg} tasks={tasks} people={people} projects={projects} access={access} viewerId={viewerId} onOpen={setEditing} />}
       {tab === "overview" && <OverviewTree config={cfg} tasks={tasks} projects={projects} onOpen={setEditing} />}
-      {tab === "timeline" && <TimelineView dept={dept} config={cfg} tasks={tasks} projects={projects} access={access} viewerId={viewerId} onOpen={setEditing} />}
+      {tab === "timeline" && <TimelineView dept={dept} config={cfg} tasks={tasks} projects={projects} access={access} viewerId={viewerId} onOpen={setEditing} baselines={baselines} />}
       {(tab === "team" || tab === "report") && <DashFilters period={period} filters={[]} />}
       {tab === "team" && team && <TeamView dept={dept} config={cfg} data={team} people={people} access={access} onOpen={openById} />}
       {tab === "report" && report && <ReportView dept={dept} data={report} period={period} workspace={workspace} />}

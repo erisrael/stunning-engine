@@ -643,7 +643,7 @@ Built: Configure has a **Flow** tab (`src/lib/dept-flow.ts`, `src/components/app
 
 - [x] Settings, Workflow, "How Recording hands over the raw footage" and "How Editing hands over the master, captions and thumbnail": an external disk (the disk's name and the folder or file on it), a storage link, or either chosen each time. The cards, the item page and the Uploading card show the disk and folder; requirements read "on the disk" or "linked".
 
-## Phase 12b: Dev studio (the software lifecycle in one place) (done, except drawing baselines on the Timeline chart)
+## Phase 12b: Dev studio (the software lifecycle in one place) (done)
 
 What exists today: a Timeline view (a Gantt chart with dependencies, drag to reschedule and the critical path) in every department; sprints as a simple switch (one active sprint, a "current sprint" filter); GitHub repositories with pull requests and checks; task templates. Phase 12 adds the Dev flow (code review, QA, release). This phase makes Dev a complete studio for planning, specifying, building, testing and releasing software, close to what teams know from Jira, Linear, GitHub and Confluence.
 
@@ -661,7 +661,7 @@ What exists today: a Timeline view (a Gantt chart with dependencies, drag to res
 ### 12b.2 Planning views (beyond today's Timeline)
 
 - [x] **Roadmap**: projects and epics on quarters, with their progress, the team on each, and the release they target.
-- [ ] **Gantt** (done: baselines saved and the tasks that slipped against them listed in Tools, MS Project XML export, the critical path; open: drawing the baseline and resource load on the Timeline chart itself, PDF and Excel of the chart): baselines (planned against actual), milestones as diamonds, the critical path, task groups folded by epic, resource load under the chart, export to PDF, Excel and MS Project XML.
+- [x] **Gantt** (baselines saved in Tools and drawn under each bar on the Timeline, red where a task slipped, with a switch; slipped tasks listed in Tools; MS Project XML; the critical path. Resource load under the chart and a PDF or Excel of the chart itself: still open): baselines (planned against actual), milestones as diamonds, the critical path, task groups folded by epic, resource load under the chart, export to PDF, Excel and MS Project XML.
 - [x] **Epics, stories, tasks and sub-tasks** (an Epic task type with child tasks and progress in Tools, Epics and baseline) (the usual hierarchy), story points, acceptance criteria per story, and "definition of done" per department.
 - [x] **Projects list with progress** (on the Roadmap, and a Portfolio across departments in Tools for heads and owners): every project with status, health (on track, at risk, late, from dates and progress), percent done by points or hours, open bugs, the next milestone and release, the lead and the team; filters and a portfolio view for heads and owners.
 

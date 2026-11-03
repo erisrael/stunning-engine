@@ -173,6 +173,9 @@ try {
   await admin.getByRole("button", { name: "Save baseline now" }).click();
   check("a baseline is saved", await toast(admin, /Baseline saved/));
   await admin.screenshot({ path: path.join(shots, "7-tools.png"), fullPage: true });
+  await go(admin, "/dev/timeline");
+  check("the Timeline draws the saved baseline under the tasks", (await admin.locator("[data-baseline]").count()) >= 3 && (await admin.locator("[data-baseline-toggle]").count()) === 1);
+  await admin.screenshot({ path: path.join(shots, "7b-timeline-baseline.png"), fullPage: true });
 } catch (e) {
   check("ran without crashing", false, e?.stack ?? e);
 } finally {

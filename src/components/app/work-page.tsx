@@ -222,6 +222,7 @@ export async function WorkPage({ dept, searchParams, view }: { dept: WorkDept; s
         period={period}
         workspace={settings.workspace.name}
         extraTabs={extraTabs}
+        baselines={tab === "timeline" ? await (await import("@/server/dev-plan")).baselines(viewer, dept).catch(() => ({})) : undefined}
       />
     </div>
   );

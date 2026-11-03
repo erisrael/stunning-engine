@@ -63,7 +63,9 @@ function criticalPath(tasks: Task[]) {
   return new Set(top.chain.length > 1 ? top.chain : []);
 }
 
-export function TimelineView({ dept, config, tasks, projects, access, viewerId, onOpen }: { dept: WorkDept; config: DeptConfig; tasks: Task[]; projects: Project[]; access: Access; viewerId: string; onOpen: (t: Task) => void }) {
+export function TimelineView({ dept, config, tasks, projects, access, viewerId, onOpen, baselines }: { dept: WorkDept; config: DeptConfig; tasks: Task[]; projects: Project[]; access: Access; viewerId: string; onOpen: (t: Task) => void; baselines?: Record<string, { start: string | null; due: string | null; savedAt: string }> }) {
+  const hasBase = !!baselines && Object.keys(baselines).length > 0;
+  const [showBase, setShowBase] = React.useState(true);
   const router = useRouter();
   const [zoom, setZoom] = React.useState<Zoom>("month");
   const [showDone, setShowDone] = React.useState(true);
@@ -76,6 +78,7 @@ export function TimelineView({ dept, config, tasks, projects, access, viewerId, 
   const dates = [
     ...scheduled.flatMap((t) => span(t)!),
     ...projects.flatMap((p) => [p.start_date, p.due_date, ...p.milestones.map((m) => m.due_date)].filter((x): x is string => !!x)),
+    ...(showBase && baselines ? scheduled.flatMap((t) => [baselines[t.id]?.start, baselines[t.id]?.due].filter((x): x is string => !!x)) : []),
     today(),
   ];
   const min = toMs(dates.reduce((a, b) => (a < b ? a : b))) - 7 * DAY;
@@ -150,6 +153,11 @@ export function TimelineView({ dept, config, tasks, projects, access, viewerId, 
         <label className="flex items-center gap-2 text-xs">
           <Switch checked={showDone} onCheckedChange={setShowDone} /> Show done
         </label>
+        {hasBase && (
+          <label className="flex items-center gap-2 text-xs" data-baseline-toggle>
+            <Switch checked={showBase} onCheckedChange={setShowBase} /> Baseline (the saved plan, red where it slipped)
+          </label>
+        )}
         <span className="flex items-center gap-1 text-xs text-muted-foreground">
           <span className="inline-block h-2.5 w-5 rounded-sm ring-2 ring-red-500 ring-offset-1" /> Critical path
         </span>
@@ -244,6 +252,21 @@ export function TimelineView({ dept, config, tasks, projects, access, viewerId, 
                       <span className="truncate">{w > 60 ? (t.assignee_name ?? t.title) : ""}</span>
                       {editable && <span className="absolute top-0 right-0 h-full w-2 cursor-ew-resize bg-black/20" />}
                     </div>
+                    {showBase && baselines?.[t.id] && (baselines[t.id]!.start || baselines[t.id]!.due) && (() => {
+                      // The plan as saved: a thin grey bar under the task, red where the task now ends later.
+                      const b = baselines[t.id]!;
+                      const bs = b.start ?? b.due!;
+                      const be = b.due ?? b.start!;
+                      const slip = e > be;
+                      return (
+                        <div
+                          className={cn("pointer-events-none absolute top-[28px] h-1 rounded-full", slip ? "bg-red-500/70" : "bg-muted-foreground/50")}
+                          style={{ left: x(bs), width: Math.max(px, x(be) - x(bs) + px) }}
+                          title={`Planned ${bs} to ${be}`}
+                          data-baseline={t.code}
+                        />
+                      );
+                    })()}
                   </div>
                 </div>
               );
