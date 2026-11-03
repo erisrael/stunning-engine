@@ -23,8 +23,34 @@
       <p>Myseed needs the internet. Check your Wi-Fi or mobile data; this page tries again by itself.</p>
       <p lang="am">ኢንተርኔት የለም። ዋይፋይ ወይም የሞባይል ዳታ ያረጋግጡ፤ ገጹ በራሱ እንደገና ይሞክራል።</p>
       <button type="button" onclick="location.reload()">Try again</button>
+      <section id="checkin" hidden style="margin-top:24px;border-top:1px solid #8884;padding-top:16px">
+        <h1>Check in without signal</h1>
+        <p>Your check-in is kept on this phone with the time now, and sent when the phone is online and you open the app. HR checks it.</p>
+        <p lang="am">ምልክት ሳይኖር መግባት፦ ሰዓቱ በስልኩ ላይ ይቀመጣል፤ ኢንተርኔት ሲመለስ ይላካል።</p>
+        <button type="button" data-offline-kind="in">Check in</button>
+        <button type="button" data-offline-kind="out" style="margin-left:8px">Check out</button>
+        <p id="saved" role="status" style="margin-top:12px;font-weight:600"></p>
+      </section>
     </main>
     <script>
+      // The QR at the entrance (/in?c=...) opened without signal: the check-in is saved on the phone (Phase 19).
+      if (location.pathname === "/in") {
+        const box = document.getElementById("checkin");
+        box.hidden = false;
+        const code = new URLSearchParams(location.search).get("c");
+        box.querySelectorAll("[data-offline-kind]").forEach((b) =>
+          b.addEventListener("click", () => {
+            const kind = b.getAttribute("data-offline-kind");
+            const at = new Date().toISOString();
+            let q = [];
+            try { q = JSON.parse(localStorage.getItem("myseed.offline-checkins") || "[]"); } catch (e) {}
+            q.push({ kind, at, code, id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8) });
+            try { localStorage.setItem("myseed.offline-checkins", JSON.stringify(q)); } catch (e) {}
+            const t = new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+            document.getElementById("saved").textContent = (kind === "in" ? "Check-in" : "Check-out") + " saved at " + t + ". It is sent when you are online.";
+          }),
+        );
+      }
       window.addEventListener("online", () => location.reload());
       setInterval(() => navigator.onLine && fetch("/api/health", { cache: "no-store" }).then((r) => r.ok && location.reload()).catch(() => {}), 10000);
     </script>

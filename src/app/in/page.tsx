@@ -4,6 +4,7 @@ import { checkinView } from "@/server/attendance-capture";
 import { WorkflowError } from "@/server/workflow";
 import { AuthShell } from "../login/auth-shell";
 import { CheckinPad } from "@/components/app/attendance/checkin-pad";
+import { OfflineCheckinSync } from "@/components/app/attendance/offline-sync";
 
 // Depends on who is asking and from which network, so never prerendered.
 export const dynamic = "force-dynamic";
@@ -25,6 +26,7 @@ export default async function CheckinPage({ searchParams }: { searchParams: Prom
   }
   return (
     <AuthShell title="Attendance">
+      <OfflineCheckinSync />
       {body}
       <p className="mt-6 text-center text-xs text-muted-foreground">
         <a href="/attendance" className="text-primary hover:underline">

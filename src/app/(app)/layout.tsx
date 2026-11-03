@@ -33,6 +33,7 @@ import { privacyToAccept } from "@/server/privacy";
 import { PrivacyGate } from "@/components/app/privacy-gate";
 import { Localizer } from "@/components/app/localizer";
 import { Assistant } from "@/components/app/assistant";
+import { OfflineCheckinSync } from "@/components/app/attendance/offline-sync";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const viewer = await requireViewer();
@@ -59,6 +60,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <SidebarInset className="min-w-0">
         {viewer.previewBy && <PreviewBanner name={viewer.name} role={ROLE_LABELS[viewer.activeRole]} />}
         <Topbar user={{ name: viewer.name, email: viewer.email, roles: viewer.roles, avatar: (await avatarsFor([viewer.id]))[viewer.id] ?? null }} activeRole={viewer.activeRole} unread={counts.notifications} chatUnread={counts.chat} qrScan={await (async () => { const c = await (await import("@/server/attendance-capture")).captureConfig(); return c.methods.qr && !!c.methods.scanner; })()} />
+        <OfflineCheckinSync />
         {viewer.mustChangePassword && (
           <div className="border-b bg-[var(--st-paused-bg)] px-4 py-2 text-sm text-[var(--st-paused-fg)] no-print">
             You are signed in with a temporary password.{" "}

@@ -13,7 +13,7 @@ import { can, type AppUser } from "./users";
 import { myEmployeeId } from "./hr";
 import { verifyPassword } from "./passwords";
 import { deviceId, requestIp } from "./auth";
-import { attendanceConfig, dayResult, hrIds, punchKind, shiftOf, stateOf, teamIds, type CheckinState } from "./attendance";
+import { attendanceConfig, dayResult, hrIds, punchKind, recordEvent, shiftOf, stateOf, teamIds, type CheckinState } from "./attendance";
 import { alertAdmins } from "./ops";
 import { distanceM, fmtMin, KIND_LABELS, localParts, NEXT_KINDS, overnight, toMin, type EventKind, type Source } from "@/lib/attendance";
 import { ipInRange, isHostName, isIpOrRange } from "@/lib/ip-match";
@@ -318,6 +318,39 @@ export async function selfCheckin(user: AppUser, input: { kind: EventKind; code?
   if (flags.length) await notify(await hrIds(), { type: "hr", title: `Check-in to review: ${user.name}`, body: flags.join("; "), link: "/attendance?tab=review", groupKey: "att-flags" }, nowIso());
   const line = await dayResult(employeeId, r.day);
   return { kind: r.kind, at: r.at, repeat: r.duplicate, flagged: flags, lateMin: line?.lateMin ?? 0, site: h.site!.name };
+}
+
+// A check-in saved on the phone without signal (the offline page, or the pad when the network dropped), sent once
+// the phone is online. Its real time is kept; it must be within the hours Admin allows for offline check-ins; the
+// office network and location could not be checked, so HR reviews it. The same saved check-in is taken once.
+export async function offlineCheckin(user: AppUser, input: { kind: EventKind; at: string; code?: string | null; clientId: string }) {
+  const employeeId = await myEmployeeId(user);
+  if (!employeeId) throw new WorkflowError("NOT_FOUND", "You do not have an HR record yet.");
+  if (!["in", "out", "break_start", "break_end", "lunch_start", "lunch_end"].includes(input.kind)) throw new WorkflowError("VALIDATION", "Unknown check-in.");
+  const at = new Date(input.at);
+  if (Number.isNaN(at.getTime())) throw new WorkflowError("VALIDATION", "The saved time cannot be read.");
+  const cfg = await attendanceConfig();
+  const ageH = (Date.now() - at.getTime()) / 36e5;
+  if (ageH < -0.05) throw new WorkflowError("VALIDATION", "The phone's clock is ahead; the saved check-in was not taken.");
+  if (ageH > cfg.offlineMaxHours) throw new WorkflowError("VALIDATION", `Saved check-ins are taken up to ${cfg.offlineMaxHours} hours later. Ask for a correction instead.`);
+  const clientId = String(input.clientId ?? "").slice(0, 40);
+  if (!clientId) throw new WorkflowError("VALIDATION", "Missing id.");
+  if (await get("SELECT 1 AS x FROM att_events WHERE employee_id = ? AND client_id = ?", employeeId, `off:${clientId}`)) return { duplicate: true };
+  const c = await captureConfig();
+  const site = input.code ? c.sites.find((s) => posterCode(s) === input.code) : null;
+  const hm = new Date(at).toISOString().slice(11, 16);
+  const r = await recordEvent(employeeId, input.kind, {
+    at: at.toISOString(),
+    source: site ? "qr" : "web",
+    siteId: site?.id ?? null,
+    offline: true,
+    clientId: `off:${clientId}`,
+    deviceId: await deviceId(true).catch(() => null),
+    flag: `Saved without signal${site ? ` at ${site.name}` : ""} (${hm} UTC), sent later`,
+    createdBy: user.id,
+  });
+  await notify(await hrIds(), { type: "hr", title: `Check-in to review: ${user.name}`, body: "Saved on the phone without signal and sent later.", link: "/attendance?tab=review", groupKey: "att-flags" }, nowIso());
+  return { duplicate: r.duplicate, kind: r.kind, at: r.at };
 }
 
 // ---------------------------------------------------------------------------

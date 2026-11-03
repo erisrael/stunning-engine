@@ -133,6 +133,22 @@ try {
   // Dawit's Me tab has the same buttons on the office network.
   await d.goto(`${base}/attendance`);
   check("the Me tab shows the check-in buttons on the office network", await visible(d.getByTestId("checkin-pad")));
+
+  // Phase 19: no signal at the entrance. The service worker shows the offline page at the QR's address (served here
+  // directly, as Playwright cannot cut a service worker's network); the check-in is kept on the phone and sent later.
+  const offlineHtml = fs.readFileSync(path.join(here, "..", "..", "public", "offline.html"), "utf8");
+  const np = await (await ctx(OFFICE, { serviceWorkers: "block" })).newPage();
+  await login(np, "dawit@demo.local");
+  await np.route(/\/in\?c=/, (r) => r.fulfill({ contentType: "text/html", body: offlineHtml }));
+  await np.goto(`${base}/in?c=${prep.code}`);
+  await np.locator('[data-offline-kind="out"]').click();
+  check("without signal the check-out is saved on the phone", /saved at/.test(await np.locator("#saved").innerText()));
+  await np.screenshot({ path: path.join(shots, "9-offline.png") });
+  await np.unroute(/\/in\?c=/);
+  await np.goto(`${base}/attendance`);
+  check("online again, the saved check-out is sent", await visible(np.locator("[data-sonner-toast]").filter({ hasText: /saved check-in was sent/ }), 15000));
+  await a.goto(`${base}/attendance?tab=review`);
+  check("and waits for HR's review", await visible(a.getByText(/without signal/)));
 } catch (e) {
   check("run finished", false, e.message);
   let i = 0;

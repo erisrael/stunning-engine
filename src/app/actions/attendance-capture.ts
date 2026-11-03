@@ -54,3 +54,8 @@ export async function decideFlagsAction(ids: string[], accept: boolean, note?: s
 export async function setDeviceAction(deviceId: string, employeeId: string, status: "active" | "blocked" | "removed") {
   return wrap(async () => setDevice(await requireViewer(), deviceId, employeeId, status));
 }
+
+// A check-in saved on the phone without signal, sent once online (Phase 19).
+export async function offlineCheckinAction(input: { kind: import("@/lib/attendance").EventKind; at: string; code?: string | null; clientId: string }) {
+  return wrap(async () => (await import("@/server/attendance-capture")).offlineCheckin(await requireViewer(), input));
+}

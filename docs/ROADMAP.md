@@ -950,7 +950,10 @@ Phase 5b made the web app installable and prepared the native shell. This phase 
 - [x] **QR check-in inside the app**: a scan button in the top bar (and on Attendance, Me) opens the camera and reads the entrance poster. The phone's own reader is used when there is one, else jsQR. It is on whenever the printed QR is on, and Admin can switch it off in Capture.
 - [ ] **Native builds**: the Android APK (then Google Play) and the iPhone build (TestFlight), from `capacitor.config.json`. These need a machine with Android Studio and Xcode.
 - [ ] **Native camera scanner** in the shell (Capacitor barcode scanner) for older phones without a usable web camera. It uses the same code check, so the site's office network and location rules still apply.
-- [ ] **Check-in without signal**: a check-in made offline is kept on the phone, signed, and sent when the network is back, with its real time. Kiosks already do this.
+- [x] **Check-in without signal** (in the web app; the native shell will use the same):
+  - The QR at the entrance opened with no signal shows the offline page with Check in and Check out, which keeps the check-in on the phone with its real time. The check-in pad does the same when the network drops.
+  - Saved check-ins are sent when the app is next opened online. They are taken once by their id, within the hours Admin allows for offline check-ins, at the QR's site, and marked for HR to review (the office network and location could not be checked).
+  - Tests: `tests/server/offline-checkin.test.ts`, and the end of `tests/e2e/qr-checkin.e2e.mjs`.
 - [ ] **Reliable notifications and ringing**: Firebase on Android and PushKit with CallKit on iPhone, for calls and urgent notices, including incoming customer support calls for agents.
 - [ ] **Biometric sign-in**: fingerprint or face to open the app, with the password kept in the phone's secure storage.
 - [ ] **Deep links**: links in emails and notifications open the right page in the app.

@@ -387,6 +387,12 @@ export async function punchKind(employeeId: string, kind: EventKind, input: Punc
   return insertEvent(employeeId, kind, at, day, input);
 }
 
+// A check-in recorded as it is, without the order rules (a check-in saved on the phone without signal: taken once by
+// its id, and reviewed by HR).
+export async function recordEvent(employeeId: string, kind: EventKind, input: PunchInput & { at: string }) {
+  return insertEvent(employeeId, kind, input.at, await dayFor(employeeId, input.at), input);
+}
+
 // Badge, PIN and face at the kiosk, and the app's single button: the step that follows from the state.
 async function punch(employeeId: string, input: PunchInput) {
   const at = input.at ?? nowIso();

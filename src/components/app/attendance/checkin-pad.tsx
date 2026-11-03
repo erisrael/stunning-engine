@@ -4,6 +4,7 @@ import * as React from "react";
 import { CheckCircle2Icon, CoffeeIcon, LogInIcon, LogOutIcon, MapPinIcon, UtensilsIcon, WifiOffIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { checkinViewAction, selfCheckinAction } from "@/app/actions/attendance-capture";
+import { saveOfflineCheckin } from "./offline-sync";
 import { ACTION_LABELS, STATE_LABELS, type EventKind } from "@/lib/attendance";
 import type { CheckinView } from "@/server/attendance-capture";
 
@@ -53,7 +54,18 @@ export function CheckinPad({ initial, code, compact = false }: { initial: Checki
       l = await locate();
       setLoc(l);
     }
-    const r = await selfCheckinAction({ kind, code, ...(l ?? {}) });
+    let r: Awaited<ReturnType<typeof selfCheckinAction>>;
+    try {
+      if (typeof navigator !== "undefined" && !navigator.onLine) throw new Error("offline");
+      r = await selfCheckinAction({ kind, code, ...(l ?? {}) });
+    } catch {
+      // No signal: kept on the phone with the time now, sent when it is back online.
+      setBusy(null);
+      const at = new Date().toISOString();
+      if (saveOfflineCheckin({ kind, at, code: code ?? null })) setDone({ kind, at, lateMin: 0, flagged: ["no signal: saved on this phone and sent when it is online"] });
+      else setError("No signal, and this phone cannot keep the check-in. Try again when you are online.");
+      return;
+    }
     setBusy(null);
     if (!r.ok) {
       setError(r.error);
