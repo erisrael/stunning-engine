@@ -147,7 +147,7 @@ export async function teamInsights(user: AppUser, d: string, opts: { weeks?: num
 
   // Risks to act on now.
   const blocked = new Set(blocks.filter((b) => b.blocker_status !== "done" && b.blocker_status !== "cancelled").map((b) => b.task_id));
-  const short = (t: T) => ({ id: t.id, code: t.code, title: t.title, status: label(t.status), due: t.due_date, assignee: people.find((p) => p.id === t.assignee_id)?.name ?? null, priority: t.priority });
+  const short = (t: T) => ({ id: t.id, code: t.code, title: t.title, status: label(t.status), due: t.due_date, assignee: people.find((p) => p.id === t.assignee_id)?.name ?? null, priority: t.priority, href: null as string | null });
   const risks = {
     overdue: open.filter((t) => t.due_date && t.due_date < today).sort((x, y) => x.due_date!.localeCompare(y.due_date!)).slice(0, 15).map(short),
     stuck: open.filter((t) => catOf(t.status) !== "open" && inStatus(t) >= 7).sort((x, y) => inStatus(y) - inStatus(x)).slice(0, 15).map((t) => ({ ...short(t), days: Math.round(inStatus(t)) })),
@@ -197,3 +197,101 @@ export async function teamInsights(user: AppUser, d: string, opts: { weeks?: num
   };
 }
 export type TeamInsights = Awaited<ReturnType<typeof teamInsights>>;
+
+// ---------------------------------------------------------------------------
+// The same analysis for a production stage (Recording, Editing, Uploading, Publication), for its leads and managers:
+// from the stage attempts (entered, started, completed, returned) instead of department tasks.
+// ---------------------------------------------------------------------------
+
+type StageRow = { id: string; item_id: string; code: string; title: string; status: string; owner_id: string | null; entered_at: string; first_started_at: string | null; completed_at: string | null; cause: string; due: string | null; since: string | null };
+
+export async function stageInsights(user: AppUser, stage: string, opts: { weeks?: number; now?: string } = {}): Promise<TeamInsights> {
+  const { STAGES, STAGE_LABELS, STATUS_LABELS, OPEN_STATUSES } = await import("@/lib/domain");
+  if (!(STAGES as readonly string[]).includes(stage)) throw new WorkflowError("VALIDATION", "Unknown stage.");
+  const manager = user.perms.includes("work.override") || user.roles.includes("manager") || user.roles.includes("admin");
+  if (!manager && !user.leads.includes(stage as never)) throw new WorkflowError("FORBIDDEN", "The analyzer is for this team's leads and managers.");
+  const now = opts.now ?? nowIso();
+  const today = now.slice(0, 10);
+  const weeks = Math.max(4, Math.min(26, opts.weeks ?? 8));
+  const since = new Date(new Date(now).getTime() - weeks * 7 * DAY).toISOString();
+  const rows = await all<StageRow>(
+    `SELECT a.id, a.item_id, i.code, i.title, a.status, a.owner_id, a.entered_at, a.first_started_at, a.completed_at, a.cause, SUBSTRING(i.current_due_at, 1, 10) AS due,
+       (SELECT MAX(started_at) FROM stage_intervals s WHERE s.attempt_id = a.id) AS since
+     FROM stage_attempts a JOIN items i ON i.id = a.item_id WHERE a.stage = ? AND a.status <> 'superseded' AND (a.completed_at IS NULL OR a.completed_at >= ?)`,
+    stage,
+    since,
+  );
+  const open = rows.filter((r) => (OPEN_STATUSES as readonly string[]).includes(r.status));
+  const done = rows.filter((r) => r.completed_at);
+  const weekKeys: string[] = [];
+  for (let i = weeks - 1; i >= 0; i--) weekKeys.push(weekStart(new Date(new Date(now).getTime() - i * 7 * DAY).toISOString()));
+  const flow = weekKeys.map((w) => ({ week: w, created: rows.filter((r) => weekStart(r.entered_at) === w).length, done: done.filter((r) => weekStart(r.completed_at!) === w).length }));
+  const cycle = done.filter((r) => r.first_started_at).map((r) => days(r.first_started_at!, r.completed_at!));
+  const lead = done.map((r) => days(r.entered_at, r.completed_at!));
+  const age = (r: StageRow) => days(r.since ?? r.first_started_at ?? r.entered_at, now);
+  const statuses = (OPEN_STATUSES as readonly string[]).map((s) => {
+    const here = open.filter((r) => r.status === s);
+    const ages = here.map(age);
+    return { key: s, label: STATUS_LABELS[s as keyof typeof STATUS_LABELS], category: s === "queued" ? "open" : "active", count: here.length, avgDays: ages.length ? Math.round((ages.reduce((x, y) => x + y, 0) / ages.length) * 10) / 10 : 0, oldestDays: ages.length ? Math.round(Math.max(...ages) * 10) / 10 : 0 };
+  });
+  const working = statuses.filter((s) => s.key !== "queued");
+  const bottleneck = [...working].sort((x, y) => y.count * Math.max(1, y.avgDays) - x.count * Math.max(1, x.avgDays))[0] ?? null;
+  const people = await all<{ id: string; name: string }>("SELECT u.id, u.name FROM users u JOIN role_assignments r ON r.user_id = u.id WHERE r.role = ? AND u.active = 1 ORDER BY u.name", stage);
+  const members = people.map((p) => {
+    const mine = open.filter((r) => r.owner_id === p.id);
+    const fin = done.filter((r) => r.owner_id === p.id);
+    const withDue = fin.filter((r) => r.due);
+    const myCycle = fin.filter((r) => r.first_started_at).map((r) => days(r.first_started_at!, r.completed_at!));
+    return {
+      id: p.id,
+      name: p.name,
+      position: "member",
+      open: mine.length,
+      inProgress: mine.filter((r) => r.status === "in_progress").length,
+      overdue: mine.filter((r) => r.due && r.due < today).length,
+      done: fin.length,
+      perWeek: Math.round((fin.length / weeks) * 10) / 10,
+      onTimePct: withDue.length ? Math.round((withDue.filter((r) => r.completed_at!.slice(0, 10) <= r.due!).length / withDue.length) * 100) : null,
+      cycleMedian: pct(myCycle, 50),
+      hours: 0,
+      capacity: 0,
+      loadPct: null,
+    };
+  });
+  const short = (r: StageRow) => ({ id: r.id, code: r.code, title: r.title, status: STATUS_LABELS[r.status as keyof typeof STATUS_LABELS] ?? r.status, due: r.due, assignee: people.find((p) => p.id === r.owner_id)?.name ?? null, priority: "normal", href: `/items/${r.item_id}` });
+  const risks = {
+    overdue: open.filter((r) => r.due && r.due < today).slice(0, 15).map(short),
+    stuck: open.filter((r) => r.status !== "queued" && age(r) >= 7).sort((x, y) => age(y) - age(x)).slice(0, 15).map((r) => ({ ...short(r), days: Math.round(age(r)) })),
+    blocked: open.filter((r) => r.status === "blocked" || r.status === "paused").slice(0, 15).map(short),
+    unowned: open.filter((r) => !r.owner_id).slice(0, 15).map(short),
+  };
+  const ins: Insight[] = [];
+  const createdN = rows.filter((r) => r.entered_at >= since).length;
+  if (createdN > done.length * 1.25 && createdN - done.length >= 3) ins.push({ tone: "warn", title: "More parts arrive than are finished", detail: `${createdN} arrived and ${done.length} finished in ${weeks} weeks.` });
+  else if (done.length >= createdN && done.length > 0) ins.push({ tone: "good", title: "The team keeps up", detail: `${done.length} finished against ${createdN} arrived.` });
+  if (bottleneck && bottleneck.count >= 3 && bottleneck.avgDays >= 2) ins.push({ tone: "bad", title: `Parts wait in ${bottleneck.label}`, detail: `${bottleneck.count} parts for ${bottleneck.avgDays} days on average.` });
+  const redone = rows.filter((r) => r.cause !== "initial").length;
+  if (redone && rows.length && redone / rows.length > 0.15) ins.push({ tone: "warn", title: `${Math.round((redone / rows.length) * 100)}% of the work was redone`, detail: "Returned parts slow the whole line; look at why they come back." });
+  if (risks.unowned.length) ins.push({ tone: "warn", title: `${risks.unowned.length} parts have nobody on them`, detail: risks.unowned.slice(0, 3).map((t) => t.code).join(", ") });
+  if (risks.stuck.length) ins.push({ tone: "warn", title: `${risks.stuck.length} parts have not moved for a week`, detail: risks.stuck.slice(0, 3).map((t) => t.code).join(", ") });
+  const idle = members.filter((m) => m.open === 0);
+  if (idle.length && risks.unowned.length) ins.push({ tone: "info", title: `${idle.length} people have nothing open`, detail: idle.map((m) => m.name).join(", ") });
+  if (!ins.length) ins.push({ tone: "info", title: "Not much to read yet", detail: "The analysis gets better as parts move through the stage." });
+  const order = { bad: 0, warn: 1, info: 2, good: 3 } as const;
+  ins.sort((x, y) => order[x.tone] - order[y.tone]);
+  return {
+    dept: `stage:${stage}`,
+    title: STAGE_LABELS[stage as keyof typeof STAGE_LABELS],
+    weeks,
+    totals: { open: open.length, done: done.length, created: createdN, overdue: risks.overdue.length, unassigned: risks.unowned.length, wip: open.filter((r) => r.status !== "queued").length },
+    flow,
+    cycle: { median: pct(cycle, 50), p85: pct(cycle, 85), samples: cycle.length },
+    lead: { median: pct(lead, 50), p85: pct(lead, 85), samples: lead.length },
+    statuses,
+    waits: [],
+    bottleneck,
+    members,
+    risks,
+    insights: ins,
+  } as unknown as TeamInsights;
+}

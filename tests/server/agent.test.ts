@@ -10,7 +10,7 @@ import { setPosition } from "../../src/server/departments";
 import { moveTask, saveTask } from "../../src/server/work";
 import * as ai from "../../src/server/assistant-ai";
 import * as asst from "../../src/server/assistant";
-import { teamInsights } from "../../src/server/team-insights";
+import { stageInsights, teamInsights } from "../../src/server/team-insights";
 import { aiFixImport, assistImport } from "../../src/server/import-assist";
 import { closestOption, normalizeDate } from "../../src/lib/import-fix";
 import { directory, getProfile, hiddenFrom, savePeopleVisibility } from "../../src/server/profiles";
@@ -114,6 +114,14 @@ async function main() {
   check("the assistant reads the analyzer for leads", /Dev team/.test(tool.text) && tool.links.some((l) => l.href === "/dev/analyze"), tool);
   const written = await ai.askAnalysis(L, { task: "Explain", data: ti, question: "Who can take more?" });
   check("the AI write-up of the analysis", !!written && /Who can take more/.test(written), written);
+
+  // The same for a production stage, for its lead.
+  const hana = (await loadUser((await get<{ id: string }>("SELECT id FROM users WHERE email = 'hana@demo.local'"))!.id))!;
+  const dawit = (await loadUser((await get<{ id: string }>("SELECT id FROM users WHERE email = 'dawit@demo.local'"))!.id))!;
+  const si = await stageInsights(hana, "recording");
+  check("a stage lead analyzes their stage", si.flow.length === 8 && si.title === "Recording" && si.members.some((m) => m.id === dawit.id) && si.insights.length >= 1, { t: si.title, m: si.members.length });
+  check("not another stage", /leads and managers/.test((await throws(() => stageInsights(hana, "editing"))) ?? ""));
+  check("not a team member", /leads and managers/.test((await throws(() => stageInsights(dawit, "recording"))) ?? ""));
 
   // ---------------- Import helper
   check("dates in other formats", normalizeDate("03/04/2026") === "2026-04-03" && normalizeDate("4/25/2026") === "2026-04-25" && normalizeDate("2026/4/5") === "2026-04-05" && normalizeDate("5 Jan 2026") === "2026-01-05" && normalizeDate("46000") === "2025-12-09" && normalizeDate("31/02/2026") === null);

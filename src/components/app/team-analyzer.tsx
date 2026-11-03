@@ -46,7 +46,7 @@ export function TeamAnalyzer({ dept, data, ai, taskHref }: { dept: string; data:
     router.push(`${pathname}?${q.toString()}`);
   };
   const open = (id: string) => `${taskHref}?task=${id}`;
-  const riskList = (title: string, rows: { id: string; code: string; title: string; status: string; due: string | null; assignee: string | null; days?: number }[], key: string) => (
+  const riskList = (title: string, rows: { id: string; code: string; title: string; status: string; due: string | null; assignee: string | null; days?: number; href?: string | null }[], key: string) => (
     <Card data-risk={key}>
       <CardHeader className="pb-2">
         <CardTitle className="text-sm">
@@ -56,7 +56,7 @@ export function TeamAnalyzer({ dept, data, ai, taskHref }: { dept: string; data:
       <CardContent className="space-y-1 text-sm">
         {rows.length ? (
           rows.slice(0, 8).map((t) => (
-            <Link key={t.id} href={open(t.id)} className="flex items-center gap-2 rounded px-1 py-0.5 hover:bg-muted">
+            <Link key={t.id} href={t.href ?? open(t.id)} className="flex items-center gap-2 rounded px-1 py-0.5 hover:bg-muted">
               <span className="font-mono text-xs text-muted-foreground">{t.code}</span>
               <span className="min-w-0 flex-1 truncate">{t.title}</span>
               <span className="shrink-0 text-xs text-muted-foreground">{t.days !== undefined ? `${t.days} d in ${t.status}` : t.due ? `due ${t.due}` : t.status}</span>

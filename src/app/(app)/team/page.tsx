@@ -65,6 +65,7 @@ export default async function TeamPage({ searchParams }: { searchParams: Promise
         <TabsList className="w-full justify-start overflow-x-auto sm:w-fit">
           {isManager && <TabsTrigger value="workload">Workload</TabsTrigger>}
           {isManager && <TabsTrigger value="scenario">Capacity scenario</TabsTrigger>}
+          {isManager && <TabsTrigger value="analyze">Analyze</TabsTrigger>}
           <TabsTrigger value="effort">My effort</TabsTrigger>
           <TabsTrigger value="leave">Leave</TabsTrigger>
           <TabsTrigger value="corrections">Timer corrections</TabsTrigger>
@@ -133,6 +134,29 @@ export default async function TeamPage({ searchParams }: { searchParams: Promise
         {isManager && (
           <TabsContent value="scenario">
             <ScenarioPlanner data={data} />
+          </TabsContent>
+        )}
+        {isManager && (
+          <TabsContent value="analyze" className="space-y-3">
+            {await (async () => {
+              const { stageInsights } = await import("@/server/team-insights");
+              const { aiAvailable } = await import("@/server/assistant-ai");
+              const { TeamAnalyzer } = await import("@/components/app/team-analyzer");
+              const mine = manager ? [...STAGES] : STAGES.filter((st) => viewer.leads.includes(st));
+              const stage = (typeof sp.stage === "string" && (mine as string[]).includes(sp.stage) ? sp.stage : mine[0]) as Stage;
+              return (
+                <>
+                  <div className="flex flex-wrap gap-1.5" data-stage-pick>
+                    {mine.map((st) => (
+                      <Link key={st} href={`/team?tab=analyze&stage=${st}`} className={`rounded-full border px-3 py-1 text-xs ${st === stage ? "border-primary bg-primary text-primary-foreground" : "hover:bg-muted"}`}>
+                        {STAGE_LABELS[st]}
+                      </Link>
+                    ))}
+                  </div>
+                  <TeamAnalyzer dept={`stage:${stage}`} data={await stageInsights(viewer, stage, { weeks: Number(sp.weeks) || 8 })} ai={await aiAvailable(viewer)} taskHref="/items" />
+                </>
+              );
+            })()}
           </TabsContent>
         )}
         <TabsContent value="effort" className="space-y-3">

@@ -1049,6 +1049,7 @@ Built: `src/server/assistant-ai.ts` (agent, conversations, write-ups), `src/comp
   - each member's open work, work in progress, overdue tasks, pace, on-time rate and load against capacity;
   - the risks: overdue, stuck for a week or more, blocked, and urgent work without an owner.
   - Written insights come from the app's own rules. With the AI on, **Explain with AI** writes it up and answers a question. Every status move is now kept for this.
+- [x] **The same for production** (Team and capacity, Analyze): stage leads and managers see their stage's flow, where parts wait, each person's pace, redone work, and parts stuck, paused or with nobody on them.
 - [x] **Import helper** (in the import wizard's preview, when rows have errors):
   - it fixes what it safely can: spaces, hidden characters, dates in other formats or as Excel numbers, numbers with commas or units, yes/no words, emails, links, values close to an allowed one, and list separators;
   - empty and repeated rows are removed;
