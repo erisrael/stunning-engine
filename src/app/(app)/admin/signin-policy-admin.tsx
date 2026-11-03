@@ -182,6 +182,7 @@ export function SignInPolicyAdmin({ data }: { data: SignInAdminData }) {
                 onChange={(v) => set("twoStep", { email: v })}
                 hint={data.emailReady ? "Also a fallback for people without an app." : "Email is not set up (Email, Settings), so codes cannot be sent yet."}
               />
+              <Toggle id="ts-passkey" label="Passkeys" checked={p.twoStep.passkey} onChange={(v) => set("twoStep", { passkey: v })} hint="Fingerprint, face or a security key instead of typing a code. People add them on Profile, Account. Needs the site on https (or localhost)." />
               <Toggle
                 id="ts-prov"
                 label="Google, Microsoft and SSO count as both steps"

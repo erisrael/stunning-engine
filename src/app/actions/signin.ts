@@ -27,8 +27,22 @@ import type { ProviderId, SignInPolicy } from "@/lib/signin-policy";
 import type { Role } from "@/lib/domain";
 
 // The second step at sign-in (no session yet, so nothing to refresh).
-export async function verifyTwoStepAction(input: { kind: "totp" | "email" | "recovery"; code: string; remember?: boolean }) {
+export async function verifyTwoStepAction(input: { kind: "totp" | "email" | "recovery" | "passkey"; code: string; remember?: boolean }) {
   return wrap(() => verifyChallenge(input), { revalidate: false });
+}
+
+// Passkeys: the options at sign-in; adding and removing one on Profile, Account.
+export async function passkeyChallengeAction() {
+  return wrap(async () => (await import("@/server/signin")).passkeyChallenge(), { revalidate: false });
+}
+export async function passkeyRegisterOptionsAction() {
+  return wrap(async () => (await import("@/server/passkeys")).registrationOptions(await requireViewer()), { revalidate: false });
+}
+export async function passkeyRegisterAction(response: string, name: string) {
+  return wrap(async () => (await import("@/server/passkeys")).finishRegistration(await requireViewer(), JSON.parse(response), name));
+}
+export async function passkeyRemoveAction(id: string) {
+  return wrap(async () => (await import("@/server/passkeys")).removePasskey(await requireViewer(), id));
 }
 
 export async function finishTwoStepSetupAction() {

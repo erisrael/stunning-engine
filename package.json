@@ -30,6 +30,8 @@
     "@anthropic-ai/sdk": "^1.4.0",
     "@electric-sql/pglite": "^0.5.12",
     "@phosphor-icons/react": "^2.1.10",
+    "@simplewebauthn/browser": "^13.3.0",
+    "@simplewebauthn/server": "^13.3.3",
     "@vladmandic/face-api": "^1.7.15",
     "class-variance-authority": "^0.7.1",
     "cmdk": "^1.1.1",

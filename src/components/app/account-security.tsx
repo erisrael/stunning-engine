@@ -279,3 +279,69 @@ export function SignInHistory({ rows, everyone = false }: { rows: SignInLogRow[]
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Passkeys: a fingerprint, face or security key as the second step at sign-in
+// ---------------------------------------------------------------------------
+
+export function PasskeysCard({ passkeys, enabled }: { passkeys: { id: string; name: string; created_at: string; last_used_at: string | null }[]; enabled: boolean }) {
+  const router = useRouter();
+  const [busy, setBusy] = React.useState(false);
+  const [name, setName] = React.useState("");
+  if (!enabled) return null;
+  const add = async () => {
+    setBusy(true);
+    try {
+      const A = await import("@/app/actions/signin");
+      const o = await A.passkeyRegisterOptionsAction();
+      if (!o.ok) throw new Error(o.error);
+      const { startRegistration } = await import("@simplewebauthn/browser");
+      const resp = await startRegistration({ optionsJSON: o.data as Parameters<typeof startRegistration>[0]["optionsJSON"] });
+      const r = await A.passkeyRegisterAction(JSON.stringify(resp), name || "Passkey");
+      if (!r.ok) throw new Error(r.error);
+      toast.success("Passkey added. Use it at sign-in instead of a code.");
+      setName("");
+      router.refresh();
+    } catch (e) {
+      toast.error(e instanceof Error && /NotAllowed|abort|timed out/i.test(e.name + e.message) ? "The passkey was not added." : e instanceof Error ? e.message : "Could not add the passkey.");
+    }
+    setBusy(false);
+  };
+  return (
+    <Card data-passkeys>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <ShieldCheckIcon className="size-5" /> Passkeys
+        </CardTitle>
+        <CardDescription>Sign in with your fingerprint, face or a security key as the second step, instead of typing a code. Add one on each phone or computer you use.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3 text-sm">
+        {passkeys.map((p) => (
+          <div key={p.id} className="flex items-center gap-2 rounded-md border px-3 py-2" data-passkey>
+            <span className="flex-1 font-medium">{p.name}</span>
+            <span className="text-xs text-muted-foreground">added {formatDateTime(p.created_at)}{p.last_used_at ? `, last used ${formatDateTime(p.last_used_at)}` : ""}</span>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={busy}
+              onClick={async () => {
+                if (!window.confirm(`Remove the passkey "${p.name}"?`)) return;
+                const r = await (await import("@/app/actions/signin")).passkeyRemoveAction(p.id);
+                if (!r.ok) return void toast.error(r.error);
+                router.refresh();
+              }}
+            >
+              Remove
+            </Button>
+          </div>
+        ))}
+        <div className="flex flex-wrap items-center gap-2">
+          <Input aria-label="Passkey name" placeholder="Name, e.g. My phone" className="h-9 w-56" value={name} onChange={(e) => setName(e.target.value)} />
+          <Button onClick={add} disabled={busy}>
+            Add a passkey
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}

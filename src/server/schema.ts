@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 41;
+export const SCHEMA_VERSION = 42;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -1928,6 +1928,8 @@ CREATE TABLE IF NOT EXISTS signin_challenges (
   expires_at TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
+-- (v42) the passkey challenge of this sign-in.
+ALTER TABLE signin_challenges ADD COLUMN IF NOT EXISTS passkey_challenge TEXT;
 CREATE TABLE IF NOT EXISTS user_identities (
   provider TEXT NOT NULL,
   subject TEXT NOT NULL,
@@ -2166,6 +2168,24 @@ CREATE TABLE IF NOT EXISTS mail_state (
   last_uid INTEGER NOT NULL DEFAULT 0,
   checked_at TEXT,
   error TEXT
+);
+
+-- v42: passkeys (fingerprint, face or a security key, WebAuthn) as a second step at sign-in.
+CREATE TABLE IF NOT EXISTS user_passkeys (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  public_key TEXT NOT NULL,
+  counter BIGINT NOT NULL DEFAULT 0,
+  transports TEXT NOT NULL DEFAULT '[]',
+  name TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  last_used_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_user_passkeys ON user_passkeys(user_id);
+CREATE TABLE IF NOT EXISTS passkey_registrations (
+  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  challenge TEXT NOT NULL,
+  expires_at TEXT NOT NULL
 );
 
 -- v41: customer support: the knowledge base, and email and Telegram threads on tickets.
@@ -2839,6 +2859,7 @@ export const TABLES = [
   "okr_objectives",
   "okr_key_results",
   "okr_checkins",
+  "user_passkeys",
   "pres_decks",
   "pres_shares",
   "sup_apps",

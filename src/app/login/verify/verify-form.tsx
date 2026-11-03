@@ -9,7 +9,8 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { RecoveryCodes } from "@/components/app/signin-ui";
-import { cancelTwoStepAction, finishTwoStepSetupAction, sendTwoStepEmailAction, verifyTwoStepAction } from "@/app/actions/signin";
+import { cancelTwoStepAction, finishTwoStepSetupAction, passkeyChallengeAction, sendTwoStepEmailAction, verifyTwoStepAction } from "@/app/actions/signin";
+import { FingerprintIcon } from "lucide-react";
 import type { ChallengeInfo } from "@/server/signin";
 
 type Kind = "totp" | "email" | "recovery";
@@ -48,6 +49,24 @@ export function VerifyForm({ info }: { info: ChallengeInfo }) {
     }
     if (r.data?.recoveryCodes) return setDone({ codes: r.data.recoveryCodes });
     window.location.href = r.data?.next ?? "/dashboard";
+  };
+
+  // A passkey: the browser asks for the fingerprint, face or security key, and the answer is checked.
+  const usePasskey = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const o = await passkeyChallengeAction();
+      if (!o.ok) throw new Error(o.error);
+      const { startAuthentication } = await import("@simplewebauthn/browser");
+      const resp = await startAuthentication({ optionsJSON: o.data as Parameters<typeof startAuthentication>[0]["optionsJSON"] });
+      const r = await verifyTwoStepAction({ kind: "passkey", code: JSON.stringify(resp), remember });
+      if (!r.ok) throw new Error(r.error);
+      window.location.href = r.data?.next ?? "/dashboard";
+    } catch (e) {
+      setBusy(false);
+      setError(e instanceof Error && /NotAllowed|abort|timed out/i.test(e.name + e.message) ? "The passkey was not used. Try again, or use a code." : e instanceof Error ? e.message : "The passkey did not work.");
+    }
   };
 
   const sendEmail = async () => {
@@ -140,6 +159,12 @@ export function VerifyForm({ info }: { info: ChallengeInfo }) {
         </ol>
       ) : (
         <>
+          {info.passkey && (
+            <Button type="button" className="h-11 w-full rounded-lg" onClick={usePasskey} disabled={busy} data-use-passkey>
+              {busy ? <LoaderIcon className="animate-spin" /> : <FingerprintIcon />} Use a passkey
+            </Button>
+          )}
+          {info.passkey && (info.totp || info.emailCode || info.recovery) && <p className="text-center text-xs text-muted-foreground">or use a code</p>}
           {(info.totp ? 1 : 0) + (info.emailCode ? 1 : 0) + (info.recovery ? 1 : 0) > 1 && (
             <div className="grid grid-cols-3 gap-1 rounded-lg bg-muted p-1 text-xs" role="tablist">
               {(

@@ -33,7 +33,7 @@ export type SessionLimit = { idleMinutes: number; maxHours: number };
 export type SignInPolicy = {
   password: { minLength: number; lettersAndNumbers: boolean; breachCheck: boolean; maxAgeDays: number; noReuse: number };
   lockout: { attempts: number; minutes: number; perAddress: number };
-  twoStep: { totp: boolean; email: boolean; rememberDays: number; trustProviders: boolean; default: TwoStepLevel; roles: Partial<Record<Role, TwoStepLevel>> };
+  twoStep: { totp: boolean; email: boolean; passkey: boolean; rememberDays: number; trustProviders: boolean; default: TwoStepLevel; roles: Partial<Record<Role, TwoStepLevel>> };
   sessions: { default: SessionLimit; roles: Partial<Record<Role, SessionLimit>>; newDeviceAlert: boolean };
   signup: { mode: SignupMode; domains: string[]; startRole: Role; inviteDays: number };
   emailVerify: { mode: EmailVerifyMode; graceDays: number };
@@ -45,7 +45,7 @@ const SENSITIVE: Role[] = ["admin", "hr_manager", "hr_officer", "finance_manager
 export const DEFAULT_SIGNIN_POLICY: SignInPolicy = {
   password: { minLength: 10, lettersAndNumbers: true, breachCheck: true, maxAgeDays: 0, noReuse: 3 },
   lockout: { attempts: 5, minutes: 15, perAddress: 30 },
-  twoStep: { totp: true, email: true, rememberDays: 30, trustProviders: true, default: "optional", roles: Object.fromEntries(SENSITIVE.map((r) => [r, "required"])) },
+  twoStep: { totp: true, email: true, passkey: true, rememberDays: 30, trustProviders: true, default: "optional", roles: Object.fromEntries(SENSITIVE.map((r) => [r, "required"])) },
   sessions: { default: { idleMinutes: 0, maxHours: 14 * 24 }, roles: Object.fromEntries(SENSITIVE.map((r) => [r, { idleMinutes: 8 * 60, maxHours: 7 * 24 }])), newDeviceAlert: true },
   signup: { mode: "off", domains: [], startRole: "recording", inviteDays: 7 },
   emailVerify: { mode: "off", graceDays: 7 },
@@ -138,6 +138,7 @@ export function normalizeSignInPolicy(raw: unknown): SignInPolicy {
     twoStep: {
       totp: bool(ts.totp, D.twoStep.totp),
       email: bool(ts.email, D.twoStep.email),
+      passkey: bool(ts.passkey, D.twoStep.passkey),
       rememberDays: int(ts.rememberDays, 0, 90, D.twoStep.rememberDays),
       trustProviders: bool(ts.trustProviders, D.twoStep.trustProviders),
       default: level(ts.default, D.twoStep.default),

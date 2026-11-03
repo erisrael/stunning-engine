@@ -252,7 +252,8 @@ async function secondStepNeed(userId: string, method: string): Promise<"none" | 
   // Google, Microsoft and single sign-on have their own two-step sign-in, so they count as both steps.
   if (method !== "password" && method !== "reset" && method !== "invite" && p.twoStep.trustProviders) return "none";
   const ts = await twoStepRow(userId);
-  const hasTotp = p.twoStep.totp && !!ts?.totp_confirmed_at;
+  const hasPasskey = p.twoStep.passkey && (await (await import("./passkeys")).hasPasskey(userId));
+  const hasTotp = (p.twoStep.totp && !!ts?.totp_confirmed_at) || hasPasskey;
   if (level === "optional" && !hasTotp) return "none";
   const device = await deviceId(false);
   if (device && p.twoStep.rememberDays && (await get("SELECT 1 AS x FROM two_step_trust WHERE user_id = ? AND device_id = ? AND until > ?", userId, device, nowIso())))
@@ -303,7 +304,7 @@ async function finishSignIn(userId: string, method: string, next: string): Promi
 }
 
 // "done": the app was just set up and the recovery codes are on screen; the session starts on Continue.
-type ChallengeRow = { id: string; user_id: string; mode: "verify" | "setup" | "done"; method: string; totp_pending_enc: string | null; email_code_hash: string | null; email_sent_at: string | null; attempts: number; next: string; expires_at: string };
+type ChallengeRow = { id: string; user_id: string; mode: "verify" | "setup" | "done"; method: string; totp_pending_enc: string | null; email_code_hash: string | null; email_sent_at: string | null; attempts: number; next: string; expires_at: string; passkey_challenge: string | null };
 
 async function currentChallenge(): Promise<ChallengeRow | null> {
   const token = (await cookies()).get(CHALLENGE_COOKIE)?.value;
@@ -320,6 +321,7 @@ export type ChallengeInfo = {
   emailCode: boolean;
   emailSent: boolean;
   recovery: boolean;
+  passkey: boolean;
   rememberDays: number;
   setup: { secret: string; qr: string } | null;
 };
@@ -347,6 +349,7 @@ export async function challengeInfo(): Promise<ChallengeInfo | null> {
     emailCode: c.mode === "verify" && p.twoStep.email && (await emailReady()),
     emailSent: !!c.email_sent_at,
     recovery: parseJson<string[]>(ts?.recovery, []).length > 0,
+    passkey: c.mode === "verify" && p.twoStep.passkey && (await (await import("./passkeys")).hasPasskey(c.user_id)),
     rememberDays: p.twoStep.rememberDays,
     setup,
   };
@@ -370,7 +373,15 @@ export async function sendChallengeEmail() {
   );
 }
 
-export async function verifyChallenge(input: { kind: "totp" | "email" | "recovery"; code: string; remember?: boolean }): Promise<{ next: string; recoveryCodes?: string[] }> {
+// The passkey options for the sign-in in progress (the browser then asks for the fingerprint, face or key).
+export async function passkeyChallenge() {
+  const c = await currentChallenge();
+  if (!c || c.mode !== "verify") throw new WorkflowError("INVALID_STATE", "Sign in again.");
+  if (!(await signInPolicy()).twoStep.passkey) throw new WorkflowError("INVALID_STATE", "Passkeys are switched off.");
+  return (await import("./passkeys")).authenticationOptions(c.user_id, c.id);
+}
+
+export async function verifyChallenge(input: { kind: "totp" | "email" | "recovery" | "passkey"; code: string; remember?: boolean }): Promise<{ next: string; recoveryCodes?: string[] }> {
   const c = await currentChallenge();
   if (!c) throw new WorkflowError("INVALID_STATE", "This sign-in has expired. Sign in again.");
   if (c.mode === "done") throw new WorkflowError("INVALID_STATE", "Two-step sign-in is already set up. Continue.");
@@ -402,6 +413,13 @@ export async function verifyChallenge(input: { kind: "totp" | "email" | "recover
     ok = crypto.timingSafeEqual(Buffer.from(c.email_code_hash), Buffer.from(sha(`${c.id}:${code}`)));
   } else if (input.kind === "recovery" && ts) {
     ok = await useRecoveryCode(c.user_id, ts, code);
+  } else if (input.kind === "passkey" && p.twoStep.passkey) {
+    try {
+      ok = await (await import("./passkeys")).verifyAuthentication(c.user_id, c.passkey_challenge, JSON.parse(input.code));
+    } catch {
+      ok = false;
+    }
+    await run("UPDATE signin_challenges SET passkey_challenge = NULL WHERE id = ?", c.id);
   }
   if (!ok) {
     await run("UPDATE signin_challenges SET attempts = attempts + 1 WHERE id = ?", c.id);

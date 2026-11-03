@@ -13,7 +13,7 @@ import { ProfileCard } from "@/components/app/profile-card";
 import { SessionsTable } from "@/components/app/security";
 import { GoogleAccount } from "@/components/app/google-connect";
 import { googleConnection } from "@/server/google";
-import { LinkedAccounts, SignInHistory, TwoStepCard } from "@/components/app/account-security";
+import { LinkedAccounts, PasskeysCard, SignInHistory, TwoStepCard } from "@/components/app/account-security";
 import { myIdentities, myTwoStep, signInLog } from "@/server/signin";
 import { readyProviders } from "@/server/oidc";
 import { signInPolicy } from "@/server/signin-config";
@@ -158,6 +158,7 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
       </div>
       <div className="grid gap-4 lg:grid-cols-2">
         <TwoStepCard state={await myTwoStep(viewer)} />
+        <PasskeysCard passkeys={await (await import("@/server/passkeys")).myPasskeys(viewer.id)} enabled={(await (await import("@/server/signin-config")).signInPolicy()).twoStep.passkey} />
         <LinkedAccounts providers={await readyProviders().catch(() => [])} linked={await myIdentities(viewer.id)} />
       </div>
       <SessionsTable rows={await listSessions(viewer)} />

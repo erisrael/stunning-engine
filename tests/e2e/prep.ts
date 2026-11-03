@@ -169,6 +169,11 @@ const PREPS: Record<string, () => Promise<unknown>> = {
     await run("INSERT INTO department_positions (department, user_id, position) VALUES ('dev', ?, 'lead') ON CONFLICT DO NOTHING", leul);
     await syncFromUsers(await admin());
   },
+  // Passkeys: two-step sign-in optional for everyone (a passkey makes it apply), passkeys on.
+  async passkeys() {
+    await passwordOnly({ twoStep: { ...DEFAULT_SIGNIN_POLICY.twoStep, default: "optional", roles: {}, passkey: true } });
+    return {};
+  },
   // Performance: HR records for everyone; Dawit (recording) reports to Hana (recording lead).
   async performance() {
     await passwordOnly();
