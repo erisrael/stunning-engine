@@ -841,11 +841,13 @@ Done in step 1: Admin, Sign-in has tabs Rules, Google, Microsoft, SSO, Sign-up, 
 
 - [x] The Uploading card ("Record upload", destination Myseed App) has Send to the Myseed App: the approved master with the part's details goes to the app's API (POST /videos, key sealed in Admin, Files and publishing), and the app's ID is recorded as the upload; Check the app (GET /videos/ID) records the upload complete and playback checked when it plays, and live with the app's link when the app says it is live. Tested against a stand-in app; the real app must answer in that shape.
 
-### 16.4 Amharic and the Ethiopian calendar (started)
+### 16.4 Amharic and the Ethiopian calendar (dates done; translation continues)
 
 - [x] **Dates in the Ethiopian calendar**, per person (account menu, Language and calendar: Gregorian, Ethiopian or both) and per workspace (Settings, Calendar display, for people who have not chosen). Every date the pages show is converted ("ጥቅምት 24, 2019"), checked against known dates over 20 years (`src/lib/ethiopian.ts`). Ethiopian public holidays were already in Leave.
 - [x] **Amharic for the interface, first part**, per person (account menu): the sidebar, the top bar, page titles, tabs, common buttons, statuses and the assistant (about 180 labels in `src/lib/amharic.ts`; a label is shown in Amharic when its text has an entry, so more are added by adding lines).
-- [ ] Still open: every remaining label, message and email in Amharic (and Afaan Oromo later); date pickers that pick Ethiopian dates (they show Gregorian; the chosen date then shows in both); payroll months following the Ethiopian calendar.
+- [x] **Picking dates in the Ethiopian calendar**: for people using it, any date field gets a picker beside it while it has focus (Ethiopian day, month and year, with Pagume's 5 or 6 days). It fills the field with the same day without changing the pages (`src/components/app/ethiopian-picker.tsx`; checked in `tests/e2e/branding.e2e.mjs`).
+- [x] **More Amharic**: 57 more labels for performance, recognition, customer support, attendance records, payroll and presentations.
+- [ ] Still open: every remaining label, message and email in Amharic (and Afaan Oromo later); payroll months following the Ethiopian calendar.
 
 ### 16.5 Data protection for everyone's records (done)
 

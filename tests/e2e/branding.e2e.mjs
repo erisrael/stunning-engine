@@ -124,6 +124,17 @@ try {
   const month = ["መስከረም", "ጥቅምት", "ኅዳር", "ታኅሣሥ", "ጥር", "የካቲት", "መጋቢት", "ሚያዝያ", "ግንቦት", "ሰኔ", "ሐምሌ", "ነሐሴ", "ጳጉሜ"].some((m) => mainText.includes(m));
   check("dates also in the Ethiopian calendar", month, mainText.slice(0, 300));
   await page.screenshot({ path: path.join(shots, "5-amharic.png") });
+  // Picking a date in the Ethiopian calendar: Meskerem 1 fills the field with 11 or 12 September.
+  await page.goto(`${base}/attendance?tab=records`);
+  await page.evaluate(() => (document.documentElement.dataset.calendar = "ethiopian"));
+  await page.locator("#rec-day").focus();
+  check("a date field offers the Ethiopian picker", await visible(page.locator("[data-et-picker]")));
+  await page.locator("[data-et-picker]").getByLabel("Ethiopian month").selectOption("1");
+  await page.locator("[data-et-picker]").getByLabel("Ethiopian day").selectOption("1");
+  await page.screenshot({ path: path.join(shots, "6-ethiopian-picker.png") });
+  await page.locator("[data-et-use]").click();
+  await page.waitForTimeout(1200);
+  check("the chosen Ethiopian date fills the field", /day=\d{4}-09-1[12]/.test(page.url()), page.url());
   await page.evaluate(() => {
     document.documentElement.dataset.lang = "en";
     document.documentElement.dataset.calendar = "gregorian";

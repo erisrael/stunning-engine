@@ -32,6 +32,7 @@ import { pendingAnnouncements } from "@/server/announcements";
 import { privacyToAccept } from "@/server/privacy";
 import { PrivacyGate } from "@/components/app/privacy-gate";
 import { Localizer } from "@/components/app/localizer";
+import { EthiopianDatePicker } from "@/components/app/ethiopian-picker";
 import { Assistant } from "@/components/app/assistant";
 import { OfflineCheckinSync } from "@/components/app/attendance/offline-sync";
 
@@ -77,6 +78,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </main>
         <ChatKeyBootstrap viewerId={viewer.id} />
         <Localizer defaultCalendar={settings.workspace.calendarDisplay} />
+        <EthiopianDatePicker defaultCalendar={settings.workspace.calendarDisplay} />
         {!viewer.mustChangePassword && !viewer.previewBy && <Assistant ctx={await assistantContext(viewer)} ai={await aiAvailable(viewer)} />}
         {!viewer.previewBy && await privacyToAccept(viewer).then((p) => (p ? <PrivacyGate notice={p.notice} version={p.version} updatedAt={p.updatedAt} /> : null))}
         {!viewer.mustChangePassword && <GetStarted audience={audienceFor(viewer.activeRole, viewer.leads)} tour={viewer.prefs.tour ?? {}} />}
