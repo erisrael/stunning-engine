@@ -69,6 +69,32 @@ try {
   check("filled icons show and outline ones hide", shown.length > 3 && shown.every((c) => /pk-fill|pk-lucide/.test(c ?? "")) && shown.some((c) => /pk-fill/.test(c ?? "")) && !shown.some((c) => /pk-alt/.test(c ?? "")), shown.slice(0, 4).join(" | "));
   check("the font changes", /Atkinson/i.test(await page.evaluate(() => getComputedStyle(document.body).fontFamily)));
   await page.screenshot({ path: path.join(shots, "2-filled-high-contrast.png") });
+
+  // Phase 18: a policy for everyone, confirmed from the strip; who has confirmed; the usage view.
+  await page.evaluate(() => (document.documentElement.dataset.contrast = "normal"));
+  await page.goto(`${base}/announcements`);
+  const comp = page.locator("[data-announce-composer]");
+  await comp.getByRole("button", { name: "Policy to confirm" }).click();
+  await comp.getByLabel("Announcement title").fill("Working hours from December");
+  await comp.getByLabel("Announcement text").fill("The office opens at 8:30.");
+  await comp.getByRole("button", { name: "Publish" }).click();
+  check("policy published", await toast(page, /Policy published/));
+  const other = await (await browser.newContext({ viewport: { width: 1360, height: 900 } })).newPage();
+  await other.goto(`${base}/login`);
+  await other.fill("input[name=email]", "liya@demo.local");
+  await other.fill("input[name=password]", "Demo-Workflow-2026");
+  await other.getByRole("button", { name: /log in/i }).click();
+  await other.waitForURL((u) => !/\/login/.test(u.pathname), { timeout: 30000 });
+  const strip = other.locator("[data-announcement]");
+  check("the policy shows at the top of the page", await visible(strip) && /Working hours from December/.test(await strip.innerText()));
+  await other.screenshot({ path: path.join(shots, "3-policy-strip.png") });
+  await strip.getByRole("button", { name: "I have read this" }).click();
+  check("confirmed", await toast(other, /confirmed/));
+  await page.reload();
+  await page.locator("[data-announcement-card]").filter({ hasText: "Working hours from December" }).getByRole("button", { name: /Who has confirmed/ }).click();
+  check("the author sees who confirmed", /^1 of \d+ confirmed/.test(await page.locator("[data-announcement-status]").innerText()), await page.locator("[data-announcement-status]").innerText().catch(() => ""));
+  await page.goto(`${base}/admin?tab=usage`);
+  check("Admin, Usage shows visits", await visible(page.locator("[data-usage-admin]")) && !/No visits recorded/.test(await page.locator("[data-usage-admin]").innerText()));
 } catch (e) {
   check("ran without crashing", false, e?.stack ?? e);
 } finally {

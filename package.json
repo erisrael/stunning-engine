@@ -15,6 +15,7 @@
     "backup": "tsx scripts/backup.ts",
     "setup": "npm run db:reset && npm run templates",
     "verify": "tsx scripts/verify.ts",
+    "perf:big": "tsx scripts/big-data.ts",
     "db:reset": "tsx scripts/seed.ts reset",
     "db:empty": "tsx scripts/seed.ts empty",
     "db:import": "tsx scripts/seed.ts import",

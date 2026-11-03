@@ -40,7 +40,7 @@ import { searchAction } from "@/app/actions/search";
 import { listNotificationsAction, markNotificationsAction, snoozeNotificationAction } from "@/app/actions/collab";
 import { ROLE_LABELS, STAGE_LABELS, type Role, type Stage } from "@/lib/domain";
 import { fmtRelative } from "@/lib/format";
-import { cn } from "@/lib/utils";
+import { cn, pollMs } from "@/lib/utils";
 
 const TITLES: Record<string, string> = {
   dashboard: "Dashboard",
@@ -120,7 +120,7 @@ export function Topbar({ user, activeRole, unread, chatUnread }: { user: { name:
       } catch {
         /* offline: keep the last value */
       }
-    }, 45000);
+    }, pollMs(45000));
     return () => window.clearInterval(id);
   }, []);
 
@@ -352,6 +352,12 @@ function UserMenu({ user }: { user: { name: string; email: string; avatar?: stri
             <DropdownMenuRadioGroup value={look.contrast} onValueChange={(v) => setLook({ contrast: v })}>
               <DropdownMenuRadioItem value="normal">Normal</DropdownMenuRadioItem>
               <DropdownMenuRadioItem value="high">High contrast</DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="text-xs text-muted-foreground">Slow connection</DropdownMenuLabel>
+            <DropdownMenuRadioGroup value={look.lite} onValueChange={(v) => setLook({ lite: v })}>
+              <DropdownMenuRadioItem value="off">Normal</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="on">Light mode (no animations, fewer refreshes)</DropdownMenuRadioItem>
             </DropdownMenuRadioGroup>
           </DropdownMenuSubContent>
         </DropdownMenuSub>

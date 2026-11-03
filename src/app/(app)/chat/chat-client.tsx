@@ -84,7 +84,7 @@ import {
   isJumbo,
 } from "./chat-extras";
 import { SecureGate, useSecureChat } from "./secure";
-import { cn } from "@/lib/utils";
+import { cn, pollMs } from "@/lib/utils";
 import { ContactSheet, ForwardDialog, JumpToDate, MediaSheet, MentionPicker, OnlineDot, ReadersDialog, ReportDialog, SearchSheet, Ticks, presenceLabel } from "./chat-plus";
 import { deleteConversationAction, messagesFromAction, newerMessagesAction, presenceAction } from "@/app/actions/chat-plus";
 import { useSearchParams } from "next/navigation";
@@ -195,7 +195,7 @@ export function ChatClient({
 
   // Keep the list fresh while the page is open.
   React.useEffect(() => {
-    const t = setInterval(() => document.visibilityState === "visible" && router.refresh(), 30000);
+    const t = setInterval(() => document.visibilityState === "visible" && router.refresh(), pollMs(30000));
     return () => clearInterval(t);
   }, [router]);
 

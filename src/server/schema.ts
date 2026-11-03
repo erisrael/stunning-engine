@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 30;
+export const SCHEMA_VERSION = 31;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -2168,6 +2168,35 @@ CREATE TABLE IF NOT EXISTS mail_state (
   error TEXT
 );
 
+-- v31: announcements and policies (with "I have read this"), and page visits per day for Admin's usage view.
+CREATE TABLE IF NOT EXISTS announcements (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'news',
+  audience TEXT NOT NULL,
+  pinned INTEGER NOT NULL DEFAULT 0,
+  created_by TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  expires_at TEXT
+);
+CREATE TABLE IF NOT EXISTS announcement_reads (
+  announcement_id TEXT NOT NULL,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  read_at TEXT,
+  acked_at TEXT,
+  PRIMARY KEY (announcement_id, user_id)
+);
+CREATE TABLE IF NOT EXISTS page_visits (
+  day TEXT NOT NULL,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  role TEXT NOT NULL,
+  section TEXT NOT NULL,
+  n INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (day, user_id, section)
+);
+
 -- v30: routines (recorded ways of doing something in the app) and their runs, with approval (Phase 13d).
 CREATE TABLE IF NOT EXISTS assistant_routines (
   id TEXT PRIMARY KEY,
@@ -2300,6 +2329,9 @@ export const TABLES = [
   "brand_banners",
   "assistant_routines",
   "assistant_runs",
+  "announcements",
+  "announcement_reads",
+  "page_visits",
   "employees",
   "employee_private",
   "employee_documents",

@@ -14,7 +14,7 @@ import { savePrefsAction } from "@/app/actions/admin";
 import { itemAction } from "@/app/actions/items";
 import { useActions } from "@/components/app/action-center";
 import { fmtDateTime, fmtDuration, isoToLocalInput, localInputToIso } from "@/lib/format";
-import { cn } from "@/lib/utils";
+import { cn, pollMs } from "@/lib/utils";
 import { DASHBOARD_PANELS } from "@/lib/panels";
 
 const PANELS = DASHBOARD_PANELS;
@@ -109,7 +109,7 @@ export function SessionBanner({
   const router = useRouter();
   const [, tick] = React.useState(0);
   React.useEffect(() => {
-    const t = window.setInterval(() => tick((x) => x + 1), 30000);
+    const t = window.setInterval(() => tick((x) => x + 1), pollMs(30000));
     return () => window.clearInterval(t);
   }, []);
   const stale = sessions.filter((s) => Date.now() - new Date(s.started_at).getTime() > staleHours * 3600e3);

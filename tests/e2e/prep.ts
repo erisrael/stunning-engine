@@ -53,6 +53,11 @@ const PREPS: Record<string, () => Promise<unknown>> = {
     await saveAiConfig(admin, { on: true, model: "claude-opus-5-5", effort: "low", offRoles: [], dailyLimit: 0, actions: true, key: "sk-ant-e2e" });
     return {};
   },
+  // The main pages on a phone.
+  async mobile() {
+    await passwordOnly();
+    return {};
+  },
   // Admin's sidebar links, Branding and the icon packs.
   async branding() {
     await passwordOnly();

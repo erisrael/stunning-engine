@@ -27,6 +27,8 @@ import { assistantContext } from "@/server/assistant";
 import { aiAvailable } from "@/server/assistant-ai";
 import { bannerMap, navBrand } from "@/server/branding";
 import { SectionBanner } from "@/components/app/section-banner";
+import { AnnouncementStrip } from "@/components/app/announcement-strip";
+import { pendingAnnouncements } from "@/server/announcements";
 import { Assistant } from "@/components/app/assistant";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -64,6 +66,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           </div>
         )}
         <main className="mx-auto w-full max-w-[1600px] min-w-0 flex-1 px-3 py-4 sm:px-6 sm:py-6">
+          {!viewer.mustChangePassword && <AnnouncementStrip pending={await pendingAnnouncements(viewer)} />}
           <SectionBanner banners={await bannerMap()} />
           {children}
         </main>

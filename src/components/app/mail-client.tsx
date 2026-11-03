@@ -42,7 +42,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { mailActAction, mailDraftAction, mailFoldersAction, mailHomeAction, mailListAction, mailMessageAction, mailSaveDraftAction, mailSendAction } from "@/app/actions/mail";
 import type { FolderRole, MailAction, MailCompose, MailFolder, MailMessage } from "@/server/mail";
-import { cn } from "@/lib/utils";
+import { cn, pollMs } from "@/lib/utils";
 
 type Row = { uid: number; seen: boolean; flagged: boolean; answered: boolean; draft: boolean; size: number; date: string; subject: string; from: { name: string; address: string } | null; to: string[]; attachments: boolean };
 type Draft = { to: string; cc: string; bcc: string; subject: string; text: string; inReplyTo: string | null; references: string[]; attachments: { name: string; type: string; base64: string }[]; draftUid: number | null; replied: { folder: string; uid: number } | null; forward: { folder: string; uid: number; names: string[] } | null; showCc: boolean };
@@ -139,7 +139,7 @@ export function MailClient({ ownBox, others, initialBox, tz }: { ownBox: { id: s
       void loadFolders();
       void loadList(true);
     };
-    const t = window.setInterval(refresh, 60_000);
+    const t = window.setInterval(refresh, pollMs(60_000));
     document.addEventListener("visibilitychange", refresh);
     return () => (window.clearInterval(t), document.removeEventListener("visibilitychange", refresh));
   }, [loadFolders, loadList]);

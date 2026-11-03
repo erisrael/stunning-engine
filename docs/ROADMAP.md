@@ -906,9 +906,9 @@ One system for "what each person and team is responsible for, how it is measured
 - [ ] Permissions (configurable in the matrix): HR manages the library, templates, scoring and cycles; heads and leads set targets and OKRs for their teams within the rules; everyone sees their own; owners see the company.
 - [ ] Exports: Excel per period, and the Power BI feed.
 
-## Phase 18: Worth having
+## Phase 18: Worth having (done)
 
-- [ ] **Announcements and policies**: company and department news on Home, with optional "I have read this" for policies; a list of who has not confirmed yet.
-- [ ] **Phones and slow connections**: every page checked on a small phone, with a light mode that loads less (no animations, smaller images, fewer refreshes) for slow networks.
-- [ ] **Usage view** for Admin: which pages and features are used, by role and team, and who has not signed in for a while, to plan training (no tracking of content).
-- [ ] **Speed with years of data**: a test workspace filled with five years of data (tens of thousands of parts and tasks, a million attendance events), the slow pages fixed, and limits on lists with paging everywhere.
+- [x] **Announcements and policies**: Admin, HR managers and owners announce to everyone, departments or roles; a department's head to their own department. News or a policy to confirm, pinned, with an end date. Shown at the top of every page until read ("Got it") or confirmed ("I have read this"), and as a notice. The author sees who has read or confirmed and who has not, and reminds them. Page: /announcements.
+- [x] **Phones and slow connections**: every main page checked at phone width (390 px) by a browser test (`tests/e2e/mobile.e2e.mjs`); a Light mode in the account menu (no animations, no banner pictures, background checks three times less often).
+- [x] **Usage view** (Admin, Usage): page visits per section and per role over 30 days, people using the app each day, and who has not signed in for 14 days or more. Only the section of each visit is kept (no ids, nothing on the page).
+- [x] **Speed with years of data**: `npm run perf:big` fills a throwaway workspace with five years of data (20,000 parts, 40,000 tasks, 1,000,000 attendance events) and times the queries behind the busiest pages; all were under 30 ms on a laptop (limit 300 ms).

@@ -323,3 +323,7 @@
 :root[data-contrast="high"].dark { --foreground: #fff; --muted-foreground: #e6e6e6; --border: #a3a3a3; --input: #a3a3a3; --sidebar-foreground: #fff; --sidebar-border: #a3a3a3; --background: #000; --card: #0a0a0a; --popover: #0a0a0a; }
 :root[data-contrast="high"] :is(p, li, td) > a { text-decoration: underline; text-underline-offset: 2px; }
 :root[data-contrast="high"] *:focus-visible { outline: 3px solid var(--ring) !important; outline-offset: 2px; }
+
+/* Light mode for slow connections: no animations or transitions, no banner pictures (their colour stays). */
+:root[data-lite="on"] *, :root[data-lite="on"] *::before, :root[data-lite="on"] *::after { animation: none !important; transition: none !important; }
+:root[data-lite="on"] [data-section-banner] { background-image: none !important; background-color: var(--primary) !important; }

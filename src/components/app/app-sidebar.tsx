@@ -277,6 +277,7 @@ export function AppSidebar({
           { label: "Safety reports", href: "/admin?tab=reports" },
           { label: "Sidebar", href: "/admin?tab=sidebar" },
           { label: "Branding", href: "/admin?tab=branding" },
+          { label: "Usage", href: "/admin?tab=usage" },
           { label: "Integrations", href: "/admin?tab=integrations" },
           { label: "System", href: "/admin?tab=system" },
         ]
@@ -315,6 +316,7 @@ export function AppSidebar({
         { href: "/dashboard", label: home ? "Today" : staff ? "My work" : "Home", icon: HomeIcon, badge: home ? 0 : counts.myWork, locked: true },
         { href: "/attendance", label: "Attendance", icon: ClockIcon, sub: attSub },
         { href: "/routines", label: "Routines", icon: ZapIcon, badge: counts.routines ?? 0 },
+        { href: "/announcements", label: "Announcements", icon: MegaphoneIcon },
         ...(approver || counts.approvals > 0 ? [{ href: "/approvals", label: "Approvals", icon: CheckCheckIcon, badge: counts.approvals }] : []),
         ...(!lead && !home ? [{ href: "/team", label: "My effort", icon: UsersIcon, cap: "nav.team" as Capability }] : []),
         { href: "/questions", label: "Questions", icon: MessageCircleQuestionIcon, badge: counts.questions, cap: "nav.questions" },
@@ -428,6 +430,7 @@ export function AppSidebar({
         label: "My space",
         items: [
           { href: "/dashboard", label: "Home", icon: HomeIcon, locked: true },
+          { href: "/announcements", label: "Announcements", icon: MegaphoneIcon },
           ...(counts.approvals > 0 ? [{ href: "/approvals", label: "Approvals", icon: CheckCheckIcon, badge: counts.approvals }] : []),
           ...(counts.routines ? [{ href: "/routines", label: "Routines", icon: ZapIcon, badge: counts.routines }] : []),
           ...(counts.mailbox ? [{ href: "/email", label: "Email", icon: MailIcon, badge: counts.mail ?? 0, sub: emailSub }] : []),
