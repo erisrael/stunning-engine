@@ -10,11 +10,13 @@
 import * as React from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { CheckIcon, Loader2Icon, MicIcon, MicOffIcon, RotateCcwIcon, SendIcon, SparklesIcon, Volume2Icon, VolumeXIcon, XIcon } from "lucide-react";
+import { CheckIcon, CircleDotIcon, ExternalLinkIcon, Loader2Icon, MicIcon, MicOffIcon, PlayIcon, RotateCcwIcon, SendIcon, SparklesIcon, Volume2Icon, VolumeXIcon, XIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { askAiAction, assistantDataAction, confirmProposalAction, logAssistantAction } from "@/app/actions/assistant";
+import { askAiAction, assistantDataAction, confirmProposalAction, listRoutinesAction, logAssistantAction, requestRunAction } from "@/app/actions/assistant";
+import { askedSteps, beginRun, RecordBar, RoutineRunner, SaveRoutineDialog, useRecorder } from "@/components/app/routines-client";
+import type { Routine, RoutineStep } from "@/server/routines";
 import { punchAction } from "@/app/actions/attendance";
 import { saveTaskAction } from "@/app/actions/departments";
 import { requestLeaveAction } from "@/app/actions/leave";
@@ -372,6 +374,34 @@ export function Assistant({ ctx, ai = false }: { ctx: AssistantContext; ai?: boo
   const [doing, setDoing] = React.useState<Extract<Flow, { kind: "do" }> | null>(null);
   const [showing, setShowing] = React.useState<Extract<Flow, { kind: "show" }> | null>(null);
   const [voice, setVoice] = React.useState<{ lang: string; speak: boolean }>({ lang: "en-US", speak: false });
+  const [guide, setGuide] = React.useState<{ flow: Extract<Flow, { kind: "guide" }>; step: number } | null>(null);
+  const [routines, setRoutines] = React.useState<Routine[] | null>(null);
+  const [runFor, setRunFor] = React.useState<{ routine: Routine; values: Record<string, string> } | null>(null);
+  const [toSave, setToSave] = React.useState<RoutineStep[] | null>(null);
+  const rec = useRecorder();
+  const opts = ctx.options;
+  const routinesOn = !!ctx.routines;
+  const loadRoutines = React.useCallback(() => {
+    if (!routinesOn) return;
+    void listRoutinesAction().then((r) => r.ok && r.data && setRoutines(r.data));
+  }, [routinesOn]);
+  React.useEffect(() => {
+    if (open && routines === null) loadRoutines();
+  }, [open, routines, loadRoutines]);
+  const runRoutine = (r: Routine) => {
+    setOpen(true);
+    setRunFor({ routine: r, values: Object.fromEntries(askedSteps(r.steps).map((x) => [String(x.i), x.s.value ?? ""])) });
+  };
+  const sendRun = async () => {
+    if (!runFor) return;
+    const r = await requestRunAction(runFor.routine.id, runFor.values);
+    if (!r.ok || !r.data) return void toast.error((!r.ok && r.error) || "Could not start it.");
+    setRunFor(null);
+    if (r.data.status === "approved") {
+      setOpen(false);
+      await beginRun(r.data.id);
+    } else say({ from: "bot", text: `"${runFor.routine.name}" was sent for approval. You will be told when you can run it (Routines page).` });
+  };
   const base = ctx.home?.base ?? null;
   const pathname = usePathname();
   const end = React.useRef<HTMLDivElement>(null);
@@ -408,6 +438,9 @@ export function Assistant({ ctx, ai = false }: { ctx: AssistantContext; ai?: boo
       setOpen(true);
       setDoing(f);
       say({ from: "bot", text: `${f.title}. ${f.hint}.` });
+    } else if (f.kind === "guide") {
+      setOpen(true);
+      setGuide({ flow: f, step: 0 });
     } else if (f.kind === "show") {
       try {
         sessionStorage.setItem(KEY, JSON.stringify({ flow: f.key, step: 0 }));
@@ -417,7 +450,7 @@ export function Assistant({ ctx, ai = false }: { ctx: AssistantContext; ai?: boo
     }
   };
   const reply = (m: Match): Msg => {
-    if (m.type === "flow") return { from: "bot", text: `${m.flow.title}: ${m.flow.hint}.`, actions: [{ label: m.flow.kind === "do" ? "Do it with me" : "Show me", run: () => startFlow(m.flow) }] };
+    if (m.type === "flow") return { from: "bot", text: `${m.flow.title}: ${m.flow.hint}.`, actions: [{ label: m.flow.kind === "do" ? "Do it with me" : m.flow.kind === "guide" ? "Show the steps" : "Show me", run: () => startFlow(m.flow) }] };
     if (m.type === "place") return { from: "bot", text: `${m.place.name} is here.`, actions: [{ label: `Open ${m.place.name}`, run: () => router.push(fill(m.place.href, base)) }] };
     if (m.type === "term") return { from: "bot", text: `${m.term.term}: ${m.term.meaning}` };
     return { from: "bot", text: m.answer.a };
@@ -444,6 +477,10 @@ export function Assistant({ ctx, ai = false }: { ctx: AssistantContext; ai?: boo
       return void toast.error(r.error);
     }
     const done = r.data?.done ?? "Done";
+    if (r.data?.routine) {
+      const rt = (routines ?? []).find((x) => x.id === r.data!.routine) ?? (await listRoutinesAction().then((x) => (x.ok ? x.data?.find((y) => y.id === r.data!.routine) : undefined)));
+      if (rt) runRoutine(rt);
+    }
     setMsgs((m) => m.map((x, i) => (i === idx ? { ...x, busy: false, settled: done } : x)));
     toast.success(done);
     setHistory((h) => [...h, { role: "user", text: `(I confirmed: ${p.title}.)` }, { role: "assistant", text: `${done}.` }]);
@@ -493,6 +530,13 @@ export function Assistant({ ctx, ai = false }: { ctx: AssistantContext; ai?: boo
       }
       return;
     }
+    const want = t.match(/^(?:run|do|start|play)\s+(?:the\s+|my\s+)?(?:routine\s+)?(.+)$/i)?.[1]?.toLowerCase();
+    const rt = want && routines ? routines.find((r) => r.name.toLowerCase() === want) ?? routines.find((r) => r.name.toLowerCase().includes(want)) : null;
+    if (rt) {
+      setMsgs((m) => [...m, { from: "me", text: t }]);
+      runRoutine(rt);
+      return;
+    }
     setMsgs((m) => [...m, { from: "me", text: t }]);
     if (ai) void askAi(t);
     else keywordAnswer(t);
@@ -535,10 +579,14 @@ export function Assistant({ ctx, ai = false }: { ctx: AssistantContext; ai?: boo
   }, []);
   // Out of the way during a presentation.
   if (/\/present$/.test(pathname)) return null;
-  const suggestions = ai ? ["What should I work on today?", "How many leave days do I have?", "What is waiting for me?"] : [];
+  const suggestions = opts.suggestions.length ? opts.suggestions : ai ? ["What should I work on today?", "How many leave days do I have?", "What is waiting for me?"] : [];
+  const voiceOn = speech.supported && opts.voice;
   return (
     <>
       {showing && <ShowMe flow={showing} base={base} onEnd={endShow} />}
+      <RoutineRunner />
+      {rec.recording && <RecordBar count={rec.steps.length} onStop={() => setToSave(rec.stop())} onCancel={() => rec.stop()} />}
+      {toSave && <SaveRoutineDialog steps={toSave} sharing onClose={() => setToSave(null)} onSaved={() => (setToSave(null), loadRoutines())} />}
       <div className="no-print fixed right-4 bottom-4 z-50 flex flex-col items-end gap-2" data-assistant>
         {open && (
           <section role="dialog" aria-label="Assistant" className="flex max-h-[min(40rem,calc(100vh-6rem))] w-[24rem] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl border bg-popover shadow-2xl">
@@ -579,7 +627,76 @@ export function Assistant({ ctx, ai = false }: { ctx: AssistantContext; ai?: boo
               </Button>
             </header>
             <div className="flex-1 space-y-2 overflow-y-auto p-3 text-sm">
-              {!msgs.length && !doing && (
+              {guide && (
+                <div className="rounded-lg border p-2.5" data-assistant-guide={guide.flow.key}>
+                  <p className="font-medium">{guide.flow.title}</p>
+                  <ol className="mt-1.5 space-y-1">
+                    {guide.flow.steps.map((st, i) => (
+                      <li key={i} className={cn("flex gap-2 rounded px-1.5 py-1", i === guide.step ? "bg-[#1A73E8]/10 font-medium" : i < guide.step ? "text-muted-foreground line-through" : "")}>
+                        <span className="w-4 shrink-0 text-xs text-muted-foreground">{i + 1}</span>
+                        {st}
+                      </li>
+                    ))}
+                  </ol>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {guide.flow.href && (
+                      <Button size="xs" variant="outline" onClick={() => router.push(fill(guide.flow.href!, base))}>
+                        <ExternalLinkIcon /> Open the page
+                      </Button>
+                    )}
+                    <Button size="xs" variant="ghost" disabled={guide.step === 0} onClick={() => setGuide({ ...guide, step: guide.step - 1 })}>
+                      Back
+                    </Button>
+                    {guide.step + 1 < guide.flow.steps.length ? (
+                      <Button size="xs" onClick={() => setGuide({ ...guide, step: guide.step + 1 })}>
+                        Next
+                      </Button>
+                    ) : (
+                      <Button size="xs" onClick={() => (log({ flow: guide.flow.key, event: "finish", step: guide.step }), setGuide(null))}>
+                        Done
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              )}
+              {runFor && (
+                <div className="space-y-2 rounded-lg border border-[#1A73E8]/40 bg-[#1A73E8]/5 p-2.5" data-assistant-run={runFor.routine.id}>
+                  <p className="font-medium">Run &quot;{runFor.routine.name}&quot;</p>
+                  <p className="text-xs text-muted-foreground">{runFor.routine.steps.length} steps, done in this browser as you would do them. You can pause, skip or stop at any time.</p>
+                  {askedSteps(runFor.routine.steps).map(({ i, s: st }) => (
+                    <Input key={i} aria-label={st.label ?? `Value ${i + 1}`} placeholder={st.label ?? ""} value={runFor.values[String(i)] ?? ""} onChange={(e) => setRunFor({ ...runFor, values: { ...runFor.values, [String(i)]: e.target.value } })} />
+                  ))}
+                  <div className="flex gap-2">
+                    <Button size="xs" onClick={() => void sendRun()}>
+                      <PlayIcon /> Confirm and run
+                    </Button>
+                    <Button size="xs" variant="ghost" onClick={() => setRunFor(null)}>
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              )}
+              {!msgs.length && !doing && !guide && !runFor && routinesOn && (
+                <div className="space-y-1.5" data-assistant-routines>
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-medium text-muted-foreground">My routines</p>
+                    <Button size="xs" variant="outline" onClick={() => (rec.start(), setOpen(false), toast("Recording. Do the task as usual, then press Stop and save at the top."))}>
+                      <CircleDotIcon className="text-[#EA4335]" /> Record a routine
+                    </Button>
+                  </div>
+                  {routines && routines.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {routines.map((r) => (
+                        <button key={r.id} type="button" onClick={() => runRoutine(r)} className="rounded-full border border-[#1A73E8]/30 bg-[#1A73E8]/5 px-2.5 py-1 text-xs hover:bg-[#1A73E8]/10" data-assistant-routine={r.id}>
+                          <PlayIcon className="mr-1 inline size-3" />
+                          {r.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+              {!msgs.length && !doing && !guide && !runFor && (
                 <>
                   <p className="text-muted-foreground">What would you like to do? Pick one, type it in your own words, or press the microphone and say it.</p>
                   {suggestions.length > 0 && (
@@ -592,12 +709,28 @@ export function Assistant({ ctx, ai = false }: { ctx: AssistantContext; ai?: boo
                     </div>
                   )}
                   <div className="flex flex-wrap gap-1.5">
-                    {ctx.flows.map((f) => (
-                      <button key={f.key} type="button" onClick={() => startFlow(f)} className="rounded-full border px-2.5 py-1 text-xs hover:bg-muted" data-assistant-flow={f.key}>
-                        {f.title}
-                      </button>
-                    ))}
+                    {ctx.flows
+                      .filter((f) => f.kind !== "guide")
+                      .map((f) => (
+                        <button key={f.key} type="button" onClick={() => startFlow(f)} className="rounded-full border px-2.5 py-1 text-xs hover:bg-muted" data-assistant-flow={f.key}>
+                          {f.title}
+                        </button>
+                      ))}
                   </div>
+                  <details className="rounded-lg border px-2.5 py-1.5" data-assistant-tutorials>
+                    <summary className="cursor-pointer text-xs font-medium">How-to tutorials ({ctx.flows.filter((f) => f.kind === "guide").length})</summary>
+                    <ul className="mt-1.5 max-h-48 space-y-0.5 overflow-y-auto">
+                      {ctx.flows
+                        .filter((f) => f.kind === "guide")
+                        .map((f) => (
+                          <li key={f.key}>
+                            <button type="button" onClick={() => startFlow(f)} className="w-full rounded px-1.5 py-0.5 text-left text-xs hover:bg-muted" data-assistant-flow={f.key}>
+                              {f.title}
+                            </button>
+                          </li>
+                        ))}
+                    </ul>
+                  </details>
                   <p className="text-[11px] text-muted-foreground">Say &quot;open leave&quot;, &quot;go back&quot;, &quot;scroll down&quot; or ask a question.</p>
                 </>
               )}
@@ -658,7 +791,7 @@ export function Assistant({ ctx, ai = false }: { ctx: AssistantContext; ai?: boo
               <div ref={end} />
             </div>
             <form className="flex items-center gap-2 border-t p-2" onSubmit={(e) => (e.preventDefault(), ask(text))}>
-              {speech.supported && (
+              {voiceOn && (
                 <Button
                   size="icon"
                   type="button"
@@ -687,7 +820,7 @@ export function Assistant({ ctx, ai = false }: { ctx: AssistantContext; ai?: boo
           </section>
         )}
         <div className="flex items-center gap-2">
-          {!open && speech.supported && (
+          {!open && voiceOn && (
             <Button size="icon" variant="outline" className="size-9 rounded-full bg-background shadow-md" aria-label="Speak to the assistant" title="Speak (Alt+V)" onClick={listen}>
               <MicIcon className="text-[#EA4335]" />
             </Button>

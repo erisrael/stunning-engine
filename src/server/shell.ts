@@ -49,5 +49,7 @@ export async function shellCounts(user: AppUser) {
   ]);
   // Everything waiting for this person's decision, for the Approvals entry.
   const approvals = Number(leave) + Number(claims) + Number(attendance) + Number(incoming) + Number(corrections);
-  return { myWork, handoffs, questions, corrections, notifications, chat, incoming, attendance, leave, claims, approvals, mail: mail.unread, mailbox: mail.has };
+  // Routine runs waiting for this person's approval.
+  const routines = Number((await get<{ c: number }>("SELECT COUNT(*) AS c FROM assistant_runs WHERE status = 'pending' AND approver_ids LIKE ?", `%"${user.id}"%`).catch(() => null))?.c ?? 0);
+  return { myWork, handoffs, questions, corrections, notifications, chat, incoming, attendance, leave, claims, approvals, mail: mail.unread, mailbox: mail.has, routines };
 }

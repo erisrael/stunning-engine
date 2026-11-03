@@ -741,6 +741,13 @@ Built (13b): `src/server/assistant-ai.ts` (settings, the tools, sealed proposals
 - [x] **Admin, Branding**: a banner for Home, production, each department (built-in and created), HR, Finance, Attendance and People: an uploaded picture (up to 3 MB) or a colour, with a title and a line; and any sidebar entry's icon (from a pack of 90 icons, each in both packs) and colour, for everyone.
 - [x] **QR check-in inside the app**: Admin, Attendance setup, Capture: "Scan the QR in the app" (with the printed QR on); the Attendance page then has Scan the QR, which opens the camera and reads the poster on the phone (the browser's reader, or jsQR), then checks in through the usual page and checks.
 
+## Phase 13d: Assistant per role, more operations, tutorials and routines (done)
+
+- [x] **Options per role** (Admin, Assistant): AI answers, voice, routines, which actions the AI may prepare, the suggestions shown first, and a daily limit for AI questions.
+- [x] **More operations** (prepared, then run on the person's Confirm through the pages' own functions): leave (ask, cancel), check in or out, attendance corrections, expense claims, notifications read; tasks in any department (create, start, finish, send to the lead, move, change priority or due date, comment, assign, approve, return); requests to another department; approving or rejecting leave, claims and corrections; running a routine. New reads for the AI: what waits for my approval, my notifications, my routines.
+- [x] **Tutorials**: 22 written how-tos for every department plus Help's guides, as numbered steps with the page to open (How-to tutorials in the assistant; found by typing or voice; the AI can open them).
+- [x] **Routines** (no AI key needed): Record a routine in the assistant, do the task as usual (clicks and typing, page by page; never passwords), save it with a name, the values to ask each time and who may use it (only me, my departments, everyone). Run it from the assistant ("run weekly notes", a button, voice, or the AI). Approval as Admin sets it: the person confirms, their line manager first, or Admin first (told by a notice; Routines page to approve or reject with a note); optionally a "Do it" press per step. It runs in the person's own browser, ringing each button as it presses it; it stops and asks when something is not where it was; every run is recorded.
+
 ## Phase 14: Mail, a company inbox in the app (core done)
 
 Each person reads and sends their company email under Email. Admin (email managers) gives the mailboxes; people never get a password, so they cannot change it, set forwarding or filters, or open webmail or a phone app with it.

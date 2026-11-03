@@ -3,6 +3,8 @@
 // does the task with pickers and a summary ("do"), takes the person there and points at what to press ("show"),
 // or answers ("answer"). Admin can switch flows off per role, add keywords and write short answers.
 
+import { TUTORIALS } from "./tutorials";
+
 export type Audience = "everyone" | "member" | "lead" | "department" | "production" | "hr" | "finance" | "admin";
 
 export type ShowStep = { href?: string; selector?: string; text?: string; note: string };
@@ -10,7 +12,8 @@ export type ShowStep = { href?: string; selector?: string; text?: string; note: 
 export type Flow =
   | { key: string; kind: "do"; title: string; hint: string; audience: Audience[]; keywords: string[] }
   | { key: string; kind: "show"; title: string; hint: string; audience: Audience[]; keywords: string[]; steps: ShowStep[] }
-  | { key: string; kind: "answer"; title: string; hint: string; audience: Audience[]; keywords: string[]; answer: string; href?: string };
+  | { key: string; kind: "answer"; title: string; hint: string; audience: Audience[]; keywords: string[]; answer: string; href?: string }
+  | { key: string; kind: "guide"; title: string; hint: string; audience: Audience[]; keywords: string[]; steps: string[]; href?: string };
 
 // Department pages are written with "{dept}" for the person's own department (for example /dev).
 export const FLOWS: Flow[] = [
@@ -158,6 +161,9 @@ export const FLOWS: Flow[] = [
     steps: [{ href: "/finance", selector: "main", note: "Finance's work is in these tabs: bills, invoices, payments, claims, budgets and payroll." }],
   },
 ];
+
+// Tutorials (lib/tutorials.ts): numbered steps with the page, for every department.
+FLOWS.push(...TUTORIALS.map((t): Flow => ({ key: t.key, kind: "guide", title: t.title, hint: `${t.steps.length} steps`, audience: t.audience ?? ["everyone"], keywords: t.keywords, steps: t.steps, href: t.href })));
 
 // "Where is ...?": every main page by name.
 export const PLACES: { name: string; href: string; words: string[] }[] = [

@@ -108,6 +108,8 @@ export async function deleteAccount(actor: AppUser, id: string, confirmEmail: st
       "DELETE FROM profile_files WHERE user_id = ?",
       "DELETE FROM profiles WHERE user_id = ?",
       "DELETE FROM chat_members WHERE user_id = ?",
+      "DELETE FROM assistant_routines WHERE owner_id = ?",
+      "DELETE FROM assistant_runs WHERE user_id = ?",
       // Open work goes back to unassigned so it is not stuck with nobody able to do it.
       "UPDATE dept_tasks SET assignee_id = NULL WHERE assignee_id = ? AND status_category <> 'done'",
       // The HR record stays with HR (pay and contract history), no longer linked to a sign-in.

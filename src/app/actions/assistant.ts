@@ -34,3 +34,34 @@ export async function saveAiConfigAction(input: Parameters<typeof ai.saveAiConfi
 export async function testAiAction() {
   return wrap(async () => ai.testAi(await requireViewer()), { revalidate: false });
 }
+
+// Routines (Phase 13d) and the assistant's options per role.
+import * as rt from "@/server/routines";
+
+export async function listRoutinesAction() {
+  return wrap(async () => rt.listRoutines(await requireViewer()), { revalidate: false });
+}
+export async function saveRoutineAction(input: Parameters<typeof rt.saveRoutine>[1]) {
+  return wrap(async () => rt.saveRoutine(await requireViewer(), input));
+}
+export async function deleteRoutineAction(id: string) {
+  return wrap(async () => rt.deleteRoutine(await requireViewer(), id));
+}
+export async function requestRunAction(routineId: string, values: Record<string, string>) {
+  return wrap(async () => rt.requestRun(await requireViewer(), routineId, values), { revalidate: false });
+}
+export async function decideRunAction(runId: string, approve: boolean, note?: string | null) {
+  return wrap(async () => rt.decideRun(await requireViewer(), runId, approve, note));
+}
+export async function startRunAction(runId: string) {
+  return wrap(async () => rt.startRun(await requireViewer(), runId), { revalidate: false });
+}
+export async function finishRunAction(runId: string, ok: boolean, error?: string | null) {
+  return wrap(async () => rt.finishRun(await requireViewer(), runId, ok, error), { revalidate: false });
+}
+export async function saveRoutinesConfigAction(input: Partial<rt.RoutinesConfig>) {
+  return wrap(async () => rt.saveRoutinesConfig(await requireViewer(), input));
+}
+export async function saveRoleOptionsAction(input: Record<string, Partial<asst.RoleOptions>>) {
+  return wrap(async () => asst.saveRoleOptions(await requireViewer(), input));
+}

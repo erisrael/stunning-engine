@@ -21,16 +21,16 @@ import { audit, WorkflowError } from "./workflow";
 import { shellCounts } from "./shell";
 import { myDepartments, deptPeople } from "./departments";
 import { getDeptConfig } from "./dept-config";
-import { listTasks, saveTask, moveTask, addTaskComment, bulkTasks } from "./work";
-import { flowStart } from "./dept-flow";
-import { myLeave, requestLeave, leaveTypes } from "./leave";
+import { listTasks } from "./work";
+import { myLeave } from "./leave";
 import { myEmployeeId } from "./hr";
-import { stateOf, punchSelf } from "./attendance";
-import { assistantContext } from "./assistant";
+import { stateOf } from "./attendance";
+import { assistantContext, roleOptions } from "./assistant";
+import { executeOp, myApprovals, OP_KEYS, OPS, prepareOp } from "./assistant-ops";
+import { listRoutines, routinesOpen } from "./routines";
 import { CHAPTERS } from "@/lib/help";
 import { FLOWS, GLOSSARY, PLACES } from "@/lib/assistant";
 import { ROLE_LABELS, STAGE_LABELS } from "@/lib/domain";
-import { deptPath } from "@/lib/work";
 
 export const AI_MODELS = [
   { id: "claude-opus-5-5", label: "Claude Opus 5.5 (best answers)" },
@@ -97,6 +97,7 @@ export async function saveAiConfig(user: AppUser, input: Partial<AiConfig> & { k
 export async function aiAvailable(user: AppUser & { activeRole: string }) {
   const c = await stored();
   if (!c.on || c.offRoles.includes(user.activeRole)) return false;
+  if (!(await roleOptions(user.activeRole)).ai) return false;
   return fake() || !!(c.keyEnc || process.env.ANTHROPIC_API_KEY);
 }
 
@@ -180,155 +181,61 @@ const T = {
     description: "Start a 'show me' walk-through that points at what to press on the page. Use a flow key from the list in the instructions.",
     input: z.object({ flow: z.string() }),
   },
+  my_approvals: {
+    description: "What waits for the person's decision: leave requests, expense claims and attendance corrections, with their ids (for decide_leave, decide_claim, decide_correction).",
+    input: z.object({}),
+  },
+  my_notifications: {
+    description: "The person's latest unread notifications (title, when, link).",
+    input: z.object({}),
+  },
+  list_routines: {
+    description: "The person's routines (recorded ways of doing something in the app) and the ones shared with them, with their ids (for run_routine).",
+    input: z.object({}),
+  },
   propose: {
-    description:
-      "Propose an action for the person to confirm (nothing happens until they press Confirm). kind: leave {leave_type, start, end, reason}; create_task {department, title, description, assignee_id, due, priority}; start_task {department, task_id}; move_task {department, task_id, status}; assign_task {department, task_id, assignee_id}; comment_task {department, task_id, text}; check_in {}. Dates as YYYY-MM-DD. Look up ids first.",
-    input: z.object({
-      kind: z.enum(["leave", "create_task", "start_task", "move_task", "assign_task", "comment_task", "check_in"]),
-      department: z.string().optional(),
-      task_id: z.string().optional(),
-      title: z.string().optional(),
-      description: z.string().optional(),
-      assignee_id: z.string().optional(),
-      due: z.string().optional(),
-      priority: z.string().optional(),
-      status: z.string().optional(),
-      text: z.string().optional(),
-      leave_type: z.string().optional(),
-      start: z.string().optional(),
-      end: z.string().optional(),
-      reason: z.string().optional(),
-    }),
+    description: `Prepare an action for the person to confirm (nothing happens until they press Confirm). kind and its args: ${OPS.map((o) => `${o.key} {${o.args}}`).join("; ")}. Dates as YYYY-MM-DD, times as HH:MM. Look up ids first with the other tools.`,
+    input: z.object({ kind: z.enum(OP_KEYS as [string, ...string[]]), args: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])).optional() }),
   },
 } as const;
 type ToolName = keyof typeof T;
 
-function toolDefs(actions: boolean): Anthropic.Beta.BetaTool[] {
+function toolDefs(allowed: string[]): Anthropic.Beta.BetaTool[] {
   return (Object.keys(T) as ToolName[])
-    .filter((n) => actions || n !== "propose")
+    .filter((n) => allowed.length > 0 || n !== "propose")
     .map((name) => {
       const schema = z.toJSONSchema(T[name].input) as { properties?: Record<string, unknown>; required?: string[] };
       return { name, description: T[name].description, input_schema: { type: "object" as const, properties: schema.properties ?? {}, required: schema.required ?? [] } };
     });
 }
 
-async function personName(id: string | null | undefined) {
-  if (!id) return null;
-  return (await get<{ name: string }>("SELECT name FROM users WHERE id = ?", id))?.name ?? null;
+// The actions this person may have prepared: Admin's switch, then their role's list.
+async function allowedOps(user: Viewer, cfg: Stored) {
+  if (!cfg.actions) return [];
+  const o = await roleOptions(user.activeRole);
+  return o.actions ? OP_KEYS.filter((k) => o.actions!.includes(k)) : OP_KEYS;
 }
 
-// A proposal, sealed with what to run and for whom; Confirm checks it again with the page's own action.
-async function propose(user: Viewer, p: z.infer<(typeof T)["propose"]["input"]>): Promise<Proposal> {
-  const lines: string[] = [];
-  let title = "";
-  const params: Record<string, unknown> = { kind: p.kind };
-  if (p.kind === "leave") {
-    const types = await leaveTypes();
-    const t = types.find((x) => x.key === p.leave_type || x.label.toLowerCase() === (p.leave_type ?? "").toLowerCase());
-    if (!t) throw new WorkflowError("VALIDATION", `Unknown leave type. Types: ${types.map((x) => `${x.label} (${x.key})`).join(", ")}`);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(p.start ?? "") || !/^\d{4}-\d{2}-\d{2}$/.test(p.end ?? "") || p.end! < p.start!) throw new WorkflowError("VALIDATION", "Give start and end as YYYY-MM-DD, end not before start.");
-    title = "Ask for leave";
-    lines.push(t.label, `From ${p.start} to ${p.end}`, ...(p.reason ? [`Reason: ${p.reason}`] : []), "It goes to your manager for approval");
-    Object.assign(params, { typeKey: t.key, start: p.start, end: p.end, reason: p.reason ?? null });
-  } else if (p.kind === "check_in") {
-    const emp = await myEmployeeId(user);
-    if (!emp) throw new WorkflowError("NOT_FOUND", "The person has no HR record yet.");
-    const s = await stateOf(emp);
-    title = s.state === "in" ? "Check out" : "Check in";
-    lines.push(`${title} now`);
-  } else {
-    const d = await needDept(user, p.department ?? "");
-    const dt = d.title;
-    params.dept = d.dept;
-    const cfg = await getDeptConfig(d.dept);
-    const task = p.task_id ? (await listTasks(user, d.dept, { q: p.task_id })).tasks.find((x) => x.id === p.task_id || x.code === p.task_id) : null;
-    if (p.kind !== "create_task" && !task) throw new WorkflowError("NOT_FOUND", "Task not found; look it up with department_tasks first (use its id).");
-    if (task) params.taskId = task.id;
-    if (p.kind === "create_task") {
-      if (!p.title?.trim()) throw new WorkflowError("VALIDATION", "A title is needed.");
-      const who = p.assignee_id ? await personName(p.assignee_id) : null;
-      if (p.assignee_id && !who) throw new WorkflowError("NOT_FOUND", "Unknown assignee id.");
-      const pr = p.priority ? cfg.priorities.find((x) => x.key === p.priority || x.label.toLowerCase() === p.priority!.toLowerCase()) : null;
-      title = `New ${cfg.names.task.toLowerCase()} in ${dt}`;
-      lines.push(p.title.trim(), ...(p.description ? [short(p.description, 160)!] : []), who ? `For ${who}` : "Not assigned yet", ...(p.due ? [`Due ${p.due}`] : []), ...(pr ? [`Priority ${pr.label}`] : []));
-      Object.assign(params, { title: p.title.trim().slice(0, 200), description: p.description?.slice(0, 4000) ?? null, assigneeId: p.assignee_id ?? null, due: /^\d{4}-\d{2}-\d{2}$/.test(p.due ?? "") ? p.due : null, priority: pr?.key ?? null });
-    } else if (p.kind === "start_task") {
-      title = "Start a task";
-      lines.push(`${task!.code} ${task!.title}`, "It moves to In progress and your timer starts");
-    } else if (p.kind === "move_task") {
-      const st = cfg.statuses.find((x) => x.key === p.status || x.label.toLowerCase() === (p.status ?? "").toLowerCase());
-      if (!st) throw new WorkflowError("VALIDATION", `Unknown status. Statuses: ${cfg.statuses.map((x) => `${x.label} (${x.key})`).join(", ")}`);
-      title = "Move a task";
-      lines.push(`${task!.code} ${task!.title}`, `From ${cfg.statuses.find((x) => x.key === task!.status)?.label ?? task!.status} to ${st.label}`);
-      params.status = st.key;
-    } else if (p.kind === "assign_task") {
-      const who = await personName(p.assignee_id);
-      if (!who) throw new WorkflowError("NOT_FOUND", "Unknown assignee id; use department_setup for the people.");
-      title = "Assign a task";
-      lines.push(`${task!.code} ${task!.title}`, `To ${who}`);
-      params.assigneeId = p.assignee_id;
-    } else if (p.kind === "comment_task") {
-      if (!p.text?.trim()) throw new WorkflowError("VALIDATION", "The comment is empty.");
-      title = "Comment on a task";
-      lines.push(`${task!.code} ${task!.title}`, `"${short(p.text, 300)}"`);
-      params.text = p.text.slice(0, 4000);
-    }
-  }
-  const token = await seal(JSON.stringify({ u: user.id, exp: Date.now() + 30 * 60e3, p: params }));
-  return { token, title, lines };
+// A proposal, sealed with what to run and for whom; Confirm runs it with the page's own function and checks.
+export async function proposeOp(user: Viewer, kind: string, args: Record<string, unknown>): Promise<Proposal> {
+  const pr = await prepareOp(user, kind, (args ?? {}) as Record<string, string>);
+  const token = await seal(JSON.stringify({ u: user.id, exp: Date.now() + 30 * 60e3, p: pr.params }));
+  return { token, title: pr.title, lines: pr.lines };
 }
 
-// Confirm: open the sealed proposal and run the page's own action, as the person.
 export async function confirmProposal(user: Viewer, token: string) {
   const raw = await unseal(token);
-  const v = raw ? parseJson<{ u: string; exp: number; p: Record<string, string | null> }>(raw, null as never) : null;
+  const v = raw ? parseJson<{ u: string; exp: number; p: Record<string, unknown> }>(raw, null as never) : null;
   if (!v || v.u !== user.id) throw new WorkflowError("FORBIDDEN", "This proposal is not yours.");
   if (v.exp < Date.now()) throw new WorkflowError("VALIDATION", "This proposal is too old; ask again.");
-  const p = v.p;
-  let done = "Done";
-  let href: string | null = null;
-  if (p.kind === "leave") {
-    await requestLeave(user, { typeKey: p.typeKey!, startDate: p.start!, endDate: p.end!, reason: p.reason });
-    done = "Leave asked for";
-    href = "/profile?tab=leave";
-  } else if (p.kind === "check_in") {
-    await punchSelf(user, {});
-    done = "Recorded";
-    href = "/attendance";
-  } else {
-    const d = p.dept!;
-    href = deptPath(d);
-    if (p.kind === "create_task") {
-      const id = await saveTask(user, d, { title: p.title!, description: p.description, assigneeId: p.assigneeId, dueDate: p.due, ...(p.priority ? { priority: p.priority } : {}) });
-      done = "Created";
-      href = `${deptPath(d)}/list?task=${id}`;
-    } else if (p.kind === "start_task") {
-      await flowStart(user, d, p.taskId!).catch(async (e) => {
-        // Departments without a flow: move it to the first "in progress" status instead.
-        const cfg = await getDeptConfig(d);
-        const st = cfg.statuses.find((x) => x.category === "active");
-        if (!st) throw e;
-        await moveTask(user, d, p.taskId!, st.key, null);
-      });
-      done = "Started";
-    } else if (p.kind === "move_task") {
-      await moveTask(user, d, p.taskId!, p.status!, null);
-      done = "Moved";
-    } else if (p.kind === "assign_task") {
-      await bulkTasks(user, d, [p.taskId!], { assigneeId: p.assigneeId });
-      done = "Assigned";
-    } else if (p.kind === "comment_task") {
-      await addTaskComment(user, d, p.taskId!, p.text!);
-      done = "Comment added";
-    }
-  }
-  await logAi(user, `confirm:${p.kind}`);
-  return { done, href };
+  const r = await executeOp(user, v.p);
+  await logAi(user, `confirm:${String(v.p.kind)}`);
+  return r;
 }
 
-async function runTool(user: Viewer, name: string, input: unknown, out: Out, actions: boolean): Promise<unknown> {
+async function runTool(user: Viewer, name: string, input: unknown, out: Out, allowed: string[]): Promise<unknown> {
   const tool = T[name as ToolName];
-  if (!tool || (name === "propose" && !actions)) return { error: "Unknown tool." };
+  if (!tool || (name === "propose" && !allowed.length)) return { error: "Unknown tool." };
   const parsed = tool.input.safeParse(input ?? {});
   if (!parsed.success) return { error: `Invalid input: ${parsed.error.message}` };
   const a = parsed.data as Record<string, string | boolean | undefined>;
@@ -441,14 +348,22 @@ async function runTool(user: Viewer, name: string, input: unknown, out: Out, act
     }
     case "show_me": {
       const ctx = await assistantContext(user);
-      const f = ctx.flows.find((x) => x.key === a.flow && x.kind === "show");
-      if (!f) return { error: `No such walk-through for this person. Open to them: ${ctx.flows.filter((x) => x.kind === "show").map((x) => x.key).join(", ")}` };
+      const f = ctx.flows.find((x) => x.key === a.flow && (x.kind === "show" || x.kind === "guide"));
+      if (!f) return { error: `No such walk-through for this person. Open to them: ${ctx.flows.filter((x) => x.kind === "show" || x.kind === "guide").map((x) => x.key).join(", ")}` };
       out.show = f.key;
       return { ok: true, note: "A Show me button is shown under your answer." };
     }
+    case "my_approvals":
+      return await myApprovals(user);
+    case "my_notifications":
+      return await all("SELECT title, created_at AS at, link FROM notifications WHERE user_id = ? AND read_at IS NULL ORDER BY created_at DESC LIMIT 10", user.id);
+    case "list_routines":
+      return (await routinesOpen(user)) ? (await listRoutines(user)).map((r) => ({ id: r.id, name: r.name, description: r.description, steps: r.steps.length, owner: r.ownerName })) : { note: "Routines are not on for this person." };
     case "propose": {
+      const d = parsed.data as { kind: string; args?: Record<string, unknown> };
+      if (!allowed.includes(d.kind)) return { error: `This person may not have "${d.kind}" prepared. Tell them to do it on the page, or ask Admin.` };
       try {
-        const pr = await propose(user, parsed.data as z.infer<(typeof T)["propose"]["input"]>);
+        const pr = await proposeOp(user, d.kind, d.args ?? {});
         out.proposals.push(pr);
         return { ok: true, shown_to_person: pr.lines, note: "Shown with a Confirm button. Nothing is done until they press it. Tell them to check and confirm." };
       } catch (e) {
@@ -465,13 +380,14 @@ How to answer:
 - Short, plain and friendly; the person may be listening (voice), so no tables or code. Use "- " bullets only for lists. Answer in the language the person writes in (English or Amharic).
 - Use the tools to look at the person's real data before answering questions about their work, leave, attendance or team. Never invent numbers, names, ids or statuses.
 - You only see what the person may see. If a tool says they cannot open something, tell them who can help (their lead, HR or Admin).
-- To do something (ask for leave, create, start, move, assign or comment on a task, check in), look up what you need, then call propose. Nothing happens until they press Confirm, so say what will happen and ask them to confirm. Never claim it is done.
+- To do something (leave, attendance corrections, claims, tasks in any department, requests to other departments, approvals, running one of their routines), look up what you need, then call propose. Nothing happens until they press Confirm, so say what will happen and ask them to confirm. Never claim it is done. If the propose tool is missing or refuses the kind, tell them to do it on the page (offer open_page or show_me).
 - When they ask where something is or to go somewhere, call open_page. When they want to be shown how, call show_me if a walk-through fits, else explain the steps and open the page.
 - If something is outside the app or you are unsure, say so briefly and offer the Help search.
 
 Pages (paths): ${PLACES.map((p) => `${p.name} ${p.href}`).join("; ")}. {home} means the person's own department page (given below). Departments: /dev, /marketing, /studio, created ones at /d/<key>; within a department: /board, /list, /sprint, /projects, /calendar, /report, /team, /configure. Production: /overview, /handovers, /sessions, /coverage, /reports. Also /hr, /finance, /admin, /email, /chat, /requests, /approvals, /notifications.
 
-Walk-throughs for show_me: ${FLOWS.filter((f) => f.kind === "show").map((f) => `${f.key} (${f.title})`).join("; ")}.
+Walk-throughs for show_me (pointing on the page): ${FLOWS.filter((f) => f.kind === "show").map((f) => `${f.key} (${f.title})`).join("; ")}.
+Step-by-step tutorials for show_me: ${FLOWS.filter((f) => f.kind === "guide").map((f) => `${f.key} (${f.title})`).join("; ")}.
 
 Words of the app: ${GLOSSARY.map((g) => `${g.term}: ${g.meaning}`).join(" ")}`;
 
@@ -494,7 +410,9 @@ export async function askAi(user: Viewer, input: { history: Turn[]; text: string
   if (!(await aiAvailable(user))) throw new WorkflowError("FORBIDDEN", "The AI assistant is not on for you.");
   const text = String(input.text ?? "").trim().slice(0, 2000);
   if (!text) throw new WorkflowError("VALIDATION", "Ask something.");
-  if (cfg.dailyLimit && (await usedToday(user.id)) >= cfg.dailyLimit) throw new WorkflowError("VALIDATION", `You reached today's ${cfg.dailyLimit} questions. The buttons and Help still work.`);
+  const ro = await roleOptions(user.activeRole);
+  const limit = ro.dailyLimit ?? cfg.dailyLimit;
+  if (limit && (await usedToday(user.id)) >= limit) throw new WorkflowError("VALIDATION", `You reached today's ${limit} questions. The buttons and Help still work.`);
   await logAi(user, text);
   const ctx = await assistantContext(user);
   const today = new Date().toISOString().slice(0, 10);
@@ -506,7 +424,8 @@ export async function askAi(user: Viewer, input: { history: Turn[]; text: string
   while (history.length && history[0]!.role !== "user") history.shift();
   const messages: Anthropic.Beta.BetaMessageParam[] = [...history, { role: "user", content: `${who}\n\n${text}` }];
   const out: Out = { text: "", proposals: [], links: [], show: null };
-  const tools = toolDefs(cfg.actions);
+  const allowed = await allowedOps(user, cfg);
+  const tools = toolDefs(allowed);
   const call = fake() ? fakeModel : await realModel(cfg);
   for (let i = 0; i < 8; i++) {
     const res = await call({ system: SYSTEM, tools, messages });
@@ -531,7 +450,7 @@ export async function askAi(user: Viewer, input: { history: Turn[]; text: string
       let content: string;
       let isError = false;
       try {
-        content = JSON.stringify(await runTool(user, u.name, u.input, out, cfg.actions)).slice(0, 20000);
+        content = JSON.stringify(await runTool(user, u.name, u.input, out, allowed)).slice(0, 20000);
       } catch (e) {
         content = e instanceof Error ? e.message : String(e);
         isError = true;
@@ -613,7 +532,10 @@ const fakeModel: ModelCall = async ({ messages }) => {
   const use = (name: string, input: object) => ({ stop_reason: "tool_use", content: [block({ type: "tool_use", id: `toolu_${Math.random().toString(36).slice(2, 10)}`, name, input, caller: { type: "direct" } })] });
   if (/leave|balance/.test(q) && !/ask for/.test(q)) return use("my_leave", {});
   const create = said.match(/create (?:a )?task (.+?) in (\w+)/i);
-  if (create) return use("propose", { kind: "create_task", department: create[2], title: create[1] });
+  if (create) return use("propose", { kind: "create_task", args: { department: create[2], title: create[1] } });
+  if (/waiting for my (approval|decision)|to approve/.test(q)) return use("my_approvals", {});
+  const runIt = said.match(/^run (?:my )?routine (rtn_\w+)/i);
+  if (runIt) return use("propose", { kind: "run_routine", args: { routine_id: runIt[1] } });
   if (/my work|my tasks|what should i do/.test(q)) return use("my_work", {});
   if (/where|open|go to/.test(q)) return use("open_page", { href: "/attendance", label: "Attendance" });
   if (/who is|find/.test(q)) return use("find_people", { text: q.replace(/.*(who is|find)\s*/, "") });

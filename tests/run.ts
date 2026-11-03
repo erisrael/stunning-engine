@@ -70,6 +70,8 @@ function serverTests(seedDir: string) {
     const db = copyDb(seedDir, `s-${t.name}`);
     const r = spawnSync(process.execPath, [...tsx, t.file], { cwd: root, env: { ...baseEnv(), PGLITE_DIR: db }, encoding: "utf8", timeout: 15 * 60e3 });
     judge(t.name, "server", `${r.stdout}\n${r.stderr}`, r.status, t0);
+    // Only failing tests keep their copy of the database (each is about 100 MB).
+    if (outcomes.at(-1)!.ok) fs.rmSync(db, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
   }
 }
 
@@ -130,6 +132,8 @@ async function e2eTests(seedDir: string) {
       if (outcomes.at(-1)!.ok === false) fs.writeFileSync(path.join(tmp, `${t.name}-server.log`), log);
     } finally {
       stop(server);
+      // A passing test's copy of the database is not needed (each is about 100 MB); failing ones are kept to look at.
+      if (outcomes.at(-1)?.name === t.name && outcomes.at(-1)!.ok) fs.rmSync(db, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
     }
   }
 }

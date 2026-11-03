@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import {
+  ZapIcon,
   ArrowLeftRightIcon,
   BookOpenIcon,
   BriefcaseIcon,
@@ -243,7 +244,7 @@ export function AppSidebar({
   customDepts?: { key: string; title: string }[];
   reportsLink?: boolean;
   activeRole: Role;
-  counts: { myWork: number; notifications: number; questions: number; handoffs: number; corrections: number; incoming: number; attendance: number; approvals: number; mail?: number; mailbox?: boolean };
+  counts: { myWork: number; notifications: number; questions: number; handoffs: number; corrections: number; incoming: number; attendance: number; approvals: number; mail?: number; mailbox?: boolean; routines?: number };
   workspaceName: string;
   // Hidden by this person, and by Admin for the role they are viewing as.
   userHidden?: string[];
@@ -313,6 +314,7 @@ export function AppSidebar({
         // My record, Leave and Claims and pay are tabs of Profile (bottom of the sidebar and the avatar menu).
         { href: "/dashboard", label: home ? "Today" : staff ? "My work" : "Home", icon: HomeIcon, badge: home ? 0 : counts.myWork, locked: true },
         { href: "/attendance", label: "Attendance", icon: ClockIcon, sub: attSub },
+        { href: "/routines", label: "Routines", icon: ZapIcon, badge: counts.routines ?? 0 },
         ...(approver || counts.approvals > 0 ? [{ href: "/approvals", label: "Approvals", icon: CheckCheckIcon, badge: counts.approvals }] : []),
         ...(!lead && !home ? [{ href: "/team", label: "My effort", icon: UsersIcon, cap: "nav.team" as Capability }] : []),
         { href: "/questions", label: "Questions", icon: MessageCircleQuestionIcon, badge: counts.questions, cap: "nav.questions" },
@@ -427,6 +429,7 @@ export function AppSidebar({
         items: [
           { href: "/dashboard", label: "Home", icon: HomeIcon, locked: true },
           ...(counts.approvals > 0 ? [{ href: "/approvals", label: "Approvals", icon: CheckCheckIcon, badge: counts.approvals }] : []),
+          ...(counts.routines ? [{ href: "/routines", label: "Routines", icon: ZapIcon, badge: counts.routines }] : []),
           ...(counts.mailbox ? [{ href: "/email", label: "Email", icon: MailIcon, badge: counts.mail ?? 0, sub: emailSub }] : []),
         ],
       },

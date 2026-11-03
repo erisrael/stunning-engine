@@ -8,6 +8,7 @@ import { can, type AppUser } from "./users";
 import { homeDepartment } from "./nav";
 import { flowHome } from "./dept-flow";
 import { leaveTypes } from "./leave";
+import { routinesOpen } from "./routines";
 import { deptPeople, myDepartments } from "./departments";
 import { myEmployeeId } from "./hr";
 import { stateOf } from "./attendance";
@@ -40,6 +41,40 @@ export async function saveAssistantConfig(user: AppUser, input: AssistantConfig)
   await audit({ actor: user }, { action: "settings.assistant", summary: `${user.name} changed the assistant setup` });
 }
 
+// Per role (Admin, Assistant, Roles): AI answers, voice, routines, which actions the AI may prepare (null: all),
+// the suggestion chips shown first, and a daily limit for AI questions (null: Admin's general limit).
+export type RoleOptions = { ai: boolean; voice: boolean; routines: boolean; actions: string[] | null; suggestions: string[]; dailyLimit: number | null };
+export const DEFAULT_ROLE_OPTIONS: RoleOptions = { ai: true, voice: true, routines: true, actions: null, suggestions: [], dailyLimit: null };
+
+export async function allRoleOptions(): Promise<Record<string, RoleOptions>> {
+  return parseJson<Record<string, RoleOptions>>((await get<{ value: string }>("SELECT value FROM settings WHERE key = 'cfg.assistant.roles'"))?.value, {});
+}
+export async function roleOptions(role: string): Promise<RoleOptions> {
+  return { ...DEFAULT_ROLE_OPTIONS, ...((await allRoleOptions())[role] ?? {}) };
+}
+export async function saveRoleOptions(user: AppUser, input: Record<string, Partial<RoleOptions>>) {
+  if (!can(user, "users.manage")) throw new WorkflowError("FORBIDDEN", "Only Admin sets up the assistant.");
+  const out: Record<string, RoleOptions> = {};
+  for (const [role, o] of Object.entries(input ?? {}).slice(0, 40)) {
+    if (!/^[a-z_]{2,30}$/.test(role)) continue;
+    out[role] = {
+      ai: o.ai !== false,
+      voice: o.voice !== false,
+      routines: o.routines !== false,
+      actions: Array.isArray(o.actions) ? o.actions.map(String).filter((x) => /^[a-z_]{2,40}$/.test(x)).slice(0, 60) : null,
+      suggestions: (Array.isArray(o.suggestions) ? o.suggestions : []).map((x) => String(x).trim().slice(0, 120)).filter(Boolean).slice(0, 8),
+      dailyLimit: o.dailyLimit === null || o.dailyLimit === undefined || String(o.dailyLimit) === "" ? null : Math.max(0, Math.min(1000, Math.round(Number(o.dailyLimit)))),
+    };
+  }
+  await run(
+    "INSERT INTO settings (key, value, updated_at, updated_by) VALUES ('cfg.assistant.roles', ?, ?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by",
+    JSON.stringify(out),
+    nowIso(),
+    user.id,
+  );
+  await audit({ actor: user }, { action: "settings.assistant.roles", summary: `${user.name} changed the assistant's options per role` });
+}
+
 // Who the person is, for choosing their flows.
 export async function assistantContext(user: AppUser & { activeRole: string }) {
   const home = await homeDepartment(user);
@@ -47,7 +82,9 @@ export async function assistantContext(user: AppUser & { activeRole: string }) {
   const lead = user.leads.length > 0 || !!home?.seeAll || can(user, "users.manage");
   const who = { role: user.activeRole, lead, department: !!home, production, hr: can(user, "attendance.manage"), finance: can(user, "finance.access"), admin: can(user, "users.manage") };
   const cfg = await assistantConfig();
-  return { who, home: home ? { key: home.key, base: home.base, title: home.title, kind: home.kind } : null, flows: flowsFor(who, cfg), cfg };
+  const options = await roleOptions(user.activeRole);
+  const routines = options.routines && (await routinesOpen(user));
+  return { who, home: home ? { key: home.key, base: home.base, title: home.title, kind: home.kind } : null, flows: flowsFor(who, cfg), cfg, options, routines };
 }
 export type AssistantContext = Awaited<ReturnType<typeof assistantContext>>;
 

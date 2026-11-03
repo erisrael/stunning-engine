@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 29;
+export const SCHEMA_VERSION = 30;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -2168,6 +2168,35 @@ CREATE TABLE IF NOT EXISTS mail_state (
   error TEXT
 );
 
+-- v30: routines (recorded ways of doing something in the app) and their runs, with approval (Phase 13d).
+CREATE TABLE IF NOT EXISTS assistant_routines (
+  id TEXT PRIMARY KEY,
+  owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  description TEXT,
+  steps TEXT NOT NULL,
+  shared TEXT NOT NULL DEFAULT 'none',
+  uses INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS assistant_runs (
+  id TEXT PRIMARY KEY,
+  routine_id TEXT NOT NULL,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  status TEXT NOT NULL,
+  run_values TEXT,
+  approver_ids TEXT,
+  requested_at TEXT NOT NULL,
+  decided_by TEXT,
+  decided_at TEXT,
+  note TEXT,
+  started_at TEXT,
+  finished_at TEXT,
+  error TEXT
+);
+CREATE INDEX IF NOT EXISTS assistant_runs_user ON assistant_runs (user_id, requested_at);
+
 -- v29: banners at the top of each section's main page (Admin, Branding), a picture (base64) or a colour.
 CREATE TABLE IF NOT EXISTS brand_banners (
   key TEXT PRIMARY KEY,
@@ -2269,6 +2298,8 @@ export const TABLES = [
   "dept_doc_links",
   "assistant_events",
   "brand_banners",
+  "assistant_routines",
+  "assistant_runs",
   "employees",
   "employee_private",
   "employee_documents",

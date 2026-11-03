@@ -69,6 +69,50 @@ try {
   check("voice controls are there (read aloud, language)", (await dev.getByLabel("Voice language").count()) === 1 && (await dev.getByRole("button", { name: "Read answers aloud" }).count()) === 1);
   await dev.getByRole("button", { name: "Close the assistant" }).first().click();
 
+  // A tutorial.
+  await dev.goto(`${base}/dev`);
+  await dev.keyboard.press("Alt+KeyA");
+  if (await dev.getByRole("button", { name: "New conversation" }).count()) await dev.getByRole("button", { name: "New conversation" }).click();
+  await dev.locator("[data-assistant-tutorials] summary").click();
+  await dev.locator('[data-assistant-flow="t.twostep"]').click();
+  const g = dev.locator('[data-assistant-guide="t.twostep"]');
+  check("a tutorial shows its steps", await g.waitFor({ timeout: 5000 }).then(() => true, () => false) && (await g.locator("li").count()) === 4);
+  await g.getByRole("button", { name: "Next" }).click();
+  check("and moves on step by step", /Set up with an app/.test(await g.locator("li.font-medium").innerText()));
+  await g.getByRole("button", { name: "Back" }).click();
+  await dev.getByRole("button", { name: "Close the assistant" }).first().click();
+
+  // Record a routine: create a task as usual.
+  await dev.reload();
+  await dev.keyboard.press("Alt+KeyA");
+  await dev.locator("[data-assistant-routines]").getByRole("button", { name: "Record a routine" }).click();
+  check("recording shows at the top", await dev.getByRole("status", { name: "Recording a routine" }).waitFor({ timeout: 5000 }).then(() => true, () => false));
+  await dev.getByRole("button", { name: "New task" }).first().click();
+  await dev.getByRole("dialog").getByLabel("Title", { exact: true }).fill("Weekly notes");
+  await dev.getByRole("dialog").getByRole("button", { name: "Create", exact: true }).click();
+  await dev.waitForTimeout(1500);
+  check("three steps recorded", /3 steps/.test(await dev.getByRole("status", { name: "Recording a routine" }).innerText()), await dev.getByRole("status", { name: "Recording a routine" }).innerText());
+  await dev.getByRole("button", { name: "Stop and save" }).click();
+  const save = dev.locator("[data-save-routine]");
+  await save.getByLabel("Routine name").fill("Weekly notes task");
+  check("the typed title is asked each time", await save.getByLabel("Ask for Title each time").isChecked());
+  await dev.screenshot({ path: path.join(shots, "4-save-routine.png") });
+  await save.getByRole("button", { name: "Save routine" }).click();
+  check("routine saved", await toast(dev, /Routine "Weekly notes task" saved/));
+
+  // Run it with another title; the person confirms (Admin's default).
+  await dev.keyboard.press("Alt+KeyA");
+  await dev.locator("[data-assistant-routine]").filter({ hasText: "Weekly notes task" }).click();
+  const runBox = dev.locator("[data-assistant-run]");
+  await runBox.getByLabel("Title").fill("Second note from the routine");
+  await runBox.getByRole("button", { name: "Confirm and run" }).click();
+  check("the routine runs by itself", await dev.locator("[data-routine-runner]").waitFor({ timeout: 10000 }).then(() => true, () => false));
+  check("and finishes", await toast(dev, /"Weekly notes task" is done/));
+  await dev.goto(`${base}/dev/list`);
+  check("the task it made is there", await dev.getByText("Second note from the routine").first().waitFor({ timeout: 10000 }).then(() => true, () => false));
+  await dev.goto(`${base}/routines`);
+  check("Routines lists it with its run", (await dev.locator("[data-routine]").filter({ hasText: "Weekly notes task" }).count()) === 1 && /Done/.test(await dev.locator("[data-run]").first().innerText()));
+
   // Admin's AI card.
   const admin = await as("admin@demo.local");
   await admin.goto(`${base}/admin/assistant`);
