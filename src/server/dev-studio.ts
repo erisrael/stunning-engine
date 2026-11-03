@@ -330,6 +330,8 @@ export async function doraMeasures(user: AppUser, d: string) {
     releases: rel.length,
     leadTimeHours: hours.length ? Math.round(hours[Math.floor(hours.length / 2)]!) : null,
     changeFailureRate: rel.length ? Math.round((failed / rel.length) * 100) : null,
+    // From incidents reported to the department (Configure, Tools), median hours to resolve.
+    timeToRestoreHours: await import("./dev-tools").then((m) => m.timeToRestoreHours(a.dept)).catch(() => null),
   };
 }
 

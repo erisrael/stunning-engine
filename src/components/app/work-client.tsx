@@ -108,7 +108,7 @@ export function WorkClient({
   workspace = "",
 }: {
   dept: WorkDept;
-  tab: "dashboard" | "board" | "list" | "sheet" | "overview" | "timeline" | "team" | "report" | "projects" | "calendar" | "repos" | "accounting" | "sprint" | "roadmap" | "docs";
+  tab: "dashboard" | "board" | "list" | "sheet" | "overview" | "timeline" | "team" | "report" | "projects" | "calendar" | "repos" | "accounting" | "sprint" | "roadmap" | "docs" | "tools";
   filter: TaskFilter;
   tasks: Task[];
   projects: Project[];

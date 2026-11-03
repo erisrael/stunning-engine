@@ -20,7 +20,7 @@ import { FinanceAccounting } from "./integrations";
 import { DEPT_VIEW_LABELS, DEPT_VIEWS, deptPath, deptViewPath } from "@/lib/work";
 import { flowHome } from "@/server/dept-flow";
 
-const TABS = ["dashboard", "board", "list", "sheet", "overview", "timeline", "team", "report", "projects", "calendar", "configure", "repos", "accounting", "sprint", "roadmap", "docs", "present"] as const;
+const TABS = ["dashboard", "board", "list", "sheet", "overview", "timeline", "team", "report", "projects", "calendar", "configure", "repos", "accounting", "sprint", "roadmap", "docs", "present", "tools"] as const;
 const SORTS = ["updated", "due", "priority", "code", "title", "status"] as const;
 
 // The Dev and Marketing sections share this page; their vocabulary, workflow and rights come from the configuration.
@@ -75,7 +75,8 @@ export async function WorkPage({ dept, searchParams, view }: { dept: WorkDept; s
     return <DeptPresent dept={dept} data={await presentData(viewer, dept)} back={deptPath(dept)} />;
   }
   if ((tab === "sprint" && !cfg.features.sprints) || ((tab === "roadmap" || tab === "docs") && !access.view)) redirect(deptViewPath(dept, "board"));
-  if (tab === "repos" || tab === "accounting" || tab === "sprint" || tab === "roadmap" || tab === "docs") {
+  if (tab === "tools" && !access.view) redirect(deptViewPath(dept, "board"));
+  if (tab === "repos" || tab === "accounting" || tab === "sprint" || tab === "roadmap" || tab === "docs" || tab === "tools") {
     const projects = await listProjects(viewer, dept);
     const ds = await import("@/server/dev-studio");
     const { SprintView, RoadmapView, DocsView } = await import("./dev-studio");
@@ -84,6 +85,30 @@ export async function WorkPage({ dept, searchParams, view }: { dept: WorkDept; s
         <SprintView dept={dept} data={await ds.sprintPage(viewer, dept, sp.sprint ?? null)} viewerId={viewer.id} />
       ) : tab === "roadmap" ? (
         <RoadmapView data={await ds.roadmap(viewer, dept)} dora={await ds.doraMeasures(viewer, dept)} />
+      ) : tab === "tools" ? (
+        await (async () => {
+          const dt = await import("@/server/dev-tools");
+          const dpl = await import("@/server/dev-plan");
+          const { DevToolsView } = await import("./dev-tools-view");
+          return (
+            <DevToolsView
+              dept={dept}
+              releases={await dt.releasesWithDeploys(viewer, dept)}
+              incidents={await dt.listIncidents(viewer, dept)}
+              cases={await dt.listTestCases(viewer, dept)}
+              docs={(await ds.listDocs(viewer, dept)).map((x) => ({ id: x.id, title: x.title, kind: x.kind }))}
+              templates={await dpl.listTemplates(viewer, dept)}
+              tools={access.rights.configure ? await dt.toolsView(viewer, dept) : null}
+              nextVersion={await dt.nextVersion(dept)}
+              canWrite={!access.readOnly}
+              canProjects={access.rights.projects && !access.readOnly}
+              canConfigure={access.rights.configure}
+              epics={await dpl.epics(viewer, dept)}
+              drift={await dpl.baselineDrift(viewer, dept)}
+              portfolio={access.rights.seeAll ? await dpl.portfolio(viewer) : null}
+            />
+          );
+        })()
       ) : tab === "docs" ? (
         <DocsView
           dept={dept}

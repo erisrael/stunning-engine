@@ -643,7 +643,7 @@ Built: Configure has a **Flow** tab (`src/lib/dept-flow.ts`, `src/components/app
 
 - [x] Settings, Workflow, "How Recording hands over the raw footage" and "How Editing hands over the master, captions and thumbnail": an external disk (the disk's name and the folder or file on it), a storage link, or either chosen each time. The cards, the item page and the Uploading card show the disk and folder; requirements read "on the disk" or "linked".
 
-## Phase 12b: Dev studio (the software lifecycle in one place) (core done; tools and integrations open)
+## Phase 12b: Dev studio (the software lifecycle in one place) (done, except the Dev presentation 12b.6 and Gantt drawing extras)
 
 What exists today: a Timeline view (a Gantt chart with dependencies, drag to reschedule and the critical path) in every department; sprints as a simple switch (one active sprint, a "current sprint" filter); GitHub repositories with pull requests and checks; task templates. Phase 12 adds the Dev flow (code review, QA, release). This phase makes Dev a complete studio for planning, specifying, building, testing and releasing software, close to what teams know from Jira, Linear, GitHub and Confluence.
 
@@ -660,41 +660,41 @@ What exists today: a Timeline view (a Gantt chart with dependencies, drag to res
 
 ### 12b.2 Planning views (beyond today's Timeline)
 
-- [x] **Roadmap** (the release a project targets is not shown yet): projects and epics on quarters, with their progress, the team on each, and the release they target.
-- [ ] **Gantt** (the Timeline, extended): baselines (planned against actual), milestones as diamonds, the critical path, task groups folded by epic, resource load under the chart, export to PDF, Excel and MS Project XML.
-- [ ] **Epics, stories, tasks and sub-tasks** (done: story points, acceptance criteria as a Dev field, definition of done per department; open: an epic level above tasks) (the usual hierarchy), story points, acceptance criteria per story, and "definition of done" per department.
-- [ ] **Projects list with progress** (done on the Roadmap: health, progress by points or hours, open bugs, next milestone, lead and team; open: filters and a portfolio view across departments): every project with status, health (on track, at risk, late, from dates and progress), percent done by points or hours, open bugs, the next milestone and release, the lead and the team; filters and a portfolio view for heads and owners.
+- [x] **Roadmap**: projects and epics on quarters, with their progress, the team on each, and the release they target.
+- [ ] **Gantt** (done: baselines saved and the tasks that slipped against them listed in Tools, MS Project XML export, the critical path; open: drawing the baseline and resource load on the Timeline chart itself, PDF and Excel of the chart): baselines (planned against actual), milestones as diamonds, the critical path, task groups folded by epic, resource load under the chart, export to PDF, Excel and MS Project XML.
+- [x] **Epics, stories, tasks and sub-tasks** (an Epic task type with child tasks and progress in Tools, Epics and baseline) (the usual hierarchy), story points, acceptance criteria per story, and "definition of done" per department.
+- [x] **Projects list with progress** (on the Roadmap, and a Portfolio across departments in Tools for heads and owners): every project with status, health (on track, at risk, late, from dates and progress), percent done by points or hours, open bugs, the next milestone and release, the lead and the team; filters and a portfolio view for heads and owners.
 
 ### 12b.3 Specifications and documents (SRS and the rest)
 
 - [x] **Docs space per project** (Specs and docs), with pages that link to tasks and back (a task shows the requirement it comes from, a requirement shows its tasks and their state):
   - **SRS** (software requirements specification), following the usual IEEE 830 / ISO 29148 outline: purpose and scope, users, functional requirements (each with an ID, priority by MoSCoW, acceptance criteria), non-functional requirements (performance, security, availability, usability), interfaces, data, constraints and assumptions;
   - **Product brief / PRD**, **technical design** (architecture, data model, interfaces, decisions), **architecture decision records**, **test plan**, **release notes** (filled from the tasks of the release), **runbook** and **postmortem**.
-- [ ] **Requirements traceability** (done: requirements to tasks with their state, uncovered ones marked; open: through pull requests, tests and the release): each requirement through to its tasks, pull requests, tests and the release; a matrix view shows what is not covered.
+- [x] **Requirements traceability**: each requirement through to its tasks, pull requests, tests and the release; a matrix view shows what is not covered.
 - [x] **Versions and approval**: each document has versions, a review by named reviewers and an approved state; changes after approval start a new version.
 - [x] **Export**: Word and PDF (print) with a cover page (the workspace name; the logo is still to add).
 
 ### 12b.4 Myseed templates and specs
 
 - [x] Ready templates, written for Myseed's own products (the learning app, the content manager, the Studio tools), in the documents above: an SRS for a learning feature (grade, subject, unit and part; video playback; offline use; Amharic and other languages; low bandwidth), a technical design template with Myseed's stack, a test plan with the devices Myseed students use, a release checklist and release notes template, a postmortem template.
-- [ ] Project templates that bring the epics, milestones, tasks and documents for common work: "New app feature", "Content import pipeline", "New grade or subject rollout", "Mobile release", "Bug bash".
-- [ ] Admin and Dev heads can edit them and add their own.
+- [x] Project templates that bring the epics, milestones, tasks and documents for common work: "New app feature", "Content import pipeline", "New grade or subject rollout", "Mobile release", "Bug bash".
+- [x] Admin and Dev heads can edit them and add their own.
 
 ### 12b.5 Development tools and integrations (industry standard)
 
-- [ ] **Git hosting**: GitHub (exists) and GitLab; branches and pull requests linked by task code (WEB-12) in the branch name or title; checks and review state on the task; a merged pull request moves the task on.
-- [ ] **CI/CD**: build and deploy status from GitHub Actions or GitLab CI on the task and the release; deployments per environment (development, staging, production) with time and version.
-- [ ] **Releases**: versions (semantic, 1.4.0), release trains, the tasks in each, release notes generated, and the deploy that shipped it.
-- [ ] **Quality**: test cases and test runs linked to requirements (pass, fail, blocked), bugs from failed tests with steps to reproduce; code coverage and quality numbers from the CI when available.
-- [ ] **Incidents**: error reports from Sentry (or similar) open bugs automatically; incidents with severity, timeline and a postmortem.
-- [ ] **Standard formats**: import from and export to Jira (CSV and JSON), Trello and Asana boards; webhooks out (task created, status changed, release shipped) and an API key for other tools; Slack or Telegram notices for a channel.
-- [ ] **DORA measures** (done on the Roadmap: deployment frequency and lead time from releases, change failure rate from bugs filed within a week of a release; open: time to restore, which needs incidents): deployment frequency, lead time for changes, change failure rate and time to restore, from the releases, deploys and incidents.
+- [x] **Git hosting**: GitHub (exists) and GitLab; branches and pull requests linked by task code (WEB-12) in the branch name or title; checks and review state on the task; a merged pull request moves the task on.
+- [x] **CI/CD**: build and deploy status from GitHub Actions or GitLab CI on the task and the release; deployments per environment (development, staging, production) with time and version.
+- [x] **Releases**: versions (semantic, 1.4.0), release trains, the tasks in each, release notes generated, and the deploy that shipped it.
+- [x] **Quality**: test cases and test runs linked to requirements (pass, fail, blocked), bugs from failed tests with steps to reproduce; code coverage and quality numbers from the CI when available.
+- [x] **Incidents**: error reports from Sentry (or similar) open bugs automatically; incidents with severity, timeline and a postmortem.
+- [x] **Standard formats**: import from and export to Jira (CSV and JSON), Trello and Asana boards; webhooks out (task created, status changed, release shipped) and an API key for other tools; Slack or Telegram notices for a channel.
+- [x] **DORA measures**: deployment frequency, lead time for changes, change failure rate and time to restore, from the releases, deploys and incidents.
 
 ### 12b.6 Dev studio presentation
 
 - [ ] A presentation mode for Dev (as the Overview has for production, see Phase 12c): the roadmap, each project's progress and health, the current sprint (burndown, goal, what is done), the latest release and what is next, quality and DORA measures, cycling by itself or presented by hand, exported to PowerPoint, PDF or video.
 
-Built (12b): Configure has a Sprints tab; Dev starts with sprints on, in story points. Pages /dev/sprint (planning with the backlog beside the sprint and capacity per person, burndown and burnup with scope added after the start, stand-ups with blockers sent to the leads, review and close with carry-over, the retrospective with actions made into tasks, velocity from the last three sprints, the definition of done), /dev/roadmap (projects by quarter with health, and DORA measures) and /dev/docs (SRS, PRD, technical design, decision records, test plan, release notes, runbook and postmortem from templates; versions; named reviewers; requirement IDs such as FR-1 traced to tasks; Word and PDF). Server: `src/server/dev-studio.ts`; templates: `src/lib/dev-docs.ts`; tests: `tests/server/dev-studio.test.ts`. Still open in 12b: Gantt baselines and MS Project export, epics, project templates, GitLab, CI/CD deployments per environment, test cases and runs, incidents (Sentry), Jira, Trello and Asana import and export, webhooks and Slack or Telegram notices, and the Dev presentation (12b.6).
+Built (12b): Configure has a Sprints tab; Dev starts with sprints on, in story points. Pages /dev/sprint (planning with the backlog beside the sprint and capacity per person, burndown and burnup with scope added after the start, stand-ups with blockers sent to the leads, review and close with carry-over, the retrospective with actions made into tasks, velocity from the last three sprints, the definition of done), /dev/roadmap (projects by quarter with health, and DORA measures) and /dev/docs (SRS, PRD, technical design, decision records, test plan, release notes, runbook and postmortem from templates; versions; named reviewers; requirement IDs such as FR-1 traced to tasks; Word and PDF). Server: `src/server/dev-studio.ts`; templates: `src/lib/dev-docs.ts`; tests: `tests/server/dev-studio.test.ts`. Tools (/dev/tools, any department): releases with semantic versions and deployments per environment reported by CI/CD; incidents from Sentry or by hand, each filing a bug, with a timeline and time to restore for DORA; test cases linked to requirements, failed runs filing bugs; traceability from requirement to tasks, pull or merge requests (GitHub and GitLab), tests and release; five Myseed project templates plus the head's own; epics with progress; baselines and slipped tasks; a portfolio across departments; import from Jira, Trello and Asana; export to Jira CSV and MS Project XML; an API key (`POST /api/dev/<dept>/events`), signed webhooks, Slack and Telegram notices. Server: `src/server/dev-tools.ts`, `src/server/dev-plan.ts` (schemas 35 and 36); tests: `tests/server/dev-tools.test.ts`, Tools in `tests/e2e/flow.e2e.mjs`. Still open: the Dev presentation (12b.6) and drawing baselines on the Timeline chart.
 
 ## Phase 12c: Presentation studio (all departments) (started)
 

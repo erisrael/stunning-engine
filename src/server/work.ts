@@ -838,6 +838,7 @@ export async function saveTask(user: AppUser, d: string, input: TaskInput, opts:
   await audit({ actor: user }, { itemId: id, action: `${dp}.task`, summary: `${user.name} created ${code} ${title}` });
   if (opts.automations !== false) await runAutomations(user, a, dp, id, "created", now);
   if (category !== "open") await afterStatusChange(user, a, dp, id, firstOpen.key, status, now, opts.automations !== false);
+  void import("./dev-tools").then((m) => m.emitDev(dp, "task.created", { code, title, type, assignee: input.assigneeId ?? null }, `New ${cfg.names.task.toLowerCase()} ${code}: ${title}`)).catch(() => {});
   return id;
 }
 
@@ -852,6 +853,9 @@ async function followers(taskId: string) {
 // and its "all subtasks done" automations, and this task's automations.
 export async function afterStatusChange(user: AppUser, a: WorkAccess, dp: WorkDept, id: string, from: string, to: string, now: string, automations = true) {
   if (from === to) return;
+  void get<{ code: string; title: string }>("SELECT code, title FROM dept_tasks WHERE id = ?", id)
+    .then((t) => t && import("./dev-tools").then((m) => m.emitDev(dp, "task.status", { code: t.code, title: t.title, from, to }, `${t.code} moved to ${a.config.statuses.find((s) => s.key === to)?.label ?? to}`)))
+    .catch(() => {});
   const t = await get<{ code: string; title: string; type: string; parent_id: string | null; recur: string | null; requested_by: string | null; reviewer_id: string | null; due_date: string | null; start_date: string | null }>(
     "SELECT code, title, type, parent_id, recur, requested_by, reviewer_id, due_date, start_date FROM dept_tasks WHERE id = ?",
     id,

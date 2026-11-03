@@ -131,6 +131,20 @@ try {
   check("Configure, Flow lists the stages", (await admin.locator("[data-flow-stage]").count()) === 6);
   check("the path from the first stage is drawn", await admin.getByLabel("The flow from the first stage").isVisible());
   await admin.screenshot({ path: path.join(shots, "4-configure-flow.png"), fullPage: true });
+
+  // Tools: releases, incidents, tests, epics and baseline, portfolio, templates, integrations.
+  await go(admin, "/dev/tools");
+  for (const s of ["releases", "incidents", "tests", "plan", "portfolio", "templates", "import", "integrations"])
+    check(`Tools shows ${s}`, (await admin.locator(`[data-tools-section="${s}"]`).count()) === 1);
+  await admin.locator('[data-template="builtin:feature"]').getByRole("button", { name: "Start a project" }).click();
+  await admin.getByLabel("Project key").fill("QZE");
+  await admin.getByRole("button", { name: "Create the project" }).click();
+  check("a project starts from a template", await toast(admin, /Project started with 9 tasks/));
+  await admin.waitForTimeout(1200);
+  check("its epics show with progress", (await admin.locator("[data-epic]").count()) >= 4);
+  await admin.getByRole("button", { name: "Save baseline now" }).click();
+  check("a baseline is saved", await toast(admin, /Baseline saved/));
+  await admin.screenshot({ path: path.join(shots, "7-tools.png"), fullPage: true });
 } catch (e) {
   check("ran without crashing", false, e?.stack ?? e);
 } finally {

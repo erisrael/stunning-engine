@@ -728,7 +728,7 @@ export async function flowAssign(user: AppUser, d: string, ids: string[], userId
 }
 
 // Lead: group what is ready into a release with notes; the tasks move on (to Released).
-export async function flowRelease(user: AppUser, d: string, input: { ids: string[]; name: string; notes: string }) {
+export async function flowRelease(user: AppUser, d: string, input: { ids: string[]; name: string; notes: string; version?: string | null }) {
   const a = await workAccess(user, d, "write");
   needLead(a);
   const name = input.name.replace(/\s+/g, " ").trim().slice(0, 80);
@@ -751,7 +751,10 @@ export async function flowRelease(user: AppUser, d: string, input: { ids: string
     await run("DELETE FROM dept_releases WHERE id = ?", id);
     return { id: null, results: res };
   }
-  await run("UPDATE dept_releases SET task_count = ? WHERE id = ?", n, id);
+  // A version (1.4.0) from the name or given, for deployments and DORA (Phase 12b.5).
+  const ver = (input.version ?? name).trim().match(/^v?(\d+\.\d+\.\d+)/)?.[1] ?? null;
+  await run("UPDATE dept_releases SET task_count = ?, version = ? WHERE id = ?", n, ver, id);
+  void import("./dev-tools").then((m) => m.emitDev(a.dept, "release", { id, name, version: ver, tasks: n }, `${a.config.title}: ${name} released (${n} ${n === 1 ? a.config.names.task.toLowerCase() : a.config.names.tasks.toLowerCase()})`)).catch(() => {});
   await notify(await deptPeople(a.dept).then((p) => p.map((x) => x.id)), { type: "handoff", title: `${a.config.title}: ${name} released`, body: `${n} ${(n === 1 ? a.config.names.task : a.config.names.tasks).toLowerCase()}`, link: homeLink(a.dept), dedupeKey: `release:${id}` }, at, user.id);
   await audit({ actor: user }, { action: `${a.dept}.release`, summary: `${user.name} released ${name} with ${n} ${a.config.names.tasks.toLowerCase()}` });
   return { id, results: res };

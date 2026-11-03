@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import {
+  WrenchIcon,
   MicIcon,
   ZapIcon,
   ArrowLeftRightIcon,
@@ -213,6 +214,7 @@ function homeGroups(h: HomeDept, viewerId: string): { label: string; items: NavI
       items: [
         ...(h.repos ? [{ href: `${b}/repos`, label: "Repositories", icon: GitBranchIcon, exact: true }] : []),
         ...(h.studio ? [{ href: `${b}/docs`, label: "Specs and docs", icon: FileTextIcon, exact: true }] : []),
+        { href: `${b}/tools`, label: "Releases and quality", icon: WrenchIcon, exact: true },
         ...(h.accounting ? [{ href: `${b}/accounting`, label: "Accounting", icon: CalculatorIcon, exact: true }] : []),
         { href: "/requests", label: "Requests", icon: InboxIcon },
       ],
@@ -349,7 +351,7 @@ export function AppSidebar({
       label: "Departments",
       items: [
         { href: "/company", label: "Company overview", icon: Building2Icon, cap: "company.view" },
-        { href: "/dev", label: "Dev team", icon: CodeIcon, cap: ["dev.access", "owners.view"], sub: deptViews("/dev", [{ label: "Repositories", view: "repos" }], has("users.manage")) },
+        { href: "/dev", label: "Dev team", icon: CodeIcon, cap: ["dev.access", "owners.view"], sub: deptViews("/dev", [{ label: "Repositories", view: "repos" }, { label: "Roadmap", view: "roadmap" }, { label: "Specs and docs", view: "docs" }, { label: "Releases and quality", view: "tools" }], has("users.manage")) },
         { href: "/studio", label: "Studio", icon: BookOpenIcon, cap: ["studio.access", "owners.view"] },
         { href: "/marketing", label: "Marketing", icon: MegaphoneIcon, cap: ["marketing.access", "owners.view"], sub: deptViews("/marketing", [], has("users.manage")) },
         ...customDepts.map((d) => ({ href: `/d/${d.key}`, label: d.title, icon: BriefcaseIcon, sub: deptViews(`/d/${d.key}`, [], has("users.manage")) })),

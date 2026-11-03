@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 34;
+export const SCHEMA_VERSION = 36;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -2168,6 +2168,93 @@ CREATE TABLE IF NOT EXISTS mail_state (
   error TEXT
 );
 
+-- v36: project templates per department, and saved baselines of task dates (Phases 12b.2 and 12b.4).
+CREATE TABLE IF NOT EXISTS dept_project_templates (
+  id TEXT PRIMARY KEY,
+  dept TEXT NOT NULL,
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  body TEXT NOT NULL,
+  created_by TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS dept_task_baselines (
+  task_id TEXT PRIMARY KEY REFERENCES dept_tasks(id) ON DELETE CASCADE,
+  dept TEXT NOT NULL,
+  start_date TEXT,
+  due_date TEXT,
+  saved_at TEXT NOT NULL,
+  saved_by TEXT
+);
+
+-- v35: development tools (Phase 12b.5): GitLab merge requests by task code, deployments per environment, release
+-- versions, incidents, test cases and runs.
+ALTER TABLE dept_releases ADD COLUMN IF NOT EXISTS version TEXT;
+CREATE TABLE IF NOT EXISTS dev_merge_requests (
+  dept TEXT NOT NULL,
+  repo TEXT NOT NULL,
+  number INTEGER NOT NULL,
+  code TEXT NOT NULL,
+  title TEXT NOT NULL,
+  url TEXT NOT NULL,
+  branch TEXT NOT NULL,
+  state TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (dept, repo, number, code)
+);
+CREATE TABLE IF NOT EXISTS dev_deployments (
+  id TEXT PRIMARY KEY,
+  dept TEXT NOT NULL,
+  environment TEXT NOT NULL,
+  version TEXT,
+  release_id TEXT,
+  status TEXT NOT NULL,
+  commit_sha TEXT,
+  url TEXT,
+  source TEXT,
+  at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS dev_deployments_dept ON dev_deployments (dept, at);
+CREATE TABLE IF NOT EXISTS dev_incidents (
+  id TEXT PRIMARY KEY,
+  dept TEXT NOT NULL,
+  title TEXT NOT NULL,
+  severity TEXT NOT NULL,
+  status TEXT NOT NULL,
+  started_at TEXT NOT NULL,
+  resolved_at TEXT,
+  source TEXT,
+  external_id TEXT,
+  url TEXT,
+  bug_task_id TEXT,
+  postmortem_doc_id TEXT,
+  timeline TEXT NOT NULL DEFAULT '[]',
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS dev_test_cases (
+  id TEXT PRIMARY KEY,
+  dept TEXT NOT NULL,
+  title TEXT NOT NULL,
+  steps TEXT NOT NULL DEFAULT '',
+  expected TEXT NOT NULL DEFAULT '',
+  requirement TEXT,
+  doc_id TEXT,
+  created_by TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS dev_test_runs (
+  id TEXT PRIMARY KEY,
+  dept TEXT NOT NULL,
+  case_id TEXT NOT NULL REFERENCES dev_test_cases(id) ON DELETE CASCADE,
+  release_id TEXT,
+  result TEXT NOT NULL,
+  note TEXT,
+  bug_task_id TEXT,
+  by_user TEXT,
+  at TEXT NOT NULL
+);
+
 -- v34: the weekly file link check (Phase 16.2): the last result per file.
 CREATE TABLE IF NOT EXISTS link_checks (
   asset_id TEXT PRIMARY KEY,
@@ -2402,6 +2489,13 @@ export const TABLES = [
   "presenter_releases",
   "presenter_statements",
   "link_checks",
+  "dev_merge_requests",
+  "dev_deployments",
+  "dev_incidents",
+  "dev_test_cases",
+  "dev_test_runs",
+  "dept_project_templates",
+  "dept_task_baselines",
   "employees",
   "employee_private",
   "employee_documents",

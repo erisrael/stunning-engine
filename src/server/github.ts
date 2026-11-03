@@ -241,5 +241,8 @@ export async function cachedPrsByCode(dept: string) {
     for (const p of st.mergedPrs ?? []) for (const c of p.tasks) add(c, { number: p.number, title: p.title, url: p.url, branch: p.branch, state: "merged", checks: null, repo: st.fullName });
     for (const p of st.openPrs) for (const c of p.tasks) add(c, { number: p.number, title: p.title, url: p.url, branch: p.branch, state: p.draft ? "draft" : "open", checks: p.checks ?? null, repo: st.fullName });
   }
+  // GitLab merge requests reported to the department's API (Phase 12b.5), the same way.
+  const gl = await all<{ code: string; repo: string; number: number; title: string; url: string; branch: string; state: string }>("SELECT code, repo, number, title, url, branch, state FROM dev_merge_requests WHERE dept = ?", dept).catch(() => []);
+  for (const r of gl) add(r.code, { number: Number(r.number), title: r.title, url: r.url, branch: r.branch, state: r.state as TaskPr["state"], checks: null, repo: r.repo });
   return out;
 }
