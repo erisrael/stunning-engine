@@ -1,0 +1,13 @@
+.git
+node_modules
+.next
+data
+backups
+templates
+test-results
+control-panel
+.env*
+!.env.example
+.netlify
+.vercel
+*.tsbuildinfo

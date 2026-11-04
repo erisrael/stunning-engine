@@ -299,7 +299,7 @@ def _resolve(arg: str, secrets_seen: list[str]) -> str:
             raise RuntimeError(f"No backup file was found in {folder}.")
         return str(files[-1])
 
-    arg = re.sub(r"\{secret:([a-z_]+)\}", secret, arg)
+    arg = re.sub(r"\{secret:([A-Za-z0-9_]+)\}", secret, arg)
     return re.sub(r"\{latest:([^}]+)\}", latest, arg)
 
 
@@ -357,11 +357,15 @@ def run_wrapper(d: Path) -> int:
             cmd = [_resolve(str(a), secrets_seen) for a in step["cmd"]]
             cmd[0] = resolve_exe(cmd[0]) if not os.path.isabs(cmd[0]) else cmd[0]
             log.write(mask("  $ " + " ".join(Path(cmd[0]).stem if j == 0 else (f'"{c}"' if " " in c else c) for j, c in enumerate(cmd))) + "\n")
+            # Optional text for the command's standard input, for example settings with secrets that
+            # must reach a server without appearing in the command line or the log.
+            stdin_lines = [_resolve(str(x), secrets_seen) for x in step.get("stdin") or []]
+            stdin_text = "".join(f"{line}\n" for line in stdin_lines) if step.get("stdin") else None
             proc = subprocess.Popen(
                 cmd,
                 cwd=str(store.PROJECT_DIR / step.get("cwd", ".")),
                 env=env,
-                stdin=subprocess.DEVNULL,
+                stdin=subprocess.PIPE if stdin_text is not None else subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 creationflags=CREATE_NO_WINDOW if IS_WIN else 0,
@@ -370,6 +374,12 @@ def run_wrapper(d: Path) -> int:
             st = _read_json(status_path, {})
             st["child_pid"] = proc.pid
             _write_json(status_path, st)
+            if stdin_text is not None and proc.stdin:
+                try:
+                    proc.stdin.write(stdin_text.encode("utf-8"))
+                    proc.stdin.close()
+                except OSError:
+                    pass
             assert proc.stdout
             for raw in iter(proc.stdout.readline, b""):
                 log.write(mask(raw.decode("utf-8", errors="replace").rstrip("\r\n")) + "\n")

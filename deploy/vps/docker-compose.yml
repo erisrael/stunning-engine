@@ -1,0 +1,65 @@
+# The Content Manager on a VPS: the app, Postgres (profile "localdb") and Caddy for HTTPS (profile "caddy").
+# Run through deploy.sh, which sets APP_ROOT, RELEASE, DOMAIN, APP_PORT, POSTGRES_PASSWORD and COMPOSE_PROFILES
+# from $APP_ROOT/.env. The project name myseed-cm keeps it apart from other sites on the same server.
+name: myseed-cm
+
+services:
+  app:
+    image: myseed-cm-app:${RELEASE:-latest}
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ${APP_ROOT:?APP_ROOT is not set}/.env
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      BACKUP_DIR: /backups
+    volumes:
+      - ${APP_ROOT}/backups:/backups
+    ports:
+      # Always on this server only; Caddy (or your own proxy) is the public door.
+      - "127.0.0.1:${APP_PORT:-3100}:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: false
+
+  postgres:
+    image: postgres:17-alpine
+    profiles: ["localdb"]
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: myseed
+      POSTGRES_DB: myseed
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U myseed -d myseed"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  caddy:
+    image: caddy:2-alpine
+    profiles: ["caddy"]
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

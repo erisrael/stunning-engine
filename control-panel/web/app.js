@@ -399,7 +399,8 @@ const NAV = [
   {
     group: "Deploy",
     items: [
-      { id: "hosting", label: "Hosting", icon: "cloud" },
+      { id: "vps", label: "Hostinger VPS", icon: "server" },
+      { id: "hosting", label: "Netlify, Vercel, Render", icon: "cloud" },
       { id: "git", label: "Code (GitHub)", icon: "git" },
       { id: "local", label: "Local app", icon: "laptop" },
     ],
@@ -412,8 +413,8 @@ const NAV = [
     ],
   },
 ];
-const PAGES = { overview: pageOverview, database: pageDatabase, backups: pageBackups, hosting: pageHosting, git: pageGit, local: pageLocal, jobs: pageJobs, settings: pageSettings };
-const TITLES = { overview: "Overview", database: "Supabase sync", backups: "Backups", hosting: "Hosting", git: "Code (GitHub)", local: "Local app", jobs: "Jobs and logs", settings: "Settings" };
+const PAGES = { overview: pageOverview, database: pageDatabase, backups: pageBackups, vps: pageVps, hosting: pageHosting, git: pageGit, local: pageLocal, jobs: pageJobs, settings: pageSettings };
+const TITLES = { overview: "Overview", database: "Supabase sync", backups: "Backups", vps: "Hostinger VPS", hosting: "Netlify, Vercel, Render", git: "Code (GitHub)", local: "Local app", jobs: "Jobs and logs", settings: "Settings" };
 
 function applyTheme(t) {
   document.documentElement.dataset.theme = t;
@@ -469,13 +470,13 @@ function showAuth(setup) {
       el(
         "div",
         { class: "auth-card" },
-        el("div", { class: "brand" }, el("div", { class: "brand-mark" }), el("div", null, el("b", { text: "Myseed Control Panel" }), el("span", { text: "Supabase · Netlify · Vercel · Render" }))),
+        el("div", { class: "brand" }, el("div", { class: "brand-mark" }), el("div", null, el("b", { text: "Content Manager Panel" }), el("span", { text: "Hostinger VPS · Supabase · Netlify · Vercel · Render" }))),
         el("div", null, el("h1", { text: setup ? "Create your panel password" : "Welcome back" }), el("p", { class: "muted small", text: setup ? "This protects the panel in your browser. Use 8 or more characters. It is stored as a salted hash on this computer." : "Sign in to manage data, deployments and jobs." })),
         field("Password", pw),
         pw2 ? field("Repeat password", pw2) : null,
         err,
         go,
-        el("p", { class: "tiny faint", text: "The panel only listens on this computer (127.0.0.1). Jobs keep running when you close this tab." }),
+        el("p", { class: "tiny faint", text: "The panel only listens on this computer (content-manager.localhost). Jobs keep running when you close this tab." }),
       ),
     ),
   );
@@ -491,7 +492,7 @@ function go(view, sub) {
 }
 const subView = () => location.hash.replace(/^#\/?/, "").split("/")[1];
 
-let navEl, contentEl, titleEl, runningPill;
+let navEl, contentEl, titleEl, runningPill, projectChip;
 
 function showShell() {
   app.className = "";
@@ -499,6 +500,17 @@ function showShell() {
   contentEl = el("div", { class: "content" });
   titleEl = el("div", { class: "title grow", text: "" });
   runningPill = el("button", { class: "btn ghost sm hidden", onclick: () => go("jobs") });
+  // Which project this panel manages, always in view, so it is never mistaken for another project's panel.
+  projectChip = el("span", { class: "badge plain truncate desktop-only project-chip", title: "" });
+  api("GET", "/api/session")
+    .then((s) => {
+      const pr = s.project;
+      if (!pr) return;
+      const repo = pr.remote ? pr.remote.replace(/^https?:\/\/(www\.)?/, "").replace(/\.git$/, "") : pr.folder;
+      projectChip.textContent = repo;
+      projectChip.title = `${pr.name} · ${pr.path}${pr.remote ? " · " + pr.remote : ""}`;
+    })
+    .catch(() => {});
   const themeBtn = btn("", { kind: "ghost", size: "icon", icon: document.documentElement.dataset.theme === "light" ? "moon" : "sun", aria: "Switch theme", title: "Switch light or dark" });
   themeBtn.onclick = () => {
     applyTheme(document.documentElement.dataset.theme === "light" ? "dark" : "light");
@@ -510,7 +522,7 @@ function showShell() {
     el(
       "aside",
       { class: "sidebar" },
-      el("div", { class: "brand" }, el("div", { class: "brand-mark" }), el("div", null, el("b", { text: "Myseed Control" }), el("span", { text: "Data and deployments" }))),
+      el("div", { class: "brand" }, el("div", { class: "brand-mark" }), el("div", null, el("b", { text: "Content Manager" }), el("span", { text: "Control panel" }))),
       navEl,
       el("div", { class: "sidebar-foot" }, el("div", { class: "row" }, el("span", { class: "pulse-dot" }), el("span", { text: "Panel running in the background" })), el("div", { class: "faint", text: "Closing this tab keeps jobs running." })),
     ),
@@ -522,6 +534,7 @@ function showShell() {
         { class: "topbar" },
         btn("", { kind: "ghost", size: "icon mobile-only", icon: "menu", aria: "Menu", onclick: () => shell.classList.toggle("nav-open") }),
         titleEl,
+        projectChip,
         runningPill,
         themeBtn,
         btn("Sign out", { kind: "ghost", size: "sm", icon: "logout", title: "Sign out", onclick: async () => (await api("POST", "/api/logout").catch(() => { }), showAuth(false)) }),
@@ -728,7 +741,7 @@ async function pageOverview(root, alive) {
         el(
           "div",
           { class: "row" },
-          el("div", { class: "grow" }, el("h1", { text: "Myseed Content Manager" }), el("p", { class: "muted small", text: o.panel.project })),
+          el("div", { class: "grow" }, el("h1", { text: "Myseed Content Manager" }), el("p", { class: "muted small", text: [o.panel.project, o.project && o.project.remote].filter(Boolean).join(" · ") })),
           badge(`Panel up ${duration(o.panel.uptime)}`, "ok"),
           badge(o.jobs.running.length ? `${o.jobs.running.length} job(s) running` : "No jobs running", o.jobs.running.length ? "info live" : "plain"),
           badge("Secrets encrypted", "violet"),
@@ -742,6 +755,12 @@ async function pageOverview(root, alive) {
           { class: "card", role: "button", tabindex: "0", onclick: () => go("database") },
           el("div", { class: "card-head" }, el("div", { class: "icon" }, icon("db")), el("div", { class: "grow" }, el("h3", { text: "Supabase" }), el("div", { class: "card-sub truncate", text: sb.project.project_name || sb.session || "Not configured" })), sbReady ? badge("Ready", "ok") : badge("Set up", "warn")),
           el("div", { class: "small muted", text: sbReady ? `Session ${sb.session}` : "Add connection strings to sync data" }),
+        ),
+        el(
+          "section",
+          { class: "card", role: "button", tabindex: "0", onclick: () => go("vps") },
+          el("div", { class: "card-head" }, el("div", { class: "icon" }, icon("server")), el("div", { class: "grow" }, el("h3", { text: "Hostinger VPS" }), el("div", { class: "card-sub truncate", text: o.vps.host ? `${o.vps.user || "root"}@${o.vps.host}` : o.vps.connected ? "Choose the VPS" : "Not connected" })), o.vps.last_deploy ? badge("Live", "ok") : o.vps.host ? badge("Set up", "info") : badge("Off", "plain")),
+          o.vps.url ? el("div", { class: "small truncate" }, link(o.vps.url, o.vps.url.replace(/^https?:\/\//, ""))) : el("div", { class: "small muted", text: o.vps.last_deploy ? `Release ${o.vps.last_deploy.release}` : "Your own server, deployed over SSH" }),
         ),
         host("netlify", "Netlify", "netlify"),
         host("vercel", "Vercel", "vercel"),
@@ -1032,7 +1051,7 @@ function backupsTable(list, reload, compact = false) {
       fail(err);
     }
   };
-  const tone = { local: "info", supabase: "ok", other: "plain" };
+  const tone = { local: "info", supabase: "ok", vps: "violet", other: "plain" };
   return el(
     "div",
     { class: "table-wrap" },
@@ -1047,7 +1066,7 @@ function backupsTable(list, reload, compact = false) {
           el(
             "tr",
             null,
-            el("td", null, badge(b.source === "supabase" ? "Supabase" : b.source === "local" ? "Local" : "Other", tone[b.source])),
+            el("td", null, badge(b.source === "supabase" ? "Supabase" : b.source === "local" ? "Local" : b.source === "vps" ? "VPS" : "Other", tone[b.source])),
             el("td", null, el("div", { class: "mono truncate", text: b.name }), b.note ? el("div", { class: "tiny muted", text: b.note.replace(/^\d{8}-\d{6}-?/, "").replace(/-/g, " ") || b.note }) : null),
             el("td", { class: "nowrap", title: when(b.modified), text: ago(b.modified) }),
             el("td", { class: "num nowrap", text: bytes(b.size) }),
@@ -1081,7 +1100,7 @@ async function pageBackups(root, alive) {
     const tabs = el(
       "div",
       { class: "tabs" },
-      [["all", "All"], ["supabase", "Supabase"], ["local", "Local"], ["other", "Other"]].map(([k, l]) => el("button", { class: filter === k ? "active" : "", onclick: () => ((filter = k), load()) }, `${l} (${k === "all" ? backups.length : backups.filter((b) => b.source === k).length})`)),
+      [["all", "All"], ["supabase", "Supabase"], ["local", "Local"], ["vps", "VPS"], ["other", "Other"]].map(([k, l]) => el("button", { class: filter === k ? "active" : "", onclick: () => ((filter = k), load()) }, `${l} (${k === "all" ? backups.length : backups.filter((b) => b.source === k).length})`)),
     );
     root.replaceChildren(
       pageHead(
@@ -1421,6 +1440,337 @@ function deploysCard(p, d, reload) {
 // ---------------------------------------------------------------------------
 // Git
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Hostinger VPS
+// ---------------------------------------------------------------------------
+
+const act = (fn) => async () => {
+  try {
+    await fn();
+  } catch (err) {
+    fail(err);
+  }
+};
+
+async function copyText(text, what = "Copied") {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast(what);
+  } catch {
+    toast("Copy failed. Select the text and press Ctrl+C.", "bad");
+  }
+}
+
+function stepCard(n, title, done, sub, ...body) {
+  return el(
+    "section",
+    { class: "card" },
+    el("div", { class: "card-head" }, el("span", { class: "step-num", text: String(n) }), el("div", { class: "grow" }, el("h3", { text: title }), sub ? el("div", { class: "card-sub", text: sub }) : null), done === null ? null : done ? badge("Done", "ok") : badge("To do", "plain")),
+    ...body,
+  );
+}
+
+function httpRow(name, r) {
+  if (!r) return el("div", { class: "list-item static" }, el("div", { class: "grow", text: name }), badge("Not checked", "plain"));
+  return el(
+    "div",
+    { class: "list-item static" },
+    el("div", { class: "grow" }, el("div", { text: name }), el("div", { class: "tiny muted truncate", text: r.url })),
+    el("span", { class: "tiny muted", text: r.ms ? `${r.ms} ms` : "" }),
+    r.ok ? badge(`Up ${r.status}`, "ok") : badge(r.status ? `HTTP ${r.status}` : "Down", "bad"),
+  );
+}
+
+function statusCard(st, hasDomain, onRefresh) {
+  const check = btn("Check now", { size: "sm", icon: "refresh" });
+  check.onclick = () =>
+    withBusy(
+      check,
+      act(async () => {
+        await api("POST", "/api/vps/status");
+        onRefresh();
+      }),
+    );
+  const srv = st && st.server;
+  const http = (st && st.http) || {};
+  return card(
+    "Live status",
+    { icon: "shield", sub: st && st.checked ? `Checked ${ago(st.checked)}` : "Checks the site's address and the server.", action: check },
+    hasDomain ? el("div", { class: "list" }, httpRow("Website", http.site), httpRow("Health check", http.health)) : el("p", { class: "small muted", text: "Add a domain in step 3 to check the public address." }),
+    srv
+      ? srv.error
+        ? notice("bad", srv.error)
+        : el(
+            "div",
+            { class: "section" },
+            el("dl", { class: "kv" }, el("dt", { text: "Release" }), el("dd", { class: "mono", text: srv.release || "-" }), el("dt", { text: "Server up" }), el("dd", { text: srv.uptime || "-" }), el("dt", { text: "Disk used" }), el("dd", { text: srv.disk || "-" }), el("dt", { text: "Memory" }), el("dd", { text: srv.memory || "-" }), el("dt", { text: "Last backup" }), el("dd", { class: "mono", text: srv.last_backup || "none yet" })),
+            srv.containers && srv.containers.length ? el("div", { class: "row section" }, srv.containers.map((c) => badge(`${c.service}: ${c.health || c.state}`, c.state === "running" && c.health !== "unhealthy" ? "ok" : "bad"))) : null,
+          )
+      : null,
+  );
+}
+
+// "Delete connection": what to take away, chosen in one dialog.
+function disconnectBox(d) {
+  const v = d.vps;
+  return modal((close) => {
+    const opt = (label, hint, checked, disabled) => {
+      const input = el("input", { type: "checkbox", checked: checked && !disabled, disabled });
+      return [input, el("label", { class: "row small opt-row" }, input, el("span", null, el("b", { text: label }), el("br"), el("span", { class: "muted", text: hint })))];
+    };
+    const [server, serverRow] = opt("Take the panel's key off the server", v.host ? `Removes it from ${v.user || "root"}@${v.host}'s authorized_keys over SSH. Other keys stay.` : "No server is linked.", true, !v.host || !v.key_installed);
+    const [account, accountRow] = opt("Delete the key from my Hostinger account", d.connected ? "Removes it from hPanel, SSH keys." : "Needs the API token, which is not connected.", true, !d.connected);
+    const [local, localRow] = opt("Delete the SSH key on this computer", "A new key is made the next time you connect.", false, !d.public_key);
+    const word = el("input", { type: "text", placeholder: "Type DELETE to confirm", autocomplete: "off" });
+    const go = el("button", { class: "btn danger solid", type: "button", disabled: true }, "Delete connection");
+    word.addEventListener("input", () => (go.disabled = word.value.trim().toUpperCase() !== "DELETE"));
+    go.onclick = () => close({ remove_server_key: server.checked, remove_account_key: account.checked, delete_local_key: local.checked });
+    return [
+      el("h2", { text: "Delete the Hostinger connection?" }),
+      el("ul", null, el("li", { text: "Forgets the Hostinger API token and unlinks the VPS from this panel." }), el("li", { text: "The site on the VPS keeps running: nothing is stopped or deleted on the server." }), el("li", { text: "Your domain, database and proxy choices stay, so connecting again is quick." })),
+      el("div", { class: "col opt-list" }, serverRow, accountRow, localRow),
+      word,
+      el("div", { class: "actions" }, btn("Cancel", { kind: "ghost", onclick: () => close(null) }), go),
+    ];
+  });
+}
+
+async function pageVps(root, alive) {
+  let machines = null;
+  let facts = null;
+
+  const load = async () => {
+    const d = await api("GET", "/api/vps");
+    if (!alive()) return;
+    const v = d.vps;
+
+    // Step 1: the server.
+    const token = el("input", { type: "password", placeholder: d.token ? `Saved (${d.token})` : "Paste the API token", autocomplete: "off" });
+    const connect = btn(d.connected ? "Load my VPS list" : "Connect", { kind: "primary", size: "sm" });
+    connect.onclick = () =>
+      withBusy(
+        connect,
+        act(async () => {
+          machines = (token.value.trim() ? await api("POST", "/api/vps/token", { token: token.value.trim() }) : await api("GET", "/api/vps/machines")).machines;
+          if (!machines.length) toast("No VPS found in this Hostinger account.", "info");
+          load();
+        }),
+      );
+    const machineList = machines
+      ? el(
+          "div",
+          { class: "list" },
+          machines.map((mc) =>
+            el(
+              "div",
+              { class: "list-item static" },
+              el("div", { class: "grow" }, el("div", { class: "truncate", text: `${mc.hostname || "VPS " + mc.id} · ${mc.ipv4.join(", ") || "no IPv4"}` }), el("div", { class: "tiny muted", text: `${mc.plan || ""} · ${mc.os || "no OS"} · ${mc.cpus || "?"} CPU · ${Math.round((mc.memory_mb || 0) / 1024)} GB RAM · ${mc.state || ""}` })),
+              v.vm_id === mc.id ? badge("Chosen", "ok") : btn("Use this", { size: "sm", onclick: act(async () => (await api("POST", "/api/vps/select", { id: mc.id }), toast("VPS chosen"), load())) }),
+            ),
+          ),
+        )
+      : null;
+    const host = el("input", { type: "text", value: v.host || "", placeholder: "187.33.12.45" });
+    const user = el("input", { type: "text", value: v.user || "root" });
+    const sshPort = el("input", { type: "number", value: v.ssh_port || 22, min: "1", max: "65535" });
+    const path = el("input", { type: "text", value: v.path || "/opt/myseed-content-manager" });
+    const saveServer = btn("Save server", { size: "sm" });
+    saveServer.onclick = () => withBusy(saveServer, act(async () => (await api("POST", "/api/vps/server", { host: host.value, user: user.value, ssh_port: Number(sshPort.value), path: path.value }), toast("Server saved"), load())));
+
+    // Step 2: the key.
+    const keyBox = d.public_key ? el("textarea", { class: "mono tiny", rows: "3", readonly: true, value: d.public_key }) : null;
+    const test = btn("Test connection", { kind: "primary", size: "sm", icon: "terminal", disabled: !v.host || !d.public_key });
+    test.onclick = () => withBusy(test, act(async () => ((facts = (await api("POST", "/api/vps/test")).facts), toast("Connected to the server"), load())));
+    const keyActions = d.public_key
+      ? el(
+          "div",
+          { class: "row" },
+          btn("Copy key", { size: "sm", onclick: () => copyText(d.public_key, "Public key copied") }),
+          v.vm_id && d.connected ? btn("Add with Hostinger API", { size: "sm", onclick: act(async () => toast((await api("POST", "/api/vps/key/install")).message, "info", 8000)) }) : null,
+          test,
+          btn("New key", {
+            size: "sm",
+            kind: "ghost",
+            onclick: act(async () => {
+              if (!(await confirmBox({ title: "Replace the SSH key?", lines: ["The old key stops working for this panel. You will have to add the new one to the server."], ok: "Replace", danger: true }))) return;
+              await api("POST", "/api/vps/key/generate", { replace: true });
+              load();
+            }),
+          }),
+        )
+      : el("div", { class: "row" }, btn("Create the panel's SSH key", { kind: "primary", size: "sm", icon: "key", onclick: act(async () => (await api("POST", "/api/vps/key/generate", {}), load())) }));
+
+    // Step 3: the site's settings.
+    const domain = el("input", { type: "text", value: v.domain || "", placeholder: "content.myseed.com" });
+    const dbSel = el("select", null, el("option", { value: "local", text: "Postgres on the VPS (new, private to this server)" }), el("option", { value: "supabase", text: "Supabase (the session pooler from the Database page)" }));
+    dbSel.value = v.database || "local";
+    const proxySel = el("select", null, el("option", { value: "caddy", text: "Caddy on ports 80 and 443 with automatic HTTPS" }), el("option", { value: "none", text: "Use the web server I already have (another site runs here)" }));
+    proxySel.value = v.proxy || "caddy";
+    const appPort = el("input", { type: "number", value: v.app_port || 3100, min: "1024", max: "65535" });
+    const extra = el("textarea", { class: "mono tiny", rows: "4", placeholder: d.extra_env ? `Saved: ${d.extra_env_keys.join(", ")}. Type new lines to replace them.` : "Optional, one per line, for example:\nSMTP_HOST=smtp.example.com\nANTHROPIC_API_KEY=sk-...", autocomplete: "off" });
+    const saveSettings = btn("Save settings", { size: "sm", kind: "primary" });
+    saveSettings.onclick = () =>
+      withBusy(
+        saveSettings,
+        act(async () => {
+          await api("POST", "/api/vps/settings", { domain: domain.value, database: dbSel.value, proxy: proxySel.value, app_port: Number(appPort.value), ...(extra.value.trim() ? { extra_env: extra.value } : {}) });
+          toast("Settings saved. They reach the server with the next deploy, or press Send settings now.");
+          load();
+        }),
+      );
+    const settingsOk = !!(v.domain || v.proxy === "none") && (v.database !== "supabase" || d.supabase_ready);
+
+    const setupBtn = btn(v.setup_done ? "Run setup again" : "Prepare the server", { kind: v.setup_done ? "" : "primary", icon: "server", disabled: !v.key_installed });
+    setupBtn.onclick = async () => {
+      const ok = await confirmBox({
+        title: "Prepare the server?",
+        lines: ["Installs Docker and the Compose plugin, adds 2 GB of swap for the build, opens SSH" + (proxySel.value === "caddy" ? ", HTTP and HTTPS" : "") + " in the firewall, and schedules a daily backup and the app's scheduled checks.", "If another site already uses ports 80 and 443 it stops and tells you; choose \"Use the web server I already have\" then.", "Safe to run again. Takes 2 to 5 minutes."],
+        ok: "Prepare the server",
+      });
+      if (ok) runJob(() => api("POST", "/api/vps/setup")).then(load);
+    };
+
+    // Step 4: deploy.
+    const ready = v.key_installed && v.setup_done && settingsOk;
+    const wip = el("input", { type: "checkbox" });
+    const deployBtn = btn("Build and deploy", { kind: "primary", icon: "rocket", disabled: !ready });
+    deployBtn.onclick = async () => {
+      const ok = await confirmBox({ title: "Deploy to the VPS?", lines: [`Packages ${wip.checked ? "this folder, with uncommitted changes," : "the last commit"} of ${d.project}`, "Uploads it, builds it on the server (several minutes the first time), then switches over after /api/health answers. If it does not, the previous release keeps running."], ok: "Deploy" });
+      if (ok) runJob(() => api("POST", "/api/vps/deploy", { include_changes: wip.checked })).then(load);
+    };
+    const logsSel = el("select", { class: "fit" }, ["app", "postgres", "caddy"].map((s) => el("option", { value: s, text: s })));
+    const restoreBtn = btn("Restore a backup", {
+      size: "sm",
+      icon: "up",
+      disabled: !v.last_deploy,
+      onclick: act(async () => {
+        const list = (await api("GET", "/api/backups")).backups.filter((b) => b.restorable);
+        if (!list.length) return toast("No backups on this computer yet. Make one on the Backups page.", "info");
+        const choice = await modal((close) => {
+          const sel = el("select", null, list.map((b) => el("option", { value: b.file, text: `${b.file} (${bytes(b.size)}, ${ago(b.modified)})` })));
+          return [
+            el("h2", { text: "Restore a backup onto the VPS" }),
+            el("p", { class: "small muted", text: "Replaces all data in the VPS database. The server makes a safety backup first." }),
+            field("Backup", sel),
+            el("div", { class: "actions" }, btn("Cancel", { kind: "ghost", onclick: () => close(null) }), btn("Restore", { kind: "danger solid", onclick: () => close(sel.value) })),
+          ];
+        });
+        if (choice) runJob(() => api("POST", "/api/vps/restore", { file: choice }));
+      }),
+    });
+
+    const disconnect = btn("Delete connection", {
+      size: "sm",
+      kind: "danger",
+      icon: "trash",
+      disabled: !d.connected && !v.host && !d.public_key,
+      onclick: act(async () => {
+        const choice = await disconnectBox(d);
+        if (!choice) return;
+        const r = await api("POST", "/api/vps/disconnect", choice);
+        machines = null;
+        facts = null;
+        toast(r.done.join(" "), "ok", 9000);
+        for (const w of r.warnings) toast(w, "bad", 9000);
+        load();
+      }),
+    });
+
+    root.replaceChildren(
+      pageHead("Hostinger VPS", `Deploys ${d.project}. Four steps the first time; after that only step 4.`, disconnect),
+      el(
+        "div",
+        { class: "col" },
+        stepCard(
+          1,
+          "Choose the VPS",
+          !!v.host,
+          "A Hostinger KVM plan with Ubuntu 24.04. KVM 2 (8 GB RAM) is comfortable; KVM 1 works with the swap that step 3 adds.",
+          el(
+            "div",
+            { class: "grid g2" },
+            el(
+              "div",
+              { class: "col" },
+              el("h3", { class: "small", text: "Automatic (recommended)" }),
+              el("p", { class: "small muted" }, "In hPanel open your profile, then ", el("b", { text: "Account information, API" }), ". Create a token and paste it here. ", link("https://hpanel.hostinger.com/profile/api", "Open hPanel API")),
+              el("div", { class: "input-row" }, token, connect),
+              d.connected ? el("div", { class: "row" }, badge(`Connected (${d.token})`, "ok"), btn("Forget token", { size: "sm", kind: "ghost", onclick: act(async () => (await api("POST", "/api/vps/token/forget"), (machines = null), load())) })) : null,
+              machineList,
+            ),
+            el("div", { class: "col" }, el("h3", { class: "small", text: "By hand" }), el("p", { class: "small muted", text: "Copy the IP address from hPanel, VPS, Overview. Hostinger's default user is root." }), field("Server IP or host name", host), el("div", { class: "grid g2" }, field("User", user), field("SSH port", sshPort)), field("App folder on the server", path, "Its own folder, so another site on the same VPS is never touched."), el("div", { class: "row" }, saveServer)),
+          ),
+          v.host ? el("p", { class: "small muted" }, "Linked: ", el("b", { text: `${v.user || "root"}@${v.host}` }), v.hostname ? ` (${v.hostname}${v.plan ? ", " + v.plan : ""})` : "") : null,
+        ),
+        stepCard(
+          2,
+          "Install the panel's SSH key",
+          !!v.key_installed,
+          "The panel signs in with its own key, so no server password is stored. The private key stays on this computer, outside OneDrive, and is separate from any other project's panel.",
+          keyBox,
+          keyActions,
+          d.public_key && !v.key_installed
+            ? notice("info", el("div", null, "No API token? Add the key yourself:"), el("ol", { class: "small" }, el("li", null, "hPanel, VPS, ", el("b", { text: "Settings, SSH keys, Add SSH key" }), ": paste the key above."), el("li", null, "Or open the VPS ", el("b", { text: "Browser terminal" }), " in hPanel and paste this command: ", btn("Copy command", { size: "sm", onclick: () => copyText(d.install_command, "Command copied") }))), el("div", { class: "small" }, "Then press Test connection."))
+            : null,
+          facts ? el("dl", { class: "kv section" }, Object.entries(facts).map(([k, val]) => [el("dt", { text: k }), el("dd", { text: val })])) : null,
+        ),
+        stepCard(
+          3,
+          "Site settings and the server",
+          !!v.setup_done && settingsOk,
+          "Where the site answers, where its data lives, then prepare the server once.",
+          el("div", { class: "grid g2" }, field("Domain", domain, "Point its A record at the VPS first. Caddy gets the HTTPS certificate."), field("Database", dbSel, d.supabase_ready ? "Supabase is connected on the Database page." : "Supabase needs the session pooler string on the Database page.")),
+          el("div", { class: "grid g2 section" }, field("Web server", proxySel), field("App port on the server", appPort, "Only on 127.0.0.1. With your own web server, send the domain to this port.")),
+          field("More settings for the app (encrypted here, sent over SSH)", extra, d.extra_env ? `Saved: ${d.extra_env_keys.join(", ")}` : "Email (SMTP_*), the AI key, Google sign-in and the like. Most can also be set inside the app."),
+          el(
+            "div",
+            { class: "row" },
+            saveSettings,
+            d.extra_env ? btn("Clear the extra settings", { size: "sm", kind: "ghost", onclick: act(async () => (await api("POST", "/api/vps/settings", { extra_env: "__clear__" }), load())) }) : null,
+          ),
+          el("div", { class: "divider" }),
+          !v.key_installed ? notice("warn", "Finish step 2 first.") : null,
+          el("div", { class: "row" }, setupBtn, btn("Send settings now", { size: "sm", icon: "up", disabled: !v.key_installed || !settingsOk, onclick: () => runJob(() => api("POST", "/api/vps/push-env")) })),
+        ),
+        stepCard(
+          4,
+          "Build and deploy",
+          !!v.last_deploy,
+          v.last_deploy ? `Live: ${v.last_deploy.release}, ${ago(v.last_deploy.at)}.` : "Uploads the code, builds on the server and switches over after a health check. If the new release does not start, the previous one keeps running.",
+          !ready ? notice("warn", "Finish steps 1 to 3 first.") : null,
+          el("div", { class: "row" }, deployBtn, el("label", { class: "row small muted" }, wip, "Include uncommitted changes"), d.url ? link(d.url, "Open the site") : null),
+          el("div", { class: "divider" }),
+          el(
+            "div",
+            { class: "row" },
+            btn("Roll back", { size: "sm", icon: "leftright", disabled: !v.last_deploy, onclick: async () => (await confirmBox({ title: "Go back to the previous release?", lines: ["Starts the release before the current one. The database is not rolled back."], ok: "Roll back", danger: true })) && runJob(() => api("POST", "/api/vps/rollback")) }),
+            btn("Restart app", { size: "sm", icon: "refresh", disabled: !v.last_deploy, onclick: () => runJob(() => api("POST", "/api/vps/restart")) }),
+            btn("Back up and download", { size: "sm", icon: "archive", disabled: !v.last_deploy, onclick: () => runJob(() => api("POST", "/api/vps/backup")) }),
+            restoreBtn,
+            el("span", { class: "right" }),
+            logsSel,
+            btn("Show log", { size: "sm", icon: "terminal", disabled: !v.key_installed, onclick: () => runJob(() => api("POST", "/api/vps/logs", { service: logsSel.value, lines: 300 })) }),
+            v.vm_id && d.connected
+              ? btn("Reboot VPS", {
+                  size: "sm",
+                  kind: "danger",
+                  icon: "power",
+                  onclick: act(async () => {
+                    if (!(await confirmBox({ title: "Reboot the VPS?", lines: ["Every site on it is offline for about a minute while it restarts. The containers start again by themselves."], ok: "Reboot", danger: true }))) return;
+                    await api("POST", "/api/vps/reboot");
+                    toast("Hostinger is restarting the VPS", "info");
+                  }),
+                })
+              : null,
+          ),
+        ),
+        statusCard(d.status, !!d.url, load),
+      ),
+    );
+  };
+  await load();
+}
 
 async function pageGit(root, alive) {
   const load = async (info) => {

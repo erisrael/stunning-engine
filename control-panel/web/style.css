@@ -298,6 +298,7 @@ td .actions { display: flex; gap: 6px; justify-content: flex-end; }
 @keyframes ring { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 60%, transparent); } 100% { box-shadow: 0 0 0 9px transparent; } }
 
 .mobile-only { display: none; }
+@media (max-width: 760px) { .desktop-only { display: none !important; } }
 @media (max-width: 1100px) { .g4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } .g3 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 860px) {
   .shell { grid-template-columns: 1fr; }
@@ -318,3 +319,9 @@ td .actions { display: flex; gap: 6px; justify-content: flex-end; }
   .topbar .btn.sm { width: 32px; padding: 0; }
   .page-head .row { width: 100%; }
 }
+
+/* Hostinger VPS */
+.project-chip { max-width: 340px; }
+.opt-row { align-items: flex-start; gap: 8px; }
+.opt-list { gap: 10px; margin: 12px 0; }
+select.fit { width: auto; }

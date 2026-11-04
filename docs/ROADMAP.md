@@ -1239,3 +1239,12 @@ Built: `src/app/(app)/preferences`, `src/components/app/mobile-nav.tsx`, `src/co
 - [x] **Phones feel like an app**: menu groups fold so fewer options show at once, no text-size jumps, a sticky top bar with safe areas, tighter cards and titles, menus and dialogs kept on the screen.
 
 Built: `src/server/identity.ts`, `src/app/manifest.ts`, `src/app/api/branding/[kind]`, `src/app/(app)/my-work`, `src/app/(app)/sessions/managers.tsx`, `src/app/api/tracker-templates/[kind]`, `src/app/api/support/ivr-audio`, changes in `src/server/legacy.ts`, `src/server/sessions.ts`, `src/server/presenters.ts`, `src/server/support-desk.ts`, the support widget and setup. Tests: `tests/server/round36.test.ts`, the Legacy and phone tests.
+
+## Phase 37: the control panel manages this project only, and deploys to a Hostinger VPS (done)
+
+- [x] **This project's panel only**: port 8765 (the next free one if taken, never the MySeed Academy panel's 8766) at its own address, http://content-manager.localhost:8765. The launcher asks a running panel who it is (`/api/identity`) and never reuses another project's. The server binds its port exclusively: Python's default let two programs share a port on Windows, so the browser could reach the other project's panel. The top bar shows the repository.
+- [x] **Settings moved** from `.state2` into `.state` on the first start; the old panel left on 8766 is stopped (only if it is this folder's).
+- [x] **Hostinger VPS page**, learned from the MySeed Academy panel: the API token lists the VPS, the panel's own SSH key is saved and attached through the API (or pasted by hand), Test connection, site settings (domain, Postgres on the VPS or Supabase, Caddy with HTTPS or a web server already there, extra encrypted settings), Prepare the server, Build and deploy with a health check and automatic fallback, Roll back, Restart, Back up and download, Restore a backup, logs, live status, Reboot.
+- [x] **Delete connection** for Hostinger: forgets the token and the VPS, and optionally takes the key off the server, out of the Hostinger account and off this computer. The site keeps running.
+- [x] **Server side** in the repository: `Dockerfile`, `deploy/vps/` (compose with the app, Postgres and Caddy as profiles, project `myseed-cm`; `setup.sh`, `env.sh`, `deploy.sh`). Settings reach the server over SSH's standard input, never a command line. The app accepts `sslmode=disable` for Postgres next to it.
+- [x] Backups page lists `.json.gz` backups and VPS backups.

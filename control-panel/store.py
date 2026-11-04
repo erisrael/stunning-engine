@@ -19,14 +19,22 @@ from pathlib import Path
 
 PANEL_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = PANEL_DIR.parent
-STATE_DIR = Path(os.environ.get("MYSEED_PANEL_STATE") or PANEL_DIR / ".state2")  # override for testing
+STATE_DIR = Path(os.environ.get("MYSEED_PANEL_STATE") or PANEL_DIR / ".state")  # override for testing
+OLD_STATE_DIR = PANEL_DIR / ".state2"  # used by an earlier version; moved into .state on start
+# The panel's own SSH key for the VPS. Kept outside OneDrive and outside the repository, and separate from the
+# MySeed Academy panel's key so removing one never locks the other out.
+KEY_DIR = Path(os.environ.get("MYSEED_PANEL_KEYS") or Path(os.environ.get("LOCALAPPDATA") or Path.home() / ".config") / "MyseedContentManagerPanel" / "ssh")
 JOBS_DIR = STATE_DIR / "jobs"
 CONFIG_FILE = STATE_DIR / "config.json"
 PID_FILE = STATE_DIR / "panel.pid"
 LOG_FILE = STATE_DIR / "panel.log"
 BACKUPS_DIR = PROJECT_DIR / "backups"
 
-DEFAULT_PORT = 8766
+# This panel's own port and address. The MySeed Academy panel uses 8766 on 127.0.0.1, so the two never meet:
+# different port, different host name (browsers send *.localhost to this computer), different cookie.
+DEFAULT_PORT = 8765
+PANEL_HOST = "content-manager.localhost"
+APP_ID = "myseed-content-manager-panel"
 
 # Secret names the UI may set. Values never go back to the browser in full.
 SECRET_KEYS = {
@@ -37,6 +45,8 @@ SECRET_KEYS = {
     "vercel_token",
     "render_token",
     "cron_secret",
+    "hostinger_token",
+    "vps_extra_env",  # extra KEY=value lines for the server's .env (SMTP, AI key and the like)
 }
 
 _lock = threading.RLock()
@@ -124,7 +134,54 @@ DEFAULTS: dict = {
     "supabase": {"project_ref": None, "project_name": None},
     "auto_backup": {"enabled": False, "hours": 24, "keep": 14, "last_run": None},
     "jobs_keep": 60,
+    "vps": {
+        "vm_id": None,
+        "hostname": None,
+        "plan": None,
+        "host": None,
+        "user": "root",
+        "ssh_port": 22,
+        "path": "/opt/myseed-content-manager",
+        "key_installed": False,
+        "hostinger_key_id": None,
+        "setup_done": False,
+        "last_deploy": None,
+        "domain": "",
+        "database": "local",  # "local": Postgres on the VPS; "supabase": the Supabase session pooler
+        "proxy": "caddy",  # "caddy": HTTPS on ports 80/443; "none": app on 127.0.0.1:app_port for a proxy you already run
+        "app_port": 3100,
+    },
 }
+
+
+def migrate_old_state() -> bool:
+    """An earlier version kept everything in .state2. Move its settings (password, secrets, links) into .state once."""
+    old = OLD_STATE_DIR / "config.json"
+    if STATE_DIR != PANEL_DIR / ".state" or not old.exists():
+        return False
+    try:
+        data = json.loads(old.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    current: dict = {}
+    if CONFIG_FILE.exists():
+        try:
+            current = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            current = {}
+    if current.get("password") and current.get("secrets"):
+        return False  # .state is already the real one
+    ensure_dirs()
+    if CONFIG_FILE.exists():
+        CONFIG_FILE.replace(CONFIG_FILE.with_name("config.before-migration.json"))
+    for k, v in current.items():  # keep anything only the new file had
+        data.setdefault(k, v)
+    data["port"] = DEFAULT_PORT if int(data.get("port") or 0) in (0, 8766) else data["port"]
+    tmp = CONFIG_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    os.replace(tmp, CONFIG_FILE)
+    old.replace(old.with_name("config.migrated-to-state.json"))
+    return True
 
 
 def load() -> dict:

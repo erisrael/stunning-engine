@@ -1,0 +1,6 @@
+# HTTPS for the Content Manager. Caddy gets and renews the certificate for $DOMAIN by itself; point the
+# domain's A record at the VPS first.
+{$DOMAIN} {
+	encode zstd gzip
+	reverse_proxy app:3000
+}

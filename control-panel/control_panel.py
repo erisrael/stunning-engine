@@ -1,4 +1,5 @@
-"""Myseed control panel: push and pull data with Supabase, deploy to Netlify, Vercel or Render.
+"""Myseed Content Manager control panel: push and pull data with Supabase, deploy to a Hostinger VPS,
+Netlify, Vercel or Render.
 
     python control-panel/control_panel.py            start in the background and open the browser
     python control-panel/control_panel.py status     is it running, and which jobs are running
@@ -7,7 +8,10 @@
     python control-panel/control_panel.py set-password
     python control-panel/control_panel.py serve      run in this terminal (for debugging)
 
-The panel runs as its own background process and listens on 127.0.0.1 only. Closing the browser
+The panel runs as its own background process and listens on 127.0.0.1 only, on port 8765 (the next free
+one if that is taken), at http://content-manager.localhost:8765/. It only ever manages the project it sits in:
+it checks that a running panel belongs to this folder before reusing it, so another project's panel (the
+MySeed Academy one uses 8766) is never opened by mistake. Closing the browser
 or the terminal does not stop it or its jobs; use "Stop everything and exit" in the panel (or
 the stop command) for that. Standard library only: no pip install needed.
 """
@@ -23,11 +27,13 @@ import re
 import secrets
 import shutil
 import socket
+import ssl
 import subprocess
 import sys
 import threading
 import time
 import urllib.parse
+import urllib.error
 import urllib.request
 import webbrowser
 from pathlib import Path
@@ -44,6 +50,7 @@ STATIC = {"/": "index.html", "/app.js": "app.js", "/style.css": "style.css", "/f
 SESSION_COOKIE = "mcp_session"
 SESSION_HOURS = 12
 DEV_PORT = 3020
+PANEL_NAME = "Myseed Content Manager"
 NPM = "npm"
 NPX = "npx"
 GIT = "git"
@@ -53,7 +60,7 @@ _sessions: dict[str, float] = {}
 _sessions_lock = threading.Lock()
 _failures: list[float] = []
 _counts_cache: dict[str, dict] = {}
-_server: http.server.ThreadingHTTPServer | None = None
+_server = None  # PanelServer
 
 
 class ApiFail(Exception):
@@ -73,7 +80,7 @@ def port_open(port: int) -> bool:
         return s.connect_ex(("127.0.0.1", port)) == 0
 
 
-def run_quick(args: list[str], env: dict | None = None, timeout: int = 60) -> subprocess.CompletedProcess:
+def run_quick(args: list[str], env: dict | None = None, timeout: int = 60, stdin: str | None = None) -> subprocess.CompletedProcess:
     exe = jobs.resolve_exe(args[0])
     full_env = os.environ.copy()
     full_env.update({"FORCE_COLOR": "0", "NO_COLOR": "1"})
@@ -87,6 +94,7 @@ def run_quick(args: list[str], env: dict | None = None, timeout: int = 60) -> su
         [exe, *args[1:]],
         cwd=str(store.PROJECT_DIR),
         env=full_env,
+        input=stdin,
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -209,17 +217,21 @@ def counts(target: str) -> dict:
     return data
 
 
+def restorable(p: Path) -> bool:
+    return p.name.endswith((".json", ".json.gz"))
+
+
 def list_backups() -> list[dict]:
     out = []
     if store.BACKUPS_DIR.exists():
         for p in store.BACKUPS_DIR.rglob("*"):
-            if p.is_file() and p.suffix in (".json", ".db"):
+            if p.is_file() and (p.name.endswith((".json", ".json.gz", ".db"))):
                 rel = p.relative_to(store.BACKUPS_DIR).as_posix()
                 parts = rel.split("/")
-                source = parts[0] if parts[0] in ("local", "supabase") and len(parts) > 1 else "other"
+                source = parts[0] if parts[0] in ("local", "supabase", "vps") and len(parts) > 1 else "other"
                 note = parts[1] if len(parts) > 2 else ""
                 st = p.stat()
-                out.append({"file": rel, "name": p.name, "source": source, "note": note, "size": st.st_size, "modified": dt.datetime.fromtimestamp(st.st_mtime, dt.timezone.utc).isoformat(timespec="seconds"), "restorable": p.suffix == ".json"})
+                out.append({"file": rel, "name": p.name, "source": source, "note": note, "size": st.st_size, "modified": dt.datetime.fromtimestamp(st.st_mtime, dt.timezone.utc).isoformat(timespec="seconds"), "restorable": restorable(p)})
     out.sort(key=lambda b: b["modified"], reverse=True)
     return out
 
@@ -465,9 +477,46 @@ def route(method: str, pattern: str, public: bool = False):
     return deco
 
 
+def same_dir(a: str | None, b: Path) -> bool:
+    try:
+        return bool(a) and os.path.normcase(os.path.realpath(a)) == os.path.normcase(os.path.realpath(str(b)))
+    except (OSError, ValueError):
+        return False
+
+
+@route("GET", "/api/identity", public=True)
+def api_identity(h, body, m):
+    """Which panel this is. The launcher reads it so it never reuses another project's panel."""
+    return {"app": store.APP_ID, "name": PANEL_NAME, "project": str(store.PROJECT_DIR), "version": VERSION}
+
+
+def project_info() -> dict:
+    remote = None
+    try:
+        remote = run_quick([GIT, "remote", "get-url", "origin"], timeout=10).stdout.strip() or None
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    if remote:
+        remote = re.sub(r"//[^/@]+@", "//", remote)  # never show a token in the URL
+    name = None
+    try:
+        name = json.loads((store.PROJECT_DIR / "package.json").read_text(encoding="utf-8")).get("name")
+    except (OSError, ValueError):
+        pass
+    return {"name": PANEL_NAME, "package": name, "folder": store.PROJECT_DIR.name, "path": str(store.PROJECT_DIR), "remote": remote}
+
+
+_project_cache: dict = {}
+
+
 @route("GET", "/api/session", public=True)
 def api_session(h, body, m):
-    return {"authenticated": h.authed(), "has_password": store.has_password(), "version": VERSION}
+    out = {"authenticated": h.authed(), "has_password": store.has_password(), "version": VERSION, "name": PANEL_NAME}
+    if out["authenticated"]:
+        if not _project_cache:
+            _project_cache.update(project_info())
+        out["project"] = _project_cache
+    return out
 
 
 @route("POST", "/api/setup", public=True)
@@ -517,6 +566,8 @@ def api_overview(h, body, m):
         "panel": {"version": VERSION, "pid": os.getpid(), "port": cfg["port"], "uptime": int(time.time() - STARTED_AT), "encryption": store.ENCRYPTION, "project": str(store.PROJECT_DIR), "python": sys.version.split()[0]},
         "supabase": {"session": store.secret_hint("supabase_session_url"), "transaction": store.secret_hint("supabase_transaction_url"), "token": store.secret_hint("supabase_token"), "project": cfg["supabase"]},
         "hosting": {p: provider_state(p, deep=False) for p in PROVIDERS},
+        "vps": {**store.load()["vps"], "connected": bool(store.get_secret("hostinger_token")), "url": site_url(store.load()["vps"])},
+        "project": _project_cache or project_info(),
         "counts": _counts_cache,
         "jobs": {"running": running, "recent": jobs.list_jobs()[:6]},
         "dev": {"job": dev, "port_busy": port_open(DEV_PORT), "url": f"http://localhost:{DEV_PORT}"},
@@ -659,8 +710,8 @@ def api_backup(h, body, m):
 def api_restore(h, body, m):
     target = "supabase" if body.get("target") == "supabase" else "local"
     file = backup_path(str(body.get("file", "")))
-    if file.suffix != ".json":
-        raise ApiFail(400, "Only .json backups can be restored.")
+    if not restorable(file):
+        raise ApiFail(400, "Only .json or .json.gz backups can be restored.")
     if target == "supabase":
         require_secret("supabase_session_url", "The Supabase session pooler string")
     else:
@@ -1019,7 +1070,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def _host_ok(self) -> bool:
         port = self.server.server_address[1]
         host = (self.headers.get("Host") or "").lower()
-        return host in (f"127.0.0.1:{port}", f"localhost:{port}")
+        return host in (f"127.0.0.1:{port}", f"localhost:{port}", f"{store.PANEL_HOST}:{port}")
 
     # -- dispatch -----------------------------------------------------------
     def do_GET(self):
@@ -1031,7 +1082,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def _dispatch(self, method: str) -> None:
         self._set_cookie = None
         if not self._host_ok():  # blocks DNS-rebinding pages from reaching the panel
-            return self._json(421, {"error": "Open the panel at http://127.0.0.1 or http://localhost."})
+            return self._json(421, {"error": f"Open the panel at http://{store.PANEL_HOST}:{self.server.server_address[1]}/ (or 127.0.0.1)."})
         parsed = urllib.parse.urlsplit(self.path)
         path = parsed.path
         self.query = urllib.parse.parse_qs(parsed.query)
@@ -1095,57 +1146,771 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
 
 # ---------------------------------------------------------------------------
+# Hostinger VPS: the server, its SSH key, and deploys over SSH
+# ---------------------------------------------------------------------------
+
+HOSTINGER_API = os.environ.get("MYSEED_HOSTINGER_API") or "https://developers.hostinger.com"  # override for testing
+KEY_NAME = "myseed-content-manager-panel"
+DOMAIN_RE = re.compile(r"^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$")
+VPS_BACKUPS = store.BACKUPS_DIR / "vps"
+VPS_SERVICES = ("app", "postgres", "caddy")
+_status_cache: dict = {}
+
+
+def ssh_tool(name: str) -> str:
+    """Windows' own OpenSSH first (it understands Windows paths and key permissions)."""
+    if jobs.IS_WIN:
+        p = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "OpenSSH" / f"{name}.exe"
+        if p.exists():
+            return str(p)
+    return jobs.resolve_exe(name)
+
+
+KEY_FILE = store.KEY_DIR / "myseed_cm_vps_ed25519"
+KNOWN_HOSTS = store.KEY_DIR / "known_hosts"
+
+
+def public_key() -> str | None:
+    pub = KEY_FILE.with_suffix(".pub")
+    return pub.read_text(encoding="utf-8").strip() if pub.exists() else None
+
+
+def generate_key(replace: bool = False) -> str:
+    store.KEY_DIR.mkdir(parents=True, exist_ok=True)
+    if KEY_FILE.exists() and not replace:
+        return public_key() or ""
+    for f in (KEY_FILE, KEY_FILE.with_suffix(".pub")):
+        f.unlink(missing_ok=True)
+    r = run_quick([ssh_tool("ssh-keygen"), "-t", "ed25519", "-N", "", "-C", f"{KEY_NAME}@{socket.gethostname()}", "-f", str(KEY_FILE)], timeout=30)
+    if r.returncode != 0:
+        raise ApiFail(500, f"ssh-keygen failed: {(r.stderr or r.stdout).strip()}")
+    if jobs.IS_WIN:
+        # OpenSSH refuses a private key that other accounts can read.
+        user = os.environ.get("USERNAME", "")
+        subprocess.run(["icacls", str(KEY_FILE), "/inheritance:r", "/grant:r", f"{user}:F"], capture_output=True, creationflags=jobs.CREATE_NO_WINDOW)
+    store.update(lambda c: c["vps"].update(key_installed=False, hostinger_key_id=None))
+    return public_key() or ""
+
+
+def vps() -> dict:
+    return store.load()["vps"]
+
+
+def require_server() -> dict:
+    v = vps()
+    if not v.get("host"):
+        raise ApiFail(400, "Choose your VPS first (step 1).")
+    if not KEY_FILE.exists():
+        raise ApiFail(400, "Create the panel's SSH key first (step 2).")
+    return v
+
+
+def ssh_opts(port_flag: str, v: dict) -> list[str]:
+    return [
+        "-i", str(KEY_FILE),
+        port_flag, str(v.get("ssh_port") or 22),
+        "-o", "BatchMode=yes",
+        "-o", "IdentitiesOnly=yes",
+        "-o", "StrictHostKeyChecking=accept-new",
+        "-o", f"UserKnownHostsFile={KNOWN_HOSTS}",
+        "-o", "ConnectTimeout=20",
+        "-o", "ServerAliveInterval=30",
+        "-o", "ServerAliveCountMax=6",
+    ]
+
+
+def target(v: dict) -> str:
+    return f"{v.get('user') or 'root'}@{v['host']}"
+
+
+def ssh_cmd(v: dict, remote: str) -> list[str]:
+    return [ssh_tool("ssh"), *ssh_opts("-p", v), target(v), remote]
+
+
+def scp_to(v: dict, local: list[str], remote_dir: str) -> list[str]:
+    return [ssh_tool("scp"), "-q", *ssh_opts("-P", v), *local, f"{target(v)}:{remote_dir}"]
+
+
+def scp_from(v: dict, remote: str, local: str) -> list[str]:
+    return [ssh_tool("scp"), "-q", *ssh_opts("-P", v), f"{target(v)}:{remote}", local]
+
+
+def q(s: str) -> str:
+    """Single-quote for the remote shell."""
+    return "'" + str(s).replace("'", "'\"'\"'") + "'"
+
+
+def remote_root(v: dict) -> str:
+    path = v.get("path") or "/opt/myseed-content-manager"
+    if not re.fullmatch(r"/[A-Za-z0-9._/-]+", path) or path.rstrip("/") in ("", "/opt", "/root", "/home", "/var", "/etc", "/usr"):
+        raise ApiFail(400, "The server folder must be its own absolute path such as /opt/myseed-content-manager.")
+    return path.rstrip("/")
+
+
+def remote_script(v: dict, args: str) -> str:
+    root = remote_root(v)
+    return f"APP_ROOT={q(root)} bash {q(root + '/incoming/deploy.sh')} {args}"
+
+
+# --- Hostinger API ------------------------------------------------------------------
+
+
+def hostinger(method: str, path: str, body: dict | None = None, token: str | None = None):
+    token = token or store.get_secret("hostinger_token")
+    if not token:
+        raise ApiFail(400, "Connect your Hostinger API token first, or type the server address by hand.")
+    data = json.dumps(body).encode("utf-8") if body is not None else None
+    req = urllib.request.Request(HOSTINGER_API + path, data=data, method=method, headers={"Authorization": f"Bearer {token}", "Accept": "application/json", "Content-Type": "application/json", "User-Agent": f"MyseedContentManagerPanel/{VERSION}"})
+    try:
+        ctx = ssl.create_default_context() if HOSTINGER_API.startswith("https") else None
+        with urllib.request.urlopen(req, timeout=30, context=ctx) as r:
+            raw = r.read()
+            return json.loads(raw) if raw else {}
+    except urllib.error.HTTPError as err:
+        detail = err.read().decode("utf-8", errors="replace")[:400]
+        try:
+            detail = json.loads(detail).get("message") or detail
+        except (ValueError, AttributeError):
+            pass
+        if err.code == 401:
+            raise ApiFail(400, "Hostinger did not accept the API token. Create a new one in hPanel, Account, API.") from None
+        if err.code == 404:
+            raise ApiFail(404, f"Hostinger says it does not have that ({detail}).") from None
+        if err.code >= 500:
+            raise ApiFail(502, f"Hostinger's API is not answering right now (HTTP {err.code}). Try again in a few minutes, or type the server address by hand.") from None
+        raise ApiFail(502, f"Hostinger API {err.code}: {detail}") from None
+    except urllib.error.URLError as err:
+        raise ApiFail(502, f"Could not reach Hostinger: {err.reason}") from None
+
+
+def as_list(data) -> list:
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict) and isinstance(data.get("data"), list):
+        return data["data"]  # paginated answers
+    return []
+
+
+def machine_summary(m: dict) -> dict:
+    ipv4 = [ip.get("address") for ip in (m.get("ipv4") or []) if isinstance(ip, dict) and ip.get("address")]
+    tpl = m.get("template") or {}
+    return {
+        "id": m.get("id"),
+        "hostname": m.get("hostname"),
+        "state": m.get("state"),
+        "plan": m.get("plan"),
+        "ipv4": ipv4,
+        "os": tpl.get("name") if isinstance(tpl, dict) else None,
+        "cpus": m.get("cpus"),
+        "memory_mb": m.get("memory"),
+        "disk_mb": m.get("disk"),
+    }
+
+
+def machines(token: str | None = None) -> list[dict]:
+    return [machine_summary(x) for x in as_list(hostinger("GET", "/api/vps/v1/virtual-machines", token=token))]
+
+
+def key_body(key: str) -> str:
+    """The key without its comment: Hostinger and authorized_keys compare on type and data."""
+    return " ".join(key.split()[:2])
+
+
+def find_account_key(key: str) -> dict | None:
+    body = key_body(key)
+    for k in as_list(hostinger("GET", "/api/vps/v1/public-keys")):
+        if isinstance(k, dict) and key_body(str(k.get("key") or "")) == body:
+            return k
+    return None
+
+
+# --- Settings sent to the server's .env ------------------------------------------------
+
+
+EXTRA_ENV_RE = re.compile(r"^[A-Z][A-Z0-9_]*=.*$")
+RESERVED_ENV = {"DOMAIN", "APP_URL", "DB_MODE", "DATABASE_URL", "COMPOSE_PROFILES", "APP_PORT", "POSTGRES_PASSWORD"}
+
+
+def site_url(v: dict) -> str | None:
+    if v.get("domain"):
+        return f"https://{v['domain']}"
+    return None
+
+
+def env_lines(v: dict) -> list[str]:
+    """KEY=value lines for env.sh. Secrets are {secret:...} placeholders, filled in only when the job runs and
+    sent over SSH's standard input, so they never reach a command line or a log."""
+    profiles = [p for p, on in (("caddy", v.get("proxy") == "caddy"), ("localdb", v.get("database") == "local")) if on]
+    url = site_url(v) or f"http://{v.get('host')}:{v.get('app_port') or 3100}"
+    lines = [
+        f"DOMAIN={v.get('domain') or ''}",
+        f"APP_URL={url}",
+        f"DB_MODE={v.get('database') or 'local'}",
+        f"COMPOSE_PROFILES={','.join(profiles)}",
+        f"APP_PORT={int(v.get('app_port') or 3100)}",
+        "MYSEED_SHOW_DEMO_ACCOUNTS=0",
+        "TRUSTED_PROXY_HOPS=1",
+        "DATABASE_POOL_SIZE=10",
+        "CRON_SECRET={secret:cron_secret}",
+    ]
+    if v.get("database") == "supabase":
+        lines.append("DATABASE_URL={secret:supabase_session_url}")
+    if store.get_secret("vps_extra_env"):
+        lines.append("{secret:vps_extra_env}")
+    return lines
+
+
+def check_ready_to_deploy(v: dict) -> None:
+    if v.get("proxy") == "caddy" and not v.get("domain"):
+        raise ApiFail(400, "Add the site's domain in step 3 first: Caddy needs it to get the HTTPS certificate.")
+    if v.get("database") == "supabase":
+        require_secret("supabase_session_url", "The Supabase session pooler string (Database page)")
+    cron_secret()  # made once, kept in the panel
+
+
+def upload_scripts_steps(v: dict) -> list[dict]:
+    root = remote_root(v)
+    scripts = [str(store.PROJECT_DIR / "deploy" / "vps" / n) for n in ("setup.sh", "env.sh", "deploy.sh")]
+    for s in scripts:
+        if not Path(s).exists():
+            raise ApiFail(500, f"{s} is missing from this project.")
+    return [
+        {"title": "Prepare the server folder", "cmd": ssh_cmd(v, f"mkdir -p {q(root + '/incoming')} {q(root + '/backups/incoming')} && chmod 700 {q(root)}")},
+        {"title": "Upload the server scripts", "cmd": scp_to(v, scripts, root + "/incoming/")},
+        {"title": "Fix line endings", "cmd": ssh_cmd(v, f"sed -i 's/\\r$//' {q(root)}/incoming/*.sh && chmod +x {q(root)}/incoming/*.sh")},
+    ]
+
+
+def push_env_step(v: dict) -> dict:
+    root = remote_root(v)
+    return {"title": "Save settings on the server", "cmd": ssh_cmd(v, f"APP_ROOT={q(root)} bash {q(root + '/incoming/env.sh')}"), "stdin": env_lines(v)}
+
+
+def finished_vps_jobs() -> None:
+    """Marks setup and deploys as done only once their jobs succeed."""
+    v = vps()
+    for key in ("setup_pending_job", "deploy_pending"):
+        pending = v.get(key)
+        if not pending:
+            continue
+        jid = pending["job"] if isinstance(pending, dict) else pending
+        try:
+            s = jobs.summary(jobs.job_dir(jid))
+        except ValueError:
+            s = None
+        if s and s["state"] in ("starting", "running"):
+            continue
+
+        def apply(c, key=key, pending=pending, ok=bool(s and s["state"] == "succeeded")):
+            c["vps"].pop(key, None)
+            if ok and key == "setup_pending_job":
+                c["vps"]["setup_done"] = True
+            if ok and key == "deploy_pending":
+                c["vps"]["last_deploy"] = {**pending, "at": jobs.now_iso()}
+
+        store.update(apply)
+
+
+def http_check(url: str) -> dict:
+    t0 = time.time()
+    try:
+        req = urllib.request.Request(url, method="GET", headers={"User-Agent": f"MyseedContentManagerPanel/{VERSION}"})
+        with urllib.request.urlopen(req, timeout=12, context=ssl.create_default_context() if url.startswith("https") else None) as r:
+            return {"url": url, "ok": 200 <= r.status < 400, "status": r.status, "ms": int((time.time() - t0) * 1000)}
+    except urllib.error.HTTPError as err:
+        return {"url": url, "ok": err.code < 500, "status": err.code, "ms": int((time.time() - t0) * 1000)}
+    except Exception as err:  # noqa: BLE001 - DNS, TLS and timeouts all mean "not reachable"
+        reason = getattr(err, "reason", err)
+        return {"url": url, "ok": False, "status": None, "error": str(reason)[:160], "ms": int((time.time() - t0) * 1000)}
+
+
+def vps_state() -> dict:
+    finished_vps_jobs()
+    cfg = store.load()
+    v = cfg["vps"]
+    pk = public_key()
+    return {
+        "vps": v,
+        "token": store.secret_hint("hostinger_token"),
+        "connected": bool(store.get_secret("hostinger_token")),
+        "public_key": pk,
+        "key_file": str(KEY_FILE),
+        "install_command": f"mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo '{pk}' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys" if pk else None,
+        "extra_env": store.secret_hint("vps_extra_env"),
+        "extra_env_keys": [ln.split("=", 1)[0] for ln in (store.get_secret("vps_extra_env") or "").splitlines() if "=" in ln],
+        "supabase_ready": bool(store.get_secret("supabase_session_url")),
+        "url": site_url(v),
+        "status": _status_cache,
+        "project": str(store.PROJECT_DIR),
+    }
+
+
+@route("GET", "/api/vps")
+def api_vps(h, body, m):
+    return vps_state()
+
+
+@route("POST", "/api/vps/token")
+def api_vps_token(h, body, m):
+    token = str(body.get("token", "")).strip()
+    if not token:
+        raise ApiFail(400, "Paste the API token from hPanel, Account, API.")
+    found = machines(token)
+    store.set_secret("hostinger_token", token)
+    return {"machines": found}
+
+
+@route("POST", "/api/vps/token/forget")
+def api_vps_token_forget(h, body, m):
+    store.set_secret("hostinger_token", None)
+    return {"ok": True}
+
+
+@route("GET", "/api/vps/machines")
+def api_vps_machines(h, body, m):
+    return {"machines": machines()}
+
+
+@route("POST", "/api/vps/select")
+def api_vps_select(h, body, m):
+    try:
+        vm_id = int(body.get("id"))
+    except (TypeError, ValueError):
+        raise ApiFail(400, "Choose a VPS.") from None
+    vm = next((x for x in machines() if x.get("id") == vm_id), None)
+    if not vm:
+        raise ApiFail(404, "That VPS is not in your Hostinger account.")
+    if not vm["ipv4"]:
+        raise ApiFail(400, "That VPS has no IPv4 address yet. Wait until it finishes setting up.")
+
+    def apply(c):
+        changed = c["vps"].get("host") != vm["ipv4"][0]
+        c["vps"].update(vm_id=vm["id"], hostname=vm["hostname"], plan=vm["plan"], host=vm["ipv4"][0])
+        if changed:
+            c["vps"].update(key_installed=False, setup_done=False)
+
+    store.update(apply)
+    return vps_state()
+
+
+@route("POST", "/api/vps/server")
+def api_vps_server(h, body, m):
+    host = str(body.get("host", "")).strip()
+    user = str(body.get("user", "root")).strip() or "root"
+    try:
+        port = int(body.get("ssh_port") or 22)
+    except ValueError:
+        raise ApiFail(400, "The SSH port is a number, usually 22.") from None
+    path = str(body.get("path", "/opt/myseed-content-manager")).strip() or "/opt/myseed-content-manager"
+    if not re.fullmatch(r"[A-Za-z0-9.\-:]+", host):
+        raise ApiFail(400, "Enter the server's IP address or host name, for example 187.33.12.45.")
+    if not re.fullmatch(r"[a-z_][a-z0-9_-]{0,31}", user):
+        raise ApiFail(400, "Enter a valid Linux user name (Hostinger uses root).")
+    remote_root({"path": path})
+
+    def apply(c):
+        if c["vps"].get("host") != host:
+            c["vps"].update(key_installed=False, setup_done=False, vm_id=None, hostname=None, plan=None)
+        c["vps"].update(host=host, user=user, ssh_port=max(1, min(65535, port)), path=path.rstrip("/"))
+
+    store.update(apply)
+    return vps_state()
+
+
+@route("POST", "/api/vps/key/generate")
+def api_vps_key(h, body, m):
+    generate_key(replace=bool(body.get("replace")))
+    return vps_state()
+
+
+@route("POST", "/api/vps/key/install")
+def api_vps_key_install(h, body, m):
+    v = vps()
+    if not v.get("vm_id"):
+        raise ApiFail(400, "Choose the VPS from your Hostinger account first, or add the key by hand.")
+    key = public_key() or generate_key()
+    existing = find_account_key(key)
+    if existing:
+        key_id = existing.get("id")
+    else:
+        made = hostinger("POST", "/api/vps/v1/public-keys", {"name": f"{KEY_NAME} {socket.gethostname()}"[:60], "key": key})
+        key_id = (made.get("data") or made).get("id") if isinstance(made, dict) else None
+        if not key_id:
+            existing = find_account_key(key)
+            key_id = existing and existing.get("id")
+    if not key_id:
+        raise ApiFail(502, "Hostinger did not return the key it saved. Add the key by hand instead.")
+    hostinger("POST", f"/api/vps/v1/public-keys/attach/{int(v['vm_id'])}", {"ids": [int(key_id)]})
+    store.update(lambda c: c["vps"].__setitem__("hostinger_key_id", int(key_id)))
+    return {"ok": True, "message": "Hostinger is adding the key to the VPS. Wait about 30 seconds, then press Test connection."}
+
+
+@route("POST", "/api/vps/test")
+def api_vps_test(h, body, m):
+    v = require_server()
+    script = "echo OK; . /etc/os-release; echo \"OS=$PRETTY_NAME\"; echo \"CPU=$(nproc)\"; echo \"RAM=$(free -m | awk '/Mem:/ {print $2}') MB\"; echo \"DISK=$(df -h / | awk 'NR==2 {print $4\" free of \"$2}')\"; echo \"DOCKER=$(docker --version 2>/dev/null || echo none)\"; echo \"COMPOSE=$(docker compose version --short 2>/dev/null || echo none)\"; echo \"RELEASE=$(basename \"$(readlink -f " + q(remote_root(v) + "/current") + " 2>/dev/null)\" 2>/dev/null)\"; echo \"WEB=$(ss -Hltn '( sport = :443 )' 2>/dev/null | wc -l)\""
+    try:
+        r = run_quick(ssh_cmd(v, script), timeout=40)
+    except subprocess.TimeoutExpired:
+        raise ApiFail(504, "The server did not answer in 40 seconds. Check the IP address and that the VPS is running.") from None
+    out = (r.stdout or "") + (r.stderr or "")
+    if r.returncode != 0 or "OK" not in (r.stdout or ""):
+        hint = "The key is not on the server yet. Add it (step 2) and try again." if "Permission denied" in out else out.strip()[-400:]
+        store.update(lambda c: c["vps"].__setitem__("key_installed", False))
+        raise ApiFail(502, f"Could not sign in to {target(v)}. {hint}")
+    facts = dict(line.split("=", 1) for line in r.stdout.splitlines() if "=" in line)
+    store.update(lambda c: c["vps"].update(key_installed=True))
+    return {"ok": True, "facts": facts}
+
+
+@route("POST", "/api/vps/reboot")
+def api_vps_reboot(h, body, m):
+    v = vps()
+    if not v.get("vm_id"):
+        raise ApiFail(400, "Restarting the VPS needs the Hostinger API token and a chosen VPS.")
+    hostinger("POST", f"/api/vps/v1/virtual-machines/{int(v['vm_id'])}/restart")
+    return {"ok": True}
+
+
+@route("POST", "/api/vps/settings")
+def api_vps_settings(h, body, m):
+    domain = str(body.get("domain", vps().get("domain") or "")).strip().lower()
+    if domain.startswith("http"):
+        domain = urllib.parse.urlsplit(domain).hostname or ""
+    domain = domain.strip("/")
+    if domain and not DOMAIN_RE.match(domain):
+        raise ApiFail(400, f"“{domain}” is not a domain name. Use for example content.myseed.com.")
+    database = body.get("database", vps().get("database"))
+    if database not in ("local", "supabase"):
+        raise ApiFail(400, "Choose where the database lives.")
+    proxy = body.get("proxy", vps().get("proxy"))
+    if proxy not in ("caddy", "none"):
+        raise ApiFail(400, "Choose how the site is served.")
+    try:
+        app_port = int(body.get("app_port", vps().get("app_port") or 3100))
+    except ValueError:
+        raise ApiFail(400, "The app port is a number such as 3100.") from None
+    if not 1024 <= app_port <= 65535:
+        raise ApiFail(400, "The app port must be between 1024 and 65535.")
+    if "extra_env" in body:
+        raw = str(body.get("extra_env") or "")
+        if raw.strip() == "__clear__":
+            store.set_secret("vps_extra_env", None)
+        elif raw.strip():
+            lines = [ln.strip() for ln in raw.replace("\r", "").split("\n") if ln.strip() and not ln.strip().startswith("#")]
+            bad = [ln.split("=", 1)[0] for ln in lines if not EXTRA_ENV_RE.match(ln)]
+            if bad:
+                raise ApiFail(400, f"Each line is NAME=value with a capital NAME. Check: {', '.join(bad[:3])}")
+            reserved = [ln.split("=", 1)[0] for ln in lines if ln.split("=", 1)[0] in RESERVED_ENV]
+            if reserved:
+                raise ApiFail(400, f"{', '.join(reserved)} {'is' if len(reserved) == 1 else 'are'} set by the panel from the choices above.")
+            store.set_secret("vps_extra_env", "\n".join(lines))
+
+    store.update(lambda c: c["vps"].update(domain=domain, database=database, proxy=proxy, app_port=app_port))
+    return vps_state()
+
+
+@route("POST", "/api/vps/push-env")
+def api_vps_push_env(h, body, m):
+    v = require_server()
+    check_ready_to_deploy(v)
+    return {"job": jobs.create_job("Save settings on the VPS", [*upload_scripts_steps(v), push_env_step(v)], group="vps", locks=["vps"])}
+
+
+@route("POST", "/api/vps/setup")
+def api_vps_setup(h, body, m):
+    v = require_server()
+    root = remote_root(v)
+    steps = [
+        *upload_scripts_steps(v),
+        {"title": "Install Docker, swap, firewall and schedules", "cmd": ssh_cmd(v, f"APP_ROOT={q(root)} SSH_PORT={int(v.get('ssh_port') or 22)} PROXY={q(v.get('proxy') or 'caddy')} bash {q(root + '/incoming/setup.sh')}")},
+    ]
+    job = jobs.create_job("Set up the VPS", steps, group="vps", locks=["vps"])
+    store.update(lambda c: c["vps"].__setitem__("setup_pending_job", job["id"]))
+    return {"job": job}
+
+
+@route("POST", "/api/vps/deploy")
+def api_vps_deploy(h, body, m):
+    v = require_server()
+    check_ready_to_deploy(v)
+    root = remote_root(v)
+    ref = "HEAD"
+    if body.get("include_changes"):
+        ref = run_quick([GIT, "stash", "create"], timeout=30).stdout.strip() or "HEAD"  # empty when nothing is uncommitted
+    short = run_quick([GIT, "rev-parse", "--short", ref], timeout=20).stdout.strip()
+    if not short:
+        raise ApiFail(400, "Git could not read this repository. Commit your code first.")
+    release = f"{stamp()}-{short}{'-wip' if ref != 'HEAD' else ''}"
+    tmp = store.STATE_DIR / "uploads"
+    tmp.mkdir(parents=True, exist_ok=True)
+    for old in tmp.glob("*.tar.gz"):
+        old.unlink(missing_ok=True)
+    archive = tmp / f"{release}.tar.gz"
+    steps = [
+        {"title": f"Package the code ({'with uncommitted changes, ' if ref != 'HEAD' else ''}{short})", "cmd": [GIT, "archive", "--format=tar.gz", "-o", str(archive), ref]},
+        *upload_scripts_steps(v),
+        push_env_step(v),
+        {"title": "Upload the code", "cmd": scp_to(v, [str(archive)], root + "/incoming/")},
+        {"title": "Build and start on the server", "cmd": ssh_cmd(v, remote_script(v, q(release)))},
+    ]
+    job = jobs.create_job(f"Deploy {short} to the VPS", steps, group="vps", locks=["vps"], url=site_url(v))
+    store.update(lambda c: c["vps"].__setitem__("deploy_pending", {"release": release, "job": job["id"], "at": jobs.now_iso()}))
+    return {"job": job}
+
+
+@route("POST", "/api/vps/(rollback|restart)")
+def api_vps_cycle(h, body, m):
+    v = require_server()
+    what = m.group(1)
+    title = "Roll back to the previous release" if what == "rollback" else "Restart the app on the VPS"
+    return {"job": jobs.create_job(title, [*upload_scripts_steps(v), {"title": title, "cmd": ssh_cmd(v, remote_script(v, f"--{what}"))}], group="vps", locks=["vps"])}
+
+
+@route("POST", "/api/vps/logs")
+def api_vps_logs(h, body, m):
+    v = require_server()
+    service = str(body.get("service", "app"))
+    if service not in VPS_SERVICES:
+        raise ApiFail(400, "Unknown service.")
+    lines = max(50, min(2000, int(body.get("lines") or 300)))
+    return {"job": jobs.create_job(f"Server log: {service}", [{"title": f"Last {lines} lines of {service}", "cmd": ssh_cmd(v, remote_script(v, f"--compose logs --no-color --tail {lines} {service}"))}], group="vps-logs")}
+
+
+@route("POST", "/api/vps/backup")
+def api_vps_backup(h, body, m):
+    v = require_server()
+    root = remote_root(v)
+    folder = VPS_BACKUPS / stamp()
+    folder.mkdir(parents=True, exist_ok=True)
+    steps = [
+        *upload_scripts_steps(v),
+        {"title": "Back up the database on the server", "cmd": ssh_cmd(v, remote_script(v, "--backup"))},
+        {"title": "Download it to this computer", "cmd": scp_from(v, root + "/backups/latest.json.gz", str(folder / f"myseed-vps-{stamp()}.json.gz"))},
+    ]
+    return {"job": jobs.create_job("Back up the VPS database", steps, group="vps-backup", locks=["vps-backup"])}
+
+
+@route("POST", "/api/vps/restore")
+def api_vps_restore(h, body, m):
+    v = require_server()
+    root = remote_root(v)
+    file = backup_path(str(body.get("file", "")))
+    if not restorable(file):
+        raise ApiFail(400, "Only .json or .json.gz backups can be restored.")
+    name = f"restore-{stamp()}{''.join(file.suffixes[-2:]) if file.name.endswith('.json.gz') else '.json'}"
+    steps = [
+        *upload_scripts_steps(v),
+        {"title": f"Upload {file.name}", "cmd": scp_to(v, [str(file)], f"{root}/backups/incoming/{name}")},
+        {"title": "Safety backup, then restore on the server", "cmd": ssh_cmd(v, remote_script(v, f"--restore {q(name)}"))},
+    ]
+    return {"job": jobs.create_job(f"Restore {file.name} onto the VPS", steps, group="vps", locks=["vps"])}
+
+
+@route("POST", "/api/vps/status")
+def api_vps_status(h, body, m):
+    v = vps()
+    result: dict = {"checked": jobs.now_iso(), "http": {}}
+    if site_url(v):
+        result["http"] = {"site": http_check(site_url(v) + "/"), "health": http_check(site_url(v) + "/api/health")}
+    if v.get("host") and KEY_FILE.exists() and v.get("key_installed"):
+        root = remote_root(v)
+        remote = (
+            f"if [ -x {q(root + '/incoming/deploy.sh')} ]; then {remote_script(v, '--compose ps --format json')} 2>/dev/null; fi; echo '---'; "
+            "uptime -p; df -h / | awk 'NR==2 {print $5}'; free -m | awk '/Mem:/ {print $3\"/\"$2\" MB\"}'; "
+            f"basename \"$(readlink -f {q(root + '/current')} 2>/dev/null)\" 2>/dev/null; ls -1t {q(root + '/backups')} 2>/dev/null | grep -m1 '^myseed-' || true"
+        )
+        try:
+            r = run_quick(ssh_cmd(v, remote), timeout=40)
+            ps_part, _, rest = (r.stdout or "").partition("---")
+            containers = []
+            for line in ps_part.strip().splitlines():
+                try:
+                    c = json.loads(line)
+                except ValueError:
+                    continue
+                for item in c if isinstance(c, list) else [c]:
+                    containers.append({"service": item.get("Service"), "state": item.get("State"), "status": item.get("Status"), "health": item.get("Health")})
+            facts = [x.strip() for x in rest.strip().splitlines()]
+            result["server"] = {"ok": r.returncode == 0 or bool(containers), "containers": containers, "uptime": facts[0] if len(facts) > 0 else None, "disk": facts[1] if len(facts) > 1 else None, "memory": facts[2] if len(facts) > 2 else None, "release": facts[3] if len(facts) > 3 else None, "last_backup": facts[4] if len(facts) > 4 else None}
+        except subprocess.TimeoutExpired:
+            result["server"] = {"ok": False, "error": "The server did not answer in 40 seconds."}
+    _status_cache.clear()
+    _status_cache.update(result)
+    return result
+
+
+@route("POST", "/api/vps/disconnect")
+def api_vps_disconnect(h, body, m):
+    """Delete the Hostinger connection. Always forgets the token and the server here; optionally also takes the
+    panel's key off the server and out of the Hostinger account, and deletes the key on this computer. The site
+    on the VPS keeps running: nothing is stopped or deleted there."""
+    v = vps()
+    done: list[str] = []
+    warnings: list[str] = []
+    key = public_key()
+    if body.get("remove_server_key") and key and v.get("host") and KEY_FILE.exists():
+        body_part = key_body(key)
+        remote = f"f=~/.ssh/authorized_keys; [ -f \"$f\" ] && grep -vF {q(body_part)} \"$f\" > \"$f.tmp\"; [ -f \"$f.tmp\" ] && cat \"$f.tmp\" > \"$f\" && rm -f \"$f.tmp\"; echo REMOVED"
+        try:
+            r = run_quick(ssh_cmd(v, remote), timeout=40)
+            if r.returncode == 0 and "REMOVED" in (r.stdout or ""):
+                done.append(f"Took the panel's key off {target(v)}.")
+            else:
+                warnings.append(f"Could not reach {target(v)} to take the key off: {((r.stderr or r.stdout) or '').strip()[-200:]}")
+        except subprocess.TimeoutExpired:
+            warnings.append("The server did not answer, so the key is still on it.")
+    if body.get("remove_account_key") and store.get_secret("hostinger_token"):
+        try:
+            key_id = v.get("hostinger_key_id") or ((find_account_key(key) or {}).get("id") if key else None)
+            if key_id:
+                hostinger("DELETE", f"/api/vps/v1/public-keys/{int(key_id)}")
+                done.append("Deleted the key from your Hostinger account.")
+            else:
+                done.append("The key was not in your Hostinger account.")
+        except ApiFail as err:
+            warnings.append(f"Hostinger: {err}")
+    store.set_secret("hostinger_token", None)
+    done.append("Forgot the Hostinger API token.")
+
+    def apply(c):
+        keep = {k: c["vps"].get(k) for k in ("domain", "database", "proxy", "app_port")}
+        c["vps"] = {**json.loads(json.dumps(store.DEFAULTS["vps"])), **keep}
+
+    store.update(apply)
+    done.append("Unlinked the VPS from this panel (the site on it keeps running).")
+    if body.get("delete_local_key"):
+        for f in (KEY_FILE, KEY_FILE.with_suffix(".pub")):
+            f.unlink(missing_ok=True)
+        done.append("Deleted the SSH key on this computer.")
+    _status_cache.clear()
+    return {"ok": True, "done": done, "warnings": warnings, **vps_state()}
+
+
+# ---------------------------------------------------------------------------
 # Process management and CLI
 # ---------------------------------------------------------------------------
 
 
 def panel_url(port: int) -> str:
+    return f"http://{store.PANEL_HOST}:{port}/"
+
+
+def plain_url(port: int) -> str:
     return f"http://127.0.0.1:{port}/"
 
 
+def identity_at(port: int) -> dict | None:
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{int(port)}/api/identity", timeout=2) as r:
+            return json.loads(r.read() or b"{}") if r.status == 200 else None
+    except (OSError, ValueError):
+        return None
+
+
+def is_ours(port: int) -> bool:
+    d = identity_at(port)
+    return bool(d and d.get("app") == store.APP_ID and same_dir(d.get("project"), store.PROJECT_DIR))
+
+
 def running_panel() -> tuple[int, int] | None:
-    """(pid, port) of a panel that answers, or None."""
+    """(pid, port) of this project's panel when it answers, or None. A panel of another project, or anything
+    else on the port, is never treated as this one."""
     try:
         info = json.loads(store.PID_FILE.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
     if not jobs.pid_alive(info.get("pid")):
         return None
-    try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{info['port']}/api/session", timeout=2) as r:
-            if r.status == 200:
-                return info["pid"], info["port"]
-    except OSError:
-        return None
+    if is_ours(info.get("port") or 0):
+        return info["pid"], info["port"]
     return None
+
+
+class PanelServer(http.server.ThreadingHTTPServer):
+    # Python's HTTP server sets SO_REUSEADDR, and on Windows that lets a second program bind a port that is
+    # already in use, so two panels could share one port and the browser reached whichever answered. Bind
+    # exclusively instead: a busy port fails and the panel moves to the next free one.
+    allow_reuse_address = False
+    daemon_threads = True
+
+    def server_bind(self):
+        if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
+
+
+def bind_server(wanted: int) -> tuple[PanelServer, int]:
+    tried = []
+    for port in [wanted, *range(wanted + 1, wanted + 25)]:
+        if port == 8766 and port != wanted:
+            continue  # the MySeed Academy panel's port
+        if port_open(port):
+            tried.append(port)
+            continue
+        try:
+            return PanelServer(("127.0.0.1", port), Handler), port
+        except OSError:
+            tried.append(port)
+    raise OSError(f"Ports {tried[0]} to {tried[-1]} are all in use.")
 
 
 def serve() -> None:
     global _server
     store.ensure_dirs()
-    port = int(store.load()["port"])
+    wanted = int(store.load()["port"])
     try:
-        _server = http.server.ThreadingHTTPServer(("127.0.0.1", port), Handler)
+        _server, port = bind_server(wanted)
     except OSError as err:
-        print(f"Port {port} is busy ({err}). Change it with: control_panel.py serve --port <n>", flush=True)
+        print(f"Could not start: {err} Choose another with: control_panel.py serve --port <n>", flush=True)
         sys.exit(1)
-    _server.daemon_threads = True
-    store.PID_FILE.write_text(json.dumps({"pid": os.getpid(), "port": port, "started": jobs.now_iso()}), encoding="utf-8")
+    if port != wanted:
+        print(f"Port {wanted} is used by another program, so this panel uses {port}.", flush=True)
+    store.PID_FILE.write_text(json.dumps({"pid": os.getpid(), "port": port, "started": jobs.now_iso(), "project": str(store.PROJECT_DIR)}), encoding="utf-8")
     threading.Thread(target=auto_backup_loop, daemon=True).start()
-    print(f"Myseed control panel {VERSION} on {panel_url(port)} (pid {os.getpid()})", flush=True)
+    print(f"{PANEL_NAME} control panel {VERSION} on {panel_url(port)} (also {plain_url(port)}), pid {os.getpid()}, project {store.PROJECT_DIR}", flush=True)
     try:
         _server.serve_forever()
     finally:
         store.PID_FILE.unlink(missing_ok=True)
 
 
+def process_cmdline(pid: int) -> str:
+    try:
+        if jobs.IS_WIN:
+            r = subprocess.run(["powershell", "-NoProfile", "-Command", f"(Get-CimInstance Win32_Process -Filter 'ProcessId={int(pid)}').CommandLine"], capture_output=True, text=True, timeout=15, creationflags=jobs.CREATE_NO_WINDOW)
+            return r.stdout.strip()
+        return Path(f"/proc/{int(pid)}/cmdline").read_bytes().replace(b"\0", b" ").decode("utf-8", "replace")
+    except (OSError, subprocess.TimeoutExpired, ValueError):
+        return ""
+
+
+def retire_old_panel() -> None:
+    """Stop a panel left running by the earlier version (state in .state2), but only when it is this folder's
+    control_panel.py: a panel of another project is left alone."""
+    pid_file = store.OLD_STATE_DIR / "panel.pid"
+    try:
+        info = json.loads(pid_file.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    pid = info.get("pid")
+    if jobs.pid_alive(pid) and str(Path(__file__).resolve()).lower() in process_cmdline(pid).lower():
+        jobs.kill_tree(pid)
+        print(f"Stopped the old panel (pid {pid}) that used port {info.get('port')}.")
+    pid_file.unlink(missing_ok=True)
+
+
 def start(open_browser: bool = True) -> None:
     store.ensure_dirs()
+    if store.migrate_old_state():
+        print("Moved the panel's settings from .state2 into .state.")
+    retire_old_panel()
     found = running_panel()
     if not found:
         log = store.LOG_FILE
         if log.exists() and log.stat().st_size > 2_000_000:
             log.replace(log.with_suffix(".old.log"))
+        store.PID_FILE.unlink(missing_ok=True)
         jobs.spawn_detached([jobs.python_for_background(), "-u", str(Path(__file__).resolve()), "serve"], store.PROJECT_DIR, log)
         for _ in range(60):
             time.sleep(0.25)
@@ -1159,7 +1924,8 @@ def start(open_browser: bool = True) -> None:
     else:
         print(f"Control panel is already running (pid {found[0]}).")
     url = panel_url(found[1])
-    print(f"Open {url}  -  stop it from the panel or with: python control-panel/control_panel.py stop")
+    print(f"Project: {store.PROJECT_DIR}")
+    print(f"Open {url}  (or {plain_url(found[1])})  -  stop it from the panel or with: python control-panel/control_panel.py stop")
     if open_browser and store.load().get("open_browser", True):
         webbrowser.open(url)
 

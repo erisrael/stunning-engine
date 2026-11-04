@@ -49,6 +49,10 @@ next-env.d.ts
 # control panel
 __pycache__/
 /control-panel/.state/
+/control-panel/.state2/
+# reference copy of another project's panel
+/control-panel/learn from/
+/.playwright-mcp/
 
 # Netlify CLI build output (contains a copy of .env)
 .netlify/
