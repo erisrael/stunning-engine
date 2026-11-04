@@ -37,6 +37,7 @@ export async function testAiAction() {
 
 // Routines (Phase 13d) and the assistant's options per role.
 import * as rt from "@/server/routines";
+import { WorkflowError } from "@/server/workflow";
 
 export async function listRoutinesAction() {
   return wrap(async () => rt.listRoutines(await requireViewer()), { revalidate: false });
@@ -46,6 +47,26 @@ export async function saveRoutineAction(input: Parameters<typeof rt.saveRoutine>
 }
 export async function deleteRoutineAction(id: string) {
   return wrap(async () => rt.deleteRoutine(await requireViewer(), id));
+}
+export async function duplicateRoutineAction(id: string) {
+  return wrap(async () => rt.duplicateRoutine(await requireViewer(), id));
+}
+export async function importRunRowsAction(routineId: string, form: FormData, dryRun: boolean) {
+  return wrap(async () => {
+    const f = form.get("file");
+    if (!(f instanceof File) || !f.size) throw new WorkflowError("VALIDATION", "Choose the filled template.");
+    return rt.importRunRows(await requireViewer(), routineId, f.name, await f.arrayBuffer(), dryRun);
+  }, { revalidate: !dryRun });
+}
+export async function importRoutineAction(form: FormData) {
+  return wrap(async () => {
+    const f = form.get("file");
+    if (!(f instanceof File) || !f.size) throw new WorkflowError("VALIDATION", "Choose a file.");
+    return rt.importRoutine(await requireViewer(), { name: String(form.get("name") ?? "") || null, fileName: f.name, data: await f.arrayBuffer() });
+  });
+}
+export async function decideBatchAction(batchId: string, approve: boolean, note?: string | null) {
+  return wrap(async () => rt.decideBatch(await requireViewer(), batchId, approve, note));
 }
 export async function requestRunAction(routineId: string, values: Record<string, string>) {
   return wrap(async () => rt.requestRun(await requireViewer(), routineId, values), { revalidate: false });

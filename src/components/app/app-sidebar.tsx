@@ -27,6 +27,7 @@ import { CompassIcon,
   IdCardIcon,
   InboxIcon,
   LayersIcon,
+  FilmIcon,
   ListChecksIcon,
   ListTreeIcon,
   MailIcon,
@@ -243,7 +244,13 @@ export function AppSidebar({
   brand = {},
   recognition = false,
   support = false,
+  studioBooking = "optional",
+  legacy = false,
 }: {
+  // The Recording team's old catalog is on (the sidebar then shows it to them and to planners).
+  legacy?: boolean;
+  // Studio booking (Handovers, Settings): off hides Studio sessions.
+  studioBooking?: "off" | "optional" | "required";
   // Recognition switched on (Admin, Recognition): the leaderboard, badges and kudos for everyone.
   recognition?: boolean;
   // Customer support: the agent desk for agents and leads (Admin, Support).
@@ -357,11 +364,13 @@ export function AppSidebar({
         ...(views.length
           ? [{ id: "views", href: views[0]!.href, label: "Work views", icon: LayersIcon, keepFilters: true, also: views.map((v) => v.href), badge: has("nav.board") ? counts.handoffs : 0 }]
           : []),
-        { href: "/handovers", label: "Handovers", icon: PackageCheckIcon, badge: counts.incoming, cap: "nav.handovers" },
-        ...(has("items.plan") || has("team.view") || activeRole === "recording" ? [{ href: "/sessions", label: "Studio sessions", icon: VideoIcon }] : []),
+        { href: "/handovers", label: "Handovers", icon: PackageCheckIcon, badge: counts.incoming, cap: "nav.handovers", sub: [{ label: "Handovers", href: "/handovers" }, { label: "Rejected", href: "/handovers/rejected" }, { label: "Report", href: "/handovers/report" }] },
+        ...(studioBooking !== "off" && (has("items.plan") || has("team.view") || activeRole === "recording") ? [{ href: "/sessions", label: "Studio sessions", icon: VideoIcon }] : []),
         ...(has("items.plan") || has("hr.access") || has("finance.access") || (activeRole === "recording" && lead)
           ? [{ href: "/presenters", label: "Presenters", icon: MicIcon, sub: [{ label: "Presenters", href: "/presenters" }, { label: "Fees", href: "/presenters?tab=fees" }] }]
           : []),
+        ...(legacy && (has("items.plan") || has("import.run") || has("data.manage") || activeRole === "recording") ? [{ href: "/legacy", label: "Legacy catalog", icon: FilmIcon }] : []),
+        ...(has("items.plan") || has("import.run") || has("data.manage") || has("assign.bulk") || (["recording", "editing", "uploading", "publication"] as Role[]).includes(activeRole) ? [{ href: "/curriculum", label: "Curriculum", icon: ListChecksIcon, sub: [{ label: "Fix", href: "/curriculum" }, { label: "Browse and edit", href: "/curriculum?tab=browse" }, { label: "Auto-assign", href: "/curriculum?tab=auto" }, { label: "Changes", href: "/curriculum?tab=changes" }] }] : []),
         { href: "/coverage", label: "Coverage", icon: GridIcon, keepFilters: true, cap: "nav.coverage" },
         { href: "/reports", label: "Reports", icon: ChartColumnIcon, keepFilters: true, cap: "reports.view" },
         ...(lead ? [{ href: "/team", label: "Team", icon: UsersIcon, badge: has("corrections.approve") ? counts.corrections : 0, cap: "team.view" as Capability }] : []),
@@ -504,8 +513,12 @@ export function AppSidebar({
               { label: "Overview", href: "/overview" },
               ...views.map((v) => ({ label: v.href === "/content" ? "List" : v.href === "/sheet" ? "Sheet" : v.href === "/pipeline" ? "Board" : "Calendar", href: v.href })),
               { label: "Handovers", href: "/handovers" },
-              { label: "Studio sessions", href: "/sessions" },
+              { label: "Rejected", href: "/handovers/rejected" },
+              { label: "Handover report", href: "/handovers/report" },
+              ...(studioBooking !== "off" ? [{ label: "Studio sessions", href: "/sessions" }] : []),
               { label: "Presenters", href: "/presenters" },
+              ...(legacy ? [{ label: "Legacy catalog", href: "/legacy" }] : []),
+              { label: "Curriculum", href: "/curriculum" },
               { label: "Coverage", href: "/coverage" },
               { label: "Reports", href: "/reports" },
               { label: "Team", href: "/team" },

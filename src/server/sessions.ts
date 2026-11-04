@@ -142,6 +142,7 @@ async function clashes(start: string, end: string, room: string, operatorId: str
 }
 
 export async function bookSession(user: AppUser, input: BookingInput) {
+  if ((await (await import("./handover-config")).handoverConfig()).studioBooking === "off") throw new WorkflowError("VALIDATION", "Studio booking is turned off (Handovers, Settings).");
   need(user);
   const s = await getSettings();
   const tz = s.workspace.timezone;

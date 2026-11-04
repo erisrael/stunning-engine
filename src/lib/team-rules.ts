@@ -25,7 +25,7 @@ export const DEFAULT_TEAM_RULES: Record<Stage, TeamRules> = {
     targetDays: 0,
     guide: [
       "The Recording lead adds the parts to record (New item, or the curriculum import) and assigns them on Assign work, with a date and a checklist per person.",
-      "Open Home: your parts are under To do. Press Start when the session begins; the timer runs while you record.",
+      "Booking a studio session is optional (Studio sessions). Open Home: your parts are under To do. Press Start when you begin; the timer runs while you record.",
       "Log each camera code and the raw footage link on the card, and the raw length in minutes.",
       "Tick the checklist: presenter and script, audio, framing and light, files copied to shared storage.",
       "Press Mark done. It waits under Done, not sent, so you can still fix it.",
@@ -41,7 +41,7 @@ export const DEFAULT_TEAM_RULES: Record<Stage, TeamRules> = {
     wipLimit: 0,
     targetDays: 3,
     guide: [
-      "Work arrives as a handover from Recording. The Editing lead checks each part: Accept, or Missing with a note (it goes back to Recording).",
+      "Work arrives as a handover from Recording. The Editing lead checks each part: Accept, or Reject with a note. A rejection is cross-checked, then goes to Recording's To do with high priority.",
       "The lead assigns accepted parts on Home (Incoming) or on Assign work. Assign only lists parts Recording finished and handed over.",
       "Open Home: Start the part, cut it against the script, clean the audio, add titles and graphics.",
       "Add the edited master link, captions and thumbnail, and the final length.",
@@ -57,7 +57,7 @@ export const DEFAULT_TEAM_RULES: Record<Stage, TeamRules> = {
     wipLimit: 0,
     targetDays: 2,
     guide: [
-      "Work arrives as a handover from Editing. The Uploading lead accepts each part or marks it missing with a note.",
+      "Work arrives as a handover from Editing. The Uploading lead accepts each part or rejects it with a note.",
       "The lead assigns accepted parts. Assign only lists parts Editing finished and handed over.",
       "Start the part and upload the approved master to each required destination.",
       "Record the video ID or link per destination, wait for processing, then check playback and metadata.",
@@ -72,7 +72,7 @@ export const DEFAULT_TEAM_RULES: Record<Stage, TeamRules> = {
     wipLimit: 0,
     targetDays: 2,
     guide: [
-      "Work arrives as a handover from Uploading. The Publication lead accepts each part or marks it missing.",
+      "Work arrives as a handover from Uploading. The Publication lead accepts each part or rejects it with a note.",
       "Review educational accuracy, placement, thumbnail and public title: Approve or Request changes.",
       "Schedule the release, or publish now.",
       "Confirm each destination live with its link. The part is Published when every required destination is live.",

@@ -40,7 +40,51 @@ async function attendance() {
   return { setup: k.code, pin, yonasCode: yonas.code, badge, dawit: dawit.id };
 }
 
+// Two handovers from Recording to Editing, a part with a placeholder name, and a routine, for the production test.
+async function production() {
+  await passwordOnly();
+  const wf = await import("../../src/server/workflow");
+  const ed = await import("../../src/server/editorial");
+  const rt = await import("../../src/server/routines");
+  const by = async (email: string) => (await loadUser((await get<{ id: string }>("SELECT id FROM users WHERE email = ?", email))!.id))!;
+  const [hana, dawit] = [await by("hana@demo.local"), await by("dawit@demo.local")];
+  const sys = { actor: null, source: "bulk" as const, silent: true };
+  const pair = (await get<{ grade_id: string; subject_id: string; grade: string }>("SELECT gs.grade_id, gs.subject_id, g.name AS grade FROM grade_subjects gs JOIN grades g ON g.id = gs.grade_id ORDER BY g.sort LIMIT 1"))!;
+  await run("INSERT INTO grades (id, code, name, level, sort, active) VALUES ('grd_g10', 'G10', 'Grade 10', 'Secondary School', 10, 1) ON CONFLICT (code) DO NOTHING");
+  const other = { id: "grd_g10" };
+  const unit = uid("unt_");
+  await run("INSERT INTO units (id, curriculum_id, grade_id, subject_id, number, title) VALUES (?, (SELECT id FROM curricula WHERE active = 1 LIMIT 1), ?, ?, 90, 'Prep unit')", unit, pair.grade_id, pair.subject_id);
+  const part = async (n: number, title: string) => {
+    const lesson = uid("les_");
+    await run("INSERT INTO lessons (id, unit_id, number, title, created_at) VALUES (?, ?, ?, ?, ?)", lesson, unit, String(n), title, nowIso());
+    const it = await wf.createItem({ actor: null, source: "seed" }, { lessonId: lesson, gradeId: pair.grade_id, subjectId: pair.subject_id, title, owners: { recording: dawit.id } });
+    return { lesson, id: it.id, code: it.code };
+  };
+  const ready = async (id: string) => {
+    await wf.releaseToProduction(sys, id);
+    await wf.addAsset(sys, id, { kind: "raw", cameraCode: "C0001", url: "https://drive.example.com/raw" });
+    const s = (await import("../../src/server/settings"));
+    for (const c of (await s.getSettings()).checklists.recording.filter((x) => x.required)) await wf.setChecklist(sys, id, c.key, true);
+    await wf.submitHandoff(sys, id, {});
+  };
+  const [a, b, bad] = [await part(1, "Accepted part"), await part(2, "Rejected part"), await part(3, "Topic Name")];
+  await ready(a.id);
+  await ready(b.id);
+  const hoA = await ed.createHandover(hana, { itemIds: [a.id] });
+  const hoB = await ed.createHandover(hana, { itemIds: [b.id] });
+  const routine = await rt.saveRoutine({ ...dawit, activeRole: "recording" } as never, {
+    name: "Ask for things",
+    steps: [
+      { path: "/requests", do: "fill", label: "Title", value: "Lights", ask: true },
+      { path: "/requests", do: "click", role: "button", name: "Back" },
+      { path: "/requests", do: "click", role: "button", name: "Send" },
+    ],
+  });
+  return { acceptCode: hoA.code, acceptItemCode: a.code, rejectId: hoB.handoverId, rejectCode: b.code, rejectItem: b.id, badLesson: bad.lesson, gradeId: pair.grade_id, gradeName: pair.grade, subjectId: pair.subject_id, otherGradeId: other.id, routine };
+}
+
 const PREPS: Record<string, () => Promise<unknown>> = {
+  production,
   // Phase 13b: the AI assistant on (the server runs with AI_FAKE=1, a stand-in model), for a developer.
   async "assistant-ai"() {
     await passwordOnly();

@@ -526,7 +526,7 @@ export default async function ItemPage({ params, searchParams }: { params: Promi
                 )}
               </CardHeader>
               <CardContent className="space-y-2">
-                {d.recordingSessions.length === 0 && <p className="text-sm text-muted-foreground">No sessions booked.</p>}
+                {d.recordingSessions.length === 0 && <p className="text-sm text-muted-foreground">No sessions booked. Booking is optional unless your workspace requires it.</p>}
                 {d.recordingSessions.map((x) => (
                   <div key={x.id} className="flex flex-wrap items-center justify-between gap-2 text-xs">
                     <span>

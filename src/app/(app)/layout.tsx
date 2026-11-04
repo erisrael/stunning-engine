@@ -56,6 +56,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <SidebarProvider defaultOpen={sidebarCookie !== "false"}>
       <AppSidebar
         home={await homeDepartment(viewer)}
+        studioBooking={(await (await import("@/server/handover-config")).handoverConfig()).studioBooking}
+        legacy={(await (await import("@/server/legacy")).legacyConfig()).on}
         viewerId={viewer.id}
         approver={viewer.leads.length > 0 || can(viewer, "team.view") || can(viewer, "attendance.manage") || can(viewer, "corrections.approve")}
         reportsLink={!can(viewer, "owners.view") && (await reportDepartments(viewer)).length > 0} customDepts={await myCustomDepartments(viewer)} userHidden={viewer.prefs.sidebarHidden ?? []} roleHidden={(await sidebarDefaults())[viewer.activeRole] ?? []} perms={viewer.perms} activeRole={viewer.activeRole} counts={counts} workspaceName={settings.workspace.name} brand={await navBrand()} recognition={(await (await import("@/server/recognition")).recognitionConfig()).enabled} support={await (await import("@/server/support-desk")).supportNav(viewer)} />

@@ -136,6 +136,14 @@ export function RolesAdmin({ roles, ops, options, routines }: { roles: { key: st
             <Label htmlFor="rc-max">Most steps in a routine</Label>
             <Input id="rc-max" type="number" min={5} max={200} className="w-32" value={rc.maxSteps} onChange={(e) => setRc({ ...rc, maxSteps: Number(e.target.value) })} />
           </div>
+          <div className="flex items-center gap-2">
+            <Switch id="rc-import" checked={rc.imports} onCheckedChange={(v) => setRc({ ...rc, imports: v })} />
+            <Label htmlFor="rc-import">People may import routines, and fill a routine&apos;s form from a file</Label>
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="rc-rows">Most rows in one file</Label>
+            <Input id="rc-rows" type="number" min={1} max={1000} className="w-32" value={rc.maxImportRows} onChange={(e) => setRc({ ...rc, maxImportRows: Number(e.target.value) })} />
+          </div>
           <Button size="sm" disabled={!!busy} onClick={saveRc}>
             {busy === "routines" && <Loader2Icon className="animate-spin" />} Save routines
           </Button>

@@ -85,6 +85,11 @@ const TITLES: Record<string, string> = {
   owners: "Owners",
   email: "Email",
   handovers: "Handovers",
+  rejected: "Rejected",
+  report: "Report",
+  legacy: "Legacy catalog",
+  curriculum: "Curriculum",
+  routines: "Routines",
   assign: "Assign work",
   checklists: "Checklists",
 };
@@ -146,7 +151,7 @@ export function Topbar({ user, activeRole, unread, chatUnread, qrScan }: { user:
         <BreadcrumbList>
           {parts.map((p, i) => {
             const href = "/" + parts.slice(0, i + 1).join("/");
-            const label = TITLES[p] ?? (parts[i - 1] === "items" ? "Item detail" : (DEPT_VIEW_LABELS as Record<string, string>)[p] ?? p);
+            const label = TITLES[p] ?? (parts[i - 1] === "items" ? "Item detail" : parts[i - 1] === "routines" ? "Routine" : parts[i - 1] === "handovers" && /^ho_/.test(p) ? "Handover" : (DEPT_VIEW_LABELS as Record<string, string>)[p] ?? p);
             const last = i === parts.length - 1;
             return (
               <React.Fragment key={href}>

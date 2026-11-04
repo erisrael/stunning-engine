@@ -374,7 +374,8 @@ export async function importCurriculumBackup(
           const am = ETHIOPIC.test(u.title);
           let unit = await get<{ id: string; number: number }>("SELECT id, number FROM units WHERE source_ref = ?", u.id);
           if (unit) {
-            await run("UPDATE units SET title = ?, title_am = ?, number = ? WHERE id = ?", title, am ? title : null, number, unit.id);
+            // A name a person corrected (Curriculum page) is kept.
+            await run("UPDATE units SET title = CASE WHEN title_locked = 1 THEN title ELSE ? END, title_am = CASE WHEN title_locked = 1 THEN title_am ELSE ? END, number = ? WHERE id = ?", title, am ? title : null, number, unit.id);
             unit = { id: unit.id, number };
             summary.units.updated++;
           } else {
@@ -403,7 +404,7 @@ export async function importCurriculumBackup(
             const language = ETHIOPIC.test(p.title) || am ? "am" : "en";
             let lesson = await get<{ id: string; number: number }>("SELECT id, number FROM lessons WHERE source_ref = ?", p.id);
             if (lesson) {
-              await run("UPDATE lessons SET title = ?, language = ?, number = ?, unit_id = ? WHERE id = ?", pTitle, language, number, unit.id, lesson.id);
+              await run("UPDATE lessons SET title = CASE WHEN title_locked = 1 THEN title ELSE ? END, language = ?, number = ?, unit_id = ? WHERE id = ?", pTitle, language, number, unit.id, lesson.id);
               lesson = { id: lesson.id, number };
               summary.parts.updated++;
             } else {

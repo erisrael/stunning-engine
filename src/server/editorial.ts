@@ -6,6 +6,7 @@ import { all, get, nowIso, parseJson, placeholders, run, tx, uid } from "./db";
 import {
   acceptHandoff,
   assignStage,
+  canReceive,
   audit,
   currentAttempt,
   requireAttempt,
@@ -21,6 +22,7 @@ import { can, canViewItem, hasRole, isLeadOf, scopeSql, type AppUser } from "./u
 import { getSettings, rulesFor, saveSetting, type ChecklistItem } from "./settings";
 import { NEXT_STAGE, PREV_STAGE, STAGE_LABELS, STAGES, STATUS_LABELS, stageIndex, type Stage } from "@/lib/domain";
 import { handoverStatuses, teamRules } from "@/lib/team-rules";
+import { handoverConfig, type HandoverConfig } from "./handover-config";
 
 type Raw = Record<string, unknown>;
 
@@ -384,7 +386,7 @@ export async function assignCandidates(
         sa.user_id AS owner_id, sa.stage_due_at AS due_at,
         (SELECT w.name FROM work_checklists w WHERE w.item_id = i.id AND w.stage = ?) AS checklist,
         CASE WHEN EXISTS (SELECT 1 FROM stage_attempts a WHERE a.item_id = i.id AND a.stage = ? AND a.status = 'completed') THEN 1 ELSE 0 END AS stage_done,
-        CASE WHEN i.lifecycle = 'in_production' AND (i.stage IN (${arrived.map((x) => `'${x}'`).join(",")}) OR (i.stage = '${prev ?? ""}' AND i.stage_status = 'awaiting_handoff')) THEN 1 ELSE 0 END AS arrived
+        CASE WHEN i.lifecycle = 'in_production' AND (i.stage IN (${arrived.map((x) => `'${x}'`).join(",")}) OR (i.stage = '${prev ?? ""}' AND i.stage_status = 'awaiting_handoff' AND NOT EXISTS (SELECT 1 FROM handover_items ck WHERE ck.item_id = i.id AND ck.status = 'rejected'))) THEN 1 ELSE 0 END AS arrived
      FROM items i
      JOIN item_memberships m ON m.item_id = i.id AND m.is_primary = 1
      JOIN grades g ON g.id = m.grade_id JOIN subjects s ON s.id = m.subject_id
@@ -491,6 +493,8 @@ export type HandoverRow = {
   pending: number;
   accepted: number;
   missing: number;
+  // Rejected and waiting for the cross-check.
+  rejected: number;
 };
 
 export type HandoverFilter = {
@@ -509,7 +513,7 @@ export function seesAllHandovers(user: AppUser) {
   return wide(user) || can(user, "team.view");
 }
 
-function involved(user: AppUser, h: { from_stage: string; to_stage: string; from_user: string | null; to_user: string | null; created_by: string | null }) {
+export function involved(user: AppUser, h: { from_stage: string; to_stage: string; from_user: string | null; to_user: string | null; created_by: string | null }) {
   return (
     seesAllHandovers(user) ||
     h.from_user === user.id ||
@@ -529,11 +533,12 @@ const HANDOVER_SELECT = `SELECT h.*, fu.name AS from_name, tu.name AS to_name,
     (SELECT COUNT(*) FROM handover_items x WHERE x.handover_id = h.id) AS total,
     (SELECT COUNT(*) FROM handover_items x WHERE x.handover_id = h.id AND x.status = 'pending') AS pending,
     (SELECT COUNT(*) FROM handover_items x WHERE x.handover_id = h.id AND x.status = 'accepted') AS accepted,
-    (SELECT COUNT(*) FROM handover_items x WHERE x.handover_id = h.id AND x.status = 'missing') AS missing
+    (SELECT COUNT(*) FROM handover_items x WHERE x.handover_id = h.id AND x.status = 'missing') AS missing,
+    (SELECT COUNT(*) FROM handover_items x WHERE x.handover_id = h.id AND x.status = 'rejected') AS rejected
   FROM handovers h LEFT JOIN users fu ON fu.id = h.from_user LEFT JOIN users tu ON tu.id = h.to_user`;
 
 function toHandover(r: Raw): HandoverRow {
-  return { ...(r as unknown as HandoverRow), total: Number(r.total), pending: Number(r.pending), accepted: Number(r.accepted), missing: Number(r.missing) };
+  return { ...(r as unknown as HandoverRow), total: Number(r.total), pending: Number(r.pending), accepted: Number(r.accepted), missing: Number(r.missing), rejected: Number(r.rejected ?? 0) };
 }
 
 export async function listHandovers(user: AppUser, f: HandoverFilter = {}): Promise<HandoverRow[]> {
@@ -601,8 +606,12 @@ export type HandoverItemRow = {
   subject: string | null;
   unit_number: number | null;
   part_number: number | null;
-  status: "pending" | "accepted" | "missing";
+  status: "pending" | "accepted" | "missing" | "rejected";
   note: string | null;
+  reason: string | null;
+  check_status: string | null;
+  checked_at: string | null;
+  check_note: string | null;
   decided_by_name: string | null;
   decided_at: string | null;
   live_stage: Stage | null;
@@ -618,7 +627,7 @@ export async function getHandover(user: AppUser, id: string) {
   if (!involved(user, h)) throw new WorkflowError("FORBIDDEN", "You cannot open this handover.");
   const items = await all<HandoverItemRow & { live_stage: Stage | null }>(
     `SELECT x.item_id, i.code, i.title, g.name AS grade, s.name AS subject, u.number AS unit_number, l.number AS part_number,
-        x.status, x.note, du.name AS decided_by_name, x.decided_at, i.stage AS live_stage, i.stage_status AS live_status,
+        x.status, x.note, x.reason, x.check_status, x.checked_at, x.check_note, du.name AS decided_by_name, x.decided_at, i.stage AS live_stage, i.stage_status AS live_status,
         (SELECT w.name FROM work_checklists w WHERE w.item_id = i.id AND w.stage = ?) AS checklist
      FROM handover_items x JOIN items i ON i.id = x.item_id
      LEFT JOIN item_memberships m ON m.item_id = i.id AND m.is_primary = 1
@@ -634,7 +643,7 @@ export async function getHandover(user: AppUser, id: string) {
     handover: h,
     items: items.map((it) => ({ ...it, actionable: it.status === "pending" && it.live_stage === h.from_stage && it.live_status === "awaiting_handoff" })),
     canReceive: canReceiveHandover(user, h) && h.status !== "cancelled",
-    canCancel: (h.created_by === user.id || h.from_user === user.id || wide(user)) && h.accepted + h.missing === 0 && h.status !== "cancelled",
+    canCancel: (h.created_by === user.id || h.from_user === user.id || wide(user)) && h.accepted + h.missing + h.rejected === 0 && h.status !== "cancelled",
   };
 }
 
@@ -644,13 +653,14 @@ async function nextCode() {
 }
 
 async function refreshStatus(id: string) {
-  const c = await get<{ total: number; pending: number }>(
-    "SELECT COUNT(*) AS total, SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending FROM handover_items WHERE handover_id = ?",
+  const c = await get<{ total: number; waiting: number; pending: number }>(
+    "SELECT COUNT(*) AS total, SUM(CASE WHEN status IN ('pending','rejected') THEN 1 ELSE 0 END) AS waiting, SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending FROM handover_items WHERE handover_id = ?",
     id,
   );
   const total = Number(c?.total ?? 0);
   const pending = Number(c?.pending ?? 0);
-  const status: HandoverStatus = pending === 0 ? "closed" : pending < total ? "partial" : "open";
+  // A rejection waiting for its cross-check keeps the handover from closing.
+  const status: HandoverStatus = Number(c?.waiting ?? 0) === 0 ? "closed" : pending < total ? "partial" : "open";
   await run("UPDATE handovers SET status = ?, closed_at = CASE WHEN ? = 'closed' THEN COALESCE(closed_at, ?) ELSE NULL END WHERE id = ? AND status <> 'cancelled'", status, status, nowIso(), id);
   return status;
 }
@@ -691,7 +701,7 @@ export async function createHandover(user: AppUser, input: { itemIds: string[]; 
       continue;
     }
     const open = await get<{ code: string }>(
-      "SELECT h.code FROM handover_items x JOIN handovers h ON h.id = x.handover_id WHERE x.item_id = ? AND x.status = 'pending' AND h.status IN ('open','partial') AND h.from_stage = ?",
+      "SELECT h.code FROM handover_items x JOIN handovers h ON h.id = x.handover_id WHERE x.item_id = ? AND x.status IN ('pending','rejected') AND h.status IN ('open','partial') AND h.from_stage = ?",
       id,
       from,
     );
@@ -757,12 +767,14 @@ export async function createHandover(user: AppUser, input: { itemIds: string[]; 
   return { handoverId: id, code, results };
 }
 
-export async function decideHandover(user: AppUser, handoverId: string, input: { itemIds: string[]; decision: "accepted" | "missing"; note?: string | null }) {
+export async function decideHandover(user: AppUser, handoverId: string, input: { itemIds: string[]; decision: "accepted" | "missing"; note?: string | null; reasonCategory?: string | null }) {
   const h = await get<HandoverRow>("SELECT * FROM handovers WHERE id = ?", handoverId);
   if (!h) throw new WorkflowError("NOT_FOUND", "Handover not found.");
   if (h.status === "cancelled") throw new WorkflowError("INVALID_STATE", "This handover was cancelled.");
   if (!canReceiveHandover(user, h)) throw new WorkflowError("FORBIDDEN", `Only the ${STAGE_LABELS[h.to_stage]} receiver or lead can check this handover.`);
-  if (input.decision === "missing" && !input.note?.trim()) throw new WorkflowError("VALIDATION", "Say what is missing, so the sender knows what to fix.");
+  if (input.decision === "missing" && !input.note?.trim()) throw new WorkflowError("VALIDATION", "Say what is wrong, so the sender knows what to fix.");
+  const cfg = await handoverConfig();
+  const reasonCategory = input.reasonCategory || "missing_asset";
   const ctx: Ctx = { actor: wide(user) ? null : user, source: "bulk", silent: true };
   const results: { id: string; code: string; ok: boolean; error?: string }[] = [];
   const now = nowIso();
@@ -776,11 +788,16 @@ export async function decideHandover(user: AppUser, handoverId: string, input: {
     try {
       if (row.status !== "pending") throw new WorkflowError("INVALID_STATE", `Already ${row.status}.`);
       await tx(async () => {
+        const crossCheck = input.decision === "missing" && cfg.crossCheck;
         if (input.decision === "accepted") await acceptHandoff(ctx, itemId, { note: `Received by ${user.name} in handover ${h.code}${input.note ? `: ${input.note}` : ""}` });
-        else await returnHandoff(ctx, itemId, { reasonCategory: "missing_asset", note: `Marked missing by ${user.name} in handover ${h.code}: ${input.note!.trim()}` });
+        else if (!crossCheck) {
+          await returnHandoff(ctx, itemId, { reasonCategory, note: `Rejected by ${user.name} in handover ${h.code}: ${input.note!.trim()}` });
+          await raisePriority(user, itemId, cfg);
+        } else await audit({ actor: user }, { itemId, stage: h.from_stage, action: "handover.rejected", summary: `${user.name} rejected ${row.code} in ${h.code}; waiting for the cross-check`, reason: input.note ?? null });
         await run(
-          "UPDATE handover_items SET status = ?, note = ?, decided_by = ?, decided_at = ? WHERE handover_id = ? AND item_id = ?",
-          input.decision,
+          "UPDATE handover_items SET status = ?, reason = ?, note = ?, decided_by = ?, decided_at = ? WHERE handover_id = ? AND item_id = ?",
+          crossCheck ? "rejected" : input.decision,
+          input.decision === "missing" ? reasonCategory : null,
           input.note?.trim() || null,
           user.id,
           now,
@@ -798,9 +815,16 @@ export async function decideHandover(user: AppUser, handoverId: string, input: {
   if (done.length) {
     await audit(
       { actor: user },
-      { action: `handover.${input.decision}`, stage: h.to_stage, summary: `${user.name} ${input.decision === "accepted" ? "received" : "marked missing"} ${done.length} items in ${h.code}`, reason: input.note ?? null },
+      { action: `handover.${input.decision}`, stage: h.to_stage, summary: `${user.name} ${input.decision === "accepted" ? "received" : "rejected"} ${done.length} items in ${h.code}`, reason: input.note ?? null },
     );
-    // The sender and their lead hear about missing work; the sender also hears when everything is received.
+    if (input.decision === "missing" && cfg.crossCheck)
+      await notify(
+        await checkersFor(h, cfg),
+        { type: "handoff", title: `${h.code}: ${done.length} ${done.length === 1 ? "rejection" : "rejections"} to cross-check`, body: `${user.name}: ${input.note}. ${done.map((d) => d.code).join(", ")}`, link: "/handovers/rejected", dedupeKey: `handover-check:${handoverId}:${now}` },
+        now,
+        user.id,
+      );
+    // The sender and their lead hear about rejected work; the sender also hears when everything is received.
     const senders = [h.from_user, ...(input.decision === "missing" ? await teamLeads(h.from_stage) : [])];
     await notify(
       senders,
@@ -808,7 +832,7 @@ export async function decideHandover(user: AppUser, handoverId: string, input: {
         type: "handoff",
         title:
           input.decision === "missing"
-            ? `${h.code}: ${done.length} ${done.length === 1 ? "item" : "items"} marked missing`
+            ? `${h.code}: ${done.length} ${done.length === 1 ? "item" : "items"} rejected${cfg.crossCheck ? ", being cross-checked" : ""}`
             : status === "closed"
               ? `${h.code}: everything received`
               : `${h.code}: ${done.length} ${done.length === 1 ? "item" : "items"} received`,
@@ -823,10 +847,193 @@ export async function decideHandover(user: AppUser, handoverId: string, input: {
   return { results, status };
 }
 
+// ---------------------------------------------------------------------------
+// Rejections: the cross-check before work goes back
+// ---------------------------------------------------------------------------
+
+async function raisePriority(user: AppUser | null, itemId: string, cfg: HandoverConfig) {
+  if (cfg.rejectedPriority === "keep") return;
+  const item = await get<{ priority: string }>("SELECT priority FROM items WHERE id = ?", itemId);
+  if (!item || item.priority === cfg.rejectedPriority || item.priority === "urgent") return;
+  await run("UPDATE items SET priority = ?, version = version + 1, updated_at = ? WHERE id = ?", cfg.rejectedPriority, nowIso(), itemId);
+  await audit({ actor: user }, { itemId, action: "item.priority", summary: `Priority raised to ${cfg.rejectedPriority}: the work was rejected`, oldValue: item.priority, newValue: cfg.rejectedPriority });
+}
+
+type CheckRow = { from_stage: string; to_stage: string };
+
+export function canCrossCheck(user: AppUser, h: CheckRow, rejectedBy: string | null, cfg: HandoverConfig) {
+  if (rejectedBy === user.id && !cfg.allowSelfCheck) return false;
+  if (wide(user)) return true;
+  if (cfg.checker === "sender_lead") return isLeadOf(user, h.from_stage as Stage);
+  if (cfg.checker === "receiver_lead") return isLeadOf(user, h.to_stage as Stage);
+  return false;
+}
+
+async function checkersFor(h: CheckRow, cfg: HandoverConfig) {
+  const leads = cfg.checker === "sender_lead" ? await teamLeads(h.from_stage as Stage) : cfg.checker === "receiver_lead" ? await teamLeads(h.to_stage as Stage) : [];
+  return leads.length ? leads : await managers();
+}
+
+export type RejectedRow = {
+  handover_id: string;
+  code: string;
+  from_stage: Stage;
+  to_stage: Stage;
+  item_id: string;
+  item_code: string;
+  title: string;
+  place: string;
+  owner_name: string | null;
+  reason: string | null;
+  note: string | null;
+  rejected_by: string | null;
+  rejected_by_name: string | null;
+  rejected_at: string | null;
+  status: "rejected" | "missing" | "accepted";
+  check_status: "confirmed" | "overturned" | null;
+  checked_by_name: string | null;
+  checked_at: string | null;
+  check_note: string | null;
+  priority: string;
+  canCheck: boolean;
+};
+
+export async function rejectedList(user: AppUser, tab: "to_check" | "confirmed" | "overturned"): Promise<RejectedRow[]> {
+  const cfg = await handoverConfig();
+  const where = tab === "to_check" ? "x.status = 'rejected'" : tab === "confirmed" ? "x.status = 'missing'" : "x.check_status = 'overturned'";
+  const rows = await all<Omit<RejectedRow, "canCheck" | "place"> & { grade: string | null; subject: string | null; unit_number: number | null; part_number: number | null; from_user: string | null; to_user: string | null; created_by: string | null }>(
+    `SELECT x.handover_id, h.code, h.from_stage, h.to_stage, h.from_user, h.to_user, h.created_by, x.item_id, i.code AS item_code, i.title, i.priority, x.reason, x.note,
+        x.decided_by AS rejected_by, du.name AS rejected_by_name, x.decided_at AS rejected_at, x.status, x.check_status, cu.name AS checked_by_name, x.checked_at, x.check_note,
+        g.name AS grade, s.name AS subject, un.number AS unit_number, l.number AS part_number,
+        (SELECT ou.name FROM stage_attempts oa JOIN users ou ON ou.id = oa.owner_id WHERE oa.item_id = i.id AND oa.stage = h.from_stage ORDER BY oa.attempt_no DESC LIMIT 1) AS owner_name
+     FROM handover_items x JOIN handovers h ON h.id = x.handover_id JOIN items i ON i.id = x.item_id
+     LEFT JOIN users du ON du.id = x.decided_by LEFT JOIN users cu ON cu.id = x.checked_by
+     LEFT JOIN item_memberships m ON m.item_id = i.id AND m.is_primary = 1
+     LEFT JOIN grades g ON g.id = m.grade_id LEFT JOIN subjects s ON s.id = m.subject_id
+     LEFT JOIN units un ON un.id = m.unit_id LEFT JOIN lessons l ON l.id = i.lesson_id
+     WHERE ${where} ORDER BY COALESCE(x.checked_at, x.decided_at) DESC LIMIT 500`,
+  );
+  return rows
+    .filter((r) => involved(user, r) || canCrossCheck(user, r, r.rejected_by, cfg))
+    .map(({ grade, subject, unit_number, part_number, from_user: _f, to_user: _t, created_by: _c, ...r }) => ({
+      ...r,
+      place: [grade, subject, unit_number != null ? `Unit ${unit_number}` : null, part_number != null ? `Part ${part_number}` : null].filter(Boolean).join(" · "),
+      canCheck: r.status === "rejected" && canCrossCheck(user, r, r.rejected_by, cfg),
+    }));
+}
+
+export async function crossCheckCount(user: AppUser) {
+  const rows = await all<CheckRow & { decided_by: string | null }>(
+    "SELECT h.from_stage, h.to_stage, x.decided_by FROM handover_items x JOIN handovers h ON h.id = x.handover_id WHERE x.status = 'rejected' LIMIT 500",
+  );
+  if (!rows.length) return 0;
+  const cfg = await handoverConfig();
+  return rows.filter((r) => canCrossCheck(user, r, r.decided_by, cfg)).length;
+}
+
+// Confirm: the rejection was right, so the work goes back to the team's To do at the set priority.
+// Overturn: the rejection was wrong, so the work is received as if it had been accepted.
+export async function crossCheckRejection(user: AppUser, input: { items: { handoverId: string; itemId: string }[]; decision: "confirm" | "overturn"; note?: string | null }) {
+  const cfg = await handoverConfig();
+  const note = input.note?.trim() || null;
+  if (input.decision === "overturn" && !note) throw new WorkflowError("VALIDATION", "Say why the rejection was wrong.");
+  if (!input.items.length) throw new WorkflowError("VALIDATION", "Choose the rejections to check.");
+  const results: { id: string; code: string; ok: boolean; error?: string }[] = [];
+  const now = nowIso();
+  for (const { handoverId, itemId } of input.items.slice(0, 500)) {
+    const row = await get<{ status: string; reason: string | null; note: string | null; decided_by: string | null; code: string; hcode: string; from_stage: Stage; to_stage: Stage; from_user: string | null; rejecter: string | null }>(
+      `SELECT x.status, x.reason, x.note, x.decided_by, i.code, h.code AS hcode, h.from_stage, h.to_stage, h.from_user, u.name AS rejecter
+       FROM handover_items x JOIN handovers h ON h.id = x.handover_id JOIN items i ON i.id = x.item_id LEFT JOIN users u ON u.id = x.decided_by
+       WHERE x.handover_id = ? AND x.item_id = ?`,
+      handoverId,
+      itemId,
+    );
+    if (!row) continue;
+    try {
+      if (row.status !== "rejected") throw new WorkflowError("INVALID_STATE", "This was already checked.");
+      if (!canCrossCheck(user, row, row.decided_by, cfg))
+        throw new WorkflowError("FORBIDDEN", row.decided_by === user.id ? "Someone other than the person who rejected it checks it." : "You do not cross-check this rejection.");
+      await tx(async () => {
+        // The hold is lifted first, so the engine lets the decision through. The checker's own rights were checked above.
+        await run(
+          "UPDATE handover_items SET status = ?, check_status = ?, checked_by = ?, checked_at = ?, check_note = ? WHERE handover_id = ? AND item_id = ?",
+          input.decision === "confirm" ? "missing" : "accepted",
+          input.decision === "confirm" ? "confirmed" : "overturned",
+          user.id,
+          now,
+          note,
+          handoverId,
+          itemId,
+        );
+        const sys: Ctx = { actor: null, source: "bulk", silent: true };
+        if (input.decision === "confirm") {
+          await returnHandoff(sys, itemId, { reasonCategory: row.reason ?? "missing_asset", note: `Rejected by ${row.rejecter ?? "the receiver"} in ${row.hcode}: ${row.note ?? ""}${note ? ` (checked by ${user.name}: ${note})` : ` (checked by ${user.name})`}` });
+          await raisePriority(user, itemId, cfg);
+        } else await acceptHandoff(sys, itemId, { note: `${user.name} overturned the rejection in ${row.hcode}: ${note}` });
+        await audit({ actor: user }, { itemId, stage: row.from_stage, action: input.decision === "confirm" ? "handover.reject_confirmed" : "handover.reject_overturned", summary: `${user.name} ${input.decision === "confirm" ? "confirmed" : "overturned"} the rejection of ${row.code} in ${row.hcode}`, reason: note });
+      });
+      await refreshStatus(handoverId);
+      const owner = (await currentAttempt(itemId))?.owner_id ?? null;
+      const label = cfg.rejectedPriority === "keep" ? "" : ` (${cfg.rejectedPriority} priority)`;
+      if (input.decision === "confirm")
+        await notify(
+          [...(owner ? [owner] : []), ...(await teamLeads(row.from_stage))],
+          { type: "handoff", title: `${row.code} is back in To do${label}`, body: `${STAGE_LABELS[row.to_stage]} rejected it: ${row.note ?? ""}. ${user.name} checked this.`, link: `/items/${itemId}`, itemId, dedupeKey: `reject-confirmed:${handoverId}:${itemId}` },
+          now,
+          user.id,
+        );
+      else
+        await notify(
+          [...(row.decided_by ? [row.decided_by] : []), ...(row.from_user ? [row.from_user] : [])],
+          { type: "handoff", title: `${row.code}: the rejection was overturned`, body: `${user.name}: ${note}. It moves on to ${STAGE_LABELS[row.to_stage]}.`, link: `/items/${itemId}`, itemId, dedupeKey: `reject-overturned:${handoverId}:${itemId}` },
+          now,
+          user.id,
+        );
+      results.push({ id: itemId, code: row.code, ok: true });
+    } catch (err) {
+      results.push({ id: itemId, code: row.code, ok: false, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+  return results;
+}
+
+// A handoff rejected on its own (not in a batch) becomes a batch of one, so it has the same cross-check and report.
+export async function rejectHandoff(user: AppUser, itemId: string, input: { reasonCategory: string; note: string }) {
+  const batch = await get<{ id: string }>(
+    "SELECT h.id FROM handover_items x JOIN handovers h ON h.id = x.handover_id WHERE x.item_id = ? AND x.status = 'pending' AND h.status IN ('open','partial')",
+    itemId,
+  );
+  const attempt = await currentAttempt(itemId);
+  if (!attempt || attempt.status !== "awaiting_handoff") throw new WorkflowError("INVALID_STATE", "There is no handoff waiting to be returned.");
+  const to = NEXT_STAGE[attempt.stage]!;
+  if (!(await canReceive({ actor: user }, itemId, to))) throw new WorkflowError("FORBIDDEN", `Only the ${STAGE_LABELS[to]} owner or a manager can reject this handoff.`);
+  if (!input.note?.trim()) throw new WorkflowError("VALIDATION", "Say what is wrong, so the sender knows what to fix.");
+  let id = batch?.id ?? null;
+  if (!id) {
+    id = uid("ho_");
+    const code = await nextCode();
+    await run(
+      "INSERT INTO handovers (id, code, from_stage, to_stage, from_user, to_user, status, note, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, 'open', NULL, ?, ?)",
+      id,
+      code,
+      attempt.stage,
+      to,
+      attempt.owner_id,
+      user.id,
+      attempt.owner_id ?? user.id,
+      nowIso(),
+    );
+    await run("INSERT INTO handover_items (handover_id, item_id, status) VALUES (?, ?, 'pending')", id, itemId);
+  }
+  const r = await decideHandover(user, id, { itemIds: [itemId], decision: "missing", note: input.note, reasonCategory: input.reasonCategory });
+  const bad = r.results.find((x) => !x.ok);
+  if (bad) throw new WorkflowError("INVALID_STATE", bad.error ?? "The handoff could not be rejected.");
+}
+
 export async function cancelHandover(user: AppUser, id: string) {
   const data = await getHandover(user, id);
   if (!data) throw new WorkflowError("NOT_FOUND", "Handover not found.");
-  if (!data.canCancel) throw new WorkflowError("FORBIDDEN", "Only the sender can cancel, and only before anything was received or marked missing.");
+  if (!data.canCancel) throw new WorkflowError("FORBIDDEN", "Only the sender can cancel, and only before anything was received or rejected.");
   await run("UPDATE handovers SET status = 'cancelled', closed_at = ? WHERE id = ?", nowIso(), id);
   await audit({ actor: user }, { action: "handover.cancelled", stage: data.handover.from_stage, summary: `${user.name} cancelled ${data.handover.code}. The items stay submitted and can be accepted one by one.` });
 }
@@ -848,7 +1055,7 @@ export async function handoverCandidates(user: AppUser) {
      LEFT JOIN item_memberships m ON m.item_id = i.id AND m.is_primary = 1 LEFT JOIN grades g ON g.id = m.grade_id LEFT JOIN subjects s ON s.id = m.subject_id
      LEFT JOIN units u ON u.id = m.unit_id LEFT JOIN lessons l ON l.id = i.lesson_id
      WHERE i.lifecycle = 'in_production' AND a.stage <> 'publication' AND a.status IN ('finished','lead_review','ready','awaiting_handoff') AND ${sc.sql}
-       AND NOT EXISTS (SELECT 1 FROM handover_items x JOIN handovers h ON h.id = x.handover_id WHERE x.item_id = i.id AND x.status = 'pending' AND h.status IN ('open','partial'))
+       AND NOT EXISTS (SELECT 1 FROM handover_items x JOIN handovers h ON h.id = x.handover_id WHERE x.item_id = i.id AND x.status IN ('pending','rejected') AND h.status IN ('open','partial'))
      ORDER BY g.sort, s.sort, u.number, l.number, i.code LIMIT 3000`,
     ...sc.params,
   );

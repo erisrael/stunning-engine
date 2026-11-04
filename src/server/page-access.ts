@@ -31,6 +31,7 @@ const RULES: Rule[] = [
   { prefix: "/reports", any: ["reports.view"] },
   { prefix: "/coverage", any: ["nav.coverage"] },
   { prefix: "/overview", any: ["nav.overview"] },
+  { prefix: "/handovers/settings", any: ["settings.manage", "users.manage"] },
   { prefix: "/handovers", any: ["nav.handovers"] },
   { prefix: "/calendar", any: ["nav.calendar"] },
   { prefix: "/import-export", any: ["import.run"] },
@@ -45,6 +46,11 @@ const RULES: Rule[] = [
   { prefix: "/team", any: ["nav.team", "team.view"] },
   { prefix: "/strategy", any: ["perf.library", "perf.view_company", "users.manage", "owners.view"] },
   { prefix: "/sessions", check: (u) => can(u, "items.plan") || can(u, "team.view") || u.roles.includes("recording") },
+  { prefix: "/curriculum", check: async (u) => (await (await import("./curriculum-fix")).curriculumRights(u)).rename || (await import("./editorial")).assignableStages(u).length > 0 },
+  { prefix: "/legacy", check: async (u) => {
+    const { canUseLegacy, legacyConfig } = await import("./legacy");
+    return canUseLegacy(u) && ((await legacyConfig()).on || can(u, "settings.manage") || can(u, "users.manage"));
+  } },
   { prefix: "/support", check: async (u) => !!(await (await import("./support-desk")).supportNav(u)) },
   { prefix: "/dev", check: dept("dev") },
   { prefix: "/marketing", check: dept("marketing") },

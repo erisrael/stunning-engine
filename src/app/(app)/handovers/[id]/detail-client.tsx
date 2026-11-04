@@ -17,7 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { KeyValue } from "@/components/app/primitives";
 import { cancelHandoverAction, decideHandoverAction, updateHandoverNoteAction } from "@/app/actions/editorial";
 import type { getHandover, HandoverItemRow } from "@/server/editorial";
-import { STAGE_LABELS, STATUS_LABELS, type AttemptStatus } from "@/lib/domain";
+import { RETURN_REASON_LABELS, STAGE_LABELS, STATUS_LABELS, type AttemptStatus } from "@/lib/domain";
 import { fmtDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { HANDOVER_STATUS, HandoverProgress } from "../handovers-client";
@@ -27,7 +27,8 @@ type Data = NonNullable<Awaited<ReturnType<typeof getHandover>>>;
 const ITEM_STATUS: Record<HandoverItemRow["status"], { label: string; tone: string }> = {
   pending: { label: "Waiting", tone: "paused" },
   accepted: { label: "Received", tone: "done" },
-  missing: { label: "Missing", tone: "blocked" },
+  missing: { label: "Rejected", tone: "blocked" },
+  rejected: { label: "In cross-check", tone: "paused" },
 };
 
 export function HandoverDetail({ data, viewerId, tz }: { data: Data; viewerId: string; tz: string }) {
@@ -39,6 +40,7 @@ export function HandoverDetail({ data, viewerId, tz }: { data: Data; viewerId: s
   const [busy, setBusy] = React.useState<"accepted" | "missing" | "cancel" | null>(null);
   const [missingOpen, setMissingOpen] = React.useState(false);
   const [missingNote, setMissingNote] = React.useState("");
+  const [reason, setReason] = React.useState("missing_asset");
   const [acceptNote, setAcceptNote] = React.useState("");
   const [noteEdit, setNoteEdit] = React.useState<string | null>(null);
   const [confirmCancel, setConfirmCancel] = React.useState(false);
@@ -51,14 +53,14 @@ export function HandoverDetail({ data, viewerId, tz }: { data: Data; viewerId: s
 
   const decide = async (decision: "accepted" | "missing") => {
     setBusy(decision);
-    const r = await decideHandoverAction(h.id, { itemIds: ids, decision, note: decision === "missing" ? missingNote : acceptNote || null });
+    const r = await decideHandoverAction(h.id, { itemIds: ids, decision, note: decision === "missing" ? missingNote : acceptNote || null, reasonCategory: decision === "missing" ? reason : null });
     setBusy(null);
     if (!r.ok) return toast.error(r.error);
     const { results } = r.data as { results: { ok: boolean; code: string; error?: string }[] };
     const bad = results.filter((x) => !x.ok);
     const ok = results.length - bad.length;
     if (bad.length) toast.warning(`${ok} done, ${bad.length} failed`, { description: bad.slice(0, 4).map((b) => `${b.code}: ${b.error}`).join("\n"), duration: 10000 });
-    else toast.success(decision === "accepted" ? `${ok} received` : `${ok} marked missing and sent back`);
+    else toast.success(decision === "accepted" ? `${ok} received` : `${ok} rejected`);
     setPicked(new Set());
     setMissingOpen(false);
     setMissingNote("");
@@ -133,7 +135,8 @@ export function HandoverDetail({ data, viewerId, tz }: { data: Data; viewerId: s
           <TabsList>
             <TabsTrigger value="pending">Waiting ({h.pending})</TabsTrigger>
             <TabsTrigger value="accepted">Received ({h.accepted})</TabsTrigger>
-            <TabsTrigger value="missing">Missing ({h.missing})</TabsTrigger>
+            <TabsTrigger value="rejected">In cross-check ({h.rejected})</TabsTrigger>
+            <TabsTrigger value="missing">Rejected ({h.missing})</TabsTrigger>
             <TabsTrigger value="all">All ({h.total})</TabsTrigger>
           </TabsList>
         </Tabs>
@@ -236,7 +239,7 @@ export function HandoverDetail({ data, viewerId, tz }: { data: Data; viewerId: s
             {busy === "accepted" ? <Loader2Icon className="animate-spin" /> : <CheckCheckIcon />} Received
           </Button>
           <Button size="xs" variant="outline" className="text-destructive" disabled={!!busy} onClick={() => setMissingOpen(true)}>
-            <PackageXIcon /> Missing
+            <PackageXIcon /> Reject
           </Button>
         </div>
       )}
@@ -244,11 +247,19 @@ export function HandoverDetail({ data, viewerId, tz }: { data: Data; viewerId: s
       <Dialog open={missingOpen} onOpenChange={setMissingOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Mark {ids.length} as missing</DialogTitle>
-            <DialogDescription>They go back to {STAGE_LABELS[h.from_stage]} as rework, and the sender and their lead are told what is missing.</DialogDescription>
+            <DialogTitle>Reject {ids.length}</DialogTitle>
+            <DialogDescription>The rejection is checked (Handovers, Rejected) if your workspace asks for that. Then the work goes back to {STAGE_LABELS[h.from_stage]}&apos;s To do, and the sender and their lead are told why.</DialogDescription>
           </DialogHeader>
           <div className="space-y-1.5">
-            <Label>What is missing (required)</Label>
+            <Label htmlFor="reject-reason">Reason</Label>
+            <select id="reject-reason" className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={reason} onChange={(e) => setReason(e.target.value)}>
+              {Object.entries(RETURN_REASON_LABELS).map(([k, v]) => (
+                <option key={k} value={k}>
+                  {v}
+                </option>
+              ))}
+            </select>
+            <Label>What is wrong (required)</Label>
             <Textarea rows={3} value={missingNote} onChange={(e) => setMissingNote(e.target.value)} placeholder="No master file in the folder; captions not delivered" />
           </div>
           <DialogFooter>
@@ -256,7 +267,7 @@ export function HandoverDetail({ data, viewerId, tz }: { data: Data; viewerId: s
               Cancel
             </Button>
             <Button variant="destructive" disabled={!missingNote.trim() || !!busy} onClick={() => decide("missing")}>
-              {busy === "missing" && <Loader2Icon className="animate-spin" />} Mark missing
+              {busy === "missing" && <Loader2Icon className="animate-spin" />} Reject
             </Button>
           </DialogFooter>
         </DialogContent>

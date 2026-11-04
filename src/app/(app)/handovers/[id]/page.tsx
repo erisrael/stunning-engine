@@ -23,7 +23,7 @@ export default async function HandoverPage({ params }: { params: Promise<{ id: s
       <PageHeader
         eyebrow="Handover"
         title={`${h.code}: ${STAGE_LABELS[h.from_stage]} to ${STAGE_LABELS[h.to_stage]}`}
-        description={data.canReceive ? "Check each item against what you actually received. Accept what arrived; mark anything missing with a note, and it goes back to the sender and their lead." : undefined}
+        description={data.canReceive ? "Check each item against what you actually received. Accept what arrived; reject anything wrong with a note. A rejection is cross-checked before the work goes back to that team." : undefined}
         actions={
           <Button asChild variant="outline" size="sm">
             <Link href="/handovers">

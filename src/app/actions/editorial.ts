@@ -7,6 +7,7 @@ import {
   cancelHandover,
   canManageTemplates,
   createHandover,
+  crossCheckRejection,
   decideHandover,
   deleteTemplates,
   duplicateTemplate,
@@ -25,6 +26,7 @@ import {
   type TemplateFilter,
   type TemplateInput,
 } from "@/server/editorial";
+import { saveHandoverConfig, type HandoverConfig } from "@/server/handover-config";
 import { currentAttempt, WorkflowError } from "@/server/workflow";
 import { STAGES, type Stage } from "@/lib/domain";
 import { userDirectory } from "@/server/users";
@@ -101,8 +103,16 @@ export async function createHandoverAction(input: { itemIds: string[]; toUserId?
   return wrap(async () => createHandover(await requireViewer(), input));
 }
 
-export async function decideHandoverAction(handoverId: string, input: { itemIds: string[]; decision: "accepted" | "missing"; note?: string | null }) {
+export async function decideHandoverAction(handoverId: string, input: { itemIds: string[]; decision: "accepted" | "missing"; note?: string | null; reasonCategory?: string | null }) {
   return wrap(async () => decideHandover(await requireViewer(), handoverId, input));
+}
+
+export async function crossCheckAction(input: { items: { handoverId: string; itemId: string }[]; decision: "confirm" | "overturn"; note?: string | null }) {
+  return wrap(async () => crossCheckRejection(await requireViewer(), input));
+}
+
+export async function saveHandoverConfigAction(input: Partial<HandoverConfig>) {
+  return wrap(async () => saveHandoverConfig(await requireViewer(), input));
 }
 
 export async function cancelHandoverAction(id: string) {

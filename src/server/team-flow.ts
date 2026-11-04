@@ -19,6 +19,11 @@ export type FlowItem = {
   place: string;
   stage: Stage;
   status: AttemptStatus;
+  priority: string;
+  // This person may correct the part's name (Curriculum, Settings).
+  canRename: boolean;
+  // Why it came back, when it was rejected or returned.
+  returnNote: string | null;
   version: number;
   dueAt: string | null;
   ownerId: string | null;
@@ -48,6 +53,9 @@ type Row = {
   id: string;
   code: string;
   title: string;
+  priority: string;
+  cause?: string | null;
+  cause_note?: string | null;
   version: number;
   current_due_at: string | null;
   actual_duration_min: number | null;
@@ -66,7 +74,7 @@ type Row = {
   draft?: number;
 };
 
-const BASE = `SELECT i.id, i.code, i.title, i.version, i.current_due_at, i.actual_duration_min, a.id AS attempt_id, a.stage, a.status, a.owner_id, u.name AS owner_name,
+const BASE = `SELECT i.id, i.code, i.title, i.priority, a.cause, a.cause_note, i.version, i.current_due_at, i.actual_duration_min, a.id AS attempt_id, a.stage, a.status, a.owner_id, u.name AS owner_name,
     a.notes, a.handoff_submitted_at, a.raw_duration_min, g.name AS grade, s.name AS subject, un.number AS unit_number, l.number AS part_number
   FROM items i JOIN stage_attempts a ON a.id = i.current_attempt_id
   LEFT JOIN users u ON u.id = a.owner_id
@@ -75,13 +83,16 @@ const BASE = `SELECT i.id, i.code, i.title, i.version, i.current_due_at, i.actua
   LEFT JOIN units un ON un.id = m.unit_id LEFT JOIN lessons l ON l.id = i.lesson_id
   WHERE i.lifecycle = 'in_production'`;
 
-const ORDER = "ORDER BY i.current_due_at IS NULL, i.current_due_at, g.sort, s.sort, un.number, l.number, i.code";
+// Urgent and high priority first (rejected work comes back high).
+const ORDER = "ORDER BY CASE i.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 ELSE 2 END, i.current_due_at IS NULL, i.current_due_at, g.sort, s.sort, un.number, l.number, i.code";
 
 // Fills in what each card needs: checklist lines with their results, links already added, upload destinations,
 // what is still required, and whether this person's timer is running.
-async function hydrate(rows: Row[], viewerId: string): Promise<FlowItem[]> {
+async function hydrate(rows: Row[], user: AppUser): Promise<FlowItem[]> {
   if (!rows.length) return [];
+  const viewerId = user.id;
   const settings = await getSettings();
+  const canRename = (await (await import("./curriculum-fix")).curriculumRights(user)).rename;
   const out: FlowItem[] = [];
   for (const r of rows) {
     const results = await all<{ key: string; checked: number; verified_at: string | null }>("SELECT key, checked, verified_at FROM checklist_results WHERE attempt_id = ?", r.attempt_id);
@@ -120,6 +131,9 @@ async function hydrate(rows: Row[], viewerId: string): Promise<FlowItem[]> {
       place,
       stage: r.stage,
       status: r.status,
+      priority: r.priority ?? "normal",
+      canRename,
+      returnNote: r.cause === "returned" && r.status !== "finished" && r.status !== "lead_review" ? (r.cause_note ?? null) : null,
       version: Number(r.version),
       dueAt: r.current_due_at,
       ownerId: r.owner_id,
@@ -174,7 +188,7 @@ export async function myWork(user: AppUser) {
   // Parts assigned to them for Recording that nobody has started yet (still drafts).
   const drafts = stages.includes("recording")
     ? await all<Row>(
-        `SELECT i.id, i.code, i.title, i.version, COALESCE(sa.stage_due_at, i.current_due_at) AS current_due_at, i.actual_duration_min, '' AS attempt_id, 'recording' AS stage,
+        `SELECT i.id, i.code, i.title, i.priority, i.version, COALESCE(sa.stage_due_at, i.current_due_at) AS current_due_at, i.actual_duration_min, '' AS attempt_id, 'recording' AS stage,
             'queued' AS status, sa.user_id AS owner_id, u.name AS owner_name, NULL AS notes, NULL AS handoff_submitted_at, NULL AS raw_duration_min,
             g.name AS grade, s.name AS subject, un.number AS unit_number, l.number AS part_number, 1 AS draft
          FROM items i JOIN stage_assignments sa ON sa.item_id = i.id AND sa.stage = 'recording'
@@ -187,7 +201,7 @@ export async function myWork(user: AppUser) {
         ...sc.params,
       )
     : [];
-  return { items: [...(await hydrate(rows, user.id)), ...(await hydrate(drafts, user.id))], stages };
+  return { items: [...(await hydrate(rows, user)), ...(await hydrate(drafts, user))], stages };
 }
 
 // Stages this person leads (managers: every stage).
@@ -241,7 +255,7 @@ export async function leadDesk(user: AppUser, stage: Stage) {
     q("a.stage = ? AND a.status = 'lead_review'", stage),
     q("a.stage = ? AND a.status = 'ready'", stage),
     q("a.stage = ? AND a.status = 'queued' AND a.owner_id IS NULL", stage),
-    prev ? q("a.stage = ? AND a.status = 'awaiting_handoff'", prev) : Promise.resolve([] as Row[]),
+    prev ? q("a.stage = ? AND a.status = 'awaiting_handoff' AND NOT EXISTS (SELECT 1 FROM handover_items ck WHERE ck.item_id = i.id AND ck.status = 'rejected')", prev) : Promise.resolve([] as Row[]),
     all<{ id: string; name: string }>("SELECT u.id, u.name FROM users u JOIN role_assignments r ON r.user_id = u.id WHERE r.role = ? AND u.active = 1 ORDER BY u.name", stage),
     all<{ owner_id: string; status: string; c: number }>(
       "SELECT a.owner_id, a.status, COUNT(*) AS c FROM stage_attempts a JOIN items i ON i.current_attempt_id = a.id WHERE a.stage = ? AND i.lifecycle = 'in_production' AND a.owner_id IS NOT NULL GROUP BY a.owner_id, a.status",
@@ -262,10 +276,10 @@ export async function leadDesk(user: AppUser, stage: Stage) {
     prev,
     next: NEXT_STAGE[stage] ?? null,
     glance: await workflowGlance(user),
-    review: await hydrate(review, user.id),
-    ready: await hydrate(ready, user.id),
-    unassigned: await hydrate(unassigned, user.id),
-    incoming: (await hydrate(incomingRows, user.id)).map((it) => ({ ...it, batch: batch.find((b) => b.item_id === it.id) ?? null })),
+    review: await hydrate(review, user),
+    ready: await hydrate(ready, user),
+    unassigned: await hydrate(unassigned, user),
+    incoming: (await hydrate(incomingRows, user)).map((it) => ({ ...it, batch: batch.find((b) => b.item_id === it.id) ?? null })),
     people: people.map((p) => ({ id: p.id, name: p.name, todo: n(p.id, ["queued", "paused", "blocked"]), active: n(p.id, ["in_progress"]), done: n(p.id, ["finished"]), review: n(p.id, ["lead_review"]) })),
   };
 }

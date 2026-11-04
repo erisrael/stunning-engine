@@ -82,7 +82,7 @@ export function SessionPlanner(props: {
         </h2>
         {canPlan && (
           <Button className="ml-auto" onClick={() => setBooking(true)}>
-            <CalendarPlusIcon /> Book a session
+            <CalendarPlusIcon /> Book a session (optional)
           </Button>
         )}
       </div>

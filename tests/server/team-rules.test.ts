@@ -73,8 +73,9 @@ async function main() {
   const ho2 = await ed.createHandover(hana, { itemIds: [p2.id] });
   await ed.decideHandover(meron, ho2.handoverId!, { itemIds: [p2.id], decision: "missing", note: "No audio on the second camera" });
   const e2 = await ed.assignCandidates(meron, { stage: "editing", gradeIds, subjectIds: [] });
-  check("part marked missing leaves the editing list", !e2.rows.some((r) => r.id === p2.id), e2.rows.map((r) => r.code));
-  check("missing part is back with Recording", (await wf.currentAttempt(p2.id))!.stage === "recording");
+  check("rejected part leaves the editing list", !e2.rows.some((r) => r.id === p2.id), e2.rows.map((r) => r.code));
+  await ed.crossCheckRejection(hana, { items: [{ handoverId: ho2.handoverId!, itemId: p2.id }], decision: "confirm" });
+  check("rejected part is back with Recording once it is cross-checked", (await wf.currentAttempt(p2.id))!.stage === "recording");
 
   // Work in progress limit.
   const s = await getSettings();

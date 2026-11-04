@@ -18,6 +18,7 @@ import {
   InboxIcon,
   Loader2Icon,
   PauseIcon,
+  PencilIcon,
   PlayIcon,
   RotateCcwIcon,
   SendIcon,
@@ -30,6 +31,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { renameItemAction } from "@/app/actions/curriculum";
 import { EmptyState } from "@/components/app/primitives";
 import { addReviewNoteAction, bulkAction, deleteReviewNoteAction, itemAction, resolveReviewNoteAction, type ItemActionInput } from "@/app/actions/items";
 import { createHandoverAction, decideHandoverAction, verifyChecklistAction } from "@/app/actions/editorial";
@@ -451,6 +454,47 @@ function NotesField({ notes, disabled, onSave }: { notes: string | null; disable
   );
 }
 
+// The lesson or part name was typed wrong: the team corrects it right on the card.
+function RenameName({ itemId, title }: { itemId: string; title: string }) {
+  const router = useRouter();
+  const [open, setOpen] = React.useState(false);
+  const [v, setV] = React.useState(title);
+  const [busy, setBusy] = React.useState(false);
+  const save = async () => {
+    setBusy(true);
+    const r = await renameItemAction(itemId, v);
+    setBusy(false);
+    if (!r.ok) return void toast.error(r.error);
+    toast.success("Name corrected");
+    setOpen(false);
+    router.refresh();
+  };
+  return (
+    <>
+      <Button size="icon-xs" variant="ghost" aria-label={`Correct the name of ${title}`} title="Correct the name" onClick={() => (setV(title), setOpen(true))}>
+        <PencilIcon />
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Correct the name</DialogTitle>
+            <DialogDescription>The new name shows for every team, and it stays when something is imported again. The change is logged on the Curriculum page.</DialogDescription>
+          </DialogHeader>
+          <Input aria-label="Part name" value={v} onChange={(e) => setV(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void save()} autoFocus />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+            <Button disabled={busy || !v.trim() || v.trim() === title} onClick={save}>
+              {busy && <Loader2Icon className="animate-spin" />} Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
 function Card({ item, open, onToggle, children, badge, select }: { item: FlowItem; open: boolean; onToggle: () => void; children?: React.ReactNode; badge?: React.ReactNode; select?: React.ReactNode }) {
   return (
     <div data-item={item.id} className={cn("rounded-lg border bg-card p-2.5 shadow-xs", open && "ring-1 ring-primary/40")}>
@@ -464,10 +508,17 @@ function Card({ item, open, onToggle, children, badge, select }: { item: FlowIte
           </span>
           <span className="mt-0.5 block font-medium">{item.title}</span>
           {item.place && <span className="block truncate text-xs text-muted-foreground">{item.place}</span>}
+          {item.returnNote && <span className="mt-0.5 block text-xs text-[var(--st-blocked-fg)]" data-return-note>Came back: {item.returnNote}</span>}
         </button>
+        {item.canRename && <RenameName itemId={item.id} title={item.title} />}
       </div>
       <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
         <Progress item={item} />
+        {(item.priority === "high" || item.priority === "urgent") && (
+          <span className="rounded bg-[var(--st-blocked-bg)] px-1.5 py-0.5 text-[11px] font-medium text-[var(--st-blocked-fg)]" data-priority={item.priority}>
+            {item.priority === "urgent" ? "Urgent" : "High priority"}
+          </span>
+        )}
         {item.session && (
           <span className="rounded bg-[var(--st-active-bg)] px-1.5 py-0.5 text-[11px] text-[var(--st-active-fg)]" title="Studio session booked for this part">
             {new Date(item.session.start).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false })}
@@ -845,7 +896,7 @@ export function LeadDesk({ data }: { data: LeadDeskData }) {
                         disabled={!returning.note.trim()}
                         onClick={async () => {
                           const ok = it.batch
-                            ? await decideHandoverAction(it.batch.handover_id, { itemIds: [it.id], decision: "missing", note: returning.note }).then((r) => (r.ok ? (router.refresh(), true) : (toast.error(r.error), false)))
+                            ? await decideHandoverAction(it.batch.handover_id, { itemIds: [it.id], decision: "missing", note: returning.note, reasonCategory: returning.reason ?? reasons[0]![0] }).then((r) => (r.ok ? (router.refresh(), true) : (toast.error(r.error), false)))
                             : await act(it.id, { action: "return", reasonCategory: returning.reason ?? reasons[0]![0], note: returning.note }, "Returned");
                           if (ok) setReturning(null);
                         }}

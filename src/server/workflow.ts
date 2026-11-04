@@ -613,7 +613,8 @@ export async function createItem(ctx: Ctx, input: CreateItemInput): Promise<Item
                 );
       }
       for (const stage of STAGES) {
-        const owner = input.owners?.[stage] ?? null;
+        // Recording's list starts from drafts, so auto-assign applies to a new part at once.
+        const owner = input.owners?.[stage] ?? (stage === "recording" ? await (await import("./auto-assign")).autoOwnerFor(id, stage) : null);
         await run(
                   "INSERT INTO stage_assignments (item_id, stage, user_id, stage_due_at, assigned_at, assigned_by) VALUES (?, ?, ?, ?, ?, ?)",
                   id,
@@ -668,7 +669,8 @@ export async function releaseToProduction(ctx: Ctx, itemId: string, startStage: 
 async function openAttempt(ctx: Ctx, itemId: string, stage: Stage, cause: string, note: string | null, ownerOverride?: string | null) {
   const now = at(ctx);
   const n = ((await get<{ n: number }>("SELECT MAX(attempt_no) AS n FROM stage_attempts WHERE item_id = ? AND stage = ?", itemId, stage))?.n ?? 0) + 1;
-  const owner = ownerOverride !== undefined ? ownerOverride : await stageOwner(itemId, stage);
+  // Nobody planned: the team's auto-assign (Curriculum, Auto-assign) may name someone.
+  const owner = (ownerOverride !== undefined ? ownerOverride : await stageOwner(itemId, stage)) ?? (await (await import("./auto-assign")).autoOwnerFor(itemId, stage));
   const id = uid("att_");
   await run(
         `INSERT INTO stage_attempts (id, item_id, stage, attempt_no, cause, cause_note, status, substate, owner_id, entered_at)
@@ -754,6 +756,12 @@ export async function startWork(ctx: Ctx, itemId: string, opts: { expectedVersio
       await requireView(ctx, itemId);
       let item = await getItem(itemId);
       checkVersion(item, opts.expectedVersion);
+      // Booking a studio is optional unless Handovers, Settings requires it.
+      if (ctx.actor && (item.lifecycle === "draft" || item.stage === "recording")) {
+        const { handoverConfig } = await import("./handover-config");
+        if ((await handoverConfig()).studioBooking === "required" && !(await get("SELECT 1 AS x FROM recording_sessions WHERE item_id = ? AND status IN ('scheduled','completed')", itemId)))
+          throw new WorkflowError("VALIDATION", "Book a studio session for this part first (Studio sessions).");
+      }
       // Drafts are started by Recording staff themselves: the item enters production and goes straight to In progress.
       if (item.lifecycle === "draft") {
         const u = ctx.actor;
@@ -1509,7 +1517,13 @@ export async function submitHandoff(ctx: Ctx, itemId: string, input: { note?: st
     });
 }
 
-async function canReceive(ctx: Ctx, itemId: string, next: Stage) {
+// A rejection waiting for its cross-check holds the item: nobody accepts or returns it until that is decided.
+async function refuseIfInCrossCheck(itemId: string) {
+  if (await get("SELECT 1 AS x FROM handover_items WHERE item_id = ? AND status = 'rejected'", itemId))
+    throw new WorkflowError("INVALID_STATE", "This rejection is waiting for its cross-check (Handovers, Rejected).");
+}
+
+export async function canReceive(ctx: Ctx, itemId: string, next: Stage) {
   const u = ctx.actor;
   if (!u) return true;
   if (isManager(u)) return true;
@@ -1528,6 +1542,7 @@ export async function acceptHandoff(ctx: Ctx, itemId: string, input: { note?: st
       checkVersion(item, input.expectedVersion);
       const attempt = await requireAttempt(itemId);
       if (attempt.status !== "awaiting_handoff") throw new WorkflowError("INVALID_STATE", "There is no handoff waiting for acceptance.");
+      await refuseIfInCrossCheck(itemId);
       const next = NEXT_STAGE[attempt.stage]!;
       if (!await canReceive(ctx, itemId, next))
         throw new WorkflowError("FORBIDDEN", `Only the ${STAGE_LABELS[next]} owner or a manager can accept this handoff.`);
@@ -1593,6 +1608,7 @@ export async function returnHandoff(
       checkVersion(item, input.expectedVersion);
       const attempt = await requireAttempt(itemId);
       if (attempt.status !== "awaiting_handoff") throw new WorkflowError("INVALID_STATE", "There is no handoff waiting to be returned.");
+      await refuseIfInCrossCheck(itemId);
       const next = NEXT_STAGE[attempt.stage]!;
       if (!await canReceive(ctx, itemId, next))
         throw new WorkflowError("FORBIDDEN", `Only the ${STAGE_LABELS[next]} owner or a manager can return this handoff.`);

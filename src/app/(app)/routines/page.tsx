@@ -14,7 +14,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ t
   return (
     <div className="space-y-4">
       <PageHeader title="Routines" description={`Record how you do something once; then ask the assistant to do it ("run weekly report"), by button, typing or voice. ${approval}`} />
-      <RoutinesPage routines={routines} runs={runs} open={open} tab={tab === "approve" ? "approve" : "mine"} viewerId={viewer.id} />
+      <RoutinesPage routines={routines} runs={runs} open={open} imports={cfg.imports} tab={tab === "approve" ? "approve" : "mine"} viewerId={viewer.id} />
     </div>
   );
 }

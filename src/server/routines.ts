@@ -22,8 +22,8 @@ export type RoutineStep = {
   ask?: boolean;
   note?: string | null;
 };
-export type RoutinesConfig = { on: boolean; approval: "self" | "lead" | "admin"; confirmEachStep: boolean; maxSteps: number; sharing: boolean; offRoles: string[] };
-export const DEFAULT_ROUTINES: RoutinesConfig = { on: true, approval: "self", confirmEachStep: false, maxSteps: 60, sharing: true, offRoles: [] };
+export type RoutinesConfig = { on: boolean; approval: "self" | "lead" | "admin"; confirmEachStep: boolean; maxSteps: number; sharing: boolean; offRoles: string[]; imports: boolean; maxImportRows: number };
+export const DEFAULT_ROUTINES: RoutinesConfig = { on: true, approval: "self", confirmEachStep: false, maxSteps: 60, sharing: true, offRoles: [], imports: true, maxImportRows: 100 };
 
 export async function routinesConfig(): Promise<RoutinesConfig> {
   const v = parseJson<Partial<RoutinesConfig>>((await get<{ value: string }>("SELECT value FROM settings WHERE key = 'cfg.assistant.routines'"))?.value, {});
@@ -40,6 +40,8 @@ export async function saveRoutinesConfig(user: AppUser, input: Partial<RoutinesC
     maxSteps: Math.max(5, Math.min(200, Math.round(Number(input.maxSteps ?? cur.maxSteps)))),
     sharing: input.sharing ?? cur.sharing,
     offRoles: (input.offRoles ?? cur.offRoles).map(String).slice(0, 30),
+    imports: input.imports ?? cur.imports,
+    maxImportRows: Math.max(1, Math.min(1000, Math.round(Number(input.maxImportRows ?? cur.maxImportRows)))),
   };
   await run(
     "INSERT INTO settings (key, value, updated_at, updated_by) VALUES ('cfg.assistant.routines', ?, ?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by",
@@ -125,6 +127,139 @@ export async function saveRoutine(user: Viewer, input: { id?: string | null; nam
   return id;
 }
 
+// One routine this person can see, with what it asks for when it runs.
+export async function getRoutine(user: Viewer, id: string) {
+  const r = (await listRoutines(user)).find((x) => x.id === id);
+  if (!r) throw new WorkflowError("NOT_FOUND", "Routine not found.");
+  return { ...r, fields: formFields(r.steps) };
+}
+
+// Someone's shared routine, or your own, as a new routine of yours to change.
+export async function duplicateRoutine(user: Viewer, id: string) {
+  const r = await getRoutine(user, id);
+  return saveRoutine(user, { name: `${r.name} (copy)`.slice(0, 80), description: r.description, steps: r.steps, shared: "none" });
+}
+
+// ---------------------------------------------------------------------------
+// Forms from a file: a set template with one column per field the routine asks for
+// ---------------------------------------------------------------------------
+
+// The form fields a routine asks for each time, as template columns (same label twice gets a number).
+export function formFields(steps: RoutineStep[]) {
+  const seen = new Map<string, number>();
+  return steps.flatMap((s, index) => {
+    if (!s.ask || (s.do !== "fill" && s.do !== "select")) return [];
+    const base = (s.label ?? `Field ${index + 1}`).trim();
+    const n = (seen.get(base.toLowerCase()) ?? 0) + 1;
+    seen.set(base.toLowerCase(), n);
+    return [{ index, column: n > 1 ? `${base} (${n})` : base, example: s.value ?? "" }];
+  });
+}
+
+const csvCell = (v: string) => `"${v.replace(/"/g, '""')}"`;
+
+export async function routineTemplate(user: Viewer, id: string) {
+  const r = await getRoutine(user, id);
+  if (!r.fields.length) throw new WorkflowError("VALIDATION", "This routine asks for nothing. Tick Ask each time on a field first.");
+  return { name: r.name, csv: `\ufeff${[r.fields.map((f) => csvCell(f.column)).join(","), r.fields.map((f) => csvCell(f.example)).join(",")].join("\r\n")}\r\n` };
+}
+
+// Reads a filled template. Each good row is one run of the routine, with that row's values. Nothing is created on a dry run.
+export async function importRunRows(user: Viewer, routineId: string, fileName: string, data: ArrayBuffer, dryRun: boolean) {
+  await need(user);
+  const cfg = await routinesConfig();
+  if (!cfg.imports) throw new WorkflowError("FORBIDDEN", "Filling routines from a file is turned off (Admin, Assistant).");
+  const r = await getRoutine(user, routineId);
+  if (!r.fields.length) throw new WorkflowError("VALIDATION", "This routine asks for nothing. Tick Ask each time on a field first.");
+  const { parseUpload } = await import("./importer");
+  const sheet = await parseUpload(fileName, data);
+  const col = new Map(sheet.headers.map((h, i) => [h.trim().toLowerCase(), i]));
+  const missing = r.fields.filter((f) => !col.has(f.column.toLowerCase())).map((f) => f.column);
+  if (missing.length) throw new WorkflowError("VALIDATION", `This file is not the routine's template. Missing: ${missing.join(", ")}. Download the template and fill that.`);
+  if (sheet.rows.length > cfg.maxImportRows) throw new WorkflowError("VALIDATION", `At most ${cfg.maxImportRows} rows at a time (Admin, Assistant). This file has ${sheet.rows.length}.`);
+  const good: { row: number; values: Record<string, string> }[] = [];
+  const errors: string[] = [];
+  sheet.rows.forEach((cells, i) => {
+    const values: Record<string, string> = {};
+    const empty: string[] = [];
+    for (const f of r.fields) {
+      const v = (cells[col.get(f.column.toLowerCase())!] ?? "").trim();
+      if (!v) empty.push(f.column);
+      values[String(f.index)] = v;
+    }
+    if (empty.length) errors.push(`Row ${i + 2}: nothing in ${empty.join(", ")}`);
+    else good.push({ row: i + 2, values });
+  });
+  if (!sheet.rows.length) errors.push("The file has no rows under the headings.");
+  const preview = good.slice(0, 5).map((g) => Object.fromEntries(r.fields.map((f) => [f.column, g.values[String(f.index)]!])));
+  if (dryRun || !good.length) return { batchId: null, rows: good.length, errors, preview, status: null as string | null };
+  const batchId = uid("rbt_");
+  const self = cfg.approval === "self";
+  const approvers = self ? [] : await approverFor(user, cfg.approval);
+  const now = nowIso();
+  for (const [i, g] of good.entries())
+    await run(
+      "INSERT INTO assistant_runs (id, batch_id, routine_id, user_id, status, run_values, approver_ids, requested_at, decided_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      uid("rrn_"),
+      batchId,
+      routineId,
+      user.id,
+      self ? "approved" : "pending",
+      JSON.stringify(g.values),
+      JSON.stringify(approvers),
+      // A millisecond apart, so the runs keep the file's order.
+      new Date(Date.parse(now) + i).toISOString(),
+      self ? now : null,
+    );
+  if (!self) await notify(approvers, { type: "assistant", title: `${user.name} asks to run "${r.name}" ${good.length} times`, body: `From the file ${fileName.slice(0, 80)}. Approve or reject it in Routines.`, link: "/routines?tab=approve" }, now);
+  return { batchId, rows: good.length, errors, preview, status: self ? "approved" : "pending" };
+}
+
+// All the runs from one file are decided together.
+export async function decideBatch(user: Viewer, batchId: string, approve: boolean, note?: string | null) {
+  const rows = await all<{ id: string }>("SELECT id FROM assistant_runs WHERE batch_id = ? AND status = 'pending'", batchId);
+  if (!rows.length) throw new WorkflowError("INVALID_STATE", "This was already decided.");
+  for (const r of rows) await decideRun(user, r.id, approve, note);
+  return rows.length;
+}
+
+// A routine from a file: a filled steps template (CSV or Excel), or a routine exported as JSON from another account.
+export const STEPS_TEMPLATE = `\ufeff"page","action","field","value","ask","note"\r\n"/items/new","fill","Title","Example title","yes",""\r\n"/items/new","select","Priority","high","no",""\r\n"/items/new","click","Create","","",""\r\n"/items/new","note","","","","Check the new item before going on"\r\n`;
+
+export async function importRoutine(user: Viewer, input: { name?: string | null; fileName: string; data: ArrayBuffer }) {
+  await need(user);
+  const cfg = await routinesConfig();
+  if (!cfg.imports) throw new WorkflowError("FORBIDDEN", "Importing routines is turned off (Admin, Assistant).");
+  const lower = input.fileName.toLowerCase();
+  if (lower.endsWith(".json")) {
+    let parsed: { name?: string; description?: string; steps?: unknown };
+    try {
+      parsed = JSON.parse(new TextDecoder("utf-8").decode(input.data).replace(/^\uFEFF/, ""));
+    } catch {
+      throw new WorkflowError("VALIDATION", "The file could not be read.");
+    }
+    if (!Array.isArray(parsed.steps)) throw new WorkflowError("VALIDATION", "This JSON is not an exported routine.");
+    return saveRoutine(user, { name: input.name?.trim() || parsed.name || "", description: parsed.description ?? null, steps: parsed.steps });
+  }
+  const { parseUpload } = await import("./importer");
+  const sheet = await parseUpload(input.fileName, input.data);
+  const col = (n: string) => sheet.headers.findIndex((h) => h.trim().toLowerCase() === n);
+  const [page, action, field, value, ask, note] = ["page", "action", "field", "value", "ask", "note"].map(col) as [number, number, number, number, number, number];
+  if (page < 0 || action < 0 || field < 0) throw new WorkflowError("VALIDATION", "This file is not the routine template. It needs the columns page, action, field, value, ask and note.");
+  const cell = (r: string[], i: number) => (i >= 0 ? (r[i] ?? "").trim() : "");
+  const steps = sheet.rows.map((r, i): RoutineStep => {
+    const act = cell(r, action).toLowerCase();
+    if (!["click", "fill", "select", "check", "note"].includes(act)) throw new WorkflowError("VALIDATION", `Row ${i + 2}: the action must be click, fill, select, check or note.`);
+    const f = cell(r, field);
+    if (act !== "note" && !f) throw new WorkflowError("VALIDATION", `Row ${i + 2}: name the button or field.`);
+    const base = { path: cell(r, page) || "/dashboard", do: act as RoutineStep["do"], note: cell(r, note) || null };
+    if (act === "click") return { ...base, role: "button", name: f };
+    if (act === "note") return base;
+    return { ...base, label: f, value: cell(r, value), ask: /^(y|yes|true|1)$/i.test(cell(r, ask)) };
+  });
+  return saveRoutine(user, { name: input.name?.trim() || input.fileName.replace(/\.[^.]+$/, ""), steps });
+}
+
 export async function deleteRoutine(user: Viewer, id: string) {
   const cur = await get<{ owner_id: string }>("SELECT owner_id FROM assistant_routines WHERE id = ?", id);
   if (!cur || (cur.owner_id !== user.id && !can(user, "users.manage"))) throw new WorkflowError("FORBIDDEN", "Only its owner removes a routine.");
@@ -142,7 +277,7 @@ async function approverFor(user: AppUser, mode: RoutinesConfig["approval"]): Pro
   return admins.map((a) => a.user_id);
 }
 
-export type Run = { id: string; routineId: string; routineName: string; userId: string; userName: string; status: "pending" | "approved" | "rejected" | "running" | "done" | "failed"; values: Record<string, string>; requestedAt: string; decidedBy: string | null; note: string | null; error: string | null };
+export type Run = { batchId: string | null; id: string; routineId: string; routineName: string; userId: string; userName: string; status: "pending" | "approved" | "rejected" | "running" | "done" | "failed"; values: Record<string, string>; requestedAt: string; decidedBy: string | null; note: string | null; error: string | null };
 
 // Ask to run a routine (with the values asked for). With "self" approval it is approved at once (the person
 // confirmed in the assistant); otherwise the approver is told and the run waits.
@@ -203,12 +338,12 @@ export async function finishRun(user: Viewer, runId: string, ok: boolean, error?
 }
 
 export async function listRuns(user: Viewer) {
-  const rows = await all<{ id: string; routine_id: string; routine_name: string | null; user_id: string; user_name: string; status: string; run_values: string; requested_at: string; decided_by: string | null; note: string | null; error: string | null; approver_ids: string }>(
-    `SELECT x.id, x.routine_id, r.name AS routine_name, x.user_id, u.name AS user_name, x.status, x.run_values, x.requested_at, d.name AS decided_by, x.note, x.error, x.approver_ids
+  const rows = await all<{ batch_id: string | null; id: string; routine_id: string; routine_name: string | null; user_id: string; user_name: string; status: string; run_values: string; requested_at: string; decided_by: string | null; note: string | null; error: string | null; approver_ids: string }>(
+    `SELECT x.batch_id, x.id, x.routine_id, r.name AS routine_name, x.user_id, u.name AS user_name, x.status, x.run_values, x.requested_at, d.name AS decided_by, x.note, x.error, x.approver_ids
      FROM assistant_runs x JOIN users u ON u.id = x.user_id LEFT JOIN assistant_routines r ON r.id = x.routine_id LEFT JOIN users d ON d.id = x.decided_by
      ORDER BY x.requested_at DESC LIMIT 400`,
   );
-  const map = (x: (typeof rows)[number]): Run => ({ id: x.id, routineId: x.routine_id, routineName: x.routine_name ?? "(removed)", userId: x.user_id, userName: x.user_name, status: x.status as Run["status"], values: parseJson(x.run_values, {}), requestedAt: x.requested_at, decidedBy: x.decided_by, note: x.note, error: x.error });
+  const map = (x: (typeof rows)[number]): Run => ({ batchId: x.batch_id, id: x.id, routineId: x.routine_id, routineName: x.routine_name ?? "(removed)", userId: x.user_id, userName: x.user_name, status: x.status as Run["status"], values: parseJson(x.run_values, {}), requestedAt: x.requested_at, decidedBy: x.decided_by, note: x.note, error: x.error });
   return {
     mine: rows.filter((x) => x.user_id === user.id).slice(0, 50).map(map),
     toApprove: rows.filter((x) => x.status === "pending" && x.user_id !== user.id && (parseJson<string[]>(x.approver_ids, []).includes(user.id) || can(user, "users.manage"))).map(map),

@@ -5,6 +5,7 @@ import { can } from "@/server/users";
 import { canPlanSessions, recordingStaff, sessionCandidates, sessionWeek, weekStartOf } from "@/server/sessions";
 import { localDate } from "@/lib/format";
 import { nowIso } from "@/server/db";
+import { handoverConfig } from "@/server/handover-config";
 import { PageHeader } from "@/components/app/primitives";
 import { SessionPlanner } from "@/components/app/sessions-planner";
 
@@ -14,6 +15,8 @@ export const metadata = { title: "Studio sessions" };
 export default async function SessionsPage({ searchParams }: { searchParams: Promise<{ week?: string }> }) {
   const viewer = await requireViewer();
   if (!canPlanSessions(viewer) && !can(viewer, "team.view") && !viewer.roles.includes("recording")) redirect("/dashboard?denied=permission");
+  const booking = (await handoverConfig()).studioBooking;
+  if (booking === "off") redirect("/dashboard?denied=permission");
   const s = await getSettings();
   const today = localDate(nowIso(), s.workspace.timezone);
   const sp = await searchParams;
@@ -24,7 +27,7 @@ export default async function SessionsPage({ searchParams }: { searchParams: Pro
     <div className="space-y-4">
       <PageHeader
         title="Studio sessions"
-        description={plan ? "Book the studio, the camera operator and the presenter for the parts to record. The operator is told and sees the session on their Home." : "Your studio sessions. Mark one recorded when it is done."}
+        description={`${plan ? "Book the studio, the camera operator and the presenter for the parts to record. The operator is told and sees the session on their Home." : "Your studio sessions. Mark one recorded when it is done."} ${booking === "required" ? "A part needs a session before recording starts." : "Booking is optional: a part can be recorded without one."}`}
       />
       <SessionPlanner week={week} today={today} tz={data.tz} bookings={data.bookings} studios={data.studios} staff={staff} candidates={candidates} canPlan={plan} me={viewer.id} />
     </div>

@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 51;
+export const SCHEMA_VERSION = 52;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -110,6 +110,8 @@ CREATE TABLE IF NOT EXISTS units (
   source_ref TEXT,
   UNIQUE (grade_id, subject_id, number)
 );
+-- v52: a name a person corrected stays when something is imported again.
+ALTER TABLE units ADD COLUMN IF NOT EXISTS title_locked INTEGER NOT NULL DEFAULT 0;
 
 -- Planned lesson inventory ("parts"). Coverage compares this against production items.
 CREATE TABLE IF NOT EXISTS lessons (
@@ -125,6 +127,20 @@ CREATE TABLE IF NOT EXISTS lessons (
   created_at TEXT NOT NULL,
   UNIQUE (unit_id, number)
 );
+ALTER TABLE lessons ADD COLUMN IF NOT EXISTS title_locked INTEGER NOT NULL DEFAULT 0;
+
+-- v52: every rename, move and merge of the curriculum.
+CREATE TABLE IF NOT EXISTS curriculum_changes (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  entity_id TEXT NOT NULL,
+  summary TEXT NOT NULL,
+  before_value TEXT,
+  after_value TEXT,
+  actor_id TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_curriculum_changes ON curriculum_changes(created_at);
 
 CREATE TABLE IF NOT EXISTS items (
   id TEXT PRIMARY KEY,
@@ -629,6 +645,12 @@ CREATE TABLE IF NOT EXISTS handover_items (
   PRIMARY KEY (handover_id, item_id)
 );
 CREATE INDEX IF NOT EXISTS idx_handover_items_item ON handover_items(item_id);
+-- v52: a rejection waits for a cross-check (status 'rejected') before the work goes back; 'missing' is a confirmed one.
+ALTER TABLE handover_items ADD COLUMN IF NOT EXISTS reason TEXT;
+ALTER TABLE handover_items ADD COLUMN IF NOT EXISTS check_status TEXT;
+ALTER TABLE handover_items ADD COLUMN IF NOT EXISTS checked_by TEXT;
+ALTER TABLE handover_items ADD COLUMN IF NOT EXISTS checked_at TEXT;
+ALTER TABLE handover_items ADD COLUMN IF NOT EXISTS check_note TEXT;
 
 -- v6: chat. Reactions, polls, files and voice messages (voice is deleted 10 minutes after it is first played),
 -- channels (only their admins post), automatic end-to-end keys, and browser push subscriptions.
@@ -2999,8 +3021,10 @@ CREATE TABLE IF NOT EXISTS assistant_routines (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
+-- v52: runs made from a file's rows belong to one batch.
 CREATE TABLE IF NOT EXISTS assistant_runs (
   id TEXT PRIMARY KEY,
+  batch_id TEXT,
   routine_id TEXT NOT NULL,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   status TEXT NOT NULL,
@@ -3014,6 +3038,7 @@ CREATE TABLE IF NOT EXISTS assistant_runs (
   finished_at TEXT,
   error TEXT
 );
+ALTER TABLE assistant_runs ADD COLUMN IF NOT EXISTS batch_id TEXT;
 CREATE INDEX IF NOT EXISTS assistant_runs_user ON assistant_runs (user_id, requested_at);
 
 -- v29: banners at the top of each section's main page (Admin, Branding), a picture (base64) or a colour.
@@ -3119,6 +3144,7 @@ export const TABLES = [
   "brand_banners",
   "assistant_routines",
   "assistant_runs",
+  "curriculum_changes",
   "announcements",
   "announcement_reads",
   "page_visits",

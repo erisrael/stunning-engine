@@ -18,6 +18,7 @@ import type { RoutineStep } from "@/server/routines";
 
 const REC = "myseed.routine.rec";
 const RUN = "myseed.routine.run";
+const QUEUE = "myseed.routine.queue";
 const CLICKABLE = "button, a[href], [role=button], [role=tab], [role=option], [role=menuitem], [role=menuitemradio], [role=menuitemcheckbox], [role=checkbox], [role=switch], [role=radio], [role=combobox], summary";
 
 const norm = (s: string | null | undefined) => (s ?? "").replace(/\s+/g, " ").trim().toLowerCase();
@@ -163,7 +164,7 @@ export function SaveRoutineDialog({ steps, sharing, onClose, onSaved }: { steps:
       <DialogContent className="sm:max-w-lg" data-routine-ui data-save-routine>
         <DialogHeader>
           <DialogTitle>Save the routine</DialogTitle>
-          <DialogDescription>Check the steps. Ticked values are asked each time it runs; the others are typed as recorded.</DialogDescription>
+          <DialogDescription>Check the steps. Ticked values are asked each time it runs; the others are typed as recorded. You can change it later in Routines, and fill its form from a file.</DialogDescription>
         </DialogHeader>
         <div className="space-y-2">
           <Input aria-label="Routine name" placeholder="Name, for example Weekly report" value={name} onChange={(e) => setName(e.target.value)} />
@@ -243,6 +244,12 @@ export async function beginRun(runId: string) {
   window.dispatchEvent(new Event("myseed-routine"));
 }
 
+// The runs from one file, one after another.
+export async function beginBatch(runIds: string[]) {
+  write(QUEUE, runIds.slice(1));
+  await beginRun(runIds[0]!);
+}
+
 export function RoutineRunner() {
   const router = useRouter();
   const pathname = usePathname();
@@ -269,6 +276,14 @@ export function RoutineRunner() {
     setRing(null);
     if (cur) {
       await finishRunAction(cur.id, ok, error ?? null);
+      const queue = read<string[]>(QUEUE) ?? [];
+      if (ok && queue.length) {
+        write(QUEUE, queue.slice(1));
+        toast.success(`"${cur.name}" is done. ${queue.length} to go.`);
+        await beginRun(queue[0]!);
+        return;
+      }
+      write(QUEUE, null);
       if (ok) toast.success(`"${cur.name}" is done`);
     }
   }, []);

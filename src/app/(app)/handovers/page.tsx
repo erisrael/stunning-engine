@@ -1,5 +1,7 @@
 import { requireCapability } from "@/server/auth";
-import { listHandovers, seesAllHandovers, type HandoverFilter, type HandoverStatus } from "@/server/editorial";
+import { crossCheckCount, listHandovers, seesAllHandovers, type HandoverFilter, type HandoverStatus } from "@/server/editorial";
+import { can } from "@/server/users";
+import { HandoverNav } from "./handover-nav";
 import { getSettings } from "@/server/settings";
 import { userDirectory } from "@/server/users";
 import { PageHeader } from "@/components/app/primitives";
@@ -37,8 +39,9 @@ export default async function HandoversPage({ searchParams }: { searchParams: Pr
     <div className="space-y-4">
       <PageHeader
         help="lead" title="Handovers"
-        description="Work passed from one team to the next as a batch. The receiving side accepts what arrived or marks items missing with a note, which sends them back to the sender and their lead."
+        description="Work passed from one team to the next as a batch. The receiving side accepts what arrived or rejects it with a note; a rejection is cross-checked before the work goes back to that team's To do."
       />
+      <HandoverNav settings={can(viewer, "settings.manage") || can(viewer, "users.manage")} rejected={await crossCheckCount(viewer)} />
       <HandoverList
         rows={rows}
         box={box}

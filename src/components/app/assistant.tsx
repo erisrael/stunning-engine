@@ -841,9 +841,14 @@ export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantCo
                 <div className="space-y-1.5" data-assistant-routines>
                   <div className="flex items-center justify-between">
                     <p className="text-xs font-medium text-muted-foreground">My routines</p>
-                    <Button size="xs" variant="outline" onClick={() => (rec.start(), setOpen(false), toast("Recording. Do the task as usual, then press Stop and save at the top."))}>
-                      <CircleDotIcon className="text-[#EA4335]" /> Record a routine
-                    </Button>
+                    <span className="flex items-center gap-1">
+                      <Button size="xs" variant="ghost" asChild>
+                        <a href="/routines">Edit or import</a>
+                      </Button>
+                      <Button size="xs" variant="outline" onClick={() => (rec.start(), setOpen(false), toast("Recording. Do the task as usual, then press Stop and save at the top."))}>
+                        <CircleDotIcon className="text-[#EA4335]" /> Record a routine
+                      </Button>
+                    </span>
                   </div>
                   {routines && routines.length > 0 && (
                     <div className="flex flex-wrap gap-1.5">

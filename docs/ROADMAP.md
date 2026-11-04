@@ -1177,3 +1177,39 @@ Built: `src/components/app/mobile-nav.tsx`, phone styles in `src/app/globals.css
   - in Agent mode it does these itself, logged and audited.
 
 Built: `src/server/page-access.ts`, changes in `src/server/assistant-ai.ts`, `src/server/assistant-ops.ts`, `src/server/auth.ts`, `src/components/app/assistant.tsx`. Tests: `tests/server/assistant-roles.test.ts`, `tests/e2e/access.e2e.mjs`.
+
+## Phase 31: Handovers: approvals, rejections, report (done)
+
+- [x] **Approvals lists what waits**: each handover batch on its own row with the sender and date, accepted whole right there; rejections to cross-check; and work sent to the lead, approved right there. Handovers keeps its own page, with Rejected, Report and Settings beside it.
+- [x] **A rejection is checked first**: it waits on Handovers, Rejected, and holds the part. Someone other than the person who rejected it (by default the lead of the team whose work it was, or a manager) says it is right, so it goes to that team's To do at high priority, first on the board and with the reason on the card; or says it is wrong (with why), so the part moves on. A rejection outside a batch goes through the same check.
+- [x] **The report**: for every part, when it was sent, when it was accepted or rejected, by whom, why, how long it took and how the check went; filters, totals and export.
+- [x] **Booking a studio is optional**; Handovers, Settings can also require it or turn it off. The same page sets the cross-check, who does it and the priority.
+
+Built: `src/server/handover-config.ts`, `src/server/handover-report.ts`, changes in `src/server/editorial.ts` and `src/server/workflow.ts`, `src/app/(app)/handovers/{rejected,report,settings}`, `src/app/(app)/approvals` (schema 52). Tests: `tests/server/handovers.test.ts`.
+
+## Phase 32: Fixing the curriculum, and auto-assign (done)
+
+- [x] **Curriculum, Fix** finds slips in subject names, a subject in one grade of a school level it does not otherwise belong to, two units typed as one, placeholder unit and part names (with a name from the video when it has one) and messy camera codes; fixed one at a time or all suggestions together.
+- [x] **Browse and edit**: rename subjects, units and parts, change numbers, move a subject to another grade, merge two subjects, move a unit or a part. Work and placement move too; item codes stay.
+- [x] **The four teams correct lesson and part names**, on the Curriculum page or right on their work card. Admin chooses which teams, and whether leads may move things. Every change is listed, and a corrected name stays when something is imported again.
+- [x] **Auto-assign per team**: rules by grade and subject, then whoever has least open work or in turn; applied when work arrives, and on demand to parts already waiting. Off by default.
+
+Built: `src/lib/curriculum-names.ts`, `src/server/curriculum-fix.ts`, `src/server/auto-assign.ts`, `src/app/(app)/curriculum`, `src/app/actions/curriculum.ts`. Tests: `tests/server/curriculum-fix.test.ts`.
+
+## Phase 33: Routines: forms from a file, edit and delete (done)
+
+- [x] **Fill a form from a file**: a routine's asked fields are the columns of a set template; each row is one run, checked first, kept in the file's order, and approved as one.
+- [x] **Import a routine** from the steps template or an exported JSON file.
+- [x] **A page per routine**: change, reorder, add and remove steps, choose what is asked each time, duplicate, export, delete with a confirmation. Someone else's shared routine can be copied.
+- [x] Admin, Assistant turns imports on or off and sets the most rows in a file.
+
+Built: changes in `src/server/routines.ts`, `src/app/(app)/routines/[id]`, `src/app/api/routines/[id]/template`. Tests: `tests/server/routines-import.test.ts`.
+
+## Phase 34: The Legacy catalog for the Recording team (done)
+
+- [x] **The old flow, in this app's look**: Grades by school level, a grade's subjects, units as chapters, then parts and video shots by camera code; a bar with where you are, the totals, Word, Backup and Import; add, edit and delete at each level.
+- [x] **Everything is real**: a part is planned work, a shot is a recording on it, and Mark recorded sends it to Editing's incoming. Camera codes are tidied, a part with no name takes its video's title, and the same subject typed a little differently is not a second subject.
+- [x] **The old backup imports**, checked and tidied first: stray letters, two units typed as one, unnamed parts, codes. Importing again updates the same rows. Tried on the real backup: 8 grades, 351 units, 450 parts and 462 videos.
+- [x] Admin sets whether it shows, what happens after a shot is logged, and whether imported parts count as recorded.
+
+Built: `src/server/legacy.ts`, `src/app/(app)/legacy`, `src/app/actions/legacy.ts`, `src/app/api/legacy/[format]`. Tests: `tests/server/legacy.test.ts`, and all four phases in the browser in `tests/e2e/production.e2e.mjs`.

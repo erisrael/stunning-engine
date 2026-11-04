@@ -85,8 +85,16 @@ export async function itemAction(itemId: string, input: ItemActionInput, opts: {
               return await wf.leadDecide(ctx, itemId, { decision: "return", note: input.note });
             case "accept":
               return await wf.acceptHandoff(ctx, itemId, { note: input.note, expectedVersion: v });
-            case "return":
-              return await wf.returnHandoff(ctx, itemId, { reasonCategory: input.reasonCategory, note: input.note, expectedVersion: v });
+            case "return": {
+              // With the cross-check on, a rejection waits on Handovers, Rejected instead of going straight back.
+              const { handoverConfig } = await import("@/server/handover-config");
+              if ((await handoverConfig()).crossCheck) {
+                const { rejectHandoff } = await import("@/server/editorial");
+                return await rejectHandoff(viewer, itemId, input);
+              }
+              await wf.returnHandoff(ctx, itemId, { reasonCategory: input.reasonCategory, note: input.note, expectedVersion: v });
+              return;
+            }
             case "reopen":
               return await wf.reopenStage(ctx, itemId, { target: input.target, reasonCategory: input.reasonCategory, note: input.note, expectedVersion: v });
             case "asset":
@@ -170,6 +178,7 @@ export async function itemAction(itemId: string, input: ItemActionInput, opts: {
             case "recordingSession": {
               if (!await canViewItem(viewer, itemId)) throw new WorkflowError("FORBIDDEN", "This item is outside your access scope.");
               if (!isManager(viewer) && !viewer.roles.includes("recording")) throw new WorkflowError("FORBIDDEN", "Only Recording staff can book sessions.");
+              if ((await (await import("@/server/handover-config")).handoverConfig()).studioBooking === "off") throw new WorkflowError("VALIDATION", "Studio booking is turned off (Handovers, Settings).");
               if (!input.scheduledStart) throw new WorkflowError("VALIDATION", "Choose a start time.");
               const id = uid("rs_");
               await run(

@@ -768,7 +768,7 @@ export function RecordingSessionButton({ item, presenter, tz }: { item: ItemRef;
   const [f, setF] = React.useState({ start: "", duration: "90", presenter: presenter ?? "", location: "Studio A", notes: "" });
   return (
     <>
-      <Button size="xs" variant="outline" onClick={() => setOpen(true)}><PlusIcon /> Book session</Button>
+      <Button size="xs" variant="outline" onClick={() => setOpen(true)}><PlusIcon /> Book session (optional)</Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>

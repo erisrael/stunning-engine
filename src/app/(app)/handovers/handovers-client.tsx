@@ -24,16 +24,17 @@ export const HANDOVER_STATUS: Record<HandoverStatus, { label: string; tone: stri
   cancelled: { label: "Cancelled", tone: "neutral" },
 };
 
-export function HandoverProgress({ h }: { h: Pick<HandoverRow, "total" | "accepted" | "missing" | "pending"> }) {
+export function HandoverProgress({ h }: { h: Pick<HandoverRow, "total" | "accepted" | "missing" | "pending" | "rejected"> }) {
   const pct = (n: number) => `${h.total ? (n / h.total) * 100 : 0}%`;
   return (
     <div className="min-w-28">
       <div className="flex h-1.5 overflow-hidden rounded-full bg-muted">
         <span style={{ width: pct(h.accepted), background: "var(--st-done-fg)" }} />
-        <span style={{ width: pct(h.missing), background: "var(--st-blocked-fg)" }} />
+        <span style={{ width: pct(h.missing + h.rejected), background: "var(--st-blocked-fg)" }} />
       </div>
       <p className="mt-1 text-[11px] text-muted-foreground tabular">
-        {h.accepted} received{h.missing ? `, ${h.missing} missing` : ""}
+        {h.accepted} received{h.missing ? `, ${h.missing} rejected` : ""}
+        {h.rejected ? `, ${h.rejected} in cross-check` : ""}
         {h.pending ? `, ${h.pending} waiting` : ""}
       </p>
     </div>
@@ -78,7 +79,7 @@ export function HandoverList({
   );
 
   const exportCsv = () => {
-    const head = ["Code", "From", "To", "Sender", "Receiver", "Status", "Items", "Received", "Missing", "Waiting", "Created", "Closed", "Note"];
+    const head = ["Code", "From", "To", "Sender", "Receiver", "Status", "Items", "Received", "Rejected", "Waiting", "Created", "Closed", "Note"];
     const lines = rows.map((h) => [
       h.code,
       STAGE_LABELS[h.from_stage],
@@ -88,7 +89,7 @@ export function HandoverList({
       HANDOVER_STATUS[h.status].label,
       h.total,
       h.accepted,
-      h.missing,
+      h.missing + h.rejected,
       h.pending,
       fmtDateTime(h.created_at, tz),
       h.closed_at ? fmtDateTime(h.closed_at, tz) : "",
