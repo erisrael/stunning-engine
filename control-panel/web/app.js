@@ -1587,7 +1587,7 @@ async function pageVps(root, alive) {
           "div",
           { class: "row" },
           btn("Copy key", { size: "sm", onclick: () => copyText(d.public_key, "Public key copied") }),
-          v.vm_id && d.connected ? btn("Add with Hostinger API", { size: "sm", onclick: act(async () => toast((await api("POST", "/api/vps/key/install")).message, "info", 8000)) }) : null,
+          v.vm_id && d.connected ? btn("Add with Hostinger API", { size: "sm", kind: "primary", onclick: act(async () => { const r = await api("POST", "/api/vps/key/install"); toast(r.message, r.installed ? "ok" : "info", 9000); load(); }) }) : null,
           v.host
             ? btn("Add with the server password", {
                 size: "sm",

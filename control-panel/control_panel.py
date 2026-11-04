@@ -1524,26 +1524,43 @@ def api_vps_key(h, body, m):
     return vps_state()
 
 
+def vm_keys(vm_id: int) -> list[str]:
+    """The root user's keys on the VPS, as Hostinger reports them."""
+    return [str(k.get("key") or "") for k in as_list(hostinger("GET", f"/api/vps/v1/virtual-machines/{int(vm_id)}/ssh-keys")) if isinstance(k, dict)]
+
+
+def wait_for_key(v: dict, seconds: int = int(os.environ.get("MYSEED_KEY_WAIT") or 60)) -> bool:
+    """Hostinger writes the key to the server a few seconds after it answers. Try signing in until it works."""
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        try:
+            r = run_quick(ssh_cmd(v, "echo OK"), timeout=30)
+            if r.returncode == 0 and "OK" in (r.stdout or ""):
+                return True
+        except subprocess.TimeoutExpired:
+            pass
+        time.sleep(5)
+    return False
+
+
 @route("POST", "/api/vps/key/install")
 def api_vps_key_install(h, body, m):
+    """Adds the panel's key to the VPS's root user through Hostinger's API (POST virtual-machines/{id}/ssh-keys;
+    the older account-level public-keys/attach answers OK but no longer reaches the server)."""
     v = vps()
     if not v.get("vm_id"):
         raise ApiFail(400, "Choose the VPS from your Hostinger account first, or add the key by hand.")
     key = public_key() or generate_key()
-    existing = find_account_key(key)
-    if existing:
-        key_id = existing.get("id")
-    else:
-        made = hostinger("POST", "/api/vps/v1/public-keys", {"name": f"{KEY_NAME} {socket.gethostname()}"[:60], "key": key})
-        key_id = (made.get("data") or made).get("id") if isinstance(made, dict) else None
-        if not key_id:
-            existing = find_account_key(key)
-            key_id = existing and existing.get("id")
-    if not key_id:
-        raise ApiFail(502, "Hostinger did not return the key it saved. Add the key by hand instead.")
-    hostinger("POST", f"/api/vps/v1/public-keys/attach/{int(v['vm_id'])}", {"ids": [int(key_id)]})
-    store.update(lambda c: c["vps"].__setitem__("hostinger_key_id", int(key_id)))
-    return {"ok": True, "message": "Hostinger is adding the key to the VPS. Wait about 30 seconds, then press Test connection."}
+    mine = key_body(key)
+    answer = hostinger("POST", f"/api/vps/v1/virtual-machines/{int(v['vm_id'])}/ssh-keys", {"keys": [key]})
+    on_vm = [key_body(str(k.get("key") or "")) for k in as_list(answer) if isinstance(k, dict)] or [key_body(k) for k in vm_keys(v["vm_id"])]
+    if mine not in on_vm:
+        raise ApiFail(502, f"Hostinger answered but the key is not in the VPS's list ({len(on_vm)} other key(s) there). Use Add with the server password instead.")
+    store.update(lambda c: c["vps"].update(hostinger_key_id=None))
+    if wait_for_key(v):
+        store.update(lambda c: c["vps"].update(key_installed=True))
+        return {"ok": True, "installed": True, "message": f"Key added to {target(v)} and the panel signed in. Step 2 is done."}
+    return {"ok": True, "installed": False, "message": "Hostinger has the key on the VPS, but the server does not take it yet. Wait a minute and press Test connection."}
 
 
 def key_tail(key: str | None) -> str | None:
@@ -1807,12 +1824,15 @@ def api_vps_disconnect(h, body, m):
             warnings.append("The server did not answer, so the key is still on it.")
     if body.get("remove_account_key") and store.get_secret("hostinger_token"):
         try:
-            key_id = v.get("hostinger_key_id") or ((find_account_key(key) or {}).get("id") if key else None)
-            if key_id:
-                hostinger("DELETE", f"/api/vps/v1/public-keys/{int(key_id)}")
-                done.append("Deleted the key from your Hostinger account.")
-            else:
-                done.append("The key was not in your Hostinger account.")
+            if key and v.get("vm_id"):
+                hostinger("DELETE", f"/api/vps/v1/virtual-machines/{int(v['vm_id'])}/ssh-keys", {"keys": [key]})
+                done.append("Removed the key from the VPS in Hostinger.")
+            # Copies an earlier version saved at account level (the old public-keys endpoints).
+            old = [k for k in as_list(hostinger("GET", "/api/vps/v1/public-keys")) if isinstance(k, dict) and str(k.get("name") or "").startswith(KEY_NAME)]
+            for k in old:
+                hostinger("DELETE", f"/api/vps/v1/public-keys/{int(k['id'])}")
+            if old:
+                done.append(f"Deleted {len(old)} old copy(ies) of the panel's key from your Hostinger account.")
         except ApiFail as err:
             warnings.append(f"Hostinger: {err}")
     store.set_secret("hostinger_token", None)
