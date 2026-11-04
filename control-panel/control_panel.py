@@ -1435,7 +1435,8 @@ def vps_state() -> dict:
         "connected": bool(store.get_secret("hostinger_token")),
         "public_key": pk,
         "key_file": str(KEY_FILE),
-        "install_command": f"mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo '{pk}' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys" if pk else None,
+        "install_command": install_line(pk).replace(" && echo KEY-ADDED", "") if pk else None,
+        "key_tail": key_tail(pk),
         "extra_env": store.secret_hint("vps_extra_env"),
         "extra_env_keys": [ln.split("=", 1)[0] for ln in (store.get_secret("vps_extra_env") or "").splitlines() if "=" in ln],
         "supabase_ready": bool(store.get_secret("supabase_session_url")),
@@ -1545,6 +1546,50 @@ def api_vps_key_install(h, body, m):
     return {"ok": True, "message": "Hostinger is adding the key to the VPS. Wait about 30 seconds, then press Test connection."}
 
 
+def key_tail(key: str | None) -> str | None:
+    """The last characters of the key, short enough to compare by eye with what hPanel or the server shows."""
+    return key.split()[1][-8:] if key and len(key.split()) > 1 else None
+
+
+def install_line(key: str) -> str:
+    body = key_body(key)
+    return f"mkdir -p ~/.ssh && chmod 700 ~/.ssh && touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && (grep -qF {q(body)} ~/.ssh/authorized_keys || echo {q(key)} >> ~/.ssh/authorized_keys) && echo KEY-ADDED"
+
+
+@route("POST", "/api/vps/key/install-password")
+def api_vps_key_install_password(h, body, m):
+    """Adds the panel's key with the server's password, used for this one sign-in and never saved. The password
+    goes to ssh through an askpass helper that reads it from its environment, so it is not in any command line."""
+    v = vps()
+    if not v.get("host"):
+        raise ApiFail(400, "Choose your VPS first (step 1).")
+    password = str(body.get("password") or "")
+    if not password:
+        raise ApiFail(400, "Type the server's root password (hPanel, VPS, Settings shows how to change it).")
+    key = public_key() or generate_key()
+    store.KEY_DIR.mkdir(parents=True, exist_ok=True)
+    helper = store.KEY_DIR / ("askpass.cmd" if jobs.IS_WIN else "askpass.sh")
+    if jobs.IS_WIN:
+        helper.write_text("@echo off\r\npowershell -NoProfile -NonInteractive -Command \"[Console]::Out.Write($env:MYSEED_ASKPASS)\"\r\n", encoding="ascii")
+    else:
+        helper.write_text("#!/bin/sh\nprintf '%s' \"$MYSEED_ASKPASS\"\n", encoding="ascii")
+        os.chmod(helper, 0o700)
+    cmd = [ssh_tool("ssh"), "-p", str(v.get("ssh_port") or 22), "-o", "PubkeyAuthentication=no", "-o", "PreferredAuthentications=password,keyboard-interactive", "-o", "NumberOfPasswordPrompts=1", "-o", "StrictHostKeyChecking=accept-new", "-o", f"UserKnownHostsFile={KNOWN_HOSTS}", "-o", "ConnectTimeout=20", target(v), install_line(key)]
+    try:
+        r = run_quick(cmd, {"MYSEED_ASKPASS": password, "SSH_ASKPASS": str(helper), "SSH_ASKPASS_REQUIRE": "force", "DISPLAY": os.environ.get("DISPLAY") or "panel"}, timeout=60)
+    except subprocess.TimeoutExpired:
+        raise ApiFail(504, "The server did not answer in 60 seconds.") from None
+    finally:
+        helper.unlink(missing_ok=True)
+    out = (r.stdout or "") + (r.stderr or "")
+    if "KEY-ADDED" not in (r.stdout or ""):
+        if "Permission denied" in out:
+            raise ApiFail(400, f"The server did not accept that password for {target(v)}. Reset it in hPanel (VPS, Settings, Root password) if you are not sure.")
+        raise ApiFail(502, f"Could not add the key: {out.strip()[-300:]}")
+    store.update(lambda c: c["vps"].update(key_installed=True))
+    return {"ok": True, "message": f"Key added to {target(v)}. Testing the connection now."}
+
+
 @route("POST", "/api/vps/test")
 def api_vps_test(h, body, m):
     v = require_server()
@@ -1555,7 +1600,7 @@ def api_vps_test(h, body, m):
         raise ApiFail(504, "The server did not answer in 40 seconds. Check the IP address and that the VPS is running.") from None
     out = (r.stdout or "") + (r.stderr or "")
     if r.returncode != 0 or "OK" not in (r.stdout or ""):
-        hint = "The key is not on the server yet. Add it (step 2) and try again." if "Permission denied" in out else out.strip()[-400:]
+        hint = (f"The server does not have the panel's current key (it ends in …{key_tail(public_key())}). If you pressed New key, the key you added before no longer works. Add this one, or use Add with the server password." if "Permission denied" in out else out.strip()[-400:])
         store.update(lambda c: c["vps"].__setitem__("key_installed", False))
         raise ApiFail(502, f"Could not sign in to {target(v)}. {hint}")
     facts = dict(line.split("=", 1) for line in r.stdout.splitlines() if "=" in line)

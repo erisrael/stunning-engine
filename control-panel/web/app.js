@@ -1579,7 +1579,7 @@ async function pageVps(root, alive) {
     saveServer.onclick = () => withBusy(saveServer, act(async () => (await api("POST", "/api/vps/server", { host: host.value, user: user.value, ssh_port: Number(sshPort.value), path: path.value }), toast("Server saved"), load())));
 
     // Step 2: the key.
-    const keyBox = d.public_key ? el("textarea", { class: "mono tiny", rows: "3", readonly: true, value: d.public_key }) : null;
+    const keyBox = d.public_key ? [el("textarea", { class: "mono tiny", rows: "3", readonly: true, value: d.public_key }), el("p", { class: "tiny muted" }, "The panel's key ends in ", el("b", { class: "mono", text: `…${d.key_tail}` }), ". The key on the server must end the same way; after New key, add the new one again.")] : null;
     const test = btn("Test connection", { kind: "primary", size: "sm", icon: "terminal", disabled: !v.host || !d.public_key });
     test.onclick = () => withBusy(test, act(async () => ((facts = (await api("POST", "/api/vps/test")).facts), toast("Connected to the server"), load())));
     const keyActions = d.public_key
@@ -1588,6 +1588,20 @@ async function pageVps(root, alive) {
           { class: "row" },
           btn("Copy key", { size: "sm", onclick: () => copyText(d.public_key, "Public key copied") }),
           v.vm_id && d.connected ? btn("Add with Hostinger API", { size: "sm", onclick: act(async () => toast((await api("POST", "/api/vps/key/install")).message, "info", 8000)) }) : null,
+          v.host
+            ? btn("Add with the server password", {
+                size: "sm",
+                icon: "key",
+                onclick: act(async () => {
+                  const pw = await promptBox({ title: `Add the key to ${v.user || "root"}@${v.host}`, label: "Server password", secret: true, ok: "Add the key", hint: "The root password from hPanel (VPS, Settings, Root password). Used for this one sign-in only, never saved." });
+                  if (!pw) return;
+                  toast((await api("POST", "/api/vps/key/install-password", { password: pw })).message, "info");
+                  facts = (await api("POST", "/api/vps/test")).facts;
+                  toast("Connected to the server");
+                  load();
+                }),
+              })
+            : null,
           test,
           btn("New key", {
             size: "sm",
