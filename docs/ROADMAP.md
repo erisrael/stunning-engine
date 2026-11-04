@@ -1248,3 +1248,7 @@ Built: `src/server/identity.ts`, `src/app/manifest.ts`, `src/app/api/branding/[k
 - [x] **Delete connection** for Hostinger: forgets the token and the VPS, and optionally takes the key off the server, out of the Hostinger account and off this computer. The site keeps running.
 - [x] **Server side** in the repository: `Dockerfile`, `deploy/vps/` (compose with the app, Postgres and Caddy as profiles, project `myseed-cm`; `setup.sh`, `env.sh`, `deploy.sh`). Settings reach the server over SSH's standard input, never a command line. The app accepts `sslmode=disable` for Postgres next to it.
 - [x] Backups page lists `.json.gz` backups and VPS backups.
+- [x] **Auto deploy from GitHub** (Hostinger VPS page): the VPS checks the branch every 2 minutes and deploys a new commit by itself (a private repository gets a read-only deploy key); a failed build keeps the previous release and waits for the next push. Nothing is opened to the internet.
+- [x] **Data between this computer and the VPS**: copy either way; each side being replaced is backed up first.
+- [x] **Domain setup**: shows where the domain and www point; when the DNS is at Hostinger, one button sets the A records to the VPS (mail and other records untouched). Caddy serves www too.
+- [x] Fixed: the app kept TLS on for the Postgres next to it on the VPS (a stray control character in the check), so the first deploy never passed its health check. The panel now adds the VPS key through Hostinger's current per-VPS endpoint and confirms it.
