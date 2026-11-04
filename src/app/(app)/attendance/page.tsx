@@ -19,6 +19,8 @@ import { EmptyState, PageHeader } from "@/components/app/primitives";
 import { AttTabs, CorrectionsPanel, Kiosks, MyAttendance, ReviewPanel, Setup, TeamBoard, Timesheets } from "@/components/app/attendance/attendance-ui";
 import { canCapture, captureConfig, captureStatus, checkinView, flaggedEvents, listDevices } from "@/server/attendance-capture";
 import { CaptureSetup } from "@/components/app/attendance/capture-ui";
+import { GeofenceAdmin } from "@/components/app/attendance/geofence-admin";
+import { geofenceConfig } from "@/server/geofence";
 import { DevicesPanel, FlaggedPanel, LeadCheckin } from "@/components/app/attendance/capture-review";
 import { CheckinPad } from "@/components/app/attendance/checkin-pad";
 import { EmployeeRules, RecordsPanel } from "@/components/app/attendance/records-ui";
@@ -114,6 +116,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
     panel = (
       <div className="space-y-4">
         <CaptureSetup att={cfg} cap={cap} status={status} origin={origin} />
+        <GeofenceAdmin config={await geofenceConfig()} sites={cap.sites.map((s) => ({ id: s.id, name: s.name, located: s.lat !== null && s.lng !== null }))} />
         <Kiosks kiosks={kiosks} />
       </div>
     );

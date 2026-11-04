@@ -193,6 +193,16 @@ export function ChatClient({
   const active = groups.find((g) => g.id === activeId) ?? null;
   const shown = groups.filter((g) => !q || g.name.toLowerCase().includes(q.toLowerCase()) || g.lastMessage?.body.toLowerCase().includes(q.toLowerCase()));
 
+  // On phones the chat fills what the keyboard leaves and the tab bar steps aside inside a conversation (globals.css).
+  React.useEffect(() => {
+    const el = document.documentElement;
+    el.classList.add("in-chat");
+    return () => el.classList.remove("in-chat", "in-thread");
+  }, []);
+  React.useEffect(() => {
+    document.documentElement.classList.toggle("in-thread", !!activeId);
+  }, [activeId]);
+
   // Keep the list fresh while the page is open.
   React.useEffect(() => {
     const t = setInterval(() => document.visibilityState === "visible" && router.refresh(), pollMs(30000));
@@ -200,7 +210,7 @@ export function ChatClient({
   }, [router]);
 
   return (
-    <div className="-mx-3 -my-4 flex h-[calc(100dvh-3.5rem)] overflow-hidden border-t bg-card sm:-mx-6 sm:-my-6">
+    <div data-chat-shell className="-mx-3 -my-4 flex h-[calc(100dvh-3.5rem)] overflow-hidden border-t bg-card sm:-mx-6 sm:-my-6">
       {/* Group list */}
       <aside className={cn("flex w-full shrink-0 flex-col border-r md:w-80 lg:w-96", active && "hidden md:flex")}>
         <div className="flex items-center gap-2 border-b p-3">
@@ -604,6 +614,7 @@ function Conversation({
           <Button
             size="icon"
             variant="ghost"
+            className="hidden sm:inline-flex"
             title={group.muted ? "Unmute" : "Mute"}
             onClick={async () => {
               const r = await muteGroupAction(group.id, !group.muted);
@@ -617,7 +628,9 @@ function Conversation({
         <Button size="icon" variant="ghost" title="Search this chat" aria-label="Search this chat" onClick={() => (setSearchQ(""), setSearchOpen(true))}>
           <SearchIcon />
         </Button>
-        <JumpToDate onJump={(date) => void jump({ date })} />
+        <span className="hidden sm:contents">
+          <JumpToDate onJump={(date) => void jump({ date })} />
+        </span>
         <Button size="icon" variant="ghost" title={group.peer ? "Contact and shared media" : "Group info"} onClick={() => (group.peer ? setContactId(group.peer.id) : setInfoOpen(true))}>
           <InfoIcon />
         </Button>
@@ -631,6 +644,19 @@ function Conversation({
             <DropdownMenuItem onClick={() => setMediaOpen(true)}>
               <MediaIcon /> Shared media, files and links
             </DropdownMenuItem>
+            {member && (
+              // On phones the mute button is in here, to leave room for the name.
+              <DropdownMenuItem
+                className="sm:hidden"
+                onClick={async () => {
+                  const r = await muteGroupAction(group.id, !group.muted);
+                  if (!r.ok) return void toast.error(r.error);
+                  router.refresh();
+                }}
+              >
+                {group.muted ? <BellIcon /> : <BellOffIcon />} {group.muted ? "Unmute" : "Mute"}
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem onClick={() => setReporting({ chat: true })}>
               <FlagIcon /> Report this chat
             </DropdownMenuItem>
@@ -669,7 +695,8 @@ function Conversation({
 
       <div
         ref={scroller}
-        className="chat-wallpaper flex-1 overflow-y-auto px-2 py-3 sm:px-6"
+        data-chat-scroll
+        className="chat-wallpaper min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 py-3 sm:px-6"
         onScroll={(e) => {
           const el = e.currentTarget;
           stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
@@ -770,7 +797,7 @@ function Conversation({
           <MegaphoneIcon className="size-4" /> Only channel admins post here. React to posts with the smile button.
         </footer>
       ) : member ? (
-        <footer className="border-t bg-card px-2 py-2 sm:px-4">
+        <footer className="shrink-0 border-t bg-card px-2 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:px-4" data-composer>
           {(replyTo || editing) && (
             <div className="mx-auto mb-2 flex max-w-3xl items-center gap-2 border-l-2 border-primary pl-2 text-xs">
               {editing ? <PencilIcon className="size-3.5 text-primary" /> : <CornerUpLeftIcon className="size-3.5 text-primary" />}
@@ -827,6 +854,8 @@ function Conversation({
               rows={1}
               value={text}
               onChange={(e) => setText(e.target.value)}
+              // When the keyboard opens, the newest message stays in view above the message box.
+              onFocus={() => setTimeout(() => document.querySelector("[data-chat-scroll]")?.scrollTo({ top: 1e9 }), 250)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
@@ -837,7 +866,8 @@ function Conversation({
                   setEditing(null);
                 }
               }}
-              placeholder="Message (Enter to send, Shift+Enter for a new line, @name to mention)"
+              placeholder="Message"
+              title="Enter to send, Shift+Enter for a new line, @name to mention"
               className="max-h-40 min-h-10 resize-none rounded-2xl bg-muted/50 py-2.5"
             />
             )}

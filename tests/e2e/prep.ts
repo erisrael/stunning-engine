@@ -85,6 +85,22 @@ async function production() {
 
 const PREPS: Record<string, () => Promise<unknown>> = {
   production,
+  // A site with a location, leaving it only tells the person (reports every 15 s), Dawit checked in, and a chat.
+  async phone() {
+    await passwordOnly();
+    const a = await admin();
+    await syncFromUsers(a);
+    const { captureConfig, saveCaptureConfig } = await import("../../src/server/attendance-capture");
+    const cap = await captureConfig();
+    await saveCaptureConfig(a, { ...cap, sites: [{ id: "", name: "Head office", networks: [], lat: 9.0108, lng: 38.7613, radiusM: 150, checks: { network: false, location: true, device: false }, posterKey: "", posterAt: "" }] });
+    const gf = await import("../../src/server/geofence");
+    await gf.saveGeofenceConfig(a, { mode: "notify", intervalSec: 15 });
+    const emp = (await get<{ id: string }>("SELECT e.id FROM employees e JOIN users u ON u.id = e.user_id WHERE u.email = 'dawit@demo.local'"))!.id;
+    const { punchKind } = await import("../../src/server/attendance");
+    await punchKind(emp, "in", { at: new Date(Date.now() - 3600e3).toISOString(), source: "web" });
+    const { stageGroup } = await import("../../src/server/chat");
+    return { group: await stageGroup("recording") };
+  },
   // Phase 13b: the AI assistant on (the server runs with AI_FAKE=1, a stand-in model), for a developer.
   async "assistant-ai"() {
     await passwordOnly();

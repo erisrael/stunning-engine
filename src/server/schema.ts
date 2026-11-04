@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 52;
+export const SCHEMA_VERSION = 53;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -1208,6 +1208,37 @@ CREATE TABLE IF NOT EXISTS leave_requests (
 );
 CREATE INDEX IF NOT EXISTS idx_leave_requests_employee ON leave_requests(employee_id, start_date);
 CREATE INDEX IF NOT EXISTS idx_leave_requests_status ON leave_requests(status);
+-- v53: the evidence for sick leave (a document on the person's HR record), which HR checks before approving.
+ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS evidence_doc_id TEXT;
+
+-- v53: people do not see balances; they ask HR (a question, or a correction of a leave or balance), and HR answers.
+CREATE TABLE IF NOT EXISTS leave_queries (
+  id TEXT PRIMARY KEY,
+  employee_id TEXT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  request_id TEXT,
+  kind TEXT NOT NULL,
+  message TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'open',
+  answer TEXT,
+  answered_by TEXT,
+  answered_at TEXT,
+  created_by TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_leave_queries ON leave_queries(status, created_at);
+
+-- v53: someone who left the office while checked in (automatic check-out or break), one row per person.
+CREATE TABLE IF NOT EXISTS att_geofence (
+  employee_id TEXT PRIMARY KEY REFERENCES employees(id) ON DELETE CASCADE,
+  site_id TEXT,
+  outside_since TEXT,
+  outside_count INTEGER NOT NULL DEFAULT 0,
+  warned_at TEXT,
+  acted TEXT,
+  acted_at TEXT,
+  last_at TEXT,
+  last_distance INTEGER
+);
 
 CREATE TABLE IF NOT EXISTS leave_adjustments (
   id TEXT PRIMARY KEY,
@@ -3145,6 +3176,8 @@ export const TABLES = [
   "assistant_routines",
   "assistant_runs",
   "curriculum_changes",
+  "leave_queries",
+  "att_geofence",
   "announcements",
   "announcement_reads",
   "page_visits",

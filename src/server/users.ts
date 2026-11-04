@@ -21,6 +21,8 @@ export type UserPrefs = {
   tour?: { seen?: Audience[]; steps?: string[] };
   // Sidebar entries this person hid (by link).
   sidebarHidden?: string[];
+  // Help: chapters hidden, pinned or added, and guides hidden (Settings, Help).
+  help?: { hidden?: string[]; pinned?: string[]; added?: string[]; hiddenGuides?: string[] };
 };
 
 export type AppUser = {

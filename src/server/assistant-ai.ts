@@ -416,7 +416,9 @@ async function runTool(user: Viewer, name: string, input: unknown, out: Out, all
       const l = await myLeave(user);
       if (!l.employeeId) return { note: "No HR record yet; HR adds it." };
       return {
-        balances: l.balances.map((b) => ({ type: b.type.label, key: b.type.key, available: b.available, used: b.used, pending: b.pending })),
+        ...(l.showBalances
+          ? { balances: l.balances.map((b) => ({ type: b.type.label, key: b.type.key, available: b.available, used: b.used, pending: b.pending })) }
+          : { balances: "HR keeps leave balances. Do not guess them; tell the person to ask HR on Profile, Leave (Ask HR)." }),
         my_requests: l.requests.slice(0, 15).map((r) => ({ type: r.typeLabel, from: r.startDate, to: r.endDate, days: r.days, status: r.status })),
         waiting_for_my_approval: l.approvals.map((r) => ({ who: r.employeeName, type: r.typeLabel, from: r.startDate, to: r.endDate })),
       };

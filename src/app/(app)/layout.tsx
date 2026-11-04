@@ -36,6 +36,7 @@ import { EthiopianDatePicker } from "@/components/app/ethiopian-picker";
 import { Assistant } from "@/components/app/assistant";
 import { OfflineCheckinSync } from "@/components/app/attendance/offline-sync";
 import { MobileNav } from "@/components/app/mobile-nav";
+import { GeofenceWatch } from "@/components/app/attendance/geofence-watch";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const viewer = await requireViewer();
@@ -65,6 +66,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         {viewer.previewBy && <PreviewBanner name={viewer.name} role={ROLE_LABELS[viewer.activeRole]} />}
         <Topbar user={{ name: viewer.name, email: viewer.email, roles: viewer.roles, avatar: (await avatarsFor([viewer.id]))[viewer.id] ?? null }} activeRole={viewer.activeRole} unread={counts.notifications} chatUnread={counts.chat} qrScan={await (async () => { const c = await (await import("@/server/attendance-capture")).captureConfig(); return c.methods.qr && !!c.methods.scanner; })()} />
         <OfflineCheckinSync />
+        <GeofenceWatch />
         {viewer.mustChangePassword && (
           <div className="border-b bg-[var(--st-paused-bg)] px-4 py-2 text-sm text-[var(--st-paused-fg)] no-print">
             You are signed in with a temporary password.{" "}
@@ -81,7 +83,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </main>
         {await (async () => {
           const h = await homeDepartment(viewer);
-          return <MobileNav work={h ? { href: h.base, label: h.kind === "studio" ? "Studio" : "Work" } : (viewer.leads.length || viewer.roles.some((r) => ["recording", "editing", "uploading", "publication"].includes(r))) ? { href: "/overview", label: "Work" } : null} chat={counts.chat} alerts={counts.notifications} />;
+          return <MobileNav work={h ? { href: h.base, label: h.kind === "studio" ? "Studio" : "Work" } : (viewer.leads.length || viewer.roles.some((r) => ["recording", "editing", "uploading", "publication"].includes(r))) ? { href: "/overview", label: "Work" } : null} chat={counts.chat} alerts={counts.notifications} approvals={counts.approvals} />;
         })()}
         <ChatKeyBootstrap viewerId={viewer.id} />
         <Localizer defaultCalendar={settings.workspace.calendarDisplay} />

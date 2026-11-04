@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import type { CallMedia, CallSignal, CallStatus, CallView } from "@/server/calls";
 import { cn } from "@/lib/utils";
+import { ProximityShade, RouteToggle, useAudioRoute } from "@/components/app/audio-route";
 
 type Phase = "idle" | "incoming" | "outgoing" | "connecting" | "active" | "ended";
 type Quality = "good" | "fair" | "poor" | null;
@@ -556,6 +557,7 @@ export function CallLayer({ children, disabled = false }: { children: React.Reac
   };
 
   const inCall = phase !== "idle" && phase !== "ended";
+  const audio = useAudioRoute(inCall && phase !== "incoming", call?.media === "video" ? "video" : "voice", [remoteStream]);
   const ctx = React.useMemo(() => ({ start: (g: string, m: CallMedia) => void engine.current.start(g, m), inCall }), [inCall]);
 
   const video = call?.media === "video";
@@ -590,8 +592,10 @@ export function CallLayer({ children, disabled = false }: { children: React.Reac
             }}
             autoPlay
             playsInline
+            data-call-audio
             className={cn("absolute inset-0 size-full bg-black object-contain", !showRemoteVideo && "invisible")}
           />
+          <ProximityShade near={audio.near} />
           {!showRemoteVideo && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4 text-center">
               <span
@@ -650,6 +654,13 @@ export function CallLayer({ children, disabled = false }: { children: React.Reac
                 <RoundButton label={muted ? "Unmute" : "Mute"} small={minimized} active={muted} onClick={toggleMute}>
                   {muted ? <MicOffIcon /> : <MicIcon />}
                 </RoundButton>
+                <RouteToggle route={audio.route} onToggle={audio.toggle} realOutputs={audio.realOutputs}>
+                  {(icon, label) => (
+                    <RoundButton label={label} small={minimized} active={audio.route === "speaker"} onClick={audio.toggle}>
+                      {icon}
+                    </RoundButton>
+                  )}
+                </RouteToggle>
                 {video && !minimized && (
                   <RoundButton label={camOff ? "Turn camera on" : "Turn camera off"} active={camOff} onClick={toggleCam}>
                     {camOff ? <VideoOffIcon /> : <VideoIcon />}

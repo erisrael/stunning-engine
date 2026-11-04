@@ -55,13 +55,13 @@ try {
   await a.getByPlaceholder(/Search/).first().fill("how it works");
   check("Help has chapters written from each department's setup", (await a.getByText(/Dev team: how it works|Marketing: how it works/).count()) > 0);
 
-  await go(a, "/notifications");
-  const emailSwitch = a.getByRole("switch", { name: "Email copies: Approvals" });
+  await go(a, "/preferences");
+  const emailSwitch = a.locator("[data-personal-settings]:visible").getByRole("switch", { name: "Email copies: Approvals" });
   if (await emailSwitch.count()) {
     await emailSwitch.click();
     await a.waitForTimeout(1000);
-    await go(a, "/notifications");
-    check("email copies switch is saved", (await a.getByRole("switch", { name: "Email copies: Approvals" }).getAttribute("aria-checked")) === "true");
+    await go(a, "/preferences");
+    check("email copies switch is saved", (await a.locator("[data-personal-settings]:visible").getByRole("switch", { name: "Email copies: Approvals" }).getAttribute("aria-checked")) === "true");
   } else check("email copies switch is on the preferences", false);
 } catch (e) {
   check("run finished", false, e.message);

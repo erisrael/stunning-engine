@@ -170,7 +170,61 @@ export async function adjustBalance(user: AppUser, input: { employeeId: string; 
 // Requests
 // ---------------------------------------------------------------------------
 
+// What people see of their own leave (HR, Leave): by default not their balances; they ask HR instead.
+export type LeaveStaffConfig = { showBalances: boolean; requireEvidence: boolean; queries: boolean };
+const DEFAULT_STAFF: LeaveStaffConfig = { showBalances: false, requireEvidence: true, queries: true };
+
+export async function leaveStaffConfig(): Promise<LeaveStaffConfig> {
+  const r = await get<{ value: string }>("SELECT value FROM settings WHERE key = 'cfg.leave.staff'");
+  let v: Partial<LeaveStaffConfig> = {};
+  try {
+    v = JSON.parse(r?.value ?? "{}");
+  } catch {}
+  return { ...DEFAULT_STAFF, ...v };
+}
+
+export async function saveLeaveStaffConfig(user: AppUser, input: Partial<LeaveStaffConfig>) {
+  if (!can(user, "hr.manage") && !can(user, "users.manage")) throw new WorkflowError("FORBIDDEN", "Only HR managers and Admin change this.");
+  const cur = await leaveStaffConfig();
+  const next = { showBalances: input.showBalances ?? cur.showBalances, requireEvidence: input.requireEvidence ?? cur.requireEvidence, queries: input.queries ?? cur.queries };
+  await run(
+    "INSERT INTO settings (key, value, updated_at, updated_by) VALUES ('cfg.leave.staff', ?, ?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by",
+    JSON.stringify(next),
+    nowIso(),
+    user.id,
+  );
+  await audit({ actor: user }, { action: "settings.leave", summary: `${user.name} changed what people see of their leave`, newValue: next });
+  return next;
+}
+
+export type EvidenceFile = { name: string; mime: string; base64: string };
+const MAX_EVIDENCE = 8 * 1024 * 1024;
+
+// The evidence goes on the person's HR record, where only they and HR can open it.
+async function storeEvidence(user: AppUser, employeeId: string, label: string, f: EvidenceFile) {
+  const size = Math.floor((f.base64.length * 3) / 4);
+  if (!size) throw new WorkflowError("VALIDATION", "The file is empty.");
+  if (size > MAX_EVIDENCE) throw new WorkflowError("VALIDATION", "Files are limited to 8 MB.");
+  if (!/^(image\/|application\/pdf)/.test(f.mime)) throw new WorkflowError("VALIDATION", "Send a photo or a PDF of the document.");
+  const id = uid("edoc_");
+  await run(
+    "INSERT INTO employee_documents (id, employee_id, kind, title, name, mime, size, data, expires_at, uploaded_by, created_at) VALUES (?, ?, 'certificate', ?, ?, ?, ?, ?, NULL, ?, ?)",
+    id,
+    employeeId,
+    `Evidence: ${label}`.slice(0, 160),
+    f.name.replace(/[\\/]/g, "_").slice(0, 160) || "evidence",
+    f.mime.slice(0, 100),
+    size,
+    f.base64,
+    user.id,
+    nowIso(),
+  );
+  return id;
+}
+
 export type LeaveRequestRow = {
+  needsDocument: boolean;
+  evidenceId: string | null;
   id: string;
   employeeId: string;
   employeeName: string;
@@ -188,7 +242,7 @@ export type LeaveRequestRow = {
   createdAt: string;
 };
 
-const REQUEST_SQL = `SELECT r.*, e.full_name, e.preferred_name, t.label AS type_label, u.name AS approver_name
+const REQUEST_SQL = `SELECT r.*, e.full_name, e.preferred_name, t.label AS type_label, t.needs_document, u.name AS approver_name
   FROM leave_requests r JOIN employees e ON e.id = r.employee_id LEFT JOIN leave_types t ON t.key = r.type_key LEFT JOIN users u ON u.id = r.approver_id`;
 
 type RawRequest = {
@@ -209,8 +263,12 @@ type RawRequest = {
   lead_note: string | null;
   hr_note: string | null;
   created_at: string;
+  needs_document?: number | null;
+  evidence_doc_id?: string | null;
 };
 const toRequest = (r: RawRequest): LeaveRequestRow => ({
+  needsDocument: !!r.needs_document,
+  evidenceId: r.evidence_doc_id ?? null,
   id: r.id,
   employeeId: r.employee_id,
   employeeName: r.preferred_name || r.full_name,
@@ -250,7 +308,7 @@ async function writeEntry(r: { id: string; employee_id: string; start_date: stri
   await run("INSERT INTO leave_entries (user_id, starts_on, ends_on, note, request_id) VALUES (?, ?, ?, ?, ?)", e.user_id, r.start_date, r.end_date, r.type_label ?? "Leave", r.id);
 }
 
-export type LeaveInput = { typeKey: string; startDate: string; endDate: string; halfDay?: boolean; reason?: string | null; employeeId?: string | null };
+export type LeaveInput = { typeKey: string; startDate: string; endDate: string; halfDay?: boolean; reason?: string | null; employeeId?: string | null; evidence?: EvidenceFile | null };
 
 // A person asks for leave; HR can also record leave for someone, which is approved straight away.
 export async function requestLeave(user: AppUser, input: LeaveInput) {
@@ -276,17 +334,26 @@ export async function requestLeave(user: AppUser, input: LeaveInput) {
     input.startDate,
   );
   if (overlap) throw new WorkflowError("VALIDATION", `This overlaps leave already asked for (${overlap.start_date} to ${overlap.end_date}).`);
+  const staff = await leaveStaffConfig();
+  if (!forOther && type.needsDocument && staff.requireEvidence && !input.evidence) throw new WorkflowError("VALIDATION", `${type.label} needs evidence, for example a medical note. Attach a photo or PDF of it.`);
   // People cannot ask for more than they have; HR recording leave can go over (for example agreed advance leave).
   const bal = (await balances(employeeId, Number(input.startDate.slice(0, 4)))).find((b) => b.type.key === type.key);
+  // With balances hidden from people, the refusal does not say the number; HR tells them.
   if (!forOther && bal?.available !== null && bal?.available !== undefined && days > bal.available)
-    throw new WorkflowError("VALIDATION", `You have ${bal.available} ${bal.available === 1 ? "day" : "days"} of ${type.label.toLowerCase()} available, and this is ${days}.`);
+    throw new WorkflowError(
+      "VALIDATION",
+      staff.showBalances || can(user, "hr.access")
+        ? `You have ${bal.available} ${bal.available === 1 ? "day" : "days"} of ${type.label.toLowerCase()} available, and this is ${days}.`
+        : `This is more ${type.label.toLowerCase()} than you have left. Ask HR about your balance (Ask HR, below).`,
+    );
   const now = nowIso();
   const id = uid("lv_");
   const approver = forOther ? null : await approverFor(employeeId, user.id);
+  const evidenceId = input.evidence ? await storeEvidence(user, employeeId, `${type.label}, ${input.startDate}`, input.evidence) : null;
   const status: LeaveStatus = forOther ? "approved" : approver ? "pending_lead" : "pending_hr";
   await run(
-    `INSERT INTO leave_requests (id, employee_id, type_key, start_date, end_date, half_day, days, reason, status, approver_id, hr_decided_by, hr_decided_at, created_by, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO leave_requests (id, employee_id, type_key, start_date, end_date, half_day, days, reason, status, approver_id, hr_decided_by, hr_decided_at, created_by, created_at, updated_at, evidence_doc_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     id,
     employeeId,
     type.key,
@@ -302,6 +369,7 @@ export async function requestLeave(user: AppUser, input: LeaveInput) {
     user.id,
     now,
     now,
+    evidenceId,
   );
   const what = `${type.label}: ${input.startDate}${input.endDate !== input.startDate ? ` to ${input.endDate}` : ""} (${days} ${days === 1 ? "day" : "days"})`;
   if (forOther) {
@@ -335,6 +403,8 @@ export async function decideLeave(user: AppUser, id: string, input: { decision: 
     if (next === "approved") await run("UPDATE leave_requests SET hr_decided_by = ?, hr_decided_at = ? WHERE id = ?", user.id, now, id);
   } else if (r.status === "pending_hr") {
     if (!hr) throw new WorkflowError("FORBIDDEN", "HR decides this request.");
+    if (input.decision === "approve" && r.needs_document && !r.evidence_doc_id && (await leaveStaffConfig()).requireEvidence)
+      throw new WorkflowError("VALIDATION", "There is no evidence yet. Ask them to attach it, or say why not and do not approve.");
     next = input.decision === "reject" ? "rejected" : "approved";
     await run("UPDATE leave_requests SET status = ?, hr_decided_by = ?, hr_decided_at = ?, hr_note = ?, updated_at = ? WHERE id = ?", next, user.id, now, note, now, id);
   } else throw new WorkflowError("INVALID_STATE", `This request is already ${LEAVE_STATUS_LABELS[r.status].toLowerCase()}.`);
@@ -403,17 +473,95 @@ export async function leaveCalendar(user: AppUser, month: string): Promise<{ ent
   };
 }
 
+// Attach the evidence later, to a request still waiting.
+export async function addEvidence(user: AppUser, requestId: string, file: EvidenceFile) {
+  const r = await requestRow(requestId);
+  if ((await myEmployeeId(user)) !== r.employee_id && !can(user, "hr.access")) throw new WorkflowError("FORBIDDEN", "You can add evidence only to your own leave.");
+  if (!["pending_lead", "pending_hr", "approved"].includes(r.status)) throw new WorkflowError("INVALID_STATE", "This request is closed.");
+  const id = await storeEvidence(user, r.employee_id, `${r.type_label ?? r.type_key}, ${r.start_date}`, file);
+  await run("UPDATE leave_requests SET evidence_doc_id = ?, updated_at = ? WHERE id = ?", id, nowIso(), requestId);
+  await notify(await hrUserIds(), { type: "hr", title: `Evidence added: ${r.full_name}`, body: `${r.type_label ?? r.type_key}, ${r.start_date}`, link: "/hr?tab=leave" }, nowIso(), user.id);
+  await audit({ actor: user }, { itemId: r.employee_id, action: "hr.leave", summary: `${user.name} added evidence to ${r.full_name}'s leave` });
+}
+
+// ---------------------------------------------------------------------------
+// Asking HR: a question, or a correction of a leave or of the balance
+// ---------------------------------------------------------------------------
+
+export type LeaveQuery = { id: string; employeeName: string; kind: "question" | "correction"; message: string; requestLabel: string | null; status: "open" | "answered"; answer: string | null; answeredBy: string | null; createdAt: string; answeredAt: string | null };
+
+const QUERY_SQL = `SELECT q.*, e.full_name, e.preferred_name, u.name AS answered_name, t.label AS type_label, r.start_date, r.end_date
+  FROM leave_queries q JOIN employees e ON e.id = q.employee_id LEFT JOIN users u ON u.id = q.answered_by
+  LEFT JOIN leave_requests r ON r.id = q.request_id LEFT JOIN leave_types t ON t.key = r.type_key`;
+type RawQuery = { id: string; full_name: string; preferred_name: string | null; kind: string; message: string; status: string; answer: string | null; answered_name: string | null; created_at: string; answered_at: string | null; type_label: string | null; start_date: string | null; end_date: string | null };
+const toQuery = (q: RawQuery): LeaveQuery => ({
+  id: q.id,
+  employeeName: q.preferred_name || q.full_name,
+  kind: q.kind === "correction" ? "correction" : "question",
+  message: q.message,
+  requestLabel: q.start_date ? `${q.type_label ?? "Leave"}, ${q.start_date}${q.end_date && q.end_date !== q.start_date ? ` to ${q.end_date}` : ""}` : null,
+  status: q.status === "answered" ? "answered" : "open",
+  answer: q.answer,
+  answeredBy: q.answered_name,
+  createdAt: q.created_at,
+  answeredAt: q.answered_at,
+});
+
+export async function askHr(user: AppUser, input: { kind: "question" | "correction"; message: string; requestId?: string | null }) {
+  const employeeId = await myEmployeeId(user);
+  if (!employeeId) throw new WorkflowError("NOT_FOUND", "You do not have an HR record yet. Ask HR to add you.");
+  if (!(await leaveStaffConfig()).queries) throw new WorkflowError("FORBIDDEN", "Ask HR in person; questions here are turned off.");
+  const message = input.message?.trim().slice(0, 1000);
+  if (!message) throw new WorkflowError("VALIDATION", "Write what you want to ask or correct.");
+  if (input.requestId) {
+    const r = await requestRow(input.requestId);
+    if (r.employee_id !== employeeId) throw new WorkflowError("FORBIDDEN", "That is not your leave.");
+  }
+  const id = uid("lq_");
+  const now = nowIso();
+  await run("INSERT INTO leave_queries (id, employee_id, request_id, kind, message, status, created_by, created_at) VALUES (?, ?, ?, ?, ?, 'open', ?, ?)", id, employeeId, input.requestId ?? null, input.kind === "correction" ? "correction" : "question", message, user.id, now);
+  await notify(await hrUserIds(), { type: "approval", title: `${input.kind === "correction" ? "Leave correction asked" : "Leave question"}: ${user.name}`, body: message.slice(0, 200), link: "/hr?tab=leave", dedupeKey: `leave-query:${id}` }, now, user.id);
+  return id;
+}
+
+export async function myQueries(user: AppUser) {
+  const employeeId = await myEmployeeId(user);
+  if (!employeeId) return [];
+  return (await all<RawQuery>(`${QUERY_SQL} WHERE q.employee_id = ? ORDER BY q.created_at DESC LIMIT 50`, employeeId)).map(toQuery);
+}
+
+export async function hrQueries(user: AppUser) {
+  needHr(user);
+  return (await all<RawQuery>(`${QUERY_SQL} WHERE q.status = 'open' OR q.answered_at >= ? ORDER BY q.status DESC, q.created_at LIMIT 200`, new Date(Date.now() - 30 * DAY).toISOString())).map(toQuery);
+}
+
+export async function answerQuery(user: AppUser, id: string, answer: string) {
+  needHr(user);
+  const text = answer?.trim().slice(0, 1000);
+  if (!text) throw new WorkflowError("VALIDATION", "Write the answer.");
+  const q = await get<{ employee_id: string; status: string; message: string }>("SELECT employee_id, status, message FROM leave_queries WHERE id = ?", id);
+  if (!q) throw new WorkflowError("NOT_FOUND", "Question not found.");
+  const now = nowIso();
+  await run("UPDATE leave_queries SET status = 'answered', answer = ?, answered_by = ?, answered_at = ? WHERE id = ?", text, user.id, now, id);
+  const e = await get<{ user_id: string | null }>("SELECT user_id FROM employees WHERE id = ?", q.employee_id);
+  if (e?.user_id) await notify([e.user_id], { type: "hr", title: "HR answered about your leave", body: text.slice(0, 200), link: "/profile?tab=leave" }, now, user.id);
+  await audit({ actor: user }, { itemId: q.employee_id, action: "hr.leave", summary: `${user.name} answered a leave question` });
+}
+
 export async function myLeave(user: AppUser) {
   const employeeId = await myEmployeeId(user);
   const year = new Date().getUTCFullYear();
   const c = await workCalendar();
-  if (!employeeId) return { employeeId: null, balances: [], requests: [], approvals: [], types: await leaveTypes(), calendar: c };
+  const staff = await leaveStaffConfig();
+  // HR always sees balances; others only when HR shows them.
+  const show = staff.showBalances || can(user, "hr.access");
+  if (!employeeId) return { employeeId: null, balances: [], requests: [], approvals: [], types: await leaveTypes(), calendar: c, showBalances: show, staff, queries: [] as LeaveQuery[] };
   const [bal, mine, approvals] = await Promise.all([
-    balances(employeeId, year),
+    show ? balances(employeeId, year) : Promise.resolve([] as Balance[]),
     all<RawRequest>(`${REQUEST_SQL} WHERE r.employee_id = ? ORDER BY r.start_date DESC LIMIT 100`, employeeId),
     all<RawRequest>(`${REQUEST_SQL} WHERE r.status = 'pending_lead' AND r.approver_id = ? ORDER BY r.start_date`, user.id),
   ]);
-  return { employeeId, balances: bal, requests: mine.map(toRequest), approvals: approvals.map(toRequest), types: await leaveTypes(), calendar: c };
+  return { employeeId, balances: bal, requests: mine.map(toRequest), approvals: approvals.map(toRequest), types: await leaveTypes(), calendar: c, showBalances: show, staff, queries: staff.queries ? await myQueries(user) : [] };
 }
 
 export async function hrLeave(user: AppUser, year = new Date().getUTCFullYear()) {
@@ -425,7 +573,7 @@ export async function hrLeave(user: AppUser, year = new Date().getUTCFullYear())
     leaveTypes({ includeInactive: true }),
   ]);
   const c = await workCalendar();
-  return { waiting: waiting.map(toRequest), withManagers: withManagers.map(toRequest), recent: recent.map(toRequest), types, calendar: c, year };
+  return { waiting: waiting.map(toRequest), withManagers: withManagers.map(toRequest), recent: recent.map(toRequest), types, calendar: c, year, queries: await hrQueries(user), staff: await leaveStaffConfig() };
 }
 
 export async function balancesFor(user: AppUser, employeeId: string, year?: number) {

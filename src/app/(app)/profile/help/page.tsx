@@ -15,7 +15,7 @@ export default async function HelpPage() {
   return (
     <div className="space-y-4">
       <PageHeader title="Help" description="The training manual for each role, step-by-step guides, your first steps and the get-started tour." />
-      <HelpCenter audience={audienceFor(viewer.activeRole, viewer.leads)} tour={viewer.prefs.tour ?? {}} canSeeAll={viewer.perms.includes("users.manage") || viewer.perms.includes("company.view")} extra={extra} />
+      <HelpCenter audience={audienceFor(viewer.activeRole, viewer.leads)} tour={viewer.prefs.tour ?? {}} canSeeAll={viewer.perms.includes("users.manage") || viewer.perms.includes("company.view")} extra={extra} prefs={viewer.prefs.help} />
     </div>
   );
 }

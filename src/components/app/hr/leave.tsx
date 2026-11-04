@@ -23,8 +23,15 @@ import {
   removeHolidayAction,
   requestLeaveAction,
   saveLeaveTypeAction,
+  addEvidenceAction,
+  askHrAction,
+  answerQueryAction,
+  saveLeaveStaffConfigAction,
 } from "@/app/actions/leave";
-import type { Balance, LeaveCalendarEntry, LeaveRequestRow } from "@/server/leave";
+import type { Balance, EvidenceFile, LeaveCalendarEntry, LeaveQuery, LeaveRequestRow, LeaveStaffConfig } from "@/server/leave";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { FileCheckIcon, MessageCircleQuestionIcon, PaperclipIcon } from "lucide-react";
 import { LEAVE_STATUS_LABELS, countLeaveDays, type LeaveStatus, type LeaveType } from "@/lib/leave";
 import { cn } from "@/lib/utils";
 import { SimpleSelect } from "./hr-home";
@@ -81,8 +88,26 @@ export function Balances({ balances }: { balances: Balance[] }) {
   );
 }
 
-export function RequestForm({ types, calendar, people, onDone }: { types: LeaveType[]; calendar: Cal; people?: Opt[]; onDone?: () => void }) {
+// A photo or PDF, read in the browser and sent as base64.
+async function readEvidence(file: File): Promise<EvidenceFile> {
+  const buf = new Uint8Array(await file.arrayBuffer());
+  let bin = "";
+  for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+  return { name: file.name, mime: file.type || "application/octet-stream", base64: btoa(bin) };
+}
+
+function EvidencePicker({ file, onFile, required }: { file: File | null; onFile: (f: File | null) => void; required: boolean }) {
+  return (
+    <Field label={`Evidence${required ? "" : " (optional)"}: a photo or PDF of the medical note`}>
+      <Input type="file" accept="image/*,application/pdf" capture="environment" aria-label="Evidence" onChange={(e) => onFile(e.target.files?.[0] ?? null)} />
+      {file && <span className="text-xs text-muted-foreground">{file.name}</span>}
+    </Field>
+  );
+}
+
+export function RequestForm({ types, calendar, people, onDone, requireEvidence = true }: { types: LeaveType[]; calendar: Cal; people?: Opt[]; onDone?: () => void; requireEvidence?: boolean }) {
   const router = useRouter();
+  const [file, setFile] = React.useState<File | null>(null);
   const [f, setF] = React.useState({ employeeId: "", typeKey: types[0]?.key ?? "", startDate: "", endDate: "", halfDay: false, reason: "" });
   const [busy, setBusy] = React.useState(false);
   const single = !!f.startDate && (f.endDate || f.startDate) === f.startDate;
@@ -91,9 +116,11 @@ export function RequestForm({ types, calendar, people, onDone }: { types: LeaveT
   const type = types.find((t) => t.key === f.typeKey);
   const submit = async () => {
     setBusy(true);
-    const r = await requestLeaveAction({ ...f, endDate: end, halfDay: f.halfDay && single, employeeId: f.employeeId || null });
+    const evidence = file && type?.needsDocument ? await readEvidence(file) : null;
+    const r = await requestLeaveAction({ ...f, endDate: end, halfDay: f.halfDay && single, employeeId: f.employeeId || null, evidence });
     setBusy(false);
     if (await done(r, people ? "Leave recorded" : "Leave requested", router)) {
+      setFile(null);
       setF({ ...f, startDate: "", endDate: "", halfDay: false, reason: "" });
       onDone?.();
     }
@@ -122,10 +149,11 @@ export function RequestForm({ types, calendar, people, onDone }: { types: LeaveT
         </label>
       )}
       <Field label="Note (optional)">
-        <Textarea value={f.reason} onChange={(e) => setF({ ...f, reason: e.target.value })} rows={2} placeholder={type?.needsDocument ? "Attach the medical or other document to My record afterwards." : "Anything your manager should know"} />
+        <Textarea value={f.reason} onChange={(e) => setF({ ...f, reason: e.target.value })} rows={2} placeholder={type?.needsDocument ? "What happened, if you want to say" : "Anything your manager should know"} />
       </Field>
+      {type?.needsDocument && !people && <EvidencePicker file={file} onFile={setFile} required={requireEvidence} />}
       <div className="flex items-center gap-3">
-        <Button onClick={submit} disabled={busy || !f.startDate || !count || !f.typeKey || (!!people && !f.employeeId)}>
+        <Button onClick={submit} disabled={busy || !f.startDate || !count || !f.typeKey || (!!people && !f.employeeId) || (!people && !!type?.needsDocument && requireEvidence && !file)}>
           <CalendarPlusIcon /> {people ? "Record leave" : "Ask for leave"}
         </Button>
         <span className="text-sm text-muted-foreground">{f.startDate ? (count ? `${days(count)} of working time` : "Those days are weekends or public holidays") : "Weekends and public holidays are not counted."}</span>
@@ -187,6 +215,14 @@ export function ApprovalList({ rows, empty, stage }: { rows: LeaveRequestRow[]; 
             </div>
             {r.reason && <div className="text-xs text-muted-foreground">“{r.reason}”</div>}
             {r.leadNote && <div className="text-xs text-muted-foreground">Line manager: {r.leadNote}</div>}
+            {r.needsDocument &&
+              (r.evidenceId ? (
+                <a href={`/api/hr-files/${r.evidenceId}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-primary hover:underline" data-evidence>
+                  <FileCheckIcon className="size-3.5" /> Open the evidence
+                </a>
+              ) : (
+                <div className="text-xs text-[var(--st-paused-fg)]">No evidence attached yet</div>
+              ))}
           </div>
           <Button
             size="sm"
@@ -329,7 +365,151 @@ export function LeaveCalendar({ month, entries, calendar, hrefFor }: { month: st
 // The Leave page: everyone's own leave, and approvals for line managers
 // ---------------------------------------------------------------------------
 
+// Attach evidence to one of your own requests that still waits.
+function AddEvidence({ id }: { id: string }) {
+  const router = useRouter();
+  const ref = React.useRef<HTMLInputElement>(null);
+  return (
+    <>
+      <input
+        ref={ref}
+        type="file"
+        accept="image/*,application/pdf"
+        className="hidden"
+        aria-label="Add evidence"
+        onChange={async (e) => {
+          const f = e.target.files?.[0];
+          if (f) await done(await addEvidenceAction(id, await readEvidence(f)), "Evidence sent to HR", router);
+        }}
+      />
+      <Button size="xs" variant="outline" onClick={() => ref.current?.click()}>
+        <PaperclipIcon /> Add evidence
+      </Button>
+    </>
+  );
+}
+
+// Ask HR: a question about the balance, or a correction of a leave.
+function AskHr({ requests, queries }: { requests: LeaveRequestRow[]; queries: LeaveQuery[] }) {
+  const router = useRouter();
+  const [f, setF] = React.useState({ kind: "question" as "question" | "correction", requestId: "", message: "" });
+  const [busy, setBusy] = React.useState(false);
+  return (
+    <Card data-ask-hr>
+      <CardHeader>
+        <CardTitle>Ask HR</CardTitle>
+        <CardDescription>About your balance, or to correct a leave that is wrong. HR answers here and you are told.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="What about">
+            <SimpleSelect value={f.kind} onChange={(v) => setF({ ...f, kind: v as "question" | "correction" })} options={[{ value: "question", label: "A question, for example how many days I have" }, { value: "correction", label: "A correction of my leave" }]} />
+          </Field>
+          <Field label="Which leave (optional)">
+            <SimpleSelect value={f.requestId} onChange={(v) => setF({ ...f, requestId: v })} options={[{ value: "", label: "None in particular" }, ...requests.slice(0, 30).map((r) => ({ value: r.id, label: `${r.typeLabel}, ${range(r)}` }))]} />
+          </Field>
+        </div>
+        <Textarea rows={2} value={f.message} onChange={(e) => setF({ ...f, message: e.target.value })} aria-label="Your message" placeholder={f.kind === "correction" ? "I was back on Tuesday, so it should be 2 days, not 3" : "How many days of annual leave do I have left?"} />
+        <Button
+          disabled={busy || !f.message.trim()}
+          onClick={async () => {
+            setBusy(true);
+            const ok = await done(await askHrAction({ kind: f.kind, message: f.message, requestId: f.requestId || null }), "Sent to HR", router);
+            setBusy(false);
+            if (ok) setF({ ...f, message: "" });
+          }}
+        >
+          <MessageCircleQuestionIcon /> Send to HR
+        </Button>
+        {queries.length > 0 && (
+          <ul className="divide-y rounded-lg border text-sm">
+            {queries.map((q) => (
+              <li key={q.id} className="space-y-0.5 p-2" data-query={q.status}>
+                <p>
+                  <span className="text-xs text-muted-foreground">{q.kind === "correction" ? "Correction" : "Question"}{q.requestLabel ? ` · ${q.requestLabel}` : ""} · </span>
+                  {q.message}
+                </p>
+                <p className={cn("text-xs", q.answer ? "" : "text-muted-foreground")}>{q.answer ? `HR (${q.answeredBy}): ${q.answer}` : "Waiting for HR"}</p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// HR: questions and corrections from people, and what people see of their own leave.
+function HrQueries({ queries, staff }: { queries: LeaveQuery[]; staff: LeaveStaffConfig }) {
+  const router = useRouter();
+  const [answers, setAnswers] = React.useState<Record<string, string>>({});
+  const [c, setC] = React.useState(staff);
+  const open = queries.filter((q) => q.status === "open");
+  return (
+    <div className="grid gap-4 xl:grid-cols-2">
+      <Card data-hr-queries>
+        <CardHeader>
+          <CardTitle>Questions and corrections ({open.length})</CardTitle>
+          <CardDescription>From people about their leave. Look up their balance below, correct it if needed, and answer.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {!queries.length && <p className="text-sm text-muted-foreground">Nothing asked.</p>}
+          {queries.map((q) => (
+            <div key={q.id} className="space-y-1.5 rounded-lg border p-2 text-sm" data-hr-query={q.employeeName}>
+              <p>
+                <span className="font-medium">{q.employeeName}</span>{" "}
+                <span className="text-xs text-muted-foreground">
+                  {q.kind === "correction" ? "asks for a correction" : "asks"}
+                  {q.requestLabel ? ` · ${q.requestLabel}` : ""}
+                </span>
+              </p>
+              <p>{q.message}</p>
+              {q.status === "answered" ? (
+                <p className="text-xs text-muted-foreground">Answered by {q.answeredBy}: {q.answer}</p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  <Input className="h-8 min-w-48 flex-1" aria-label={`Answer ${q.employeeName}`} value={answers[q.id] ?? ""} onChange={(e) => setAnswers({ ...answers, [q.id]: e.target.value })} placeholder="Your answer" />
+                  <Button size="sm" disabled={!answers[q.id]?.trim()} onClick={async () => void (await done(await answerQueryAction(q.id, answers[q.id]!), "Answer sent", router))}>
+                    Answer
+                  </Button>
+                </div>
+              )}
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+      <Card data-leave-staff>
+        <CardHeader>
+          <CardTitle>What people see</CardTitle>
+          <CardDescription>Of their own leave, on Profile, Leave.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          {(
+            [
+              ["showBalances", "Show people their remaining days"],
+              ["requireEvidence", "Leave that needs a document (sick leave) needs evidence attached"],
+              ["queries", "People ask HR questions and corrections here"],
+            ] as const
+          ).map(([k, label]) => (
+            <div key={k} className="flex items-center gap-2">
+              <Switch id={`ls-${k}`} checked={c[k]} onCheckedChange={(v) => setC({ ...c, [k]: v })} />
+              <Label htmlFor={`ls-${k}`}>{label}</Label>
+            </div>
+          ))}
+          <Button size="sm" onClick={async () => void (await done(await saveLeaveStaffConfigAction(c), "Saved", router))}>
+            Save
+          </Button>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 export function MyLeave(props: {
+  showBalances?: boolean;
+  queries?: LeaveQuery[];
+  queriesOn?: boolean;
+  requireEvidence?: boolean;
   balances: Balance[];
   requests: LeaveRequestRow[];
   approvals: LeaveRequestRow[];
@@ -352,7 +532,7 @@ export function MyLeave(props: {
           </CardContent>
         </Card>
       )}
-      <Balances balances={props.balances} />
+      {props.showBalances !== false && <Balances balances={props.balances} />}
       <div className="grid gap-4 lg:grid-cols-[22rem_1fr]">
         <Card>
           <CardHeader>
@@ -360,7 +540,7 @@ export function MyLeave(props: {
             <CardDescription>Your line manager approves first, then HR.</CardDescription>
           </CardHeader>
           <CardContent>
-            <RequestForm types={props.types} calendar={props.calendar} />
+            <RequestForm types={props.types} calendar={props.calendar} requireEvidence={props.requireEvidence !== false} />
           </CardContent>
         </Card>
         <Card>
@@ -379,8 +559,24 @@ export function MyLeave(props: {
         </CardHeader>
         <CardContent>
           <RequestTable rows={props.requests} canCancel={(r) => r.status === "pending_lead" || r.status === "pending_hr" || (r.status === "approved" && r.startDate > today)} />
+          {props.requests.some((r) => r.needsDocument && !r.evidenceId && ["pending_lead", "pending_hr", "approved"].includes(r.status)) && (
+            <div className="mt-3 space-y-1.5 rounded-lg border border-[var(--st-paused-fg)]/40 p-2 text-sm">
+              <p className="font-medium">Evidence still needed</p>
+              {props.requests
+                .filter((r) => r.needsDocument && !r.evidenceId && ["pending_lead", "pending_hr", "approved"].includes(r.status))
+                .map((r) => (
+                  <div key={r.id} className="flex flex-wrap items-center gap-2">
+                    <span className="flex-1">
+                      {r.typeLabel}, {range(r)}
+                    </span>
+                    <AddEvidence id={r.id} />
+                  </div>
+                ))}
+            </div>
+          )}
         </CardContent>
       </Card>
+      {props.queriesOn !== false && <AskHr requests={props.requests} queries={props.queries ?? []} />}
     </div>
   );
 }
@@ -390,6 +586,8 @@ export function MyLeave(props: {
 // ---------------------------------------------------------------------------
 
 export function HrLeave(props: {
+  queries?: LeaveQuery[];
+  staff?: LeaveStaffConfig;
   waiting: LeaveRequestRow[];
   withManagers: LeaveRequestRow[];
   recent: LeaveRequestRow[];
@@ -435,6 +633,7 @@ export function HrLeave(props: {
           </CardContent>
         </Card>
       </div>
+      {props.staff && <HrQueries queries={props.queries ?? []} staff={props.staff} />}
       <BalanceTool people={props.people} types={props.types.filter((t) => t.active)} year={props.year} />
       <Card>
         <CardHeader>

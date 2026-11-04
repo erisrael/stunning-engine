@@ -86,7 +86,7 @@ export const DAY_STATUS_LABELS: Record<DayStatus, string> = {
 export const MARK_STATUSES = ["present", "late", "half_day", "absent", "leave"] as const;
 export type MarkStatus = (typeof MARK_STATUSES)[number];
 
-export const SOURCES = ["web", "mobile", "kiosk_pin", "kiosk_badge", "kiosk_face", "lead", "hr", "correction", "qr", "network", "shared", "lead_scan"] as const;
+export const SOURCES = ["web", "mobile", "kiosk_pin", "kiosk_badge", "kiosk_face", "lead", "hr", "correction", "qr", "network", "shared", "lead_scan", "geofence"] as const;
 export type Source = (typeof SOURCES)[number];
 export const SOURCE_LABELS: Record<Source, string> = {
   web: "App",
@@ -101,6 +101,7 @@ export const SOURCE_LABELS: Record<Source, string> = {
   network: "Office network",
   shared: "Shared computer",
   lead_scan: "Recorded by the team lead",
+  geofence: "Automatic: left the site",
 };
 
 // What a check-in records: arriving and leaving, and the start and end of a break or of lunch.

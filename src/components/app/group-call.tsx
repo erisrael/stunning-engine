@@ -4,6 +4,7 @@ import * as React from "react";
 import { Loader2Icon, MicIcon, MicOffIcon, PhoneOffIcon, VideoIcon, VideoOffIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { ProximityShade, RouteToggle, useAudioRoute } from "@/components/app/audio-route";
 
 // A group call for up to four people. Every pair of browsers has its own direct connection (a mesh). The person
 // whose id sorts first in each pair makes the offer, so two people never offer to each other at once.
@@ -26,7 +27,7 @@ function Tile({ name, stream, muted, self, video }: { name: string; stream: Medi
   const hasVideo = video && !!stream?.getVideoTracks().some((t) => t.enabled && t.readyState === "live");
   return (
     <div className="relative flex aspect-video items-center justify-center overflow-hidden rounded-2xl bg-[#1d1b3a]">
-      <video ref={ref} autoPlay playsInline muted={self || muted} className={cn("absolute inset-0 size-full object-cover", !hasVideo && "invisible", self && "-scale-x-100")} />
+      <video ref={ref} autoPlay playsInline muted={self || muted} {...(self ? {} : { "data-call-audio": "" })} className={cn("absolute inset-0 size-full object-cover", !hasVideo && "invisible", self && "-scale-x-100")} />
       {!hasVideo && <span className="flex size-20 items-center justify-center rounded-full bg-white/10 text-3xl font-semibold text-white">{name.slice(0, 1).toUpperCase()}</span>}
       <span className="absolute bottom-2 left-2 rounded-md bg-black/50 px-2 py-0.5 text-sm text-white">
         {name}
@@ -172,6 +173,7 @@ export function GroupCallRoom({ callId, me }: { callId: string; me: Peer }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [callId]);
 
+  const audio = useAudioRoute(state === "in", video ? "video" : "voice", [streams]);
   const toggleMic = () => {
     const on = !micOn;
     local.current?.getAudioTracks().forEach((t) => (t.enabled = on));
@@ -196,7 +198,7 @@ export function GroupCallRoom({ callId, me }: { callId: string; me: Peer }) {
 
   const tiles = [{ id: me.id, name: me.name, self: true }, ...peers.map((p) => ({ ...p, self: false }))];
   return (
-    <main className="flex min-h-dvh flex-col bg-[#14132a] text-[#ecebf7]" style={{ paddingLeft: "max(16px, env(safe-area-inset-left, 0px))", paddingRight: "max(16px, env(safe-area-inset-right, 0px))" }}>
+    <main className="flex min-h-dvh flex-col bg-[#14132a] text-[#ecebf7]" data-group-call style={{ paddingLeft: "max(16px, env(safe-area-inset-left, 0px))", paddingRight: "max(16px, env(safe-area-inset-right, 0px))" }}>
       <header className="flex items-center gap-3 py-4">
         <p className="font-semibold">{title}</p>
         <span className="text-sm text-[#a9a6c9]">
@@ -209,7 +211,8 @@ export function GroupCallRoom({ callId, me }: { callId: string; me: Peer }) {
         ))}
       </section>
       {tiles.length === 1 && state === "in" && <p className="pt-3 text-center text-sm text-[#a9a6c9]">Waiting for others to join from the group chat.</p>}
-      <footer className="flex justify-center gap-3 py-5">
+      <ProximityShade near={audio.near} />
+      <footer className="flex flex-wrap justify-center gap-3 py-5">
         <Button size="lg" variant="secondary" onClick={toggleMic} aria-pressed={!micOn} aria-label={micOn ? "Mute" : "Unmute"}>
           {micOn ? <MicIcon /> : <MicOffIcon />} {micOn ? "Mute" : "Unmute"}
         </Button>
@@ -218,6 +221,13 @@ export function GroupCallRoom({ callId, me }: { callId: string; me: Peer }) {
             {camOn ? <VideoIcon /> : <VideoOffIcon />} {camOn ? "Camera off" : "Camera on"}
           </Button>
         )}
+        <RouteToggle route={audio.route} onToggle={audio.toggle} realOutputs={audio.realOutputs}>
+          {(icon, label) => (
+            <Button size="lg" variant="secondary" onClick={audio.toggle} aria-label={label} title={label} aria-pressed={audio.route === "speaker"} data-audio-route={audio.route}>
+              {icon} {audio.route === "ear" ? "Ear" : "Speaker"}
+            </Button>
+          )}
+        </RouteToggle>
         <Button size="lg" variant="destructive" onClick={leave}>
           <PhoneOffIcon /> Leave
         </Button>

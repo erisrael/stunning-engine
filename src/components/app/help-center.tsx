@@ -13,18 +13,110 @@ import { AUDIENCE_LABELS, CHAPTERS as BASE_CHAPTERS, CHAPTER_EXPLAINERS, GUIDES,
 import { Explainer } from "@/components/app/explainers";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { PinIcon, SlidersHorizontalIcon } from "lucide-react";
+import { toast } from "sonner";
+
+// What a person chose to see in Help: chapters hidden or pinned first, other roles' chapters added, guides hidden. Kept on
+// their account (every device), or on this device only, so a phone can show less than a computer.
+export type HelpPrefs = { hidden: string[]; pinned: string[]; added: string[]; hiddenGuides: string[] };
+const EMPTY: HelpPrefs = { hidden: [], pinned: [], added: [], hiddenGuides: [] };
+const DEVICE_KEY = "myseed.help";
+const clean = (p: Partial<HelpPrefs> | null | undefined): HelpPrefs => ({ hidden: p?.hidden ?? [], pinned: p?.pinned ?? [], added: p?.added ?? [], hiddenGuides: p?.hiddenGuides ?? [] });
+function readDevice(): HelpPrefs | null {
+  try {
+    const v = localStorage.getItem(DEVICE_KEY);
+    return v ? clean(JSON.parse(v)) : null;
+  } catch {
+    return null;
+  }
+}
 
 const forAudience = (c: Chapter, a: Audience) => c.audiences === "all" || c.audiences.includes(a);
 const text = (c: Chapter) => [c.title, c.summary, ...c.sections.flatMap((s) => [s.title, s.text ?? "", ...(s.steps ?? [])])].join(" ").toLowerCase();
 
-function ChapterCard({ c, open, highlight }: { c: Chapter; open: boolean; highlight: boolean }) {
+function CustomizeHelp({ chapters, own, guides, prefs, onDevice, onClose, onSaved }: { chapters: Chapter[]; own: (c: Chapter) => boolean; guides: { key: string; title: string }[]; prefs: HelpPrefs; onDevice: boolean; onClose: () => void; onSaved: (p: HelpPrefs, where: "account" | "device") => void }) {
+  const [p, setP] = React.useState<HelpPrefs>(prefs);
+  const [where, setWhere] = React.useState<"account" | "device">(onDevice ? "device" : "account");
+  const flip = (list: keyof HelpPrefs, key: string, on: boolean) => setP({ ...p, [list]: on ? [...new Set([...p[list], key])] : p[list].filter((k) => k !== key) });
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg" data-help-dialog>
+        <DialogHeader>
+          <DialogTitle>Customize Help</DialogTitle>
+          <DialogDescription>Choose the chapters and guides you see, and pin the ones you use most. A search still finds everything.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 text-sm">
+          <fieldset className="space-y-1.5">
+            <legend className="font-medium">Chapters</legend>
+            {chapters.map((c) => {
+              const mineToo = own(c);
+              const shown = mineToo ? !p.hidden.includes(c.key) : p.added.includes(c.key);
+              return (
+                <div key={c.key} className="flex items-center gap-2" data-help-chapter={c.key}>
+                  <Checkbox checked={shown} aria-label={`Show ${c.title}`} onCheckedChange={(v) => (mineToo ? flip("hidden", c.key, v !== true) : flip("added", c.key, v === true))} />
+                  <span className="min-w-0 flex-1">
+                    {c.title}
+                    {!mineToo && <span className="text-xs text-muted-foreground"> (another role)</span>}
+                  </span>
+                  <Button size="icon-xs" variant={p.pinned.includes(c.key) ? "secondary" : "ghost"} aria-label={`Pin ${c.title}`} aria-pressed={p.pinned.includes(c.key)} disabled={!shown} onClick={() => flip("pinned", c.key, !p.pinned.includes(c.key))}>
+                    <PinIcon />
+                  </Button>
+                </div>
+              );
+            })}
+          </fieldset>
+          {guides.length > 0 && (
+            <fieldset className="space-y-1.5">
+              <legend className="font-medium">Guides</legend>
+              {guides.map((g) => (
+                <label key={g.key} className="flex items-center gap-2">
+                  <Checkbox checked={!p.hiddenGuides.includes(g.key)} onCheckedChange={(v) => flip("hiddenGuides", g.key, v !== true)} /> {g.title}
+                </label>
+              ))}
+            </fieldset>
+          )}
+          <fieldset className="space-y-1.5">
+            <legend className="font-medium">Use this on</legend>
+            <label className="flex items-center gap-2">
+              <input type="radio" name="help-where" checked={where === "account"} onChange={() => setWhere("account")} /> All my devices
+            </label>
+            <label className="flex items-center gap-2">
+              <input type="radio" name="help-where" checked={where === "device"} onChange={() => setWhere("device")} /> Only this device (for example less on the phone)
+            </label>
+          </fieldset>
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => setP(EMPTY)}>
+            Show everything
+          </Button>
+          <Button
+            onClick={() => {
+              onSaved(p, where);
+              toast.success(where === "device" ? "Saved on this device" : "Saved for all your devices");
+              onClose();
+            }}
+          >
+            Save
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ChapterCard({ c, open, highlight, pinned }: { c: Chapter; open: boolean; highlight: boolean; pinned?: boolean }) {
   // Clips play only while the chapter is open.
   const [shown, setShown] = React.useState(open);
   React.useEffect(() => setShown(open), [open]);
   return (
     <details id={c.key} open={open} onToggle={(e) => setShown((e.target as HTMLDetailsElement).open)} className={cn("group scroll-mt-20 rounded-lg border bg-card", highlight && "ring-2 ring-primary/40")}>
       <summary className="cursor-pointer list-none px-4 py-3">
-        <div className="font-medium">{c.title}</div>
+        <div className="flex items-center gap-1.5 font-medium">
+          {pinned && <PinIcon className="size-3.5 text-primary" aria-label="Pinned" />}
+          {c.title}
+        </div>
         <div className="text-sm text-muted-foreground">{c.summary}</div>
       </summary>
       <div className="space-y-4 border-t px-4 py-4">
@@ -58,9 +150,13 @@ function ChapterCard({ c, open, highlight }: { c: Chapter; open: boolean; highli
 }
 
 // The training manual, guides, first steps and tour replay. Chapters for the person's role come first.
-export function HelpCenter({ audience, tour, canSeeAll = false, extra = [] }: { audience: Audience; tour: TourState; canSeeAll?: boolean; extra?: Chapter[] }) {
+export function HelpCenter({ audience, tour, canSeeAll = false, extra = [], prefs: accountPrefs }: { audience: Audience; tour: TourState; canSeeAll?: boolean; extra?: Chapter[]; prefs?: Partial<HelpPrefs> }) {
   // Chapters written from each department's configuration come after the fixed ones.
   const CHAPTERS = React.useMemo(() => [...BASE_CHAPTERS, ...extra], [extra]);
+  const [device, setDevice] = React.useState<HelpPrefs | null>(null);
+  React.useEffect(() => setDevice(readDevice()), []);
+  const prefs = device ?? clean(accountPrefs);
+  const [customizing, setCustomizing] = React.useState(false);
   const [everyone, setEveryone] = React.useState(false);
   const router = useRouter();
   const [q, setQ] = React.useState("");
@@ -79,12 +175,16 @@ export function HelpCenter({ audience, tour, canSeeAll = false, extra = [] }: { 
 
   const needle = q.trim().toLowerCase();
   const match = (c: Chapter) => !needle || needle.split(/\s+/).every((w) => text(c).includes(w));
-  const mine = CHAPTERS.filter((c) => forAudience(c, audience) && match(c));
+  // The person's chapters, without the ones they hid, with the ones they added; pinned first. A search still looks
+  // through hidden ones.
+  const order = (list: Chapter[]) => [...list.filter((c) => prefs.pinned.includes(c.key)), ...list.filter((c) => !prefs.pinned.includes(c.key))];
+  const mine = order(CHAPTERS.filter((c) => (forAudience(c, audience) || (canSeeAll && prefs.added.includes(c.key))) && (needle ? true : !prefs.hidden.includes(c.key)) && match(c)));
   // Each person sees their own chapters; managers and Admin can open every role's, to support their people.
-  const others = canSeeAll && everyone ? CHAPTERS.filter((c) => !forAudience(c, audience) && match(c)) : [];
+  const others = canSeeAll && everyone ? CHAPTERS.filter((c) => !forAudience(c, audience) && !prefs.added.includes(c.key) && match(c)) : [];
   // Guides for the person's own chapters; a search looks through all of them.
   const own = new Set(CHAPTERS.filter((c) => forAudience(c, audience)).map((c) => c.key));
-  const guides = GUIDES.filter((g) => (own.has(g.chapter) || (canSeeAll && everyone)) && (!needle || `${g.title} ${g.steps.join(" ")}`.toLowerCase().includes(needle)));
+  for (const k of prefs.added) own.add(k);
+  const guides = GUIDES.filter((g) => (own.has(g.chapter) || (canSeeAll && everyone)) && (needle ? `${g.title} ${g.steps.join(" ")}`.toLowerCase().includes(needle) : !prefs.hiddenGuides.includes(g.key)));
   const toggle = (key: string, on: boolean) => {
     const next = on ? [...new Set([...done, key])] : done.filter((k) => k !== key);
     setDone(next);
@@ -101,6 +201,9 @@ export function HelpCenter({ audience, tour, canSeeAll = false, extra = [] }: { 
         <div className="space-y-2">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-sm font-medium text-muted-foreground">For you ({AUDIENCE_LABELS[audience]})</h2>
+            <Button size="xs" variant="outline" onClick={() => setCustomizing(true)} data-help-customize>
+              <SlidersHorizontalIcon /> Customize{device ? " (this device)" : ""}
+            </Button>
             {canSeeAll && (
               <label className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
                 <Switch checked={everyone} onCheckedChange={setEveryone} /> Show every role&apos;s chapters
@@ -108,9 +211,9 @@ export function HelpCenter({ audience, tour, canSeeAll = false, extra = [] }: { 
             )}
           </div>
           {mine.map((c) => (
-            <ChapterCard key={c.key} c={c} open={!!needle || hash === c.key} highlight={hash === c.key} />
+            <ChapterCard key={c.key} c={c} open={!!needle || hash === c.key} highlight={hash === c.key} pinned={prefs.pinned.includes(c.key)} />
           ))}
-          {!mine.length && <p className="text-sm text-muted-foreground">Nothing here matches.</p>}
+          {!mine.length && <p className="text-sm text-muted-foreground">{needle ? "Nothing here matches." : "You hid every chapter. Press Customize to show them again."}</p>}
         </div>
         {others.length > 0 && (
           <div className="space-y-2">
@@ -134,6 +237,30 @@ export function HelpCenter({ audience, tour, canSeeAll = false, extra = [] }: { 
             </Button>
           </CardContent>
         </Card>
+        {customizing && (
+          <CustomizeHelp
+            chapters={CHAPTERS.filter((c) => forAudience(c, audience) || canSeeAll)}
+            own={(c) => forAudience(c, audience)}
+            guides={GUIDES.filter((g) => CHAPTERS.some((c) => c.key === g.chapter && (forAudience(c, audience) || canSeeAll)))}
+            prefs={prefs}
+            onDevice={!!device}
+            onClose={() => setCustomizing(false)}
+            onSaved={(p, where) => {
+              if (where === "device") {
+                try {
+                  localStorage.setItem(DEVICE_KEY, JSON.stringify(p));
+                } catch {}
+                setDevice(p);
+              } else {
+                try {
+                  localStorage.removeItem(DEVICE_KEY);
+                } catch {}
+                setDevice(null);
+                void savePrefsAction({ help: p }).then(() => router.refresh());
+              }
+            }}
+          />
+        )}
         <Card>
           <CardHeader>
             <CardTitle>Guides</CardTitle>

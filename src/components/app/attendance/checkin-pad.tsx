@@ -72,6 +72,8 @@ export function CheckinPad({ initial, code, compact = false }: { initial: Checki
       return;
     }
     setDone({ kind, at: r.data!.at, lateMin: r.data!.lateMin, flagged: r.data!.flagged });
+    // Leaving the site is watched from now on (or no longer).
+    window.dispatchEvent(new Event("myseed-checkin"));
     await refresh(l);
     // The confirmation stays a few seconds, then the page is ready for the next tap.
     setTimeout(() => setDone(null), 8000);

@@ -7,6 +7,18 @@ import type { LeaveType } from "@/lib/leave";
 
 // Every action checks the person, their line manager or HR on the server (see server/leave.ts).
 
+export async function addEvidenceAction(id: string, file: leave.EvidenceFile) {
+  return wrap(async () => leave.addEvidence(await requireViewer(), id, file));
+}
+export async function askHrAction(input: { kind: "question" | "correction"; message: string; requestId?: string | null }) {
+  return wrap(async () => leave.askHr(await requireViewer(), input));
+}
+export async function answerQueryAction(id: string, answer: string) {
+  return wrap(async () => leave.answerQuery(await requireViewer(), id, answer));
+}
+export async function saveLeaveStaffConfigAction(input: Partial<leave.LeaveStaffConfig>) {
+  return wrap(async () => leave.saveLeaveStaffConfig(await requireViewer(), input));
+}
 export async function requestLeaveAction(input: leave.LeaveInput) {
   return wrap(async () => leave.requestLeave(await requireViewer(), input));
 }

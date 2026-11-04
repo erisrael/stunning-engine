@@ -4,7 +4,7 @@ import * as React from "react";
 
 // Accent colour, corner style, text size and colourful or plain icons. Stored per browser; applied to <html> before
 // paint.
-export type Appearance = { accent: string; radius: string; text: string; icons: string; iconPack: string; iconWeight: string; font: string; contrast: string; lite: string; lang: string; calendar: string };
+export type Appearance = { accent: string; radius: string; text: string; icons: string; iconPack: string; iconWeight: string; font: string; contrast: string; lite: string; lang: string; calendar: string; helpLinks: string; tips: string };
 
 export const FONTS = [
   { key: "app", label: "Jakarta (default)" },
@@ -26,7 +26,7 @@ export const ACCENTS = [
 ];
 
 const KEY = "myseed.appearance";
-const DEFAULTS: Appearance = { accent: "violet", radius: "default", text: "normal", icons: "colour", iconPack: "lucide", iconWeight: "regular", font: "app", contrast: "normal", lite: "off", lang: "en", calendar: "" };
+const DEFAULTS: Appearance = { accent: "violet", radius: "default", text: "normal", icons: "colour", iconPack: "lucide", iconWeight: "regular", font: "app", contrast: "normal", lite: "off", lang: "en", calendar: "", helpLinks: "on", tips: "on" };
 
 export function readAppearance(): Appearance {
   try {
@@ -48,10 +48,22 @@ function apply(a: Appearance) {
   el.dataset.contrast = a.contrast;
   el.dataset.lite = a.lite;
   el.dataset.lang = a.lang;
+  el.dataset.helplinks = a.helpLinks;
+  el.dataset.tips = a.tips;
+  window.dispatchEvent(new Event("myseed-appearance"));
   // No choice: the workspace's calendar (Settings), read by the Localizer.
   if (a.calendar) el.dataset.calendar = a.calendar;
   else delete el.dataset.calendar;
   el.lang = a.lang === "am" ? "am" : "en";
+}
+
+// Hover tips are on unless the person turned them off on this device (Settings, Help).
+export function useTipsOn() {
+  return React.useSyncExternalStore(
+    (cb) => (window.addEventListener("myseed-appearance", cb), () => window.removeEventListener("myseed-appearance", cb)),
+    () => document.documentElement.dataset.tips !== "off",
+    () => true,
+  );
 }
 
 export function useAppearance() {
@@ -71,4 +83,4 @@ export function useAppearance() {
 }
 
 // Inline script for the root layout, so the saved appearance is applied before the first paint.
-export const APPEARANCE_SCRIPT = `try{var a=JSON.parse(localStorage.getItem("${KEY}")||"{}");var d=document.documentElement;d.dataset.accent=a.accent||"violet";d.dataset.radius=a.radius||"default";d.dataset.text=a.text||"normal";d.dataset.icons=a.icons||"colour";d.dataset.iconPack=a.iconPack||"lucide";d.dataset.iconWeight=a.iconWeight||"regular";d.dataset.font=a.font||"app";d.dataset.contrast=a.contrast||"normal";d.dataset.lite=a.lite||"off";d.dataset.lang=a.lang||"en";if(a.calendar)d.dataset.calendar=a.calendar;if(a.lang==="am")d.lang="am";}catch(e){}`;
+export const APPEARANCE_SCRIPT = `try{var a=JSON.parse(localStorage.getItem("${KEY}")||"{}");var d=document.documentElement;d.dataset.accent=a.accent||"violet";d.dataset.radius=a.radius||"default";d.dataset.text=a.text||"normal";d.dataset.icons=a.icons||"colour";d.dataset.iconPack=a.iconPack||"lucide";d.dataset.iconWeight=a.iconWeight||"regular";d.dataset.font=a.font||"app";d.dataset.contrast=a.contrast||"normal";d.dataset.lite=a.lite||"off";d.dataset.lang=a.lang||"en";d.dataset.helplinks=a.helpLinks||"on";d.dataset.tips=a.tips||"on";if(a.calendar)d.dataset.calendar=a.calendar;if(a.lang==="am")d.lang="am";}catch(e){}`;

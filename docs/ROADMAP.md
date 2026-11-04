@@ -1213,3 +1213,15 @@ Built: changes in `src/server/routines.ts`, `src/app/(app)/routines/[id]`, `src/
 - [x] Admin sets whether it shows, what happens after a shot is logged, and whether imported parts count as recorded.
 
 Built: `src/server/legacy.ts`, `src/app/(app)/legacy`, `src/app/actions/legacy.ts`, `src/app/api/legacy/[format]`. Tests: `tests/server/legacy.test.ts`, and all four phases in the browser in `tests/e2e/production.e2e.mjs`.
+
+## Phase 35: Phones, settings, leaving the site, leave for staff, calls (done)
+
+- [x] **Settings in one page** (account menu, Settings; Tools, Settings): appearance, font, contrast, text size, language and dates, notifications (moved from the Notifications page), help, calls and location. Choices wrap on a phone instead of opening menus that ran off the screen; the nested menus stay on computers only.
+- [x] **Tools in the tab bar** instead of Alerts: alerts, check-in, search, the assistant, approvals, routines, help and Settings in one sheet.
+- [x] **Help as each person wants it**: hide or pin chapters, add other roles' chapters (managers), hide guides; for all their devices or this device only. Tips and the page help links can be turned off on a device.
+- [x] **Leaving the site** (Attendance, Capture): while someone is checked in, their phone reports where it is. Outside twice in a row, they are told; after the grace time the app only reminds, starts a break, checks out, or starts a break and checks out later, as Admin chose. Coming back ends the break. Weak readings are ignored, each person agrees once per phone, and someone whose phone went quiet outside is dealt with by the regular checks. Phones stop web apps in the background, so it works while the app is open.
+- [x] **Leave for staff**: balances and leave settings are HR's (HR can show balances again). People ask HR a question or a correction, and HR answers. Sick leave needs a photo or PDF of the evidence, kept on the HR record; HR cannot give the final approval without it, and evidence can be added later.
+- [x] **Calls**: a speaker or earpiece switch on both call types; voice calls start at the ear on phones. Where the browser allows choosing the output it uses the earpiece; otherwise ear mode plays quietly. The proximity sensor (where the browser gives it) darkens the screen at the ear; the screen stays on during calls.
+- [x] **Chat on phones** like Telegram: the conversation fills what the keyboard leaves and the message box stays right above it; the tab bar and the assistant's buttons step aside inside a conversation.
+
+Built: `src/app/(app)/preferences`, `src/components/app/mobile-nav.tsx`, `src/components/app/help-center.tsx`, `src/server/geofence.ts`, `src/components/app/attendance/geofence-{watch,admin}.tsx`, changes in `src/server/leave.ts` and `src/components/app/hr/leave.tsx`, `src/components/app/audio-route.tsx`, chat layout (schema 53). Tests: `tests/server/geofence.test.ts`, `tests/server/leave-staff.test.ts`, `tests/e2e/phone.e2e.mjs`.

@@ -118,6 +118,7 @@ export async function testAlert(user: AppUser) {
 // ---------------------------------------------------------------------------
 
 export const JOB_LABELS: Record<string, string> = {
+  geofence: "Leaving the site (automatic check-out)",
   alerts: "Work alerts (deadlines, blockers, timers, handoffs, questions)",
   trash: "Trash clean-up",
   "chat-files": "Chat files clean-up",

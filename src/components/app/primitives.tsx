@@ -8,6 +8,7 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/h
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ShowMeHow, type ExplainerKey } from "@/components/app/explainers";
 import { initials } from "@/lib/format";
+import { useTipsOn } from "@/components/app/appearance";
 
 export function PageHeader({
   title,
@@ -36,7 +37,7 @@ export function PageHeader({
           <h1 className="flex items-center gap-2 text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
             {title}
             {help && (
-              <Link href={`/profile/help#${help}`} title="How this page works" aria-label="Help for this page" className="text-muted-foreground hover:text-foreground">
+              <Link href={`/profile/help#${help}`} title="How this page works" aria-label="Help for this page" className="text-muted-foreground hover:text-foreground" data-help-link>
                 <CircleHelpIcon className="size-4" />
               </Link>
             )}
@@ -219,7 +220,8 @@ export function Meter({ value, max, tone = "primary", className }: { value: numb
 
 // A short explanation on hover or focus for any control: <Hint tip="...">{button}</Hint>.
 export function Hint({ tip, title, side = "bottom", children }: { tip?: string; title?: string; side?: "top" | "bottom" | "left" | "right"; children: React.ReactElement }) {
-  if (!tip) return children;
+  const on = useTipsOn();
+  if (!tip || !on) return children;
   return (
     <Tooltip>
       <TooltipTrigger asChild>{children}</TooltipTrigger>

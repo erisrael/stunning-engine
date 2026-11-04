@@ -179,6 +179,8 @@ export async function runScheduledChecks(now = nowIso(), opts: { trigger?: strin
     await runJob("deck-emails", async () => (await import("./decks")).weeklyDeckEmails(now));
     // Recognition: last month's badges once it is over (when switched on).
     await runJob("recognition", async () => (await import("./recognition")).recognitionJob());
+    // Attendance: someone who left the site and whose phone went quiet (Capture, Leaving the site).
+    await runJob("geofence", async () => (await import("./geofence")).geofenceSweep(now));
     // Attendance: a kiosk that went quiet during working hours.
     await runJob("kiosks", () => kioskSilenceChecks(now));
     // Face data of people who have left is deleted.

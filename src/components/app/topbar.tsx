@@ -9,7 +9,7 @@ import { useTheme } from "next-themes";
 import { toast } from "sonner";
 import { BellIcon, CheckCheckIcon, ClockIcon, FlagIcon, HelpCircleIcon, IdCardIcon, LogOutIcon, MessageSquareHeartIcon, MessageCircleIcon, MonitorIcon, MoonIcon, PaletteIcon,
   TypeIcon,
-  LanguagesIcon, SearchIcon, SquareIcon, SunIcon, UserIcon } from "lucide-react";
+  LanguagesIcon, SearchIcon, SettingsIcon, SquareIcon, SunIcon, UserIcon } from "lucide-react";
 import { ACCENTS, FONTS, useAppearance } from "@/components/app/appearance";
 import { Button } from "@/components/ui/button";
 import { SidebarTrigger } from "@/components/ui/sidebar";
@@ -86,6 +86,7 @@ const TITLES: Record<string, string> = {
   email: "Email",
   handovers: "Handovers",
   rejected: "Rejected",
+  preferences: "Settings",
   report: "Report",
   legacy: "Legacy catalog",
   curriculum: "Curriculum",
@@ -269,7 +270,12 @@ function UserMenu({ user }: { user: { name: string; email: string; avatar?: stri
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
           <Link href="/profile">
-            <UserIcon /> Profile and preferences
+            <UserIcon /> Profile
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link href="/preferences" data-settings-link>
+            <SettingsIcon /> Settings
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
@@ -291,7 +297,7 @@ function UserMenu({ user }: { user: { name: string; email: string; avatar?: stri
           </Link>
         </DropdownMenuItem>
         <DropdownMenuSub>
-          <DropdownMenuSubTrigger>
+          <DropdownMenuSubTrigger className="hidden md:flex">
             {theme === "dark" ? <MoonIcon /> : theme === "system" ? <MonitorIcon /> : <SunIcon />} Theme
           </DropdownMenuSubTrigger>
           <DropdownMenuSubContent>
@@ -303,7 +309,7 @@ function UserMenu({ user }: { user: { name: string; email: string; avatar?: stri
           </DropdownMenuSubContent>
         </DropdownMenuSub>
         <DropdownMenuSub>
-          <DropdownMenuSubTrigger>
+          <DropdownMenuSubTrigger className="hidden md:flex">
             <PaletteIcon /> Accent colour
           </DropdownMenuSubTrigger>
           <DropdownMenuSubContent>
@@ -317,7 +323,7 @@ function UserMenu({ user }: { user: { name: string; email: string; avatar?: stri
           </DropdownMenuSubContent>
         </DropdownMenuSub>
         <DropdownMenuSub>
-          <DropdownMenuSubTrigger>
+          <DropdownMenuSubTrigger className="hidden md:flex">
             <SquareIcon /> Corners, text and icons
           </DropdownMenuSubTrigger>
           <DropdownMenuSubContent>
@@ -357,7 +363,7 @@ function UserMenu({ user }: { user: { name: string; email: string; avatar?: stri
           </DropdownMenuSubContent>
         </DropdownMenuSub>
         <DropdownMenuSub>
-          <DropdownMenuSubTrigger>
+          <DropdownMenuSubTrigger className="hidden md:flex">
             <TypeIcon /> Font and contrast
           </DropdownMenuSubTrigger>
           <DropdownMenuSubContent>
@@ -384,7 +390,7 @@ function UserMenu({ user }: { user: { name: string; email: string; avatar?: stri
           </DropdownMenuSubContent>
         </DropdownMenuSub>
         <DropdownMenuSub>
-          <DropdownMenuSubTrigger>
+          <DropdownMenuSubTrigger className="hidden md:flex">
             <LanguagesIcon /> Language and calendar
           </DropdownMenuSubTrigger>
           <DropdownMenuSubContent>
