@@ -38,7 +38,7 @@ async function createPostgres(url: string): Promise<Driver> {
     connect_timeout: 15,
     // No TLS on this computer, or when the URL says sslmode=disable (Postgres next to the app on a VPS,
     // reached over Docker's private network).
-    ssl: /localhost|127\.0\.0\.1|[?&]sslmode=disable/.test(url) ? false : "require",
+    ssl: /localhost|127\.0\.0\.1|[?&]sslmode=disable(&|$)/.test(url) ? false : "require",
     types: {
       bigint: { to: INT8, from: [INT8], serialize: (x: number) => String(x), parse: (x: string) => Number(x) },
       numeric: { to: NUMERIC, from: [NUMERIC], serialize: (x: number) => String(x), parse: (x: string) => Number(x) },

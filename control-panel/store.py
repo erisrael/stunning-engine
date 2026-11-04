@@ -150,6 +150,8 @@ DEFAULTS: dict = {
         "database": "local",  # "local": Postgres on the VPS; "supabase": the Supabase session pooler
         "proxy": "caddy",  # "caddy": HTTPS on ports 80/443; "none": app on 127.0.0.1:app_port for a proxy you already run
         "app_port": 3100,
+        "www": True,  # also serve www.<domain>
+        "autodeploy": {"enabled": False, "branch": "main", "repo": None},
     },
 }
 

@@ -294,7 +294,7 @@ def _resolve(arg: str, secrets_seen: list[str]) -> str:
 
     def latest(m: re.Match) -> str:
         folder = (store.PROJECT_DIR / m.group(1)).resolve()
-        files = sorted(folder.glob("*.json"), key=lambda p: p.stat().st_mtime)
+        files = sorted((p for p in folder.glob("*") if p.name.endswith((".json", ".json.gz"))), key=lambda p: p.stat().st_mtime)
         if not files:
             raise RuntimeError(f"No backup file was found in {folder}.")
         return str(files[-1])

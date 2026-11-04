@@ -1,6 +1,6 @@
-# HTTPS for the Content Manager. Caddy gets and renews the certificate for $DOMAIN by itself; point the
-# domain's A record at the VPS first.
-{$DOMAIN} {
+# HTTPS for the Content Manager. Caddy gets and renews the certificates by itself; point the domain at the
+# VPS first. SITE_ADDRESSES is the domain, plus www.<domain> when that is on (set by deploy.sh).
+{$SITE_ADDRESSES} {
 	encode zstd gzip
 	reverse_proxy app:3000
 }

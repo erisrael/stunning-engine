@@ -1337,6 +1337,12 @@ def site_url(v: dict) -> str | None:
     return None
 
 
+def site_addresses(v: dict) -> str:
+    """What Caddy serves: the domain, and www.<domain> when that is on."""
+    d = v.get("domain")
+    return ", ".join([d] + ([f"www.{d}"] if v.get("www", True) else [])) if d else "localhost"
+
+
 def env_lines(v: dict) -> list[str]:
     """KEY=value lines for env.sh. Secrets are {secret:...} placeholders, filled in only when the job runs and
     sent over SSH's standard input, so they never reach a command line or a log."""
@@ -1344,6 +1350,7 @@ def env_lines(v: dict) -> list[str]:
     url = site_url(v) or f"http://{v.get('host')}:{v.get('app_port') or 3100}"
     lines = [
         f"DOMAIN={v.get('domain') or ''}",
+        f"SITE_ADDRESSES={site_addresses(v)}",
         f"APP_URL={url}",
         f"DB_MODE={v.get('database') or 'local'}",
         f"COMPOSE_PROFILES={','.join(profiles)}",
@@ -1645,6 +1652,7 @@ def api_vps_settings(h, body, m):
     database = body.get("database", vps().get("database"))
     if database not in ("local", "supabase"):
         raise ApiFail(400, "Choose where the database lives.")
+    www = bool(body.get("www", vps().get("www", True)))
     proxy = body.get("proxy", vps().get("proxy"))
     if proxy not in ("caddy", "none"):
         raise ApiFail(400, "Choose how the site is served.")
@@ -1668,7 +1676,7 @@ def api_vps_settings(h, body, m):
                 raise ApiFail(400, f"{', '.join(reserved)} {'is' if len(reserved) == 1 else 'are'} set by the panel from the choices above.")
             store.set_secret("vps_extra_env", "\n".join(lines))
 
-    store.update(lambda c: c["vps"].update(domain=domain, database=database, proxy=proxy, app_port=app_port))
+    store.update(lambda c: c["vps"].update(domain=domain, database=database, proxy=proxy, app_port=app_port, www=www))
     return vps_state()
 
 
@@ -1780,7 +1788,7 @@ def api_vps_status(h, body, m):
         remote = (
             f"if [ -x {q(root + '/incoming/deploy.sh')} ]; then {remote_script(v, '--compose ps --format json')} 2>/dev/null; fi; echo '---'; "
             "uptime -p; df -h / | awk 'NR==2 {print $5}'; free -m | awk '/Mem:/ {print $3\"/\"$2\" MB\"}'; "
-            f"basename \"$(readlink -f {q(root + '/current')} 2>/dev/null)\" 2>/dev/null; ls -1t {q(root + '/backups')} 2>/dev/null | grep -m1 '^myseed-' || true"
+            f"basename \"$(readlink -f {q(root + '/current')} 2>/dev/null)\" 2>/dev/null; ls -1t {q(root + '/backups')} 2>/dev/null | grep -m1 '^myseed-' || echo -; tail -n1 {q(root + '/autodeploy.log')} 2>/dev/null || echo -; [ -f /etc/cron.d/myseed-cm-autodeploy ] && echo on || echo off"
         )
         try:
             r = run_quick(ssh_cmd(v, remote), timeout=40)
@@ -1794,12 +1802,166 @@ def api_vps_status(h, body, m):
                 for item in c if isinstance(c, list) else [c]:
                     containers.append({"service": item.get("Service"), "state": item.get("State"), "status": item.get("Status"), "health": item.get("Health")})
             facts = [x.strip() for x in rest.strip().splitlines()]
-            result["server"] = {"ok": r.returncode == 0 or bool(containers), "containers": containers, "uptime": facts[0] if len(facts) > 0 else None, "disk": facts[1] if len(facts) > 1 else None, "memory": facts[2] if len(facts) > 2 else None, "release": facts[3] if len(facts) > 3 else None, "last_backup": facts[4] if len(facts) > 4 else None}
+            result["server"] = {"ok": r.returncode == 0 or bool(containers), "containers": containers, "uptime": facts[0] if len(facts) > 0 else None, "disk": facts[1] if len(facts) > 1 else None, "memory": facts[2] if len(facts) > 2 else None, "release": facts[3] if len(facts) > 3 else None, "last_backup": facts[4] if len(facts) > 4 and facts[4] != "-" else None, "autodeploy_last": facts[5] if len(facts) > 5 and facts[5] != "-" else None, "autodeploy_on": len(facts) > 6 and facts[6] == "on"}
         except subprocess.TimeoutExpired:
             result["server"] = {"ok": False, "error": "The server did not answer in 40 seconds."}
     _status_cache.clear()
     _status_cache.update(result)
     return result
+
+
+# --- Domain: check where it points, and point it at the VPS through Hostinger DNS ---------------
+
+
+def resolve_a(name: str) -> list[str]:
+    try:
+        return sorted({a[4][0] for a in socket.getaddrinfo(name, 443, socket.AF_INET, socket.SOCK_STREAM)})
+    except OSError:
+        return []
+
+
+def dns_zone(domain: str) -> list[dict] | None:
+    """The domain's records when its DNS is at Hostinger (and the token can read it), else None."""
+    if not store.get_secret("hostinger_token"):
+        return None
+    try:
+        return [r for r in as_list(hostinger("GET", f"/api/dns/v1/zones/{domain}")) if isinstance(r, dict)]
+    except ApiFail:
+        return None
+
+
+def domain_state(v: dict) -> dict:
+    domain = v.get("domain") or ""
+    if not domain:
+        return {"domain": None}
+    ip = v.get("host")
+    names = [domain] + ([f"www.{domain}"] if v.get("www", True) else [])
+    seen = {n: resolve_a(n) for n in names}
+    zone = dns_zone(domain)
+    records = [{"type": r.get("type"), "name": r.get("name"), "values": [x.get("content") for x in r.get("records") or []], "ttl": r.get("ttl")} for r in zone or [] if r.get("type") in ("A", "AAAA", "CNAME", "ALIAS")]
+    return {
+        "domain": domain,
+        "www": bool(v.get("www", True)),
+        "vps_ip": ip,
+        "resolves": seen,
+        "ok": {n: bool(ip) and seen[n] == [ip] for n in names},
+        "hostinger_dns": zone is not None,
+        "records": records,
+        "aaaa": [r for r in records if r["type"] == "AAAA" and r["name"] in ("@", "www")],
+        "checked": jobs.now_iso(),
+    }
+
+
+@route("GET", "/api/vps/domain")
+def api_vps_domain(h, body, m):
+    return domain_state(vps())
+
+
+@route("POST", "/api/vps/domain/point")
+def api_vps_domain_point(h, body, m):
+    """Sets the domain's A record (and www) to the VPS in Hostinger DNS. Only these names and types change:
+    mail (MX), TXT and every other record stay as they are. Hostinger keeps a snapshot of the zone."""
+    v = vps()
+    domain, ip = v.get("domain"), v.get("host")
+    if not domain or not ip:
+        raise ApiFail(400, "Save the domain (step 3) and choose the VPS (step 1) first.")
+    zone = dns_zone(domain)
+    if zone is None:
+        raise ApiFail(400, f"{domain}'s DNS is not at Hostinger (or the API token cannot read it). Add the records at your DNS provider instead: A @ {ip}" + (f" and A www {ip}" if v.get("www", True) else "") + ".")
+    changes = [{"name": "@", "type": "A", "ttl": 300, "records": [{"content": ip}]}]
+    if v.get("www", True):
+        www_cname = next((r for r in zone if r.get("name") == "www" and r.get("type") == "CNAME"), None)
+        if not www_cname:
+            changes.append({"name": "www", "type": "A", "ttl": 300, "records": [{"content": ip}]})
+        # A www CNAME to the domain follows the A record by itself.
+    hostinger("PUT", f"/api/dns/v1/zones/{domain}", {"overwrite": True, "zone": changes})
+    st = domain_state(v)
+    note = "DNS updated. Most networks see it within 5 to 30 minutes; Caddy then gets the HTTPS certificate by itself."
+    if st["aaaa"]:
+        note += " There is also an IPv6 (AAAA) record for this name that does not point at the VPS: delete it in hPanel, DNS, or IPv6 visitors reach the old address."
+    return {**st, "message": note}
+
+
+# --- Auto deploy from GitHub -----------------------------------------------------------------
+
+
+def repo_url() -> str:
+    url = run_quick([GIT, "remote", "get-url", "origin"], timeout=10).stdout.strip()
+    url = re.sub(r"//[^/@]+@", "//", url)  # no token in it
+    if url.endswith(".git"):
+        url = url[:-4]
+    if not re.fullmatch(r"(https://|git@)[A-Za-z0-9._@:/~-]+", url):
+        raise ApiFail(400, "This folder has no GitHub remote (origin). Add one on the Code (GitHub) page first.")
+    return url
+
+
+@route("POST", "/api/vps/autodeploy")
+def api_vps_autodeploy(h, body, m):
+    v = require_server()
+    if not v.get("last_deploy") and body.get("enabled"):
+        raise ApiFail(400, "Deploy once from here first (step 4); after that every push deploys by itself.")
+    if body.get("enabled"):
+        branch = str(body.get("branch") or "main").strip()
+        if not re.fullmatch(r"[A-Za-z0-9._/-]{1,100}", branch):
+            raise ApiFail(400, "That is not a branch name.")
+        url = repo_url()
+        step = {"title": f"Turn on auto deploy for {branch}", "cmd": ssh_cmd(v, remote_script(v, f"--autodeploy-on {q(url)} {q(branch)}"))}
+        job = jobs.create_job(f"Auto deploy from GitHub ({branch})", [*upload_scripts_steps(v), step], group="vps", locks=["vps"])
+        store.update(lambda c: c["vps"].update(autodeploy={"enabled": True, "branch": branch, "repo": url, "job": job["id"]}))
+    else:
+        job = jobs.create_job("Turn off auto deploy", [*upload_scripts_steps(v), {"title": "Turn off auto deploy", "cmd": ssh_cmd(v, remote_script(v, "--autodeploy-off"))}], group="vps", locks=["vps"])
+        store.update(lambda c: c["vps"].update(autodeploy={**(c["vps"].get("autodeploy") or {}), "enabled": False, "job": job["id"]}))
+    return {"job": job}
+
+
+@route("POST", "/api/vps/autodeploy/log")
+def api_vps_autodeploy_log(h, body, m):
+    v = require_server()
+    root = remote_root(v)
+    return {"job": jobs.create_job("Auto deploy log", [{"title": "Last 80 lines of autodeploy.log", "cmd": ssh_cmd(v, f"tail -n 80 {q(root + '/autodeploy.log')} 2>/dev/null || echo 'No automatic deploy has run yet.'")}], group="vps-logs")}
+
+
+# --- Data: this computer <-> the VPS database ---------------------------------------------------
+
+
+@route("POST", "/api/vps/data/push")
+def api_vps_data_push(h, body, m):
+    """This computer's data replaces the VPS's. Backs up both sides first."""
+    v = require_server()
+    if not v.get("last_deploy"):
+        raise ApiFail(400, "Deploy the app to the VPS first (step 4).")
+    local_db_guard()
+    root = remote_root(v)
+    s = stamp()
+    folder = f"backups/local/{s}-push-vps"
+    steps = [
+        backup_step("local", folder, "Back up the local database"),
+        *upload_scripts_steps(v),
+        {"title": "Upload it to the server", "cmd": scp_to(v, [f"{{latest:{folder}}}"], root + "/backups/incoming/")},
+        {"title": "Safety backup of the VPS, then replace its data", "cmd": ssh_cmd(v, remote_script(v, "--restore-newest"))},
+    ]
+    return {"job": jobs.create_job("Copy this computer's data to the VPS", steps, group="data", locks=["local database", "vps"])}
+
+
+@route("POST", "/api/vps/data/pull")
+def api_vps_data_pull(h, body, m):
+    """The VPS's data replaces this computer's. Backs up this computer first."""
+    v = require_server()
+    if not v.get("last_deploy"):
+        raise ApiFail(400, "Deploy the app to the VPS first (step 4).")
+    local_db_guard()
+    root = remote_root(v)
+    s = stamp()
+    folder = VPS_BACKUPS / f"{s}-pull"
+    folder.mkdir(parents=True, exist_ok=True)
+    steps = [
+        *upload_scripts_steps(v),
+        {"title": "Back up the VPS database", "cmd": ssh_cmd(v, remote_script(v, "--backup"))},
+        {"title": "Download it", "cmd": scp_from(v, root + "/backups/latest.json.gz", str(folder / f"myseed-vps-{s}.json.gz"))},
+        backup_step("local", f"backups/local/{s}-before-pull-vps", "Safety backup of the local database (so this can be undone)"),
+        restore_step("local", f"{{latest:backups/vps/{s}-pull}}", "Replace the local data with the VPS data"),
+    ]
+    return {"job": jobs.create_job("Copy the VPS data to this computer", steps, group="data", locks=["local database", "vps"])}
 
 
 @route("POST", "/api/vps/disconnect")
@@ -1839,7 +2001,7 @@ def api_vps_disconnect(h, body, m):
     done.append("Forgot the Hostinger API token.")
 
     def apply(c):
-        keep = {k: c["vps"].get(k) for k in ("domain", "database", "proxy", "app_port")}
+        keep = {k: c["vps"].get(k) for k in ("domain", "database", "proxy", "app_port", "www")}
         c["vps"] = {**json.loads(json.dumps(store.DEFAULTS["vps"])), **keep}
 
     store.update(apply)

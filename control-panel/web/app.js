@@ -1536,6 +1536,116 @@ function disconnectBox(d) {
   });
 }
 
+// Domain: where it points now, and one button to point it at the VPS when the DNS is at Hostinger.
+function domainCard(d, reload) {
+  const v = d.vps;
+  const body = el("div", { class: "col" }, el("div", { class: "progress indeterminate" }, el("div")));
+  const check = btn("Check again", { size: "sm", icon: "refresh" });
+  const show = async () => {
+    body.replaceChildren(el("div", { class: "progress indeterminate" }, el("div")));
+    try {
+      const st = await api("GET", "/api/vps/domain");
+      if (!st.domain) return body.replaceChildren(el("p", { class: "small muted", text: "Save the domain in step 3 first." }));
+      const allOk = Object.values(st.ok).every(Boolean);
+      const point = btn(`Point ${st.domain} at the VPS`, {
+        kind: "primary",
+        size: "sm",
+        icon: "right",
+        disabled: !st.hostinger_dns || !st.vps_ip,
+        onclick: act(async () => {
+          const ok = await confirmBox({
+            title: `Point ${st.domain} at ${st.vps_ip}?`,
+            lines: [`Sets the A record of ${st.domain}${st.www ? " (and www)" : ""} to the VPS in Hostinger DNS.`, "Mail (MX), TXT and every other record stay as they are. Hostinger keeps a snapshot of the zone, so it can be undone in hPanel, DNS.", "The old address stops getting visitors as soon as the change spreads (5 to 30 minutes)."],
+            ok: "Point it at the VPS",
+          });
+          if (!ok) return;
+          const r = await api("POST", "/api/vps/domain/point");
+          toast(r.message, "ok", 10000);
+          show();
+        }),
+      });
+      body.replaceChildren(
+        el(
+          "div",
+          { class: "list" },
+          Object.entries(st.resolves).map(([name, ips]) =>
+            el(
+              "div",
+              { class: "list-item static" },
+              el("div", { class: "grow" }, el("div", { class: "mono", text: name }), el("div", { class: "tiny muted", text: ips.length ? `points to ${ips.join(", ")}` : "has no address yet" })),
+              st.ok[name] ? badge("On the VPS", "ok") : badge(ips.length ? "Elsewhere" : "Not set", "warn"),
+            ),
+          ),
+        ),
+        allOk
+          ? notice("ok", `${st.domain} reaches the VPS. Caddy gets the HTTPS certificate on the next deploy or restart.`)
+          : st.hostinger_dns
+            ? notice("info", `The DNS for ${st.domain} is at Hostinger, so the panel can change it for you.`)
+            : notice("warn", el("div", null, `The DNS for ${st.domain} is not at Hostinger (or the API token is not connected). At your DNS provider add:`), el("ul", { class: "small" }, el("li", { class: "mono", text: `A  @  ${st.vps_ip || "<VPS IP>"}` }), st.www ? el("li", { class: "mono", text: `A  www  ${st.vps_ip || "<VPS IP>"}` }) : null)),
+        st.aaaa.length ? notice("warn", `There is an IPv6 (AAAA) record for ${st.aaaa.map((r) => r.name).join(" and ")}. Delete it in hPanel, DNS unless it is the VPS's IPv6 address, or some visitors reach the old address.`) : null,
+        st.records.length ? el("details", { class: "small" }, el("summary", { text: "Current web records at Hostinger" }), el("ul", { class: "mono tiny" }, st.records.map((r) => el("li", { text: `${r.type}  ${r.name}  ${r.values.join(", ")}  (TTL ${r.ttl})` })))) : null,
+        el("div", { class: "row" }, allOk ? null : point, st.domain ? link(`https://${st.domain}`, `Open https://${st.domain}`) : null),
+      );
+    } catch (err) {
+      body.replaceChildren(notice("bad", err.message || String(err)));
+    }
+  };
+  check.onclick = () => withBusy(check, show);
+  show();
+  return card("Domain", { icon: "cloud", sub: v.domain ? `Where ${v.domain} points, and setting it up.` : "Connect your domain to the VPS.", action: check }, body);
+}
+
+function autodeployCard(d, reload) {
+  const v = d.vps;
+  const a = v.autodeploy || {};
+  const srv = (d.status && d.status.server) || {};
+  const branch = el("input", { type: "text", value: a.branch || "main" });
+  const on = !!a.enabled;
+  return card(
+    "Auto deploy from GitHub",
+    { icon: "git", sub: on ? `On: every push to ${a.branch} goes live by itself, about 2 minutes later plus the build.` : "Every push to GitHub deploys by itself. The VPS checks GitHub every 2 minutes; nothing is opened to the internet.", action: on ? badge("On", "ok") : badge("Off", "plain") },
+    el("div", { class: "grid g2" }, field("Branch", branch, "Usually main."), field("Repository", el("input", { type: "text", value: a.repo || d.repo || "(the origin of this folder)", readonly: true }))),
+    srv.autodeploy_last ? el("p", { class: "tiny muted mono", text: `Last: ${srv.autodeploy_last}` }) : null,
+    !v.last_deploy ? notice("warn", "Deploy once from step 4 first.") : null,
+    el(
+      "div",
+      { class: "row" },
+      btn(on ? "Save branch" : "Turn on", { kind: "primary", size: "sm", icon: "play", disabled: !v.last_deploy, onclick: () => runJob(() => api("POST", "/api/vps/autodeploy", { enabled: true, branch: branch.value })).then(reload) }),
+      on ? btn("Turn off", { size: "sm", icon: "stop", onclick: () => runJob(() => api("POST", "/api/vps/autodeploy", { enabled: false })).then(reload) }) : null,
+      btn("Auto deploy log", { size: "sm", kind: "ghost", icon: "terminal", disabled: !v.key_installed, onclick: () => runJob(() => api("POST", "/api/vps/autodeploy/log")) }),
+    ),
+    el("p", { class: "tiny muted", text: "A private repository: the first Turn on prints a deploy key in the log. Add it on GitHub (repository, Settings, Deploy keys), then press Turn on again. A failed build keeps the previous release running and waits for the next push." }),
+  );
+}
+
+function dataCard(d) {
+  const v = d.vps;
+  const ready = !!v.last_deploy;
+  return card(
+    "Data between this computer and the VPS",
+    { icon: "leftright", sub: "Each copy backs up the side it replaces first, so it can be undone from Backups." },
+    !ready ? notice("warn", "Deploy the app to the VPS first.") : null,
+    el(
+      "div",
+      { class: "row" },
+      btn("Copy this computer's data to the VPS", {
+        kind: "primary",
+        size: "sm",
+        icon: "up",
+        disabled: !ready,
+        onclick: async () => (await confirmBox({ title: "Replace the VPS data with this computer's?", lines: ["Backs up the local database and the VPS database, then replaces everything on the VPS with the local data.", "People using the live site lose what they changed since your local copy."], word: "VPS", ok: "Copy to the VPS", danger: true })) && runJob(() => api("POST", "/api/vps/data/push")),
+      }),
+      btn("Copy the VPS data to this computer", {
+        size: "sm",
+        icon: "down",
+        disabled: !ready,
+        onclick: async () => (await confirmBox({ title: "Replace this computer's data with the VPS's?", lines: ["Downloads a backup of the VPS database, backs up the local database, then replaces the local data with it."], ok: "Copy to this computer", danger: true })) && runJob(() => api("POST", "/api/vps/data/pull")),
+      }),
+    ),
+    el("p", { class: "tiny muted", text: "The local database can only be open in one program: stop npm run dev in a terminal first (the panel stops its own dev server for you)." }),
+  );
+}
+
 async function pageVps(root, alive) {
   let machines = null;
   let facts = null;
@@ -1622,13 +1732,14 @@ async function pageVps(root, alive) {
     const proxySel = el("select", null, el("option", { value: "caddy", text: "Caddy on ports 80 and 443 with automatic HTTPS" }), el("option", { value: "none", text: "Use the web server I already have (another site runs here)" }));
     proxySel.value = v.proxy || "caddy";
     const appPort = el("input", { type: "number", value: v.app_port || 3100, min: "1024", max: "65535" });
+    const www = el("input", { type: "checkbox", checked: v.www !== false });
     const extra = el("textarea", { class: "mono tiny", rows: "4", placeholder: d.extra_env ? `Saved: ${d.extra_env_keys.join(", ")}. Type new lines to replace them.` : "Optional, one per line, for example:\nSMTP_HOST=smtp.example.com\nANTHROPIC_API_KEY=sk-...", autocomplete: "off" });
     const saveSettings = btn("Save settings", { size: "sm", kind: "primary" });
     saveSettings.onclick = () =>
       withBusy(
         saveSettings,
         act(async () => {
-          await api("POST", "/api/vps/settings", { domain: domain.value, database: dbSel.value, proxy: proxySel.value, app_port: Number(appPort.value), ...(extra.value.trim() ? { extra_env: extra.value } : {}) });
+          await api("POST", "/api/vps/settings", { domain: domain.value, database: dbSel.value, proxy: proxySel.value, app_port: Number(appPort.value), www: www.checked, ...(extra.value.trim() ? { extra_env: extra.value } : {}) });
           toast("Settings saved. They reach the server with the next deploy, or press Send settings now.");
           load();
         }),
@@ -1734,7 +1845,7 @@ async function pageVps(root, alive) {
           "Site settings and the server",
           !!v.setup_done && settingsOk,
           "Where the site answers, where its data lives, then prepare the server once.",
-          el("div", { class: "grid g2" }, field("Domain", domain, "Point its A record at the VPS first. Caddy gets the HTTPS certificate."), field("Database", dbSel, d.supabase_ready ? "Supabase is connected on the Database page." : "Supabase needs the session pooler string on the Database page.")),
+          el("div", { class: "grid g2" }, el("div", { class: "col" }, field("Domain", domain, "The Domain card below points it at the VPS. Caddy gets the HTTPS certificate."), el("label", { class: "row small" }, www, "Also www.<domain>")), field("Database", dbSel, d.supabase_ready ? "Supabase is connected on the Database page." : "Supabase needs the session pooler string on the Database page.")),
           el("div", { class: "grid g2 section" }, field("Web server", proxySel), field("App port on the server", appPort, "Only on 127.0.0.1. With your own web server, send the domain to this port.")),
           field("More settings for the app (encrypted here, sent over SSH)", extra, d.extra_env ? `Saved: ${d.extra_env_keys.join(", ")}` : "Email (SMTP_*), the AI key, Google sign-in and the like. Most can also be set inside the app."),
           el(
@@ -1779,6 +1890,9 @@ async function pageVps(root, alive) {
               : null,
           ),
         ),
+        domainCard(d, load),
+        autodeployCard(d, load),
+        dataCard(d),
         statusCard(d.status, !!d.url, load),
       ),
     );

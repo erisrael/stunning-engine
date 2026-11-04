@@ -10,7 +10,7 @@ export DEBIAN_FRONTEND=noninteractive
 
 echo "== System packages"
 apt-get update -y -q
-apt-get install -y -q ca-certificates curl cron ufw >/dev/null
+apt-get install -y -q ca-certificates curl cron ufw git >/dev/null
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "== Installing Docker"
