@@ -83,14 +83,41 @@ async function main() {
   check("a shot is removed", (await lg.legacyParts(u1.id)).find((x) => x.id === p1.id)?.videos.length === 1);
   check("a member cannot delete a part", await rejects(() => lg.deletePart(dawit, tbd.id), /lead or a planner/));
 
-  // Mark recorded: into the handover flow.
-  const part1 = (await lg.legacyParts(u1.id)).find((x) => x.id === p1.id)!;
-  check("Mark recorded is offered once it has a shot", part1.canMark && part1.canLog);
-  await lg.markRecorded(dawit, p1.id);
-  const sent = await wf.currentAttempt(it!.id);
-  check("marked recorded: it waits for Editing", sent?.stage === "recording" && sent.status === "awaiting_handoff", sent);
+  // Everything else the team enters on a part.
+  let part1 = (await lg.legacyParts(u1.id)).find((x) => x.id === p1.id)!;
+  check("the part lists the checklist and what is still missing", part1.checks.length > 0 && part1.missing.length > 0, part1);
+  await lg.saveDetails(dawit, p1.id, { teacher: "Ato Kebede", rawMin: 42, notes: "Studio 2, second take is better", checks: Object.fromEntries(part1.checks.map((c) => [c.key, true])) });
+  part1 = (await lg.legacyParts(u1.id)).find((x) => x.id === p1.id)!;
+  check("presenter, minutes, notes and checklist are saved on the real work", part1.teacher === "Ato Kebede" && part1.rawMin === 42 && /Studio 2/.test(part1.notes ?? "") && part1.checks.every((c) => c.checked), part1);
+  check("and nothing is missing now", part1.missing.length === 0, part1.missing);
+  await lg.addVideo(dawit, p1.id, { cameraCode: "C0173", title: "Second take", minutes: 20, link: "https://drive.example.com/c0173" });
+  const shot = (await lg.legacyParts(u1.id)).find((x) => x.id === p1.id)!.videos.find((v) => v.cameraCode === "C0173")!;
+  check("a shot keeps its minutes and link", shot.minutes === 20 && shot.link === "https://drive.example.com/c0173", shot);
+  await lg.addVideo(dawit, p1.id, { cameraCode: "C0174", title: "On the disk", disk: "Disk A", path: "G9/Astronomy/U3" });
+  const diskShot = (await lg.legacyParts(u1.id)).find((x) => x.id === p1.id)!.videos.find((v) => v.cameraCode === "C0174")!;
+  check("or the disk and folder it is on", diskShot.disk === "Disk A" && diskShot.path === "G9/Astronomy/U3", diskShot);
+
+  // Done: it waits ready to hand off; it is not handed off on its own.
+  check("Done is offered once it has a shot", part1.canMark && part1.canLog);
+  await lg.markDone(dawit, p1.id);
+  const doneAt = await wf.currentAttempt(it!.id);
+  check("done: it stays in Recording, ready to hand off", doneAt?.stage === "recording" && doneAt.status === "finished", doneAt);
+  const after1 = (await lg.legacyParts(u1.id)).find((x) => x.id === p1.id)!;
+  check("the catalog says so", /ready to hand off/.test(after1.where) && after1.canReopen && !after1.canLog, after1);
+  await lg.reopenPart(dawit, p1.id);
+  check("it can be reopened to change it", (await wf.currentAttempt(it!.id))?.status === "paused");
+  await lg.markDone(dawit, p1.id);
+  const ready = await lg.readyToHandOff(dawit, {});
+  check("it is on the person's Ready to hand off list", ready.some((r) => r.itemId === it!.id && r.teacher === "Ato Kebede"), ready);
+  check("filters by teacher and subject", (await lg.readyToHandOff(dawit, { teacher: "ato kebede" })).length >= 1 && (await lg.readyToHandOff(dawit, { subjectId: "nope" })).length === 0);
+  const sentR = await lg.handOff(dawit, [it!.id]);
+  check("a member hands it off to the Recording lead", sentR.sentToLead && sentR.results[0]?.ok === true && (await wf.currentAttempt(it!.id))?.status === "lead_review", sentR);
+  const leadList = await lg.readyToHandOff(hana, {});
+  check("the lead sees it", leadList.some((r) => r.itemId === it!.id && r.status === "lead_review"));
+  const batch = await lg.handOff(hana, [it!.id]);
+  check("the lead hands it over to Editing as a batch", !!batch.handover && (await wf.currentAttempt(it!.id))?.status === "awaiting_handoff", batch);
   const after = (await lg.legacyParts(u1.id)).find((x) => x.id === p1.id)!;
-  check("the catalog says so, and stops logging on it", /waiting for Editing/.test(after.where) && !after.canLog && !after.canMark, after);
+  check("then it waits for Editing, and logging stops", /waiting for Editing/.test(after.where) && !after.canLog && !after.canMark, after);
   check("a video cannot be added now", await rejects(() => lg.addVideo(dawit, p1.id, { cameraCode: "C1" }), /left Recording/));
   await lg.editVideo(dawit, asset!.id, { cameraCode: "C0172", title: "Stars", description: "" });
   check("but details can still be corrected", (await get<{ label: string }>("SELECT label FROM assets WHERE id = ?", asset!.id))?.label === "Stars");
@@ -105,10 +132,12 @@ async function main() {
   check("a subject with nothing worked on can be removed", !(await lg.legacySubjects(hana, grade)).some((s) => s.id === empty.id));
 
   // Settings.
-  await lg.saveLegacyConfig(admin, { afterVideo: "recorded" });
+  await lg.saveLegacyConfig(admin, { afterVideo: "done" });
   const auto = await lg.addPart(dawit, u1.id, "Part 9: Auto");
+  const autoItem = (await get<{ id: string }>("SELECT id FROM items WHERE lesson_id = ?", auto.id))!.id;
+  await lg.saveDetails(dawit, auto.id, { rawMin: 5, checks: Object.fromEntries((await lg.legacyParts(u1.id)).find((x) => x.id === auto.id)!.checks.map((c) => [c.key, true])) });
   await lg.addVideo(dawit, auto.id, { cameraCode: "C0300", title: "Auto" });
-  check("set to send on at once, a shot sends the part to Editing", (await wf.currentAttempt((await get<{ id: string }>("SELECT id FROM items WHERE lesson_id = ?", auto.id))!.id))?.status === "awaiting_handoff");
+  check("set to mark done at once, a shot makes it ready to hand off, never handed off", (await wf.currentAttempt(autoItem))?.status === "finished");
   await lg.saveLegacyConfig(admin, { afterVideo: "stay", on: false });
   check("Admin can switch it off for the team", !(await canOpenPath(dawit, "/legacy")));
   check("only Admin changes it", await rejects(() => lg.saveLegacyConfig(hana, { on: true }), /Only Admin/));

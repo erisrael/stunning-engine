@@ -29,10 +29,12 @@ export type Presenter = {
   releaseState: "valid" | "expiring" | "expired" | "none";
 };
 
-export const canPresenters = (u: AppUser) => can(u, "users.manage") || can(u, "hr.access") || can(u, "items.plan") || isLeadOf(u, "recording");
+// HR manages presenters (and Admin). The Recording, Editing and Uploading leads and planners see the list.
+export const canPresenters = (u: AppUser) => can(u, "users.manage") || can(u, "hr.access");
+export const seesPresenters = (u: AppUser) => canPresenters(u) || can(u, "items.plan") || isLeadOf(u, "recording") || isLeadOf(u, "editing") || isLeadOf(u, "uploading");
 const canFinance = (u: AppUser) => can(u, "finance.access");
 function need(u: AppUser) {
-  if (!canPresenters(u)) throw new WorkflowError("FORBIDDEN", "Only HR, managers and the Recording lead manage presenters.");
+  if (!canPresenters(u)) throw new WorkflowError("FORBIDDEN", "HR manages presenters.");
 }
 
 export async function presenterConfig(): Promise<PresenterConfig> {
@@ -72,7 +74,7 @@ function stateOf(r: { expires_on: string | null } | undefined | null, warnDays: 
 }
 
 export async function listPresenters(user: AppUser): Promise<Presenter[]> {
-  need(user);
+  if (!seesPresenters(user)) throw new WorkflowError("FORBIDDEN", "HR and the production team leads see presenters.");
   const cfg = await presenterConfig();
   const rows = await all<Row>("SELECT * FROM presenters ORDER BY active DESC, name");
   const out: Presenter[] = [];

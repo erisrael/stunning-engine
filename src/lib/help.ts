@@ -509,7 +509,7 @@ export const CHAPTERS: Chapter[] = [
     key: "sessions",
     title: "Studio sessions",
     audiences: ["lead", "member", "manager"],
-    summary: "The Recording lead books the studio, presenter and camera operator for the parts to record.",
+    summary: "The academic manager books the studio, presenter and camera operator for the parts to record (Admin chooses who, on Studio sessions).",
     sections: [
       {
         title: "Booking",

@@ -31,6 +31,7 @@ const RULES: Rule[] = [
   { prefix: "/reports", any: ["reports.view"] },
   { prefix: "/coverage", any: ["nav.coverage"] },
   { prefix: "/overview", any: ["nav.overview"] },
+  { prefix: "/my-work", check: () => true },
   { prefix: "/handovers/settings", any: ["settings.manage", "users.manage"] },
   { prefix: "/handovers", any: ["nav.handovers"] },
   { prefix: "/calendar", any: ["nav.calendar"] },
@@ -45,7 +46,7 @@ const RULES: Rule[] = [
   { prefix: "/email", any: ["email.send"] },
   { prefix: "/team", any: ["nav.team", "team.view"] },
   { prefix: "/strategy", any: ["perf.library", "perf.view_company", "users.manage", "owners.view"] },
-  { prefix: "/sessions", check: (u) => can(u, "items.plan") || can(u, "team.view") || u.roles.includes("recording") },
+  { prefix: "/sessions", check: async (u) => can(u, "team.view") || u.roles.includes("recording") || (await (await import("./sessions")).canPlanSessions(u)) },
   { prefix: "/curriculum", check: async (u) => (await (await import("./curriculum-fix")).curriculumRights(u)).rename || (await import("./editorial")).assignableStages(u).length > 0 },
   { prefix: "/legacy", check: async (u) => {
     const { canUseLegacy, legacyConfig } = await import("./legacy");

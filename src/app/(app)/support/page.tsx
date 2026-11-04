@@ -6,7 +6,7 @@ import { appOrigin } from "@/server/password-reset";
 import * as sd from "@/server/support-desk";
 import { EmptyState, PageHeader } from "@/components/app/primitives";
 import { Desk, Inbox, NewTicket, TicketView } from "@/components/app/support/desk";
-import { Apps, Canned, KnowledgeBase, Monitor, Queues, SupportSettings } from "@/components/app/support/setup";
+import { Apps, Canned, DeveloperApi, KnowledgeBase, Monitor, Queues, SupportSettings } from "@/components/app/support/setup";
 import * as ch from "@/server/support-channels";
 import { all } from "@/server/db";
 import { cn } from "@/lib/utils";
@@ -56,11 +56,18 @@ export default async function SupportPage({ searchParams }: { searchParams: Prom
           <NewTicket queues={queues.filter((q) => q.active).map((q) => ({ id: q.id, name: q.name }))} />
         </div>
         <div className="grid gap-4 lg:grid-cols-[22rem_1fr]">
-          <Inbox rows={rows} view={view} views={views} q={sp.q ?? ""} openId={sp.ticket ?? null} />
+          <div className={cn(detail && "hidden lg:block")}>
+            <Inbox rows={rows} view={view} views={views} q={sp.q ?? ""} openId={sp.ticket ?? null} />
+          </div>
           {detail ? (
+            <div className="min-w-0 space-y-2">
+            <Link href={`/support?view=${encodeURIComponent(view)}`} className="text-sm text-primary hover:underline lg:hidden">
+              ← Tickets
+            </Link>
             <TicketView d={detail as Parameters<typeof TicketView>[0]["d"]} agents={agents} queues={queues.map((q) => ({ id: q.id, name: q.name }))} canned={await sd.cannedReplies()} me={viewer.id} lead={lead} articles={(await ch.listArticles(viewer)).filter((x) => x.published).map((x) => ({ id: x.id, title: x.title }))} origin={await appOrigin()} />
+            </div>
           ) : (
-            <EmptyState title="Choose a ticket" description="Go online to be given new tickets and calls. Tickets that wait because nobody is free are given out as agents come online." />
+            <div className="hidden lg:block"><EmptyState title="Choose a ticket" description="Go online to be given new tickets and calls. Tickets that wait because nobody is free are given out as agents come online." /></div>
           )}
         </div>
       </Desk>
@@ -77,7 +84,15 @@ export default async function SupportPage({ searchParams }: { searchParams: Prom
         <Canned list={await sd.cannedReplies()} />
       </div>
     );
-  else if (tab === "apps") panel = <Apps apps={await sd.listApps(viewer)} queues={queues} origin={await appOrigin()} admin={admin} />;
+  else if (tab === "apps") {
+    const apps = await sd.listApps(viewer);
+    panel = (
+      <div className="space-y-4">
+        <Apps apps={apps} queues={queues} origin={await appOrigin()} admin={admin} />
+        <DeveloperApi origin={await appOrigin()} appKey={apps[0]?.publicKey ?? null} />
+      </div>
+    );
+  }
   else if (tab === "settings")
     panel = <SupportSettings cfg={cfg} people={people} admin={admin} mailboxes={(await all<{ address: string }>("SELECT address FROM email_senders WHERE mailbox = 1 AND active = 1 ORDER BY address")).map((m) => m.address)} telegram={await ch.telegramInfo()} />;
   else if (tab === "kb") panel = <KnowledgeBase list={await ch.listArticles(viewer)} lead={lead} origin={await appOrigin()} />;
@@ -85,9 +100,9 @@ export default async function SupportPage({ searchParams }: { searchParams: Prom
   return (
     <div className="space-y-4">
       <PageHeader title="Customer support" description="Questions and calls from customers of Myseed's apps, given out to agents by queue, with targets, recordings and monitoring." />
-      <nav className="flex flex-wrap gap-1 border-b" aria-label="Support">
+      <nav className="flex gap-1 overflow-x-auto border-b" aria-label="Support">
         {tabs.map((t) => (
-          <Link key={t} href={`/support?tab=${t}`} className={cn("-mb-px border-b-2 px-3 py-2 text-sm", tab === t ? "border-primary font-medium" : "border-transparent text-muted-foreground hover:text-foreground")}>
+          <Link key={t} href={`/support?tab=${t}`} className={cn("-mb-px shrink-0 border-b-2 px-3 py-2 text-sm whitespace-nowrap", tab === t ? "border-primary font-medium" : "border-transparent text-muted-foreground hover:text-foreground")}>
             {LABELS[t]}
           </Link>
         ))}

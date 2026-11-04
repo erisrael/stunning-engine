@@ -98,6 +98,77 @@ export function SupportSettings({ cfg, people, admin, mailboxes = [], telegram =
             <Input id="sc-away" disabled={!admin} value={c.awayMessage} onChange={(e) => setC({ ...c, awayMessage: e.target.value })} />
           </div>
         </div>
+        <fieldset className="space-y-2 rounded-lg border p-3" data-ivr-settings>
+          <legend className="px-1 text-sm font-medium">Waiting message for callers</legend>
+          <p className="text-xs text-muted-foreground">Played to someone calling from the app until an agent answers: your recording, or the message read out in their browser, then soft hold music. Repeated, with their place in line.</p>
+          <label className="flex items-center gap-2 text-sm">
+            <Switch disabled={!admin} checked={c.ivr.on} onCheckedChange={(v) => setC({ ...c, ivr: { ...c.ivr, on: v } })} /> Play a waiting message
+          </label>
+          <div className="space-y-1">
+            <Label htmlFor="sc-ivr">Message</Label>
+            <Textarea id="sc-ivr" rows={2} disabled={!admin || !c.ivr.on} value={c.ivr.message} onChange={(e) => setC({ ...c, ivr: { ...c.ivr, message: e.target.value } })} />
+          </div>
+          <div className="grid gap-2 sm:grid-cols-3">
+            <div className="space-y-1">
+              <Label htmlFor="sc-ivr-lang">Voice language</Label>
+              <select id="sc-ivr-lang" disabled={!admin || !c.ivr.on} className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={c.ivr.lang} onChange={(e) => setC({ ...c, ivr: { ...c.ivr, lang: e.target.value } })}>
+                <option value="en-US">English</option>
+                <option value="am-ET">Amharic (where the phone has the voice)</option>
+                <option value="en-GB">English (UK)</option>
+              </select>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="sc-ivr-rep">Repeat every (seconds)</Label>
+              <Input id="sc-ivr-rep" type="number" min={10} max={300} disabled={!admin || !c.ivr.on} value={c.ivr.repeatSec} onChange={(e) => setC({ ...c, ivr: { ...c.ivr, repeatSec: Number(e.target.value) } })} />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="sc-ivr-file">Or a recording (MP3, up to 4 MB)</Label>
+              <Input
+                id="sc-ivr-file"
+                type="file"
+                accept="audio/*"
+                disabled={!admin || !c.ivr.on}
+                onChange={async (e) => {
+                  const f = e.target.files?.[0];
+                  if (!f) return;
+                  if (f.size > 4 * 1024 * 1024) return void toast.error("Up to 4 MB.");
+                  const url = await new Promise<string>((res) => {
+                    const r = new FileReader();
+                    r.onload = () => res(String(r.result));
+                    r.readAsDataURL(f);
+                  });
+                  setC({ ...c, ivr: { ...c.ivr, audio: url } });
+                }}
+              />
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-4 text-sm">
+            <label className="flex items-center gap-2">
+              <Switch disabled={!admin || !c.ivr.on} checked={c.ivr.music} onCheckedChange={(v) => setC({ ...c, ivr: { ...c.ivr, music: v } })} /> Hold music
+            </label>
+            <label className="flex items-center gap-2">
+              <Switch disabled={!admin || !c.ivr.on} checked={c.ivr.position} onCheckedChange={(v) => setC({ ...c, ivr: { ...c.ivr, position: v } })} /> Say their place in line
+            </label>
+            {c.ivr.audio && (
+              <Button size="xs" variant="ghost" disabled={!admin} onClick={() => setC({ ...c, ivr: { ...c.ivr, audio: null } })}>
+                Remove the recording
+              </Button>
+            )}
+            <Button
+              size="xs"
+              variant="outline"
+              type="button"
+              onClick={() => {
+                if (c.ivr.audio) return void new Audio(c.ivr.audio).play();
+                const u = new SpeechSynthesisUtterance(`${c.ivr.message} You are number 2 in line.`);
+                u.lang = c.ivr.lang;
+                window.speechSynthesis?.speak(u);
+              }}
+            >
+              Listen
+            </Button>
+          </div>
+        </fieldset>
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-1">
             <Label htmlFor="sc-mailbox">Support mailbox (email becomes tickets)</Label>
@@ -209,6 +280,8 @@ export function Apps({ apps, queues, origin, admin }: { apps: App[]; queues: Que
   const { act, busy } = useAct();
   const [a, setA] = React.useState<{ id: string | null; name: string; origins: string; queueId: string; verifyIdentity: boolean; greeting: string; color: string; active: boolean } | null>(null);
   const [secret, setSecret] = React.useState<{ app: string; secret: string } | null>(null);
+  const [testing, setTesting] = React.useState<string | null>(null);
+  const [tests, setTests] = React.useState<Record<string, { ok: boolean; ms: number; lines: { label: string; ok: boolean; detail: string }[] }>>({});
   const copy = (t: string) => void navigator.clipboard.writeText(t).then(() => toast.success("Copied"));
   const snippet = (x: App) => `<script src="${origin}/support-sdk.js"></script>
 <script>
@@ -262,7 +335,35 @@ export function Apps({ apps, queues, origin, admin }: { apps: App[]; queues: Que
               <a className="text-xs text-primary hover:underline" href={`/support-widget?key=${x.publicKey}&name=Test%20customer&id=test-1`} target="_blank" rel="noreferrer">
                 Try the widget as a customer
               </a>
+              <Button
+                size="xs"
+                variant="outline"
+                disabled={testing === x.id}
+                data-test-connection
+                onClick={async () => {
+                  setTesting(x.id);
+                  const r = await A.testAppAction(x.id);
+                  setTesting(null);
+                  if (!r.ok) return void toast.error(r.error);
+                  setTests({ ...tests, [x.id]: r.data! });
+                }}
+              >
+                Test connection
+              </Button>
             </div>
+            {tests[x.id] && (
+              <ul className="space-y-0.5 rounded-lg border p-2 text-xs" data-test-result={tests[x.id]!.ok ? "ok" : "warn"}>
+                <li className="font-medium">{tests[x.id]!.ok ? "Ready" : "Something needs attention"} ({tests[x.id]!.ms} ms)</li>
+                {tests[x.id]!.lines.map((l) => (
+                  <li key={l.label} className="flex gap-1.5">
+                    <span className={l.ok ? "text-[var(--st-done-fg)]" : "text-[var(--st-paused-fg)]"}>{l.ok ? "✓" : "!"}</span>
+                    <span>
+                      <span className="font-medium">{l.label}:</span> {l.detail}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         ))}
         {admin && !a && (
@@ -310,6 +411,84 @@ export function Apps({ apps, queues, origin, admin }: { apps: App[]; queues: Que
             </div>
           </div>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+
+// For developers: the customer API, with examples to copy, and a check to run from their own app.
+export function DeveloperApi({ origin, appKey }: { origin: string; appKey: string | null }) {
+  const key = appKey ?? "<app key>";
+  const copy = (t: string) => void navigator.clipboard.writeText(t).then(() => toast.success("Copied"));
+  const base = `${origin}/api/support/v1`;
+  const rows: [string, string, string][] = [
+    ["GET", "ping", "Checks the key and the setup. No customer needed. Use it to test the connection."],
+    ["POST", "identify", "{ id, name, email, phone, hash? } gives a customer token."],
+    ["GET", "tickets", "The customer's conversations."],
+    ["POST", "tickets", "{ subject?, message, priority? } opens one."],
+    ["GET", "tickets/<id>/messages?since=", "Messages since a time (poll every few seconds)."],
+    ["POST", "tickets/<id>/messages", "{ body } replies."],
+    ["POST", "tickets/<id>/rating", "{ rating: 1 to 5, comment? }"],
+    ["GET", "articles?q=", "Help articles matching the words."],
+    ["GET", "ice", "STUN and TURN servers for a call."],
+    ["POST", "calls", "{ ticketId?, offer, consent } starts a call (WebRTC offer)."],
+    ["GET", "calls/<id>", "{ status, answer, position, ivr } while it rings and once answered."],
+    ["POST", "calls/<id>/ice", "{ candidate }"],
+    ["POST", "calls/<id>/end", "Ends the call."],
+  ];
+  const curl = `curl -s ${base}/ping -H "X-App-Key: ${key}"
+
+curl -s -X POST ${base}/identify -H "X-App-Key: ${key}" -H "Content-Type: application/json" \\
+  -d '{"id":"123","name":"Abebe Kebede","email":"abebe@example.com"}'
+
+curl -s -X POST ${base}/tickets -H "X-App-Key: ${key}" -H "Authorization: Bearer <token>" \\
+  -H "Content-Type: application/json" -d '{"subject":"Video does not play","message":"Grade 9 Biology unit 1"}'`;
+  const js = `const api = (path, body) => fetch("${base}/" + path, {
+  method: body ? "POST" : "GET",
+  headers: { "X-App-Key": "${key}", "Content-Type": "application/json", ...(token ? { Authorization: "Bearer " + token } : {}) },
+  body: body ? JSON.stringify(body) : undefined,
+}).then((r) => r.json());
+
+console.log(await api("ping"));                         // { ok: true, app, checks: [...] }
+const { token } = await api("identify", { id: "123", name: "Abebe" });`;
+  return (
+    <Card data-developer-api>
+      <CardHeader>
+        <CardTitle className="text-base">Developer API</CardTitle>
+        <CardDescription>For the app&apos;s developers: every request sends the app key in X-App-Key; after identify, the customer token as a Bearer token. Errors come back as {"{ error }"} with the status code. Full guide: docs/SUPPORT-SDK.md.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3 text-sm">
+        <p>
+          Base address: <code className="break-all">{base}</code>
+        </p>
+        <div className="overflow-x-auto rounded-lg border">
+          <table className="w-full text-xs">
+            <tbody>
+              {rows.map(([m, p, what]) => (
+                <tr key={m + p} className="border-t first:border-t-0">
+                  <td className="p-1.5 font-mono font-semibold">{m}</td>
+                  <td className="p-1.5 font-mono whitespace-nowrap">{p}</td>
+                  <td className="p-1.5 text-muted-foreground">{what}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {[
+          ["From a terminal", curl],
+          ["From JavaScript", js],
+        ].map(([label, code]) => (
+          <div key={label} className="space-y-1">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-medium">{label}</p>
+              <Button size="xs" variant="ghost" onClick={() => copy(code!)}>
+                <CopyIcon /> Copy
+              </Button>
+            </div>
+            <pre className="overflow-x-auto rounded bg-muted p-2 text-xs">{code}</pre>
+          </div>
+        ))}
       </CardContent>
     </Card>
   );

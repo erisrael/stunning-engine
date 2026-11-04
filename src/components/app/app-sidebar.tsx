@@ -90,6 +90,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { MyseedLogo } from "@/components/app/logo";
+import { BrandMark } from "@/components/app/brand-mark";
 import { savePrefsAction } from "@/app/actions/admin";
 import { NAV_TIPS } from "@/lib/help";
 import { ROLE_LABELS, type Capability, type Role } from "@/lib/domain";
@@ -246,7 +247,13 @@ export function AppSidebar({
   support = false,
   studioBooking = "optional",
   legacy = false,
+  sessionsManager = false,
+  identity = { name: "Myseed", tagline: "Content Manager", logo: false, version: "0" },
 }: {
+  // The site's name, tagline and logo (Admin, Branding).
+  identity?: { name: string; tagline: string; logo: boolean; version: string };
+  // Named to manage studio sessions (the academic manager).
+  sessionsManager?: boolean;
   // The Recording team's old catalog is on (the sidebar then shows it to them and to planners).
   legacy?: boolean;
   // Studio booking (Handovers, Settings): off hides Studio sessions.
@@ -342,7 +349,9 @@ export function AppSidebar({
       label: "My space",
       items: [
         // My record, Leave and Claims and pay are tabs of Profile (bottom of the sidebar and the avatar menu).
-        { href: "/dashboard", label: home ? "Today" : staff ? "My work" : "Home", icon: HomeIcon, badge: home ? 0 : counts.myWork, locked: true },
+        { href: "/dashboard", label: home ? "Today" : "Home", icon: HomeIcon, locked: true },
+        // Only the person's own work (production parts, support tickets), apart from managing a team.
+        ...(staff || lead || support ? [{ href: "/my-work", label: "My work", icon: BriefcaseIcon, badge: counts.myWork }] : []),
         { href: "/attendance", label: "Attendance", icon: ClockIcon, sub: attSub },
         { href: "/routines", label: "Routines", icon: ZapIcon, badge: counts.routines ?? 0 },
         { href: "/announcements", label: "Announcements", icon: MegaphoneIcon },
@@ -362,12 +371,12 @@ export function AppSidebar({
       items: [
         { href: "/overview", label: "Overview", icon: ListTreeIcon, keepFilters: true, cap: "nav.overview" },
         ...(views.length
-          ? [{ id: "views", href: views[0]!.href, label: "Work views", icon: LayersIcon, keepFilters: true, also: views.map((v) => v.href), badge: has("nav.board") ? counts.handoffs : 0 }]
+          ? [{ id: "views", href: views[0]!.href, label: "Work views", icon: LayersIcon, keepFilters: true, also: views.map((v) => v.href), badge: counts.myWork }]
           : []),
         { href: "/handovers", label: "Handovers", icon: PackageCheckIcon, badge: counts.incoming, cap: "nav.handovers", sub: [{ label: "Handovers", href: "/handovers" }, { label: "Rejected", href: "/handovers/rejected" }, { label: "Report", href: "/handovers/report" }] },
-        ...(studioBooking !== "off" && (has("items.plan") || has("team.view") || activeRole === "recording") ? [{ href: "/sessions", label: "Studio sessions", icon: VideoIcon }] : []),
-        ...(has("items.plan") || has("hr.access") || has("finance.access") || (activeRole === "recording" && lead)
-          ? [{ href: "/presenters", label: "Presenters", icon: MicIcon, sub: [{ label: "Presenters", href: "/presenters" }, { label: "Fees", href: "/presenters?tab=fees" }] }]
+        ...(studioBooking !== "off" && (sessionsManager || has("items.plan") || has("team.view") || activeRole === "recording") ? [{ href: "/sessions", label: "Studio sessions", icon: VideoIcon }] : []),
+        ...(has("items.plan") || has("hr.access") || has("finance.access") || ((["recording", "editing", "uploading"] as Role[]).includes(activeRole) && lead)
+          ? [{ href: "/presenters", label: "Presenters", icon: MicIcon, sub: has("hr.access") || has("finance.access") ? [{ label: "Presenters", href: "/presenters" }, { label: "Fees", href: "/presenters?tab=fees" }] : undefined }]
           : []),
         ...(legacy && (has("items.plan") || has("import.run") || has("data.manage") || activeRole === "recording") ? [{ href: "/legacy", label: "Legacy catalog", icon: FilmIcon }] : []),
         ...(has("items.plan") || has("import.run") || has("data.manage") || has("assign.bulk") || (["recording", "editing", "uploading", "publication"] as Role[]).includes(activeRole) ? [{ href: "/curriculum", label: "Curriculum", icon: ListChecksIcon, sub: [{ label: "Fix", href: "/curriculum" }, { label: "Browse and edit", href: "/curriculum?tab=browse" }, { label: "Auto-assign", href: "/curriculum?tab=auto" }, { label: "Changes", href: "/curriculum?tab=changes" }] }] : []),
@@ -554,6 +563,7 @@ export function AppSidebar({
     return pathname === item.href || (item.href !== "/dashboard" && item.href !== "/items/new" && item.href !== "/admin" && pathname.startsWith(item.href + "/"));
   };
   const close = () => isMobile && setOpenMobile(false);
+  const [openGroups, setOpenGroups] = React.useState<string[]>([]);
 
   return (
     <Sidebar collapsible="icon" variant="sidebar">
@@ -564,11 +574,11 @@ export function AppSidebar({
               <SidebarMenuButton size="lg" asChild tooltip={workspaceName} className="h-10">
                 <Link href="/dashboard" onClick={close}>
                   <span className="flex size-8 items-center justify-center rounded-md bg-white shadow-xs ring-1 ring-sidebar-border dark:bg-[#0f2a1a]">
-                    <MyseedLogo className="size-6" />
+                    <BrandMark logo={identity.logo} version={identity.version} className="size-6" />
                   </span>
                   <span className="grid flex-1 text-left leading-tight">
-                    <span className="truncate text-sm font-semibold">Myseed</span>
-                    <span className="truncate text-[11px] text-muted-foreground">Content Manager</span>
+                    <span className="truncate text-sm font-semibold" data-site-name>{identity.name}</span>
+                    {identity.tagline && <span className="truncate text-[11px] text-muted-foreground">{identity.tagline}</span>}
                   </span>
                 </Link>
               </SidebarMenuButton>
@@ -579,10 +589,25 @@ export function AppSidebar({
           {groups.map((g) => {
             const items = g.items.filter(visible);
             if (!items.length) return null;
+            // On phones, fewer choices at once: the first group and the one you are in are open; the others fold.
+            const here = items.some((i) => isActive(i));
+            const folded = isMobile && !here && g !== groups[0] && !openGroups.includes(g.label);
             return (
-              <SidebarGroup key={g.label} className="py-1">
-                <SidebarGroupLabel className="h-7 text-[11px] font-semibold tracking-wide uppercase">{g.label}</SidebarGroupLabel>
-                <SidebarGroupContent>
+              <SidebarGroup key={g.label} className="py-1" data-nav-group={g.label} data-folded={folded ? "1" : undefined}>
+                {isMobile ? (
+                  <button
+                    type="button"
+                    className="flex h-9 w-full items-center justify-between px-2 text-[11px] font-semibold tracking-wide text-sidebar-foreground/70 uppercase"
+                    aria-expanded={!folded}
+                    onClick={() => setOpenGroups((o) => (o.includes(g.label) ? o.filter((x) => x !== g.label) : [...o, g.label]))}
+                  >
+                    {g.label}
+                    <span className="text-xs normal-case">{folded ? `${items.length} ›` : "⌄"}</span>
+                  </button>
+                ) : (
+                  <SidebarGroupLabel className="h-7 text-[11px] font-semibold tracking-wide uppercase">{g.label}</SidebarGroupLabel>
+                )}
+                <SidebarGroupContent className={folded ? "hidden" : undefined}>
                   <SidebarMenu className="gap-0.5">
                     {items.map((item) => {
                       const active = isActive(item);

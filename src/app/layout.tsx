@@ -16,14 +16,22 @@ const readable = Atkinson_Hyperlegible({ variable: "--font-readable", subsets: [
 const rounded = Nunito({ variable: "--font-rounded", subsets: ["latin"], preload: false });
 const serif = Lora({ variable: "--font-serif", subsets: ["latin"], preload: false });
 
-export const metadata: Metadata = {
-  title: { default: "Myseed Content Manager", template: "%s - Myseed Content Manager" },
-  description: "Production workflow for Myseed educational content: recording, editing, uploading and publication.",
-  applicationName: "Myseed Content Manager",
-  // Installable app (Add to Home Screen), needed for push notifications on iPhone and iPad.
-  manifest: "/manifest.webmanifest",
-  appleWebApp: { capable: true, title: "Myseed", statusBarStyle: "default" },
-};
+// The name, tagline and favicon Admin set (Branding, Name and logo).
+export async function generateMetadata(): Promise<Metadata> {
+  const { identity, fullName } = await import("@/server/identity");
+  const id = await identity().catch(() => null);
+  const name = id ? fullName(id) : "Myseed Content Manager";
+  const icon = `/api/branding/favicon?v=${id?.version ?? "0"}`;
+  return {
+    title: { default: name, template: `%s - ${name}` },
+    description: "Production workflow for educational content: recording, editing, uploading and publication.",
+    applicationName: name,
+    // Installable app (Add to Home Screen), needed for push notifications on iPhone and iPad.
+    manifest: "/manifest.webmanifest",
+    icons: { icon, apple: icon, shortcut: icon },
+    appleWebApp: { capable: true, title: id?.shortName ?? "Myseed", statusBarStyle: "default" },
+  };
+}
 
 export const viewport: Viewport = {
   width: "device-width",

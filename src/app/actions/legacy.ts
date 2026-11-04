@@ -22,17 +22,26 @@ export async function editPartAction(id: string, title: string) {
 export async function editUnitAction(id: string, title: string) {
   return wrap(async () => renameUnit(await requireViewer(), id, title));
 }
-export async function addVideoAction(lessonId: string, input: { cameraCode: string; title?: string | null; description?: string | null }) {
+export async function addVideoAction(lessonId: string, input: lg.VideoInput) {
   return wrap(async () => lg.addVideo(await requireViewer(), lessonId, input));
 }
-export async function editVideoAction(id: string, input: { cameraCode: string; title?: string | null; description?: string | null }) {
+export async function editVideoAction(id: string, input: lg.VideoInput) {
   return wrap(async () => lg.editVideo(await requireViewer(), id, input));
 }
 export async function deleteVideoAction(id: string) {
   return wrap(async () => lg.deleteVideo(await requireViewer(), id));
 }
 export async function markRecordedAction(lessonId: string) {
-  return wrap(async () => lg.markRecorded(await requireViewer(), lessonId));
+  return wrap(async () => lg.markDone(await requireViewer(), lessonId));
+}
+export async function reopenPartAction(lessonId: string) {
+  return wrap(async () => lg.reopenPart(await requireViewer(), lessonId));
+}
+export async function saveDetailsAction(lessonId: string, input: Parameters<typeof lg.saveDetails>[2]) {
+  return wrap(async () => lg.saveDetails(await requireViewer(), lessonId, input));
+}
+export async function handOffAction(itemIds: string[], note?: string | null) {
+  return wrap(async () => lg.handOff(await requireViewer(), itemIds, note));
 }
 export async function deletePartAction(id: string) {
   return wrap(async () => lg.deletePart(await requireViewer(), id));

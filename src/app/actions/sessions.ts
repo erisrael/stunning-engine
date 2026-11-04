@@ -15,3 +15,7 @@ export async function moveSessionAction(batchId: string, input: { date: string; 
 export async function setSessionStatusAction(batchId: string, status: "completed" | "cancelled", note?: string | null) {
   return wrap(async () => ss.setSessionStatus(await requireViewer(), batchId, status, note));
 }
+
+export async function saveSessionsConfigAction(input: Partial<ss.SessionsConfig>) {
+  return wrap(async () => ss.saveSessionsConfig(await requireViewer(), input));
+}

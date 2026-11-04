@@ -1,13 +1,15 @@
 import { redirect } from "next/navigation";
 import { getViewer } from "@/server/auth";
 import { LoginForm } from "./login-form";
-import { MyseedLogo } from "@/components/app/logo";
+import { BrandMark } from "@/components/app/brand-mark";
+import { identity } from "@/server/identity";
 import { readyProviders } from "@/server/oidc";
 import { signInPolicy } from "@/server/signin-config";
 
 export const metadata = { title: "Sign in" };
 
 export default async function LoginPage({ searchParams }: { searchParams: Promise<{ next?: string; error?: string; notice?: string }> }) {
+  const id = await identity();
   if (await getViewer()) redirect("/dashboard");
   const { next, error, notice } = await searchParams;
   const signup = (await signInPolicy()).signup.mode;
@@ -21,10 +23,10 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
 
       <div className="relative flex w-full max-w-[420px] flex-col items-center">
         <div className="mb-6 flex items-center gap-2.5">
-          <MyseedLogo className="size-11" />
+          <BrandMark logo={id.logo} version={id.version} className="size-11" />
           <div className="leading-tight">
-            <div className="text-xl font-bold tracking-tight">Myseed</div>
-            <div className="text-xs font-medium text-muted-foreground">Content Manager</div>
+            <div className="text-xl font-bold tracking-tight">{id.name}</div>
+            <div className="text-xs font-medium text-muted-foreground">{id.tagline}</div>
           </div>
         </div>
 

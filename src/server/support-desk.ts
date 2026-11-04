@@ -24,6 +24,7 @@ import { can, listUsers, type AppUser } from "./users";
 import { signedReadUrl, signedUploadUrl, storageKind } from "./storage";
 import {
   DEFAULT_SUPPORT,
+  DEFAULT_IVR,
   OPEN_STATUSES,
   PRIORITIES,
   TICKET_STATUSES,
@@ -94,6 +95,12 @@ export async function saveSupportConfig(user: AppUser, input: Partial<SupportCon
     awayMessage: clean(input.awayMessage ?? cur.awayMessage, 400),
     mailbox: input.mailbox === undefined ? cur.mailbox : input.mailbox ? clean(input.mailbox, 200).toLowerCase() : null,
     telegram: input.telegram ?? cur.telegram,
+    ivr: (() => {
+      const i = { ...DEFAULT_IVR, ...cur.ivr, ...(input.ivr ?? {}) };
+      const audio = i.audio && /^data:audio\/(mpeg|mp3|ogg|wav|webm|aac|mp4);base64,/.test(i.audio) && i.audio.length < 6_000_000 ? i.audio : null;
+      if (input.ivr?.audio && !audio) throw new WorkflowError("VALIDATION", "The recording must be an audio file (MP3, OGG, WAV or M4A) up to 4 MB.");
+      return { on: !!i.on, message: clean(i.message, 600), lang: clean(i.lang, 20) || "en-US", audio, music: !!i.music, repeatSec: n(i.repeatSec, 30, 10, 300), position: !!i.position };
+    })(),
   };
   if (next.mailbox && next.mailbox !== cur.mailbox && !(await get("SELECT 1 AS x FROM email_senders WHERE LOWER(address) = ? AND mailbox = 1", next.mailbox)))
     throw new WorkflowError("VALIDATION", `${next.mailbox} is not a mailbox in the app yet (Email, Settings, Mailboxes).`);
@@ -797,7 +804,53 @@ export async function customerPollCall(app: AppFull, token: string, callId: stri
   const k = await callFor(callId);
   if (k.customer_id !== c.id) throw new WorkflowError("NOT_FOUND", "Call not found.");
   const agent = k.agent_id ? (await get<{ name: string }>("SELECT name FROM users WHERE id = ?", k.agent_id))?.name.split(" ")[0] : null;
+  // While it rings: what the caller hears, and their place in line (calls ringing before theirs).
+  if (k.status === "ringing") {
+    const cfg = await supportConfig();
+    const ahead = Number((await get<{ n: number }>("SELECT COUNT(*) AS n FROM sup_calls WHERE status = 'ringing' AND started_at < ?", k.started_at))?.n ?? 0);
+    return { status: k.status, answer: k.answer, ice: parseJson<unknown[]>(k.agent_ice, []), agent, position: ahead + 1, ivr: cfg.ivr.on ? { ...cfg.ivr, audio: cfg.ivr.audio ? `/api/support/ivr-audio` : null } : null };
+  }
   return { status: k.status, answer: k.answer, ice: parseJson<unknown[]>(k.agent_ice, []), agent };
+}
+
+// The uploaded waiting message, for the widget to play.
+export async function ivrAudio() {
+  const a = (await supportConfig()).ivr.audio;
+  const m = a ? /^data:([^;]+);base64,(.*)$/.exec(a) : null;
+  return m ? { mime: m[1]!, data: Buffer.from(m[2]!, "base64") } : null;
+}
+
+// ---------------------------------------------------------------------------
+// Checking a connected app (Apps and SDK, Test connection; and GET ping for developers)
+// ---------------------------------------------------------------------------
+
+export type CheckLine = { label: string; ok: boolean; detail: string };
+
+export async function appChecks(app: { id: string; name: string; active: boolean; origins: string[]; queueId: string | null; verifyIdentity: boolean }): Promise<CheckLine[]> {
+  const cfg = await supportConfig();
+  const lines: CheckLine[] = [];
+  lines.push({ label: "Customer support is on", ok: cfg.enabled, detail: cfg.enabled ? "Customers can reach you." : "Switch it on in Settings." });
+  lines.push({ label: "The app is on", ok: app.active, detail: app.active ? "Its key is accepted." : "Its key is refused until it is switched on." });
+  lines.push({ label: "Web addresses", ok: true, detail: app.origins.length ? `Browsers may call from ${app.origins.join(", ")}.` : "Any web address may call (fine for testing; set them before going live)." });
+  const queue = app.queueId ? (await listQueues()).find((q) => q.id === app.queueId) : null;
+  lines.push({ label: "Queue", ok: !app.queueId || !!queue?.active, detail: app.queueId ? (queue ? `${queue.name}, ${queue.members.length} agents` : "The queue was removed.") : "Tickets are routed by keywords and any queue." });
+  const online = await availableAgents(app.queueId ?? null, cfg, { ignoreLimit: true });
+  lines.push({ label: "Agents online now", ok: online.length > 0, detail: online.length ? `${online.length} can take a ticket or a call.` : "Nobody is online: tickets wait, calls get the away message." });
+  const ice = await iceConfig();
+  const turn = (ice.iceServers as { urls: string | string[] }[]).some((s) => [s.urls].flat().some((u) => String(u).startsWith("turn")));
+  lines.push({ label: "Calls across networks", ok: true, detail: turn ? "A TURN server is set, so calls work behind strict networks." : "Only STUN is set: most calls work; behind strict office networks a TURN server helps (Admin, Calls)." });
+  lines.push({ label: "Signed customers", ok: true, detail: app.verifyIdentity ? "The app must sign each customer's id with its secret (hash)." : "Customers are not signed; anyone with the key can say who they are." });
+  lines.push({ label: "Waiting message for callers", ok: true, detail: cfg.ivr.on ? (cfg.ivr.audio ? "Plays the uploaded recording." : "Speaks the message, then hold music.") : "Off: callers hear ringing only." });
+  return lines;
+}
+
+export async function testApp(user: AppUser, id: string) {
+  if (!(await isLead(user))) throw new WorkflowError("FORBIDDEN", "Support leads and Admin test apps.");
+  const row = (await listApps(user)).find((a) => a.id === id);
+  if (!row) throw new WorkflowError("NOT_FOUND", "App not found.");
+  const t0 = Date.now();
+  const lines = await appChecks(row);
+  return { ok: lines.every((l) => l.ok), ms: Date.now() - t0, lines };
 }
 
 export async function addIce(side: "customer" | "agent", callId: string, candidate: unknown, who: { customerId?: string; userId?: string }) {

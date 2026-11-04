@@ -98,7 +98,7 @@ function ReleaseForm({ p, onDone }: { p: Presenter; onDone: () => void }) {
   );
 }
 
-export function PresentersClient(props: { tab: "people" | "fees"; month: string; manage: boolean; finance: boolean; presenters: Presenter[]; config: PresenterConfig; statements: Statement[] }) {
+export function PresentersClient(props: { tab: "people" | "fees"; month: string; manage: boolean; view?: boolean; finance: boolean; presenters: Presenter[]; config: PresenterConfig; statements: Statement[] }) {
   const router = useRouter();
   const [open, setOpen] = React.useState<string | null>(null);
   const [cfg, setCfg] = React.useState(props.config);
@@ -157,6 +157,8 @@ export function PresentersClient(props: { tab: "people" | "fees"; month: string;
     );
   return (
     <div className="space-y-4">
+      {!props.manage && <p className="rounded-lg border bg-muted/40 p-2 text-sm">HR manages presenters. You see the list and their releases.</p>}
+      {props.manage && (
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Rules</CardTitle>
@@ -176,11 +178,12 @@ export function PresentersClient(props: { tab: "people" | "fees"; month: string;
           </Button>
         </CardContent>
       </Card>
-      <div className="flex justify-end">
+      )}
+      {props.manage && <div className="flex justify-end">
         <Button size="sm" onClick={() => setOpen(open === "new" ? null : "new")}>
           <PlusIcon /> Add a presenter
         </Button>
-      </div>
+      </div>}
       {open === "new" && <PresenterForm onDone={done} />}
       {!props.presenters.length && <p className="text-sm text-muted-foreground">No presenters yet.</p>}
       {props.presenters.map((p) => (
@@ -200,12 +203,16 @@ export function PresentersClient(props: { tab: "people" | "fees"; month: string;
                   Signed form
                 </a>
               )}
-              <Button size="xs" variant="outline" onClick={() => setOpen(open === `rel:${p.id}` ? null : `rel:${p.id}`)}>
-                Record a release
-              </Button>
-              <Button size="xs" variant="ghost" onClick={() => setOpen(open === `edit:${p.id}` ? null : `edit:${p.id}`)}>
-                Edit
-              </Button>
+              {props.manage && (
+                <>
+                  <Button size="xs" variant="outline" onClick={() => setOpen(open === `rel:${p.id}` ? null : `rel:${p.id}`)}>
+                    Record a release
+                  </Button>
+                  <Button size="xs" variant="ghost" onClick={() => setOpen(open === `edit:${p.id}` ? null : `edit:${p.id}`)}>
+                    Edit
+                  </Button>
+                </>
+              )}
             </div>
             {open === `rel:${p.id}` && <ReleaseForm p={p} onDone={done} />}
             {open === `edit:${p.id}` && <PresenterForm p={p} onDone={done} />}

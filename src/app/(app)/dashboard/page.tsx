@@ -73,7 +73,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         <PageHeader help={desk ? "lead" : "member"} explainer={desk ? "lead-desk" : "my-board"} eyebrow={`${STAGE_LABELS[team]}${desk ? " team lead" : ""}`} title={greeting} description={desk ? "Approve what your team sends, hand it over to the next team, accept what arrives and assign it." : "Your work. Start it, fill in what it needs on the card, mark it done, and send it to your team lead."} />
         <TeamGuide stage={team} steps={teamRules((await getSettings()).teams, team).guide.split("\n").map((s) => s.trim()).filter(Boolean)} />
         {desk && <LeadDesk data={desk} />}
-        {(!desk || own.length > 0) && <MyBoard items={own} title={desk ? "My own work" : "My work"} />}
+        {desk && own.length > 0 && (
+          <Link href="/my-work" className="block rounded-lg border bg-card p-3 text-sm hover:bg-muted/50" data-my-work-link>
+            You have {own.length} {own.length === 1 ? "part" : "parts"} of your own. Open My work →
+          </Link>
+        )}
+        {!desk && <MyBoard items={own} title="My work" />}
       </div>
     );
   }

@@ -59,6 +59,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         home={await homeDepartment(viewer)}
         studioBooking={(await (await import("@/server/handover-config")).handoverConfig()).studioBooking}
         legacy={(await (await import("@/server/legacy")).legacyConfig()).on}
+        sessionsManager={await (await import("@/server/sessions")).canPlanSessions(viewer)}
+        identity={await (await import("@/server/identity")).identity()}
         viewerId={viewer.id}
         approver={viewer.leads.length > 0 || can(viewer, "team.view") || can(viewer, "attendance.manage") || can(viewer, "corrections.approve")}
         reportsLink={!can(viewer, "owners.view") && (await reportDepartments(viewer)).length > 0} customDepts={await myCustomDepartments(viewer)} userHidden={viewer.prefs.sidebarHidden ?? []} roleHidden={(await sidebarDefaults())[viewer.activeRole] ?? []} perms={viewer.perms} activeRole={viewer.activeRole} counts={counts} workspaceName={settings.workspace.name} brand={await navBrand()} recognition={(await (await import("@/server/recognition")).recognitionConfig()).enabled} support={await (await import("@/server/support-desk")).supportNav(viewer)} />
@@ -83,7 +85,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </main>
         {await (async () => {
           const h = await homeDepartment(viewer);
-          return <MobileNav work={h ? { href: h.base, label: h.kind === "studio" ? "Studio" : "Work" } : (viewer.leads.length || viewer.roles.some((r) => ["recording", "editing", "uploading", "publication"].includes(r))) ? { href: "/overview", label: "Work" } : null} chat={counts.chat} alerts={counts.notifications} approvals={counts.approvals} />;
+          return <MobileNav work={h ? { href: h.base, label: h.kind === "studio" ? "Studio" : "Work" } : (viewer.leads.length || viewer.roles.some((r) => ["recording", "editing", "uploading", "publication"].includes(r))) ? { href: "/my-work", label: "My work" } : null} chat={counts.chat} alerts={counts.notifications} approvals={counts.approvals} />;
         })()}
         <ChatKeyBootstrap viewerId={viewer.id} />
         <Localizer defaultCalendar={settings.workspace.calendarDisplay} />

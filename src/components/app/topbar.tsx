@@ -87,6 +87,7 @@ const TITLES: Record<string, string> = {
   handovers: "Handovers",
   rejected: "Rejected",
   preferences: "Settings",
+  "my-work": "My work",
   report: "Report",
   legacy: "Legacy catalog",
   curriculum: "Curriculum",
@@ -145,7 +146,7 @@ export function Topbar({ user, activeRole, unread, chatUnread, qrScan }: { user:
   }, []);
 
   return (
-    <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b bg-background/85 px-3 backdrop-blur supports-[backdrop-filter]:bg-background/70 sm:px-4 no-print">
+    <header data-topbar className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b bg-background/85 px-3 backdrop-blur supports-[backdrop-filter]:bg-background/70 sm:px-4 no-print">
       <Hint tip={NAV_TIPS["top.sidebar"]}><SidebarTrigger className="-ml-1" /></Hint>
       <Separator orientation="vertical" className="mr-1 hidden h-5 sm:block" />
       <Breadcrumb className="hidden min-w-0 md:block">

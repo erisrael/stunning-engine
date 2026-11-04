@@ -1225,3 +1225,17 @@ Built: `src/server/legacy.ts`, `src/app/(app)/legacy`, `src/app/actions/legacy.t
 - [x] **Chat on phones** like Telegram: the conversation fills what the keyboard leaves and the message box stays right above it; the tab bar and the assistant's buttons step aside inside a conversation.
 
 Built: `src/app/(app)/preferences`, `src/components/app/mobile-nav.tsx`, `src/components/app/help-center.tsx`, `src/server/geofence.ts`, `src/components/app/attendance/geofence-{watch,admin}.tsx`, changes in `src/server/leave.ts` and `src/components/app/hr/leave.tsx`, `src/components/app/audio-route.tsx`, chat layout (schema 53). Tests: `tests/server/geofence.test.ts`, `tests/server/leave-staff.test.ts`, `tests/e2e/phone.e2e.mjs`.
+
+## Phase 36: My work, Legacy hand-off, presenters to HR, academic manager, support ready, site identity (done)
+
+- [x] **Kiosk PIN** shows on Attendance only when Admin set up a kiosk (or the shared office computer).
+- [x] **Legacy catalog, complete**: each part's recording details (presenter, raw minutes, notes, the checklist and what is still needed) and each shot's minutes, link or disk and folder. Done keeps the part in Recording as "ready to hand off"; nothing hands off by itself. **Ready to hand off** lists them with filters (grade, subject, teacher, who recorded, status) and many can be handed off at once: a member sends them to the Recording lead, the lead approves and hands them over to Editing as one batch.
+- [x] **My work** for everyone: their own board, apart from managing a team (leads see their desk on Home and their own parts on My work), parts waiting with nobody on them to take themselves, and, for support agents, their open tickets with the whole conversation (reply, call, status). The Work views counter counts the person's own work only.
+- [x] **Presenters are HR's**; the Recording, Editing and Uploading leads see the list.
+- [x] **Studio sessions are the academic manager's**: Admin names them on Studio sessions, and may let planners or the Recording lead book too.
+- [x] **Templates** for the Uploading team's video tracker CSV and the curriculum tracker JSON.
+- [x] **Customer support ready**: callers hear a waiting message (spoken, or Admin's recording) with their place in line and hold music until an agent answers; Test connection per app and `GET ping` for developers; a Developer API card with every endpoint and examples; the desk works on phones (the list or the conversation).
+- [x] **Site identity** (Admin, Branding, Name and logo): the name, the line under it, the short name and colour of the installed app, the logo and the favicon, used in the sidebar, sign-in, the tab title and the app manifest.
+- [x] **Phones feel like an app**: menu groups fold so fewer options show at once, no text-size jumps, a sticky top bar with safe areas, tighter cards and titles, menus and dialogs kept on the screen.
+
+Built: `src/server/identity.ts`, `src/app/manifest.ts`, `src/app/api/branding/[kind]`, `src/app/(app)/my-work`, `src/app/(app)/sessions/managers.tsx`, `src/app/api/tracker-templates/[kind]`, `src/app/api/support/ivr-audio`, changes in `src/server/legacy.ts`, `src/server/sessions.ts`, `src/server/presenters.ts`, `src/server/support-desk.ts`, the support widget and setup. Tests: `tests/server/round36.test.ts`, the Legacy and phone tests.

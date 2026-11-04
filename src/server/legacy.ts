@@ -15,8 +15,9 @@ import { STAGE_LABELS, type Stage } from "@/lib/domain";
 
 export type LegacyConfig = {
   on: boolean;
-  // After a video shot is logged: the part waits for Mark recorded, or goes to Editing's incoming at once.
-  afterVideo: "stay" | "recorded";
+  // After a video shot is logged: the part stays open for more, or is marked done at once (ready to hand off; it is
+  // never handed off on its own).
+  afterVideo: "stay" | "done";
   // A part with no real name takes the video's title.
   nameFromVideo: boolean;
   // Importing an old backup: parts with videos count as recorded and move on to Editing.
@@ -26,13 +27,16 @@ const DEFAULT: LegacyConfig = { on: true, afterVideo: "stay", nameFromVideo: tru
 
 export async function legacyConfig(): Promise<LegacyConfig> {
   const v = parseJson<Partial<LegacyConfig>>((await get<{ value: string }>("SELECT value FROM settings WHERE key = 'cfg.legacy'"))?.value, {});
-  return { ...DEFAULT, ...v };
+  const out = { ...DEFAULT, ...v };
+  // The old setting "recorded" now means "done" (it no longer hands off by itself).
+  if ((out.afterVideo as string) === "recorded") out.afterVideo = "done";
+  return out;
 }
 
 export async function saveLegacyConfig(user: AppUser, input: Partial<LegacyConfig>) {
   if (!can(user, "settings.manage") && !can(user, "users.manage")) throw new WorkflowError("FORBIDDEN", "Only Admin sets up the Legacy catalog.");
   const cur = await legacyConfig();
-  const next: LegacyConfig = { on: input.on ?? cur.on, afterVideo: input.afterVideo === "recorded" || input.afterVideo === "stay" ? input.afterVideo : cur.afterVideo, nameFromVideo: input.nameFromVideo ?? cur.nameFromVideo, importAsRecorded: input.importAsRecorded ?? cur.importAsRecorded };
+  const next: LegacyConfig = { on: input.on ?? cur.on, afterVideo: input.afterVideo === "done" || input.afterVideo === "stay" ? input.afterVideo : cur.afterVideo, nameFromVideo: input.nameFromVideo ?? cur.nameFromVideo, importAsRecorded: input.importAsRecorded ?? cur.importAsRecorded };
   await run(
     "INSERT INTO settings (key, value, updated_at, updated_by) VALUES ('cfg.legacy', ?, ?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by",
     JSON.stringify(next),
@@ -101,13 +105,41 @@ export async function legacyUnits(gradeId: string, subjectId: string) {
   return units.map((u) => ({ ...u, number: Number(u.number), parts: Number(u.parts), videos: Number(vids.find((v) => v.k === u.id)?.n ?? 0) }));
 }
 
-export type LegacyVideo = { id: string; cameraCode: string; title: string; description: string };
-export type LegacyPart = { id: string; number: number; title: string; itemId: string | null; itemCode: string | null; where: string; canLog: boolean; canMark: boolean; videos: LegacyVideo[] };
+export type LegacyVideo = { id: string; cameraCode: string; title: string; description: string; minutes: number | null; link: string | null; disk: string | null; path: string | null };
+export type LegacyCheck = { key: string; label: string; required: boolean; checked: boolean };
+export type LegacyPart = {
+  id: string;
+  number: number;
+  title: string;
+  itemId: string | null;
+  itemCode: string | null;
+  where: string;
+  status: string | null;
+  canLog: boolean;
+  canMark: boolean;
+  canReopen: boolean;
+  videos: LegacyVideo[];
+  // Everything else the Recording team enters on the part: the presenter, the total raw minutes, notes, the checklist.
+  teacher: string | null;
+  rawMin: number | null;
+  notes: string | null;
+  checks: LegacyCheck[];
+  missing: string[];
+};
 
 function whereIs(i: { lifecycle: string; stage: Stage | null; stage_status: string | null } | undefined) {
   if (!i || i.lifecycle === "draft") return "Not started";
   if (i.lifecycle === "published") return "Published";
-  if (i.stage === "recording") return i.stage_status === "awaiting_handoff" ? "Recorded, waiting for Editing" : "In Recording";
+  if (i.stage === "recording")
+    return i.stage_status === "awaiting_handoff"
+      ? "Handed off, waiting for Editing"
+      : i.stage_status === "finished"
+        ? "Done, ready to hand off"
+        : i.stage_status === "lead_review"
+          ? "With the Recording lead"
+          : i.stage_status === "ready"
+            ? "Approved, ready for Editing"
+            : "In Recording";
   return i.stage ? `In ${STAGE_LABELS[i.stage]}` : i.lifecycle;
 }
 
@@ -115,22 +147,53 @@ export async function legacyParts(unitId: string): Promise<LegacyPart[]> {
   const parts = await all<{ id: string; number: number; title: string }>("SELECT id, number, title FROM lessons WHERE unit_id = ? ORDER BY number", unitId);
   if (!parts.length) return [];
   const ids = parts.map((p) => p.id);
-  const items = await all<{ id: string; code: string; lesson_id: string; lifecycle: string; stage: Stage | null; stage_status: string | null }>(
-    `SELECT id, code, lesson_id, lifecycle, stage, stage_status FROM items WHERE lesson_id IN (${placeholders(ids.length)}) AND revision_of_id IS NULL AND lifecycle NOT IN ('archived','cancelled')`,
+  const items = await all<{ id: string; code: string; lesson_id: string; lifecycle: string; stage: Stage | null; stage_status: string | null; teacher: string | null; current_attempt_id: string | null }>(
+    `SELECT id, code, lesson_id, lifecycle, stage, stage_status, teacher, current_attempt_id FROM items WHERE lesson_id IN (${placeholders(ids.length)}) AND revision_of_id IS NULL AND lifecycle NOT IN ('archived','cancelled')`,
     ...ids,
   );
   const assets = items.length
-    ? await all<{ id: string; item_id: string; camera_code: string | null; label: string | null; notes: string | null }>(
-        `SELECT id, item_id, camera_code, label, notes FROM assets WHERE kind = 'raw' AND status = 'current' AND item_id IN (${placeholders(items.length)}) ORDER BY created_at`,
+    ? await all<{ id: string; item_id: string; camera_code: string | null; label: string | null; notes: string | null; duration_min: number | null; url: string | null; source_ref: string | null }>(
+        `SELECT id, item_id, camera_code, label, notes, duration_min, url, source_ref FROM assets WHERE kind = 'raw' AND status = 'current' AND item_id IN (${placeholders(items.length)}) ORDER BY created_at`,
         ...items.map((i) => i.id),
       )
     : [];
-  return parts.map((p) => {
+  const settings = await getSettings();
+  const out: LegacyPart[] = [];
+  for (const p of parts) {
     const it = items.find((i) => i.lesson_id === p.id);
-    const inRecording = !it || it.lifecycle === "draft" || (it.lifecycle === "in_production" && it.stage === "recording" && it.stage_status !== "awaiting_handoff");
-    const videos = assets.filter((a) => a.item_id === it?.id).map((a) => ({ id: a.id, cameraCode: a.camera_code ?? "", title: a.label ?? "", description: a.notes ?? "" }));
-    return { id: p.id, number: Number(p.number), title: p.title, itemId: it?.id ?? null, itemCode: it?.code ?? null, where: whereIs(it), canLog: inRecording, canMark: inRecording && videos.length > 0, videos };
-  });
+    const open = !it || it.lifecycle === "draft" || (it.lifecycle === "in_production" && it.stage === "recording" && OPEN.slice(0, 4).includes(it.stage_status ?? ""));
+    const videos = assets
+      .filter((a) => a.item_id === it?.id)
+      .map((a) => {
+        // A shot on an external disk keeps "disk:<name>" as its label and the folder in source_ref (as the work card does).
+        const disk = a.label?.startsWith("disk:") ? a.label.slice(5) : null;
+        const [title, ...rest] = disk ? ["", a.notes ?? ""] : [a.label ?? "", a.notes ?? ""];
+        return { id: a.id, cameraCode: a.camera_code ?? "", title, description: rest.join(""), minutes: a.duration_min == null ? null : Number(a.duration_min), link: a.url, disk, path: disk ? a.source_ref : null };
+      });
+    const att = it?.current_attempt_id ? await get<{ raw_duration_min: number | null; notes: string | null; id: string; status: string }>("SELECT id, raw_duration_min, notes, status FROM stage_attempts WHERE id = ?", it.current_attempt_id) : null;
+    const results = att ? await all<{ key: string; checked: number }>("SELECT key, checked FROM checklist_results WHERE attempt_id = ?", att.id) : [];
+    const checks = settings.checklists.recording.map((c) => ({ key: c.key, label: c.label, required: c.required, checked: !!results.find((r) => r.key === c.key)?.checked }));
+    const missing = it && att && it.stage === "recording" && OPEN.slice(0, 4).includes(att.status) ? (await wf.evaluateRequirements(it.id)).filter((r) => !r.met && !r.key.startsWith("verify:")).map((r) => r.label) : [];
+    out.push({
+      id: p.id,
+      number: Number(p.number),
+      title: p.title,
+      itemId: it?.id ?? null,
+      itemCode: it?.code ?? null,
+      where: whereIs(it),
+      status: it?.lifecycle === "draft" ? "draft" : (it?.stage_status ?? null),
+      canLog: open,
+      canMark: open && videos.length > 0,
+      canReopen: it?.stage === "recording" && it.stage_status === "finished",
+      videos,
+      teacher: it?.teacher ?? null,
+      rawMin: att?.raw_duration_min == null ? null : Number(att.raw_duration_min),
+      notes: att?.notes ?? null,
+      checks,
+      missing,
+    });
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -225,7 +288,9 @@ async function itemFor(user: AppUser, lessonId: string) {
 
 const OPEN = ["queued", "in_progress", "paused", "blocked", "finished"];
 
-export async function addVideo(user: AppUser, lessonId: string, input: { cameraCode: string; title?: string | null; description?: string | null }) {
+export type VideoInput = { cameraCode: string; title?: string | null; description?: string | null; minutes?: number | null; link?: string | null; disk?: string | null; path?: string | null };
+
+export async function addVideo(user: AppUser, lessonId: string, input: VideoInput) {
   need(user);
   const clean = cleanCameraCode(input.cameraCode);
   if (!clean.code) throw new WorkflowError("VALIDATION", "Enter the camera code.");
@@ -244,29 +309,55 @@ export async function addVideo(user: AppUser, lessonId: string, input: { cameraC
       await run("UPDATE stage_attempts SET owner_id = ? WHERE id = ?", user.id, attempt.id);
       await run("UPDATE stage_assignments SET user_id = ? WHERE item_id = ? AND stage = 'recording'", user.id, item.id);
     }
-    await wf.addAsset(SYS, item.id, { kind: "raw", cameraCode: clean.code, label: title && !isPlaceholderTitle(title) ? title : null, notes: description || null, url: null, sourceRef: uid("vid_") });
+    const minutes = Number(input.minutes);
+    const disk = tidy(input.disk, 80) || null;
+    await wf.addAsset(SYS, item.id, {
+      kind: "raw",
+      cameraCode: clean.code,
+      label: disk ? null : title && !isPlaceholderTitle(title) ? title : null,
+      notes: [disk && title ? title : null, description].filter(Boolean).join(". ") || null,
+      url: disk ? null : tidy(input.link, 1000) || null,
+      disk,
+      path: disk ? tidy(input.path, 400) || null : null,
+      durationMin: Number.isFinite(minutes) && minutes > 0 ? minutes : null,
+      sourceRef: disk ? undefined : uid("vid_"),
+    });
+    // The part's total raw minutes follow its shots, unless someone typed the total.
+    if (Number.isFinite(minutes) && minutes > 0) {
+      const sum = (await get<{ m: number | null }>("SELECT SUM(duration_min) AS m FROM assets WHERE item_id = ? AND kind = 'raw' AND status = 'current'", item.id))?.m;
+      if (sum) await run("UPDATE stage_attempts SET raw_duration_min = ? WHERE id = ? AND (raw_duration_min IS NULL OR raw_duration_min < ?)", Number(sum), attempt.id, Number(sum));
+    }
     await logged(user, "video", `${user.name} logged the shot ${clean.code}${title ? ` "${title}"` : ""}`, item.id);
     // A part with no real name takes the shot's title (the old catalog had real names only on its videos).
     if (cfg.nameFromVideo && isPlaceholderTitle(lesson.title) && title && !isPlaceholderTitle(title)) await renamePart(user, lessonId, stripDots(title)).catch(() => {});
-    if (cfg.afterVideo === "recorded") await sendOn(item.id);
+    if (cfg.afterVideo === "done") await wf.finishWork(SYS, item.id).catch(() => {});
     return { code: clean.code, doubtful: clean.doubtful };
   });
 }
 
 async function assetOf(id: string) {
-  const a = await get<{ id: string; item_id: string; camera_code: string | null; label: string | null; notes: string | null; status: string }>("SELECT id, item_id, camera_code, label, notes, status FROM assets WHERE id = ? AND kind = 'raw'", id);
+  const a = await get<{ id: string; item_id: string; camera_code: string | null; label: string | null; notes: string | null; status: string; url: string | null }>("SELECT id, item_id, camera_code, label, notes, status, url FROM assets WHERE id = ? AND kind = 'raw'", id);
   if (!a || a.status !== "current") throw new WorkflowError("NOT_FOUND", "Video shot not found.");
   return a;
 }
 
 // Wrong details can be corrected at any stage; they say which recording it is, not what the work was.
-export async function editVideo(user: AppUser, assetId: string, input: { cameraCode: string; title?: string | null; description?: string | null }) {
+export async function editVideo(user: AppUser, assetId: string, input: VideoInput) {
   need(user);
   const a = await assetOf(assetId);
   const clean = cleanCameraCode(input.cameraCode);
   if (!clean.code) throw new WorkflowError("VALIDATION", "Enter the camera code.");
   const title = tidy(input.title);
-  await run("UPDATE assets SET camera_code = ?, label = ?, notes = ? WHERE id = ?", clean.code, title && !isPlaceholderTitle(title) ? title : null, [tidy(input.description, 2000), clean.note].filter(Boolean).join(". ") || null, assetId);
+  const minutes = Number(input.minutes);
+  await run(
+    "UPDATE assets SET camera_code = ?, label = CASE WHEN label LIKE 'disk:%' THEN label ELSE ? END, notes = ?, duration_min = ?, url = CASE WHEN label LIKE 'disk:%' THEN url ELSE ? END WHERE id = ?",
+    clean.code,
+    title && !isPlaceholderTitle(title) ? title : null,
+    [tidy(input.description, 2000), clean.note].filter(Boolean).join(". ") || null,
+    Number.isFinite(minutes) && minutes > 0 ? minutes : null,
+    tidy(input.link, 1000) || a.url || null,
+    assetId,
+  );
   await logged(user, "video", `${user.name} corrected the shot ${a.camera_code ?? ""} to ${clean.code}`, a.item_id);
 }
 
@@ -279,23 +370,130 @@ export async function deleteVideo(user: AppUser, assetId: string) {
   await logged(user, "video", `${user.name} removed the shot ${a.camera_code ?? ""}`, a.item_id);
 }
 
-async function sendOn(itemId: string) {
-  const settings = await getSettings();
-  for (const c of settings.checklists.recording.filter((x) => x.required)) await wf.setChecklist(SYS, itemId, c.key, true);
-  await wf.submitHandoff(SYS, itemId, { note: "Marked recorded in the Legacy catalog" });
+// The rest of what the Recording team enters on a part: the presenter, the raw minutes in total, notes and the
+// checklist. A part already handed on keeps its details; only the presenter and notes can still be corrected.
+export async function saveDetails(user: AppUser, lessonId: string, input: { teacher?: string | null; rawMin?: number | null; notes?: string | null; checks?: Record<string, boolean> }) {
+  need(user);
+  const { item } = await itemFor(user, lessonId);
+  const now = nowIso();
+  await tx(async () => {
+    if (input.teacher !== undefined) {
+      const t = tidy(input.teacher, 120) || null;
+      await run("UPDATE items SET teacher = ?, version = version + 1, updated_at = ? WHERE id = ?", t, now, item.id);
+    }
+    if (item.lifecycle === "draft" && (input.rawMin !== undefined || input.notes !== undefined || input.checks)) await wf.releaseToProduction(SYS, item.id);
+    const attempt = await wf.currentAttempt(item.id);
+    const open = attempt && attempt.stage === "recording" && OPEN.slice(0, 4).includes(attempt.status);
+    if (attempt && attempt.stage === "recording" && input.notes !== undefined) await run("UPDATE stage_attempts SET notes = ? WHERE id = ?", tidy(input.notes, 4000) || null, attempt.id);
+    if (open && input.rawMin !== undefined) await wf.setDurations(SYS, item.id, { rawDurationMin: input.rawMin === null || !(Number(input.rawMin) >= 0) ? null : Number(input.rawMin) });
+    if (open && input.checks) for (const [k, v] of Object.entries(input.checks)) await wf.setChecklist(SYS, item.id, k, !!v);
+    await logged(user, "details", `${user.name} filled in the part's recording details`, item.id);
+  });
 }
 
-// The old catalog had no "done": this is the step that sends the part on, to Editing's incoming, where they accept or reject it.
-export async function markRecorded(user: AppUser, lessonId: string) {
+// Done: the part waits as "Done, ready to hand off". It is never handed off from here on its own; the person checks it
+// and hands it off (one or many) on Ready to hand off.
+export async function markDone(user: AppUser, lessonId: string) {
   need(user);
   const { item } = await itemFor(user, lessonId);
   const attempt = await wf.currentAttempt(item.id);
-  if (!attempt || attempt.stage !== "recording" || !OPEN.includes(attempt.status)) throw new WorkflowError("INVALID_STATE", "This part is not waiting in Recording.");
+  if (!attempt || attempt.stage !== "recording" || !OPEN.slice(0, 4).includes(attempt.status)) throw new WorkflowError("INVALID_STATE", "This part is not open in Recording.");
   if (!(await get("SELECT 1 AS x FROM assets WHERE item_id = ? AND kind = 'raw' AND status = 'current'", item.id))) throw new WorkflowError("VALIDATION", "Log a video shot first.");
-  await tx(async () => {
-    await sendOn(item.id);
-    await logged(user, "recorded", `${user.name} marked the part recorded`, item.id);
-  });
+  await wf.finishWork(SYS, item.id);
+  await logged(user, "done", `${user.name} marked the part done`, item.id);
+}
+export const markRecorded = markDone;
+
+export async function reopenPart(user: AppUser, lessonId: string) {
+  need(user);
+  const { item } = await itemFor(user, lessonId);
+  await wf.reopenFinished(SYS, item.id);
+  await logged(user, "reopened", `${user.name} reopened the part to change it`, item.id);
+}
+
+// ---------------------------------------------------------------------------
+// Ready to hand off: parts done, checked by the person, handed off one by one or many at once
+// ---------------------------------------------------------------------------
+
+export type ReadyRow = { itemId: string; lessonId: string; code: string; title: string; grade: string; gradeId: string; subject: string; subjectId: string; unit: number | null; part: number | null; teacher: string | null; owner: string | null; ownerId: string | null; status: string; videos: number; minutes: number | null; finishedAt: string | null };
+export type ReadyFilter = { gradeId?: string | null; subjectId?: string | null; teacher?: string | null; ownerId?: string | null; status?: string | null; q?: string | null };
+
+const leadsRecording = (u: AppUser) => isLeadOf(u, "recording") || isManager(u) || can(u, "items.plan");
+
+export async function readyToHandOff(user: AppUser, f: ReadyFilter = {}): Promise<ReadyRow[]> {
+  need(user);
+  const lead = leadsRecording(user);
+  const rows = await all<ReadyRow & { finished_at: string | null }>(
+    `SELECT i.id AS "itemId", i.lesson_id AS "lessonId", i.code, i.title, g.name AS grade, g.id AS "gradeId", s.name AS subject, s.id AS "subjectId", un.number AS unit, l.number AS part,
+        i.teacher, u.name AS owner, a.owner_id AS "ownerId", a.status, a.raw_duration_min AS minutes, i.recorded_at AS finished_at,
+        (SELECT COUNT(*) FROM assets x WHERE x.item_id = i.id AND x.kind = 'raw' AND x.status = 'current') AS videos
+     FROM items i JOIN stage_attempts a ON a.id = i.current_attempt_id
+     LEFT JOIN users u ON u.id = a.owner_id
+     JOIN item_memberships m ON m.item_id = i.id AND m.is_primary = 1 JOIN grades g ON g.id = m.grade_id JOIN subjects s ON s.id = m.subject_id
+     LEFT JOIN units un ON un.id = m.unit_id LEFT JOIN lessons l ON l.id = i.lesson_id
+     WHERE i.lifecycle = 'in_production' AND a.stage = 'recording' AND a.status IN (${lead ? "'finished','lead_review','ready'" : "'finished','lead_review'"})
+       ${lead ? "" : "AND a.owner_id = ?"}
+     ORDER BY g.sort, s.sort, un.number, l.number LIMIT 2000`,
+    ...(lead ? [] : [user.id]),
+  );
+  const needle = f.q?.trim().toLowerCase();
+  return rows
+    .map((r) => ({ ...r, videos: Number(r.videos), minutes: r.minutes == null ? null : Number(r.minutes), unit: r.unit == null ? null : Number(r.unit), part: r.part == null ? null : Number(r.part), finishedAt: r.finished_at }))
+    .filter(
+      (r) =>
+        (!f.gradeId || r.gradeId === f.gradeId) &&
+        (!f.subjectId || r.subjectId === f.subjectId) &&
+        (!f.teacher || (r.teacher ?? "").toLowerCase() === f.teacher.toLowerCase()) &&
+        (!f.ownerId || r.ownerId === f.ownerId) &&
+        (!f.status || r.status === f.status) &&
+        (!needle || `${r.code} ${r.title} ${r.teacher ?? ""} ${r.owner ?? ""}`.toLowerCase().includes(needle)),
+    )
+    .map(({ finished_at: _f, ...r }) => r as ReadyRow);
+}
+
+// Hands off what the person checked. A team member sends it to the Recording lead (who approves it); the lead (or a
+// manager) approves what was sent and hands it all over to Editing as one batch.
+export async function handOff(user: AppUser, itemIds: string[], note?: string | null) {
+  need(user);
+  const ids = [...new Set(itemIds)].slice(0, 500);
+  if (!ids.length) throw new WorkflowError("VALIDATION", "Choose the parts to hand off.");
+  const lead = leadsRecording(user);
+  const ctx: Ctx = { actor: user, source: "bulk" };
+  const results: { id: string; code: string; ok: boolean; error?: string }[] = [];
+  const toBatch: string[] = [];
+  for (const id of ids) {
+    const it = await get<{ code: string }>("SELECT code FROM items WHERE id = ?", id);
+    if (!it) continue;
+    try {
+      const a = await wf.currentAttempt(id);
+      if (!a || a.stage !== "recording") throw new WorkflowError("INVALID_STATE", "Not in Recording.");
+      if (lead) {
+        if (a.status === "finished" || a.status === "lead_review") {
+          if (a.owner_id === user.id || a.status === "finished") await wf.submitToLead({ ...ctx, silent: true }, id, { note: note ?? null }).catch(() => {});
+          const b = await wf.currentAttempt(id);
+          if (b && (b.status === "lead_review" || b.status === "finished")) await wf.leadDecide(ctx, id, { decision: "approve", note: note ?? null });
+        }
+        if ((await wf.currentAttempt(id))?.status !== "ready") throw new WorkflowError("INVALID_STATE", "Not approved yet.");
+        toBatch.push(id);
+      } else {
+        if (a.owner_id !== user.id) throw new WorkflowError("FORBIDDEN", "Only your own parts.");
+        if (a.status !== "finished") throw new WorkflowError("INVALID_STATE", "Already sent to the lead.");
+        await wf.submitToLead(ctx, id, { note: note ?? null });
+        results.push({ id, code: it.code, ok: true });
+      }
+    } catch (e) {
+      results.push({ id, code: it.code, ok: false, error: e instanceof Error ? e.message : String(e) });
+    }
+  }
+  let handover: string | null = null;
+  if (toBatch.length) {
+    const { createHandover } = await import("./editorial");
+    const r = await createHandover(user, { itemIds: toBatch, note: note ?? "From the Legacy catalog" });
+    handover = r.code;
+    for (const x of r.results) results.push({ id: x.id, code: x.code, ok: x.ok, error: x.error });
+  }
+  await logged(user, "handoff", `${user.name} handed off ${results.filter((r) => r.ok).length} parts${handover ? ` (${handover})` : ""}`);
+  return { results, handover, sentToLead: !lead };
 }
 
 // ---------------------------------------------------------------------------

@@ -33,8 +33,13 @@ import {
   importLegacyAction,
   markRecordedAction,
   saveLegacyConfigAction,
+  reopenPartAction,
+  saveDetailsAction,
+  handOffAction,
 } from "@/app/actions/legacy";
-import type { LegacyConfig, LegacyPart, LegacyVideo } from "@/server/legacy";
+import type { LegacyConfig, LegacyPart, LegacyVideo, ReadyRow } from "@/server/legacy";
+import { Checkbox } from "@/components/ui/checkbox";
+import { ClipboardCheckIcon, SendIcon, Undo2Icon } from "lucide-react";
 import { isPlaceholderTitle } from "@/lib/curriculum-names";
 
 type Result = { ok: boolean; error?: string };
@@ -46,10 +51,13 @@ type Props = {
   grade: { id: string; name: string; level: string | null } | null;
   subject: { id: string; name: string } | null;
   unit: { id: string; number: number; title: string } | null;
-  grades: GradeCard[];
   subjects: SubjectCard[];
   units: UnitCard[];
   parts: LegacyPart[];
+  ready: ReadyRow[] | null;
+  readyCount: number;
+  lead: boolean;
+  grades: GradeCard[];
   canImport: boolean;
   canRemove: boolean;
   admin: boolean;
@@ -193,6 +201,11 @@ export function LegacyClient(p: Props) {
               <DownloadIcon /> Backup
             </a>
           </Button>
+          <Button size="sm" variant={p.ready ? "default" : "outline"} asChild>
+            <Link href="/legacy?view=ready" data-legacy-ready-link>
+              <ClipboardCheckIcon /> Ready to hand off{p.readyCount ? ` (${p.readyCount})` : ""}
+            </Link>
+          </Button>
           {p.canImport && (
             <Button size="sm" variant="outline" onClick={() => setImporting(true)}>
               <UploadIcon /> Import
@@ -206,7 +219,8 @@ export function LegacyClient(p: Props) {
         </div>
       </div>
 
-      {!p.grade && <GradesView grades={p.grades} />}
+      {p.ready && <ReadyView rows={p.ready} lead={p.lead} />}
+      {!p.ready && !p.grade && <GradesView grades={p.grades} />}
       {p.grade && !p.subject && <SubjectsView {...p} grade={p.grade} />}
       {p.grade && p.subject && !p.unit && <UnitsView {...p} grade={p.grade} subject={p.subject} />}
       {p.unit && <PartsView {...p} unit={p.unit} />}
@@ -375,14 +389,16 @@ function UnitsView({ grade, subject, units, canRemove }: Props & { grade: NonNul
 function VideoDialog({ part, video, onClose }: { part: LegacyPart; video?: LegacyVideo; onClose: () => void }) {
   const act = useAct();
   const router = useRouter();
-  const [f, setF] = React.useState({ cameraCode: video?.cameraCode ?? "", title: video?.title ?? "", description: video?.description ?? "" });
+  const [f, setF] = React.useState({ cameraCode: video?.cameraCode ?? "", title: video?.title ?? "", description: video?.description ?? "", minutes: video?.minutes ? String(video.minutes) : "", link: video?.link ?? "", disk: video?.disk ?? "", path: video?.path ?? "" });
+  const [onDisk, setOnDisk] = React.useState(!!video?.disk);
   const [busy, setBusy] = React.useState(false);
   const save = async () => {
     setBusy(true);
     let ok: boolean;
-    if (video) ok = await act(editVideoAction(video.id, f), "Video details updated");
+    const input = { ...f, minutes: f.minutes ? Number(f.minutes) : null, link: onDisk ? null : f.link || null, disk: onDisk ? f.disk || null : null, path: onDisk ? f.path || null : null };
+    if (video) ok = await act(editVideoAction(video.id, input), "Video details updated");
     else {
-      const r = await addVideoAction(part.id, f);
+      const r = await addVideoAction(part.id, input);
       ok = r.ok;
       if (!r.ok) toast.error(r.error);
       else {
@@ -411,6 +427,32 @@ function VideoDialog({ part, video, onClose }: { part: LegacyPart; video?: Legac
             <Label htmlFor="lg-title">Video title</Label>
             <Input id="lg-title" placeholder="Introduction and key definitions" value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} />
           </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label htmlFor="lg-min">Minutes</Label>
+              <Input id="lg-min" type="number" min={0} step="0.5" inputMode="decimal" value={f.minutes} onChange={(e) => setF({ ...f, minutes: e.target.value })} />
+            </div>
+            <label className="flex items-end gap-2 pb-2 text-sm">
+              <Checkbox checked={onDisk} disabled={!!video} onCheckedChange={(v) => setOnDisk(v === true)} /> On an external disk
+            </label>
+          </div>
+          {onDisk ? (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label htmlFor="lg-disk">Disk</Label>
+                <Input id="lg-disk" disabled={!!video} value={f.disk} onChange={(e) => setF({ ...f, disk: e.target.value })} placeholder="Disk A" />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="lg-path">Folder</Label>
+                <Input id="lg-path" disabled={!!video} value={f.path} onChange={(e) => setF({ ...f, path: e.target.value })} placeholder="G9/Biology/U1" />
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-1">
+              <Label htmlFor="lg-link">Raw footage link (optional)</Label>
+              <Input id="lg-link" type="url" inputMode="url" value={f.link} onChange={(e) => setF({ ...f, link: e.target.value })} placeholder="https://drive.example.com/..." />
+            </div>
+          )}
           <div className="space-y-1">
             <Label htmlFor="lg-desc">Description or notes</Label>
             <Textarea id="lg-desc" rows={3} value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} />
@@ -426,6 +468,214 @@ function VideoDialog({ part, video, onClose }: { part: LegacyPart; video?: Legac
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// The rest of what the Recording team enters on a part, as on their work card.
+function PartDetails({ part }: { part: LegacyPart }) {
+  const act = useAct();
+  const [open, setOpen] = React.useState(false);
+  const [f, setF] = React.useState({ teacher: part.teacher ?? "", rawMin: part.rawMin == null ? "" : String(part.rawMin), notes: part.notes ?? "", checks: Object.fromEntries(part.checks.map((c) => [c.key, c.checked])) as Record<string, boolean> });
+  React.useEffect(() => setF({ teacher: part.teacher ?? "", rawMin: part.rawMin == null ? "" : String(part.rawMin), notes: part.notes ?? "", checks: Object.fromEntries(part.checks.map((c) => [c.key, c.checked])) }), [part]);
+  const editable = part.canLog;
+  const filled = [part.teacher, part.rawMin, part.notes].filter((x) => x !== null && x !== "").length + part.checks.filter((c) => c.checked).length;
+  return (
+    <div className="rounded-lg border bg-muted/20" data-legacy-details>
+      <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm" onClick={() => setOpen(!open)} aria-expanded={open}>
+        <ChevronRightIcon className={open ? "size-4 rotate-90 transition-transform" : "size-4 transition-transform"} />
+        <span className="font-medium">Recording details</span>
+        <span className="text-xs text-muted-foreground">
+          {part.teacher ? `${part.teacher} · ` : ""}
+          {part.rawMin ? `${part.rawMin} min · ` : ""}
+          {part.checks.filter((c) => c.checked).length}/{part.checks.length} checked
+        </span>
+        {part.missing.length > 0 && <span className="ml-auto text-xs text-[var(--st-paused-fg)]">Still needed: {part.missing.length}</span>}
+        {!filled && !part.missing.length && <span className="ml-auto text-xs text-muted-foreground">Not filled in</span>}
+      </button>
+      {open && (
+        <div className="space-y-3 border-t p-3 text-sm">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1">
+              <Label htmlFor={`lt-${part.id}`}>Presenter (teacher)</Label>
+              <Input id={`lt-${part.id}`} value={f.teacher} onChange={(e) => setF({ ...f, teacher: e.target.value })} placeholder="Ato Kebede" />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor={`lm-${part.id}`}>Raw minutes in total</Label>
+              <Input id={`lm-${part.id}`} type="number" min={0} step="0.5" inputMode="decimal" disabled={!editable} value={f.rawMin} onChange={(e) => setF({ ...f, rawMin: e.target.value })} />
+            </div>
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor={`ln-${part.id}`}>Notes for the team (studio, takes, problems)</Label>
+            <Textarea id={`ln-${part.id}`} rows={2} value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} />
+          </div>
+          {part.checks.length > 0 && (
+            <fieldset className="space-y-1">
+              <legend className="font-medium">Checklist</legend>
+              {part.checks.map((c) => (
+                <label key={c.key} className="flex items-center gap-2">
+                  <Checkbox disabled={!editable} checked={!!f.checks[c.key]} onCheckedChange={(v) => setF({ ...f, checks: { ...f.checks, [c.key]: v === true } })} /> {c.label}
+                  {c.required && <span className="text-xs text-muted-foreground">required</span>}
+                </label>
+              ))}
+            </fieldset>
+          )}
+          {part.missing.length > 0 && <p className="text-xs text-[var(--st-paused-fg)]">Before it is done: {part.missing.join("; ")}</p>}
+          <Button
+            size="sm"
+            onClick={() => void act(saveDetailsAction(part.id, { teacher: f.teacher, notes: f.notes, ...(editable ? { rawMin: f.rawMin === "" ? null : Number(f.rawMin), checks: f.checks } : {}) }), "Details saved")}
+          >
+            Save details
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Ready to hand off: the parts done, to check and hand off one by one or many at once, with filters.
+function ReadyView({ rows, lead }: { rows: ReadyRow[]; lead: boolean }) {
+  const router = useRouter();
+  const [f, setF] = React.useState({ grade: "", subject: "", teacher: "", owner: "", status: "", q: "" });
+  const [picked, setPicked] = React.useState<Set<string>>(new Set());
+  const [busy, setBusy] = React.useState(false);
+  const opts = (k: (r: ReadyRow) => [string, string] | null) => [...new Map(rows.map(k).filter((x): x is [string, string] => !!x)).entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  const needle = f.q.trim().toLowerCase();
+  const shown = rows.filter(
+    (r) =>
+      (!f.grade || r.gradeId === f.grade) &&
+      (!f.subject || r.subjectId === f.subject) &&
+      (!f.teacher || (r.teacher ?? "") === f.teacher) &&
+      (!f.owner || r.ownerId === f.owner) &&
+      (!f.status || r.status === f.status) &&
+      (!needle || `${r.code} ${r.title} ${r.teacher ?? ""} ${r.owner ?? ""}`.toLowerCase().includes(needle)),
+  );
+  const chosen = shown.filter((r) => picked.has(r.itemId));
+  const STATUS: Record<string, string> = { finished: "Done, to check", lead_review: "With the lead", ready: "Approved" };
+  const sel = "h-9 rounded-md border bg-background px-2 text-sm";
+  return (
+    <div className="space-y-3" data-legacy-ready>
+      <div>
+        <h2 className="text-lg font-semibold">Ready to hand off</h2>
+        <p className="text-sm text-muted-foreground">
+          {lead ? "Parts your team marked done, sent to you, or approved. Check them, then hand them over to Editing as one batch." : "Your parts marked done. Check each one, then hand them off to the Recording lead, one by one or many at once."}
+        </p>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <select aria-label="Grade" className={sel} value={f.grade} onChange={(e) => setF({ ...f, grade: e.target.value })}>
+          <option value="">Any grade</option>
+          {opts((r) => [r.gradeId, r.grade]).map(([v, l]) => (
+            <option key={v} value={v}>
+              {l}
+            </option>
+          ))}
+        </select>
+        <select aria-label="Subject" className={sel} value={f.subject} onChange={(e) => setF({ ...f, subject: e.target.value })}>
+          <option value="">Any subject</option>
+          {opts((r) => [r.subjectId, r.subject]).map(([v, l]) => (
+            <option key={v} value={v}>
+              {l}
+            </option>
+          ))}
+        </select>
+        <select aria-label="Teacher" className={sel} value={f.teacher} onChange={(e) => setF({ ...f, teacher: e.target.value })}>
+          <option value="">Any teacher</option>
+          {opts((r) => (r.teacher ? [r.teacher, r.teacher] : null)).map(([v, l]) => (
+            <option key={v} value={v}>
+              {l}
+            </option>
+          ))}
+        </select>
+        {lead && (
+          <>
+            <select aria-label="Recorded by" className={sel} value={f.owner} onChange={(e) => setF({ ...f, owner: e.target.value })}>
+              <option value="">Anyone</option>
+              {opts((r) => (r.ownerId ? [r.ownerId, r.owner ?? ""] : null)).map(([v, l]) => (
+                <option key={v} value={v}>
+                  {l}
+                </option>
+              ))}
+            </select>
+            <select aria-label="Status" className={sel} value={f.status} onChange={(e) => setF({ ...f, status: e.target.value })}>
+              <option value="">Any status</option>
+              {Object.entries(STATUS).map(([v, l]) => (
+                <option key={v} value={v}>
+                  {l}
+                </option>
+              ))}
+            </select>
+          </>
+        )}
+        <Input className="h-9 w-44" placeholder="Search" aria-label="Search ready parts" value={f.q} onChange={(e) => setF({ ...f, q: e.target.value })} />
+      </div>
+      {!shown.length ? (
+        <EmptyState icon={<ClipboardCheckIcon className="size-5" />} title="Nothing ready" description="Parts you mark Done wait here until you hand them off." />
+      ) : (
+        <div className="overflow-x-auto rounded-lg border">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/50 text-left text-xs text-muted-foreground">
+              <tr>
+                <th className="w-8 p-2">
+                  <Checkbox aria-label="Select all shown" checked={chosen.length > 0 && chosen.length === shown.length} onCheckedChange={(v) => setPicked(v ? new Set(shown.map((r) => r.itemId)) : new Set())} />
+                </th>
+                <th className="p-2 font-medium">Part</th>
+                <th className="p-2 font-medium">Teacher</th>
+                <th className="p-2 font-medium">Shots</th>
+                <th className="p-2 font-medium">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {shown.map((r) => (
+                <tr key={r.itemId} className="border-t align-top" data-ready-row={r.code}>
+                  <td className="p-2">
+                    <Checkbox aria-label={`Select ${r.code}`} checked={picked.has(r.itemId)} onCheckedChange={(v) => setPicked((s) => { const n = new Set(s); if (v) n.add(r.itemId); else n.delete(r.itemId); return n; })} />
+                  </td>
+                  <td className="p-2">
+                    <Link href={`/items/${r.itemId}`} className="font-medium hover:underline">
+                      {r.title}
+                    </Link>
+                    <span className="block text-xs text-muted-foreground">
+                      {r.grade} · {r.subject}
+                      {r.unit != null ? ` · Unit ${r.unit}` : ""}
+                      {r.part != null ? ` · Part ${r.part}` : ""}
+                      {lead && r.owner ? ` · ${r.owner}` : ""}
+                    </span>
+                  </td>
+                  <td className="p-2 text-xs">{r.teacher ?? "-"}</td>
+                  <td className="p-2 text-xs whitespace-nowrap">
+                    {r.videos}
+                    {r.minutes ? ` · ${r.minutes} min` : ""}
+                  </td>
+                  <td className="p-2 text-xs whitespace-nowrap">{STATUS[r.status] ?? r.status}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {chosen.length > 0 && (
+        <div className="sticky bottom-20 z-20 mx-auto flex w-fit max-w-full items-center gap-2 rounded-xl border bg-popover px-3 py-2 shadow-lg md:bottom-3" data-ready-bar>
+          <span className="text-sm font-medium tabular">{chosen.length} selected</span>
+          <Button
+            size="sm"
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              const r = await handOffAction(chosen.map((x) => x.itemId));
+              setBusy(false);
+              if (!r.ok) return void toast.error(r.error);
+              const ok = r.data!.results.filter((x) => x.ok).length;
+              const bad = r.data!.results.filter((x) => !x.ok);
+              if (ok) toast.success(r.data!.handover ? `${ok} handed over to Editing (${r.data!.handover})` : `${ok} sent to the Recording lead`);
+              if (bad.length) toast.error(`${bad.length} not handed off`, { description: bad.map((b) => `${b.code}: ${b.error}`).join("; ").slice(0, 300) });
+              setPicked(new Set());
+              router.refresh();
+            }}
+          >
+            {busy ? <Loader2Icon className="animate-spin" /> : <SendIcon />} {lead ? "Hand over to Editing" : "Hand off"}
+          </Button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -464,9 +714,14 @@ function PartsView({ unit, parts, canRemove, config }: Props & { unit: NonNullab
                 </Badge>
                 {isPlaceholderTitle(p.title) && <Badge variant="outline" className="border-[var(--st-paused-fg)] text-[var(--st-paused-fg)]">Needs a real name</Badge>}
                 <span className="ml-auto flex flex-wrap items-center gap-1">
-                  {p.canMark && config.afterVideo === "stay" && (
-                    <Button size="sm" variant="outline" onClick={() => void act(markRecordedAction(p.id), "Sent on to Editing")}>
-                      <CheckCheckIcon /> Mark recorded
+                  {p.canMark && (
+                    <Button size="sm" variant="outline" onClick={() => void act(markRecordedAction(p.id), "Done. It waits on Ready to hand off.")}>
+                      <CheckCheckIcon /> Done
+                    </Button>
+                  )}
+                  {p.canReopen && (
+                    <Button size="sm" variant="ghost" onClick={() => void act(reopenPartAction(p.id), "Reopened")}>
+                      <Undo2Icon /> Reopen
                     </Button>
                   )}
                   <Button size="sm" disabled={!p.canLog} title={p.canLog ? undefined : "This part has left Recording"} onClick={() => setAddVideo(p)}>
@@ -482,6 +737,7 @@ function PartsView({ unit, parts, canRemove, config }: Props & { unit: NonNullab
                   )}
                 </span>
               </div>
+              <PartDetails part={p} />
               {!p.videos.length ? (
                 <p className="rounded-lg border border-dashed p-3 text-center text-xs text-muted-foreground">No video shots added to this part yet.</p>
               ) : (
@@ -506,6 +762,17 @@ function PartsView({ unit, parts, canRemove, config }: Props & { unit: NonNullab
                       </div>
                       <p className="mt-1.5 text-sm font-medium">{v.title || "To be determined"}</p>
                       <p className="mt-0.5 text-xs whitespace-pre-line text-muted-foreground">{v.description || "No description provided."}</p>
+                      {(v.minutes || v.link || v.disk) && (
+                        <p className="mt-1 truncate text-[11px] text-muted-foreground">
+                          {v.minutes ? `${v.minutes} min` : ""}
+                          {v.disk ? `${v.minutes ? " · " : ""}${v.disk}${v.path ? `, ${v.path}` : ""}` : ""}
+                          {v.link ? (
+                            <a href={v.link} target="_blank" rel="noreferrer" className="ml-1 text-primary hover:underline">
+                              link
+                            </a>
+                          ) : null}
+                        </p>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -605,8 +872,8 @@ function SettingsDialog({ config, onClose }: { config: LegacyConfig; onClose: ()
           <div className="space-y-1">
             <Label htmlFor="lc-after">After a video shot is logged</Label>
             <select id="lc-after" className="h-9 w-full rounded-md border bg-background px-2" value={c.afterVideo} onChange={(e) => setC({ ...c, afterVideo: e.target.value as LegacyConfig["afterVideo"] })}>
-              <option value="stay">The part waits until someone presses Mark recorded</option>
-              <option value="recorded">The part goes to Editing&apos;s incoming at once</option>
+              <option value="stay">The part stays open until someone presses Done</option>
+              <option value="done">The part is marked done at once (it still waits on Ready to hand off)</option>
             </select>
           </div>
           <div className="flex items-center gap-2">

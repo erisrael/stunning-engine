@@ -197,7 +197,10 @@ export default async function ImportExportPage({ searchParams }: { searchParams:
                   does not list are added from here. Preview the trace before applying; running it again is safe.
                 </CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-2">
+                <a href="/api/tracker-templates/video-tracker" className="inline-flex items-center gap-1 text-sm text-primary hover:underline" data-template="video-tracker">
+                  <DownloadIcon className="size-4" /> Download the template (CSV)
+                </a>
                 <VideoTrackerImport />
               </CardContent>
             </Card>
@@ -210,7 +213,10 @@ export default async function ImportExportPage({ searchParams }: { searchParams:
                   The Recording team&apos;s tracker file (grade, subjects, units, parts and videos). New units and parts are added, videos are logged by camera code and recorded parts move to Editing. Safe to run again.
                 </CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-2">
+                <a href="/api/tracker-templates/curriculum-tracker" className="inline-flex items-center gap-1 text-sm text-primary hover:underline" data-template="curriculum-tracker">
+                  <DownloadIcon className="size-4" /> Download the template (JSON)
+                </a>
                 <TrackerImport />
               </CardContent>
             </Card>

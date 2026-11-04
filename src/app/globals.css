@@ -333,6 +333,57 @@ html[data-helplinks="off"] [data-help-link] {
   display: none !important;
 }
 
+/* Phones feel like an app: no text-size jumps, momentum scrolling, no grey flash on tap, the top bar stays, cards
+   use the width, page titles and menus are compact, the bottom bar leaves room for the home indicator. */
+@media (max-width: 767px) {
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+  body {
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior-y: contain;
+  }
+  header[data-topbar] {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    padding-top: env(safe-area-inset-top);
+  }
+  main {
+    padding-left: max(0.75rem, env(safe-area-inset-left)) !important;
+    padding-right: max(0.75rem, env(safe-area-inset-right)) !important;
+  }
+  main [data-slot="card"] {
+    gap: 0.75rem;
+    padding-top: 1rem;
+    padding-bottom: 1rem;
+  }
+  main [data-slot="card-header"],
+  main [data-slot="card-content"] {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+  main h1 {
+    font-size: 1.25rem;
+    line-height: 1.6rem;
+  }
+  main nav[aria-label] {
+    scrollbar-width: none;
+  }
+  [data-slot="dropdown-menu-content"],
+  [data-slot="popover-content"] {
+    max-width: calc(100vw - 1.5rem);
+  }
+  [data-slot="dialog-content"] {
+    max-height: calc(100dvh - 2rem);
+    overflow-y: auto;
+  }
+  button, a, [role="tab"] {
+    touch-action: manipulation;
+  }
+}
+
 /* Chat on phones (Telegram-like): the conversation fills what the keyboard leaves, the message box stays on top of the
    keyboard, and the tab bar is out of the way. --vvh is the visible height, set while the keyboard is open. */
 @media (max-width: 767px) {

@@ -174,6 +174,7 @@ export const PLACES: { name: string; href: string; words: string[] }[] = [
   { name: "Pay and claims", href: "/profile?tab=pay", words: ["pay", "payslip", "salary", "claims"] },
   { name: "My record", href: "/profile?tab=record", words: ["my record", "documents", "contract", "hr record"] },
   { name: "Account and password", href: "/profile?tab=account", words: ["password", "two-step", "account", "sessions", "devices"] },
+  { name: "My work", href: "/my-work", words: ["my work", "my tasks", "my board", "my tickets", "assigned to me"] },
   { name: "Settings", href: "/preferences", words: ["my settings", "preferences", "font", "contrast", "language", "theme", "dark mode", "notification settings"] },
   { name: "Notifications", href: "/notifications", words: ["notifications", "notices", "alerts"] },
   { name: "Chat", href: "/chat", words: ["chat", "messages", "group", "call"] },

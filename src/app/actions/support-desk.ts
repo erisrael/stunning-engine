@@ -11,6 +11,9 @@ export async function saveSupportConfigAction(input: Partial<sd.SupportConfig>) 
 export async function saveAppAction(input: Parameters<typeof sd.saveApp>[1]) {
   return wrap(async () => sd.saveApp(await requireViewer(), input));
 }
+export async function testAppAction(id: string) {
+  return wrap(async () => sd.testApp(await requireViewer(), id), { revalidate: false });
+}
 export async function newAppSecretAction(id: string) {
   return wrap(async () => sd.newAppSecret(await requireViewer(), id), { revalidate: false });
 }

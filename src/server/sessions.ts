@@ -1,4 +1,4 @@
-// Studio session planning: the Recording lead books a studio, a time, a presenter and a camera operator for one or
+// Studio session planning: the academic manager books a studio, a time, a presenter and a camera operator for one or
 // several parts at once. Each part gets its own recording_sessions row sharing a batch id, so the item page, the
 // calendar and imports keep working as before. Rooms and operators cannot be double-booked.
 
@@ -9,11 +9,48 @@ import { getSettings } from "./settings";
 import { can, isLeadOf, isManager, scopeSql, type AppUser } from "./users";
 import { localInputToIso } from "@/lib/format";
 
-export const canPlanSessions = (u: AppUser) => isLeadOf(u, "recording") || isManager(u) || can(u, "items.plan");
-const canSeeSessions = (u: AppUser) => canPlanSessions(u) || can(u, "team.view") || u.roles.includes("recording");
+// Who books studio sessions (Studio sessions, Who manages them): the academic managers Admin names, and, as Admin
+// chooses, planners and the Recording lead too. With nobody named, managers and planners book them.
+export type SessionsConfig = { managers: string[]; planners: boolean; recordingLead: boolean };
+export const DEFAULT_SESSIONS: SessionsConfig = { managers: [], planners: false, recordingLead: false };
 
-function need(u: AppUser) {
-  if (!canPlanSessions(u)) throw new WorkflowError("FORBIDDEN", "The Recording team lead or a manager books studio sessions.");
+export async function sessionsConfig(): Promise<SessionsConfig> {
+  const r = await get<{ value: string }>("SELECT value FROM settings WHERE key = 'cfg.sessions'");
+  let v: Partial<SessionsConfig> = {};
+  try {
+    v = JSON.parse(r?.value ?? "{}");
+  } catch {}
+  return { ...DEFAULT_SESSIONS, ...v, managers: Array.isArray(v.managers) ? v.managers : [] };
+}
+
+export function plansWith(u: AppUser, cfg: SessionsConfig) {
+  if (can(u, "users.manage")) return true;
+  if (cfg.managers.includes(u.id)) return true;
+  // Until an academic manager is named, managers book them.
+  if (!cfg.managers.length && isManager(u) && !isLeadOf(u, "recording")) return true;
+  if (cfg.planners && can(u, "items.plan")) return true;
+  return cfg.recordingLead && isLeadOf(u, "recording");
+}
+
+export async function canPlanSessions(u: AppUser) {
+  return plansWith(u, await sessionsConfig());
+}
+
+export async function saveSessionsConfig(user: AppUser, input: Partial<SessionsConfig>) {
+  if (!can(user, "users.manage") && !can(user, "settings.manage")) throw new WorkflowError("FORBIDDEN", "Only Admin chooses who manages studio sessions.");
+  const cur = await sessionsConfig();
+  const next: SessionsConfig = { managers: Array.isArray(input.managers) ? input.managers.map(String).slice(0, 50) : cur.managers, planners: input.planners ?? cur.planners, recordingLead: input.recordingLead ?? cur.recordingLead };
+  await run(
+    "INSERT INTO settings (key, value, updated_at, updated_by) VALUES ('cfg.sessions', ?, ?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by",
+    JSON.stringify(next),
+    nowIso(),
+    user.id,
+  );
+  await audit({ actor: user }, { action: "settings.sessions", summary: `${user.name} changed who manages studio sessions`, newValue: next });
+}
+
+async function need(u: AppUser) {
+  if (!(await canPlanSessions(u))) throw new WorkflowError("FORBIDDEN", "The academic manager books studio sessions.");
 }
 
 export type Booking = {
@@ -88,7 +125,7 @@ function group(rows: Row[]): Booking[] {
 }
 
 export async function sessionWeek(user: AppUser, weekStart: string) {
-  if (!canSeeSessions(user)) throw new WorkflowError("FORBIDDEN", "You cannot see studio sessions.");
+  if (!(await canPlanSessions(user)) && !can(user, "team.view") && !user.roles.includes("recording")) throw new WorkflowError("FORBIDDEN", "You cannot see studio sessions.");
   const s = await getSettings();
   const tz = s.workspace.timezone;
   const from = localInputToIso(`${weekStart}T00:00`, tz)!;
@@ -96,7 +133,7 @@ export async function sessionWeek(user: AppUser, weekStart: string) {
   const sc = scopeSql(user, "i");
   const rows = await all<Row>(`${ROWS} WHERE rs.scheduled_start >= ? AND rs.scheduled_start < ? AND rs.status <> 'cancelled' AND ${sc.sql} ORDER BY rs.scheduled_start, i.code`, from, to, ...sc.params);
   // Team members see only their own sessions.
-  const mine = !canPlanSessions(user) && !can(user, "team.view");
+  const mine = !(await canPlanSessions(user)) && !can(user, "team.view");
   return { bookings: group(rows).filter((b) => !mine || b.operatorId === user.id), studios: s.lists.studios ?? [], tz };
 }
 
@@ -108,7 +145,7 @@ export async function mySessions(user: AppUser) {
 
 // Parts that still need recording: drafts and parts in Recording not yet done.
 export async function sessionCandidates(user: AppUser) {
-  need(user);
+  await need(user);
   const sc = scopeSql(user, "i");
   return all<{ id: string; code: string; title: string; grade: string | null; subject: string | null; unit_number: number | null; part_number: number | null; booked: string | null }>(
     `SELECT i.id, i.code, i.title, g.name AS grade, s.name AS subject, un.number AS unit_number, l.number AS part_number,
@@ -143,7 +180,7 @@ async function clashes(start: string, end: string, room: string, operatorId: str
 
 export async function bookSession(user: AppUser, input: BookingInput) {
   if ((await (await import("./handover-config")).handoverConfig()).studioBooking === "off") throw new WorkflowError("VALIDATION", "Studio booking is turned off (Handovers, Settings).");
-  need(user);
+  await need(user);
   const s = await getSettings();
   const tz = s.workspace.timezone;
   const ids = [...new Set(input.itemIds)].slice(0, 30);
@@ -207,7 +244,7 @@ async function batchRows(batchId: string) {
 }
 
 export async function moveSession(user: AppUser, batchId: string, input: { date: string; time: string; room?: string | null }) {
-  need(user);
+  await need(user);
   const rows = await batchRows(batchId);
   if (!rows.length) throw new WorkflowError("NOT_FOUND", "Session not found.");
   const tz = (await getSettings()).workspace.timezone;
@@ -227,7 +264,7 @@ export async function setSessionStatus(user: AppUser, batchId: string, status: "
   const rows = await batchRows(batchId);
   if (!rows.length) throw new WorkflowError("NOT_FOUND", "Session not found.");
   // The operator can mark their own session recorded; booking changes are the lead's.
-  if (!(canPlanSessions(user) || (status === "completed" && rows[0]!.operator_id === user.id))) need(user);
+  if (!((await canPlanSessions(user)) || (status === "completed" && rows[0]!.operator_id === user.id))) await need(user);
   await run("UPDATE recording_sessions SET status = ?, outcome_note = COALESCE(?, outcome_note) WHERE batch_id = ? OR id = ?", status, note?.trim() || null, batchId, batchId);
   await audit({ actor: user }, { action: `session.${status}`, stage: "recording", summary: `${user.name} marked a studio session ${status === "completed" ? "recorded" : "cancelled"}${note ? `: ${note}` : ""}` });
 }

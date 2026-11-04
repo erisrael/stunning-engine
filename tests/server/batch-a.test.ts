@@ -30,7 +30,11 @@ async function main() {
   const items = await all<{ id: string; code: string }>("SELECT i.id, i.code FROM items i JOIN lessons l ON l.id = i.lesson_id ORDER BY l.number");
   const [p1, p2, p3] = items;
 
-  // Studio sessions
+  // Studio sessions: the academic manager books them. The Recording lead does not, until Admin names them.
+  const admin = await by("admin@demo.local");
+  check("by default the Recording lead does not book", !(await ss.canPlanSessions(hana)));
+  await ss.saveSessionsConfig(admin, { managers: [hana.id] });
+  check("named as academic manager, they do", await ss.canPlanSessions(hana));
   const day = new Date(Date.now() + 2 * 864e5).toISOString().slice(0, 10);
   const batch = await ss.bookSession(hana, { date: day, time: "10:00", durationMin: 120, room: "Studio A", presenter: "Teacher Almaz", operatorId: dawit.id, itemIds: [p1!.id, p2!.id], assignToOperator: true });
   check("lead books a session for two parts", !!batch);

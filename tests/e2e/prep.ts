@@ -257,6 +257,9 @@ const PREPS: Record<string, () => Promise<unknown>> = {
   },
   async "batch-a"() {
     await passwordOnly();
+    // Hana books studio sessions as the academic manager.
+    const hana = (await get<{ id: string }>("SELECT id FROM users WHERE email = 'hana@demo.local'"))!.id;
+    await (await import("../../src/server/sessions")).saveSessionsConfig(await admin(), { managers: [hana] });
   },
   async "batch-b"() {
     await passwordOnly();

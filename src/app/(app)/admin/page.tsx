@@ -10,6 +10,8 @@ import { can, listUsers } from "@/server/users";
 import { workspaceCounts } from "@/server/workspace-data";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BrandingAdmin } from "./branding-admin";
+import { IdentityAdmin } from "./identity-admin";
+import { identity } from "@/server/identity";
 import { UsageAdmin } from "./usage-admin";
 import { PrivacyAdmin } from "./privacy-admin";
 import { FilesAdmin } from "./files-admin";
@@ -210,6 +212,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
               {tab === "usage" && <UsageAdmin report={await usageReport(viewer)} roleLabel={ROLE_LABELS as Record<string, string>} />}
             </TabsContent>
             <TabsContent value="branding">
+              {tab === "branding" && <IdentityAdmin value={await identity()} />}
               {tab === "branding" && <BrandingAdmin sections={(await bannerSections()).map((x) => ({ key: x.key, label: x.label }))} banners={await banners()} nav={await navBrand()} />}
             </TabsContent>
             <TabsContent value="presentations">

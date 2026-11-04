@@ -304,7 +304,7 @@ async function tzNow() {
 export async function myAttendance(user: AppUser, month: string) {
   const employeeId = await myEmployeeId(user);
   const cfg = await attendanceConfig();
-  if (!employeeId) return { employeeId: null as string | null, cfg, capture: { qr: false, network: false, scanner: false }, today: null, events: [] as EventRow[], days: [] as DayResult[], totals: null as MonthTotals | null, shift: null as Shift | null, code: null as string | null, hasPin: false, face: null as { enrolledAt: string; samples: number } | null, corrections: [] as CorrectionRow[] };
+  if (!employeeId) return { employeeId: null as string | null, cfg, capture: { qr: false, network: false, scanner: false }, today: null, events: [] as EventRow[], days: [] as DayResult[], totals: null as MonthTotals | null, shift: null as Shift | null, code: null as string | null, hasPin: false, kioskPin: false, face: null as { enrolledAt: string; samples: number } | null, corrections: [] as CorrectionRow[] };
   const emp = (await get<Emp>(`${EMP_SELECT} WHERE id = ?`, employeeId))!;
   const { date } = await tzNow();
   const r = monthRange(month);
@@ -316,6 +316,8 @@ export async function myAttendance(user: AppUser, month: string) {
   const mine = range.get(employeeId)!;
   const t = todayData.get(employeeId)!;
   const cap = (await (await import("./attendance-capture")).captureConfig()).methods;
+  // The PIN is for a kiosk Admin paired, or the shared office computer; without either it is not shown.
+  const kioskPin = (cfg.methods.kiosk && !!(await get("SELECT 1 AS x FROM att_kiosks WHERE active = 1"))) || !!cap.shared;
   return {
     employeeId,
     cfg,
@@ -327,6 +329,7 @@ export async function myAttendance(user: AppUser, month: string) {
     shift: await shiftOf(employeeId, cfg),
     code: emp.code,
     hasPin: !!badge?.pin_hash,
+    kioskPin,
     face: await (await import("./attendance-face")).faceStatus(employeeId),
     corrections: (await corrections(user)).mine,
   };

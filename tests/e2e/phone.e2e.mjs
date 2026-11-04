@@ -132,7 +132,7 @@ try {
   await page.goto(`${base}/chat?g=${prep.group}`);
   const composer = page.locator("[data-composer]");
   check("the message box shows", await seen(composer));
-  check("the tab bar is out of the way in a conversation", !(await nav.isVisible()));
+  check("the tab bar is out of the way in a conversation", await nav.waitFor({ state: "hidden", timeout: 8000 }).then(() => true, () => false));
   const box = await composer.boundingBox();
   check("the message box is at the bottom of the screen, not under anything", !!box && box.y + box.height <= 800 + 1 && box.y + box.height >= 760, JSON.stringify(box));
   // The keyboard: the visible height shrinks; the box follows it.
@@ -167,6 +167,30 @@ try {
   await hr.page.goto(`${base}/attendance?tab=capture`);
   check("Admin has the leaving-the-site settings", await seen(hr.page.locator("[data-geofence-admin]")));
   check("set to only tell", (await hr.page.locator("#gf-mode:visible").first().inputValue()) === "notify");
+
+  // Round 36: no kiosk PIN without a kiosk, My work, the tracker templates, the site's name.
+  await page.goto(`${base}/attendance`);
+  check("no kiosk set up: no PIN card", (await page.locator("[data-kiosk-signin]:visible").count()) === 0);
+  await page.goto(`${base}/my-work`);
+  check("My work shows the person's own board", await seen(page.locator("[data-my-work]:visible")));
+  check("My work fits the phone", (await fits(page)) <= 1, `${await fits(page)}px over`);
+  const tpl = await hr.page.request.get(`${base}/api/tracker-templates/video-tracker`);
+  check("the video tracker template downloads", tpl.ok() && (await tpl.text()).includes('"grade","subject","unit","part","status"'));
+  const tj = await hr.page.request.get(`${base}/api/tracker-templates/curriculum-tracker`);
+  check("the curriculum tracker template downloads", tj.ok() && !!(await tj.json())["grade-9"]);
+  await hr.page.goto(`${base}/admin?tab=branding`);
+  const idCard = hr.page.locator("[data-identity-admin]:visible");
+  check("Admin can set the name and logo", await seen(idCard));
+  await idCard.getByLabel("Name", { exact: true }).fill("Acme Academy");
+  await idCard.getByLabel("Line under the name").fill("Studio Manager");
+  await idCard.getByRole("button", { name: "Save" }).click();
+  check("the name is saved", await toast(hr.page, /Name and logo saved/));
+  await page.goto(`${base}/dashboard`);
+  check("the tab title uses the new name", /Acme Academy Studio Manager/.test(await page.title()), await page.title());
+  const man = await hr.page.request.get(`${base}/manifest.webmanifest`);
+  check("the installed app uses it too", man.ok() && (await man.json()).name === "Acme Academy Studio Manager");
+  const fav = await hr.page.request.get(`${base}/api/branding/favicon`);
+  check("a favicon is always served", fav.ok());
 
   check("no script errors", errors.length === 0, errors.join(" | "));
 } catch (e) {

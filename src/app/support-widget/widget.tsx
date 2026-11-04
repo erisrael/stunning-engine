@@ -336,6 +336,92 @@ async function gathered(pc: RTCPeerConnection, ms = 3000) {
   });
 }
 
+type Ivr = { on: boolean; message: string; lang: string; audio: string | null; music: boolean; repeatSec: number; position: boolean };
+
+// What the caller hears until an agent answers: the recording Admin uploaded, or the message spoken in their browser,
+// with their place in line, then soft hold music; repeated. It stops the moment the call is answered or ends.
+function useWaitingMessage(active: boolean) {
+  const cfg = React.useRef<Ivr | null>(null);
+  const [position, setPosition] = React.useState<number | null>(null);
+  const said = React.useRef(0);
+  const ctx = React.useRef<AudioContext | null>(null);
+  const tune = React.useRef<number | null>(null);
+  const player = React.useRef<HTMLAudioElement | null>(null);
+  const stopAll = React.useCallback(() => {
+    try {
+      window.speechSynthesis?.cancel();
+    } catch {}
+    if (tune.current) window.clearInterval(tune.current);
+    tune.current = null;
+    player.current?.pause();
+    player.current = null;
+    void ctx.current?.close().catch(() => {});
+    ctx.current = null;
+    said.current = 0;
+  }, []);
+  // Soft hold music: a slow chord pattern from the browser, no file needed.
+  const music = React.useCallback(() => {
+    if (tune.current || !cfg.current?.music) return;
+    const C = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    if (!C) return;
+    const ac = (ctx.current ??= new C());
+    const notes = [261.6, 329.6, 392, 329.6, 293.7, 349.2, 440, 349.2];
+    let i = 0;
+    const play = () => {
+      const o = ac.createOscillator();
+      const g = ac.createGain();
+      o.type = "sine";
+      o.frequency.value = notes[i++ % notes.length]!;
+      g.gain.setValueAtTime(0.0001, ac.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.05, ac.currentTime + 0.05);
+      g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + 0.9);
+      o.connect(g).connect(ac.destination);
+      o.start();
+      o.stop(ac.currentTime + 1);
+    };
+    play();
+    tune.current = window.setInterval(play, 1000);
+  }, []);
+  const speak = React.useCallback(
+    (pos: number | null) => {
+      const c = cfg.current;
+      if (!c?.on) return;
+      said.current = Date.now();
+      if (tune.current) window.clearInterval(tune.current);
+      tune.current = null;
+      if (c.audio) {
+        const a = (player.current ??= new Audio(c.audio));
+        a.currentTime = 0;
+        a.onended = () => music();
+        void a.play().catch(() => music());
+        return;
+      }
+      const synth = window.speechSynthesis;
+      if (!synth) return music();
+      const text = `${c.message}${c.position && pos && pos > 1 ? ` You are number ${pos} in line.` : ""}`;
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = c.lang;
+      u.rate = 0.95;
+      u.onend = () => music();
+      u.onerror = () => music();
+      synth.cancel();
+      synth.speak(u);
+    },
+    [music],
+  );
+  React.useEffect(() => {
+    if (!active) stopAll();
+    return () => stopAll();
+  }, [active, stopAll]);
+  const update = (ivr: Ivr | null, pos: number | null) => {
+    cfg.current = ivr;
+    setPosition(pos);
+    if (!ivr?.on || !active) return;
+    if (!said.current || Date.now() - said.current > ivr.repeatSec * 1000) speak(pos);
+  };
+  return { update, position };
+}
+
 // Calling an agent: the browser asks for the microphone, the call rings in the desk, and the agent answers there.
 function CallButton({ api, s, ticketId, color, onTicket }: { api: Api; s: Session; ticketId: string | null; color: string; onTicket: (id: string) => void }) {
   const [state, setState] = React.useState<"idle" | "consent" | "ringing" | "live" | "ended">("idle");
@@ -344,6 +430,7 @@ function CallButton({ api, s, ticketId, color, onTicket }: { api: Api; s: Sessio
   const [secs, setSecs] = React.useState(0);
   const ref = React.useRef<{ pc?: RTCPeerConnection; mic?: MediaStream; poll?: number; timer?: number; callId?: string }>({});
   const audio = React.useRef<HTMLAudioElement>(null);
+  const waiting = useWaitingMessage(state === "ringing");
   const stop = React.useCallback(
     async (tell: boolean) => {
       const p = ref.current;
@@ -373,8 +460,9 @@ function CallButton({ api, s, ticketId, color, onTicket }: { api: Api; s: Sessio
       ref.current.callId = r.callId;
       if (!ticketId) onTicket(r.ticketId);
       ref.current.poll = window.setInterval(async () => {
-        const k = await api<{ status: string; answer: string | null; agent: string | null }>(`calls/${r.callId}`).catch(() => null);
+        const k = await api<{ status: string; answer: string | null; agent: string | null; position?: number; ivr?: Ivr | null }>(`calls/${r.callId}`).catch(() => null);
         if (!k) return;
+        if (k.status === "ringing") waiting.update(k.ivr ?? null, k.position ?? null);
         if (k.status === "answered" && k.answer && pc.signalingState === "have-local-offer") {
           await pc.setRemoteDescription(JSON.parse(k.answer) as RTCSessionDescriptionInit);
           setInfo(k.agent ? `You are talking with ${k.agent}` : null);
@@ -417,7 +505,7 @@ function CallButton({ api, s, ticketId, color, onTicket }: { api: Api; s: Sessio
   return (
     <div className="flex items-center gap-2 rounded-lg border p-2 text-sm" data-call-state={state}>
       <audio ref={audio} autoPlay />
-      <span className="flex-1">{state === "ringing" ? "Calling…" : state === "live" ? `${info ?? "Connected"} · ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}` : (info ?? "Call ended")}</span>
+      <span className="flex-1">{state === "ringing" ? (waiting.position && waiting.position > 1 ? `Calling… you are number ${waiting.position} in line` : "Calling… please hold") : state === "live" ? `${info ?? "Connected"} · ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}` : (info ?? "Call ended")}</span>
       {state === "ended" ? (
         <Button size="sm" variant="ghost" onClick={() => (setState("idle"), setSecs(0))}>
           OK

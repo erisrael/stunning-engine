@@ -227,9 +227,30 @@ try {
   check("the shot shows, with its code tidied", await seen(dawit.locator('[data-legacy-shot="C0172 & C0173"]')));
   check("the part is now in Recording", await seen(part.getByText("In Recording")));
   await dawit.screenshot({ path: path.join(shots, "8-legacy-parts.png"), fullPage: true });
-  await part.getByRole("button", { name: "Mark recorded" }).click();
-  check("Mark recorded sends it on", await toast(dawit, /Sent on to Editing/));
-  check("it says it waits for Editing", await seen(part.getByText(/waiting for Editing/)));
+  await part.locator("[data-legacy-details] > button").click();
+  const det = part.locator("[data-legacy-details]");
+  await det.getByLabel("Presenter (teacher)").fill("Ato Kebede");
+  await det.getByLabel("Raw minutes in total").fill("30");
+  for (const c of await det.getByRole("checkbox").all()) await c.check();
+  await det.getByRole("button", { name: "Save details" }).click();
+  check("the part's recording details are saved", await toast(dawit, /Details saved/));
+  await part.getByRole("button", { name: "Done", exact: true }).click();
+  check("Done keeps it in Recording, ready to hand off", await toast(dawit, /Ready to hand off/));
+  check("it says so", await seen(part.getByText(/ready to hand off/)));
+  await dawit.goto(`${base}/legacy?view=ready`);
+  const readyRow = dawit.locator("[data-ready-row]").filter({ hasText: "Stars" });
+  check("it is on Ready to hand off, with its teacher", await seen(readyRow) && /Ato Kebede/.test(await readyRow.innerText()));
+  await dawit.getByLabel("Teacher").selectOption("Ato Kebede");
+  check("filters by teacher", (await dawit.locator("[data-ready-row]").count()) >= 1);
+  await readyRow.getByRole("checkbox").check();
+  await dawit.locator("[data-ready-bar]").getByRole("button", { name: "Hand off" }).click();
+  check("the recorder hands it off to the lead", await toast(dawit, /sent to the Recording lead/));
+  await hana.goto(`${base}/legacy?view=ready`);
+  const leadRow = hana.locator("[data-ready-row]").filter({ hasText: "Stars" });
+  check("the lead sees it", await seen(leadRow));
+  await leadRow.getByRole("checkbox").check();
+  await hana.locator("[data-ready-bar]").getByRole("button", { name: "Hand over to Editing" }).click();
+  check("the lead hands it over to Editing", await toast(hana, /handed over to Editing/));
   const word = await dawit.request.get(`${base}/api/legacy/word`);
   check("the Word export works", word.ok() && (await word.text()).includes("Astronomy"));
   const bk = await dawit.request.get(`${base}/api/legacy/backup`);
@@ -237,9 +258,9 @@ try {
   await dawit.goto(`${base}/legacy`);
   check("a member does not get Import", (await dawit.locator("[data-legacy-bar]").getByRole("button", { name: "Import" }).count()) === 0);
 
-  // The new part is real: Editing's lead sees it.
-  await meron.goto(`${base}/dashboard`);
-  check("the part reached Editing's lead", await seen(meron.getByText("Stars")));
+  // The new part is real: Editing's lead has it to check.
+  await meron.goto(`${base}/approvals`);
+  check("the part reached Editing's lead", await seen(meron.locator('[data-testid="approvals-handovers"]')));
 
   // Import with the lead: checked first, tidied.
   await hana.goto(`${base}/legacy`);

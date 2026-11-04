@@ -122,6 +122,8 @@ type MyData = {
   shift: Shift | null;
   code: string | null;
   hasPin: boolean;
+  // A kiosk is paired (or the shared office computer is on), so the PIN is worth showing.
+  kioskPin?: boolean;
   face: { enrolledAt: string; samples: number } | null;
   corrections: CorrectionRow[];
 };
@@ -226,12 +228,14 @@ export function MyAttendance({ data, month, today, monthLink = "/attendance?mont
             )}
           </CardContent>
         </Card>
-        <Card>
+        {(data.kioskPin || data.cfg.methods.face) && (
+        <Card data-kiosk-signin>
           <CardHeader>
-            <CardTitle>Kiosk sign-in</CardTitle>
-            <CardDescription>At the kiosk, scan your badge, or type your number and PIN.</CardDescription>
+            <CardTitle>{data.kioskPin ? "Kiosk sign-in" : "Face check-in"}</CardTitle>
+            {data.kioskPin && <CardDescription>At the kiosk, scan your badge, or type your number and PIN.</CardDescription>}
           </CardHeader>
           <CardContent className="space-y-3">
+            {data.kioskPin && (<>
             <p className="text-sm">
               Your number: <span className="font-mono text-base font-semibold">{data.code}</span>
             </p>
@@ -245,6 +249,7 @@ export function MyAttendance({ data, month, today, monthLink = "/attendance?mont
               </Button>
             </form>
             <p className="text-xs text-muted-foreground">{data.hasPin ? "A PIN is set." : "No PIN yet."} Never share it; it records your time.</p>
+            </>)}
             {data.cfg.methods.face && (
               <div className="space-y-1.5 border-t pt-3">
                 <p className="text-sm font-medium">Face check-in</p>
@@ -267,6 +272,7 @@ export function MyAttendance({ data, month, today, monthLink = "/attendance?mont
             )}
           </CardContent>
         </Card>
+        )}
       </div>
 
       {data.totals && (

@@ -12,7 +12,21 @@ export const PRIORITY_LABELS: Record<Priority, string> = { low: "Low", normal: "
 
 export const CHANNEL_LABELS: Record<string, string> = { telegram: "Telegram", widget: "App chat", call: "App call", phone: "Phone", email: "Email", walk_in: "In person", agent: "Opened by an agent", social: "Social media", api: "API" };
 
+// What a caller hears while waiting for an agent: a spoken message (in the caller's browser, in the language set) or a
+// recording Admin uploaded, then quiet hold music; their place in line is said when there is a line.
+export type IvrConfig = { on: boolean; message: string; lang: string; audio: string | null; music: boolean; repeatSec: number; position: boolean };
+export const DEFAULT_IVR: IvrConfig = {
+  on: true,
+  message: "Thank you for calling Myseed support. Please stay on the line; the next available agent will be with you shortly.",
+  lang: "en-US",
+  audio: null,
+  music: true,
+  repeatSec: 30,
+  position: true,
+};
+
 export type SupportConfig = {
+  ivr: IvrConfig;
   enabled: boolean;
   // Support leads (besides Admin): set up queues, see everything, monitor agents, listen to recordings.
   leads: string[];
@@ -37,6 +51,7 @@ export type SupportConfig = {
 };
 
 export const DEFAULT_SUPPORT: SupportConfig = {
+  ivr: DEFAULT_IVR,
   enabled: false,
   leads: [],
   autoAssign: true,

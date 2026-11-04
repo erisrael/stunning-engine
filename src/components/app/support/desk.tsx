@@ -249,10 +249,11 @@ export function CallPanel({ ring, record, onDone }: { ring: Ring; record: boolea
 // Inbox
 // ---------------------------------------------------------------------------
 
-export function Inbox({ rows, view, views, q, openId }: { rows: Row[]; view: string; views: { key: string; label: string; count?: number }[]; q: string; openId: string | null }) {
+export function Inbox({ rows, view, views, q, openId, base = "/support?" }: { rows: Row[]; view: string; views: { key: string; label: string; count?: number }[]; q: string; openId: string | null; base?: string }) {
   const router = useRouter();
   const [search, setSearch] = React.useState(q);
-  const href = (v: string, extra = "") => `/support?view=${encodeURIComponent(v)}${search ? `&q=${encodeURIComponent(search)}` : ""}${extra}`;
+  const join = base.includes("?") ? (base.endsWith("?") ? base : `${base}&`) : `${base}?`;
+  const href = (v: string, extra = "") => `${join}view=${encodeURIComponent(v)}${search ? `&q=${encodeURIComponent(search)}` : ""}${extra}`;
   return (
     <div className="space-y-2" data-inbox>
       <div className="flex flex-wrap gap-1">
@@ -269,7 +270,7 @@ export function Inbox({ rows, view, views, q, openId }: { rows: Row[]; view: str
       <ul className="divide-y rounded-lg border">
         {rows.map((r) => (
           <li key={r.id}>
-            <Link href={`/support?view=${encodeURIComponent(view)}&ticket=${r.id}`} className={cn("block space-y-0.5 px-3 py-2 hover:bg-muted/50", r.id === openId && "bg-primary/5")} data-ticket-row={r.number}>
+            <Link href={`${join}view=${encodeURIComponent(view)}&ticket=${r.id}`} className={cn("block space-y-0.5 px-3 py-2 hover:bg-muted/50", r.id === openId && "bg-primary/5")} data-ticket-row={r.number}>
               <div className="flex items-center gap-2">
                 <span className="font-mono text-xs text-muted-foreground">#{r.number}</span>
                 <span className="min-w-0 flex-1 truncate text-sm font-medium">{r.subject}</span>
