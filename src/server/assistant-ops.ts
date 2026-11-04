@@ -42,6 +42,15 @@ export const OPS: { key: string; label: string; group: string; args: string; who
   { key: "decide_claim", label: "Approve or reject a claim", group: "Approvals", args: "claim_id, decision (approve|reject), note", who: "managers" },
   { key: "decide_correction", label: "Approve or reject an attendance correction", group: "Approvals", args: "correction_id, decision (approve|reject), note", who: "managers" },
   { key: "run_routine", label: "Run one of my routines", group: "Routines", args: "routine_id" },
+  // HR's work (Phase 30): only for people with the HR rights each needs.
+  { key: "hr_mark_day", label: "Record someone's day (present, late, absent...)", group: "HR", args: "employee (name or code), day, status (present|late|half_day|absent|leave), in_time, out_time, note", who: "attendance" },
+  { key: "hr_log_attendance", label: "Log a missed check-in or check-out", group: "HR", args: "employee, day, kind (in|out|break_start|break_end|lunch_start|lunch_end), time (HH:MM), note", who: "attendanceHr" },
+  { key: "hr_adjust_leave", label: "Add or take away leave days", group: "HR", args: "employee, leave_type, days (negative to take away), note, year", who: "hr" },
+  { key: "hr_announce", label: "Post an announcement", group: "HR", args: "title, body, kind (news|policy), department (empty: everyone)", who: "announce" },
+  { key: "hr_open_case", label: "Open an HR case", group: "HR", args: "employee, kind (disciplinary|grievance|investigation), title, note", who: "cases" },
+  { key: "hr_one_on_one", label: "Record a one-to-one meeting", group: "HR", args: "employee, date, notes, actions", who: "hr" },
+  { key: "hr_assign_course", label: "Assign a training course", group: "HR", args: "course (title), employees (names, comma separated), due", who: "hr" },
+  { key: "hr_open_job", label: "Open a job opening", group: "HR", args: "title, department, positions, description, closes (YYYY-MM-DD)", who: "hr" },
 ];
 export const OP_KEYS = OPS.map((o) => o.key);
 
@@ -67,6 +76,22 @@ async function findTask(user: Viewer, d: string, id: unknown) {
   return t;
 }
 const nameOf = async (id: unknown) => (typeof id === "string" ? ((await get<{ name: string }>("SELECT name FROM users WHERE id = ?", id))?.name ?? null) : null);
+
+// An employee by name or code, among those HR (or the lead) can see.
+export async function findEmployee(user: Viewer, v: unknown) {
+  const q = String(v ?? "").trim().toLowerCase();
+  if (!q) throw new WorkflowError("VALIDATION", "Name the employee.");
+  const { listEmployees } = await import("./hr");
+  const list = await listEmployees(user).catch(() => null);
+  if (!list) throw new WorkflowError("FORBIDDEN", "Only HR looks up employees.");
+  const hit = list.find((e) => e.code.toLowerCase() === q || e.id === v) ?? list.find((e) => e.name.toLowerCase() === q) ?? list.filter((e) => e.name.toLowerCase().includes(q));
+  if (Array.isArray(hit)) {
+    if (hit.length === 1) return hit[0]!;
+    if (!hit.length) throw new WorkflowError("NOT_FOUND", `No employee called "${v}".`);
+    throw new WorkflowError("VALIDATION", `Several people match "${v}": ${hit.slice(0, 6).map((e) => `${e.name} (${e.code})`).join(", ")}. Say which.`);
+  }
+  return hit;
+}
 
 export async function prepareOp(user: Viewer, kind: string, a: Args): Promise<Prepared> {
   const p: Record<string, unknown> = { kind };
@@ -156,6 +181,75 @@ export async function prepareOp(user: Viewer, kind: string, a: Args): Promise<Pr
       title = `Run "${r.name}"`;
       lines.push(`${(JSON.parse(r.steps) as unknown[]).length} recorded steps, done in your browser as you would`, "Approval first if Admin asks for it");
       p.id = r.id;
+      break;
+    }
+    case "hr_mark_day":
+    case "hr_log_attendance":
+    case "hr_adjust_leave":
+    case "hr_open_case":
+    case "hr_one_on_one": {
+      const e = await findEmployee(user, a.employee);
+      p.employeeId = e.id;
+      lines.push(`${e.name}${e.code ? ` (${e.code})` : ""}`);
+      if (kind === "hr_mark_day") {
+        const d = day(a.day);
+        const st = String(a.status ?? "");
+        if (!d || !["present", "late", "half_day", "absent", "leave"].includes(st)) throw new WorkflowError("VALIDATION", "Give the day (YYYY-MM-DD) and the status: present, late, half_day, absent or leave.");
+        lines.push(`${d}: ${st.replace("_", " ")}`, ...(hm(a.in_time) ? [`In ${a.in_time}`] : []), ...(hm(a.out_time) ? [`Out ${a.out_time}`] : []), ...(str(a.note) ? [`Note: ${a.note}`] : []));
+        Object.assign(p, { day: d, status: st, inTime: hm(a.in_time), outTime: hm(a.out_time), note: str(a.note, 300) });
+      } else if (kind === "hr_log_attendance") {
+        const d = day(a.day);
+        const k = String(a.kind ?? "");
+        if (!d || !hm(a.time) || !["in", "out", "break_start", "break_end", "lunch_start", "lunch_end"].includes(k) || !str(a.note)) throw new WorkflowError("VALIDATION", "Give the day, the kind (in or out...), the time HH:MM and a reason.");
+        lines.push(`${d} at ${a.time}: ${k.replace("_", " ")}`, `Reason: ${a.note}`, "The person is told; it is in the audit log");
+        Object.assign(p, { day: d, eventKind: k, time: hm(a.time), note: str(a.note, 300) });
+      } else if (kind === "hr_adjust_leave") {
+        const types = await leaveTypes();
+        const t = types.find((x) => x.key === a.leave_type || x.label.toLowerCase() === String(a.leave_type ?? "").toLowerCase());
+        const n = Number(a.days);
+        if (!t || !n || !str(a.note)) throw new WorkflowError("VALIDATION", `Give the leave type (${types.map((x) => x.label).join(", ")}), the days and why.`);
+        const year = Number(a.year) || new Date().getUTCFullYear();
+        lines.push(`${n > 0 ? "Add" : "Take away"} ${Math.abs(n)} days of ${t.label} for ${year}`, `Reason: ${a.note}`);
+        Object.assign(p, { typeKey: t.key, days: n, year, note: str(a.note, 300) });
+      } else if (kind === "hr_open_case") {
+        const k = String(a.kind ?? "");
+        if (!["disciplinary", "grievance", "investigation"].includes(k) || !str(a.title)) throw new WorkflowError("VALIDATION", "Give the kind (disciplinary, grievance or investigation) and a short title.");
+        lines.push(`${k} case: ${a.title}`, "Only HR managers see it");
+        Object.assign(p, { caseKind: k, title: str(a.title, 160), note: str(a.note, 1000) });
+      } else {
+        const d = day(a.date) ?? new Date().toISOString().slice(0, 10);
+        if (!str(a.notes)) throw new WorkflowError("VALIDATION", "Give the meeting's notes.");
+        lines.push(`One-to-one on ${d}`, String(a.notes).slice(0, 200), ...(str(a.actions) ? [`Actions: ${a.actions}`] : []));
+        Object.assign(p, { date: d, notes: str(a.notes, 3000), actions: str(a.actions, 1000) });
+      }
+      break;
+    }
+    case "hr_announce": {
+      const t = str(a.title, 160);
+      const b = str(a.body, 8000);
+      if (!t || !b) throw new WorkflowError("VALIDATION", "Give the announcement's title and text.");
+      const depKey = str(a.department, 60);
+      lines.push(t, b.slice(0, 200), depKey ? `To the ${depKey} department` : "To everyone", a.kind === "policy" ? "As a policy everyone confirms" : "As news");
+      Object.assign(p, { title: t, body: b, policy: a.kind === "policy", department: depKey });
+      break;
+    }
+    case "hr_assign_course": {
+      const c = await get<{ id: string; title: string }>("SELECT id, title FROM courses WHERE active = 1 AND lower(title) LIKE lower(?) ORDER BY title LIMIT 1", `%${String(a.course ?? "").trim()}%`);
+      if (!c || !String(a.course ?? "").trim()) throw new WorkflowError("NOT_FOUND", "No course with that title (HR, Growth, Training).");
+      const names = String(a.employees ?? "").split(/[,;]/).map((x) => x.trim()).filter(Boolean);
+      if (!names.length) throw new WorkflowError("VALIDATION", "Name the people.");
+      const ids: string[] = [];
+      for (const n of names.slice(0, 50)) ids.push((await findEmployee(user, n)).id);
+      lines.push(`"${c.title}" for ${names.join(", ")}`, ...(day(a.due) ? [`Due ${a.due}`] : []));
+      Object.assign(p, { courseId: c.id, employeeIds: ids, due: day(a.due) });
+      break;
+    }
+    case "hr_open_job": {
+      const t = str(a.title, 120);
+      if (!t) throw new WorkflowError("VALIDATION", "Give the job title.");
+      const n = Math.max(1, Math.min(50, Number(a.positions) || 1));
+      lines.push(t, `${n} position${n > 1 ? "s" : ""}`, ...(str(a.department) ? [`Department: ${a.department}`] : []), ...(day(a.closes) ? [`Closes ${a.closes}`] : []), "Opened as a draft in HR, Hiring");
+      Object.assign(p, { title: t, positions: n, department: str(a.department, 60), description: str(a.description, 4000), closes: day(a.closes) });
       break;
     }
     default: {
@@ -251,6 +345,47 @@ export async function executeOp(user: Viewer, p: Record<string, unknown>): Promi
       return { done: s("decision") === "approve" ? "Correction approved" : "Correction rejected", href: "/approvals" };
     case "run_routine":
       return { done: "Routine ready", href: null, routine: s("id")! };
+    case "hr_mark_day": {
+      const { markDay } = await import("./attendance");
+      await markDay(user, { employeeId: s("employeeId")!, day: s("day")!, status: s("status") as "present", inTime: s("inTime"), outTime: s("outTime"), note: s("note") });
+      return { done: "Day recorded", href: "/attendance?tab=team" };
+    }
+    case "hr_log_attendance": {
+      const { logEvent } = await import("./attendance-admin");
+      await logEvent(user, { employeeId: s("employeeId")!, day: s("day")!, kind: s("eventKind") as "in", time: s("time")!, note: s("note")! });
+      return { done: "Attendance logged", href: "/attendance?tab=records" };
+    }
+    case "hr_adjust_leave": {
+      const { adjustBalance } = await import("./leave");
+      await adjustBalance(user, { employeeId: s("employeeId")!, typeKey: s("typeKey")!, year: Number(p.year), days: Number(p.days), note: s("note")! });
+      return { done: "Leave balance changed", href: "/hr?tab=leave" };
+    }
+    case "hr_open_case": {
+      const { openCase } = await import("./hr-growth");
+      await openCase(user, { employeeId: s("employeeId")!, kind: s("caseKind")!, title: s("title")!, note: s("note") });
+      return { done: "Case opened", href: "/hr?tab=cases" };
+    }
+    case "hr_one_on_one": {
+      const { addOneOnOne } = await import("./hr-growth");
+      await addOneOnOne(user, { employeeId: s("employeeId")!, heldOn: s("date")!, notes: s("notes"), actions: s("actions") });
+      return { done: "One-to-one recorded", href: `/hr/${s("employeeId")}` };
+    }
+    case "hr_assign_course": {
+      const { assignCourse } = await import("./hr-growth");
+      await assignCourse(user, s("courseId")!, { employeeIds: p.employeeIds as string[], dueDate: s("due") });
+      return { done: "Training assigned", href: "/hr?tab=growth" };
+    }
+    case "hr_open_job": {
+      const { saveOpening } = await import("./hr-hiring");
+      await saveOpening(user, { title: s("title")!, department: s("department"), positions: Number(p.positions), description: s("description"), closesOn: s("closes"), status: "draft" });
+      return { done: "Job opening drafted", href: "/hr?tab=hiring" };
+    }
+    case "hr_announce": {
+      const { saveAnnouncement } = await import("./announcements");
+      const dep = s("department");
+      await saveAnnouncement(user, { title: s("title")!, body: s("body")!, kind: p.policy ? "policy" : "news", audience: { all: !dep, departments: dep ? [dep] : [], roles: [] }, notify: true });
+      return { done: "Announcement posted", href: "/announcements" };
+    }
   }
   const d = s("dept")!;
   const id = s("taskId");

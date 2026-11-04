@@ -269,13 +269,13 @@ export type Match =
   | { type: "answer"; answer: AssistantConfig["answers"][number]; score: number };
 
 // The best matches for what someone typed, among the flows open to them.
-export function matchText(text: string, flows: Flow[], cfg: AssistantConfig): Match[] {
+export function matchText(text: string, flows: Flow[], cfg: AssistantConfig, places?: string[]): Match[] {
   const t = norm(text);
   const asksWhere = /\b(where|find|open|go to|page)\b/.test(t);
   const asksMeaning = /\b(what (does|is)|mean|meaning)\b/.test(t);
   const out: Match[] = [];
   for (const f of flows) out.push({ type: "flow", flow: f, score: score(text, [...f.keywords, ...(cfg.keywords[f.key] ?? []), f.title]) });
-  for (const p of PLACES) out.push({ type: "place", place: p, score: score(text, [...p.words, p.name]) + (asksWhere ? 2 : 0) });
+  for (const p of PLACES.filter((x) => !places || places.includes(x.name))) out.push({ type: "place", place: p, score: score(text, [...p.words, p.name]) + (asksWhere ? 2 : 0) });
   for (const g of GLOSSARY) out.push({ type: "term", term: g, score: score(text, [...g.words, g.term]) + (asksMeaning ? 3 : 0) });
   for (const a of cfg.answers) out.push({ type: "answer", answer: a, score: score(text, [...a.words, a.q]) + 1 });
   return out.filter((m) => m.score >= 3).sort((x, y) => y.score - x.score).slice(0, 4);

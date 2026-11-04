@@ -34,7 +34,12 @@ export async function logoutAction() {
 
 export async function switchRoleAction(role: Role) {
   if (!ROLES.includes(role)) return { ok: false as const, error: "Unknown role." };
-  await setActiveRole(role);
+  // An error here must never break the page: it comes back as a message.
+  try {
+    await setActiveRole(role);
+  } catch (e) {
+    return { ok: false as const, error: e instanceof Error ? e.message : "The role could not be switched." };
+  }
   revalidatePath("/", "layout");
   return { ok: true as const };
 }

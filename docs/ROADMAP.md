@@ -1160,3 +1160,20 @@ Built: `src/server/platform.ts`, `src/app/(app)/admin/platform`, `src/app/api/op
 - [x] **Touch-friendly**: bigger buttons, no zooming when typing, the assistant's button above the tab bar, and the chat button moved from the top bar to the tab bar.
 
 Built: `src/components/app/mobile-nav.tsx`, phone styles in `src/app/globals.css`. Tests: the phone checks in `tests/e2e/mobile.e2e.mjs`.
+
+## Phase 30: The assistant follows the role, and does HR's work (done)
+
+- [x] **View as**: switching role while viewing as someone shows their other role (their session is never touched); errors from the switcher are a message, never a broken page.
+- [x] **Only what the role can do**:
+  - the assistant gets the list of pages the person can open (the same rules as the pages), and opens or suggests nothing else;
+  - its tools and actions follow the person's rights: HR's for HR, the analyzer for leads, tickets for support agents, approvals for approvers;
+  - anything else is refused even if asked for;
+  - typed and spoken "open …" only go to the person's pages, and suggestions follow the role (HR, leads, members).
+- [x] **Never breaks**: a failing AI call, network or tool becomes an answer in the panel; a plain member can open every page safely (checked in the browser).
+- [x] **Better at multi-step work**: it plans, reads first, acts or proposes, then sums up; it asks one question when a detail is missing.
+- [x] **HR's work**:
+  - looking people up, an employee in full, today's attendance (late, absent, not in), the leave queue, what falls due (probation, contracts, documents) and the year's people numbers;
+  - recording someone's day, logging a missed check-in or out, approving leave, adjusting balances, opening a case, recording a one-to-one, assigning training, drafting a job opening and posting announcements;
+  - in Agent mode it does these itself, logged and audited.
+
+Built: `src/server/page-access.ts`, changes in `src/server/assistant-ai.ts`, `src/server/assistant-ops.ts`, `src/server/auth.ts`, `src/components/app/assistant.tsx`. Tests: `tests/server/assistant-roles.test.ts`, `tests/e2e/access.e2e.mjs`.

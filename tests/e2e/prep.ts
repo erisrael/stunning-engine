@@ -109,6 +109,19 @@ const PREPS: Record<string, () => Promise<unknown>> = {
     await run("UPDATE users SET prefs = ? WHERE id = ?", JSON.stringify({ tour: { seen: ["member", "lead", "publication", "manager", "owner", "department", "hr", "finance"] } }), a.id);
     return {};
   },
+  // Every page opened by a plain member (no access is a friendly message or a redirect, never a crash).
+  async access() {
+    await passwordOnly();
+    const { saveAiConfig } = await import("../../src/server/assistant-ai");
+    const a = await admin();
+    await saveAiConfig(a, { on: true, offRoles: [], dailyLimit: 0, actions: true, agent: true, key: "sk-ant-e2e" });
+    const d = (await get<{ id: string }>("SELECT id FROM users WHERE email = 'dawit@demo.local'"))!;
+    await run("UPDATE users SET prefs = ? WHERE id = ?", JSON.stringify({ tour: { seen: ["member", "lead", "publication", "manager", "owner", "department", "hr", "finance"] } }), d.id);
+    // Someone with two roles, for switching roles in View as.
+    await upsertAccount({ name: "Two Roles", email: "tworoles@demo.local", title: "Editor and uploader", roles: ["editing", "uploading"], password: "Demo-Workflow-2026", mustChangePassword: false });
+    await run("UPDATE users SET prefs = ? WHERE id = ?", JSON.stringify({ tour: { seen: ["member", "lead", "publication", "manager", "owner", "department", "hr", "finance"] } }), a.id);
+    return {};
+  },
   // The main pages on a phone.
   async mobile() {
     await passwordOnly();

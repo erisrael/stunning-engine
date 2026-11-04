@@ -228,6 +228,30 @@ const T = {
     description: "The recognition leaderboard for this month (when recognition is on): ranks, scores, badges and titles.",
     input: z.object({ period: z.string().optional() }),
   },
+  hr_people: {
+    description: "HR: employees, found by name, code, job title or department (or all, up to 60): code, name, job, department, manager, employment type, status, start date, probation and contract end, documents due.",
+    input: z.object({ text: z.string().optional(), department: z.string().optional() }),
+  },
+  hr_employee: {
+    description: "HR: one employee in full: their record, manager, dates, leave balances this year, and attendance this month. Give a name or code.",
+    input: z.object({ employee: z.string() }),
+  },
+  hr_attendance_day: {
+    description: "Attendance for a day (default today): how many present, late, absent, on leave, not in yet, and who is late, absent or not in. HR sees everyone; leads their team.",
+    input: z.object({ day: z.string().optional() }),
+  },
+  hr_leave_queue: {
+    description: "HR: leave waiting for HR's decision and with managers (ids for decide_leave), and who is on leave today and this week.",
+    input: z.object({}),
+  },
+  hr_due: {
+    description: "HR: what falls due soon: probation ends, contract ends and documents expiring, within the next days (default 60).",
+    input: z.object({ days: z.number().optional() }),
+  },
+  hr_report: {
+    description: "HR: the year's people numbers: headcount, joiners and leavers, turnover, leave taken, training and reviews.",
+    input: z.object({ year: z.number().optional() }),
+  },
   propose: {
     description: `Prepare an action for the person to confirm (nothing happens until they press Confirm). kind and its args: ${OPS.map((o) => `${o.key} {${o.args}}`).join("; ")}. Dates as YYYY-MM-DD, times as HH:MM. Look up ids first with the other tools.`,
     input: z.object({ kind: z.enum(OP_KEYS as [string, ...string[]]), args: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])).optional() }),
@@ -239,9 +263,10 @@ const T = {
 } as const;
 type ToolName = keyof typeof T;
 
-function toolDefs(allowed: string[], agent = false): Anthropic.Beta.BetaTool[] {
+function toolDefs(allowed: string[], agent = false, ab?: Abilities): Anthropic.Beta.BetaTool[] {
   return (Object.keys(T) as ToolName[])
     .filter((n) => (n === "propose" ? allowed.length > 0 && !agent : n === "do_action" ? allowed.length > 0 && agent : true))
+    .filter((n) => !ab || !TOOL_NEEDS[n] || TOOL_NEEDS[n]!(ab))
     .map((name) => {
       const schema = z.toJSONSchema(T[name].input) as { properties?: Record<string, unknown>; required?: string[] };
       return { name, description: T[name].description, input_schema: { type: "object" as const, properties: schema.properties ?? {}, required: schema.required ?? [] } };
@@ -249,11 +274,63 @@ function toolDefs(allowed: string[], agent = false): Anthropic.Beta.BetaTool[] {
 }
 
 // The actions this person may have prepared: Admin's switch, then their role's list.
-async function allowedOps(user: Viewer, cfg: Stored) {
+// What this person's role can do, worked out once per question: the assistant offers only these.
+export type Abilities = { lead: boolean; approver: boolean; attendance: boolean; attendanceHr: boolean; hr: boolean; cases: boolean; announce: boolean; support: boolean; recognition: boolean; finance: boolean; admin: boolean };
+export async function abilities(user: Viewer): Promise<Abilities> {
+  const ds = await depts(user).catch(() => []);
+  const lead = user.leads.length > 0 || ds.some((d) => d.position === "head" || d.position === "lead" || d.manage) || can(user, "team.view");
+  const reports = !!(await get("SELECT 1 AS x FROM employees e JOIN employees m ON m.id = e.manager_id WHERE m.user_id = ? LIMIT 1", user.id).catch(() => null));
+  const attendanceHr = can(user, "attendance.manage");
+  const hr = can(user, "hr.access");
+  const t = await (await import("./announcements")).announceTargets(user).catch(() => ({ all: false, departments: [] as string[] }));
+  return {
+    lead,
+    approver: lead || reports || attendanceHr || can(user, "hr.manage") || can(user, "corrections.approve") || can(user, "finance.access"),
+    attendance: attendanceHr || lead || reports,
+    attendanceHr,
+    hr,
+    cases: can(user, "hr.cases"),
+    announce: t.all || t.departments.length > 0,
+    support: await (await import("./support-desk")).isAgent(user).catch(() => false),
+    recognition: (await (await import("./recognition")).recognitionConfig().catch(() => ({ enabled: false }))).enabled,
+    finance: can(user, "finance.access"),
+    admin: can(user, "users.manage"),
+  };
+}
+
+const WHO_OK: Record<string, (a: Abilities) => boolean> = {
+  leads: (a) => a.lead,
+  managers: (a) => a.approver,
+  attendance: (a) => a.attendance,
+  attendanceHr: (a) => a.attendanceHr,
+  hr: (a) => a.hr,
+  cases: (a) => a.cases,
+  announce: (a) => a.announce,
+};
+
+async function allowedOps(user: Viewer, cfg: Stored, ab?: Abilities) {
   if (!cfg.actions) return [];
   const o = await roleOptions(user.activeRole);
-  return o.actions ? OP_KEYS.filter((k) => o.actions!.includes(k)) : OP_KEYS;
+  const a = ab ?? (await abilities(user));
+  // Admin's list for the role, then only what the person's rights allow.
+  return (o.actions ? OP_KEYS.filter((k) => o.actions!.includes(k)) : OP_KEYS).filter((k) => {
+    const who = OPS.find((x) => x.key === k)?.who;
+    return !who || (WHO_OK[who]?.(a) ?? true);
+  });
 }
+
+// The reading tools this person gets (HR's only for HR, the analyzer for leads, tickets for agents...).
+const TOOL_NEEDS: Partial<Record<string, (a: Abilities) => boolean>> = {
+  team_insights: (a) => a.lead,
+  support_tickets: (a) => a.support,
+  leaderboard: (a) => a.recognition,
+  hr_people: (a) => a.hr,
+  hr_employee: (a) => a.hr,
+  hr_attendance_day: (a) => a.attendance,
+  hr_leave_queue: (a) => a.hr,
+  hr_due: (a) => a.hr,
+  hr_report: (a) => a.hr,
+};
 
 // A proposal, sealed with what to run and for whom; Confirm runs it with the page's own function and checks.
 export async function proposeOp(user: Viewer, kind: string, args: Record<string, unknown>): Promise<Proposal> {
@@ -383,6 +460,7 @@ async function runTool(user: Viewer, name: string, input: unknown, out: Out, all
     case "open_page": {
       const href = String(a.href);
       if (!href.startsWith("/") || href.startsWith("//")) return { error: "Use a path inside the app, starting with /." };
+      if (!(await (await import("./page-access")).canOpenPath(user, href))) return { error: `This person cannot open ${href} with their role. Do not offer it; tell them who can help (their lead, HR or Admin).` };
       out.links.push({ href, label: String(a.label).slice(0, 60) });
       return { ok: true, note: "A button to open it is shown under your answer." };
     }
@@ -399,6 +477,62 @@ async function runTool(user: Viewer, name: string, input: unknown, out: Out, all
       return await all("SELECT title, created_at AS at, link FROM notifications WHERE user_id = ? AND read_at IS NULL ORDER BY created_at DESC LIMIT 10", user.id);
     case "list_routines":
       return (await routinesOpen(user)) ? (await listRoutines(user)).map((r) => ({ id: r.id, name: r.name, description: r.description, steps: r.steps.length, owner: r.ownerName })) : { note: "Routines are not on for this person." };
+    case "hr_people": {
+      const { listEmployees } = await import("./hr");
+      const q = String(a.text ?? "").toLowerCase().trim();
+      const dq = String(a.department ?? "").toLowerCase().trim();
+      const list = (await listEmployees(user)).filter((e) => (!q || `${e.name} ${e.code} ${e.jobTitle ?? ""}`.toLowerCase().includes(q)) && (!dq || (e.department ?? "").toLowerCase().includes(dq)));
+      return { total: list.length, employees: list.slice(0, 60).map((e) => ({ code: e.code, name: e.name, job: e.jobTitle, department: e.department, manager: e.managerName, type: e.employmentType, status: e.status, start: e.startDate, probation_end: e.probationEnd, contract_end: e.contractEnd, documents_due: e.docsDue })) };
+    }
+    case "hr_employee": {
+      const { findEmployee } = await import("./assistant-ops");
+      const e = await findEmployee(user, a.employee);
+      const { balancesFor } = await import("./leave");
+      const bal = await balancesFor(user, e.id).catch(() => []);
+      const month = nowIso().slice(0, 7);
+      const att = await all<{ status: string; n: number }>("SELECT status, COUNT(*) AS n FROM att_marks WHERE employee_id = ? AND day LIKE ? GROUP BY status", e.id, `${month}%`).catch(() => []);
+      return {
+        code: e.code,
+        name: e.name,
+        job: e.jobTitle,
+        department: e.department,
+        manager: e.managerName,
+        type: e.employmentType,
+        status: e.status,
+        start: e.startDate,
+        probation_end: e.probationEnd,
+        contract_end: e.contractEnd,
+        email: e.email,
+        phone: e.phone,
+        leave_balances: (Array.isArray(bal) ? bal : []).map((b: { type: { label: string }; available: number | null; used: number }) => ({ type: b.type.label, available: b.available, used: b.used })),
+        attendance_marks_this_month: att,
+        open_page: `/hr/${e.id}`,
+      };
+    }
+    case "hr_attendance_day": {
+      const { dailyBoard } = await import("./attendance");
+      const d = typeof a.day === "string" && /^\d{4}-\d{2}-\d{2}$/.test(a.day) ? a.day : nowIso().slice(0, 10);
+      const b = await dailyBoard(user, d);
+      const list = (st: string) => b.rows.filter((r) => r.result.status === st).map((r) => r.name);
+      return { day: d, counts: b.counts, late: list("late"), absent: list("absent"), not_in: list("not_in"), on_leave: list("leave"), half_day: list("half_day") };
+    }
+    case "hr_leave_queue": {
+      const { hrLeave } = await import("./leave");
+      const l = await hrLeave(user);
+      const today = nowIso().slice(0, 10);
+      const week = new Date(Date.now() + 7 * 864e5).toISOString().slice(0, 10);
+      const on = await all<{ name: string; start_date: string; end_date: string }>("SELECT e.full_name AS name, r.start_date, r.end_date FROM leave_requests r JOIN employees e ON e.id = r.employee_id WHERE r.status = 'approved' AND r.start_date <= ? AND r.end_date >= ? ORDER BY r.start_date", week, today);
+      const row = (r: { id: string; employeeName?: string; typeLabel?: string; startDate?: string; endDate?: string; days?: number }) => ({ id: r.id, who: r.employeeName, type: r.typeLabel, from: r.startDate, to: r.endDate, days: r.days });
+      return { waiting_for_hr: l.waiting.map(row), with_managers: l.withManagers.map(row), on_leave_now_or_this_week: on.map((x) => ({ who: x.name, from: x.start_date, to: x.end_date })) };
+    }
+    case "hr_due": {
+      const { hrUpcoming } = await import("./hr");
+      return await hrUpcoming(user, typeof a.days === "number" ? Math.max(1, Math.min(365, a.days)) : 60);
+    }
+    case "hr_report": {
+      const { hrReport } = await import("./hr-growth");
+      return await hrReport(user, typeof a.year === "number" ? a.year : undefined);
+    }
     case "search_everything": {
       const term = String(a.text).trim();
       if (term.length < 2) return { error: "Give at least two letters." };
@@ -516,7 +650,14 @@ How to answer:
 - When they ask where something is or to go somewhere, call open_page. When they want to be shown how, call show_me if a walk-through fits, else explain the steps and open the page.
 - If something is outside the app or you are unsure, say so briefly and offer the Help search.
 
-Pages (paths): ${PLACES.map((p) => `${p.name} ${p.href}`).join("; ")}. {home} means the person's own department page (given below). Departments: /dev, /marketing, /studio, created ones at /d/<key>; within a department: /board, /list, /sprint, /projects, /calendar, /report, /team, /configure. Production: /overview, /handovers, /sessions, /coverage, /reports. Also /hr, /finance, /admin, /email, /chat, /requests, /approvals, /notifications.
+Pages: each question comes with the list of pages this person can open; offer only those (open_page refuses others). {home} is the person's own department page. Never suggest pages, actions or data outside what they may use; if they ask for something their role cannot do, say so plainly and name who can (their lead, HR, Finance or Admin).
+
+Working well:
+- For a request with several parts, plan the steps, read what you need first (ids, names, dates), then act or propose, and end with a short summary of what was done and what is left.
+- Ask one short question when a detail is missing (which person, which day); otherwise use sensible defaults (today, this month).
+- Prefer facts from the tools over guesses, and say when something has no data.
+
+HR work (only for people with HR rights; the tools tell you): look people up (hr_people, hr_employee), see today's attendance (hr_attendance_day), the leave queue (hr_leave_queue), what falls due (probation, contracts, documents: hr_due) and the year's people numbers (hr_report). Then record a day or a missed check-in, approve or reject leave, adjust leave balances, open a case, record a one-to-one, assign training, open a job, or post an announcement. Always name the person and the day back to the user, and give a reason when the action asks for one.
 
 Walk-throughs for show_me (pointing on the page): ${FLOWS.filter((f) => f.kind === "show").map((f) => `${f.key} (${f.title})`).join("; ")}.
 Step-by-step tutorials for show_me: ${FLOWS.filter((f) => f.kind === "guide").map((f) => `${f.key} (${f.title})`).join("; ")}.
@@ -555,12 +696,21 @@ export async function askAi(user: Viewer, input: { history: Turn[]; text: string
     .map((t) => ({ role: t.role, content: String(t.text).slice(0, 4000) }));
   while (history.length && history[0]!.role !== "user") history.shift();
   const messages: Anthropic.Beta.BetaMessageParam[] = [...history, { role: "user", content: `${who}\n\n${text}` }];
-  const allowed = await allowedOps(user, cfg);
+  const ab = await abilities(user);
+  const allowed = await allowedOps(user, cfg, ab);
+  // What this person can open and do, so the assistant never offers anything else.
+  const { placesFor } = await import("./page-access");
+  const pages = await placesFor(user, ctx.home?.base ?? null);
+  const canDo = OPS.filter((o) => allowed.includes(o.key)).map((o) => o.label);
+  messages[messages.length - 1] = {
+    role: "user",
+    content: `${who}\nPages this person can open (offer only these): ${pages.map((p) => `${p.name} ${p.href}`).join("; ")}.\nActions you may ${input.mode === "agent" ? "do" : "prepare"} for them: ${canDo.length ? canDo.join("; ") : "none (answer and point to pages only)"}.\nTheir rights: ${[ab.hr && "HR", ab.attendanceHr && "attendance for everyone", ab.attendance && !ab.attendanceHr && "their team's attendance", ab.cases && "HR cases", ab.lead && "leads a team", ab.approver && "approves requests", ab.finance && "finance", ab.support && "customer support agent", ab.admin && "Admin"].filter(Boolean).join(", ") || "a team member (their own work, leave and attendance)"}.\n\n${text}`,
+  };
   const agentOn = input.mode === "agent" && (await agentAvailable(user));
   if (input.mode === "agent" && !agentOn) throw new WorkflowError("FORBIDDEN", "Agent mode is not on for you. Ask Admin, or use Ask mode.");
   const conversationId = await ensureConversation(user, input.conversationId ?? null, text, agentOn ? "agent" : "ask");
   const out: Out = { text: "", proposals: [], links: [], show: null, done: [], conversationId };
-  const tools = toolDefs(allowed, agentOn);
+  const tools = toolDefs(allowed, agentOn, ab);
   const system = agentOn ? `${SYSTEM}\n\n${AGENT}` : SYSTEM;
   const call = fake() ? fakeModel : await realModel(cfg);
   const finish = async () => {
@@ -568,7 +718,16 @@ export async function askAi(user: Viewer, input: { history: Turn[]; text: string
     return out;
   };
   for (let i = 0; i < (agentOn ? 16 : 8); i++) {
-    const res = await call({ system, tools, messages });
+    let res: Awaited<ReturnType<ModelCall>>;
+    try {
+      res = await call({ system, tools, messages });
+    } catch (e) {
+      if (e instanceof WorkflowError) throw e;
+      console.error("assistant", e);
+      void import("./ops").then(({ recordError }) => recordError({ source: "action", message: `Assistant: ${e instanceof Error ? e.message : String(e)}`, stack: e instanceof Error ? e.stack : undefined }));
+      out.text = "I could not finish that one. Try again, or ask in smaller steps.";
+      return await finish();
+    }
     if (res.stop_reason === "refusal") {
       out.text = "I cannot help with that one. Try the Help search, or ask your lead.";
       return await finish();
@@ -590,7 +749,8 @@ export async function askAi(user: Viewer, input: { history: Turn[]; text: string
       let content: string;
       let isError = false;
       try {
-        content = JSON.stringify(await runTool(user, u.name, u.input, out, allowed, { on: agentOn, max: cfg.agentMax })).slice(0, 20000);
+        // Only the tools given to this person run, whatever the model asks for.
+        content = tools.some((t) => t.name === u.name) ? JSON.stringify(await runTool(user, u.name, u.input, out, allowed, { on: agentOn, max: cfg.agentMax })).slice(0, 20000) : JSON.stringify({ error: "That is not available to this person's role. Tell them who can help." });
       } catch (e) {
         content = e instanceof Error ? e.message : String(e);
         isError = true;
@@ -757,6 +917,9 @@ const fakeModel: ModelCall = async ({ messages, tools }) => {
   const said = String(typeof last.content === "string" ? last.content : "").split("\n\n").pop()!;
   const q = said.toLowerCase();
   const use = (name: string, input: object) => ({ stop_reason: "tool_use", content: [block({ type: "tool_use", id: `toolu_${Math.random().toString(36).slice(2, 10)}`, name, input, caller: { type: "direct" } })] });
+  // Tests: "tool:<name> {json}" calls that tool directly.
+  const forced = said.match(/^tool:(\w+)\s*(\{.*\})?\s*$/);
+  if (forced) return use(forced[1]!, forced[2] ? JSON.parse(forced[2]) : {});
   if (/leave|balance/.test(q) && !/ask for/.test(q)) return use("my_leave", {});
   const agent = tools.some((t) => t.name === "do_action");
   const create = said.match(/create (?:a )?task (.+?) in (\w+)/i);

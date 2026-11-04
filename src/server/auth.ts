@@ -146,7 +146,12 @@ export async function requireCapability(cap: Capability): Promise<Viewer> {
 
 export async function setActiveRole(role: Role) {
   const viewer = await requireViewer();
-  if (viewer.previewBy) throw new Error("Exit View as to switch your own role.");
+  // View as: the switcher shows the viewed person's other role (their own session is never touched).
+  if (viewer.previewBy) {
+    if (!viewer.roles.includes(role)) throw new Error("They do not hold that role.");
+    (await cookies()).set(PREVIEW_COOKIE, `${viewer.id}:${role}`, { httpOnly: true, sameSite: "lax", path: "/", maxAge: 4 * 3600 });
+    return;
+  }
   if (!viewer.roles.includes(role)) throw new Error("You do not hold that role.");
   await run("UPDATE sessions SET active_role = ? WHERE id = ?", role, viewer.sessionId);
 }

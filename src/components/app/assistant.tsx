@@ -384,7 +384,7 @@ function speak(text: string, lang: string) {
 type Command = { kind: "go"; href: string; name: string } | { kind: "back" | "forward" | "up" | "down" | "top" | "close" | "clear" };
 
 // Spoken (or typed) commands handled here at once, without the AI: open a page, go back, scroll, close.
-export function localCommand(text: string, base: string | null): Command | null {
+export function localCommand(text: string, base: string | null, places?: string[]): Command | null {
   const t = text.toLowerCase().replace(/[.!?]+$/, "").trim();
   if (/^(go )?back$/.test(t)) return { kind: "back" };
   if (/^(go )?forward$/.test(t)) return { kind: "forward" };
@@ -396,7 +396,7 @@ export function localCommand(text: string, base: string | null): Command | null 
   const m = t.match(/^(?:please )?(?:open|go to|take me to|navigate to|ክፈት)\s+(?:the |my )?(.+?)(?: page)?$/);
   if (m) {
     const want = m[1]!;
-    const best = PLACES.map((p) => ({ p, s: score(want, [...p.words, p.name]) })).sort((x, y) => y.s - x.s)[0];
+    const best = PLACES.filter((p) => !places || places.includes(p.name)).map((p) => ({ p, s: score(want, [...p.words, p.name]) })).sort((x, y) => y.s - x.s)[0];
     if (best && best.s >= 3) return { kind: "go", href: fill(best.p.href, base), name: best.p.name };
   }
   return null;
@@ -536,7 +536,7 @@ export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantCo
     return { from: "bot", text: m.answer.a };
   };
   const keywordAnswer = (t: string) => {
-    const found = matchText(t, ctx.flows, ctx.cfg);
+    const found = matchText(t, ctx.flows, ctx.cfg, ctx.places);
     if (!found.length) {
       log({ event: "nomatch", text: t });
       say({
@@ -551,7 +551,7 @@ export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantCo
   };
   const confirmProposal = async (p: Proposal, idx: number) => {
     setMsgs((m) => m.map((x, i) => (i === idx ? { ...x, busy: true } : x)));
-    const r = await confirmProposalAction(p.token);
+    const r = await confirmProposalAction(p.token).catch(() => ({ ok: false as const, error: "Could not reach the server. Try again." }));
     if (!r.ok) {
       setMsgs((m) => m.map((x, i) => (i === idx ? { ...x, busy: false } : x)));
       return void toast.error(r.error);
@@ -568,7 +568,8 @@ export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantCo
   };
   const askAi = async (t: string) => {
     setThinking(true);
-    const r = await askAiAction({ history, text: t, page: pathname, mode: agent ? mode : "ask", conversationId: convId });
+    // A failed request (network, server) is an answer in the panel, never a broken page.
+    const r = await askAiAction({ history, text: t, page: pathname, mode: agent ? mode : "ask", conversationId: convId }).catch(() => ({ ok: false as const, error: "The assistant could not be reached. Check the connection and try again." }));
     setThinking(false);
     if (!r.ok || !r.data) {
       say({ from: "bot", text: (!r.ok && r.error) || "The AI could not answer." });
@@ -597,7 +598,7 @@ export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantCo
     if (!t) return;
     viaVoice.current = spoken;
     setText("");
-    const cmd = localCommand(t, base);
+    const cmd = localCommand(t, base, ctx.places);
     if (cmd) {
       if (spoken) log({ event: "voice", text: t });
       if (cmd.kind === "go") {
@@ -664,7 +665,16 @@ export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantCo
   }, []);
   // Out of the way during a presentation.
   if (/\/present$/.test(pathname)) return null;
-  const suggestions = opts.suggestions.length ? opts.suggestions : ai ? ["What should I work on today?", "How many leave days do I have?", "What is waiting for me?"] : [];
+  // Suggestions for what the role does (Admin can set their own per role).
+  const suggestions = opts.suggestions.length
+    ? opts.suggestions
+    : ai
+      ? ctx.who.hr
+        ? ["Who is absent or late today?", "What leave is waiting for HR?", "Whose probation or contract ends soon?"]
+        : ctx.who.lead
+          ? ["How is my team doing?", "What is waiting for my approval?", "What is stuck or overdue?"]
+          : ["What should I work on today?", "How many leave days do I have?", "What is waiting for me?"]
+      : [];
   const voiceOn = speech.supported && opts.voice;
   return (
     <>

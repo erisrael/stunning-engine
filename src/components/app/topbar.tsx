@@ -214,7 +214,8 @@ function RoleSwitcher({ roles, active }: { roles: Role[]; active: Role }) {
       value={active}
       onValueChange={(v) =>
         start(async () => {
-          await switchRoleAction(v as Role);
+          const r = await switchRoleAction(v as Role).catch(() => ({ ok: false as const, error: "The role could not be switched. Try again." }));
+          if (!r.ok) return void toast.error(r.error);
           toast.success(`Now viewing as ${ROLE_LABELS[v as Role]}`, { description: "The role switcher changes your view, not your permissions." });
           router.push("/dashboard");
         })
