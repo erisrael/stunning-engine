@@ -32,13 +32,39 @@ export async function seal(plain: string): Promise<string> {
   return `v1:${iv.toString("base64")}:${c.getAuthTag().toString("base64")}:${ct.toString("base64")}`;
 }
 
+async function dbFallbackKey(): Promise<Buffer | null> {
+  try {
+    const row = await get<{ value: string }>("SELECT value FROM settings WHERE key = 'cfg.secret'");
+    if (row) return Buffer.from(JSON.parse(row.value) as string, "base64");
+  } catch {}
+  return null;
+}
+
 export async function unseal(sealed: string): Promise<string | null> {
   try {
     const [v, iv, tag, ct] = sealed.split(":");
     if (v !== "v1") return null;
-    const d = crypto.createDecipheriv("aes-256-gcm", await key(), Buffer.from(iv, "base64"));
-    d.setAuthTag(Buffer.from(tag, "base64"));
-    return Buffer.concat([d.update(Buffer.from(ct, "base64")), d.final()]).toString("utf8");
+    const tryDecrypt = (k: Buffer): string | null => {
+      try {
+        const d = crypto.createDecipheriv("aes-256-gcm", k, Buffer.from(iv, "base64"));
+        d.setAuthTag(Buffer.from(tag, "base64"));
+        return Buffer.concat([d.update(Buffer.from(ct, "base64")), d.final()]).toString("utf8");
+      } catch {
+        return null;
+      }
+    };
+    const primary = await key();
+    const res = tryDecrypt(primary);
+    if (res !== null) return res;
+
+    if (process.env.APP_SECRET) {
+      const fb = await dbFallbackKey();
+      if (fb) {
+        const fbRes = tryDecrypt(fb);
+        if (fbRes !== null) return fbRes;
+      }
+    }
+    return null;
   } catch {
     return null;
   }

@@ -192,20 +192,31 @@ def restore_step(target: str, file_arg: str, title: str | None = None) -> dict:
 
 
 def label(target: str) -> str:
-    return "Supabase" if target == "supabase" else "local"
+    return "Supabase" if target == "supabase" else "Hostinger VPS" if target == "vps" else "local"
 
 
 def counts(target: str) -> dict:
     if target == "supabase":
         url = require_secret("supabase_session_url", "The Supabase session pooler string")
         env = {"DATABASE_URL": url}
+        try:
+            res = run_quick([NPM, "run", "-s", "db:counts"], env, timeout=120)
+        except subprocess.TimeoutExpired:
+            raise ApiFail(504, f"The {label(target)} database did not answer within 2 minutes.") from None
+    elif target == "vps":
+        v = require_server()
+        try:
+            res = run_quick(ssh_cmd(v, "docker exec myseed-cm-app-1 npm run -s db:counts"), timeout=40)
+        except subprocess.TimeoutExpired:
+            raise ApiFail(504, "The Hostinger VPS database did not answer within 40 seconds.") from None
     else:
         local_db_guard()
         env = {"DATABASE_URL": None}
-    try:
-        res = run_quick([NPM, "run", "-s", "db:counts"], env, timeout=120)
-    except subprocess.TimeoutExpired:
-        raise ApiFail(504, f"The {label(target)} database did not answer within 2 minutes.") from None
+        try:
+            res = run_quick([NPM, "run", "-s", "db:counts"], env, timeout=120)
+        except subprocess.TimeoutExpired:
+            raise ApiFail(504, f"The {label(target)} database did not answer within 2 minutes.") from None
+
     line = next((ln for ln in reversed(res.stdout.strip().splitlines()) if ln.startswith("{")), None)
     if not line:
         raise ApiFail(500, (res.stderr or res.stdout or "No output").strip()[-600:])
@@ -444,18 +455,42 @@ def auto_backup_loop() -> None:
         time.sleep(60)
         try:
             cfg = store.load()["auto_backup"]
-            if not cfg.get("enabled") or not store.get_secret("supabase_session_url"):
+            if not cfg.get("enabled"):
                 continue
             last = cfg.get("last_run")
             due = not last or time.time() - dt.datetime.fromisoformat(last).timestamp() >= float(cfg.get("hours", 24)) * 3600
             if not due:
                 continue
             store.update(lambda c: c["auto_backup"].update(last_run=jobs.now_iso()))
-            jobs.create_job("Scheduled Supabase backup", [backup_step("supabase", f"backups/supabase/auto-{stamp()}")], group="backup", locks=["Supabase database"])
             keep = int(cfg.get("keep", 14))
-            autos = sorted((p for p in (store.BACKUPS_DIR / "supabase").glob("auto-*") if p.is_dir()), key=lambda p: p.name)
-            for old in autos[:-keep] if keep > 0 else []:
-                shutil.rmtree(old, ignore_errors=True)
+
+            # Scheduled Supabase backup
+            if store.get_secret("supabase_session_url"):
+                jobs.create_job("Scheduled Supabase backup", [backup_step("supabase", f"backups/supabase/auto-{stamp()}")], group="backup", locks=["Supabase database"])
+                autos = sorted((p for p in (store.BACKUPS_DIR / "supabase").glob("auto-*") if p.is_dir()), key=lambda p: p.name)
+                for old in autos[:-keep] if keep > 0 else []:
+                    shutil.rmtree(old, ignore_errors=True)
+
+            # Scheduled Hostinger VPS backup
+            try:
+                v = vps()
+                if v.get("host") and v.get("key_installed") and v.get("last_deploy"):
+                    root = remote_root(v)
+                    s = stamp()
+                    folder = VPS_BACKUPS / f"auto-{s}"
+                    folder.mkdir(parents=True, exist_ok=True)
+                    steps = [
+                        *upload_scripts_steps(v),
+                        {"title": "Back up the Hostinger VPS database", "cmd": ssh_cmd(v, remote_script(v, "--backup"))},
+                        {"title": "Download it to this computer", "cmd": scp_from(v, root + "/backups/latest.json.gz", str(folder / f"myseed-vps-auto-{s}.json.gz"))},
+                    ]
+                    jobs.create_job("Scheduled Hostinger VPS backup", steps, group="vps-backup", locks=["vps-backup"])
+                    vps_autos = sorted((p for p in VPS_BACKUPS.glob("auto-*") if p.is_dir()), key=lambda p: p.name)
+                    for old in vps_autos[:-keep] if keep > 0 else []:
+                        shutil.rmtree(old, ignore_errors=True)
+            except Exception as err:
+                print(f"[auto-backup-vps] {err}", flush=True)
+
         except jobs.Busy:
             pass
         except Exception as err:  # noqa: BLE001
@@ -579,7 +614,10 @@ def api_overview(h, body, m):
 
 @route("POST", "/api/db/counts")
 def api_counts(h, body, m):
-    return counts("supabase" if body.get("target") == "supabase" else "local")
+    target = str(body.get("target") or "local")
+    if target in ("supabase", "vps"):
+        return counts(target)
+    return counts("local")
 
 
 # --- Supabase ---------------------------------------------------------------
@@ -697,7 +735,10 @@ def api_pull(h, body, m):
 
 @route("POST", "/api/data/backup")
 def api_backup(h, body, m):
-    target = "supabase" if body.get("target") == "supabase" else "local"
+    target = body.get("target")
+    if target == "vps":
+        return api_vps_backup(h, body, m)
+    target = "supabase" if target == "supabase" else "local"
     if target == "supabase":
         require_secret("supabase_session_url", "The Supabase session pooler string")
     else:
@@ -1326,6 +1367,45 @@ def find_account_key(key: str) -> dict | None:
 
 # --- Settings sent to the server's .env ------------------------------------------------
 
+SITE_KEYS = [
+    "SITE_DOMAIN", "SITE_ALIAS", "ADMIN_DOMAIN", "API_DOMAIN", "ACME_EMAIL",
+    "PUBLIC_SITE_URL", "EMAIL_API_PROVIDER", "SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_FROM",
+    "EMAIL_FROM", "BILLING_FINANCE_EMAIL", "TELEGRAM_HANDLE", "WHATSAPP_NUMBER",
+    "S3_BUCKET", "S3_REGION", "S3_ENDPOINT", "S3_PUBLIC_URL"
+]
+ENV_SECRETS = sorted(k for k in store.SECRET_KEYS if k.isupper())
+
+PRESETS = {
+    "vps": {"label": "Everything on a Hostinger VPS", "web": "vps", "admin": "vps", "api": "vps", "db": "vps", "summary": "Runs the Next.js app, API routes and database on one Hostinger VPS with free HTTPS."},
+    "render": {"label": "App on Render, database on Supabase", "web": "render", "admin": "render", "api": "render", "db": "external", "summary": "Deploy on Render from your GitHub repository, database on Supabase."},
+    "netlify": {"label": "App on Netlify, database on Supabase", "web": "netlify", "admin": "netlify", "api": "render", "db": "external", "summary": "Deploy on Netlify's global edge network, database on Supabase."},
+    "vercel": {"label": "App on Vercel, database on Supabase", "web": "vercel", "admin": "vercel", "api": "render", "db": "external", "summary": "Deploy on Vercel with automatic edge optimizations, database on Supabase."},
+}
+
+
+@route("GET", "/api/plan")
+def api_plan_get(h, body, m):
+    cfg = store.load()
+    return {"plan": cfg.get("plan", {"preset": "vps", "web": "vps", "admin": "vps", "api": "vps", "db": "vps"}), "presets": PRESETS}
+
+
+@route("POST", "/api/plan")
+def api_plan_post(h, body, m):
+    preset = body.get("preset")
+
+    def apply(c):
+        if preset in PRESETS:
+            c["plan"] = {"preset": preset, **PRESETS[preset]}
+        else:
+            p = c.setdefault("plan", {})
+            p["preset"] = "custom"
+            for k in ("web", "admin", "api", "db"):
+                if k in body:
+                    p[k] = body[k]
+
+    store.update(apply)
+    return {"plan": store.load()["plan"], "presets": PRESETS}
+
 
 EXTRA_ENV_RE = re.compile(r"^[A-Z][A-Z0-9_]*=.*$")
 RESERVED_ENV = {"DOMAIN", "APP_URL", "DB_MODE", "DATABASE_URL", "COMPOSE_PROFILES", "APP_PORT", "POSTGRES_PASSWORD"}
@@ -1346,10 +1426,13 @@ def site_addresses(v: dict) -> str:
 def env_lines(v: dict) -> list[str]:
     """KEY=value lines for env.sh. Secrets are {secret:...} placeholders, filled in only when the job runs and
     sent over SSH's standard input, so they never reach a command line or a log."""
+    cfg = store.load()
+    site = cfg.get("site", {})
+    domain = v.get("domain") or site.get("SITE_DOMAIN") or ""
     profiles = [p for p, on in (("caddy", v.get("proxy") == "caddy"), ("localdb", v.get("database") == "local")) if on]
-    url = site_url(v) or f"http://{v.get('host')}:{v.get('app_port') or 3100}"
+    url = site_url(v) or site.get("PUBLIC_SITE_URL") or f"http://{v.get('host')}:{v.get('app_port') or 3100}"
     lines = [
-        f"DOMAIN={v.get('domain') or ''}",
+        f"DOMAIN={domain}",
         f"SITE_ADDRESSES={site_addresses(v)}",
         f"APP_URL={url}",
         f"DB_MODE={v.get('database') or 'local'}",
@@ -1362,6 +1445,17 @@ def env_lines(v: dict) -> list[str]:
     ]
     if v.get("database") == "supabase":
         lines.append("DATABASE_URL={secret:supabase_session_url}")
+    for k in SITE_KEYS:
+        val = str(site.get(k) or "").strip()
+        if val and k not in ("SITE_DOMAIN", "SITE_ALIAS"):
+            lines.append(f"{k}={val}")
+    for k in ENV_SECRETS:
+        if store.get_secret(k):
+            lines.append(f"{k}={{secret:{k}}}")
+    if store.get_secret("RESEND_API_KEY") and not store.get_secret("EMAIL_API_KEY"):
+        if "EMAIL_API_PROVIDER=resend" not in lines:
+            lines.append("EMAIL_API_PROVIDER=resend")
+        lines.append("EMAIL_API_KEY={secret:RESEND_API_KEY}")
     if store.get_secret("vps_extra_env"):
         lines.append("{secret:vps_extra_env}")
     return lines
@@ -1438,6 +1532,8 @@ def vps_state() -> dict:
     pk = public_key()
     return {
         "vps": v,
+        "site": cfg.get("site", {}),
+        "secrets": {k: store.secret_hint(k) for k in ENV_SECRETS},
         "token": store.secret_hint("hostinger_token"),
         "connected": bool(store.get_secret("hostinger_token")),
         "public_key": pk,
@@ -1644,6 +1740,26 @@ def api_vps_reboot(h, body, m):
 @route("POST", "/api/vps/settings")
 def api_vps_settings(h, body, m):
     domain = str(body.get("domain", vps().get("domain") or "")).strip().lower()
+    site_body = body.get("site")
+    if isinstance(site_body, dict):
+        if site_body.get("SITE_DOMAIN"):
+            domain = str(site_body["SITE_DOMAIN"]).strip().lower()
+        def apply_site(c):
+            s = c.setdefault("site", {})
+            for k in SITE_KEYS:
+                if k in site_body:
+                    s[k] = str(site_body[k]).strip()
+        store.update(apply_site)
+
+    secrets_body = body.get("secrets")
+    if isinstance(secrets_body, dict):
+        for k, val in secrets_body.items():
+            if k in ENV_SECRETS:
+                val = str(val or "").strip()
+                if val == "__clear__":
+                    store.set_secret(k, None)
+                elif val:
+                    store.set_secret(k, val)
     if domain.startswith("http"):
         domain = urllib.parse.urlsplit(domain).hostname or ""
     domain = domain.strip("/")
@@ -1962,6 +2078,37 @@ def api_vps_data_pull(h, body, m):
         restore_step("local", f"{{latest:backups/vps/{s}-pull}}", "Replace the local data with the VPS data"),
     ]
     return {"job": jobs.create_job("Copy the VPS data to this computer", steps, group="data", locks=["local database", "vps"])}
+
+
+@route("POST", "/api/vps/data/pull_supabase")
+def api_vps_data_pull_supabase(h, body, m):
+    """Pull data from Supabase directly to the Hostinger VPS.
+    Mode 'accounts_and_config' (default) copies user accounts and system configuration,
+    excluding workspace configuration (cfg.workspace) and curriculum/production items.
+    Mode 'all' copies all tables."""
+    require_secret("supabase_session_url", "The Supabase session pooler string")
+    v = require_server()
+    if not v.get("last_deploy"):
+        raise ApiFail(400, "Deploy the app to the VPS first (step 4).")
+    mode = str(body.get("mode") or "accounts_and_config")
+    root = remote_root(v)
+    s = stamp()
+    sb_folder = f"backups/supabase/{s}-for-vps"
+    prepared_file = store.BACKUPS_DIR / "vps" / f"{s}-prepared" / f"restore-{s}.json.gz"
+    prepared_file.parent.mkdir(parents=True, exist_ok=True)
+
+    label_mode = "accounts and configurations (without workspace config)" if mode == "accounts_and_config" else "all data"
+    steps = [
+        backup_step("supabase", sb_folder, "Back up Supabase"),
+        {
+            "title": f"Prepare snapshot: {label_mode}",
+            "cmd": [sys.executable, str(store.PANEL_DIR / "filter_backup.py"), f"{{latest:{sb_folder}}}", str(prepared_file), mode],
+        },
+        *upload_scripts_steps(v),
+        {"title": "Upload to Hostinger VPS", "cmd": scp_to(v, [str(prepared_file)], root + "/backups/incoming/")},
+        {"title": "Safety backup of the VPS, then restore data", "cmd": ssh_cmd(v, remote_script(v, f"--restore restore-{s}.json.gz"))},
+    ]
+    return {"job": jobs.create_job(f"Pull Supabase {label_mode} to Hostinger VPS", steps, group="data", locks=["Supabase database", "vps"])}
 
 
 @route("POST", "/api/vps/disconnect")

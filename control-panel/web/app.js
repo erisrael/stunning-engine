@@ -390,6 +390,14 @@ const S = { running: [], session: null, timers: [] };
 const NAV = [
   { group: null, items: [{ id: "overview", label: "Overview", icon: "home" }] },
   {
+    group: "Set up",
+    items: [
+      { id: "plan", label: "Deploy plan", icon: "leftright" },
+      { id: "domains", label: "Domains", icon: "cloud" },
+      { id: "keys", label: "Keys and settings", icon: "key" },
+    ],
+  },
+  {
     group: "Data",
     items: [
       { id: "database", label: "Supabase sync", icon: "db" },
@@ -413,8 +421,8 @@ const NAV = [
     ],
   },
 ];
-const PAGES = { overview: pageOverview, database: pageDatabase, backups: pageBackups, vps: pageVps, hosting: pageHosting, git: pageGit, local: pageLocal, jobs: pageJobs, settings: pageSettings };
-const TITLES = { overview: "Overview", database: "Supabase sync", backups: "Backups", vps: "Hostinger VPS", hosting: "Netlify, Vercel, Render", git: "Code (GitHub)", local: "Local app", jobs: "Jobs and logs", settings: "Settings" };
+const PAGES = { overview: pageOverview, plan: pagePlan, domains: pageDomains, keys: pageKeys, database: pageDatabase, backups: pageBackups, vps: pageVps, hosting: pageHosting, git: pageGit, local: pageLocal, jobs: pageJobs, settings: pageSettings };
+const TITLES = { overview: "Overview", plan: "Deploy plan", domains: "Domains", keys: "Keys and settings", database: "Supabase sync", backups: "Backups", vps: "Hostinger VPS", hosting: "Netlify, Vercel, Render", git: "Code (GitHub)", local: "Local app", jobs: "Jobs and logs", settings: "Settings" };
 
 function applyTheme(t) {
   document.documentElement.dataset.theme = t;
@@ -641,6 +649,8 @@ const COUNT_LABELS = { users: "People", grades: "Grades", subjects: "Subjects", 
 function countsTable(counts) {
   const local = counts.local?.counts || {};
   const remote = counts.supabase?.counts || {};
+  const vps = counts.vps?.counts || {};
+  const hasVps = !!counts.vps;
   const keys = Object.keys(COUNT_LABELS);
   return el(
     "div",
@@ -648,13 +658,14 @@ function countsTable(counts) {
     el(
       "table",
       null,
-      el("thead", null, el("tr", null, el("th", { text: "Table" }), el("th", { class: "num", text: "This computer" }), el("th", { class: "num", text: "Supabase" }), el("th", { class: "num", text: "Difference" }))),
+      el("thead", null, el("tr", null, el("th", { text: "Table" }), el("th", { class: "num", text: "This computer" }), el("th", { class: "num", text: "Supabase" }), hasVps ? el("th", { class: "num", text: "Hostinger VPS" }) : null, el("th", { class: "num", text: "Local vs Supabase" }))),
       el(
         "tbody",
         null,
         keys.map((k) => {
           const a = local[k];
           const b = remote[k];
+          const c = vps[k];
           const d = a !== undefined && b !== undefined ? a - b : null;
           return el(
             "tr",
@@ -662,6 +673,7 @@ function countsTable(counts) {
             el("td", { text: COUNT_LABELS[k] }),
             el("td", { class: "num", text: a ?? "-" }),
             el("td", { class: "num", text: b ?? "-" }),
+            hasVps ? el("td", { class: "num", text: c ?? "-" }) : null,
             el("td", { class: `num ${d > 0 ? "diff-up" : d < 0 ? "diff-down" : "muted"}`, text: d === null ? "-" : d === 0 ? "same" : d > 0 ? `+${d} here` : `${-d} more in Supabase` }),
           );
         }),
@@ -685,8 +697,8 @@ function countsCard(counts, onRefresh) {
       });
     return b;
   };
-  const stampText = ["local", "supabase"].map((t) => (counts[t] ? `${t === "local" ? "Local" : "Supabase"} checked ${ago(counts[t].at)} (${counts[t].ms} ms)` : null)).filter(Boolean).join(" · ");
-  return card("Compare row counts", { icon: "leftright", sub: stampText || "Count rows on each side to see what differs before you push or pull.", class: "flush-body", action: el("div", { class: "row" }, mk("local", "Count local"), mk("supabase", "Count Supabase")) }, countsTable(counts));
+  const stampText = ["local", "supabase", "vps"].map((t) => (counts[t] ? `${t === "local" ? "Local" : t === "supabase" ? "Supabase" : "VPS"} checked ${ago(counts[t].at)} (${counts[t].ms} ms)` : null)).filter(Boolean).join(" · ");
+  return card("Compare row counts", { icon: "leftright", sub: stampText || "Count rows on each side to see what differs before you push or pull.", class: "flush-body", action: el("div", { class: "row" }, mk("local", "Count local"), mk("supabase", "Count Supabase"), mk("vps", "Count Hostinger VPS")) }, countsTable(counts));
 }
 
 function jobsList(jobs, empty = "No jobs yet.") {
@@ -734,6 +746,10 @@ async function pageOverview(root, alive) {
     const devRunning = !!dev.job;
     const pushBtn = btn("Push to Supabase", { kind: "primary", icon: "up", disabled: !sbReady, onclick: doPush });
     const pullBtn = btn("Pull from Supabase", { icon: "down", disabled: !sbReady, onclick: doPull });
+    const vpsReady = !!o.vps.last_deploy;
+    const pushVpsBtn = btn("Push to VPS", { kind: "primary", icon: "up", disabled: !vpsReady, onclick: doPushVps });
+    const pullVpsBtn = btn("Pull from VPS", { icon: "down", disabled: !vpsReady, onclick: doPullVps });
+    const pullSbToVpsBtn = btn("Pull Supabase to VPS", { size: "sm", icon: "down", disabled: !sbReady || !vpsReady, onclick: doPullSbToVps });
     root.replaceChildren(
       el(
         "div",
@@ -778,6 +794,8 @@ async function pageOverview(root, alive) {
           card("This computer", { icon: "laptop", sub: o.app_db ? "Embedded copy in data/pg (your app is not using it)" : "Embedded database in data/pg" }, el("div", { class: "stat", text: o.counts.local ? `${o.counts.local.counts.items} items` : "-" }), el("div", { class: "small muted", text: o.counts.local ? `${o.counts.local.counts.users} people · ${o.counts.local.counts.parts} parts · checked ${ago(o.counts.local.at)}` : "Not counted yet" })),
           el("div", { class: "flow-arrow col" }, pushBtn, icon("leftright"), pullBtn),
           card("Supabase", { icon: "db", sub: sb.project.project_name || "Hosted PostgreSQL" }, el("div", { class: "stat", text: o.counts.supabase ? `${o.counts.supabase.counts.items} items` : "-" }), el("div", { class: "small muted", text: o.counts.supabase ? `${o.counts.supabase.counts.users} people · ${o.counts.supabase.counts.parts} parts · checked ${ago(o.counts.supabase.at)}` : "Not counted yet" })),
+          el("div", { class: "flow-arrow col" }, pushVpsBtn, icon("leftright"), pullVpsBtn),
+          card("Hostinger VPS", { icon: "server", sub: o.vps.domain || o.vps.host || "VPS PostgreSQL" }, el("div", { class: "stat", text: o.counts.vps ? `${o.counts.vps.counts.items} items` : "-" }), el("div", { class: "small muted", text: o.counts.vps ? `${o.counts.vps.counts.users} people · ${o.counts.vps.counts.parts} parts · checked ${ago(o.counts.vps.at)}` : (vpsReady ? "VPS connected" : "Set up VPS") }), vpsReady && sbReady ? el("div", { class: "section row", style: "margin-top: 10px" }, pullSbToVpsBtn) : null),
         ),
         el("div", { class: "section" }, countsCard(o.counts, load)),
       ),
@@ -851,6 +869,250 @@ async function doPull() {
     danger: true,
   });
   if (ok) await runJob(() => api("POST", "/api/data/pull"));
+}
+
+async function doPushVps() {
+  const ok = await confirmBox({
+    title: "Push this computer's data to Hostinger VPS?",
+    lines: [
+      "Backs up the local database and the VPS database, then replaces everything on the VPS with the local data.",
+      "Anyone using the live site will lose any changes made since your local copy.",
+    ],
+    word: "VPS",
+    ok: "Push to Hostinger VPS",
+    danger: true,
+  });
+  if (ok) await runJob(() => api("POST", "/api/vps/data/push"));
+}
+
+async function doPullVps() {
+  const ok = await confirmBox({
+    title: "Pull Hostinger VPS data to this computer?",
+    lines: [
+      "Downloads a backup of the VPS database, backs up the local database, then replaces the local data with it.",
+    ],
+    ok: "Pull from Hostinger VPS",
+    danger: true,
+  });
+  if (ok) await runJob(() => api("POST", "/api/vps/data/pull"));
+}
+
+async function doPullSbToVps() {
+  const ok = await confirmBox({
+    title: "Pull from Supabase into Hostinger VPS?",
+    lines: [
+      "Pulls configurations and user accounts from Supabase into your Hostinger VPS database.",
+      "Excludes workspace config (cfg.workspace) to preserve your Hostinger site settings.",
+      "A safety backup of both Supabase and the VPS database will be saved first.",
+    ],
+    word: "PULL",
+    ok: "Pull to Hostinger VPS",
+    danger: true,
+  });
+  if (ok) await runJob(() => api("POST", "/api/vps/data/pull_supabase", { mode: "accounts_and_config" }));
+}
+
+
+// ---------------------------------------------------------------------------
+// Deploy plan, Domains, Keys and settings
+// ---------------------------------------------------------------------------
+
+const APP_LABEL = { web: "Website", admin: "Admin console", api: "API" };
+const HOST_LABEL = { vps: "Hostinger VPS", netlify: "Netlify", vercel: "Vercel", render: "Render", external: "Supabase" };
+const HOST_PAGE = { vps: "vps", netlify: "hosting", vercel: "hosting", render: "hosting" };
+
+const SITE_FIELDS = [
+  ["SITE_DOMAIN", "Website domain", "myseedops.tech", "Main public domain for the website"],
+  ["SITE_ALIAS", "Also answer on (redirects to the website)", "www.myseedops.tech", "VPS only; on other hosts add it as a domain alias"],
+  ["ADMIN_DOMAIN", "Admin console domain", "myseedops.tech", "Same as website or a subdomain like admin.myseedops.tech"],
+  ["API_DOMAIN", "API domain", "myseedops.tech", "Same as website or a subdomain like api.myseedops.tech"],
+  ["ACME_EMAIL", "Email for HTTPS certificate notices (VPS)", "info@myseedops.tech", "Used by Caddy for TLS certificate alerts"],
+  ["PUBLIC_SITE_URL", "Public address for search engines & links", "https://myseedops.tech", "Canonical public URL"],
+];
+
+const EMAIL_FIELDS = [
+  ["SMTP_HOST", "SMTP server", "mail.myseed.com.et"],
+  ["SMTP_PORT", "SMTP port", "465"],
+  ["SMTP_USER", "SMTP user", "iwfm@myseed.com.et"],
+  ["SMTP_FROM", "From address", "MySeed Content Manager <iwfm@myseed.com.et>"],
+  ["EMAIL_FROM", "From address (Resend)", "MySeed Content Manager <iwfm@myseed.com.et>"],
+  ["BILLING_FINANCE_EMAIL", "Copy of invoices and receipts to", "iwfm@myseed.com.et"],
+];
+
+const OTHER_FIELDS = [
+  ["TELEGRAM_HANDLE", "Telegram handle", "MySeed_Academy"],
+  ["WHATSAPP_NUMBER", "WhatsApp number (digits; empty hides it)", ""],
+  ["S3_BUCKET", "S3 or R2 bucket", ""],
+  ["S3_REGION", "S3 region", "auto"],
+  ["S3_ENDPOINT", "S3 endpoint (R2, MinIO)", ""],
+  ["S3_PUBLIC_URL", "Public URL of the bucket", ""],
+];
+
+const SECRET_FIELDS = [
+  ["SMTP_PASSWORD", "SMTP password", "Email"],
+  ["RESEND_API_KEY", "Resend API key (instead of SMTP)", "Email"],
+  ["CHAPA_SECRET_KEY", "Chapa secret key", "Payments"],
+  ["CHAPA_WEBHOOK_SECRET", "Chapa webhook secret", "Payments"],
+  ["STRIPE_SECRET_KEY", "Stripe secret key", "Payments"],
+  ["STRIPE_WEBHOOK_SECRET", "Stripe webhook secret", "Payments"],
+  ["ANTHROPIC_API_KEY", "Anthropic API key (assistant)", "Other"],
+  ["GOOGLE_TRANSLATE_API_KEY", "Google Translate API key", "Other"],
+  ["S3_ACCESS_KEY_ID", "S3 access key ID", "Other"],
+  ["S3_SECRET_ACCESS_KEY", "S3 secret access key", "Other"],
+];
+
+function sendToHostsNote(plan) {
+  const hosts = [...new Set(["web", "admin", "api"].map((a) => (plan && plan[a]) || "vps"))];
+  return notice("info", el("div", null, "After saving, send the settings to your host: ", hosts.map((h, i) => [i ? ", " : "", el("a", { href: `#/${HOST_PAGE[h] || 'vps'}`, text: HOST_LABEL[h] || h })]), ". Every deploy or Push Settings step sends them too."));
+}
+
+async function pagePlan(root, alive) {
+  const load = async () => {
+    const d = await api("GET", "/api/plan");
+    if (!alive()) return;
+    const p = d.plan || {};
+    const choose = (preset) =>
+      act(async () => {
+        await api("POST", "/api/plan", { preset });
+        toast("Plan saved");
+        load();
+      });
+    const selects = {};
+    const mkSel = (key, options) => {
+      selects[key] = el("select", null, options.map(([v, l]) => el("option", { value: v, text: l, selected: p[key] === v })));
+      return selects[key];
+    };
+    const saveCustom = btn("Save custom plan", { kind: "primary", size: "sm" });
+    saveCustom.onclick = () =>
+      withBusy(
+        saveCustom,
+        act(async () => {
+          await api("POST", "/api/plan", Object.fromEntries(Object.entries(selects).map(([k, s]) => [k, s.value])));
+          toast("Plan saved");
+          load();
+        }),
+      );
+    root.replaceChildren(
+      pageHead("Deploy plan", "Pick where the website, admin console, API and database run. You can change it later; nothing is moved until you deploy."),
+      el(
+        "div",
+        { class: "grid g2" },
+        Object.entries(d.presets || {}).map(([key, pr]) =>
+          el(
+            "section",
+            { class: `card plan-card ${p.preset === key ? "chosen" : ""}` },
+            el("div", { class: "card-head" }, el("div", { class: "icon" }, icon(key === "vps" ? "server" : key === "render" ? "render" : key === "netlify" ? "netlify" : "vercel")), el("div", { class: "grow" }, el("h3", { text: pr.label })), p.preset === key ? badge("Current plan", "ok") : null),
+            el("p", { class: "small muted", text: pr.summary }),
+            el("div", { class: "row tiny" }, ["web", "admin", "api"].map((a) => badge(`${APP_LABEL[a]}: ${HOST_LABEL[pr[a]] || pr[a]}`, "plain")), badge(`Database: ${pr.db === "vps" ? "VPS" : "Supabase"}`, "plain")),
+            p.preset === key ? null : el("div", { class: "row" }, btn("Use this plan", { size: "sm", kind: "primary", onclick: choose(key) })),
+          ),
+        ),
+      ),
+      card(
+        "Custom plan",
+        { icon: "gear", sub: "Mix hosts yourself. The database container exists on the VPS." },
+        el(
+          "div",
+          { class: "grid g4" },
+          field("Website", mkSel("web", [["vps", "Hostinger VPS"], ["netlify", "Netlify"], ["vercel", "Vercel"], ["render", "Render"]])),
+          field("Admin console", mkSel("admin", [["vps", "Hostinger VPS"], ["netlify", "Netlify"], ["vercel", "Vercel"], ["render", "Render"]])),
+          field("API", mkSel("api", [["vps", "Hostinger VPS"], ["render", "Render"]])),
+          field("Database", mkSel("db", [["vps", "On the VPS"], ["external", "Supabase or other PostgreSQL"]])),
+        ),
+        el("div", { class: "row section" }, saveCustom),
+      ),
+    );
+  };
+  await load();
+}
+
+async function pageDomains(root, alive) {
+  const load = async () => {
+    const [d, pl] = await Promise.all([api("GET", "/api/vps"), api("GET", "/api/plan")]);
+    if (!alive()) return;
+    const p = pl.plan || {};
+    const site = d.site || {};
+    const inputs = {};
+    const mkField = ([k, label, ph, hint]) => field(label, (inputs[k] = el("input", { type: "text", value: site[k] || "", placeholder: ph })), hint || undefined);
+    const save = btn("Save domains", { kind: "primary", size: "sm" });
+    const pushEnv = btn("Push settings to VPS", { size: "sm", icon: "up", onclick: () => runJob(() => api("POST", "/api/vps/push-env")) });
+    save.onclick = () =>
+      withBusy(
+        save,
+        act(async () => {
+          await api("POST", "/api/vps/settings", { site: Object.fromEntries(Object.entries(inputs).map(([k, i]) => [k, i.value])), secrets: {} });
+          toast("Domains saved");
+          load();
+        }),
+      );
+    const ip = d.vps?.host || "<VPS IP>";
+    const rows = [
+      ["web", site.SITE_DOMAIN || "myseedops.tech"],
+      ["web", site.SITE_ALIAS || "www.myseedops.tech"],
+      ["admin", site.ADMIN_DOMAIN || "myseedops.tech"],
+      ["api", site.API_DOMAIN || "myseedops.tech"],
+    ].filter((r) => r[1]);
+    const dns = (app, name) => {
+      const host = p[app] || "vps";
+      if (host === "vps") return ["A", ip, "Points the domain name at your Hostinger VPS."];
+      if (/\.(netlify\.app|vercel\.app|onrender\.com)$/.test(name)) return ["-", "nothing to add", "The host's own address works as it is."];
+      return ["CNAME", `shown by ${HOST_LABEL[host] || host}`, `Add ${name} as a custom domain in ${HOST_LABEL[host] || host}.`];
+    };
+    root.replaceChildren(
+      pageHead("Domains", "The public addresses of the website, admin console and API. Every host uses them for URLs and CORS allowed origins.", el("div", { class: "row" }, save, pushEnv)),
+      card("Addresses", { icon: "cloud" }, el("div", { class: "grid g2" }, SITE_FIELDS.map(mkField)), el("div", { class: "row section" }, save, pushEnv)),
+      card(
+        "DNS records to add",
+        { icon: "info", sub: "In the DNS zone of your domain at Hostinger." },
+        el("div", { class: "table-wrap" }, el("table", null, el("thead", null, el("tr", null, el("th", { text: "Name" }), el("th", { text: "Runs on" }), el("th", { text: "Type" }), el("th", { text: "Value" }), el("th", { text: "Why" }))), el("tbody", null, rows.map(([app, name]) => {
+          const [type, value, why] = dns(app, name);
+          return el("tr", null, el("td", { class: "mono", text: name }), el("td", { text: HOST_LABEL[p[app] || "vps"] || "Hostinger VPS" }), el("td", { text: type }), el("td", { class: "mono", text: value }), el("td", { class: "small muted", text: why }));
+        })))),
+      ),
+      sendToHostsNote(p),
+    );
+  };
+  await load();
+}
+
+async function pageKeys(root, alive) {
+  const load = async () => {
+    const [d, pl] = await Promise.all([api("GET", "/api/vps"), api("GET", "/api/plan")]);
+    if (!alive()) return;
+    const site = d.site || {};
+    const secrets = d.secrets || {};
+    const inputs = {};
+    const mkField = ([k, label, ph]) => field(label, (inputs[k] = el("input", { type: "text", value: site[k] || "", placeholder: ph })));
+    const secretInputs = {};
+    const mkSecret = ([k, label]) => field(label, (secretInputs[k] = el("input", { type: "password", placeholder: secrets[k] ? `Saved (${secrets[k]}); type to replace` : "Not set", autocomplete: "off" })));
+    const save = btn("Save keys and settings", { kind: "primary", size: "sm" });
+    const pushEnv = btn("Push settings to VPS", { size: "sm", icon: "up", onclick: () => runJob(() => api("POST", "/api/vps/push-env")) });
+    save.onclick = () =>
+      withBusy(
+        save,
+        act(async () => {
+          const s = Object.fromEntries(Object.entries(inputs).map(([k, i]) => [k, i.value]));
+          const sec = Object.fromEntries(Object.entries(secretInputs).filter(([, i]) => i.value.trim()).map(([k, i]) => [k, i.value]));
+          await api("POST", "/api/vps/settings", { site: s, secrets: sec });
+          toast("Saved");
+          load();
+        }),
+      );
+    const group = (title, ic, sub, ...body) => card(title, { icon: ic, sub }, el("div", { class: "grid g2" }, ...body));
+    root.replaceChildren(
+      pageHead("Keys and settings", "Email, payments, media storage and AI. Saved in this panel with encryption, and copied to the VPS server's .env file.", el("div", { class: "row" }, save, pushEnv)),
+      group("Email (SMTP / Resend)", "info", "SMTP mailbox or Resend API key.", EMAIL_FIELDS.map(mkField), SECRET_FIELDS.filter((x) => x[2] === "Email").map(mkSecret)),
+      group("Payments (Chapa / Stripe)", "key", "Payment gateways for donations and billing.", SECRET_FIELDS.filter((x) => x[2] === "Payments").map(mkSecret)),
+      group("Support, media storage and AI", "gear", "S3 / Cloudflare R2 bucket for uploads and Anthropic AI keys.", OTHER_FIELDS.map(mkField), SECRET_FIELDS.filter((x) => x[2] === "Other").map(mkSecret)),
+      card(
+        "Push settings to Hostinger VPS",
+        { icon: "server", sub: "Writes all configured keys and variables directly into /opt/myseed-content-manager/.env on your Hostinger server." },
+        el("div", { class: "row" }, pushEnv),
+      ),
+      sendToHostsNote(pl.plan),
+    );
+  };
+  await load();
 }
 
 // ---------------------------------------------------------------------------
@@ -1108,6 +1370,7 @@ async function pageBackups(root, alive) {
         `Full JSON snapshots of every table. ${backups.length} file(s), ${bytes(total)} in ${folder}.`,
         btn("Back up local", { icon: "laptop", onclick: () => runJob(() => api("POST", "/api/data/backup", { target: "local" })) }),
         btn("Back up Supabase", { kind: "primary", icon: "db", onclick: () => runJob(() => api("POST", "/api/data/backup", { target: "supabase" })) }),
+        btn("Back up Hostinger VPS", { icon: "server", onclick: () => runJob(() => api("POST", "/api/vps/backup")) }),
         btn("Open folder", { kind: "ghost", icon: "folder", onclick: () => api("POST", "/api/backups/reveal", {}).catch(fail) }),
       ),
       tabs,
@@ -1622,7 +1885,7 @@ function dataCard(d) {
   const v = d.vps;
   const ready = !!v.last_deploy;
   return card(
-    "Data between this computer and the VPS",
+    "Data between this computer, Supabase, and the VPS",
     { icon: "leftright", sub: "Each copy backs up the side it replaces first, so it can be undone from Backups." },
     !ready ? notice("warn", "Deploy the app to the VPS first.") : null,
     el(
@@ -1640,6 +1903,18 @@ function dataCard(d) {
         icon: "down",
         disabled: !ready,
         onclick: async () => (await confirmBox({ title: "Replace this computer's data with the VPS's?", lines: ["Downloads a backup of the VPS database, backs up the local database, then replaces the local data with it."], ok: "Copy to this computer", danger: true })) && runJob(() => api("POST", "/api/vps/data/pull")),
+      }),
+      btn("Pull Supabase into VPS", {
+        size: "sm",
+        icon: "down",
+        disabled: !ready,
+        onclick: async () => (await confirmBox({ title: "Pull from Supabase into Hostinger VPS?", lines: ["Pulls configurations and user accounts from Supabase into your Hostinger VPS database.", "Excludes workspace config (cfg.workspace) to preserve your Hostinger site settings.", "Both databases will be backed up before the transfer."], word: "PULL", ok: "Pull to Hostinger VPS", danger: true })) && runJob(() => api("POST", "/api/vps/data/pull_supabase", { mode: "accounts_and_config" })),
+      }),
+      btn("Back up VPS database", {
+        size: "sm",
+        icon: "archive",
+        disabled: !ready,
+        onclick: () => runJob(() => api("POST", "/api/vps/backup")),
       }),
     ),
     el("p", { class: "tiny muted", text: "The local database can only be open in one program: stop npm run dev in a terminal first (the panel stops its own dev server for you)." }),
