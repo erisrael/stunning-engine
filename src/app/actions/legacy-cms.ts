@@ -24,7 +24,7 @@ export async function saveLegacyCmsConfigAction(input: Parameters<typeof cms.sav
   }
 }
 
-export async function syncLegacyCmsAction(opts?: { force?: boolean; category?: LegacyCmsCategory | "all" }) {
+export async function syncLegacyCmsAction(opts?: { force?: boolean; category?: LegacyCmsCategory | "all"; deep?: boolean; maxPages?: number }) {
   try {
     const viewer = await requireViewer();
     const result = await cms.syncLegacyCms(viewer, opts);
@@ -124,5 +124,70 @@ export async function getLegacyCmsStatsAction() {
     return { ok: true, data };
   } catch (err: any) {
     return { ok: false, error: String(err?.message || err) };
+  }
+}
+
+export async function getStudentParentRelationsAction(opts?: Parameters<typeof cms.getStudentParentRelations>[0]) {
+  try {
+    await requireViewer();
+    const data = await cms.getStudentParentRelations(opts);
+    return { ok: true, data };
+  } catch (err: any) {
+    return {
+      ok: false,
+      error: String(err?.message || err),
+      data: { relations: [], summary: { totalStudents: 0, linkedParents: 0, withPhone: 0, activeSubscriptions: 0 } },
+    };
+  }
+}
+
+export async function getLegacyCmsRevenueAnalyticsAction(opts?: Parameters<typeof cms.getLegacyCmsRevenueAnalytics>[0]) {
+  try {
+    await requireViewer();
+    const data = await cms.getLegacyCmsRevenueAnalytics(opts);
+    return { ok: true, data };
+  } catch (err: any) {
+    return {
+      ok: false,
+      error: String(err?.message || err),
+      data: {
+        summary: { totalRevenue: 0, totalPaidCount: 0, pendingApprovalRevenue: 0, pendingApprovalCount: 0, averageInvoiceValue: 0 },
+        byPaymentMethod: [],
+        byStatus: [],
+        byMonth: [],
+        byPlan: [],
+        invoices: [],
+      },
+    };
+  }
+}
+
+export async function approveLegacyCmsInvoiceAction(invoiceId: string, notes?: string) {
+  try {
+    const viewer = await requireViewer();
+    const data = await cms.approveLegacyCmsInvoice(viewer, invoiceId, notes);
+    return data;
+  } catch (err: any) {
+    return { ok: false, message: String(err?.message || err) };
+  }
+}
+
+export async function getLegacyCmsGrowthAnalyticsAction() {
+  try {
+    await requireViewer();
+    const data = await cms.getLegacyCmsGrowthAnalytics();
+    return { ok: true, data };
+  } catch (err: any) {
+    return {
+      ok: false,
+      error: String(err?.message || err),
+      data: {
+        summary: { totalStudents: 0, totalParents: 0, totalInvoices: 0, activeSubscriptions: 0, conversionRate: 0 },
+        gradeDistribution: [],
+        cityDemographics: [],
+        planPopularity: [],
+        genderBreakdown: [],
+      },
+    };
   }
 }

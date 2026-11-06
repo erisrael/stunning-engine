@@ -4,6 +4,9 @@ import {
   listLegacyCmsRecords,
   getLegacyCmsStats,
   getCmsRoleVisibility,
+  getStudentParentRelations,
+  getLegacyCmsRevenueAnalytics,
+  getLegacyCmsGrowthAnalytics,
   LEGACY_CMS_CATEGORIES,
   type LegacyCmsCategory,
 } from "@/server/legacy-cms";
@@ -45,14 +48,19 @@ export default async function LegacyCmsPage({
     allowedCategories.includes(requestedCategory) ? requestedCategory : allowedCategories[0] || "students";
 
   const config = await getLegacyCmsConfig();
-  const initialRecords = await listLegacyCmsRecords(initialCategory, { limit: 100 });
-  const stats = await getLegacyCmsStats();
+  const [initialRecords, stats, initialRelations, initialRevenue, initialGrowth] = await Promise.all([
+    listLegacyCmsRecords(initialCategory, { limit: 100 }),
+    getLegacyCmsStats(),
+    getStudentParentRelations({ limit: 150 }),
+    getLegacyCmsRevenueAnalytics(),
+    getLegacyCmsGrowthAnalytics(),
+  ]);
 
   return (
     <div className="space-y-4">
       <PageHeader
         title="Legacy CMS Integration"
-        description="Synchronized database mirror of cms.noorethiopia.com. Search students, parents, invoices, and subscriptions."
+        description="Synchronized database mirror of cms.noorethiopia.com. Search students, parents, invoices, subscriptions, and revenue."
       />
       <LegacyCmsClient
         config={config}
@@ -62,6 +70,9 @@ export default async function LegacyCmsPage({
         isAdmin={isAdmin}
         allowedCategories={allowedCategories}
         visibility={visibility}
+        initialRelations={initialRelations}
+        initialRevenue={initialRevenue}
+        initialGrowth={initialGrowth}
       />
     </div>
   );
