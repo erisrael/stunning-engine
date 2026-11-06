@@ -129,37 +129,66 @@ export function ExternalApiConsole({ config }: { config: ExternalApiConfig }) {
   const handleSaveChapaAccount = async () => {
     if (!chapaForm.name.trim()) return toast.error("Business account name is required");
     setBusy(true);
-    const res = await saveChapaAccountAction({
-      id: chapaForm.id || undefined,
-      name: chapaForm.name,
-      secretKey: chapaForm.secretKey || undefined,
-      publicKey: chapaForm.publicKey || undefined,
-      webhookSecret: chapaForm.webhookSecret || undefined,
-      currency: chapaForm.currency,
-      active: chapaForm.active,
-    });
-    setBusy(false);
-    if (!res.ok) return toast.error(res.error || "Failed to save Chapa account");
-    toast.success(`Chapa account "${chapaForm.name}" saved.`);
-    setChapaModalOpen(false);
-    setChapaForm({ id: "", name: "", secretKey: "", publicKey: "", webhookSecret: "", currency: "ETB", active: true });
-    loadChapaData();
+    try {
+      const res = await saveChapaAccountAction({
+        id: chapaForm.id || undefined,
+        name: chapaForm.name,
+        secretKey: chapaForm.secretKey || undefined,
+        publicKey: chapaForm.publicKey || undefined,
+        webhookSecret: chapaForm.webhookSecret || undefined,
+        currency: chapaForm.currency,
+        active: chapaForm.active,
+      });
+      setBusy(false);
+      if (!res.ok) return toast.error(res.error || "Failed to save Chapa account");
+      toast.success(`Chapa account "${chapaForm.name}" saved.`);
+      setChapaModalOpen(false);
+      setChapaForm({ id: "", name: "", secretKey: "", publicKey: "", webhookSecret: "", currency: "ETB", active: true });
+      loadChapaData();
+    } catch (err: any) {
+      setBusy(false);
+      if (String(err?.message || err).includes("Server Action")) {
+        toast.error("New deployment detected. Refreshing page...");
+        window.location.reload();
+      } else {
+        toast.error(String(err?.message || err));
+      }
+    }
   };
 
   const handleDeleteChapaAccount = async (id: string, name: string) => {
     if (!confirm(`Delete Chapa account "${name}"?`)) return;
-    const res = await deleteChapaAccountAction(id);
-    if (!res.ok) return toast.error(res.error || "Failed to delete account");
-    toast.success(`Account "${name}" removed.`);
-    loadChapaData();
+    try {
+      const res = await deleteChapaAccountAction(id);
+      if (!res.ok) return toast.error(res.error || "Failed to delete account");
+      toast.success(`Account "${name}" removed.`);
+      loadChapaData();
+    } catch (err: any) {
+      if (String(err?.message || err).includes("Server Action")) {
+        toast.error("New deployment detected. Refreshing page...");
+        window.location.reload();
+      } else {
+        toast.error(String(err?.message || err));
+      }
+    }
   };
 
   const handleTestChapaAccount = async (id: string) => {
     setTesting(`chapa-${id}`);
-    const res = await testChapaAccountAction(id);
-    setTesting(null);
-    if (res.ok) toast.success(res.message);
-    else toast.error(res.message);
+    try {
+      const res = await testChapaAccountAction(id);
+      setTesting(null);
+      if (res.ok) toast.success(res.message);
+      else toast.error(res.message);
+    } catch (err: any) {
+      setTesting(null);
+      if (String(err?.message || err).includes("Server Action")) {
+        toast.error("New deployment detected. Refreshing page...");
+        window.location.reload();
+      } else {
+        toast.error(String(err?.message || err));
+      }
+    }
   };
 
   const handleClearAllChapaAccounts = async () => {

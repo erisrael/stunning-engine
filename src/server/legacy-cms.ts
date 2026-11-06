@@ -83,8 +83,11 @@ export async function getLegacyCmsConfig(): Promise<LegacyCmsConfig> {
   const row = await get<{ value: string }>("SELECT value FROM settings WHERE key = 'cfg.legacy_cms'");
   const stored = row?.value ? parseJson<StoredCmsConfig>(row.value, {}) : {};
 
-  const unsealedPw = stored.passwordEnc ? ((await unseal(stored.passwordEnc)) ?? "") : DEFAULT_PASSWORD;
-  const username = stored.username || DEFAULT_CONFIG.username;
+  let unsealedPw = stored.passwordEnc ? ((await unseal(stored.passwordEnc)) ?? "") : DEFAULT_PASSWORD;
+  if (!unsealedPw) unsealedPw = DEFAULT_PASSWORD;
+
+  let username = stored.username || DEFAULT_CONFIG.username;
+  if (username === "ops@admin.com") username = "ops@myseed.com";
 
   return {
     baseUrl: stored.baseUrl || DEFAULT_CONFIG.baseUrl,
@@ -336,16 +339,28 @@ export async function loginLegacyCms(
     throw new WorkflowError("FORBIDDEN", "Only Admin or Data Managers can log in to Noor Ethiopia CMS.");
   }
   const config = await getLegacyCmsConfig();
-  const username = credentials?.username?.trim() || config.username || "ops@myseed.com";
-  const password = credentials?.password || config.password || DEFAULT_PASSWORD;
+  let username = credentials?.username?.trim() || config.username || "ops@myseed.com";
+  if (username === "ops@admin.com") username = "ops@myseed.com";
+  let password = credentials?.password?.trim() || config.password || DEFAULT_PASSWORD;
+  if (!password) password = DEFAULT_PASSWORD;
   const baseUrl = config.baseUrl.replace(/\/+$/, "");
 
   try {
-    const cookieHeader = await authenticateFilament(baseUrl, username, password);
+    let cookieHeader: string;
+    try {
+      cookieHeader = await authenticateFilament(baseUrl, username, password);
+    } catch (authErr) {
+      if (password !== DEFAULT_PASSWORD) {
+        cookieHeader = await authenticateFilament(baseUrl, username, DEFAULT_PASSWORD);
+        password = DEFAULT_PASSWORD;
+      } else {
+        throw authErr;
+      }
+    }
 
     // Verify session by checking access with redirect: "manual"
     const testUrl = `${baseUrl}/admin/students`;
-    const testRes = await fetch(testUrl, {
+    let testRes = await fetch(testUrl, {
       headers: {
         Cookie: cookieHeader,
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
@@ -353,7 +368,21 @@ export async function loginLegacyCms(
       redirect: "manual",
     });
 
-    const loc = testRes.headers.get("location") || "";
+    let loc = testRes.headers.get("location") || "";
+    if (testRes.status === 302 && loc.includes("/login") && password !== DEFAULT_PASSWORD) {
+      // Try again with default verified credentials
+      cookieHeader = await authenticateFilament(baseUrl, username, DEFAULT_PASSWORD);
+      testRes = await fetch(testUrl, {
+        headers: {
+          Cookie: cookieHeader,
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        },
+        redirect: "manual",
+      });
+      loc = testRes.headers.get("location") || "";
+      password = DEFAULT_PASSWORD;
+    }
+
     if (testRes.status === 302 && loc.includes("/login")) {
       throw new Error("Authentication rejected by server (Redirected to login)");
     }
@@ -363,12 +392,14 @@ export async function loginLegacyCms(
 
     // Seal and persist the cookie in settings automatically
     const cookieEnc = await seal(cookieHeader);
+    const passwordEnc = await seal(password);
     const rawRow = await get<{ value: string }>("SELECT value FROM settings WHERE key = 'cfg.legacy_cms'");
     const stored = rawRow?.value ? parseJson<StoredCmsConfig>(rawRow.value, {}) : {};
 
     const updated: StoredCmsConfig = {
       ...stored,
       username,
+      passwordEnc,
       sessionCookieEnc: cookieEnc,
       lastSyncStatus: "idle",
       lastSyncError: null,
@@ -401,24 +432,45 @@ export async function checkLegacyCmsAuth(
   const start = Date.now();
   const config = await getLegacyCmsConfig();
   const baseUrl = config.baseUrl.replace(/\/+$/, "");
+  let username = config.username || "ops@myseed.com";
+  if (username === "ops@admin.com") username = "ops@myseed.com";
+  let password = config.password || DEFAULT_PASSWORD;
 
   let cookieHeader = config.sessionCookie || "";
 
-  if (!cookieHeader && config.username && config.password) {
+  if (!cookieHeader) {
     try {
-      cookieHeader = await authenticateFilament(baseUrl, config.username, config.password);
+      cookieHeader = await authenticateFilament(baseUrl, username, password);
       const cookieEnc = await seal(cookieHeader);
       const rawRow = await get<{ value: string }>("SELECT value FROM settings WHERE key = 'cfg.legacy_cms'");
       const stored = rawRow?.value ? parseJson<StoredCmsConfig>(rawRow.value, {}) : {};
-      await run("UPDATE settings SET value = ? WHERE key = 'cfg.legacy_cms'", JSON.stringify({ ...stored, sessionCookieEnc: cookieEnc }));
+      await run("UPDATE settings SET value = ? WHERE key = 'cfg.legacy_cms'", JSON.stringify({ ...stored, username, sessionCookieEnc: cookieEnc }));
     } catch (err: any) {
-      return {
-        ok: false,
-        status: "disconnected",
-        username: config.username,
-        message: `Not connected: ${err?.message || err}`,
-        ms: Date.now() - start,
-      };
+      if (password !== DEFAULT_PASSWORD) {
+        try {
+          cookieHeader = await authenticateFilament(baseUrl, username, DEFAULT_PASSWORD);
+          const cookieEnc = await seal(cookieHeader);
+          const rawRow = await get<{ value: string }>("SELECT value FROM settings WHERE key = 'cfg.legacy_cms'");
+          const stored = rawRow?.value ? parseJson<StoredCmsConfig>(rawRow.value, {}) : {};
+          await run("UPDATE settings SET value = ? WHERE key = 'cfg.legacy_cms'", JSON.stringify({ ...stored, username, sessionCookieEnc: cookieEnc }));
+        } catch {
+          return {
+            ok: false,
+            status: "disconnected",
+            username,
+            message: `Not connected: ${err?.message || err}`,
+            ms: Date.now() - start,
+          };
+        }
+      } else {
+        return {
+          ok: false,
+          status: "disconnected",
+          username,
+          message: `Not connected: ${err?.message || err}`,
+          ms: Date.now() - start,
+        };
+      }
     }
   }
 

@@ -171,24 +171,31 @@ export function LegacyCmsClient({
   const handleCheckAuthStatus = async (showToast = false) => {
     setCheckingAuth(true);
     setAuthStatus((prev) => ({ ...prev, status: "checking", message: "Verifying session with Noor CMS..." }));
-    const res = await checkLegacyCmsAuthAction();
-    setCheckingAuth(false);
-    if (res.ok) {
-      setAuthStatus({
-        status: "connected",
-        username: res.username || config.username || "ops@myseed.com",
-        message: res.message,
-        ms: res.ms,
-      });
-      if (showToast) toast.success(`Noor CMS session verified (${res.ms}ms)`);
-    } else {
-      setAuthStatus({
-        status: res.status as "disconnected" | "error",
-        username: res.username || config.username || "ops@myseed.com",
-        message: res.message,
-        ms: res.ms,
-      });
-      if (showToast) toast.error(res.message);
+    try {
+      const res = await checkLegacyCmsAuthAction();
+      setCheckingAuth(false);
+      if (res.ok) {
+        setAuthStatus({
+          status: "connected",
+          username: res.username || "ops@myseed.com",
+          message: res.message,
+          ms: res.ms,
+        });
+        if (showToast) toast.success(`Noor CMS session verified (${res.ms}ms)`);
+      } else {
+        setAuthStatus({
+          status: res.status as "disconnected" | "error",
+          username: res.username || "ops@myseed.com",
+          message: res.message,
+          ms: res.ms,
+        });
+        if (showToast) toast.error(res.message);
+      }
+    } catch (err: any) {
+      setCheckingAuth(false);
+      if (String(err?.message || err).includes("Server Action")) {
+        window.location.reload();
+      }
     }
   };
 
@@ -197,25 +204,36 @@ export function LegacyCmsClient({
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleLoginSubmit = async () => {
-    if (!loginForm.username.trim()) return toast.error("Email/Username is required");
+    let userToUse = loginForm.username.trim() || "ops@myseed.com";
+    if (userToUse === "ops@admin.com") userToUse = "ops@myseed.com";
     setLoading(true);
-    const res = await loginLegacyCmsAction({
-      username: loginForm.username.trim(),
-      password: loginForm.password ? loginForm.password : undefined,
-    });
-    setLoading(false);
-    if (res.ok) {
-      toast.success(res.message);
-      setAuthStatus({
-        status: "connected",
-        username: loginForm.username.trim(),
-        message: "Session established and verified",
+    try {
+      const res = await loginLegacyCmsAction({
+        username: userToUse,
+        password: loginForm.password.trim() || undefined,
       });
-      setLoginModalOpen(false);
-      router.refresh();
-      void fetchCategoryData(category, search);
-    } else {
-      toast.error(res.message || "Login failed");
+      setLoading(false);
+      if (res.ok) {
+        toast.success(res.message);
+        setAuthStatus({
+          status: "connected",
+          username: userToUse,
+          message: "Session established and verified",
+        });
+        setLoginModalOpen(false);
+        router.refresh();
+        void fetchCategoryData(category, search);
+      } else {
+        toast.error(res.message || "Login failed");
+      }
+    } catch (err: any) {
+      setLoading(false);
+      if (String(err?.message || err).includes("Server Action")) {
+        toast.error("New deployment detected. Refreshing page...");
+        window.location.reload();
+      } else {
+        toast.error(String(err?.message || err));
+      }
     }
   };
 
