@@ -311,10 +311,173 @@ async function authenticateFilament(baseUrl: string, username: string, password:
   return authCookieHeader;
 }
 
+export async function loginLegacyCms(
+  user: AppUser,
+  credentials?: { username?: string; password?: string }
+): Promise<{ ok: boolean; message: string; cookiePreview?: string }> {
+  if (!can(user, "data.manage") && !can(user, "users.manage")) {
+    throw new WorkflowError("FORBIDDEN", "Only Admin or Data Managers can log in to Noor Ethiopia CMS.");
+  }
+  const config = await getLegacyCmsConfig();
+  const username = credentials?.username?.trim() || config.username || "ops@myseed.com";
+  const password = credentials?.password || config.password || DEFAULT_PASSWORD;
+  const baseUrl = config.baseUrl.replace(/\/+$/, "");
+
+  try {
+    const cookieHeader = await authenticateFilament(baseUrl, username, password);
+
+    // Verify session by checking access
+    const testUrl = `${baseUrl}/admin/students`;
+    const testRes = await fetch(testUrl, {
+      headers: {
+        Cookie: cookieHeader,
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+      },
+    });
+
+    if (!testRes.ok || testRes.url.includes("/login")) {
+      throw new Error(`Authentication rejected by server (HTTP ${testRes.status})`);
+    }
+
+    // Seal and persist the cookie in settings
+    const cookieEnc = await seal(cookieHeader);
+    const rawRow = await get<{ value: string }>("SELECT value FROM settings WHERE key = 'cfg.legacy_cms'");
+    const stored = rawRow?.value ? parseJson<StoredCmsConfig>(rawRow.value, {}) : {};
+
+    const updated: StoredCmsConfig = {
+      ...stored,
+      username,
+      sessionCookieEnc: cookieEnc,
+      lastSyncStatus: "idle",
+      lastSyncError: null,
+    };
+
+    await run(
+      "INSERT INTO settings (key, value, updated_at, updated_by) VALUES ('cfg.legacy_cms', ?, ?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by",
+      JSON.stringify(updated),
+      nowIso(),
+      user.id
+    );
+
+    await audit({ actor: user }, { action: "login.legacy_cms", summary: `${user.name} logged in to Noor Ethiopia CMS as ${username}` });
+
+    const cookiePreview = cookieHeader.split(";").map((s) => s.trim().split("=")[0]).join(", ");
+    return {
+      ok: true,
+      message: `Successfully authenticated to Noor Ethiopia CMS as ${username}. Session is active.`,
+      cookiePreview,
+    };
+  } catch (err: any) {
+    const errorMsg = String(err?.message || err);
+    return { ok: false, message: `Login failed: ${errorMsg}` };
+  }
+}
+
+export async function checkLegacyCmsAuth(
+  user: AppUser
+): Promise<{ ok: boolean; status: "connected" | "disconnected" | "error"; username: string; message: string; ms: number }> {
+  const start = Date.now();
+  const config = await getLegacyCmsConfig();
+  const baseUrl = config.baseUrl.replace(/\/+$/, "");
+
+  let cookieHeader = config.sessionCookie || "";
+
+  if (!cookieHeader) {
+    if (config.username && config.password) {
+      try {
+        cookieHeader = await authenticateFilament(baseUrl, config.username, config.password);
+        const cookieEnc = await seal(cookieHeader);
+        const rawRow = await get<{ value: string }>("SELECT value FROM settings WHERE key = 'cfg.legacy_cms'");
+        const stored = rawRow?.value ? parseJson<StoredCmsConfig>(rawRow.value, {}) : {};
+        await run("UPDATE settings SET value = ? WHERE key = 'cfg.legacy_cms'", JSON.stringify({ ...stored, sessionCookieEnc: cookieEnc }));
+      } catch (err: any) {
+        return {
+          ok: false,
+          status: "disconnected",
+          username: config.username,
+          message: `Not connected: ${err?.message || err}`,
+          ms: Date.now() - start,
+        };
+      }
+    } else {
+      return {
+        ok: false,
+        status: "disconnected",
+        username: config.username,
+        message: "No active session cookie or credentials found.",
+        ms: Date.now() - start,
+      };
+    }
+  }
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 12000);
+    const res = await fetch(`${baseUrl}/admin/students`, {
+      headers: {
+        Cookie: cookieHeader,
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+      },
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    const ms = Date.now() - start;
+    if (res.ok && !res.url.includes("/login")) {
+      return {
+        ok: true,
+        status: "connected",
+        username: config.username,
+        message: `Session active and verified with Noor CMS (HTTP ${res.status})`,
+        ms,
+      };
+    }
+
+    return {
+      ok: false,
+      status: "disconnected",
+      username: config.username,
+      message: `Session expired (HTTP ${res.status})`,
+      ms,
+    };
+  } catch (err: any) {
+    return {
+      ok: false,
+      status: "error",
+      username: config.username,
+      message: `CMS unreachable: ${err?.message || err}`,
+      ms: Date.now() - start,
+    };
+  }
+}
+
+export async function logoutLegacyCms(user: AppUser): Promise<{ ok: boolean; message: string }> {
+  if (!can(user, "data.manage") && !can(user, "users.manage")) {
+    throw new WorkflowError("FORBIDDEN", "Only Admin or Data Managers can log out from Noor Ethiopia CMS.");
+  }
+  const rawRow = await get<{ value: string }>("SELECT value FROM settings WHERE key = 'cfg.legacy_cms'");
+  const stored = rawRow?.value ? parseJson<StoredCmsConfig>(rawRow.value, {}) : {};
+
+  const updated: StoredCmsConfig = {
+    ...stored,
+    sessionCookieEnc: undefined,
+  };
+
+  await run(
+    "INSERT INTO settings (key, value, updated_at, updated_by) VALUES ('cfg.legacy_cms', ?, ?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by",
+    JSON.stringify(updated),
+    nowIso(),
+    user.id
+  );
+
+  await audit({ actor: user }, { action: "logout.legacy_cms", summary: `${user.name} logged out from Noor Ethiopia CMS session` });
+  return { ok: true, message: "Logged out from Noor Ethiopia CMS. Active session cookie cleared." };
+}
+
 export async function syncLegacyCms(
   user: AppUser,
-  opts: { force?: boolean } = {}
-): Promise<{ ok: boolean; message: string; counts: Record<LegacyCmsCategory, number> }> {
+  opts: { force?: boolean; category?: LegacyCmsCategory | "all" } = {}
+): Promise<{ ok: boolean; message: string; counts: Record<LegacyCmsCategory, number>; targetCategory: string }> {
   if (!can(user, "data.manage") && !can(user, "users.manage")) {
     throw new WorkflowError("FORBIDDEN", "Only Admin or Data Managers can trigger Legacy CMS sync.");
   }
@@ -338,6 +501,8 @@ export async function syncLegacyCms(
     subscriptions: 0,
   };
 
+  const targetCategory = opts.category || "all";
+
   try {
     const baseUrl = config.baseUrl.replace(/\/+$/, "");
     let cookieHeader = config.sessionCookie || "";
@@ -345,6 +510,8 @@ export async function syncLegacyCms(
     // Authenticate with Livewire if credentials provided and no explicit cookie
     if (!cookieHeader && config.username && config.password) {
       cookieHeader = await authenticateFilament(baseUrl, config.username, config.password);
+      const cookieEnc = await seal(cookieHeader);
+      await run("UPDATE settings SET value = ? WHERE key = 'cfg.legacy_cms'", JSON.stringify({ ...stored, sessionCookieEnc: cookieEnc }));
     }
 
     const headers: Record<string, string> = {
@@ -355,7 +522,11 @@ export async function syncLegacyCms(
       headers["Cookie"] = cookieHeader;
     }
 
-    for (const cat of LEGACY_CMS_CATEGORIES) {
+    const targetCategories = (!opts.category || opts.category === "all")
+      ? LEGACY_CMS_CATEGORIES
+      : LEGACY_CMS_CATEGORIES.filter((c) => c.key === opts.category);
+
+    for (const cat of targetCategories) {
       let records: Record<string, unknown>[] = [];
       const targetUrl = `${baseUrl}${cat.path}`;
 
@@ -409,9 +580,16 @@ export async function syncLegacyCms(
     };
     await run("UPDATE settings SET value = ? WHERE key = 'cfg.legacy_cms'", JSON.stringify(updatedStored));
 
-    await audit({ actor: user }, { action: "sync.legacy_cms", summary: `${user.name} synced Legacy Noor Ethiopia CMS data` });
+    const totalScraped = Object.values(counts).reduce((a, b) => a + b, 0);
+    const targetLabel = opts.category && opts.category !== "all" ? `target page "${opts.category}"` : "all pages";
+    await audit({ actor: user }, { action: "sync.legacy_cms", summary: `${user.name} synced Noor Ethiopia CMS (${targetLabel})` });
 
-    return { ok: true, message: `Legacy CMS synchronized successfully (${Object.values(counts).reduce((a, b) => a + b, 0)} records).`, counts };
+    return {
+      ok: true,
+      message: `Noor Ethiopia CMS synced successfully for ${targetLabel} (${totalScraped} records updated).`,
+      counts,
+      targetCategory,
+    };
   } catch (err: any) {
     const errorMsg = String(err?.message || err);
     const updatedStored: StoredCmsConfig = {
@@ -420,7 +598,7 @@ export async function syncLegacyCms(
       lastSyncError: errorMsg,
     };
     await run("UPDATE settings SET value = ? WHERE key = 'cfg.legacy_cms'", JSON.stringify(updatedStored));
-    return { ok: false, message: `Sync failed: ${errorMsg}`, counts };
+    return { ok: false, message: `Sync failed: ${errorMsg}`, counts, targetCategory };
   }
 }
 

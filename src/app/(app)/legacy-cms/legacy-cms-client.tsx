@@ -26,6 +26,10 @@ import {
   LockIcon,
   DatabaseIcon,
   Trash2Icon,
+  LogInIcon,
+  LogOutIcon,
+  ShieldCheckIcon,
+  ActivityIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -68,6 +72,9 @@ import {
   listLegacyCmsRecordsAction,
   clearLegacyCmsDataAction,
   saveCmsRoleVisibilityAction,
+  loginLegacyCmsAction,
+  checkLegacyCmsAuthAction,
+  logoutLegacyCmsAction,
 } from "@/app/actions/legacy-cms";
 import type {
   LegacyCmsCategory,
@@ -121,6 +128,28 @@ export function LegacyCmsClient({
   const [settingsOpen, setSettingsOpen] = React.useState(false);
   const [selectedRecord, setSelectedRecord] = React.useState<LegacyCmsRecord | null>(null);
   const [copiedKey, setCopiedKey] = React.useState<string | null>(null);
+
+  // Authentication & Session Status
+  const [authStatus, setAuthStatus] = React.useState<{
+    status: "checking" | "connected" | "disconnected" | "error";
+    username: string;
+    message: string;
+    ms?: number;
+  }>({
+    status: config.hasSessionCookie || config.username ? "checking" : "disconnected",
+    username: config.username || "ops@myseed.com",
+    message: "Checking Noor CMS session...",
+  });
+  const [checkingAuth, setCheckingAuth] = React.useState(false);
+  const [loginModalOpen, setLoginModalOpen] = React.useState(false);
+  const [loginForm, setLoginForm] = React.useState({
+    username: config.username || "ops@myseed.com",
+    password: "",
+  });
+
+  // Selectable Target Page for Sync
+  const [targetSyncPage, setTargetSyncPage] = React.useState<"all" | LegacyCmsCategory>("all");
+
   const [roleVisibility, setRoleVisibility] = React.useState<CmsRoleVisibility>(
     visibility || {
       admin: ["students", "parents", "subscription-plans", "subscription-histories", "invoices", "subscriptions"],
@@ -138,6 +167,75 @@ export function LegacyCmsClient({
     autoSync: config.autoSync,
     syncIntervalMinutes: config.syncIntervalMinutes,
   });
+
+  const handleCheckAuthStatus = async (showToast = false) => {
+    setCheckingAuth(true);
+    setAuthStatus((prev) => ({ ...prev, status: "checking", message: "Verifying session with Noor CMS..." }));
+    const res = await checkLegacyCmsAuthAction();
+    setCheckingAuth(false);
+    if (res.ok) {
+      setAuthStatus({
+        status: "connected",
+        username: res.username || config.username || "ops@myseed.com",
+        message: res.message,
+        ms: res.ms,
+      });
+      if (showToast) toast.success(`Noor CMS session verified (${res.ms}ms)`);
+    } else {
+      setAuthStatus({
+        status: res.status as "disconnected" | "error",
+        username: res.username || config.username || "ops@myseed.com",
+        message: res.message,
+        ms: res.ms,
+      });
+      if (showToast) toast.error(res.message);
+    }
+  };
+
+  React.useEffect(() => {
+    void handleCheckAuthStatus(false);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleLoginSubmit = async () => {
+    if (!loginForm.username.trim()) return toast.error("Email/Username is required");
+    setLoading(true);
+    const res = await loginLegacyCmsAction({
+      username: loginForm.username.trim(),
+      password: loginForm.password ? loginForm.password : undefined,
+    });
+    setLoading(false);
+    if (res.ok) {
+      toast.success(res.message);
+      setAuthStatus({
+        status: "connected",
+        username: loginForm.username.trim(),
+        message: "Session established and verified",
+      });
+      setLoginModalOpen(false);
+      router.refresh();
+      void fetchCategoryData(category, search);
+    } else {
+      toast.error(res.message || "Login failed");
+    }
+  };
+
+  const handleLogout = async () => {
+    if (!confirm("Log out from Noor Ethiopia CMS? This will clear the active session cookie.")) return;
+    setLoading(true);
+    const res = await logoutLegacyCmsAction();
+    setLoading(false);
+    if (res.ok) {
+      toast.success(res.message);
+      setAuthStatus({
+        status: "disconnected",
+        username: config.username || "ops@myseed.com",
+        message: "Logged out. Session cleared.",
+      });
+      router.refresh();
+    } else {
+      toast.error(res.message || "Logout failed");
+    }
+  };
 
   const fetchCategoryData = async (cat: LegacyCmsCategory, query = search) => {
     setLoading(true);
@@ -163,12 +261,13 @@ export function LegacyCmsClient({
     fetchCategoryData(category, val);
   };
 
-  const handleSyncNow = async () => {
+  const handleSyncTargetPage = async (catToSync: "all" | LegacyCmsCategory = targetSyncPage) => {
     setSyncing(true);
-    const res = await syncLegacyCmsAction({ force: true });
+    const res = await syncLegacyCmsAction({ force: true, category: catToSync });
     setSyncing(false);
     if (res.ok) {
-      toast.success(res.message || "Synced successfully from Noor Ethiopia CMS");
+      toast.success(res.message || `Synced successfully for ${catToSync}`);
+      await handleCheckAuthStatus(false);
       await fetchCategoryData(category, search);
       router.refresh();
     } else {
@@ -191,6 +290,7 @@ export function LegacyCmsClient({
       toast.success("Legacy CMS credentials and role visibility settings saved");
       setSettingsOpen(false);
       router.refresh();
+      void handleCheckAuthStatus(false);
     } else {
       toast.error(res.error || "Failed to save settings");
     }
@@ -233,7 +333,6 @@ export function LegacyCmsClient({
       el.remove();
       toast.success("Exported JSON");
     } else {
-      // CSV
       const keys = Array.from(new Set(records.flatMap((r) => Object.keys(r.data))));
       const csvRows = [
         keys.join(","),
@@ -258,7 +357,6 @@ export function LegacyCmsClient({
     }
   };
 
-  // Filtered by status if selected
   const filteredRecords = React.useMemo(() => {
     if (statusFilter === "all") return records;
     return records.filter((r) => {
@@ -267,7 +365,6 @@ export function LegacyCmsClient({
     });
   }, [records, statusFilter]);
 
-  // Dynamic columns for current table
   const columns = React.useMemo(() => {
     if (records.length === 0) return [];
     const firstKeys = Object.keys(records[0].data);
@@ -285,63 +382,157 @@ export function LegacyCmsClient({
                 Noor Ethiopia CMS (Legacy)
               </CardTitle>
               <Badge variant="outline" className="border-[#9334E6]/30 text-[#9334E6] dark:text-[#C58AF9]">
-                Live Sync
+                Live Mirror
               </Badge>
             </div>
             <CardDescription className="text-xs">
-              Synchronized mirror of <code className="font-mono text-foreground font-semibold">https://cms.noorethiopia.com</code> with auto-scrape and search.
+              Direct connection to <code className="font-mono text-foreground font-semibold">https://cms.noorethiopia.com</code> with Livewire authentication and page scraping.
             </CardDescription>
           </div>
 
+          {/* Session Status & Quick Login / Logout Bar */}
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex items-center gap-2 rounded-lg border bg-muted/40 px-3 py-1.5 text-xs">
-              <ClockIcon className="size-3.5 text-muted-foreground" />
-              <span className="text-muted-foreground">Last synced:</span>
-              <span className="font-medium text-foreground">
-                {config.lastSyncedAt ? new Date(config.lastSyncedAt).toLocaleString() : "Recently"}
-              </span>
+              {authStatus.status === "connected" && (
+                <>
+                  <span className="relative flex size-2">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex size-2 rounded-full bg-emerald-500"></span>
+                  </span>
+                  <span className="font-medium text-emerald-700 dark:text-emerald-400">
+                    Connected: {authStatus.username}
+                  </span>
+                  {authStatus.ms !== undefined && (
+                    <span className="text-[11px] text-muted-foreground">({authStatus.ms}ms)</span>
+                  )}
+                </>
+              )}
+              {authStatus.status === "disconnected" && (
+                <>
+                  <span className="size-2 rounded-full bg-amber-500" />
+                  <span className="font-medium text-amber-700 dark:text-amber-400">
+                    Logged Out / Disconnected
+                  </span>
+                </>
+              )}
+              {authStatus.status === "checking" && (
+                <>
+                  <RefreshCwIcon className="size-3 animate-spin text-primary" />
+                  <span className="text-muted-foreground">Checking session...</span>
+                </>
+              )}
+              {authStatus.status === "error" && (
+                <>
+                  <span className="size-2 rounded-full bg-rose-500" />
+                  <span className="font-medium text-destructive">Connection Error</span>
+                </>
+              )}
             </div>
 
-            {isAdmin ? (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={checkingAuth}
+              onClick={() => handleCheckAuthStatus(true)}
+              className="h-8 gap-1 text-xs"
+              title="Test connection and check live login status"
+            >
+              <ActivityIcon className={cn("size-3.5 text-primary", checkingAuth && "animate-spin")} />
+              Check Status
+            </Button>
+
+            {isAdmin && (
               <>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleClearCmsData}
-                  disabled={loading}
-                  className="gap-1.5 text-xs text-destructive hover:bg-destructive/10 border-destructive/30"
-                >
-                  <Trash2Icon className="size-3.5" />
-                  Clear All Data
-                </Button>
+                {authStatus.status === "connected" ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={loading}
+                    onClick={handleLogout}
+                    className="h-8 gap-1.5 text-xs text-destructive hover:bg-destructive/10 border-destructive/30"
+                  >
+                    <LogOutIcon className="size-3.5" />
+                    Log Out
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    onClick={() => setLoginModalOpen(true)}
+                    className="h-8 gap-1.5 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-medium"
+                  >
+                    <LogInIcon className="size-3.5" />
+                    Log In to CMS
+                  </Button>
+                )}
 
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => setSettingsOpen(true)}
-                  className="gap-1.5 text-xs"
+                  className="h-8 gap-1.5 text-xs"
                 >
                   <Settings2Icon className="size-3.5" />
-                  Login & Sync Settings
-                </Button>
-
-                <Button
-                  size="sm"
-                  onClick={handleSyncNow}
-                  disabled={syncing}
-                  className="gap-1.5 bg-[#00522B] text-white hover:bg-[#003d20] text-xs font-semibold"
-                >
-                  <RefreshCwIcon className={cn("size-3.5", syncing && "animate-spin")} />
-                  {syncing ? "Scraping CMS..." : "Sync Now"}
+                  Credentials & Roles
                 </Button>
               </>
-            ) : (
-              <Badge variant="outline" className="text-xs text-muted-foreground">
-                Read-Only (Support & Finance)
-              </Badge>
             )}
           </div>
         </CardHeader>
+
+        {/* Target Page Selector & Scraper Toolbar */}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t bg-muted/20 px-4 py-2.5 text-xs">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-medium text-muted-foreground">Target Page to Sync:</span>
+            <select
+              value={targetSyncPage}
+              onChange={(e) => setTargetSyncPage(e.target.value as "all" | LegacyCmsCategory)}
+              className="h-8 rounded-md border bg-background px-2.5 text-xs font-medium"
+            >
+              <option value="all">All 6 Subpages (Students, Parents, Subscriptions, Invoices, Plans, Histories)</option>
+              <option value="students">Students (/admin/students)</option>
+              <option value="parents">Parents (/admin/parents)</option>
+              <option value="subscriptions">Active Subscriptions (/admin/subscriptions)</option>
+              <option value="invoices">Invoices (/admin/invoices)</option>
+              <option value="subscription-plans">Subscription Plans (/admin/subscription-plans)</option>
+              <option value="subscription-histories">Subscription Histories (/admin/subscription-histories)</option>
+            </select>
+
+            {isAdmin && (
+              <Button
+                size="sm"
+                onClick={() => handleSyncTargetPage(targetSyncPage)}
+                disabled={syncing}
+                className="h-8 gap-1.5 bg-[#00522B] text-white hover:bg-[#003d20] text-xs font-semibold"
+              >
+                <RefreshCwIcon className={cn("size-3.5", syncing && "animate-spin")} />
+                {syncing
+                  ? `Scraping ${targetSyncPage}...`
+                  : targetSyncPage === "all"
+                  ? "Sync All Pages"
+                  : `Sync Target Page (${targetSyncPage})`}
+              </Button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 text-muted-foreground text-[11px]">
+              <ClockIcon className="size-3 text-muted-foreground" />
+              <span>Last synced: {config.lastSyncedAt ? new Date(config.lastSyncedAt).toLocaleString() : "Never"}</span>
+            </div>
+
+            {isAdmin && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleClearCmsData}
+                disabled={loading}
+                className="h-8 gap-1 text-xs text-destructive hover:bg-destructive/10"
+              >
+                <Trash2Icon className="size-3.5" /> Clear All Records
+              </Button>
+            )}
+          </div>
+        </div>
 
         {/* Stats Strip */}
         <div className="grid grid-cols-2 divide-x divide-y border-t sm:grid-cols-5 sm:divide-y-0">
@@ -431,135 +622,140 @@ export function LegacyCmsClient({
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+
+            {isAdmin && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleSyncTargetPage(category)}
+                disabled={syncing}
+                className="h-9 gap-1 text-xs"
+                title={`Sync only the active tab (${category})`}
+              >
+                <RefreshCwIcon className={cn("size-3.5", syncing && "animate-spin")} />
+                Sync Active Tab
+              </Button>
+            )}
           </div>
         </div>
 
-        {/* Content Body */}
-        <Card className="overflow-hidden border-border">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader className="bg-muted/50">
-                <TableRow>
-                  <TableHead className="w-12 text-xs">#</TableHead>
-                  <TableHead className="text-xs">Record Identifier</TableHead>
-                  {columns.map((c) => (
-                    <TableHead key={c} className="text-xs uppercase tracking-wider">
-                      {c.replace(/_/g, " ")}
-                    </TableHead>
-                  ))}
-                  <TableHead className="text-right text-xs">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {loading ? (
-                  <TableRow>
-                    <TableCell colSpan={columns.length + 3} className="h-32 text-center text-xs text-muted-foreground">
-                      <RefreshCwIcon className="mx-auto size-5 animate-spin text-primary mb-2" />
-                      Loading records...
-                    </TableCell>
-                  </TableRow>
-                ) : filteredRecords.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={columns.length + 3} className="h-32 text-center text-xs text-muted-foreground">
-                      No records found for "{search}". Try searching or click "Sync Now".
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  filteredRecords.map((r, idx) => {
-                    const phone = String(r.data.phone || r.data.parent_phone || r.data.Parent_Phone || "");
-                    const status = String(r.data.status || r.data.Status || "");
-                    const isPaid = /active|paid|verified/i.test(status);
-                    const isPending = /pending|awaiting/i.test(status);
-
-                    return (
-                      <TableRow key={r.id} className="hover:bg-muted/40 text-xs">
-                        <TableCell className="font-mono text-muted-foreground text-[11px]">{idx + 1}</TableCell>
-                        <TableCell className="font-semibold text-foreground">
-                          {r.title}
-                          <div className="font-mono text-[10px] text-muted-foreground">{r.externalId}</div>
-                        </TableCell>
-
-                        {columns.map((col) => {
-                          const val = String(r.data[col] ?? "—");
-                          const isStatusCol = /status/i.test(col);
-                          return (
-                            <TableCell key={col}>
-                              {isStatusCol ? (
-                                <Badge
-                                  variant="secondary"
-                                  className={cn(
-                                    "text-[10px] font-semibold",
-                                    isPaid && "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
-                                    isPending && "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-                                    !isPaid && !isPending && "bg-muted text-muted-foreground"
-                                  )}
-                                >
-                                  {val}
-                                </Badge>
-                              ) : (
-                                <span className="max-w-[200px] truncate block" title={val}>
-                                  {val}
-                                </span>
-                              )}
-                            </TableCell>
-                          );
-                        })}
-
-                        <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-1">
-                            {phone && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="size-7 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40"
-                                title={`Call Parent: ${phone}`}
-                                asChild
-                              >
-                                <a href={`tel:${phone}`}>
-                                  <PhoneCallIcon className="size-3.5" />
-                                </a>
-                              </Button>
+        {/* Tab Content & Tables */}
+        {(["students", "parents", "subscriptions", "invoices", "subscription-plans", "subscription-histories"] as LegacyCmsCategory[]).map(
+          (cat) =>
+            allowedCategories.includes(cat) && (
+              <TabsContent key={cat} value={cat} className="space-y-4">
+                <Card>
+                  <CardContent className="p-0">
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader className="bg-muted/40">
+                          <TableRow>
+                            {columns.length > 0 ? (
+                              columns.map((c) => (
+                                <TableHead key={c} className="text-xs font-semibold capitalize">
+                                  {c.replace(/_/g, " ")}
+                                </TableHead>
+                              ))
+                            ) : (
+                              <TableHead className="text-xs">Data</TableHead>
                             )}
+                            <TableHead className="w-24 text-right text-xs">Action</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {loading ? (
+                            <TableRow>
+                              <TableCell colSpan={Math.max(2, columns.length + 1)} className="py-12 text-center text-xs text-muted-foreground">
+                                <RefreshCwIcon className="mx-auto mb-2 size-5 animate-spin text-primary" />
+                                Loading {cat} data...
+                              </TableCell>
+                            </TableRow>
+                          ) : filteredRecords.length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={Math.max(2, columns.length + 1)} className="py-12 text-center text-xs text-muted-foreground">
+                                No records found in {cat}. Click &quot;Sync Target Page&quot; or &quot;Log In to CMS&quot; to fetch live data.
+                              </TableCell>
+                            </TableRow>
+                          ) : (
+                            filteredRecords.map((r) => (
+                              <TableRow key={r.id} className="text-xs hover:bg-muted/30">
+                                {columns.length > 0 ? (
+                                  columns.map((colKey) => {
+                                    const val = r.data[colKey];
+                                    const isPhone = colKey.toLowerCase().includes("phone");
+                                    const isEmail = colKey.toLowerCase().includes("email");
 
-                            {phone && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="size-7"
-                                title="Copy Phone Number"
-                                onClick={() => copyText(phone, `phone-${r.id}`)}
-                              >
-                                {copiedKey === `phone-${r.id}` ? (
-                                  <CheckIcon className="size-3.5 text-emerald-600" />
+                                    return (
+                                      <TableCell key={colKey} className="py-2.5 font-medium">
+                                        {isPhone && val ? (
+                                          <div className="flex items-center gap-1.5">
+                                            <a
+                                              href={`tel:${String(val)}`}
+                                              className="flex items-center gap-1 font-mono text-primary hover:underline"
+                                            >
+                                              <PhoneCallIcon className="size-3 text-emerald-600" />
+                                              {String(val)}
+                                            </a>
+                                            <button
+                                              type="button"
+                                              onClick={() => copyText(String(val), `${r.id}-${colKey}`)}
+                                              className="text-muted-foreground hover:text-foreground"
+                                              title="Copy Phone"
+                                            >
+                                              {copiedKey === `${r.id}-${colKey}` ? (
+                                                <CheckIcon className="size-3 text-emerald-600" />
+                                              ) : (
+                                                <CopyIcon className="size-3" />
+                                              )}
+                                            </button>
+                                          </div>
+                                        ) : isEmail && val ? (
+                                          <a
+                                            href={`mailto:${String(val)}`}
+                                            className="text-primary hover:underline truncate max-w-xs block"
+                                          >
+                                            {String(val)}
+                                          </a>
+                                        ) : typeof val === "string" && (val === "Active" || val === "Yes" || val === "Paid" || val === "Verified") ? (
+                                          <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20 text-[10px]">
+                                            {val}
+                                          </Badge>
+                                        ) : typeof val === "string" && (val === "Expired" || val === "No" || val === "Inactive") ? (
+                                          <Badge variant="secondary" className="bg-destructive/10 text-destructive border-destructive/20 text-[10px]">
+                                            {val}
+                                          </Badge>
+                                        ) : (
+                                          <span className="truncate max-w-xs block text-foreground">
+                                            {val !== undefined && val !== null ? String(val) : "—"}
+                                          </span>
+                                        )}
+                                      </TableCell>
+                                    );
+                                  })
                                 ) : (
-                                  <CopyIcon className="size-3.5" />
+                                  <TableCell className="font-mono text-xs">{JSON.stringify(r.data)}</TableCell>
                                 )}
-                              </Button>
-                            )}
-
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="size-7"
-                              title="View Raw Data"
-                              onClick={() => setSelectedRecord(r)}
-                            >
-                              <EyeIcon className="size-3.5" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })
-                )}
-              </TableBody>
-            </Table>
-          </div>
-          <div className="flex items-center justify-between border-t bg-muted/20 px-4 py-2 text-xs text-muted-foreground">
-            <span>Showing {filteredRecords.length} of {total} records</span>
-            <span className="font-mono text-[11px]">Source: {config.baseUrl}{CATEGORY_PATHS[category] || "/admin"}</span>
-          </div>
-        </Card>
+                                <TableCell className="text-right">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setSelectedRecord(r)}
+                                    className="h-7 px-2 text-[11px]"
+                                  >
+                                    <EyeIcon className="size-3 mr-1" /> View
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            ))
+                          )}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+            )
+        )}
       </Tabs>
 
       {/* Record Inspector Modal */}
@@ -593,6 +789,63 @@ export function LegacyCmsClient({
         </DialogContent>
       </Dialog>
 
+      {/* Explicit Login Modal */}
+      <Dialog open={loginModalOpen} onOpenChange={setLoginModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <LogInIcon className="size-4 text-emerald-600" /> Log In to Noor Ethiopia CMS
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Enter admin credentials for <code className="text-foreground">https://cms.noorethiopia.com</code> to authenticate and establish a live session.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2 text-xs">
+            <div className="space-y-1">
+              <Label htmlFor="login-user">Email / Username</Label>
+              <Input
+                id="login-user"
+                value={loginForm.username}
+                onChange={(e) => setLoginForm({ ...loginForm, username: e.target.value })}
+                placeholder="ops@myseed.com"
+                className="h-9 text-xs"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <Label htmlFor="login-pass">Password</Label>
+              <Input
+                id="login-pass"
+                type="password"
+                value={loginForm.password}
+                onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
+                placeholder="Leave blank to use default (9V7x6antUAU6eyE)"
+                className="h-9 text-xs"
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Credentials are automatically sealed and authenticated via Livewire.
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" size="sm" onClick={() => setLoginModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleLoginSubmit}
+              disabled={loading}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+            >
+              {loading && <RefreshCwIcon className="mr-1.5 size-3.5 animate-spin" />}
+              Log In & Establish Session
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Settings & Credentials Modal */}
       <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
         <DialogContent className="max-w-md">
@@ -601,7 +854,7 @@ export function LegacyCmsClient({
               <LockIcon className="size-4 text-primary" /> Noor Ethiopia CMS Settings
             </DialogTitle>
             <DialogDescription className="text-xs">
-              Configure scraping credentials and background sync for <code className="text-foreground">https://cms.noorethiopia.com</code>.
+              Configure scraping credentials, background sync, and role category visibility.
             </DialogDescription>
           </DialogHeader>
 
@@ -624,7 +877,7 @@ export function LegacyCmsClient({
                   id="cms-user"
                   value={cfg.username}
                   onChange={(e) => setCfg({ ...cfg, username: e.target.value })}
-                  placeholder="admin@noorethiopia.com"
+                  placeholder="ops@myseed.com"
                   className="h-8 text-xs"
                 />
               </div>
@@ -642,7 +895,7 @@ export function LegacyCmsClient({
             </div>
 
             <div className="space-y-1">
-              <Label htmlFor="cms-cookie">Session Cookie (Optional / Bypass 2FA or Captcha)</Label>
+              <Label htmlFor="cms-cookie">Session Cookie (Optional / Bypass 2FA)</Label>
               <Input
                 id="cms-cookie"
                 type="password"
@@ -651,9 +904,6 @@ export function LegacyCmsClient({
                 placeholder={config.hasSessionCookie ? "•••••••• (Cookie active)" : "e.g. remember_web_... or session=..."}
                 className="h-8 text-xs font-mono"
               />
-              <p className="text-[11px] text-muted-foreground">
-                If the CMS requires browser 2FA, paste the session cookie from your browser once to scrape directly.
-              </p>
             </div>
 
             <div className="flex items-center justify-between rounded-lg border p-2.5">
@@ -753,4 +1003,3 @@ export function LegacyCmsClient({
     </div>
   );
 }
-

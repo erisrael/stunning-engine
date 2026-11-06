@@ -24,13 +24,43 @@ export async function saveLegacyCmsConfigAction(input: Parameters<typeof cms.sav
   }
 }
 
-export async function syncLegacyCmsAction(opts?: { force?: boolean }) {
+export async function syncLegacyCmsAction(opts?: { force?: boolean; category?: LegacyCmsCategory | "all" }) {
   try {
     const viewer = await requireViewer();
     const result = await cms.syncLegacyCms(viewer, opts);
-    return { ok: result.ok, message: result.message, counts: result.counts };
+    return { ok: result.ok, message: result.message, counts: result.counts, targetCategory: result.targetCategory };
   } catch (err: any) {
     return { ok: false, error: String(err?.message || err) };
+  }
+}
+
+export async function loginLegacyCmsAction(credentials?: { username?: string; password?: string }) {
+  try {
+    const viewer = await requireViewer();
+    const result = await cms.loginLegacyCms(viewer, credentials);
+    return result;
+  } catch (err: any) {
+    return { ok: false, message: String(err?.message || err) };
+  }
+}
+
+export async function checkLegacyCmsAuthAction() {
+  try {
+    const viewer = await requireViewer();
+    const result = await cms.checkLegacyCmsAuth(viewer);
+    return result;
+  } catch (err: any) {
+    return { ok: false, status: "error" as const, username: "", message: String(err?.message || err), ms: 0 };
+  }
+}
+
+export async function logoutLegacyCmsAction() {
+  try {
+    const viewer = await requireViewer();
+    const result = await cms.logoutLegacyCms(viewer);
+    return result;
+  } catch (err: any) {
+    return { ok: false, message: String(err?.message || err) };
   }
 }
 
