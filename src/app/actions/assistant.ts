@@ -35,6 +35,26 @@ export async function testAiAction() {
   return wrap(async () => ai.testAi(await requireViewer()), { revalidate: false });
 }
 
+export async function listAiModelsAction() {
+  return wrap(async () => ai.listAiModels(await requireViewer()), { revalidate: false });
+}
+
+export async function saveAiModelAction(input: Parameters<typeof ai.saveAiModel>[1]) {
+  return wrap(async () => ai.saveAiModel(await requireViewer(), input));
+}
+
+export async function deleteAiModelAction(id: string) {
+  return wrap(async () => ai.deleteAiModel(await requireViewer(), id));
+}
+
+export async function setDefaultAiModelAction(id: string) {
+  return wrap(async () => ai.setDefaultAiModel(await requireViewer(), id));
+}
+
+export async function testAiModelByIdAction(id: string) {
+  return wrap(async () => ai.testAiModelById(await requireViewer(), id), { revalidate: false });
+}
+
 // Routines (Phase 13d) and the assistant's options per role.
 import * as rt from "@/server/routines";
 import { WorkflowError } from "@/server/workflow";

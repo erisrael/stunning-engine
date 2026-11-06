@@ -64,3 +64,13 @@ export async function listChapaTransactionsAction(accountId?: string) {
   }
 }
 
+export async function clearAllChapaAccountsAction() {
+  try {
+    const viewer = await requireViewer();
+    await cp.clearAllChapaAccounts(viewer);
+    return { ok: true };
+  } catch (err: any) {
+    return { ok: false, error: String(err?.message || err) };
+  }
+}
+

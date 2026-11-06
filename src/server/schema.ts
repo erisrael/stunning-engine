@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 54;
+export const SCHEMA_VERSION = 55;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -3109,6 +3109,21 @@ CREATE TABLE IF NOT EXISTS chapa_accounts (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
+
+-- v31: Multi-AI Model API keys & providers
+CREATE TABLE IF NOT EXISTS ai_models (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  model TEXT NOT NULL,
+  api_key_enc TEXT,
+  custom_base_url TEXT,
+  is_default INTEGER NOT NULL DEFAULT 0,
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ai_models_provider ON ai_models(provider);
 `;
 
 // Tables in dependency order; used to empty the workspace and to export or restore backups.
@@ -3328,4 +3343,5 @@ export const TABLES = [
   "att_devices",
   "legacy_cms_records",
   "chapa_accounts",
+  "ai_models",
 ] as const;

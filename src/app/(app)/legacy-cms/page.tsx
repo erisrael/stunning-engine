@@ -1,5 +1,13 @@
 import { requireViewer } from "@/server/auth";
-import { getLegacyCmsConfig, listLegacyCmsRecords, getLegacyCmsStats, type LegacyCmsCategory } from "@/server/legacy-cms";
+import {
+  getLegacyCmsConfig,
+  listLegacyCmsRecords,
+  getLegacyCmsStats,
+  getCmsRoleVisibility,
+  LEGACY_CMS_CATEGORIES,
+  type LegacyCmsCategory,
+} from "@/server/legacy-cms";
+import { can } from "@/server/users";
 import { PageHeader } from "@/components/app/primitives";
 import { LegacyCmsClient } from "./legacy-cms-client";
 
@@ -12,7 +20,29 @@ export default async function LegacyCmsPage({
 }) {
   const viewer = await requireViewer();
   const sp = await searchParams;
-  const initialCategory: LegacyCmsCategory = (sp.category as LegacyCmsCategory) || "students";
+
+  const isAdmin = can(viewer, "users.manage") || can(viewer, "settings.manage");
+  const visibility = await getCmsRoleVisibility();
+
+  // Determine allowed categories for current user
+  let allowedCategories: LegacyCmsCategory[] = LEGACY_CMS_CATEGORIES.map((c) => c.key);
+  if (!isAdmin) {
+    const set = new Set<LegacyCmsCategory>();
+    for (const r of viewer.roles) {
+      const allowed = visibility[r] || [];
+      allowed.forEach((cat) => set.add(cat));
+    }
+    // Fallback if none matched
+    if (set.size > 0) {
+      allowedCategories = Array.from(set);
+    } else {
+      allowedCategories = ["students", "parents"];
+    }
+  }
+
+  const requestedCategory = sp.category as LegacyCmsCategory;
+  const initialCategory: LegacyCmsCategory =
+    allowedCategories.includes(requestedCategory) ? requestedCategory : allowedCategories[0] || "students";
 
   const config = await getLegacyCmsConfig();
   const initialRecords = await listLegacyCmsRecords(initialCategory, { limit: 100 });
@@ -29,8 +59,10 @@ export default async function LegacyCmsPage({
         initialCategory={initialCategory}
         initialRecords={initialRecords}
         stats={stats}
+        isAdmin={isAdmin}
+        allowedCategories={allowedCategories}
+        visibility={visibility}
       />
     </div>
   );
 }
-

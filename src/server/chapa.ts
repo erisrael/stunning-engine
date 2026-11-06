@@ -71,42 +71,8 @@ export async function listChapaAccounts(user: AppUser): Promise<ChapaAccount[]> 
     updated_at: string;
   }>("SELECT id, name, secret_key_enc, public_key, webhook_secret_enc, currency, active, created_at, updated_at FROM chapa_accounts ORDER BY created_at ASC");
 
-  // If no account exists yet, seed default default accounts for "MySeed Subscriptions" and "MySeed Donations"
   if (rows.length === 0) {
-    const subId = uid();
-    const donId = uid();
-    const now = nowIso();
-    const dummyKey = await seal("CHASECK_TEST-demo_key_sub_0192");
-    const dummyDonKey = await seal("CHASECK_TEST-demo_key_don_8821");
-
-    await run(
-      "INSERT INTO chapa_accounts (id, name, secret_key_enc, public_key, currency, active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-      subId,
-      "MySeed Subscriptions",
-      dummyKey,
-      "CHAPUBK_TEST-demo_pub_sub_0192",
-      "ETB",
-      1,
-      now,
-      now
-    );
-
-    await run(
-      "INSERT INTO chapa_accounts (id, name, secret_key_enc, public_key, currency, active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-      donId,
-      "MySeed Donations",
-      dummyDonKey,
-      "CHAPUBK_TEST-demo_pub_don_8821",
-      "ETB",
-      1,
-      now,
-      now
-    );
-
-    return [
-      { id: subId, name: "MySeed Subscriptions", publicKey: "CHAPUBK_TEST-demo_pub_sub_0192", currency: "ETB", active: true, createdAt: now, updatedAt: now, hasSecretKey: true, hasWebhookSecret: false },
-      { id: donId, name: "MySeed Donations", publicKey: "CHAPUBK_TEST-demo_pub_don_8821", currency: "ETB", active: true, createdAt: now, updatedAt: now, hasSecretKey: true, hasWebhookSecret: false },
-    ];
+    return [];
   }
 
   return rows.map((r) => ({
@@ -286,9 +252,19 @@ export async function fetchChapaBalances(user: AppUser): Promise<ChapaBalance[]>
   return out;
 }
 
+export async function clearAllChapaAccounts(user: AppUser): Promise<void> {
+  if (!can(user, "finance.access") && !can(user, "users.manage")) {
+    throw new WorkflowError("FORBIDDEN", "Only Admin can clear payment gateway accounts.");
+  }
+  await run("DELETE FROM chapa_accounts");
+  await audit({ actor: user }, { action: "finance.chapa_accounts_clear", summary: `${user.name} cleared all Chapa accounts` });
+}
+
 export async function listChapaTransactions(user: AppUser, accountId?: string): Promise<ChapaTransaction[]> {
   const accounts = await listChapaAccounts(user);
+  if (accounts.length === 0) return [];
   const targetAccounts = accountId ? accounts.filter((a) => a.id === accountId) : accounts;
+  if (targetAccounts.length === 0) return [];
 
   // Realistic transaction records across businesses
   const mockTx: ChapaTransaction[] = [

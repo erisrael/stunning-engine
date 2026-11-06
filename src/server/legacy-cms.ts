@@ -7,8 +7,9 @@
 //   - https://cms.noorethiopia.com/admin/subscription-histories
 //   - https://cms.noorethiopia.com/admin/invoices
 //   - https://cms.noorethiopia.com/admin/subscriptions
-// Scrapes HTML tables or JSON payloads, caches records in legacy_cms_records,
-// and provides rich searching/filtering for Support, Finance, and Admin.
+// Scrapes HTML tables via Livewire Filament v3 session or API payloads,
+// caches real records in legacy_cms_records, and provides rich searching/filtering
+// for Support, Finance, and Admin with granular role-based visibility controls.
 
 import { all, get, nowIso, parseJson, run, tx, uid, type Param } from "./db";
 import { seal, unseal } from "./secrets";
@@ -46,6 +47,14 @@ export type LegacyCmsConfig = {
   hasSessionCookie?: boolean;
 };
 
+export type CmsRoleVisibility = Record<string, LegacyCmsCategory[]>;
+
+export const DEFAULT_ROLE_VISIBILITY: CmsRoleVisibility = {
+  admin: ["students", "parents", "subscription-plans", "subscription-histories", "invoices", "subscriptions"],
+  support: ["students", "parents", "subscriptions", "subscription-plans"],
+  finance: ["invoices", "subscription-plans", "subscription-histories", "subscriptions"],
+};
+
 type StoredCmsConfig = {
   baseUrl?: string;
   username?: string;
@@ -60,7 +69,7 @@ type StoredCmsConfig = {
 
 const DEFAULT_CONFIG: LegacyCmsConfig = {
   baseUrl: "https://cms.noorethiopia.com",
-  username: "",
+  username: "ops@myseed.com",
   autoSync: true,
   syncIntervalMinutes: 30,
   lastSyncedAt: null,
@@ -68,22 +77,26 @@ const DEFAULT_CONFIG: LegacyCmsConfig = {
   lastSyncError: null,
 };
 
+const DEFAULT_PASSWORD = "9V7x6antUAU6eyE";
+
 export async function getLegacyCmsConfig(): Promise<LegacyCmsConfig> {
   const row = await get<{ value: string }>("SELECT value FROM settings WHERE key = 'cfg.legacy_cms'");
-  if (!row?.value) return DEFAULT_CONFIG;
-  const stored = parseJson<StoredCmsConfig>(row.value, {});
+  const stored = row?.value ? parseJson<StoredCmsConfig>(row.value, {}) : {};
+
+  const unsealedPw = stored.passwordEnc ? ((await unseal(stored.passwordEnc)) ?? "") : DEFAULT_PASSWORD;
+  const username = stored.username || DEFAULT_CONFIG.username;
 
   return {
     baseUrl: stored.baseUrl || DEFAULT_CONFIG.baseUrl,
-    username: stored.username || "",
-    password: stored.passwordEnc ? ((await unseal(stored.passwordEnc)) ?? "") : "",
+    username,
+    password: unsealedPw,
     sessionCookie: stored.sessionCookieEnc ? ((await unseal(stored.sessionCookieEnc)) ?? "") : "",
     autoSync: stored.autoSync ?? DEFAULT_CONFIG.autoSync,
     syncIntervalMinutes: Number(stored.syncIntervalMinutes ?? 30),
     lastSyncedAt: stored.lastSyncedAt || null,
     lastSyncStatus: stored.lastSyncStatus || "idle",
     lastSyncError: stored.lastSyncError || null,
-    hasPassword: !!stored.passwordEnc,
+    hasPassword: !!stored.passwordEnc || !!DEFAULT_PASSWORD,
     hasSessionCookie: !!stored.sessionCookieEnc,
   };
 }
@@ -142,119 +155,160 @@ export async function saveLegacyCmsConfig(
   await audit({ actor: user }, { action: "settings.legacy_cms", summary: `${user.name} updated Legacy CMS settings` });
 }
 
+export async function getCmsRoleVisibility(): Promise<CmsRoleVisibility> {
+  const row = await get<{ value: string }>("SELECT value FROM settings WHERE key = 'cfg.legacy_cms_roles'");
+  if (!row?.value) return DEFAULT_ROLE_VISIBILITY;
+  const stored = parseJson<CmsRoleVisibility>(row.value, DEFAULT_ROLE_VISIBILITY);
+  return { ...DEFAULT_ROLE_VISIBILITY, ...stored };
+}
+
+export async function saveCmsRoleVisibility(user: AppUser, visibility: CmsRoleVisibility) {
+  if (!can(user, "users.manage") && !can(user, "settings.manage")) {
+    throw new WorkflowError("FORBIDDEN", "Only Admin can manage CMS role permissions.");
+  }
+  await run(
+    "INSERT INTO settings (key, value, updated_at, updated_by) VALUES ('cfg.legacy_cms_roles', ?, ?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by",
+    JSON.stringify(visibility),
+    nowIso(),
+    user.id
+  );
+  await audit({ actor: user }, { action: "settings.legacy_cms_roles", summary: `${user.name} updated Legacy CMS role visibility permissions` });
+}
+
+export async function clearLegacyCmsData(user: AppUser, category?: LegacyCmsCategory): Promise<{ count: number }> {
+  if (!can(user, "data.manage") && !can(user, "users.manage")) {
+    throw new WorkflowError("FORBIDDEN", "Only Admin or Data Managers can clear Legacy CMS records.");
+  }
+  let query = "DELETE FROM legacy_cms_records";
+  const params: Param[] = [];
+  if (category) {
+    query += " WHERE category = ?";
+    params.push(category);
+  }
+  const res = await run(query, ...params);
+  await audit({ actor: user }, { action: "clear.legacy_cms", summary: `${user.name} cleared Legacy CMS records${category ? ` (${category})` : ""}` });
+  return { count: res.changes || 0 };
+}
+
 // ---------------------------------------------------------------------------
-// Scraper & Sync Engine
+// Filament v3 Table Scraper & Livewire Authenticator
 // ---------------------------------------------------------------------------
 
-function parseHtmlTable(html: string): Record<string, string>[] {
-  const rows: Record<string, string>[] = [];
-  // Extract table
-  const tableMatch = html.match(/<table[\s\S]*?<\/table>/i);
-  if (!tableMatch) return rows;
+function parseFilamentTable(html: string): Record<string, string>[] {
+  const tableMatch = html.match(/<table\b[\s\S]*?<\/table>/i);
+  if (!tableMatch) return [];
   const tableHtml = tableMatch[0];
 
-  // Extract headers
-  const headerMatches = [...tableHtml.matchAll(/<th[\s\S]*?>([\s\S]*?)<\/th>/gi)];
-  const headers = headerMatches.map((m) =>
-    m[1]
-      .replace(/<[^>]+>/g, "")
-      .replace(/&nbsp;/g, " ")
-      .trim()
-  );
-
-  if (headers.length === 0) return rows;
-
-  // Extract rows
-  const trMatches = [...tableHtml.matchAll(/<tr[\s\S]*?>([\s\S]*?)<\/tr>/gi)];
-  for (const tr of trMatches) {
-    const tdMatches = [...tr[1].matchAll(/<td[\s\S]*?>([\s\S]*?)<\/td>/gi)];
-    if (tdMatches.length === 0) continue;
-
-    const rowObj: Record<string, string> = {};
-    tdMatches.forEach((td, idx) => {
-      const colName = headers[idx] || `col_${idx + 1}`;
-      const text = td[1]
-        .replace(/<[^>]+>/g, " ")
-        .replace(/&nbsp;/g, " ")
-        .replace(/\s+/g, " ")
-        .trim();
-      rowObj[colName] = text;
-    });
-
-    if (Object.keys(rowObj).length > 0) {
-      rows.push(rowObj);
-    }
+  // TH headers (using word boundary so <thead is not matched)
+  const headerMatches = [...tableHtml.matchAll(/<th\b[\s\S]*?>([\s\S]*?)<\/th>/gi)];
+  const headers: string[] = [];
+  for (const hm of headerMatches) {
+    const rawTh = hm[0];
+    if (rawTh.includes("fi-ta-actions-header-cell") || rawTh.includes("Select/deselect")) continue;
+    const label = hm[1].replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+    if (label) headers.push(label);
   }
 
+  const tbodyMatch = tableHtml.match(/<tbody\b[\s\S]*?<\/tbody>/i);
+  if (!tbodyMatch) return [];
+
+  const trMatches = [...tbodyMatch[0].matchAll(/<tr\b[\s\S]*?>([\s\S]*?)<\/tr>/gi)];
+  const rows: Record<string, string>[] = [];
+  for (const tr of trMatches) {
+    const tdMatches = [...tr[1].matchAll(/<td\b([\s\S]*?)>([\s\S]*?)<\/td>/gi)];
+    // Filter out selection cell and action cell
+    const validTds = tdMatches.filter((td) => {
+      const attrs = td[1];
+      if (attrs.includes("fi-ta-selection-cell")) return false;
+      const text = td[2].replace(/<[^>]+>/g, "").trim();
+      if (text === "View Edit Delete" || text === "View" || text === "Edit") return false;
+      return true;
+    });
+
+    if (validTds.length === 0) continue;
+
+    const rowObj: Record<string, string> = {};
+    headers.forEach((h, idx) => {
+      const td = validTds[idx];
+      if (!td) {
+        rowObj[h] = "";
+        return;
+      }
+      let val = td[2].replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+      if (!val) {
+        if (td[2].includes("fi-color-success")) val = "Yes";
+        else if (td[2].includes("fi-color-danger")) val = "No";
+      }
+      rowObj[h] = val;
+    });
+    rows.push(rowObj);
+  }
   return rows;
 }
 
-// Seeded dataset representing authentic Noor Ethiopia CMS structure
-function getMockCategoryData(category: LegacyCmsCategory): Record<string, unknown>[] {
-  switch (category) {
-    case "students":
-      return [
-        { id: "STD-1001", name: "Abebe Bekele", grade: "Grade 9", parent_name: "Bekele Tadesse", phone: "+251911223344", email: "abebe.b@noorethiopia.com", status: "Active", joined_at: "2026-09-01", courses: "Math, Physics, Biology" },
-        { id: "STD-1002", name: "Hanan Mohammed", grade: "Grade 11", parent_name: "Mohammed Ibrahim", phone: "+251922334455", email: "hanan.m@noorethiopia.com", status: "Active", joined_at: "2026-09-05", courses: "English, History, Civics" },
-        { id: "STD-1003", name: "Yonas Girma", grade: "Grade 8", parent_name: "Girma Haile", phone: "+251933445566", email: "yonas.g@noorethiopia.com", status: "Active", joined_at: "2026-09-10", courses: "General Science, Math, Amharic" },
-        { id: "STD-1004", name: "Selamawit Kebede", grade: "Grade 12", parent_name: "Kebede Alemu", phone: "+251944556677", email: "selam.k@noorethiopia.com", status: "Expired", joined_at: "2026-08-15", courses: "Math, Chemistry, Physics" },
-        { id: "STD-1005", name: "Dawit Tesfaye", grade: "Grade 10", parent_name: "Tesfaye Wolde", phone: "+251955667788", email: "dawit.t@noorethiopia.com", status: "Pending", joined_at: "2026-10-02", courses: "Economics, Geography, History" },
-        { id: "STD-1006", name: "Fatima Ahmed", grade: "Grade 7", parent_name: "Ahmed Nur", phone: "+251966778899", email: "fatima.a@noorethiopia.com", status: "Active", joined_at: "2026-09-18", courses: "Math, English, Science" },
-        { id: "STD-1007", name: "Kidus Solomon", grade: "Grade 11", parent_name: "Solomon Fikre", phone: "+251977889900", email: "kidus.s@noorethiopia.com", status: "Active", joined_at: "2026-09-22", courses: "IT, Physics, Math" },
-        { id: "STD-1008", name: "Marta Desta", grade: "Grade 9", parent_name: "Desta Negash", phone: "+251988990011", email: "marta.d@noorethiopia.com", status: "Active", joined_at: "2026-09-25", courses: "Biology, Chemistry, English" },
-      ];
-    case "parents":
-      return [
-        { id: "PAR-2001", name: "Bekele Tadesse", phone: "+251911223344", email: "bekele.t@gmail.com", students: "Abebe Bekele (Grade 9)", address: "Bole Sub-city, Woreda 03, Addis Ababa", registered_at: "2026-08-20", status: "Verified" },
-        { id: "PAR-2002", name: "Mohammed Ibrahim", phone: "+251922334455", email: "m.ibrahim@yahoo.com", students: "Hanan Mohammed (Grade 11)", address: "Arada Sub-city, Addis Ababa", registered_at: "2026-08-22", status: "Verified" },
-        { id: "PAR-2003", name: "Girma Haile", phone: "+251933445566", email: "girma.h@ethionet.et", students: "Yonas Girma (Grade 8)", address: "Yeka Sub-city, Megenagna, Addis Ababa", registered_at: "2026-08-28", status: "Verified" },
-        { id: "PAR-2004", name: "Kebede Alemu", phone: "+251944556677", email: "kebede.a@outlook.com", students: "Selamawit Kebede (Grade 12)", address: "Nifas Silk-Lafto, Addis Ababa", registered_at: "2026-08-10", status: "Pending" },
-        { id: "PAR-2005", name: "Tesfaye Wolde", phone: "+251955667788", email: "tesfaye.w@gmail.com", students: "Dawit Tesfaye (Grade 10)", address: "Kirkos Sub-city, Kazanchis, Addis Ababa", registered_at: "2026-09-30", status: "Verified" },
-        { id: "PAR-2006", name: "Ahmed Nur", phone: "+251966778899", email: "ahmed.nur@gmail.com", students: "Fatima Ahmed (Grade 7)", address: "Kolfe Keranio, Addis Ababa", registered_at: "2026-09-12", status: "Verified" },
-        { id: "PAR-2007", name: "Solomon Fikre", phone: "+251977889900", email: "solomon.fikre@gmail.com", students: "Kidus Solomon (Grade 11)", address: "Gullele Sub-city, Addis Ababa", registered_at: "2026-09-15", status: "Verified" },
-        { id: "PAR-2008", name: "Desta Negash", phone: "+251988990011", email: "desta.negash@yahoo.com", students: "Marta Desta (Grade 9)", address: "Akaki Kality, Addis Ababa", registered_at: "2026-09-20", status: "Verified" },
-      ];
-    case "subscription-plans":
-      return [
-        { id: "PLN-101", title: "Standard Term Plan (Grade 7-8)", duration: "3 Months", price: "1,500 ETB", currency: "ETB", max_devices: "2", status: "Active", features: "Full curriculum videos, workbooks, weekly quizzes" },
-        { id: "PLN-102", title: "Secondary Term Plan (Grade 9-10)", duration: "3 Months", price: "2,200 ETB", currency: "ETB", max_devices: "2", status: "Active", features: "All subjects, practice exams, offline video downloads" },
-        { id: "PLN-103", title: "National Exam Prep (Grade 12)", duration: "6 Months", price: "3,800 ETB", currency: "ETB", max_devices: "3", status: "Active", features: "10-year entrance exam walkthroughs, live Q&A sessions" },
-        { id: "PLN-104", title: "Annual All-Access Pass", duration: "12 Months", price: "6,500 ETB", currency: "ETB", max_devices: "4", status: "Active", features: "Unlimited access across all grades and subjects" },
-        { id: "PLN-105", title: "Trial Starter", duration: "7 Days", price: "0 ETB", currency: "ETB", max_devices: "1", status: "Active", features: "Sample lessons and introductory quizzes" },
-      ];
-    case "subscription-histories":
-      return [
-        { id: "HIST-301", student_name: "Abebe Bekele", plan: "Secondary Term Plan (Grade 9-10)", period: "2026-09-01 to 2026-12-01", amount: "2,200 ETB", status: "Active", renewed_on: "2026-09-01", payment_ref: "CBE-98234190" },
-        { id: "HIST-302", student_name: "Hanan Mohammed", plan: "National Exam Prep (Grade 12)", period: "2026-09-05 to 2027-03-05", amount: "3,800 ETB", status: "Active", renewed_on: "2026-09-05", payment_ref: "TEL-77291033" },
-        { id: "HIST-303", student_name: "Yonas Girma", plan: "Standard Term Plan (Grade 7-8)", period: "2026-09-10 to 2026-12-10", amount: "1,500 ETB", status: "Active", renewed_on: "2026-09-10", payment_ref: "CBE-88129034" },
-        { id: "HIST-304", student_name: "Selamawit Kebede", plan: "Secondary Term Plan (Grade 9-10)", period: "2026-05-15 to 2026-08-15", amount: "2,200 ETB", status: "Expired", renewed_on: "2026-05-15", payment_ref: "CBE-44910283" },
-        { id: "HIST-305", student_name: "Dawit Tesfaye", plan: "Secondary Term Plan (Grade 9-10)", period: "2026-10-02 to 2027-01-02", amount: "2,200 ETB", status: "Pending Approval", renewed_on: "2026-10-02", payment_ref: "AWASH-192837" },
-        { id: "HIST-306", student_name: "Fatima Ahmed", plan: "Standard Term Plan (Grade 7-8)", period: "2026-09-18 to 2026-12-18", amount: "1,500 ETB", status: "Active", renewed_on: "2026-09-18", payment_ref: "TEL-99382104" },
-        { id: "HIST-307", student_name: "Kidus Solomon", plan: "National Exam Prep (Grade 12)", period: "2026-09-22 to 2027-03-22", amount: "3,800 ETB", status: "Active", renewed_on: "2026-09-22", payment_ref: "CBE-55102934" },
-      ];
-    case "invoices":
-      return [
-        { id: "INV-5001", student: "Abebe Bekele", parent: "Bekele Tadesse", phone: "+251911223344", amount: "2,200 ETB", method: "CBE Birr", reference: "CBE-98234190", status: "Paid", issue_date: "2026-09-01", paid_date: "2026-09-01" },
-        { id: "INV-5002", student: "Hanan Mohammed", parent: "Mohammed Ibrahim", phone: "+251922334455", amount: "3,800 ETB", method: "Telebirr", reference: "TEL-77291033", status: "Paid", issue_date: "2026-09-05", paid_date: "2026-09-05" },
-        { id: "INV-5003", student: "Yonas Girma", parent: "Girma Haile", phone: "+251933445566", amount: "1,500 ETB", method: "Commercial Bank of Ethiopia", reference: "CBE-88129034", status: "Paid", issue_date: "2026-09-10", paid_date: "2026-09-10" },
-        { id: "INV-5004", student: "Selamawit Kebede", parent: "Kebede Alemu", phone: "+251944556677", amount: "2,200 ETB", method: "CBE Birr", reference: "CBE-44910283", status: "Paid", issue_date: "2026-05-15", paid_date: "2026-05-15" },
-        { id: "INV-5005", student: "Dawit Tesfaye", parent: "Tesfaye Wolde", phone: "+251955667788", amount: "2,200 ETB", method: "Awash Bank Transfer", reference: "AWASH-192837", status: "Pending Verification", issue_date: "2026-10-02", paid_date: "—" },
-        { id: "INV-5006", student: "Fatima Ahmed", parent: "Ahmed Nur", phone: "+251966778899", amount: "1,500 ETB", method: "Telebirr", reference: "TEL-99382104", status: "Paid", issue_date: "2026-09-18", paid_date: "2026-09-18" },
-        { id: "INV-5007", student: "Kidus Solomon", parent: "Solomon Fikre", phone: "+251977889900", amount: "3,800 ETB", method: "Commercial Bank of Ethiopia", reference: "CBE-55102934", status: "Paid", issue_date: "2026-09-22", paid_date: "2026-09-22" },
-        { id: "INV-5008", student: "Marta Desta", parent: "Desta Negash", phone: "+251988990011", amount: "2,200 ETB", method: "Telebirr", reference: "TEL-11223344", status: "Paid", issue_date: "2026-09-25", paid_date: "2026-09-25" },
-      ];
-    case "subscriptions":
-      return [
-        { id: "SUB-801", student_name: "Abebe Bekele", parent_phone: "+251911223344", plan: "Secondary Term Plan", grade: "Grade 9", start_date: "2026-09-01", expires_at: "2026-12-01", status: "Active", auto_renew: "Yes" },
-        { id: "SUB-802", student_name: "Hanan Mohammed", parent_phone: "+251922334455", plan: "National Exam Prep", grade: "Grade 11", start_date: "2026-09-05", expires_at: "2027-03-05", status: "Active", auto_renew: "Yes" },
-        { id: "SUB-803", student_name: "Yonas Girma", parent_phone: "+251933445566", plan: "Standard Term Plan", grade: "Grade 8", start_date: "2026-09-10", expires_at: "2026-12-10", status: "Active", auto_renew: "No" },
-        { id: "SUB-804", student_name: "Selamawit Kebede", parent_phone: "+251944556677", plan: "Secondary Term Plan", grade: "Grade 12", start_date: "2026-05-15", expires_at: "2026-08-15", status: "Expired", auto_renew: "No" },
-        { id: "SUB-805", student_name: "Dawit Tesfaye", parent_phone: "+251955667788", plan: "Secondary Term Plan", grade: "Grade 10", start_date: "2026-10-02", expires_at: "2027-01-02", status: "Awaiting Payment", auto_renew: "Yes" },
-        { id: "SUB-806", student_name: "Fatima Ahmed", parent_phone: "+251966778899", plan: "Standard Term Plan", grade: "Grade 7", start_date: "2026-09-18", expires_at: "2026-12-18", status: "Active", auto_renew: "Yes" },
-        { id: "SUB-807", student_name: "Kidus Solomon", parent_phone: "+251977889900", plan: "National Exam Prep", grade: "Grade 11", start_date: "2026-09-22", expires_at: "2027-03-22", status: "Active", auto_renew: "Yes" },
-        { id: "SUB-808", student_name: "Marta Desta", parent_phone: "+251988990011", plan: "Secondary Term Plan", grade: "Grade 9", start_date: "2026-09-25", expires_at: "2026-12-25", status: "Active", auto_renew: "Yes" },
-      ];
+async function authenticateFilament(baseUrl: string, username: string, password: string): Promise<string> {
+  const loginUrl = `${baseUrl}/admin/login`;
+  const getRes = await fetch(loginUrl, {
+    headers: {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    },
+  });
+  if (!getRes.ok) {
+    throw new Error(`Failed to load login page: HTTP ${getRes.status} ${getRes.statusText}`);
   }
+
+  const rawCookies = (getRes.headers as any).getSetCookie ? (getRes.headers as any).getSetCookie() : [getRes.headers.get("set-cookie") || ""];
+  const initialCookies = rawCookies.map((c: string) => c.split(";")[0]).filter(Boolean).join("; ");
+  const html = await getRes.text();
+
+  const csrfMatch = html.match(/name="csrf-token" content="([^"]+)"/i);
+  const csrf = csrfMatch ? csrfMatch[1] : "";
+  const snapshotMatch = html.match(/wire:snapshot="([^"]+)"/i);
+  const updateUriMatch = html.match(/data-update-uri="([^"]+)"/i);
+
+  if (!snapshotMatch || !updateUriMatch) {
+    return initialCookies;
+  }
+
+  const snapshot = JSON.parse(snapshotMatch[1].replace(/&quot;/g, '"'));
+  const updateUrl = updateUriMatch[1].startsWith("http")
+    ? updateUriMatch[1]
+    : `${baseUrl}${updateUriMatch[1].startsWith("/") ? "" : "/"}${updateUriMatch[1]}`;
+
+  const payload = {
+    _token: csrf,
+    components: [
+      {
+        snapshot: JSON.stringify(snapshot),
+        updates: {
+          "data.email": username,
+          "data.password": password,
+          "data.remember": true,
+        },
+        calls: [{ path: "", method: "authenticate", params: [] }],
+      },
+    ],
+  };
+
+  const lwRes = await fetch(updateUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-CSRF-TOKEN": csrf,
+      "X-Livewire": "true",
+      "Cookie": initialCookies,
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const lwCookies = (lwRes.headers as any).getSetCookie ? (lwRes.headers as any).getSetCookie() : [lwRes.headers.get("set-cookie") || ""];
+  const authCookieHeader = [...rawCookies, ...lwCookies]
+    .map((c: string) => c.split(";")[0])
+    .filter(Boolean)
+    .join("; ");
+
+  return authCookieHeader;
 }
 
 export async function syncLegacyCms(
@@ -285,18 +339,21 @@ export async function syncLegacyCms(
   };
 
   try {
-    const headers: Record<string, string> = {
-      "User-Agent": "MySeed-Operations/1.0 (+https://myseedops.tech)",
-      Accept: "text/html,application/xhtml+xml,application/json,*/*",
-    };
+    const baseUrl = config.baseUrl.replace(/\/+$/, "");
+    let cookieHeader = config.sessionCookie || "";
 
-    if (config.sessionCookie) {
-      headers["Cookie"] = config.sessionCookie;
-    } else if (config.username && config.password) {
-      headers["Authorization"] = `Basic ${Buffer.from(`${config.username}:${config.password}`).toString("base64")}`;
+    // Authenticate with Livewire if credentials provided and no explicit cookie
+    if (!cookieHeader && config.username && config.password) {
+      cookieHeader = await authenticateFilament(baseUrl, config.username, config.password);
     }
 
-    const baseUrl = config.baseUrl.replace(/\/+$/, "");
+    const headers: Record<string, string> = {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+      Accept: "text/html,application/xhtml+xml,application/json,*/*",
+    };
+    if (cookieHeader) {
+      headers["Cookie"] = cookieHeader;
+    }
 
     for (const cat of LEGACY_CMS_CATEGORIES) {
       let records: Record<string, unknown>[] = [];
@@ -304,7 +361,7 @@ export async function syncLegacyCms(
 
       try {
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 12000);
+        const timeout = setTimeout(() => controller.abort(), 20000);
         const res = await fetch(targetUrl, { headers, signal: controller.signal });
         clearTimeout(timeout);
 
@@ -315,35 +372,20 @@ export async function syncLegacyCms(
             records = Array.isArray(json) ? json : json.data || json.rows || json.items || [];
           } else {
             const html = await res.text();
-            // Check if page embeds inertia / JSON props
-            const inertiaMatch = html.match(/data-page="([^"]+)"/i);
-            if (inertiaMatch) {
-              try {
-                const decoded = JSON.parse(inertiaMatch[1].replace(/&quot;/g, '"'));
-                const pageProps = decoded.props || {};
-                records = pageProps.students || pageProps.parents || pageProps.plans || pageProps.invoices || pageProps.subscriptions || pageProps.rows || [];
-              } catch {}
-            }
-            if (records.length === 0) {
-              records = parseHtmlTable(html);
-            }
+            records = parseFilamentTable(html);
           }
         }
       } catch (fetchErr) {
-        // Site unreachable or requiring web session login: fallback to pre-seeded mock dataset
+        console.warn(`[legacy-cms] Failed to fetch ${targetUrl}:`, fetchErr);
       }
 
-      if (records.length === 0) {
-        records = getMockCategoryData(cat.key);
-      }
-
-      // Persist in db transaction
+      // Persist real scraped records into database transaction
       await tx(async () => {
         await run("DELETE FROM legacy_cms_records WHERE category = ?", cat.key);
         for (const r of records) {
           const recordId = uid();
           const extId = String(r.id || r.ID || r.student_id || r.code || r.invoice_number || uid());
-          const title = String(r.name || r.title || r.student_name || r.student || r.plan || extId);
+          const title = String(r.name || r.Name || r.title || r.Title || r.student_name || r.Student || r.Parent || extId);
           await run(
             "INSERT INTO legacy_cms_records (id, category, external_id, title, data_json, synced_at) VALUES (?, ?, ?, ?, ?, ?)",
             recordId,
@@ -369,7 +411,7 @@ export async function syncLegacyCms(
 
     await audit({ actor: user }, { action: "sync.legacy_cms", summary: `${user.name} synced Legacy Noor Ethiopia CMS data` });
 
-    return { ok: true, message: "Legacy CMS synchronized successfully.", counts };
+    return { ok: true, message: `Legacy CMS synchronized successfully (${Object.values(counts).reduce((a, b) => a + b, 0)} records).`, counts };
   } catch (err: any) {
     const errorMsg = String(err?.message || err);
     const updatedStored: StoredCmsConfig = {
@@ -399,28 +441,6 @@ export async function listLegacyCmsRecords(
   category: LegacyCmsCategory,
   opts: { q?: string; limit?: number; offset?: number } = {}
 ): Promise<{ rows: LegacyCmsRecord[]; total: number }> {
-  // Ensure table has data, otherwise seed it once
-  const existCount = await get<{ c: number }>("SELECT COUNT(*) AS c FROM legacy_cms_records WHERE category = ?", category);
-  if (!existCount || Number(existCount.c) === 0) {
-    const mock = getMockCategoryData(category);
-    await tx(async () => {
-      for (const r of mock) {
-        const recordId = uid();
-        const extId = String(r.id || r.ID || r.student_id || r.code || r.invoice_number || uid());
-        const title = String(r.name || r.title || r.student_name || r.student || r.plan || extId);
-        await run(
-          "INSERT INTO legacy_cms_records (id, category, external_id, title, data_json, synced_at) VALUES (?, ?, ?, ?, ?, ?)",
-          recordId,
-          category,
-          extId,
-          title,
-          JSON.stringify(r),
-          nowIso()
-        );
-      }
-    });
-  }
-
   const limit = Math.min(200, Math.max(1, opts.limit ?? 50));
   const offset = Math.max(0, opts.offset ?? 0);
   const q = opts.q?.trim().toLowerCase();

@@ -125,6 +125,270 @@ export async function saveAiConfig(user: AppUser, input: Partial<AiConfig> & { k
   await audit({ actor: user }, { action: "settings.assistant.ai", summary: `${user.name} ${next.on ? "turned on" : "turned off"} the AI assistant (${next.model})${input.key?.trim() ? "; a new API key was saved" : ""}${input.clearKey ? "; the API key was removed" : ""}` });
 }
 
+export type StoredAiModel = {
+  id: string;
+  name: string;
+  provider: AiProvider;
+  model: string;
+  apiKeyEnc?: string | null;
+  customBaseUrl?: string | null;
+  isDefault: boolean;
+  active: boolean;
+  hasKey?: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export async function listAiModels(user: AppUser): Promise<StoredAiModel[]> {
+  const rows = await all<{
+    id: string;
+    name: string;
+    provider: string;
+    model: string;
+    api_key_enc: string | null;
+    custom_base_url: string | null;
+    is_default: number;
+    active: number;
+    created_at: string;
+    updated_at: string;
+  }>("SELECT id, name, provider, model, api_key_enc, custom_base_url, is_default, active, created_at, updated_at FROM ai_models ORDER BY is_default DESC, name ASC");
+
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    provider: r.provider as AiProvider,
+    model: r.model,
+    hasKey: !!r.api_key_enc,
+    customBaseUrl: r.custom_base_url,
+    isDefault: !!r.is_default,
+    active: !!r.active,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  }));
+}
+
+export async function saveAiModel(
+  user: AppUser,
+  input: {
+    id?: string;
+    name: string;
+    provider: AiProvider;
+    model: string;
+    apiKey?: string | null;
+    customBaseUrl?: string | null;
+    isDefault?: boolean;
+    active?: boolean;
+  }
+) {
+  if (!can(user, "users.manage") && !can(user, "settings.manage")) {
+    throw new WorkflowError("FORBIDDEN", "Only Admin can manage AI models and API keys.");
+  }
+  const name = input.name.trim();
+  if (!name) throw new WorkflowError("VALIDATION", "Model name is required.");
+  const provider = input.provider;
+  const model = input.model.trim();
+  if (!model) throw new WorkflowError("VALIDATION", "Model identifier is required.");
+
+  const now = nowIso();
+  const id = input.id || uid();
+
+  if (input.isDefault) {
+    await run("UPDATE ai_models SET is_default = 0");
+  }
+
+  const existing = input.id
+    ? await get<{ id: string; api_key_enc: string | null }>("SELECT id, api_key_enc FROM ai_models WHERE id = ?", input.id)
+    : null;
+
+  let apiKeyEnc = existing?.api_key_enc ?? null;
+  if (input.apiKey && input.apiKey.trim()) {
+    apiKeyEnc = await seal(input.apiKey.trim());
+  }
+
+  const isDefault = input.isDefault ? 1 : 0;
+  const active = input.active !== undefined ? (input.active ? 1 : 0) : 1;
+  const customBaseUrl = input.customBaseUrl?.trim() || null;
+
+  if (existing) {
+    await run(
+      "UPDATE ai_models SET name = ?, provider = ?, model = ?, api_key_enc = ?, custom_base_url = ?, is_default = ?, active = ?, updated_at = ? WHERE id = ?",
+      name,
+      provider,
+      model,
+      apiKeyEnc,
+      customBaseUrl,
+      isDefault,
+      active,
+      now,
+      id
+    );
+  } else {
+    await run(
+      "INSERT INTO ai_models (id, name, provider, model, api_key_enc, custom_base_url, is_default, active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      id,
+      name,
+      provider,
+      model,
+      apiKeyEnc,
+      customBaseUrl,
+      isDefault,
+      active,
+      now,
+      now
+    );
+  }
+
+  if (input.isDefault) {
+    const curCfg = await stored();
+    const nextCfg: Stored = {
+      ...curCfg,
+      provider,
+      model,
+      customBaseUrl,
+      keyEnc: apiKeyEnc,
+    };
+    await run(
+      "INSERT INTO settings (key, value, updated_at, updated_by) VALUES ('cfg.assistant.ai', ?, ?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by",
+      JSON.stringify(nextCfg),
+      now,
+      user.id
+    );
+  }
+
+  await audit({ actor: user }, { action: "settings.ai_model", summary: `${user.name} saved AI model ${name} (${provider}/${model})` });
+  return { id };
+}
+
+export async function deleteAiModel(user: AppUser, id: string) {
+  if (!can(user, "users.manage") && !can(user, "settings.manage")) {
+    throw new WorkflowError("FORBIDDEN", "Only Admin can delete AI models.");
+  }
+  const row = await get<{ name: string; is_default: number }>("SELECT name, is_default FROM ai_models WHERE id = ?", id);
+  if (!row) return;
+
+  await run("DELETE FROM ai_models WHERE id = ?", id);
+  if (row.is_default) {
+    const next = await get<{ id: string }>("SELECT id FROM ai_models WHERE active = 1 LIMIT 1");
+    if (next) {
+      await run("UPDATE ai_models SET is_default = 1 WHERE id = ?", next.id);
+    }
+  }
+
+  await audit({ actor: user }, { action: "settings.ai_model.delete", summary: `${user.name} deleted AI model ${row.name}` });
+}
+
+export async function setDefaultAiModel(user: AppUser, id: string) {
+  if (!can(user, "users.manage") && !can(user, "settings.manage")) {
+    throw new WorkflowError("FORBIDDEN", "Only Admin can set default AI model.");
+  }
+  const row = await get<{ id: string; name: string; provider: string; model: string; api_key_enc: string | null; custom_base_url: string | null }>(
+    "SELECT id, name, provider, model, api_key_enc, custom_base_url FROM ai_models WHERE id = ?",
+    id
+  );
+  if (!row) throw new WorkflowError("NOT_FOUND", "AI model not found.");
+
+  await run("UPDATE ai_models SET is_default = 0");
+  await run("UPDATE ai_models SET is_default = 1, active = 1 WHERE id = ?", id);
+
+  const curCfg = await stored();
+  const nextCfg: Stored = {
+    ...curCfg,
+    provider: row.provider as AiProvider,
+    model: row.model,
+    customBaseUrl: row.custom_base_url,
+    keyEnc: row.api_key_enc || curCfg.keyEnc,
+  };
+  await run(
+    "INSERT INTO settings (key, value, updated_at, updated_by) VALUES ('cfg.assistant.ai', ?, ?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by",
+    JSON.stringify(nextCfg),
+    nowIso(),
+    user.id
+  );
+
+  await audit({ actor: user }, { action: "settings.ai_model.default", summary: `${user.name} set default AI model to ${row.name}` });
+}
+
+export async function testAiModelById(user: AppUser, id: string): Promise<{ ok: boolean; response: string }> {
+  if (!can(user, "users.manage") && !can(user, "settings.manage")) {
+    throw new WorkflowError("FORBIDDEN", "Only Admin can test AI models.");
+  }
+  const row = await get<{ id: string; name: string; provider: string; model: string; api_key_enc: string | null; custom_base_url: string | null }>(
+    "SELECT id, name, provider, model, api_key_enc, custom_base_url FROM ai_models WHERE id = ?",
+    id
+  );
+  if (!row) throw new WorkflowError("NOT_FOUND", "AI model not found.");
+
+  let key: string | null = null;
+  if (row.api_key_enc) {
+    key = await unseal(row.api_key_enc);
+  }
+  if (!key) {
+    if (row.provider === "gemini") key = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || null;
+    else if (row.provider === "openai") key = process.env.OPENAI_API_KEY || null;
+    else if (row.provider === "anthropic") key = process.env.ANTHROPIC_API_KEY || null;
+  }
+
+  if (!key && !fake()) {
+    throw new WorkflowError("INVALID_STATE", `No API key configured for model "${row.name}". Enter an API key.`);
+  }
+
+  if (fake()) {
+    return { ok: true, response: `[Fake Test] Model ${row.name} (${row.provider}/${row.model}) connected successfully.` };
+  }
+
+  try {
+    if (row.provider === "gemini") {
+      const model = row.model.startsWith("gemini") ? row.model : "gemini-2.5-flash";
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: "Hello, reply in one sentence confirming you are online." }] }],
+        }),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`);
+      }
+      const data = await res.json();
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || "Connected successfully.";
+      return { ok: true, response: text.trim() };
+    } else if (row.provider === "openai" || row.provider === "custom") {
+      const endpoint = row.custom_base_url
+        ? `${row.custom_base_url.replace(/\/+$/, "")}/chat/completions`
+        : "https://api.openai.com/v1/chat/completions";
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+        body: JSON.stringify({
+          model: row.model,
+          messages: [{ role: "user", content: "Hello, reply in one sentence confirming you are online." }],
+          max_tokens: 50,
+        }),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`);
+      }
+      const data = await res.json();
+      const content = data.choices?.[0]?.message?.content?.trim() || "Connected successfully.";
+      return { ok: true, response: content };
+    } else {
+      const client = new Anthropic({ apiKey: key!, timeout: 30_000 });
+      const res = await client.messages.create({
+        model: row.model,
+        max_tokens: 50,
+        messages: [{ role: "user", content: "Hello, reply in one sentence confirming you are online." }],
+      });
+      const text = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("").trim();
+      return { ok: true, response: text || "Connected successfully." };
+    }
+  } catch (err: any) {
+    throw new WorkflowError("INVALID_STATE", `Model test failed: ${err?.message || err}`);
+  }
+}
+
 // Whether this person gets the AI (the client hides it otherwise).
 export async function aiAvailable(user: AppUser & { activeRole: string }) {
   const c = await stored();

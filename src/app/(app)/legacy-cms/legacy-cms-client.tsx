@@ -25,6 +25,7 @@ import {
   AlertCircleIcon,
   LockIcon,
   DatabaseIcon,
+  Trash2Icon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -65,11 +66,14 @@ import {
   syncLegacyCmsAction,
   saveLegacyCmsConfigAction,
   listLegacyCmsRecordsAction,
+  clearLegacyCmsDataAction,
+  saveCmsRoleVisibilityAction,
 } from "@/app/actions/legacy-cms";
 import type {
   LegacyCmsCategory,
   LegacyCmsConfig,
   LegacyCmsRecord,
+  CmsRoleVisibility,
 } from "@/server/legacy-cms";
 import { cn } from "@/lib/utils";
 
@@ -87,6 +91,9 @@ export function LegacyCmsClient({
   initialCategory,
   initialRecords,
   stats,
+  isAdmin = true,
+  allowedCategories = ["students", "parents", "subscriptions", "invoices", "subscription-plans", "subscription-histories"],
+  visibility,
 }: {
   config: LegacyCmsConfig;
   initialCategory: LegacyCmsCategory;
@@ -99,6 +106,9 @@ export function LegacyCmsClient({
     invoicesCount: number;
     lastSyncedAt: string | null;
   };
+  isAdmin?: boolean;
+  allowedCategories?: LegacyCmsCategory[];
+  visibility?: CmsRoleVisibility;
 }) {
   const router = useRouter();
   const [category, setCategory] = React.useState<LegacyCmsCategory>(initialCategory);
@@ -111,11 +121,18 @@ export function LegacyCmsClient({
   const [settingsOpen, setSettingsOpen] = React.useState(false);
   const [selectedRecord, setSelectedRecord] = React.useState<LegacyCmsRecord | null>(null);
   const [copiedKey, setCopiedKey] = React.useState<string | null>(null);
+  const [roleVisibility, setRoleVisibility] = React.useState<CmsRoleVisibility>(
+    visibility || {
+      admin: ["students", "parents", "subscription-plans", "subscription-histories", "invoices", "subscriptions"],
+      support: ["students", "parents", "subscriptions", "subscription-plans"],
+      finance: ["invoices", "subscription-plans", "subscription-histories", "subscriptions"],
+    }
+  );
 
   // Settings form
   const [cfg, setCfg] = React.useState({
-    baseUrl: config.baseUrl,
-    username: config.username,
+    baseUrl: config.baseUrl || "https://cms.noorethiopia.com",
+    username: config.username || "ops@myseed.com",
     password: "",
     sessionCookie: "",
     autoSync: config.autoSync,
@@ -169,13 +186,29 @@ export function LegacyCmsClient({
       autoSync: cfg.autoSync,
       syncIntervalMinutes: cfg.syncIntervalMinutes,
     });
-    setLoading(false);
     if (res.ok) {
-      toast.success("Legacy CMS credentials and auto-sync settings saved");
+      await saveCmsRoleVisibilityAction(roleVisibility);
+      toast.success("Legacy CMS credentials and role visibility settings saved");
       setSettingsOpen(false);
       router.refresh();
     } else {
       toast.error(res.error || "Failed to save settings");
+    }
+    setLoading(false);
+  };
+
+  const handleClearCmsData = async () => {
+    if (!confirm("Are you sure you want to clear all synced Noor Ethiopia CMS records? This will delete all cached records and leave the tables empty.")) return;
+    setLoading(true);
+    const res = await clearLegacyCmsDataAction();
+    setLoading(false);
+    if (res.ok) {
+      toast.success("All Legacy CMS records cleared successfully");
+      setRecords([]);
+      setTotal(0);
+      router.refresh();
+    } else {
+      toast.error(res.error || "Failed to clear records");
     }
   };
 
@@ -269,25 +302,44 @@ export function LegacyCmsClient({
               </span>
             </div>
 
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setSettingsOpen(true)}
-              className="gap-1.5 text-xs"
-            >
-              <Settings2Icon className="size-3.5" />
-              Login & Sync Settings
-            </Button>
+            {isAdmin ? (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleClearCmsData}
+                  disabled={loading}
+                  className="gap-1.5 text-xs text-destructive hover:bg-destructive/10 border-destructive/30"
+                >
+                  <Trash2Icon className="size-3.5" />
+                  Clear All Data
+                </Button>
 
-            <Button
-              size="sm"
-              onClick={handleSyncNow}
-              disabled={syncing}
-              className="gap-1.5 bg-[#00522B] text-white hover:bg-[#003d20] text-xs font-semibold"
-            >
-              <RefreshCwIcon className={cn("size-3.5", syncing && "animate-spin")} />
-              {syncing ? "Scraping CMS..." : "Sync Now"}
-            </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSettingsOpen(true)}
+                  className="gap-1.5 text-xs"
+                >
+                  <Settings2Icon className="size-3.5" />
+                  Login & Sync Settings
+                </Button>
+
+                <Button
+                  size="sm"
+                  onClick={handleSyncNow}
+                  disabled={syncing}
+                  className="gap-1.5 bg-[#00522B] text-white hover:bg-[#003d20] text-xs font-semibold"
+                >
+                  <RefreshCwIcon className={cn("size-3.5", syncing && "animate-spin")} />
+                  {syncing ? "Scraping CMS..." : "Sync Now"}
+                </Button>
+              </>
+            ) : (
+              <Badge variant="outline" className="text-xs text-muted-foreground">
+                Read-Only (Support & Finance)
+              </Badge>
+            )}
           </div>
         </CardHeader>
 
@@ -319,25 +371,37 @@ export function LegacyCmsClient({
       {/* Main Tabs & Table View */}
       <Tabs value={category} onValueChange={handleTabChange} className="space-y-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <TabsList className="h-10 p-1">
-            <TabsTrigger value="students" className="gap-1.5 text-xs font-medium">
-              <GraduationCapIcon className="size-3.5" /> Students
-            </TabsTrigger>
-            <TabsTrigger value="parents" className="gap-1.5 text-xs font-medium">
-              <UsersIcon className="size-3.5" /> Parents
-            </TabsTrigger>
-            <TabsTrigger value="subscriptions" className="gap-1.5 text-xs font-medium">
-              <CreditCardIcon className="size-3.5" /> Subscriptions
-            </TabsTrigger>
-            <TabsTrigger value="invoices" className="gap-1.5 text-xs font-medium">
-              <FileTextIcon className="size-3.5" /> Invoices
-            </TabsTrigger>
-            <TabsTrigger value="subscription-plans" className="gap-1.5 text-xs font-medium">
-              <SparklesIcon className="size-3.5" /> Plans
-            </TabsTrigger>
-            <TabsTrigger value="subscription-histories" className="gap-1.5 text-xs font-medium">
-              <HistoryIcon className="size-3.5" /> Histories
-            </TabsTrigger>
+          <TabsList className="h-10 p-1 flex-wrap">
+            {allowedCategories.includes("students") && (
+              <TabsTrigger value="students" className="gap-1.5 text-xs font-medium">
+                <GraduationCapIcon className="size-3.5" /> Students
+              </TabsTrigger>
+            )}
+            {allowedCategories.includes("parents") && (
+              <TabsTrigger value="parents" className="gap-1.5 text-xs font-medium">
+                <UsersIcon className="size-3.5" /> Parents
+              </TabsTrigger>
+            )}
+            {allowedCategories.includes("subscriptions") && (
+              <TabsTrigger value="subscriptions" className="gap-1.5 text-xs font-medium">
+                <CreditCardIcon className="size-3.5" /> Subscriptions
+              </TabsTrigger>
+            )}
+            {allowedCategories.includes("invoices") && (
+              <TabsTrigger value="invoices" className="gap-1.5 text-xs font-medium">
+                <FileTextIcon className="size-3.5" /> Invoices
+              </TabsTrigger>
+            )}
+            {allowedCategories.includes("subscription-plans") && (
+              <TabsTrigger value="subscription-plans" className="gap-1.5 text-xs font-medium">
+                <SparklesIcon className="size-3.5" /> Plans
+              </TabsTrigger>
+            )}
+            {allowedCategories.includes("subscription-histories") && (
+              <TabsTrigger value="subscription-histories" className="gap-1.5 text-xs font-medium">
+                <HistoryIcon className="size-3.5" /> Histories
+              </TabsTrigger>
+            )}
           </TabsList>
 
           {/* Search & Export Actions */}
@@ -615,6 +679,64 @@ export function LegacyCmsClient({
                 onChange={(e) => setCfg({ ...cfg, syncIntervalMinutes: Number(e.target.value) })}
                 className="h-8 text-xs"
               />
+            </div>
+
+            {/* Category Visibility for Non-Admins */}
+            <div className="space-y-2 rounded-lg border p-3 bg-muted/20">
+              <p className="font-semibold text-foreground text-xs">Role Visibility (Control what Support & Finance can see)</p>
+              <div className="space-y-3 pt-1">
+                <div>
+                  <p className="text-[11px] text-muted-foreground font-medium pb-1">Customer Support sees:</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(["students", "parents", "subscriptions", "subscription-plans", "invoices", "subscription-histories"] as LegacyCmsCategory[]).map((cat) => {
+                      const enabled = (roleVisibility.support || []).includes(cat);
+                      return (
+                        <button
+                          key={cat}
+                          type="button"
+                          onClick={() => {
+                            const cur = roleVisibility.support || [];
+                            const next = enabled ? cur.filter((x) => x !== cat) : [...cur, cat];
+                            setRoleVisibility({ ...roleVisibility, support: next });
+                          }}
+                          className={cn(
+                            "rounded-md border px-2 py-0.5 text-[11px] transition-colors",
+                            enabled ? "bg-primary text-primary-foreground font-medium" : "bg-background text-muted-foreground hover:bg-muted"
+                          )}
+                        >
+                          {cat}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-[11px] text-muted-foreground font-medium pb-1">Finance sees:</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(["invoices", "subscriptions", "subscription-plans", "subscription-histories", "students", "parents"] as LegacyCmsCategory[]).map((cat) => {
+                      const enabled = (roleVisibility.finance || []).includes(cat);
+                      return (
+                        <button
+                          key={cat}
+                          type="button"
+                          onClick={() => {
+                            const cur = roleVisibility.finance || [];
+                            const next = enabled ? cur.filter((x) => x !== cat) : [...cur, cat];
+                            setRoleVisibility({ ...roleVisibility, finance: next });
+                          }}
+                          className={cn(
+                            "rounded-md border px-2 py-0.5 text-[11px] transition-colors",
+                            enabled ? "bg-primary text-primary-foreground font-medium" : "bg-background text-muted-foreground hover:bg-muted"
+                          )}
+                        >
+                          {cat}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 

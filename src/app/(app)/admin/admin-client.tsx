@@ -17,6 +17,11 @@ import {
   UserCheckIcon,
   UserPlusIcon,
   UserXIcon,
+  LayoutGridIcon,
+  TableIcon,
+  SlidersHorizontalIcon,
+  XIcon,
+  EyeIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -627,8 +632,14 @@ export function PermissionsAdmin({ matrix, counts, leadCounts }: { matrix: Permi
   const router = useRouter();
   const [m, setM] = React.useState(matrix);
   const [busy, setBusy] = React.useState(false);
+  const [search, setSearch] = React.useState("");
+  const [selectedGroup, setSelectedGroup] = React.useState<string>("all");
+  const [mode, setMode] = React.useState<"matrix" | "table">("table");
+  const [editingCap, setEditingCap] = React.useState<{ key: Capability; label: string; group: string } | null>(null);
+
   const dirty = JSON.stringify(m) !== JSON.stringify(matrix);
   const groups = [...new Set(CAPABILITIES.map((c) => c.group))];
+
   // Roles first, then one column per team lead (Admin, Teams).
   const columns: { key: keyof PermissionMatrix; label: React.ReactNode; name: string; count: number }[] = [
     ...ROLES.map((r) => ({ key: r, label: <RoleBadge role={r} />, name: ROLE_LABELS[r], count: counts[r] ?? 0 })),
@@ -639,70 +650,295 @@ export function PermissionsAdmin({ matrix, counts, leadCounts }: { matrix: Permi
       count: leadCounts[st] ?? 0,
     })),
   ];
+
   const toggle = (k: keyof PermissionMatrix, c: Capability) => setM({ ...m, [k]: m[k].includes(c) ? m[k].filter((x) => x !== c) : [...m[k], c] });
+
+  const grantAll = (c: Capability) => {
+    const next = { ...m };
+    for (const col of columns) {
+      if (!next[col.key].includes(c)) {
+        next[col.key] = [...next[col.key], c];
+      }
+    }
+    setM(next);
+  };
+
+  const revokeAll = (c: Capability) => {
+    const next = { ...m };
+    for (const col of columns) {
+      if (next[col.key].includes(c)) {
+        next[col.key] = next[col.key].filter((x) => x !== c);
+      }
+    }
+    setM(next);
+  };
+
+  const filteredCaps = CAPABILITIES.filter((c) => {
+    if (selectedGroup !== "all" && c.group !== selectedGroup) return false;
+    if (!search.trim()) return true;
+    const q = search.toLowerCase();
+    return c.label.toLowerCase().includes(q) || c.key.toLowerCase().includes(q) || c.group.toLowerCase().includes(q);
+  });
+
   return (
     <Card className="gap-0 py-0">
-      <div className="flex flex-wrap items-center gap-2 border-b p-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b p-3">
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium">Role permissions</p>
+          <p className="text-sm font-medium">Roles & Capabilities Management</p>
           <p className="text-xs text-muted-foreground">
-            Stage roles always work their own stage. These switches add extra abilities and choose which sidebar pages and import or export options each role sees. A person gets everything granted to any of their roles and to the teams they lead.
+            Granular system access rules. Changes apply across sidebar pages, import/export, and administrative tools.
           </p>
         </div>
-        <Button size="sm" variant="outline" disabled={!dirty || busy} onClick={() => setM(matrix)}>
-          Discard
-        </Button>
-        <Button
-          size="sm"
-          disabled={!dirty || busy}
-          onClick={async () => {
-            setBusy(true);
-            const r = await savePermissionsAction(m);
-            setBusy(false);
-            if (!r.ok) return toast.error(r.error);
-            toast.success("Permissions saved");
-            router.refresh();
-          }}
-        >
-          Save permissions
-        </Button>
+        <div className="flex items-center gap-2">
+          {/* Mode Switcher */}
+          <div className="flex items-center rounded-lg border bg-muted/40 p-0.5 text-xs">
+            <button
+              type="button"
+              onClick={() => setMode("table")}
+              className={cn("flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-colors", mode === "table" ? "bg-background font-semibold shadow-xs text-foreground" : "text-muted-foreground hover:text-foreground")}
+            >
+              <TableIcon className="size-3.5" /> Table View
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode("matrix")}
+              className={cn("flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-colors", mode === "matrix" ? "bg-background font-semibold shadow-xs text-foreground" : "text-muted-foreground hover:text-foreground")}
+            >
+              <LayoutGridIcon className="size-3.5" /> Matrix View
+            </button>
+          </div>
+          <Button size="sm" variant="outline" disabled={!dirty || busy} onClick={() => setM(matrix)}>
+            Discard
+          </Button>
+          <Button
+            size="sm"
+            disabled={!dirty || busy}
+            onClick={async () => {
+              setBusy(true);
+              const r = await savePermissionsAction(m);
+              setBusy(false);
+              if (!r.ok) return toast.error(r.error);
+              toast.success("Permissions saved");
+              router.refresh();
+            }}
+          >
+            Save permissions
+          </Button>
+        </div>
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[1180px] text-sm">
-          <thead className="sticky top-0 bg-muted/60 text-xs">
-            <tr>
-              <th className="px-3 py-2 text-left font-medium text-muted-foreground">Permission</th>
-              {columns.map((col) => (
-                <th key={col.key} className="w-28 px-2 py-2 text-center font-medium">
-                  {col.label}
-                  <span className="mt-0.5 block text-[11px] font-normal text-muted-foreground">
-                    {col.count} {col.count === 1 ? "person" : "people"}
-                  </span>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          {groups.map((g) => (
-            <tbody key={g} className="divide-y border-t">
-              <tr className="bg-muted/25">
-                <td colSpan={columns.length + 1} className="px-3 py-1.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-                  {g}
-                </td>
+
+      {/* Filter and Search Bar */}
+      <div className="flex flex-wrap items-center gap-2.5 border-b bg-muted/20 px-3 py-2 text-xs">
+        <div className="relative min-w-[200px] flex-1">
+          <SearchIcon className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Search permissions by name, key, or group..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="h-8 pl-8 text-xs bg-background"
+          />
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="text-muted-foreground">Category:</span>
+          <select
+            value={selectedGroup}
+            onChange={(e) => setSelectedGroup(e.target.value)}
+            className="h-8 rounded-md border bg-background px-2 text-xs"
+          >
+            <option value="all">All Groups ({CAPABILITIES.length})</option>
+            {groups.map((g) => (
+              <option key={g} value={g}>
+                {g} ({CAPABILITIES.filter((c) => c.group === g).length})
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="text-xs text-muted-foreground">
+          Showing {filteredCaps.length} of {CAPABILITIES.length} permissions
+        </div>
+      </div>
+
+      {mode === "table" ? (
+        /* Table Mode View */
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/50 text-xs">
+              <tr className="border-b">
+                <th className="px-3 py-2 text-left font-medium text-muted-foreground w-[320px]">Permission & Key</th>
+                <th className="px-3 py-2 text-left font-medium text-muted-foreground w-[160px]">Group</th>
+                <th className="px-3 py-2 text-left font-medium text-muted-foreground">Granted Roles & Leads</th>
+                <th className="px-3 py-2 text-right font-medium text-muted-foreground w-[220px]">Actions</th>
               </tr>
-              {CAPABILITIES.filter((c) => c.group === g).map((c) => (
-                <tr key={c.key} className="hover:bg-muted/20">
-                  <td className="px-3 py-2">{c.label}</td>
-                  {columns.map((col) => (
-                    <td key={col.key} className="px-2 py-2 text-center">
-                      <Checkbox checked={m[col.key].includes(c.key)} onCheckedChange={() => toggle(col.key, c.key)} aria-label={`${col.name}: ${c.label}`} />
-                    </td>
-                  ))}
+            </thead>
+            <tbody className="divide-y text-xs">
+              {filteredCaps.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="px-3 py-8 text-center text-muted-foreground">
+                    No permissions match your search or filter criteria.
+                  </td>
                 </tr>
-              ))}
+              ) : (
+                filteredCaps.map((c) => {
+                  const assigned = columns.filter((col) => m[col.key].includes(c.key));
+                  return (
+                    <tr key={c.key} className="hover:bg-muted/20 transition-colors">
+                      <td className="px-3 py-2.5">
+                        <div className="font-medium text-foreground text-sm">{c.label}</div>
+                        <code className="text-[11px] font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                          {c.key}
+                        </code>
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <Badge variant="secondary" className="font-normal text-[11px]">
+                          {c.group}
+                        </Badge>
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {assigned.length === 0 ? (
+                            <span className="text-muted-foreground italic text-[11px]">No roles assigned</span>
+                          ) : (
+                            assigned.map((col) => (
+                              <span
+                                key={col.key}
+                                className="inline-flex items-center gap-1 rounded-md border bg-background px-1.5 py-0.5 text-[11px] font-medium"
+                              >
+                                {col.name}
+                                <button
+                                  type="button"
+                                  onClick={() => toggle(col.key, c.key)}
+                                  title={`Remove ${col.name}`}
+                                  className="text-muted-foreground hover:text-destructive transition-colors ml-0.5"
+                                >
+                                  <XIcon className="size-3" />
+                                </button>
+                              </span>
+                            ))
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2.5 text-right space-x-1.5">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs px-2"
+                          onClick={() => setEditingCap(c)}
+                        >
+                          <SlidersHorizontalIcon className="size-3 mr-1" /> Edit Roles
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-xs px-1.5 text-muted-foreground hover:text-foreground"
+                          onClick={() => (assigned.length === columns.length ? revokeAll(c.key) : grantAll(c.key))}
+                        >
+                          {assigned.length === columns.length ? "Revoke All" : "Grant All"}
+                        </Button>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
-          ))}
-        </table>
-      </div>
+          </table>
+        </div>
+      ) : (
+        /* Matrix View */
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[1180px] text-sm">
+            <thead className="sticky top-0 bg-muted/60 text-xs">
+              <tr>
+                <th className="px-3 py-2 text-left font-medium text-muted-foreground">Permission</th>
+                {columns.map((col) => (
+                  <th key={col.key} className="w-28 px-2 py-2 text-center font-medium">
+                    {col.label}
+                    <span className="mt-0.5 block text-[11px] font-normal text-muted-foreground">
+                      {col.count} {col.count === 1 ? "person" : "people"}
+                    </span>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            {groups
+              .filter((g) => selectedGroup === "all" || g === selectedGroup)
+              .map((g) => {
+                const groupCaps = filteredCaps.filter((c) => c.group === g);
+                if (groupCaps.length === 0) return null;
+                return (
+                  <tbody key={g} className="divide-y border-t">
+                    <tr className="bg-muted/25">
+                      <td colSpan={columns.length + 1} className="px-3 py-1.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                        {g} ({groupCaps.length})
+                      </td>
+                    </tr>
+                    {groupCaps.map((c) => (
+                      <tr key={c.key} className="hover:bg-muted/20">
+                        <td className="px-3 py-2">
+                          <span className="font-medium">{c.label}</span>
+                          <span className="ml-2 font-mono text-[10px] text-muted-foreground">{c.key}</span>
+                        </td>
+                        {columns.map((col) => (
+                          <td key={col.key} className="px-2 py-2 text-center">
+                            <Checkbox checked={m[col.key].includes(c.key)} onCheckedChange={() => toggle(col.key, c.key)} aria-label={`${col.name}: ${c.label}`} />
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                );
+              })}
+          </table>
+        </div>
+      )}
+
+      {/* Quick Edit Roles Dialog for Table Mode */}
+      {editingCap && (
+        <Dialog open onOpenChange={(o) => !o && setEditingCap(null)}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="text-base">Edit Roles: {editingCap.label}</DialogTitle>
+              <DialogDescription className="text-xs">
+                Toggle which roles and team leads are granted capability <code className="font-mono">{editingCap.key}</code> ({editingCap.group}).
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2 py-2 max-h-[60vh] overflow-y-auto">
+              <div className="flex items-center justify-between pb-1 border-b text-xs text-muted-foreground">
+                <span>Select Roles</span>
+                <div className="space-x-2">
+                  <button type="button" onClick={() => grantAll(editingCap.key)} className="text-primary hover:underline">Select All</button>
+                  <span>•</span>
+                  <button type="button" onClick={() => revokeAll(editingCap.key)} className="text-muted-foreground hover:underline">Clear All</button>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-sm pt-1">
+                {columns.map((col) => {
+                  const hasRole = m[col.key].includes(editingCap.key);
+                  return (
+                    <label
+                      key={col.key}
+                      className={cn(
+                        "flex items-center gap-2 p-2 rounded-md border text-xs cursor-pointer transition-colors",
+                        hasRole ? "bg-primary/5 border-primary/40 text-foreground" : "hover:bg-muted"
+                      )}
+                    >
+                      <Checkbox
+                        checked={hasRole}
+                        onCheckedChange={() => toggle(col.key, editingCap.key)}
+                      />
+                      <span className="font-medium truncate">{col.name}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+            <DialogFooter>
+              <Button size="sm" onClick={() => setEditingCap(null)}>
+                Done
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </Card>
   );
 }

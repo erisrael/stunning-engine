@@ -2,7 +2,7 @@
 
 import { requireViewer } from "@/server/auth";
 import * as cms from "@/server/legacy-cms";
-import type { LegacyCmsCategory } from "@/server/legacy-cms";
+import type { LegacyCmsCategory, CmsRoleVisibility } from "@/server/legacy-cms";
 
 export async function getLegacyCmsConfigAction() {
   try {
@@ -29,6 +29,36 @@ export async function syncLegacyCmsAction(opts?: { force?: boolean }) {
     const viewer = await requireViewer();
     const result = await cms.syncLegacyCms(viewer, opts);
     return { ok: result.ok, message: result.message, counts: result.counts };
+  } catch (err: any) {
+    return { ok: false, error: String(err?.message || err) };
+  }
+}
+
+export async function clearLegacyCmsDataAction(category?: LegacyCmsCategory) {
+  try {
+    const viewer = await requireViewer();
+    const result = await cms.clearLegacyCmsData(viewer, category);
+    return { ok: true, count: result.count };
+  } catch (err: any) {
+    return { ok: false, error: String(err?.message || err) };
+  }
+}
+
+export async function getCmsRoleVisibilityAction() {
+  try {
+    await requireViewer();
+    const data = await cms.getCmsRoleVisibility();
+    return { ok: true, data };
+  } catch (err: any) {
+    return { ok: false, error: String(err?.message || err) };
+  }
+}
+
+export async function saveCmsRoleVisibilityAction(visibility: CmsRoleVisibility) {
+  try {
+    const viewer = await requireViewer();
+    await cms.saveCmsRoleVisibility(viewer, visibility);
+    return { ok: true };
   } catch (err: any) {
     return { ok: false, error: String(err?.message || err) };
   }
@@ -66,4 +96,3 @@ export async function getLegacyCmsStatsAction() {
     return { ok: false, error: String(err?.message || err) };
   }
 }
-

@@ -43,6 +43,7 @@ import {
   testChapaAccountAction,
   fetchChapaBalancesAction,
   listChapaTransactionsAction,
+  clearAllChapaAccountsAction,
 } from "@/app/actions/chapa";
 import type { ExternalApiConfig } from "@/server/external-api";
 import type { ChapaAccount, ChapaBalance, ChapaTransaction } from "@/server/chapa";
@@ -160,6 +161,20 @@ export function ExternalApiConsole({ config }: { config: ExternalApiConfig }) {
     else toast.error(res.message);
   };
 
+  const handleClearAllChapaAccounts = async () => {
+    if (!confirm("Are you sure you want to delete all Chapa accounts and dummy records? This will clear test data permanently.")) return;
+    const res = await clearAllChapaAccountsAction();
+    if (res.ok) {
+      toast.success("All Chapa business accounts removed");
+      setChapaAccounts([]);
+      setChapaBalances([]);
+      setChapaTxs([]);
+      router.refresh();
+    } else {
+      toast.error(res.error || "Failed to clear accounts");
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b">
@@ -206,16 +221,28 @@ export function ExternalApiConsole({ config }: { config: ExternalApiConfig }) {
                   Manage multiple Chapa merchant accounts for different business arms (e.g. MySeed Subscriptions, MySeed Donations, Academy Tuitions).
                 </CardDescription>
               </div>
-              <Button
-                size="sm"
-                onClick={() => {
-                  setChapaForm({ id: "", name: "", secretKey: "", publicKey: "", webhookSecret: "", currency: "ETB", active: true });
-                  setChapaModalOpen(true);
-                }}
-                className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
-              >
-                <PlusIcon className="size-3.5" /> Add Business Account
-              </Button>
+              <div className="flex items-center gap-2">
+                {chapaAccounts.length > 0 && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleClearAllChapaAccounts}
+                    className="text-xs text-destructive hover:bg-destructive/10 border-destructive/30"
+                  >
+                    Clear All Accounts
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setChapaForm({ id: "", name: "", secretKey: "", publicKey: "", webhookSecret: "", currency: "ETB", active: true });
+                    setChapaModalOpen(true);
+                  }}
+                  className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
+                >
+                  <PlusIcon className="size-3.5" /> Add Business Account
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="space-y-4">
               {/* Account Balances Grid */}

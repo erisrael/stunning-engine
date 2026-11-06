@@ -104,7 +104,7 @@ export const PURGE_DOMAINS: Record<PurgeCategory, { label: string; description: 
       "dept_tasks", "dept_time_entries", "dept_sprints", "dept_capacity", "dept_releases", "dept_standups",
       "dept_retro", "dept_doc_links", "dept_doc_versions", "dept_docs", "dept_metrics", "dept_reports",
       "dept_projects", "dept_milestones", "dept_config_versions", "dept_config", "dept_dashboards",
-      "department_positions", "departments",
+      "department_positions", "departments", "ai_models",
     ],
   },
   chat_communications: {
