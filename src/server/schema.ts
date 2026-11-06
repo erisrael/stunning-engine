@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 53;
+export const SCHEMA_VERSION = 54;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -3085,6 +3085,30 @@ CREATE TABLE IF NOT EXISTS brand_banners (
   updated_at TEXT NOT NULL,
   updated_by TEXT
 );
+
+-- v30: Legacy Noor Ethiopia CMS scraped data & multi-business Chapa accounts
+CREATE TABLE IF NOT EXISTS legacy_cms_records (
+  id TEXT PRIMARY KEY,
+  category TEXT NOT NULL,
+  external_id TEXT,
+  title TEXT,
+  data_json TEXT NOT NULL,
+  synced_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_legacy_cms_cat ON legacy_cms_records(category);
+CREATE INDEX IF NOT EXISTS idx_legacy_cms_ext ON legacy_cms_records(external_id);
+
+CREATE TABLE IF NOT EXISTS chapa_accounts (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  secret_key_enc TEXT NOT NULL,
+  public_key TEXT,
+  webhook_secret_enc TEXT,
+  currency TEXT NOT NULL DEFAULT 'ETB',
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
 `;
 
 // Tables in dependency order; used to empty the workspace and to export or restore backups.
@@ -3302,4 +3326,6 @@ export const TABLES = [
   "password_history",
   "signin_log",
   "att_devices",
+  "legacy_cms_records",
+  "chapa_accounts",
 ] as const;

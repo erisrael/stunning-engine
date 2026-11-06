@@ -8,6 +8,7 @@ import { EmptyState, PageHeader } from "@/components/app/primitives";
 import { Desk, Inbox, NewTicket, TicketView } from "@/components/app/support/desk";
 import { Apps, Canned, DeveloperApi, KnowledgeBase, Monitor, Queues, SupportSettings } from "@/components/app/support/setup";
 import { StudentLookupDialog } from "@/components/app/support/student-lookup-dialog";
+import { StudentsTable } from "@/components/app/support/students-table";
 import * as ch from "@/server/support-channels";
 import { all } from "@/server/db";
 import { cn } from "@/lib/utils";
@@ -29,8 +30,8 @@ export default async function SupportPage({ searchParams }: { searchParams: Prom
         <EmptyState title={cfg.enabled ? "You are not a support agent" : "Customer support is switched off"} description={cfg.enabled ? "A support lead adds agents to the queues." : "Admin switches it on in Support setup."} />
       </div>
     );
-  const tabs = [...(cfg.enabled && agent ? ["desk", "kb"] : []), ...(lead && cfg.enabled ? ["monitor"] : []), ...(lead ? ["queues", "apps"] : []), ...(admin || lead ? ["settings"] : [])];
-  const LABELS: Record<string, string> = { kb: "Knowledge base", desk: "Desk", monitor: "Monitor", queues: "Queues and replies", apps: "Apps and SDK", settings: "Settings" };
+  const tabs = [...(cfg.enabled && agent ? ["desk", "students", "kb"] : []), ...(lead && cfg.enabled ? ["monitor"] : []), ...(lead ? ["queues", "apps"] : []), ...(admin || lead ? ["settings"] : [])];
+  const LABELS: Record<string, string> = { desk: "Desk", students: "Students & Parents", kb: "Knowledge base", monitor: "Monitor", queues: "Queues and replies", apps: "Apps and SDK", settings: "Settings" };
   const tab = tabs.includes(sp.tab ?? "") ? sp.tab! : tabs[0]!;
   const people = (await userDirectory()).map((u) => ({ id: u.id, name: u.name }));
   const queues = await sd.listQueues();
@@ -73,6 +74,8 @@ export default async function SupportPage({ searchParams }: { searchParams: Prom
         </div>
       </Desk>
     );
+  } else if (tab === "students") {
+    panel = <StudentsTable />;
   } else if (tab === "monitor") {
     const today = new Date().toISOString().slice(0, 10);
     const from = /^\d{4}-\d{2}-\d{2}$/.test(sp.from ?? "") ? sp.from! : new Date(Date.now() - 6 * 864e5).toISOString().slice(0, 10);

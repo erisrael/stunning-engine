@@ -32,16 +32,39 @@ import { CHAPTERS } from "@/lib/help";
 import { FLOWS, GLOSSARY, PLACES } from "@/lib/assistant";
 import { ROLE_LABELS, STAGE_LABELS } from "@/lib/domain";
 
+export const AI_PROVIDERS = [
+  { id: "anthropic", label: "Anthropic (Claude)" },
+  { id: "gemini", label: "Google (Gemini)" },
+  { id: "openai", label: "OpenAI (GPT / o-series)" },
+  { id: "custom", label: "Custom / OpenAI-Compatible (DeepSeek, Local LLM)" },
+] as const;
+
+export type AiProvider = (typeof AI_PROVIDERS)[number]["id"];
+
 export const AI_MODELS = [
-  { id: "claude-opus-5-5", label: "Claude Opus 5.5 (best answers)" },
-  { id: "claude-sonnet-5-5", label: "Claude Sonnet 5.5 (faster, cheaper)" },
-  { id: "claude-haiku-5-5", label: "Claude Haiku 5.5 (fastest, cheapest)" },
+  // Anthropic
+  { id: "claude-opus-5-5", label: "Claude Opus 5.5 (best answers)", provider: "anthropic" },
+  { id: "claude-sonnet-5-5", label: "Claude Sonnet 5.5 (faster, cheaper)", provider: "anthropic" },
+  { id: "claude-haiku-5-5", label: "Claude Haiku 5.5 (fastest, cheapest)", provider: "anthropic" },
+  // Google Gemini
+  { id: "gemini-2.5-flash", label: "Google Gemini 2.5 Flash (Ultra Fast & Smart)", provider: "gemini" },
+  { id: "gemini-2.5-pro", label: "Google Gemini 2.5 Pro (Deep Reasoning)", provider: "gemini" },
+  { id: "gemini-1.5-flash", label: "Google Gemini 1.5 Flash", provider: "gemini" },
+  { id: "gemini-1.5-pro", label: "Google Gemini 1.5 Pro", provider: "gemini" },
+  // OpenAI
+  { id: "gpt-4o", label: "OpenAI GPT-4o (Omni flagship)", provider: "openai" },
+  { id: "gpt-4o-mini", label: "OpenAI GPT-4o Mini (Cost-efficient)", provider: "openai" },
+  { id: "o3-mini", label: "OpenAI o3-mini (High reasoning)", provider: "openai" },
+  // Custom
+  { id: "custom-model", label: "Custom Model (configured via base URL)", provider: "custom" },
 ] as const;
 export const AI_EFFORTS = ["low", "medium", "high"] as const;
 
 export type AiConfig = {
   on: boolean;
+  provider: AiProvider;
   model: string;
+  customBaseUrl?: string | null;
   effort: (typeof AI_EFFORTS)[number];
   // Roles that may not use it (the keyword assistant stays for them).
   offRoles: string[];
@@ -54,7 +77,7 @@ export type AiConfig = {
   agentMax: number;
 };
 type Stored = AiConfig & { keyEnc?: string | null };
-const DEFAULT: AiConfig = { on: false, model: "claude-opus-5-5", effort: "low", offRoles: [], dailyLimit: 60, actions: true, agent: true, agentMax: 8 };
+const DEFAULT: AiConfig = { on: false, provider: "anthropic", model: "claude-opus-5-5", effort: "low", offRoles: [], dailyLimit: 60, actions: true, agent: true, agentMax: 8 };
 
 const fake = () => process.env.AI_FAKE === "1";
 
@@ -66,12 +89,14 @@ async function stored(): Promise<Stored> {
 async function apiKey(): Promise<string | null> {
   const s = await stored();
   if (s.keyEnc) return await unseal(s.keyEnc);
+  if (s.provider === "gemini") return process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || null;
+  if (s.provider === "openai") return process.env.OPENAI_API_KEY || null;
   return process.env.ANTHROPIC_API_KEY || null;
 }
 
 export async function aiConfig() {
   const { keyEnc, ...rest } = await stored();
-  return { ...rest, hasKey: !!keyEnc, envKey: !!process.env.ANTHROPIC_API_KEY, fake: fake() };
+  return { ...rest, hasKey: !!keyEnc, envKey: !!(process.env.ANTHROPIC_API_KEY || process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY), fake: fake() };
 }
 export type AiConfigView = Awaited<ReturnType<typeof aiConfig>>;
 
@@ -80,7 +105,9 @@ export async function saveAiConfig(user: AppUser, input: Partial<AiConfig> & { k
   const cur = await stored();
   const next: Stored = {
     on: !!input.on,
-    model: AI_MODELS.some((m) => m.id === input.model) ? input.model! : cur.model,
+    provider: input.provider ?? cur.provider ?? "anthropic",
+    model: AI_MODELS.some((m) => m.id === input.model) ? input.model! : (input.model || cur.model),
+    customBaseUrl: input.customBaseUrl !== undefined ? (input.customBaseUrl ? input.customBaseUrl.trim() : null) : (cur.customBaseUrl ?? null),
     effort: (AI_EFFORTS as readonly string[]).includes(input.effort ?? "") ? input.effort! : cur.effort,
     offRoles: (input.offRoles ?? cur.offRoles).map(String).slice(0, 30),
     dailyLimit: Math.max(0, Math.min(1000, Math.round(Number(input.dailyLimit ?? cur.dailyLimit)))),
@@ -858,6 +885,77 @@ type ModelCall = (r: { system: string; tools: Anthropic.Beta.BetaTool[]; message
 async function realModel(cfg: Stored): Promise<ModelCall> {
   const key = await apiKey();
   if (!key) throw new WorkflowError("INVALID_STATE", "No API key is set (Admin, Assistant, AI).");
+
+  if (cfg.provider === "gemini") {
+    const model = cfg.model.startsWith("gemini") ? cfg.model : "gemini-2.5-flash";
+    return async ({ system, messages }) => {
+      try {
+        const contents = messages.map((m) => ({
+          role: m.role === "assistant" ? "model" : "user",
+          parts: [{ text: typeof m.content === "string" ? m.content : JSON.stringify(m.content) }],
+        }));
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: system }] },
+            contents,
+          }),
+        });
+        if (!res.ok) {
+          throw new WorkflowError("INVALID_STATE", `Gemini API returned status ${res.status}: ${res.statusText}`);
+        }
+        const data = await res.json();
+        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || "No response received";
+        return {
+          stop_reason: "end_turn",
+          content: [{ type: "text", text } as Anthropic.Beta.BetaTextBlock],
+        };
+      } catch (e: any) {
+        throw new WorkflowError("INVALID_STATE", `Gemini error: ${e?.message || e}`);
+      }
+    };
+  }
+
+  if (cfg.provider === "openai" || cfg.provider === "custom") {
+    const baseUrl = (cfg.customBaseUrl || "https://api.openai.com/v1").replace(/\/+$/, "");
+    const model = cfg.provider === "custom" ? (cfg.model || "custom-model") : (cfg.model.startsWith("gpt") || cfg.model.startsWith("o") ? cfg.model : "gpt-4o-mini");
+    return async ({ system, messages }) => {
+      try {
+        const formattedMessages = [
+          { role: "system", content: system },
+          ...messages.map((m) => ({
+            role: m.role,
+            content: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
+          })),
+        ];
+        const res = await fetch(`${baseUrl}/chat/completions`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${key}`,
+          },
+          body: JSON.stringify({
+            model,
+            messages: formattedMessages,
+          }),
+        });
+        if (!res.ok) {
+          throw new WorkflowError("INVALID_STATE", `OpenAI API returned status ${res.status}: ${res.statusText}`);
+        }
+        const data = await res.json();
+        const text = data?.choices?.[0]?.message?.content || "No response received";
+        return {
+          stop_reason: "end_turn",
+          content: [{ type: "text", text } as Anthropic.Beta.BetaTextBlock],
+        };
+      } catch (e: any) {
+        throw new WorkflowError("INVALID_STATE", `OpenAI/Custom API error: ${e?.message || e}`);
+      }
+    };
+  }
+
   const client = new Anthropic({ apiKey: key, timeout: 90_000, maxRetries: 2 });
   return async ({ system, tools, messages }) => {
     try {

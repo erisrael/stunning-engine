@@ -21,7 +21,7 @@ export default async function AssistantAdminPage() {
   return (
     <div className="space-y-4">
       <PageHeader title="Assistant" description="The guide in the corner of every page, by typing or by voice. It follows written flows; with AI answers on, Claude also answers questions from each person's own data and prepares actions they confirm." />
-      <AiAdmin config={ai} usage={usage} models={AI_MODELS.map((m) => ({ id: m.id, label: m.label }))} roles={ROLES.map((r) => ({ key: r, label: ROLE_LABELS[r] }))} />
+      <AiAdmin config={ai} usage={usage} models={AI_MODELS.map((m) => ({ id: m.id, label: m.label, provider: m.provider }))} roles={ROLES.map((r) => ({ key: r, label: ROLE_LABELS[r] }))} />
       <RolesAdmin roles={ROLES.map((r) => ({ key: r, label: ROLE_LABELS[r] }))} ops={OPS.map((o) => ({ key: o.key, label: o.label, group: o.group }))} options={roleOpts} routines={rc} />
       <AssistantAdmin config={cfg} stats={stats} flows={FLOWS.map((f) => ({ key: f.key, title: f.title, keywords: f.keywords }))} roles={ROLES.map((r) => ({ key: r, label: ROLE_LABELS[r] }))} />
     </div>

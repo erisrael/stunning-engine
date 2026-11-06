@@ -289,40 +289,24 @@ export function AppSidebar({
   const staff = !has("nav.overview") && !has("company.view");
   const views = VIEW_PATHS.filter((v) => has(v.cap));
 
-  // Every Admin tab, as links under Admin (the page has no tab bar of its own).
+  // Every Admin tab, grouped cleanly into core operational categories so the sidebar remains compact.
   const adminSub = [
     ...(has("users.manage")
       ? [
-          { label: "People", href: "/admin" },
-          { label: "Teams", href: "/admin?tab=teams" },
+          { label: "People & Teams", href: "/admin?tab=people" },
           { label: "Departments", href: "/admin?tab=departments" },
-          { label: "Roles and permissions", href: "/admin?tab=permissions" },
-          { label: "Access", href: "/admin?tab=access" },
-          { label: "Sign-in", href: "/admin?tab=signin" },
-          { label: "Sessions and devices", href: "/admin?tab=sessions" },
-          { label: "Chat", href: "/admin?tab=chat" },
-          { label: "Feedback", href: "/admin?tab=feedback" },
-          { label: "Safety reports", href: "/admin?tab=reports" },
-          { label: "Sidebar", href: "/admin?tab=sidebar" },
-          { label: "Branding", href: "/admin?tab=branding" },
-          { label: "Presentation templates", href: "/admin?tab=presentations" },
-          { label: "Usage", href: "/admin?tab=usage" },
-          { label: "Privacy", href: "/admin?tab=privacy" },
-          { label: "Files and publishing", href: "/admin?tab=files" },
-          { label: "Integrations", href: "/admin?tab=integrations" },
+          { label: "Roles & permissions", href: "/admin?tab=permissions" },
+          { label: "Sign-in & security", href: "/admin?tab=signin" },
+          { label: "External APIs & Chapa", href: "/admin?tab=external-apis" },
           { label: "Customer support", href: "/admin?tab=customer-support" },
-          { label: "External APIs", href: "/admin?tab=external-apis" },
           { label: "Clean data", href: "/admin?tab=clean-data" },
-          { label: "System", href: "/admin?tab=system" },
-          { label: "Database", href: "/admin/platform?tab=database" },
-          { label: "API usage", href: "/admin/platform?tab=api" },
-          { label: "Status and deploys", href: "/admin/platform?tab=status" },
-          { label: "Developer integration", href: "/admin/platform?tab=developer" },
-          { label: "System health", href: "/admin/platform?tab=health" },
+          { label: "Legacy CMS (Noor)", href: "/legacy-cms" },
+          { label: "System & workspace", href: "/admin?tab=system" },
+          { label: "Platform & health", href: "/admin/platform?tab=status" },
         ]
       : []),
-    ...(has("data.manage") ? [{ label: "Data", href: has("users.manage") ? "/admin?tab=data" : "/admin" }] : []),
-    ...(has("users.manage") ? [{ label: "Assistant", href: "/admin/assistant" }, { label: "View as", href: "/admin/preview" }] : []),
+    ...(has("data.manage") ? [{ label: "Data manager", href: "/admin/data" }] : []),
+    ...(has("users.manage") ? [{ label: "Assistant AI", href: "/admin/assistant" }] : []),
   ];
   // Attendance's parts for leads, HR and Admin (the page has no tab bar for them).
   const attSub =
@@ -508,6 +492,7 @@ export function AppSidebar({
           { href: "/attendance?tab=capture", label: "Attendance setup", icon: ClockIcon, sub: attSub },
           { href: "/recognition?tab=settings", label: "Recognition setup", icon: TrophyIcon, cap: "users.manage", exact: true },
           { href: "/support?tab=settings", label: "Support setup", icon: HeadsetIcon, cap: "users.manage", exact: true },
+          { href: "/legacy-cms", label: "Legacy CMS (Noor)", icon: ArrowLeftRightIcon, cap: ["users.manage", "data.manage"] },
           { href: "/admin/data", label: "Data manager", icon: DatabaseIcon, cap: "data.manage" },
           { href: "/import-export", label: "Import and export", icon: ArrowLeftRightIcon, cap: ["import.run", "import.stage", "import.tracker", "export.run", "export.report", "export.tracker", "export.audit"] },
           { href: "/audit", label: "Audit log", icon: ShieldCheckIcon, cap: ["users.manage", "items.plan"] },
@@ -595,7 +580,7 @@ export function AppSidebar({
             if (!items.length) return null;
             // On phones, fewer choices at once: the first group and the one you are in are open; the others fold.
             const here = items.some((i) => isActive(i));
-            const folded = isMobile && !here && g !== groups[0] && !openGroups.includes(g.label);
+            const folded = (isMobile && !here && g !== groups[0] && !openGroups.includes(g.label)) || openGroups.includes(`fold:${g.label}`);
             return (
               <SidebarGroup key={g.label} className="py-1" data-nav-group={g.label} data-folded={folded ? "1" : undefined}>
                 {isMobile ? (
@@ -609,7 +594,15 @@ export function AppSidebar({
                     <span className="text-xs normal-case">{folded ? `${items.length} ›` : "⌄"}</span>
                   </button>
                 ) : (
-                  <SidebarGroupLabel className="h-7 text-[11px] font-semibold tracking-wide uppercase">{g.label}</SidebarGroupLabel>
+                  <button
+                    type="button"
+                    className="group/lbl flex h-7 w-full items-center justify-between px-2 text-[11px] font-semibold tracking-wide text-sidebar-foreground/70 uppercase hover:text-sidebar-foreground transition-colors cursor-pointer"
+                    aria-expanded={!folded}
+                    onClick={() => setOpenGroups((o) => (o.includes(`fold:${g.label}`) ? o.filter((x) => x !== `fold:${g.label}`) : [...o, `fold:${g.label}`]))}
+                  >
+                    <span>{g.label}</span>
+                    <span className="text-[10px] normal-case opacity-60 group-hover/lbl:opacity-100">{folded ? `${items.length} ›` : "⌄"}</span>
+                  </button>
                 )}
                 <SidebarGroupContent className={folded ? "hidden" : undefined}>
                   <SidebarMenu className="gap-0.5">

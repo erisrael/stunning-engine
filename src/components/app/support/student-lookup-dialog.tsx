@@ -166,3 +166,4 @@ export function StudentLookupDialog({ trigger }: { trigger?: React.ReactNode }) 
     </Dialog>
   );
 }
+

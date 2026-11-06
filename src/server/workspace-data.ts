@@ -61,7 +61,7 @@ export const PURGE_DOMAINS: Record<PurgeCategory, { label: string; description: 
       "comments", "comment_reactions", "recording_sessions", "stage_attempts", "stage_intervals", "stage_assignments",
       "item_collaborators", "item_memberships", "items", "lessons", "units", "grade_subjects", "subjects", "grades",
       "curricula", "work_sessions", "session_corrections", "trash", "checklist_templates", "work_checklists",
-      "handovers", "handover_items", "curriculum_changes",
+      "handovers", "handover_items", "curriculum_changes", "legacy_cms_records",
     ],
   },
   attendance: {
@@ -74,7 +74,7 @@ export const PURGE_DOMAINS: Record<PurgeCategory, { label: string; description: 
     description: "Payroll runs, payslips, employee pay structures, transactions, bills, invoices, claims, budgets, and accounts.",
     tables: [
       "fin_payslips", "fin_payroll_runs", "fin_pay_structures", "fin_transactions", "fin_bills", "fin_invoices",
-      "fin_claims", "fin_purchases", "fin_budgets", "fin_accounts", "fin_parties", "fin_periods",
+      "fin_claims", "fin_purchases", "fin_budgets", "fin_accounts", "fin_parties", "fin_periods", "chapa_accounts",
     ],
   },
   hr_personnel: {

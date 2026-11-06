@@ -15,7 +15,7 @@ export async function saveExternalApiConfigAction(input: Partial<api.ExternalApi
   return wrap(async () => api.saveExternalApiConfig(await requireViewer(), input));
 }
 
-export async function testExternalApiAction(service: "academy" | "finance" | "sms") {
+export async function testExternalApiAction(service: "academy" | "finance" | "sms" | "iconicSms") {
   return wrap(async () => {
     await requireViewer();
     return api.testExternalApi(service);
@@ -44,3 +44,11 @@ export async function fetchSmsStatusAction() {
     return api.fetchSmsStatus();
   });
 }
+
+export async function fetchIconicSmsStatusAction() {
+  return wrap(async () => {
+    await requireViewer();
+    return api.fetchIconicSmsStatus();
+  });
+}
+

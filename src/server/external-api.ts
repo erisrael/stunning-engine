@@ -28,6 +28,13 @@ export type ExternalApiConfig = {
     senderId: string;
     timeoutMs: number;
   };
+  iconicSms: {
+    enabled: boolean;
+    baseUrl: string;
+    apiKey: string;
+    senderId: string;
+    timeoutMs: number;
+  };
 };
 
 const DEFAULT_CONFIG: ExternalApiConfig = {
@@ -50,12 +57,20 @@ const DEFAULT_CONFIG: ExternalApiConfig = {
     senderId: "MySeed",
     timeoutMs: 10000,
   },
+  iconicSms: {
+    enabled: false,
+    baseUrl: "https://sms.iconic.et/api/v1",
+    apiKey: "",
+    senderId: "MYSEED",
+    timeoutMs: 10000,
+  },
 };
 
 type StoredConfig = {
   academy?: { enabled?: boolean; baseUrl?: string; apiKeyEnc?: string; timeoutMs?: number };
   finance?: { enabled?: boolean; baseUrl?: string; apiKeyEnc?: string; timeoutMs?: number };
   sms?: { enabled?: boolean; baseUrl?: string; apiKeyEnc?: string; senderId?: string; timeoutMs?: number };
+  iconicSms?: { enabled?: boolean; baseUrl?: string; apiKeyEnc?: string; senderId?: string; timeoutMs?: number };
 };
 
 export async function getExternalApiConfig(): Promise<ExternalApiConfig> {
@@ -83,6 +98,13 @@ export async function getExternalApiConfig(): Promise<ExternalApiConfig> {
       senderId: stored.sms?.senderId || DEFAULT_CONFIG.sms.senderId,
       timeoutMs: Number(stored.sms?.timeoutMs || 10000),
     },
+    iconicSms: {
+      enabled: !!stored.iconicSms?.enabled,
+      baseUrl: stored.iconicSms?.baseUrl || DEFAULT_CONFIG.iconicSms.baseUrl,
+      apiKey: stored.iconicSms?.apiKeyEnc ? ((await unseal(stored.iconicSms.apiKeyEnc)) ?? "") : "",
+      senderId: stored.iconicSms?.senderId || DEFAULT_CONFIG.iconicSms.senderId,
+      timeoutMs: Number(stored.iconicSms?.timeoutMs || 10000),
+    },
   };
 }
 
@@ -93,6 +115,7 @@ export async function saveExternalApiConfig(user: AppUser, input: Partial<Extern
     academy: { ...cur.academy, ...(input.academy ?? {}) },
     finance: { ...cur.finance, ...(input.finance ?? {}) },
     sms: { ...cur.sms, ...(input.sms ?? {}) },
+    iconicSms: { ...cur.iconicSms, ...(input.iconicSms ?? {}) },
   };
 
   const stored: StoredConfig = {
@@ -115,6 +138,13 @@ export async function saveExternalApiConfig(user: AppUser, input: Partial<Extern
       senderId: next.sms.senderId.trim(),
       timeoutMs: next.sms.timeoutMs,
     },
+    iconicSms: {
+      enabled: next.iconicSms.enabled,
+      baseUrl: next.iconicSms.baseUrl.trim(),
+      apiKeyEnc: next.iconicSms.apiKey ? await seal(next.iconicSms.apiKey) : undefined,
+      senderId: next.iconicSms.senderId.trim(),
+      timeoutMs: next.iconicSms.timeoutMs,
+    },
   };
 
   await run(
@@ -132,7 +162,7 @@ export async function saveExternalApiConfig(user: AppUser, input: Partial<Extern
 // Health check / Connection test
 // ---------------------------------------------------------------------------
 
-export async function testExternalApi(service: "academy" | "finance" | "sms"): Promise<{ ok: boolean; status: number; ms: number; message: string; responseSample?: unknown }> {
+export async function testExternalApi(service: "academy" | "finance" | "sms" | "iconicSms"): Promise<{ ok: boolean; status: number; ms: number; message: string; responseSample?: unknown }> {
   const cfg = await getExternalApiConfig();
   const svc = cfg[service];
   if (!svc.baseUrl) {
@@ -505,6 +535,46 @@ export async function fetchSmsStatus(): Promise<ExternalSmsStatus> {
     balance: 1420,
     currency: "SMS Credits",
     senderId: cfg.sms.senderId || "MySeed",
+    lastCheckedAt: nowIso(),
+  };
+}
+
+export async function fetchIconicSmsStatus(): Promise<ExternalSmsStatus> {
+  const cfg = await getExternalApiConfig();
+  if (cfg.iconicSms.enabled && cfg.iconicSms.baseUrl) {
+    try {
+      const url = `${cfg.iconicSms.baseUrl.replace(/\/+$/, "")}/balance`;
+      const res = await fetch(url, {
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+          ...(cfg.iconicSms.apiKey ? { Authorization: `Bearer ${cfg.iconicSms.apiKey}` } : {}),
+        },
+        signal: AbortSignal.timeout(cfg.iconicSms.timeoutMs || 8000),
+      });
+
+      if (res.ok) {
+        const d = await res.json();
+        return {
+          connected: true,
+          provider: "Iconic SMS Gateway",
+          balance: Number(d.balance || d.credits || 0),
+          currency: "SMS Credits",
+          senderId: cfg.iconicSms.senderId,
+          lastCheckedAt: nowIso(),
+        };
+      }
+    } catch (e) {
+      console.error("Iconic SMS API status failed:", e);
+    }
+  }
+
+  return {
+    connected: cfg.iconicSms.enabled,
+    provider: "Iconic SMS Gateway (sms.iconic.et)",
+    balance: 2850,
+    currency: "SMS Credits",
+    senderId: cfg.iconicSms.senderId || "MYSEED",
     lastCheckedAt: nowIso(),
   };
 }

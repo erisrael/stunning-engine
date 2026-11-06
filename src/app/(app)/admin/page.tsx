@@ -28,6 +28,7 @@ import { DepartmentsAdmin } from "./departments-admin";
 import { customDepartments, deptPeople } from "@/server/departments";
 import { DEPARTMENTS } from "@/lib/domain";
 import { headers } from "next/headers";
+import { cn } from "@/lib/utils";
 import { DATASETS, listTokens, type Dataset } from "@/server/feeds";
 import { IntegrationsAdmin } from "@/components/app/integrations";
 import { sidebarDefaults } from "@/server/ui-prefs";
@@ -135,6 +136,74 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
         }
       />
       <Tabs value={tab} className="gap-4">
+        <div className="flex flex-wrap items-center gap-1.5 border-b pb-2 overflow-x-auto text-xs">
+          {manageUsers && (
+            <>
+              <Link href="/admin?tab=people" className={cn("px-2.5 py-1 rounded-md transition-colors", tab === "people" ? "bg-primary text-primary-foreground font-semibold" : "bg-muted/50 hover:bg-muted text-muted-foreground")}>
+                People ({users.filter((u) => u.active).length})
+              </Link>
+              <Link href="/admin?tab=teams" className={cn("px-2.5 py-1 rounded-md transition-colors", tab === "teams" ? "bg-primary text-primary-foreground font-semibold" : "bg-muted/50 hover:bg-muted text-muted-foreground")}>
+                Teams
+              </Link>
+              <Link href="/admin?tab=departments" className={cn("px-2.5 py-1 rounded-md transition-colors", tab === "departments" ? "bg-primary text-primary-foreground font-semibold" : "bg-muted/50 hover:bg-muted text-muted-foreground")}>
+                Departments
+              </Link>
+              <Link href="/admin?tab=permissions" className={cn("px-2.5 py-1 rounded-md transition-colors", tab === "permissions" ? "bg-primary text-primary-foreground font-semibold" : "bg-muted/50 hover:bg-muted text-muted-foreground")}>
+                Permissions
+              </Link>
+              <Link href="/admin?tab=access" className={cn("px-2.5 py-1 rounded-md transition-colors", tab === "access" ? "bg-primary text-primary-foreground font-semibold" : "bg-muted/50 hover:bg-muted text-muted-foreground")}>
+                Access
+              </Link>
+              <span className="text-muted-foreground/30 font-light hidden sm:inline">|</span>
+              <Link href="/admin?tab=signin" className={cn("px-2.5 py-1 rounded-md transition-colors", tab === "signin" ? "bg-primary text-primary-foreground font-semibold" : "bg-muted/50 hover:bg-muted text-muted-foreground")}>
+                Sign-in
+              </Link>
+              <Link href="/admin?tab=sessions" className={cn("px-2.5 py-1 rounded-md transition-colors", tab === "sessions" ? "bg-primary text-primary-foreground font-semibold" : "bg-muted/50 hover:bg-muted text-muted-foreground")}>
+                Sessions
+              </Link>
+              <Link href="/admin?tab=privacy" className={cn("px-2.5 py-1 rounded-md transition-colors", tab === "privacy" ? "bg-primary text-primary-foreground font-semibold" : "bg-muted/50 hover:bg-muted text-muted-foreground")}>
+                Privacy
+              </Link>
+              <span className="text-muted-foreground/30 font-light hidden sm:inline">|</span>
+              <Link href="/admin?tab=external-apis" className={cn("px-2.5 py-1 rounded-md transition-colors", tab === "external-apis" ? "bg-primary text-primary-foreground font-semibold" : "bg-muted/50 hover:bg-muted text-muted-foreground")}>
+                External APIs & Chapa
+              </Link>
+              <Link href="/admin?tab=customer-support" className={cn("px-2.5 py-1 rounded-md transition-colors", tab === "customer-support" ? "bg-primary text-primary-foreground font-semibold" : "bg-muted/50 hover:bg-muted text-muted-foreground")}>
+                Support Setup
+              </Link>
+              <Link href="/admin?tab=chat" className={cn("px-2.5 py-1 rounded-md transition-colors", tab === "chat" ? "bg-primary text-primary-foreground font-semibold" : "bg-muted/50 hover:bg-muted text-muted-foreground")}>
+                Chat
+              </Link>
+              <Link href="/admin?tab=feedback" className={cn("px-2.5 py-1 rounded-md transition-colors", tab === "feedback" ? "bg-primary text-primary-foreground font-semibold" : "bg-muted/50 hover:bg-muted text-muted-foreground")}>
+                Feedback
+              </Link>
+              <Link href="/admin?tab=reports" className={cn("px-2.5 py-1 rounded-md transition-colors", tab === "reports" ? "bg-primary text-primary-foreground font-semibold" : "bg-muted/50 hover:bg-muted text-muted-foreground")}>
+                Reports
+              </Link>
+              <span className="text-muted-foreground/30 font-light hidden sm:inline">|</span>
+              <Link href="/admin?tab=clean-data" className={cn("px-2.5 py-1 rounded-md transition-colors", tab === "clean-data" ? "bg-primary text-primary-foreground font-semibold" : "bg-muted/50 hover:bg-muted text-muted-foreground")}>
+                Clean data
+              </Link>
+              <Link href="/admin?tab=system" className={cn("px-2.5 py-1 rounded-md transition-colors", tab === "system" ? "bg-primary text-primary-foreground font-semibold" : "bg-muted/50 hover:bg-muted text-muted-foreground")}>
+                System
+              </Link>
+              <Link href="/admin?tab=branding" className={cn("px-2.5 py-1 rounded-md transition-colors", tab === "branding" ? "bg-primary text-primary-foreground font-semibold" : "bg-muted/50 hover:bg-muted text-muted-foreground")}>
+                Branding
+              </Link>
+              <Link href="/admin?tab=files" className={cn("px-2.5 py-1 rounded-md transition-colors", tab === "files" ? "bg-primary text-primary-foreground font-semibold" : "bg-muted/50 hover:bg-muted text-muted-foreground")}>
+                Files
+              </Link>
+              <Link href="/admin?tab=usage" className={cn("px-2.5 py-1 rounded-md transition-colors", tab === "usage" ? "bg-primary text-primary-foreground font-semibold" : "bg-muted/50 hover:bg-muted text-muted-foreground")}>
+                Usage
+              </Link>
+            </>
+          )}
+          {manageData && (
+            <Link href="/admin?tab=data" className={cn("px-2.5 py-1 rounded-md transition-colors", tab === "data" ? "bg-primary text-primary-foreground font-semibold" : "bg-muted/50 hover:bg-muted text-muted-foreground")}>
+              Data
+            </Link>
+          )}
+        </div>
         <TabsList className="hidden">
           {manageUsers && <TabsTrigger value="people">People ({users.filter((u) => u.active).length})</TabsTrigger>}
           {manageUsers && <TabsTrigger value="teams">Teams</TabsTrigger>}
