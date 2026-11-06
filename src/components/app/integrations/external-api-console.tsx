@@ -25,6 +25,7 @@ import {
   Building2Icon,
   SparklesIcon,
   CheckIcon,
+  PencilIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -333,6 +334,26 @@ export function ExternalApiConsole({ config }: { config: ExternalApiConfig }) {
                               >
                                 {testing === `chapa-${acc.id}` ? <Loader2Icon className="size-3 animate-spin mr-1" /> : <RefreshCwIcon className="size-3 mr-1" />}
                                 Test
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-7 text-[11px] px-2"
+                                onClick={() => {
+                                  setChapaForm({
+                                    id: acc.id,
+                                    name: acc.name,
+                                    secretKey: "",
+                                    publicKey: acc.publicKey,
+                                    webhookSecret: "",
+                                    currency: acc.currency,
+                                    active: acc.active,
+                                  });
+                                  setChapaModalOpen(true);
+                                }}
+                              >
+                                <PencilIcon className="size-3 mr-1" />
+                                Edit
                               </Button>
                               <Button
                                 variant="ghost"
@@ -759,10 +780,10 @@ export function ExternalApiConsole({ config }: { config: ExternalApiConfig }) {
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-base">
-              <CreditCardIcon className="size-4 text-emerald-600" /> Add Chapa Business Account
+              <CreditCardIcon className="size-4 text-emerald-600" /> {chapaForm.id ? "Edit Chapa Business Account" : "Add Chapa Business Account"}
             </DialogTitle>
             <DialogDescription className="text-xs">
-              Add a distinct business sub-account (e.g. "MySeed Subscriptions", "MySeed Donations") with its own API keys.
+              {chapaForm.id ? "Update business account credentials and settings." : "Add a distinct business sub-account (e.g. \"MySeed Subscriptions\", \"MySeed Donations\") with its own API keys."}
             </DialogDescription>
           </DialogHeader>
 
@@ -779,13 +800,13 @@ export function ExternalApiConsole({ config }: { config: ExternalApiConfig }) {
             </div>
 
             <div className="space-y-1">
-              <Label htmlFor="acc-sec">Chapa Secret Key (CHASECK_...) *</Label>
+              <Label htmlFor="acc-sec">Chapa Secret Key (CHASECK_...) {chapaForm.id ? "(Optional if unchanged)" : "*"}</Label>
               <Input
                 id="acc-sec"
                 type="password"
                 value={chapaForm.secretKey}
                 onChange={(e) => setChapaForm({ ...chapaForm, secretKey: e.target.value })}
-                placeholder="CHASECK_LIVE-... or CHASECK_TEST-..."
+                placeholder={chapaForm.id ? "•••••••• (Leave blank to keep existing key)" : "CHASECK_LIVE-... or CHASECK_TEST-..."}
                 className="h-8 text-xs font-mono"
               />
             </div>

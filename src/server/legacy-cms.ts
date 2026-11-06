@@ -194,6 +194,24 @@ export async function clearLegacyCmsData(user: AppUser, category?: LegacyCmsCate
 // Filament v3 Table Scraper & Livewire Authenticator
 // ---------------------------------------------------------------------------
 
+function parseCookiesToJar(cookies: string[], jar = new Map<string, string>()): Map<string, string> {
+  for (const c of cookies) {
+    if (!c) continue;
+    const part = c.split(";")[0].trim();
+    const idx = part.indexOf("=");
+    if (idx > 0) {
+      const name = part.slice(0, idx).trim();
+      const val = part.slice(idx + 1).trim();
+      jar.set(name, val);
+    }
+  }
+  return jar;
+}
+
+function jarToHeader(jar: Map<string, string>): string {
+  return Array.from(jar.entries()).map(([k, v]) => `${k}=${v}`).join("; ");
+}
+
 function parseFilamentTable(html: string): Record<string, string>[] {
   const tableMatch = html.match(/<table\b[\s\S]*?<\/table>/i);
   if (!tableMatch) return [];
@@ -258,7 +276,8 @@ async function authenticateFilament(baseUrl: string, username: string, password:
   }
 
   const rawCookies = (getRes.headers as any).getSetCookie ? (getRes.headers as any).getSetCookie() : [getRes.headers.get("set-cookie") || ""];
-  const initialCookies = rawCookies.map((c: string) => c.split(";")[0]).filter(Boolean).join("; ");
+  const jar = parseCookiesToJar(rawCookies);
+  const initialCookies = jarToHeader(jar);
   const html = await getRes.text();
 
   const csrfMatch = html.match(/name="csrf-token" content="([^"]+)"/i);
@@ -303,12 +322,10 @@ async function authenticateFilament(baseUrl: string, username: string, password:
   });
 
   const lwCookies = (lwRes.headers as any).getSetCookie ? (lwRes.headers as any).getSetCookie() : [lwRes.headers.get("set-cookie") || ""];
-  const authCookieHeader = [...rawCookies, ...lwCookies]
-    .map((c: string) => c.split(";")[0])
-    .filter(Boolean)
-    .join("; ");
+  // Merge livewire cookies into jar so newly issued authenticated session overwrites initial unauthenticated cookie
+  parseCookiesToJar(lwCookies, jar);
 
-  return authCookieHeader;
+  return jarToHeader(jar);
 }
 
 export async function loginLegacyCms(
@@ -326,20 +343,25 @@ export async function loginLegacyCms(
   try {
     const cookieHeader = await authenticateFilament(baseUrl, username, password);
 
-    // Verify session by checking access
+    // Verify session by checking access with redirect: "manual"
     const testUrl = `${baseUrl}/admin/students`;
     const testRes = await fetch(testUrl, {
       headers: {
         Cookie: cookieHeader,
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
       },
+      redirect: "manual",
     });
 
-    if (!testRes.ok || testRes.url.includes("/login")) {
+    const loc = testRes.headers.get("location") || "";
+    if (testRes.status === 302 && loc.includes("/login")) {
+      throw new Error("Authentication rejected by server (Redirected to login)");
+    }
+    if (!testRes.ok && testRes.status !== 200) {
       throw new Error(`Authentication rejected by server (HTTP ${testRes.status})`);
     }
 
-    // Seal and persist the cookie in settings
+    // Seal and persist the cookie in settings automatically
     const cookieEnc = await seal(cookieHeader);
     const rawRow = await get<{ value: string }>("SELECT value FROM settings WHERE key = 'cfg.legacy_cms'");
     const stored = rawRow?.value ? parseJson<StoredCmsConfig>(rawRow.value, {}) : {};
@@ -382,53 +404,83 @@ export async function checkLegacyCmsAuth(
 
   let cookieHeader = config.sessionCookie || "";
 
-  if (!cookieHeader) {
-    if (config.username && config.password) {
-      try {
-        cookieHeader = await authenticateFilament(baseUrl, config.username, config.password);
-        const cookieEnc = await seal(cookieHeader);
-        const rawRow = await get<{ value: string }>("SELECT value FROM settings WHERE key = 'cfg.legacy_cms'");
-        const stored = rawRow?.value ? parseJson<StoredCmsConfig>(rawRow.value, {}) : {};
-        await run("UPDATE settings SET value = ? WHERE key = 'cfg.legacy_cms'", JSON.stringify({ ...stored, sessionCookieEnc: cookieEnc }));
-      } catch (err: any) {
-        return {
-          ok: false,
-          status: "disconnected",
-          username: config.username,
-          message: `Not connected: ${err?.message || err}`,
-          ms: Date.now() - start,
-        };
-      }
-    } else {
+  if (!cookieHeader && config.username && config.password) {
+    try {
+      cookieHeader = await authenticateFilament(baseUrl, config.username, config.password);
+      const cookieEnc = await seal(cookieHeader);
+      const rawRow = await get<{ value: string }>("SELECT value FROM settings WHERE key = 'cfg.legacy_cms'");
+      const stored = rawRow?.value ? parseJson<StoredCmsConfig>(rawRow.value, {}) : {};
+      await run("UPDATE settings SET value = ? WHERE key = 'cfg.legacy_cms'", JSON.stringify({ ...stored, sessionCookieEnc: cookieEnc }));
+    } catch (err: any) {
       return {
         ok: false,
         status: "disconnected",
         username: config.username,
-        message: "No active session cookie or credentials found.",
+        message: `Not connected: ${err?.message || err}`,
         ms: Date.now() - start,
       };
     }
   }
 
+  if (!cookieHeader) {
+    return {
+      ok: false,
+      status: "disconnected",
+      username: config.username,
+      message: "No active session cookie or credentials found.",
+      ms: Date.now() - start,
+    };
+  }
+
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 12000);
-    const res = await fetch(`${baseUrl}/admin/students`, {
+    let res = await fetch(`${baseUrl}/admin/students`, {
       headers: {
         Cookie: cookieHeader,
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
       },
+      redirect: "manual",
       signal: controller.signal,
     });
     clearTimeout(timeout);
 
+    // Auto-refresh session if expired
+    const loc = res.headers.get("location") || "";
+    if ((res.status === 302 && loc.includes("/login")) || res.status === 401 || res.status === 419) {
+      if (config.username && config.password) {
+        try {
+          cookieHeader = await authenticateFilament(baseUrl, config.username, config.password);
+          const cookieEnc = await seal(cookieHeader);
+          const rawRow = await get<{ value: string }>("SELECT value FROM settings WHERE key = 'cfg.legacy_cms'");
+          const stored = rawRow?.value ? parseJson<StoredCmsConfig>(rawRow.value, {}) : {};
+          await run("UPDATE settings SET value = ? WHERE key = 'cfg.legacy_cms'", JSON.stringify({ ...stored, sessionCookieEnc: cookieEnc }));
+
+          const retryCtrl = new AbortController();
+          const retryTimeout = setTimeout(() => retryCtrl.abort(), 12000);
+          res = await fetch(`${baseUrl}/admin/students`, {
+            headers: {
+              Cookie: cookieHeader,
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            },
+            redirect: "manual",
+            signal: retryCtrl.signal,
+          });
+          clearTimeout(retryTimeout);
+        } catch {
+          // ignore error here and handle below
+        }
+      }
+    }
+
     const ms = Date.now() - start;
-    if (res.ok && !res.url.includes("/login")) {
+    const retryLoc = res.headers.get("location") || "";
+    if (res.status === 200 && !retryLoc.includes("/login")) {
       return {
         ok: true,
         status: "connected",
         username: config.username,
-        message: `Session active and verified with Noor CMS (HTTP ${res.status})`,
+        message: `Session active and verified with Noor CMS (HTTP 200)`,
         ms,
       };
     }
@@ -533,10 +585,29 @@ export async function syncLegacyCms(
       try {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 20000);
-        const res = await fetch(targetUrl, { headers, signal: controller.signal });
+        let res = await fetch(targetUrl, { headers, signal: controller.signal });
         clearTimeout(timeout);
 
-        if (res.ok) {
+        // If session expired or redirected to login, auto-refresh and retry once
+        if (res.url.includes("/login") || res.status === 401 || res.status === 419) {
+          if (config.username && config.password) {
+            try {
+              cookieHeader = await authenticateFilament(baseUrl, config.username, config.password);
+              headers["Cookie"] = cookieHeader;
+              const cookieEnc = await seal(cookieHeader);
+              await run("UPDATE settings SET value = ? WHERE key = 'cfg.legacy_cms'", JSON.stringify({ ...stored, sessionCookieEnc: cookieEnc }));
+
+              const retryCtrl = new AbortController();
+              const retryTimeout = setTimeout(() => retryCtrl.abort(), 20000);
+              res = await fetch(targetUrl, { headers, signal: retryCtrl.signal });
+              clearTimeout(retryTimeout);
+            } catch (authErr) {
+              console.warn(`[legacy-cms] Auto re-auth failed during sync:`, authErr);
+            }
+          }
+        }
+
+        if (res.ok && !res.url.includes("/login")) {
           const contentType = res.headers.get("content-type") || "";
           if (contentType.includes("application/json")) {
             const json = await res.json();

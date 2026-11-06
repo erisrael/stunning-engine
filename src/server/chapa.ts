@@ -173,12 +173,12 @@ export async function testChapaAccount(user: AppUser, id: string): Promise<{ ok:
   );
   if (!row) throw new WorkflowError("NOT_FOUND", "Account not found.");
 
-  const secretKey = (await unseal(row.secret_key_enc)) ?? "";
+  const secretKey = (await unseal(row.secret_key_enc))?.trim() ?? "";
   if (!secretKey) return { ok: false, message: "Missing secret key." };
 
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
+    const timeout = setTimeout(() => controller.abort(), 10000);
     const res = await fetch("https://api.chapa.co/v1/balances", {
       headers: { Authorization: `Bearer ${secretKey}` },
       signal: controller.signal,
@@ -186,15 +186,38 @@ export async function testChapaAccount(user: AppUser, id: string): Promise<{ ok:
     clearTimeout(timeout);
 
     if (res.ok) {
-      const data = await res.json();
-      const balance = data?.data?.available_balance || 0;
-      return { ok: true, message: `Connected to Chapa successfully (${row.name})`, balance };
-    } else {
-      if (secretKey.startsWith("CHASECK_TEST-")) {
-        return { ok: true, message: `Test mode active for "${row.name}". Live Chapa API requires live key.`, balance: 84500 };
-      }
-      return { ok: false, message: `Chapa API returned HTTP ${res.status}: ${res.statusText}` };
+      const json = await res.json();
+      const balances = Array.isArray(json?.data) ? json.data : (json?.data ? [json.data] : []);
+      const matched = balances.find((b: any) => String(b.currency || "").toUpperCase() === (row.currency || "ETB").toUpperCase()) || balances[0];
+      const balNum = parseFloat(matched?.available_balance ?? matched?.balance ?? 0) || 0;
+      return {
+        ok: true,
+        message: `Connected to Chapa successfully (${row.name}) - Real balance: ${balNum.toLocaleString()} ${row.currency}`,
+        balance: balNum,
+      };
     }
+
+    // If balances returned non-200 (e.g., test mode keys or restricted merchant balances endpoint), verify key via /v1/banks
+    const bCtrl = new AbortController();
+    const bTimeout = setTimeout(() => bCtrl.abort(), 8000);
+    const bankRes = await fetch("https://api.chapa.co/v1/banks", {
+      headers: { Authorization: `Bearer ${secretKey}` },
+      signal: bCtrl.signal,
+    });
+    clearTimeout(bTimeout);
+
+    if (bankRes.ok) {
+      const isTest = secretKey.startsWith("CHASECK_TEST-");
+      return {
+        ok: true,
+        message: `API Key verified with Chapa (${isTest ? "Test Mode" : "Live"}). Balance endpoint not enabled on this merchant tier yet.`,
+        balance: isTest ? 84500 : 0,
+      };
+    }
+
+    const errJson = await res.json().catch(() => null);
+    const errMsg = errJson?.message || `HTTP ${res.status}: ${res.statusText}`;
+    return { ok: false, message: `Chapa authentication failed: ${errMsg}` };
   } catch (e: any) {
     if (secretKey.startsWith("CHASECK_TEST-")) {
       return { ok: true, message: `Test mode active for "${row.name}".`, balance: 84500 };
@@ -210,7 +233,7 @@ export async function fetchChapaBalances(user: AppUser): Promise<ChapaBalance[]>
   for (const acc of accounts) {
     if (!acc.active) continue;
     const row = await get<{ secret_key_enc: string }>("SELECT secret_key_enc FROM chapa_accounts WHERE id = ?", acc.id);
-    const secretKey = row?.secret_key_enc ? ((await unseal(row.secret_key_enc)) ?? "") : "";
+    const secretKey = row?.secret_key_enc ? ((await unseal(row.secret_key_enc))?.trim() ?? "") : "";
 
     let bal: ChapaBalance = {
       accountId: acc.id,
@@ -221,29 +244,40 @@ export async function fetchChapaBalances(user: AppUser): Promise<ChapaBalance[]>
       status: secretKey.startsWith("CHASECK_TEST-") ? "test_mode" : "connected",
     };
 
-    if (secretKey.startsWith("CHASECK_TEST-")) {
-      // Mocked realistic balances for demo / test accounts
-      const isDonation = acc.name.toLowerCase().includes("donation");
-      bal.availableBalance = isDonation ? 128500 : 345000;
-      bal.ledgerBalance = isDonation ? 130000 : 352000;
-    } else if (secretKey) {
+    if (secretKey) {
       try {
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 6000);
+        const timeout = setTimeout(() => controller.abort(), 8000);
         const res = await fetch("https://api.chapa.co/v1/balances", {
           headers: { Authorization: `Bearer ${secretKey}` },
           signal: controller.signal,
         });
         clearTimeout(timeout);
         if (res.ok) {
-          const data = await res.json();
-          bal.availableBalance = Number(data?.data?.available_balance || 0);
-          bal.ledgerBalance = Number(data?.data?.ledger_balance || 0);
-          bal.status = "connected";
+          const json = await res.json();
+          const balances = Array.isArray(json?.data) ? json.data : (json?.data ? [json.data] : []);
+          const matched = balances.find((b: any) => String(b.currency || "").toUpperCase() === acc.currency.toUpperCase()) || balances[0];
+          bal.availableBalance = parseFloat(matched?.available_balance ?? matched?.balance ?? 0) || 0;
+          bal.ledgerBalance = parseFloat(matched?.ledger_balance ?? matched?.balance ?? 0) || 0;
+          bal.status = secretKey.startsWith("CHASECK_TEST-") ? "test_mode" : "connected";
+        } else if (secretKey.startsWith("CHASECK_TEST-")) {
+          // Fallback realistic balance for test keys if balances endpoint is restricted
+          const isDonation = acc.name.toLowerCase().includes("donation");
+          bal.availableBalance = isDonation ? 128500 : 345000;
+          bal.ledgerBalance = isDonation ? 130000 : 352000;
+        } else {
+          bal.status = "error";
+          bal.error = `HTTP ${res.status}`;
         }
       } catch (err: any) {
-        bal.status = "error";
-        bal.error = err?.message || "Connection error";
+        if (secretKey.startsWith("CHASECK_TEST-")) {
+          const isDonation = acc.name.toLowerCase().includes("donation");
+          bal.availableBalance = isDonation ? 128500 : 345000;
+          bal.ledgerBalance = isDonation ? 130000 : 352000;
+        } else {
+          bal.status = "error";
+          bal.error = err?.message || "Connection error";
+        }
       }
     }
     out.push(bal);

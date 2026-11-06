@@ -895,15 +895,21 @@ export function LegacyCmsClient({
             </div>
 
             <div className="space-y-1">
-              <Label htmlFor="cms-cookie">Session Cookie (Optional / Bypass 2FA)</Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="cms-cookie">Session Cookie</Label>
+                <span className="text-[10px] text-emerald-600 font-medium">Captured automatically</span>
+              </div>
               <Input
                 id="cms-cookie"
                 type="password"
                 value={cfg.sessionCookie}
                 onChange={(e) => setCfg({ ...cfg, sessionCookie: e.target.value })}
-                placeholder={config.hasSessionCookie ? "•••••••• (Cookie active)" : "e.g. remember_web_... or session=..."}
+                placeholder={config.hasSessionCookie ? "•••••••• (Live session cookie active)" : "Automatically extracted from Livewire"}
                 className="h-8 text-xs font-mono"
               />
+              <p className="text-[11px] text-muted-foreground">
+                You do not need to paste cookies manually. The system automatically captures and renews the Livewire session cookie in the background.
+              </p>
             </div>
 
             <div className="flex items-center justify-between rounded-lg border p-2.5">
