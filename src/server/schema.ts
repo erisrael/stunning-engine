@@ -2967,10 +2967,12 @@ CREATE TABLE IF NOT EXISTS presenters (
   aliases TEXT NOT NULL DEFAULT '[]',
   rate_kind TEXT,
   rate DOUBLE PRECISION,
+  department TEXT,
   active INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
+ALTER TABLE presenters ADD COLUMN IF NOT EXISTS department TEXT;
 CREATE TABLE IF NOT EXISTS presenter_releases (
   id TEXT PRIMARY KEY,
   presenter_id TEXT NOT NULL REFERENCES presenters(id) ON DELETE CASCADE,

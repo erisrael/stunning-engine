@@ -11,7 +11,7 @@ import { uniqueHandle } from "@/server/importer";
 import { audit, decideSessionCorrection, WorkflowError } from "@/server/workflow";
 import { runScheduledChecks } from "@/server/jobs";
 import { can, type UserPrefs } from "@/server/users";
-import { emptyWorkspace, importCurriculumBackup, isCurriculumBackup } from "@/server/workspace-data";
+import { emptyWorkspace, importCurriculumBackup, isCurriculumBackup, purgeWorkspaceData, type PurgeCategory } from "@/server/workspace-data";
 import { CAPABILITIES, ROLES, STAGES, leadKey, type Capability, type PermissionMatrix, type Role, type Stage } from "@/lib/domain";
 
 // ---------------------------------------------------------------------------
@@ -343,6 +343,13 @@ export async function emptyWorkspaceAction(input: { confirm: string; keepAccount
       await run("DELETE FROM sessions WHERE id <> ?", viewer.sessionId);
     }
     await audit({ actor: viewer }, { action: "workspace.emptied", summary: `${viewer.name} emptied the workspace${input.keepAccounts ? " (accounts kept)" : ""}` });
+  });
+}
+
+export async function purgeWorkspaceDataAction(input: { categories: PurgeCategory[]; confirm: string }) {
+  return wrap(async () => {
+    const viewer = await requireViewer();
+    return purgeWorkspaceData(viewer, input.categories, input.confirm);
   });
 }
 

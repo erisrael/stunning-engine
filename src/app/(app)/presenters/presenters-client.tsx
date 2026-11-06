@@ -23,11 +23,11 @@ const STATE: Record<Presenter["releaseState"], { label: string; cls: string }> =
 const RATE: Record<string, string> = { session: "per session", part: "per part", hour: "per hour" };
 
 function PresenterForm({ p, onDone }: { p?: Presenter; onDone: () => void }) {
-  const [f, setF] = React.useState({ name: p?.name ?? "", kind: p?.kind ?? "teacher", phone: p?.phone ?? "", email: p?.email ?? "", subjects: p?.subjects ?? "", aliases: (p?.aliases ?? []).join(", "), rateKind: p?.rateKind ?? "", rate: p?.rate ? String(p.rate) : "" });
+  const [f, setF] = React.useState({ name: p?.name ?? "", kind: p?.kind ?? "teacher", phone: p?.phone ?? "", email: p?.email ?? "", subjects: p?.subjects ?? "", aliases: (p?.aliases ?? []).join(", "), rateKind: p?.rateKind ?? "", rate: p?.rate ? String(p.rate) : "", department: p?.department ?? "" });
   const [busy, setBusy] = React.useState(false);
   const save = async () => {
     setBusy(true);
-    const r = await savePresenterAction({ id: p?.id, ...f, aliases: f.aliases.split(",").map((x) => x.trim()).filter(Boolean), rate: f.rate ? Number(f.rate) : null, rateKind: f.rateKind || null });
+    const r = await savePresenterAction({ id: p?.id, ...f, aliases: f.aliases.split(",").map((x) => x.trim()).filter(Boolean), rate: f.rate ? Number(f.rate) : null, rateKind: f.rateKind || null, department: f.department || null });
     setBusy(false);
     if (!r.ok) return void toast.error(r.error);
     toast.success(p ? "Saved" : "Presenter added");
@@ -43,6 +43,7 @@ function PresenterForm({ p, onDone }: { p?: Presenter; onDone: () => void }) {
       </select>
       <Input aria-label="Phone" placeholder="Phone" value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} />
       <Input aria-label="Email" placeholder="Email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} />
+      <Input aria-label="Department" placeholder="Department key (e.g. academic, studio)" value={f.department} onChange={(e) => setF({ ...f, department: e.target.value })} />
       <Input aria-label="Subjects" placeholder="Subjects (for example Grade 9 Physics)" value={f.subjects} onChange={(e) => setF({ ...f, subjects: e.target.value })} />
       <Input aria-label="Other names" placeholder="Other names on parts, comma separated" value={f.aliases} onChange={(e) => setF({ ...f, aliases: e.target.value })} />
       <select aria-label="Fee" className="h-9 rounded-md border bg-background px-2" value={f.rateKind} onChange={(e) => setF({ ...f, rateKind: e.target.value })}>

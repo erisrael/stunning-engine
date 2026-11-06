@@ -90,6 +90,8 @@ export async function saveFinanceSettings(user: AppUser, input: Partial<FinanceS
       rest: num(input.overtimeRates?.rest ?? cur.overtimeRates.rest, 2, 1, 5),
       holiday: num(input.overtimeRates?.holiday ?? cur.overtimeRates.holiday, 2.5, 1, 5),
     },
+    payrollStartDate: input.payrollStartDate === undefined ? (cur.payrollStartDate ?? null) : input.payrollStartDate ? clean(input.payrollStartDate, 20) : null,
+    payrollCycleStartDay: num(input.payrollCycleStartDay ?? cur.payrollCycleStartDay, 1, 1, 31),
   };
   next.taxLaw = lawOf(next.taxBrackets);
   await run(
@@ -774,6 +776,10 @@ export async function enrolEveryone(user: AppUser | null) {
 export async function createPayrollRun(user: AppUser, period: string) {
   need(user, "payroll", "prepare payroll");
   if (!/^\d{4}-\d{2}$/.test(period)) throw new WorkflowError("VALIDATION", "Choose the month.");
+  const fset = await financeSettings();
+  if (fset.payrollStartDate && period < fset.payrollStartDate.slice(0, 7)) {
+    throw new WorkflowError("VALIDATION", `Payroll starts from ${fset.payrollStartDate.slice(0, 7)}. Cannot create a payroll run before the configured starting date.`);
+  }
   await needOpen(`${period}-01`);
   if (await get("SELECT 1 AS x FROM fin_payroll_runs WHERE period = ?", period)) throw new WorkflowError("VALIDATION", `${period} already has a payroll run.`);
   await enrolEveryone(user);

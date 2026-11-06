@@ -52,6 +52,12 @@ import { ChatAdmin, FeedbackAdmin, ReportsAdmin } from "./support-admin";
 import { chatConfig, chatUsage } from "@/server/chat-extras";
 import { maxUploadBytes } from "@/server/storage";
 import { FEEDBACK_CATEGORIES, FEEDBACK_STATUSES, REPORT_REASONS, REPORT_STATUSES, listFeedback, listReports } from "@/server/support";
+import { CleanDataAdmin } from "./clean-data-admin";
+import { ExternalApiConsole } from "@/components/app/integrations/external-api-console";
+import { getExternalApiConfig } from "@/server/external-api";
+import { SupportSettings } from "@/components/app/support/setup";
+import { supportConfig } from "@/server/support-desk";
+import * as ch from "@/server/support-channels";
 
 export const metadata = { title: "Admin" };
 
@@ -147,6 +153,9 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           {manageUsers && <TabsTrigger value="privacy">Privacy</TabsTrigger>}
           {manageUsers && <TabsTrigger value="files">Files and publishing</TabsTrigger>}
           {manageUsers && <TabsTrigger value="integrations">Integrations</TabsTrigger>}
+          {manageUsers && <TabsTrigger value="customer-support">Customer support</TabsTrigger>}
+          {manageUsers && <TabsTrigger value="external-apis">External APIs</TabsTrigger>}
+          {manageUsers && <TabsTrigger value="clean-data">Clean data</TabsTrigger>}
           {manageUsers && <TabsTrigger value="system">System</TabsTrigger>}
           {manageData && <TabsTrigger value="data">Data</TabsTrigger>}
         </TabsList>
@@ -166,6 +175,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
                   (await customDepartments({ includeArchived: true })).map(async (c) => ({ ...c, people: (await deptPeople(c.key)).map((x) => ({ id: x.id, name: x.name, roles: x.roles, position: x.position })) })),
                 )}
                 everyone={users.filter((u) => u.active).map((u) => ({ id: u.id, name: u.name }))}
+                presenters={await all<{ id: string; name: string; kind: string; subjects: string | null; department: string | null }>("SELECT id, name, kind, subjects, department FROM presenters WHERE active = 1 ORDER BY name")}
               />
             </TabsContent>
             <TabsContent value="permissions">
@@ -272,6 +282,23 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
                     </div>
                   );
                 })())}
+            </TabsContent>
+            <TabsContent value="customer-support" className="space-y-4">
+              {tab === "customer-support" && (
+                <SupportSettings
+                  cfg={await supportConfig()}
+                  people={users.filter((u) => u.active).map((u) => ({ id: u.id, name: u.name }))}
+                  admin={manageUsers}
+                  mailboxes={(await all<{ address: string }>("SELECT address FROM email_senders WHERE mailbox = 1 AND active = 1 ORDER BY address")).map((m) => m.address)}
+                  telegram={await ch.telegramInfo()}
+                />
+              )}
+            </TabsContent>
+            <TabsContent value="external-apis">
+              {tab === "external-apis" && <ExternalApiConsole config={await getExternalApiConfig()} />}
+            </TabsContent>
+            <TabsContent value="clean-data">
+              {tab === "clean-data" && <CleanDataAdmin />}
             </TabsContent>
           </>
         )}

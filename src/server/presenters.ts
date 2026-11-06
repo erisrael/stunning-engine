@@ -24,6 +24,7 @@ export type Presenter = {
   aliases: string[];
   rateKind: "session" | "part" | "hour" | null;
   rate: number | null;
+  department: string | null;
   active: boolean;
   release: { id: string; signedOn: string; expiresOn: string | null; scope: string | null; fileName: string | null } | null;
   releaseState: "valid" | "expiring" | "expired" | "none";
@@ -58,7 +59,7 @@ const today = () => nowIso().slice(0, 10);
 const plusDays = (d: string, n: number) => new Date(Date.parse(`${d}T12:00:00Z`) + n * 864e5).toISOString().slice(0, 10);
 const norm = (s: string | null | undefined) => (s ?? "").replace(/\s+/g, " ").trim().toLowerCase();
 
-type Row = { id: string; name: string; kind: string; phone: string | null; email: string | null; subjects: string | null; aliases: string | null; rate_kind: string | null; rate: number | null; active: number };
+type Row = { id: string; name: string; kind: string; phone: string | null; email: string | null; subjects: string | null; aliases: string | null; rate_kind: string | null; rate: number | null; department?: string | null; active: number };
 
 async function latestRelease(presenterId: string) {
   return await get<{ id: string; signed_on: string; expires_on: string | null; scope: string | null; file_name: string | null }>(
@@ -90,6 +91,7 @@ export async function listPresenters(user: AppUser): Promise<Presenter[]> {
       aliases: parseJson<string[]>(r.aliases, []),
       rateKind: (r.rate_kind as Presenter["rateKind"]) ?? null,
       rate: r.rate === null ? null : Number(r.rate),
+      department: r.department ?? null,
       active: !!Number(r.active),
       release: rel ? { id: rel.id, signedOn: rel.signed_on, expiresOn: rel.expires_on, scope: rel.scope, fileName: rel.file_name } : null,
       releaseState: stateOf(rel, cfg.warnDays),
@@ -98,7 +100,20 @@ export async function listPresenters(user: AppUser): Promise<Presenter[]> {
   return out;
 }
 
-export async function savePresenter(user: AppUser, input: { id?: string | null; name: string; kind?: string; phone?: string | null; email?: string | null; subjects?: string | null; aliases?: string[]; rateKind?: string | null; rate?: number | null; active?: boolean }) {
+export async function deptPresenters(dept: string): Promise<{ id: string; name: string; kind: string; subjects: string | null; phone: string | null }[]> {
+  return all("SELECT id, name, kind, subjects, phone FROM presenters WHERE department = ? AND active = 1 ORDER BY name", dept);
+}
+
+export async function setPresenterDepartment(user: AppUser, presenterId: string, dept: string | null) {
+  if (!canPresenters(user)) throw new WorkflowError("FORBIDDEN", "Only HR and Admin assign presenters to departments.");
+  const p = await get<{ name: string }>("SELECT name FROM presenters WHERE id = ?", presenterId);
+  if (!p) throw new WorkflowError("NOT_FOUND", "Presenter not found.");
+  await run("UPDATE presenters SET department = ?, updated_at = ? WHERE id = ?", dept || null, nowIso(), presenterId);
+  await audit({ actor: user }, { action: "presenter.department", summary: `${user.name} assigned ${p.name} to department ${dept || "none"}` });
+  return true;
+}
+
+export async function savePresenter(user: AppUser, input: { id?: string | null; name: string; kind?: string; phone?: string | null; email?: string | null; subjects?: string | null; aliases?: string[]; rateKind?: string | null; rate?: number | null; department?: string | null; active?: boolean }) {
   need(user);
   const name = String(input.name ?? "").replace(/\s+/g, " ").trim().slice(0, 120);
   if (!name) throw new WorkflowError("VALIDATION", "Give the presenter's name.");
@@ -106,14 +121,15 @@ export async function savePresenter(user: AppUser, input: { id?: string | null; 
   const rateKind = ["session", "part", "hour"].includes(String(input.rateKind)) ? input.rateKind! : null;
   const rate = rateKind && Number(input.rate) > 0 ? Math.round(Number(input.rate) * 100) / 100 : null;
   const aliases = (input.aliases ?? []).map((a) => String(a).trim().slice(0, 120)).filter(Boolean).slice(0, 10);
+  const dept = input.department?.trim() || null;
   const now = nowIso();
-  const vals = [name, kind, input.phone?.trim().slice(0, 40) || null, input.email?.trim().slice(0, 120) || null, input.subjects?.trim().slice(0, 300) || null, JSON.stringify(aliases), rateKind, rate, input.active === false ? 0 : 1];
+  const vals = [name, kind, input.phone?.trim().slice(0, 40) || null, input.email?.trim().slice(0, 120) || null, input.subjects?.trim().slice(0, 300) || null, JSON.stringify(aliases), rateKind, rate, dept, input.active === false ? 0 : 1];
   if (input.id) {
-    await run("UPDATE presenters SET name = ?, kind = ?, phone = ?, email = ?, subjects = ?, aliases = ?, rate_kind = ?, rate = ?, active = ?, updated_at = ? WHERE id = ?", ...vals, now, input.id);
+    await run("UPDATE presenters SET name = ?, kind = ?, phone = ?, email = ?, subjects = ?, aliases = ?, rate_kind = ?, rate = ?, department = ?, active = ?, updated_at = ? WHERE id = ?", ...vals, now, input.id);
     return input.id;
   }
   const id = uid("prs_");
-  await run("INSERT INTO presenters (id, name, kind, phone, email, subjects, aliases, rate_kind, rate, active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", id, ...vals, now, now);
+  await run("INSERT INTO presenters (id, name, kind, phone, email, subjects, aliases, rate_kind, rate, department, active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", id, ...vals, now, now);
   await audit({ actor: user }, { action: "presenter.created", summary: `${user.name} added the presenter ${name}` });
   return id;
 }

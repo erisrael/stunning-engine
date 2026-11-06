@@ -7,6 +7,7 @@ import * as sd from "@/server/support-desk";
 import { EmptyState, PageHeader } from "@/components/app/primitives";
 import { Desk, Inbox, NewTicket, TicketView } from "@/components/app/support/desk";
 import { Apps, Canned, DeveloperApi, KnowledgeBase, Monitor, Queues, SupportSettings } from "@/components/app/support/setup";
+import { StudentLookupDialog } from "@/components/app/support/student-lookup-dialog";
 import * as ch from "@/server/support-channels";
 import { all } from "@/server/db";
 import { cn } from "@/lib/utils";
@@ -99,7 +100,11 @@ export default async function SupportPage({ searchParams }: { searchParams: Prom
 
   return (
     <div className="space-y-4">
-      <PageHeader title="Customer support" description="Questions and calls from customers of Myseed's apps, given out to agents by queue, with targets, recordings and monitoring." />
+      <PageHeader
+        title="Customer support"
+        description="Questions and calls from customers of Myseed's apps, given out to agents by queue, with targets, recordings and monitoring."
+        actions={<StudentLookupDialog />}
+      />
       <nav className="flex gap-1 overflow-x-auto border-b" aria-label="Support">
         {tabs.map((t) => (
           <Link key={t} href={`/support?tab=${t}`} className={cn("-mb-px shrink-0 border-b-2 px-3 py-2 text-sm whitespace-nowrap", tab === t ? "border-primary font-medium" : "border-transparent text-muted-foreground hover:text-foreground")}>

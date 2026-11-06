@@ -5,16 +5,19 @@ import { hashPassword } from "./passwords";
 import {
   acceptHandoff,
   addAsset,
+  audit,
   createItem,
   currentAttempt,
   recordStageCompletion,
   releaseToProduction,
   setChecklist,
   submitHandoff,
+  WorkflowError,
   type Ctx,
 } from "./workflow";
 import { ROLES, STAGES, type Role, type Stage } from "@/lib/domain";
 import { progressOf } from "@/lib/progress";
+import { can, type AppUser } from "./users";
 
 /*
  * Workspace data management: empty the database, create accounts and load the curriculum
@@ -36,6 +39,125 @@ export async function emptyWorkspace(opts: { keepAccounts?: boolean; keepSetting
   );
   await run(`TRUNCATE ${targets.join(", ")} RESTART IDENTITY CASCADE`);
   return targets.length;
+}
+
+export type PurgeCategory =
+  | "production"
+  | "attendance"
+  | "finance_payroll"
+  | "hr_personnel"
+  | "customer_support"
+  | "departments_tasks"
+  | "chat_communications"
+  | "email_mailboxes"
+  | "logs_notifications";
+
+export const PURGE_DOMAINS: Record<PurgeCategory, { label: string; description: string; tables: string[] }> = {
+  production: {
+    label: "Curriculum & Video Production",
+    description: "Grades, subjects, units, lessons, parts/items, deliverable assets, recordings, reviews, and handoffs.",
+    tables: [
+      "assets", "checklist_results", "handoff_reviews", "blockers", "deadline_revisions", "publication_targets",
+      "comments", "comment_reactions", "recording_sessions", "stage_attempts", "stage_intervals", "stage_assignments",
+      "item_collaborators", "item_memberships", "items", "lessons", "units", "grade_subjects", "subjects", "grades",
+      "curricula", "work_sessions", "session_corrections", "trash", "checklist_templates", "work_checklists",
+      "handovers", "handover_items", "curriculum_changes",
+    ],
+  },
+  attendance: {
+    label: "Attendance & Time Records",
+    description: "Daily check-ins, time events, attendance marks, shift assignments, kiosk logins, and face enrollments.",
+    tables: ["att_events", "att_marks", "att_shift_assign", "att_corrections", "att_kiosks", "att_badges", "att_devices", "att_geofence"],
+  },
+  finance_payroll: {
+    label: "Finance & Payroll",
+    description: "Payroll runs, payslips, employee pay structures, transactions, bills, invoices, claims, budgets, and accounts.",
+    tables: [
+      "fin_payslips", "fin_payroll_runs", "fin_pay_structures", "fin_transactions", "fin_bills", "fin_invoices",
+      "fin_claims", "fin_purchases", "fin_budgets", "fin_accounts", "fin_parties", "fin_periods",
+    ],
+  },
+  hr_personnel: {
+    label: "HR & Employee Records",
+    description: "Employee records, private info, documents, leave requests, leave types/balances, jobs, applicants, reviews, and presenters.",
+    tables: [
+      "employee_documents", "employee_private", "employees", "leave_entries", "leave_requests", "leave_adjustments",
+      "leave_queries", "leave_types", "equipment_events", "equipment", "scorecards", "interviews", "applicant_files",
+      "applicants", "job_openings", "employee_checklists", "hr_goals", "hr_reviews", "review_cycles", "one_on_ones",
+      "trainings", "courses", "hr_case_notes", "hr_cases", "profile_files", "profiles", "presenter_statements",
+      "presenter_releases", "presenters",
+    ],
+  },
+  customer_support: {
+    label: "Customer Support Desk",
+    description: "Support tickets, customer messages, call logs, customer records, and knowledge base articles.",
+    tables: [
+      "sup_messages", "sup_calls", "sup_tickets", "sup_customer_identities", "sup_customers", "sup_queue_members",
+      "sup_apps", "sup_queues", "sup_canned", "sup_kb_revisions", "sup_kb_articles", "sup_kb_categories", "sup_events", "sup_macro_history",
+    ],
+  },
+  departments_tasks: {
+    label: "Custom Departments & Tasks",
+    description: "Tasks, task links, watchers, task files, sprints, milestones, department docs, and custom departments.",
+    tables: [
+      "dept_task_links", "dept_task_watchers", "dept_task_files", "dept_task_comments", "dept_task_history",
+      "dept_tasks", "dept_time_entries", "dept_sprints", "dept_capacity", "dept_releases", "dept_standups",
+      "dept_retro", "dept_doc_links", "dept_doc_versions", "dept_docs", "dept_metrics", "dept_reports",
+      "dept_projects", "dept_milestones", "dept_config_versions", "dept_config", "dept_dashboards",
+      "department_positions", "departments",
+    ],
+  },
+  chat_communications: {
+    label: "Internal Chat & Announcements",
+    description: "Chat messages, channels, reactions, files, announcements, and reads.",
+    tables: ["chat_reactions", "chat_poll_votes", "chat_files", "chat_blobs", "chat_messages", "chat_members", "chat_groups", "announcement_reads", "announcements", "manager_questions"],
+  },
+  email_mailboxes: {
+    label: "Mail State & Inboxes",
+    description: "Mail state sync cache, email logs, and sender configs.",
+    tables: ["mail_state", "email_log_recipients", "email_log", "email_templates"],
+  },
+  logs_notifications: {
+    label: "Audit Logs & Notifications",
+    description: "System audit logs, in-app notifications, and link check history.",
+    tables: ["audit_events", "notifications", "page_visits", "record_access_log", "link_checks", "jobs", "idempotency_keys"],
+  },
+};
+
+export async function purgeWorkspaceData(user: AppUser, categories: PurgeCategory[], confirmText: string) {
+  if (!can(user, "users.manage")) throw new WorkflowError("FORBIDDEN", "Only user administrators can purge system data.");
+  if (confirmText.trim().toUpperCase() !== "PURGE DATA") {
+    throw new WorkflowError("VALIDATION", 'Type "PURGE DATA" to confirm.');
+  }
+  if (!categories.length) {
+    throw new WorkflowError("VALIDATION", "Select at least one data category to purge.");
+  }
+
+  const tablesToTruncate = new Set<string>();
+  for (const cat of categories) {
+    const def = PURGE_DOMAINS[cat];
+    if (def) {
+      for (const t of def.tables) tablesToTruncate.add(t);
+    }
+  }
+
+  // Double check that user accounts, logins, and roles are NEVER truncated:
+  const PROTECTED = new Set(["users", "role_assignments", "access_scopes", "sessions", "user_identities", "user_two_step", "password_history"]);
+  const safeList = [...tablesToTruncate].filter((t) => !PROTECTED.has(t) && (TABLES as readonly string[]).includes(t));
+
+  if (!safeList.length) return { purged: 0, categories: [] };
+
+  await run(`TRUNCATE ${safeList.join(", ")} RESTART IDENTITY CASCADE`);
+
+  await audit(
+    { actor: user },
+    {
+      action: "system.purge",
+      summary: `${user.name} purged data categories: ${categories.join(", ")} (${safeList.length} tables cleaned, user accounts preserved)`,
+    },
+  );
+
+  return { purged: safeList.length, categories };
 }
 
 export async function workspaceCounts() {

@@ -33,12 +33,14 @@ import { cn } from "@/lib/utils";
 import { FormDialog, Status, fmt, useRun, type FieldSpec, type Opt } from "./fin-kit";
 
 import { FIN_TABS, type FinTab } from "@/lib/finance";
+import { ExternalReceiptsCard } from "./external-receipts-card";
 export type { FinTab };
 const TAB_LABELS: Record<FinTab, string> = {
   overview: "Overview",
   transactions: "Transactions",
   bills: "Bills",
   invoices: "Invoices",
+  receipts: "External receipts",
   claims: "Expense claims",
   purchasing: "Purchasing",
   budgets: "Budgets",
@@ -97,6 +99,7 @@ export function FinanceHome(props: {
       {tab === "transactions" && <Transactions ctx={ctx} rows={props.data.rows as TxRow[]} />}
       {tab === "bills" && <Bills ctx={ctx} rows={props.data.rows as BillRow[]} />}
       {tab === "invoices" && <Invoices ctx={ctx} rows={props.data.rows as InvoiceRow[]} />}
+      {tab === "receipts" && <ExternalReceiptsCard />}
       {tab === "claims" && <Claims ctx={ctx} rows={props.data.rows as ClaimRow[]} />}
       {tab === "purchasing" && <Purchasing ctx={ctx} rows={props.data.rows as PurchaseRow[]} />}
       {tab === "budgets" && <Budgets ctx={ctx} rows={props.data.rows as BudgetRow[]} year={props.data.year as number} />}
@@ -1516,6 +1519,12 @@ function SettingsTab({ ctx, settings, ledger, periods }: { ctx: Ctx; settings: F
             {n("fiscalStartMonth", "Fiscal year starts (month)", "7 = July (Hamle).")}
             {n("daysPerMonth", "Days per month", "For daily rates and unpaid days.")}
             {n("hoursPerDay", "Hours per day", "For overtime.")}
+            <div className="space-y-1">
+              <Label htmlFor="fs-paystart">Payroll start date (month)</Label>
+              <Input id="fs-paystart" type="month" disabled={!can} value={s.payrollStartDate?.slice(0, 7) ?? ""} onChange={(e) => setS({ ...s, payrollStartDate: e.target.value || null })} />
+              <p className="text-xs text-muted-foreground">Earliest month for payroll runs. Empty: any month.</p>
+            </div>
+            {n("payrollCycleStartDay", "Payroll cycle start day", "Day of the month the payroll cycle begins (e.g. 1 or 25).")}
           </div>
           <div className="space-y-1" data-tax-law>
             <Label htmlFor="fs-law">Income tax law</Label>

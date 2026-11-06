@@ -60,6 +60,10 @@ export type FinanceSettings = {
   // Overtime multipliers of the Labour Proclamation 1156/2019, art. 68: working days until 10 pm, nights (10 pm to
   // 6 am), the weekly rest day, public holidays. Payslips start at the working-day rate.
   overtimeRates: { normal: number; night: number; rest: number; holiday: number };
+  // Month or date from which payroll runs start (e.g. 2026-11). Empty: any month.
+  payrollStartDate?: string | null;
+  // Day of the month payroll period starts/cycles on (e.g. 1 or 25).
+  payrollCycleStartDay?: number;
 };
 
 // Monthly employment income brackets (rate x taxable income - deduction). Check against the gazetted text.
@@ -113,6 +117,8 @@ export const DEFAULT_FINANCE_SETTINGS: FinanceSettings = {
   approvalLimit: 10000,
   taxLaw: "1395/2025",
   overtimeRates: { normal: 1.5, night: 1.75, rest: 2, holiday: 2.5 },
+  payrollStartDate: null,
+  payrollCycleStartDay: 1,
 };
 
 export const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
@@ -150,5 +156,5 @@ export const money = (n: number, currency = "ETB") => `${(Number(n) || 0).toLoca
 export const periodOf = (date: string) => date.slice(0, 7);
 
 // Tabs of the Finance page (shared by the server page and the client tabs).
-export const FIN_TABS = ["overview", "transactions", "bills", "invoices", "claims", "purchasing", "budgets", "payroll", "parties", "accounts", "reports", "settings"] as const;
+export const FIN_TABS = ["overview", "transactions", "bills", "invoices", "receipts", "claims", "purchasing", "budgets", "payroll", "parties", "accounts", "reports", "settings"] as const;
 export type FinTab = (typeof FIN_TABS)[number];

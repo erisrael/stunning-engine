@@ -6,7 +6,7 @@
 // whole department's work; members see only their own. Owners and the Company overview (owners.view, company.view)
 // see every department read only. Admin (users.manage) can do everything everywhere.
 
-import { all, get, nowIso, run } from "./db";
+import { all, get, nowIso, placeholders, run, tx } from "./db";
 import { audit, WorkflowError } from "./workflow";
 import { can, type AppUser } from "./users";
 import { DEPARTMENT_LABELS, DEPARTMENT_ROLES, DEPARTMENTS, POSITIONS, type Capability, type Department, type Position, type Role } from "@/lib/domain";
@@ -185,6 +185,30 @@ export async function setDepartmentArchived(user: AppUser, key: string, archived
   if (!d) throw new WorkflowError("NOT_FOUND", "Department not found.");
   await run("UPDATE departments SET archived = ? WHERE key = ?", archived ? 1 : 0, key);
   await audit({ actor: user }, { action: "department.archive", summary: `${user.name} ${archived ? "archived" : "restored"} the ${d.title} department` });
+}
+
+export async function deleteDepartment(user: AppUser, key: string) {
+  if (!can(user, "users.manage")) throw new WorkflowError("FORBIDDEN", "Only Admin deletes departments.");
+  if (isBuiltIn(key)) throw new WorkflowError("VALIDATION", "Built-in departments cannot be deleted.");
+  const d = await customDepartment(key);
+  if (!d) throw new WorkflowError("NOT_FOUND", "Department not found.");
+  await tx(async () => {
+    await run("UPDATE presenters SET department = NULL WHERE department = ?", key);
+    await run("DELETE FROM department_positions WHERE department = ?", key);
+    const tasks = await all<{ id: string }>("SELECT id FROM dept_tasks WHERE department = ?", key);
+    const taskIds = tasks.map((t) => t.id);
+    if (taskIds.length) {
+      await run(`DELETE FROM dept_task_links WHERE task_id IN (${placeholders(taskIds.length)}) OR blocked_by IN (${placeholders(taskIds.length)})`, ...taskIds, ...taskIds);
+      await run(`DELETE FROM dept_task_watchers WHERE task_id IN (${placeholders(taskIds.length)})`, ...taskIds);
+      await run(`DELETE FROM dept_task_files WHERE task_id IN (${placeholders(taskIds.length)})`, ...taskIds);
+      await run(`DELETE FROM dept_task_comments WHERE task_id IN (${placeholders(taskIds.length)})`, ...taskIds);
+      await run(`DELETE FROM dept_task_history WHERE task_id IN (${placeholders(taskIds.length)})`, ...taskIds);
+      await run("DELETE FROM dept_tasks WHERE department = ?", key);
+    }
+    await run("DELETE FROM departments WHERE key = ?", key);
+  });
+  await audit({ actor: user }, { action: "department.delete", summary: `${user.name} deleted the ${d.title} department (${key})` });
+  return true;
 }
 
 // ---------------------------------------------------------------------------

@@ -23,6 +23,7 @@ import {
   removeHolidayAction,
   requestLeaveAction,
   saveLeaveTypeAction,
+  deleteLeaveTypeAction,
   addEvidenceAction,
   askHrAction,
   answerQueryAction,
@@ -713,6 +714,7 @@ function BalanceTool({ people, types, year }: { people: Opt[]; types: LeaveType[
 }
 
 function LeaveTypes({ types, canManage }: { types: LeaveType[]; canManage: boolean }) {
+  const router = useRouter();
   const [editing, setEditing] = React.useState<LeaveType | "new" | null>(null);
   return (
     <Card>
@@ -742,9 +744,26 @@ function LeaveTypes({ types, canManage }: { types: LeaveType[]; canManage: boole
               </div>
             </div>
             {canManage && (
-              <Button size="icon-xs" variant="ghost" aria-label={`Edit ${t.label}`} onClick={() => setEditing(t)}>
-                <PencilIcon />
-              </Button>
+              <div className="flex items-center gap-1">
+                <Button size="icon-xs" variant="ghost" aria-label={`Edit ${t.label}`} onClick={() => setEditing(t)}>
+                  <PencilIcon />
+                </Button>
+                <Button
+                  size="icon-xs"
+                  variant="ghost"
+                  className="text-muted-foreground hover:text-destructive"
+                  aria-label={`Delete ${t.label}`}
+                  onClick={async () => {
+                    if (!confirm(`Delete "${t.label}" leave type? This cannot be undone.`)) return;
+                    const res = await deleteLeaveTypeAction(t.key);
+                    if (!res.ok) return toast.error(res.error);
+                    toast.success("Leave type deleted");
+                    router.refresh();
+                  }}
+                >
+                  <Trash2Icon />
+                </Button>
+              </div>
             )}
           </div>
         ))}
@@ -824,13 +843,34 @@ function TypeForm({ type, onClose }: { type: LeaveType | null; onClose: () => vo
           {tick("needsDocument", "Needs a document (for example a medical certificate)")}
           {tick("active", "People can ask for it")}
         </div>
-        <DialogFooter>
-          <Button variant="ghost" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button onClick={save} disabled={!f.label.trim()}>
-            Save
-          </Button>
+        <DialogFooter className="flex items-center justify-between gap-2 sm:justify-between">
+          <div>
+            {type && (
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                onClick={async () => {
+                  if (!confirm(`Delete "${type.label}" leave type? This cannot be undone.`)) return;
+                  const res = await deleteLeaveTypeAction(type.key);
+                  if (!res.ok) return toast.error(res.error);
+                  toast.success("Leave type deleted");
+                  onClose();
+                  router.refresh();
+                }}
+              >
+                Delete type
+              </Button>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button onClick={save} disabled={!f.label.trim()}>
+              Save
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

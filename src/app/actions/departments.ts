@@ -2,7 +2,8 @@
 
 import { requireViewer } from "@/server/auth";
 import { wrap } from "@/server/action-result";
-import { setDepartmentArchived, setPosition } from "@/server/departments";
+import { deleteDepartment, setDepartmentArchived, setPosition } from "@/server/departments";
+import { setPresenterDepartment } from "@/server/presenters";
 import * as extras from "@/server/work-extras";
 import * as studioX from "@/server/studio-extras";
 import * as work from "@/server/work";
@@ -161,6 +162,12 @@ export async function createDepartmentAction(input: { key: string; title: string
 }
 export async function archiveDepartmentAction(key: string, archived: boolean) {
   return wrap(async () => setDepartmentArchived(await requireViewer(), key, archived));
+}
+export async function deleteDepartmentAction(key: string) {
+  return wrap(async () => deleteDepartment(await requireViewer(), key));
+}
+export async function assignPresenterToDepartmentAction(presenterId: string, dept: string | null) {
+  return wrap(async () => setPresenterDepartment(await requireViewer(), presenterId, dept));
 }
 
 // --- Task depth: review, details, watchers, files, time ---

@@ -40,6 +40,9 @@ export async function adjustLeaveAction(input: { employeeId: string; typeKey: st
 export async function saveLeaveTypeAction(input: Partial<LeaveType> & { label: string; key?: string }) {
   return wrap(async () => leave.saveLeaveType(await requireViewer(), input));
 }
+export async function deleteLeaveTypeAction(key: string) {
+  return wrap(async () => leave.deleteLeaveType(await requireViewer(), key));
+}
 export async function addHolidayAction(date: string, name: string) {
   return wrap(async () => leave.addHolidays(await requireViewer(), [{ date, name }]));
 }

@@ -88,6 +88,19 @@ export async function saveLeaveType(user: AppUser, input: Partial<LeaveType> & {
   return key;
 }
 
+export async function deleteLeaveType(user: AppUser, key: string) {
+  if (!can(user, "hr.manage")) throw new WorkflowError("FORBIDDEN", "Only the HR Manager changes leave policy.");
+  const existing = await get<{ label: string }>("SELECT label FROM leave_types WHERE key = ?", key);
+  if (!existing) throw new WorkflowError("NOT_FOUND", "Leave type not found.");
+  const count = Number((await get<{ c: number }>("SELECT COUNT(*) AS c FROM leave_requests WHERE type_key = ?", key))?.c ?? 0);
+  if (count > 0) {
+    throw new WorkflowError("VALIDATION", `Cannot delete "${existing.label}" because ${count} leave ${count === 1 ? "request uses" : "requests use"} it. Switch it off instead.`);
+  }
+  await run("DELETE FROM leave_types WHERE key = ?", key);
+  await audit({ actor: user }, { action: "hr.leave", summary: `${user.name} deleted the leave type ${existing.label}` });
+  return true;
+}
+
 // ---------------------------------------------------------------------------
 // Days and balances
 // ---------------------------------------------------------------------------

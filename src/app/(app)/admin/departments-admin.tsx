@@ -4,26 +4,27 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ArchiveIcon, ArchiveRestoreIcon, Loader2Icon, PlusIcon, XIcon } from "lucide-react";
+import { ArchiveIcon, ArchiveRestoreIcon, GraduationCapIcon, Loader2Icon, PlusIcon, Trash2Icon, XIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { UserAvatar } from "@/components/app/primitives";
-import { archiveDepartmentAction, createDepartmentAction, setPositionAction } from "@/app/actions/departments";
+import { archiveDepartmentAction, assignPresenterToDepartmentAction, createDepartmentAction, deleteDepartmentAction, setPositionAction } from "@/app/actions/departments";
 import { DEPARTMENT_LABELS, DEPARTMENT_ROLES, POSITION_LABELS, POSITIONS, ROLE_LABELS, type Department, type Position, type Role } from "@/lib/domain";
 import { DEPT_TEMPLATES } from "@/lib/dept-config";
 import { deptPath } from "@/lib/work";
 import { cn } from "@/lib/utils";
 
 type Person = { id: string; name: string; roles: Role[]; position: Position };
+export type PresenterItem = { id: string; name: string; kind: string; subjects?: string | null; department?: string | null };
 export type DeptRow = { dept: Department; people: Person[] };
 export type CustomRow = { key: string; title: string; template: string; archived: boolean; people: Person[] };
 
 const SECTION: Partial<Record<Department, string>> = { dev: "/dev", studio: "/studio", marketing: "/marketing" };
 
-export function DepartmentsAdmin({ departments, custom = [], everyone = [] }: { departments: DeptRow[]; custom?: CustomRow[]; everyone?: { id: string; name: string }[] }) {
+export function DepartmentsAdmin({ departments, custom = [], everyone = [], presenters = [] }: { departments: DeptRow[]; custom?: CustomRow[]; everyone?: { id: string; name: string }[]; presenters?: PresenterItem[] }) {
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
@@ -42,6 +43,7 @@ export function DepartmentsAdmin({ departments, custom = [], everyone = [] }: { 
             href={SECTION[d.dept]}
             configure={d.dept === "dev" || d.dept === "marketing"}
             people={d.people}
+            presenters={presenters}
             empty={`Nobody yet. Give people the ${DEPARTMENT_ROLES[d.dept].map((r) => ROLE_LABELS[r]).join(" or ")} role in People.`}
           />
         ))}
@@ -54,6 +56,7 @@ export function DepartmentsAdmin({ departments, custom = [], everyone = [] }: { 
             href={d.archived ? undefined : deptPath(d.key)}
             configure={!d.archived}
             people={d.people}
+            presenters={presenters}
             custom
             archived={d.archived}
             everyone={everyone}
@@ -138,6 +141,7 @@ function DeptCard({
   custom,
   archived,
   everyone = [],
+  presenters = [],
 }: {
   dept: string;
   title: string;
@@ -149,10 +153,12 @@ function DeptCard({
   custom?: boolean;
   archived?: boolean;
   everyone?: { id: string; name: string }[];
+  presenters?: PresenterItem[];
 }) {
   const router = useRouter();
   const [busy, setBusy] = React.useState<string | null>(null);
   const [adding, setAdding] = React.useState<{ id: string; position: Position }>({ id: "", position: "member" });
+  const [addingPresenterId, setAddingPresenterId] = React.useState<string>("");
   const set = async (userId: string, name: string, v: Position | "remove") => {
     setBusy(`${dept}:${userId}`);
     const r = await setPositionAction(dept, userId, v);
@@ -162,6 +168,8 @@ function DeptCard({
     router.refresh();
   };
   const outside = everyone.filter((p) => !people.some((x) => x.id === p.id));
+  const myPresenters = presenters.filter((p) => p.department === dept);
+  const availablePresenters = presenters.filter((p) => p.department !== dept);
   return (
     <Card className={cn(archived && "opacity-70")}>
       <CardHeader>
@@ -179,24 +187,39 @@ function DeptCard({
               </Link>
             )}
             {custom && (
-              <button
-                type="button"
-                className="flex items-center gap-1 text-muted-foreground hover:text-foreground"
-                onClick={async () => {
-                  if (!archived && !window.confirm(`Archive ${title}? Its section is hidden; its work and reports are kept and it can be restored.`)) return;
-                  const r = await archiveDepartmentAction(dept, !archived);
-                  if (!r.ok) return toast.error(r.error);
-                  router.refresh();
-                }}
-              >
-                {archived ? <ArchiveRestoreIcon className="size-3.5" /> : <ArchiveIcon className="size-3.5" />} {archived ? "Restore" : "Archive"}
-              </button>
+              <>
+                <button
+                  type="button"
+                  className="flex items-center gap-1 text-muted-foreground hover:text-foreground"
+                  onClick={async () => {
+                    if (!archived && !window.confirm(`Archive ${title}? Its section is hidden; its work and reports are kept and it can be restored.`)) return;
+                    const r = await archiveDepartmentAction(dept, !archived);
+                    if (!r.ok) return toast.error(r.error);
+                    router.refresh();
+                  }}
+                >
+                  {archived ? <ArchiveRestoreIcon className="size-3.5" /> : <ArchiveIcon className="size-3.5" />} {archived ? "Restore" : "Archive"}
+                </button>
+                <button
+                  type="button"
+                  className="flex items-center gap-1 text-destructive hover:underline"
+                  onClick={async () => {
+                    if (!window.confirm(`Permanently delete "${title}" (${dept})? All its tasks and settings will be permanently removed. This cannot be undone.`)) return;
+                    const r = await deleteDepartmentAction(dept);
+                    if (!r.ok) return toast.error(r.error);
+                    toast.success(`Department ${title} deleted.`);
+                    router.refresh();
+                  }}
+                >
+                  <Trash2Icon className="size-3.5" /> Delete
+                </button>
+              </>
             )}
           </span>
         </CardTitle>
         <CardDescription>{subtitle}</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="space-y-4">
         {people.length ? (
           <ul className="divide-y rounded-lg border">
             {people.map((p) => (
@@ -270,6 +293,72 @@ function DeptCard({
             </Button>
           </div>
         )}
+
+        {/* Teachers & Presenters in this department */}
+        <div className="space-y-2 pt-3 border-t">
+          <div className="flex items-center justify-between text-xs font-semibold text-muted-foreground">
+            <span className="flex items-center gap-1.5"><GraduationCapIcon className="size-3.5 text-primary" /> Presenters & Teachers ({myPresenters.length})</span>
+          </div>
+          {myPresenters.length > 0 ? (
+            <ul className="divide-y rounded-lg border text-xs bg-muted/20">
+              {myPresenters.map((pr) => (
+                <li key={pr.id} className="flex items-center justify-between gap-2 px-3 py-1.5">
+                  <div className="min-w-0 flex-1">
+                    <span className="font-medium text-foreground">{pr.name}</span>
+                    <span className="text-muted-foreground ml-2">({pr.kind}{pr.subjects ? ` · ${pr.subjects}` : ""})</span>
+                  </div>
+                  <Button
+                    size="icon-xs"
+                    variant="ghost"
+                    aria-label={`Remove ${pr.name} from ${title}`}
+                    onClick={async () => {
+                      const r = await assignPresenterToDepartmentAction(pr.id, null);
+                      if (!r.ok) return toast.error(r.error);
+                      toast.success(`${pr.name} removed from ${title}`);
+                      router.refresh();
+                    }}
+                  >
+                    <XIcon className="size-3.5" />
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-xs text-muted-foreground italic">No presenters or teachers assigned yet.</p>
+          )}
+          {!archived && availablePresenters.length > 0 && (
+            <div className="flex gap-2 pt-1">
+              <Select value={addingPresenterId || "none"} onValueChange={(v) => setAddingPresenterId(v === "none" ? "" : v)}>
+                <SelectTrigger size="sm" className="h-8 flex-1 text-xs" aria-label={`Add a presenter/teacher to ${title}`}>
+                  <SelectValue placeholder="Add teacher or presenter…" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Add teacher or presenter…</SelectItem>
+                  {availablePresenters.map((pr) => (
+                    <SelectItem key={pr.id} value={pr.id}>
+                      {pr.name} ({pr.kind}{pr.subjects ? ` · ${pr.subjects}` : ""})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!addingPresenterId}
+                onClick={async () => {
+                  const pr = presenters.find((x) => x.id === addingPresenterId);
+                  const r = await assignPresenterToDepartmentAction(addingPresenterId, dept);
+                  if (!r.ok) return toast.error(r.error);
+                  toast.success(`${pr?.name ?? "Teacher"} assigned to ${title}`);
+                  setAddingPresenterId("");
+                  router.refresh();
+                }}
+              >
+                <PlusIcon /> Assign
+              </Button>
+            </div>
+          )}
+        </div>
       </CardContent>
     </Card>
   );
