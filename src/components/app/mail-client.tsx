@@ -13,11 +13,14 @@ import {
   ArrowLeftIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
+  EyeIcon,
+  EyeOffIcon,
   FileIcon,
   FolderIcon,
   ForwardIcon,
   ImageIcon,
   InboxIcon,
+  KeyRoundIcon,
   Loader2Icon,
   MailIcon,
   MailOpenIcon,
@@ -38,9 +41,10 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { cancelScheduledAction, mailActAction, mailDraftAction, mailFoldersAction, mailHomeAction, mailListAction, mailMessageAction, mailSaveDraftAction, mailScheduleAction, mailSendAction, myScheduledAction, mySignatureAction, saveSignatureAction } from "@/app/actions/mail";
+import { cancelScheduledAction, mailActAction, mailDraftAction, mailFoldersAction, mailHomeAction, mailListAction, mailMessageAction, mailSaveDraftAction, mailScheduleAction, mailSendAction, myScheduledAction, mySignatureAction, saveSignatureAction, setMyMailboxPasswordAction } from "@/app/actions/mail";
 import type { FolderRole, MailAction, MailCompose, MailFolder, MailMessage } from "@/server/mail";
 import { cn, pollMs } from "@/lib/utils";
 
@@ -110,6 +114,7 @@ export function MailClient({ ownBox, others, initialBox, tz }: { ownBox: { id: s
   const [threads, setThreads] = React.useState(true);
   const [signature, setSignature] = React.useState("");
   const [editSig, setEditSig] = React.useState<string | null>(null);
+  const [editPass, setEditPass] = React.useState(false);
   const [scheduled, setScheduled] = React.useState<{ id: string; subject: string; recipients: string; send_at: string; status: string; error: string | null }[]>([]);
   const loadScheduled = React.useCallback(async () => {
     const r = await myScheduledAction();
@@ -326,9 +331,13 @@ export function MailClient({ ownBox, others, initialBox, tz }: { ownBox: { id: s
             </Button>
           )}
           {!readOnly && (
-            <div className="flex gap-1 text-xs">
+            <div className="flex flex-wrap items-center gap-1.5 text-xs">
               <button type="button" className="text-primary hover:underline" onClick={() => setEditSig(signature)} data-edit-signature>
                 Signature
+              </button>
+              <span className="text-muted-foreground">·</span>
+              <button type="button" className="text-primary hover:underline" onClick={() => setEditPass(true)} data-edit-password>
+                Password
               </button>
               <span className="text-muted-foreground">·</span>
               <label className="flex items-center gap-1">
@@ -431,9 +440,19 @@ export function MailClient({ ownBox, others, initialBox, tz }: { ownBox: { id: s
               )}
             </div>
             {error ? (
-              <p className="p-4 text-sm text-destructive" role="alert">
-                {error}
-              </p>
+              <div className="m-4 rounded-lg border border-destructive/30 bg-destructive/5 p-4" role="alert">
+                <p className="text-sm font-medium text-destructive">{error}</p>
+                {!readOnly && (
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <Button size="xs" variant="default" onClick={() => setEditPass(true)}>
+                      <KeyRoundIcon className="size-3.5" /> Enter / Update Mailbox Password
+                    </Button>
+                    <Button size="xs" variant="outline" onClick={() => (void loadFolders(), void loadList())}>
+                      <RefreshCwIcon className="size-3.5" /> Retry
+                    </Button>
+                  </div>
+                )}
+              </div>
             ) : loading && !rows.length ? (
               <p className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
                 <Loader2Icon className="size-4 animate-spin" /> Loading…
@@ -523,6 +542,19 @@ export function MailClient({ ownBox, others, initialBox, tz }: { ownBox: { id: s
           onDone={() => (void loadFolders(), current?.role === "sent" || current?.role === "drafts" ? void loadList(true) : null)}
           onReopen={(d) => setCompose(d)}
           onScheduled={() => void loadScheduled()}
+        />
+      )}
+      {editPass && (
+        <SetPasswordDialog
+          boxAddress={box ? (others.find((o) => o.id === box)?.address ?? "this mailbox") : (ownBox?.address ?? "your mailbox")}
+          boxId={box}
+          onClose={() => setEditPass(false)}
+          onSaved={() => {
+            setEditPass(false);
+            setError(null);
+            void loadFolders();
+            void loadList();
+          }}
         />
       )}
     </div>
@@ -893,6 +925,70 @@ function Compose({ initial, box, from, draftsPath, onClose, onDone, onReopen, on
               <SendIcon /> Send
             </Button>
           </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function SetPasswordDialog({ boxAddress, boxId, onClose, onSaved }: { boxAddress: string; boxId: string | null; onClose: () => void; onSaved: () => void }) {
+  const [password, setPassword] = React.useState("");
+  const [show, setShow] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
+
+  const submit = async () => {
+    if (!password.trim()) return toast.error("Enter the mailbox password.");
+    setBusy(true);
+    const r = await setMyMailboxPasswordAction(password.trim(), boxId);
+    setBusy(false);
+    if (!r.ok) return toast.error(r.error);
+    toast.success("Mailbox password saved");
+    onSaved();
+  };
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Set mailbox password</DialogTitle>
+          <DialogDescription>
+            Enter the password for <strong>{boxAddress}</strong>. The password is encrypted and used by the app to connect to your email.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3 py-2">
+          <div className="space-y-1">
+            <Label htmlFor="mb-client-pass">Mailbox Password</Label>
+            <div className="relative">
+              <Input
+                id="mb-client-pass"
+                type={show ? "text" : "password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Enter password"
+                autoComplete="current-password"
+                className="pr-10"
+              />
+              <Button
+                type="button"
+                size="icon-xs"
+                variant="ghost"
+                className="absolute right-1 top-1/2 -translate-y-1/2 text-muted-foreground"
+                onClick={() => setShow(!show)}
+                aria-label={show ? "Hide password" : "Show password"}
+              >
+                {show ? <EyeOffIcon className="size-4" /> : <EyeIcon className="size-4" />}
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">Use the email account&apos;s password from your mail hosting / webmail.</p>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={busy}>
+            Cancel
+          </Button>
+          <Button onClick={submit} disabled={busy}>
+            {busy && <Loader2Icon className="animate-spin" />} Save & Connect
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

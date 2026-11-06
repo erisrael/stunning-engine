@@ -928,6 +928,37 @@ export async function takeOverMailbox(user: AppUser, input: { userId: string; ad
   return { id, address };
 }
 
+export async function setMailboxPassword(user: AppUser, input: { id: string; password: string }) {
+  manager(user);
+  const row = await senderRow(input.id);
+  const pass = input.password.trim();
+  if (!pass) throw new WorkflowError("VALIDATION", "Enter the mailbox password.");
+  const passEnc = await seal(pass);
+  await run("UPDATE email_senders SET smtp_user = ?, smtp_pass_enc = ?, managed = 'manual', updated_at = ? WHERE id = ?", row.address, passEnc, nowIso(), row.id);
+  await setState(row.id, { error: null });
+  conns.get(row.id)?.client.close();
+  conns.delete(row.id);
+  await audit({ actor: user }, { action: "mail.mailbox", summary: `${user.name} set the password for ${row.address}` });
+  return { id: row.id, address: row.address };
+}
+
+export async function setMyMailboxPassword(user: AppUser, input: { password: string; boxId?: string | null }) {
+  const row = input.boxId ? await senderRow(input.boxId) : await myMailbox(user.id);
+  if (!row) throw new WorkflowError("NOT_FOUND", "You do not have a mailbox in the app yet.");
+  if (row.user_id !== user.id && !can(user, "email.manage")) {
+    throw new WorkflowError("FORBIDDEN", "You can only change the password for your own mailbox.");
+  }
+  const pass = input.password.trim();
+  if (!pass) throw new WorkflowError("VALIDATION", "Enter the mailbox password.");
+  const passEnc = await seal(pass);
+  await run("UPDATE email_senders SET smtp_user = ?, smtp_pass_enc = ?, updated_at = ? WHERE id = ?", row.address, passEnc, nowIso(), row.id);
+  await setState(row.id, { error: null });
+  conns.get(row.id)?.client.close();
+  conns.delete(row.id);
+  await audit({ actor: user }, { action: "mail.mailbox", summary: `${user.name} updated the password for their mailbox ${row.address}` });
+  return { id: row.id, address: row.address };
+}
+
 // Without the cPanel API: the mailbox's password typed in by the email manager.
 export async function connectMailbox(user: AppUser, input: { userId: string; address: string; password: string }) {
   manager(user);

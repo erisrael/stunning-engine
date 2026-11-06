@@ -53,6 +53,12 @@ export async function takeOverMailboxAction(input: Parameters<typeof mail.takeOv
 export async function connectMailboxAction(input: Parameters<typeof mail.connectMailbox>[1]) {
   return wrap(async () => mail.connectMailbox(await requireViewer(), input));
 }
+export async function setMailboxPasswordAction(id: string, password: string) {
+  return wrap(async () => mail.setMailboxPassword(await requireViewer(), { id, password }));
+}
+export async function setMyMailboxPasswordAction(password: string, boxId?: string | null) {
+  return wrap(async () => mail.setMyMailboxPassword(await requireViewer(), { password, boxId }));
+}
 export async function newMailboxPasswordAction(id: string) {
   return wrap(async () => mail.newMailboxPassword(await requireViewer(), id));
 }

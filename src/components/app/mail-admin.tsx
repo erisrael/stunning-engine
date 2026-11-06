@@ -6,7 +6,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { CheckCircle2Icon, CircleAlertIcon, CircleXIcon, KeyRoundIcon, Loader2Icon, MailIcon, PlusIcon, SearchIcon, Trash2Icon, XIcon } from "lucide-react";
+import { CheckCircle2Icon, CircleAlertIcon, CircleXIcon, EyeIcon, EyeOffIcon, KeyRoundIcon, Loader2Icon, MailIcon, PlusIcon, SearchIcon, Trash2Icon, XIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -26,6 +26,7 @@ import {
   removeMailboxAction,
   saveMailConfigAction,
   setMailboxOnAction,
+  setMailboxPasswordAction,
   takeOverMailboxAction,
 } from "@/app/actions/mail";
 import type { MailboxRow, MailConfig } from "@/server/mail";
@@ -65,6 +66,7 @@ export function MailAdmin({ config, boxes, people }: { config: MailConfig; boxes
   const [checks, setChecks] = React.useState<{ title: string; steps: CheckStep[] } | null>(null);
   const [adding, setAdding] = React.useState(false);
   const [removing, setRemoving] = React.useState<MailboxRow | null>(null);
+  const [settingPass, setSettingPass] = React.useState<MailboxRow | null>(null);
   const cpanelReady = !!(config.cpanelUrl && config.cpanelUser && config.hasToken);
 
   const save = async () => {
@@ -209,6 +211,9 @@ export function MailAdmin({ config, boxes, people }: { config: MailConfig; boxes
                   <Button size="xs" variant="ghost" disabled={!!busy} onClick={() => run(`c-${b.id}`, `Check ${b.address}`, () => checkMailServerAction(b.id))}>
                     {busy === `c-${b.id}` ? <Loader2Icon className="animate-spin" /> : <SearchIcon />} Check
                   </Button>
+                  <Button size="xs" variant="ghost" disabled={!!busy} onClick={() => setSettingPass(b)}>
+                    <KeyRoundIcon /> Set password
+                  </Button>
                   {b.managed === "cpanel" && (
                     <Button
                       size="xs"
@@ -223,7 +228,7 @@ export function MailAdmin({ config, boxes, people }: { config: MailConfig; boxes
                         toast.success("New password set (nobody sees it)");
                       }}
                     >
-                      <KeyRoundIcon /> New password
+                      <KeyRoundIcon /> Randomize
                     </Button>
                   )}
                   <Button size="icon-xs" variant="ghost" className="text-destructive" aria-label={`Remove ${b.address}`} onClick={() => setRemoving(b)}>
@@ -240,7 +245,72 @@ export function MailAdmin({ config, boxes, people }: { config: MailConfig; boxes
 
       {adding && <AddMailbox people={people} domain={config.domain} cpanel={cpanelReady} taken={boxes.map((b) => b.userId).filter((x): x is string => !!x)} onClose={() => setAdding(false)} onSaved={() => (setAdding(false), router.refresh())} />}
       {removing && <RemoveMailbox box={removing} onClose={() => setRemoving(null)} onDone={() => (setRemoving(null), router.refresh())} />}
+      {settingPass && <SetMailboxPasswordModal box={settingPass} onClose={() => setSettingPass(null)} onSaved={() => (setSettingPass(null), router.refresh())} />}
     </div>
+  );
+}
+
+function SetMailboxPasswordModal({ box, onClose, onSaved }: { box: MailboxRow; onClose: () => void; onSaved: () => void }) {
+  const [password, setPassword] = React.useState("");
+  const [show, setShow] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
+
+  const submit = async () => {
+    if (!password.trim()) return toast.error("Enter the mailbox password.");
+    setBusy(true);
+    const r = await setMailboxPasswordAction(box.id, password.trim());
+    setBusy(false);
+    if (!r.ok) return toast.error(r.error);
+    toast.success(`Password saved for ${box.address}`);
+    onSaved();
+  };
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Set mailbox password</DialogTitle>
+          <DialogDescription>
+            Enter the password for <strong>{box.address}</strong> ({box.userName ?? "Nobody"}). The password is encrypted and saved securely.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3 py-2">
+          <div className="space-y-1">
+            <Label htmlFor="mb-set-pass">Mailbox Password</Label>
+            <div className="relative">
+              <Input
+                id="mb-set-pass"
+                type={show ? "text" : "password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Enter password"
+                autoComplete="new-password"
+                className="pr-10"
+              />
+              <Button
+                type="button"
+                size="icon-xs"
+                variant="ghost"
+                className="absolute right-1 top-1/2 -translate-y-1/2 text-muted-foreground"
+                onClick={() => setShow(!show)}
+                aria-label={show ? "Hide password" : "Show password"}
+              >
+                {show ? <EyeOffIcon className="size-4" /> : <EyeIcon className="size-4" />}
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">Use the email account&apos;s password from your mail hosting / cPanel.</p>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={busy}>
+            Cancel
+          </Button>
+          <Button onClick={submit} disabled={busy}>
+            {busy && <Loader2Icon className="animate-spin" />} Save password
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
