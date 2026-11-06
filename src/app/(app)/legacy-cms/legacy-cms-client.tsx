@@ -71,8 +71,16 @@ import type {
   LegacyCmsConfig,
   LegacyCmsRecord,
 } from "@/server/legacy-cms";
-import { LEGACY_CMS_CATEGORIES } from "@/server/legacy-cms";
 import { cn } from "@/lib/utils";
+
+const CATEGORY_PATHS: Record<LegacyCmsCategory, string> = {
+  students: "/admin/students",
+  parents: "/admin/parents",
+  "subscription-plans": "/admin/subscription-plans",
+  "subscription-histories": "/admin/subscription-histories",
+  invoices: "/admin/invoices",
+  subscriptions: "/admin/subscriptions",
+};
 
 export function LegacyCmsClient({
   config,
@@ -485,7 +493,7 @@ export function LegacyCmsClient({
           </div>
           <div className="flex items-center justify-between border-t bg-muted/20 px-4 py-2 text-xs text-muted-foreground">
             <span>Showing {filteredRecords.length} of {total} records</span>
-            <span className="font-mono text-[11px]">Source: {config.baseUrl}{LEGACY_CMS_CATEGORIES.find((c) => c.key === category)?.path}</span>
+            <span className="font-mono text-[11px]">Source: {config.baseUrl}{CATEGORY_PATHS[category] || "/admin"}</span>
           </div>
         </Card>
       </Tabs>
@@ -623,3 +631,4 @@ export function LegacyCmsClient({
     </div>
   );
 }
+
