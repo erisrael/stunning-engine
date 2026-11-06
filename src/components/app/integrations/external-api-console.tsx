@@ -61,6 +61,8 @@ export function ExternalApiConsole({ config }: { config: ExternalApiConfig }) {
   const [chapaAccounts, setChapaAccounts] = React.useState<ChapaAccount[]>([]);
   const [chapaBalances, setChapaBalances] = React.useState<ChapaBalance[]>([]);
   const [chapaTxs, setChapaTxs] = React.useState<ChapaTransaction[]>([]);
+  const [selectedChapaAccountId, setSelectedChapaAccountId] = React.useState<string | null>(null);
+  const [chapaTestResults, setChapaTestResults] = React.useState<Record<string, { ok: boolean; message: string; balance?: number; mode?: string }>>({});
   const [chapaModalOpen, setChapaModalOpen] = React.useState(false);
   const [chapaForm, setChapaForm] = React.useState({
     id: "",
@@ -75,13 +77,18 @@ export function ExternalApiConsole({ config }: { config: ExternalApiConfig }) {
   // Iconic SMS state
   const [iconicBalance, setIconicBalance] = React.useState<{ balance: number; currency: string } | null>(null);
 
-  const loadChapaData = async () => {
+  const loadChapaData = async (targetAccountId?: string) => {
     const [accRes, balRes, txRes] = await Promise.all([
       listChapaAccountsAction(),
       fetchChapaBalancesAction(),
-      listChapaTransactionsAction(),
+      listChapaTransactionsAction(targetAccountId || undefined),
     ]);
-    if (accRes.ok) setChapaAccounts(accRes.data);
+    if (accRes.ok) {
+      setChapaAccounts(accRes.data);
+      if (!selectedChapaAccountId && accRes.data.length > 0) {
+        setSelectedChapaAccountId(accRes.data[0].id);
+      }
+    }
     if (balRes.ok) setChapaBalances(balRes.data);
     if (txRes.ok) setChapaTxs(txRes.data);
   };
@@ -178,8 +185,13 @@ export function ExternalApiConsole({ config }: { config: ExternalApiConfig }) {
     try {
       const res = await testChapaAccountAction(id);
       setTesting(null);
-      if (res.ok) toast.success(res.message);
-      else toast.error(res.message);
+      setChapaTestResults((prev) => ({ ...prev, [id]: res }));
+      if (res.ok) {
+        toast.success(res.message);
+        loadChapaData(selectedChapaAccountId || undefined);
+      } else {
+        toast.error(res.message);
+      }
     } catch (err: any) {
       setTesting(null);
       if (String(err?.message || err).includes("Server Action")) {
@@ -275,37 +287,111 @@ export function ExternalApiConsole({ config }: { config: ExternalApiConfig }) {
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              {/* Account Balances Grid */}
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {chapaBalances.map((bal) => (
-                  <div key={bal.accountId} className="rounded-lg border bg-muted/20 p-3.5 space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                        <Building2Icon className="size-3.5 text-muted-foreground" />
-                        {bal.accountName}
-                      </span>
-                      <Badge
-                        variant="secondary"
-                        className={cn(
-                          "text-[10px] font-semibold",
-                          bal.status === "connected" && "bg-emerald-500/10 text-emerald-600",
-                          bal.status === "test_mode" && "bg-blue-500/10 text-blue-600",
-                          bal.status === "error" && "bg-rose-500/10 text-rose-600"
-                        )}
-                      >
-                        {bal.status === "test_mode" ? "Test Key" : bal.status === "connected" ? "Live Connected" : "Error"}
-                      </Badge>
+              {/* Account Balances & Organizations Grid (Interactive Selection) */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    Select Business Organization / Account
+                  </h4>
+                  {chapaAccounts.length > 0 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 text-[11px] px-2 text-muted-foreground"
+                      onClick={() => {
+                        setSelectedChapaAccountId(null);
+                        loadChapaData();
+                      }}
+                    >
+                      Show All ({chapaAccounts.length})
+                    </Button>
+                  )}
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {chapaBalances.length === 0 ? (
+                    <div className="col-span-full border border-dashed rounded-lg p-6 text-center text-xs text-muted-foreground">
+                      No business accounts configured. Click &ldquo;Add Business Account&rdquo; above to connect your Chapa API keys.
                     </div>
-                    <div className="pt-1">
-                      <p className="text-xl font-bold tracking-tight text-foreground">
-                        {bal.availableBalance.toLocaleString()} <span className="text-xs font-normal text-muted-foreground">{bal.currency}</span>
-                      </p>
-                      <p className="text-[11px] text-muted-foreground">
-                        Ledger Balance: {bal.ledgerBalance.toLocaleString()} {bal.currency}
-                      </p>
-                    </div>
-                  </div>
-                ))}
+                  ) : (
+                    chapaBalances.map((bal) => {
+                      const isSelected = selectedChapaAccountId === bal.accountId;
+                      const testInfo = chapaTestResults[bal.accountId];
+                      const isChecking = testing === `chapa-${bal.accountId}`;
+
+                      return (
+                        <div
+                          key={bal.accountId}
+                          onClick={() => {
+                            setSelectedChapaAccountId(bal.accountId);
+                            loadChapaData(bal.accountId);
+                          }}
+                          className={cn(
+                            "group relative rounded-xl border p-4 space-y-2 cursor-pointer transition-all",
+                            isSelected
+                              ? "border-emerald-500 bg-emerald-500/[0.04] shadow-sm ring-1 ring-emerald-500/30"
+                              : "bg-card hover:border-border/80 hover:bg-muted/30"
+                          )}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <span className="text-sm font-semibold text-foreground flex items-center gap-1.5">
+                              <Building2Icon className={cn("size-4", isSelected ? "text-emerald-600" : "text-muted-foreground")} />
+                              {bal.accountName}
+                            </span>
+                            <Badge
+                              variant="secondary"
+                              className={cn(
+                                "text-[10px] font-semibold shrink-0",
+                                bal.status === "connected" && "bg-emerald-500/10 text-emerald-600",
+                                bal.status === "test_mode" && "bg-blue-500/10 text-blue-600",
+                                bal.status === "error" && "bg-rose-500/10 text-rose-600"
+                              )}
+                            >
+                              {bal.status === "test_mode" ? "Test Key" : bal.status === "connected" ? "Live Connected" : "Error"}
+                            </Badge>
+                          </div>
+
+                          <div className="pt-1">
+                            <p className="text-xl font-bold tracking-tight text-foreground">
+                              {bal.availableBalance.toLocaleString()} <span className="text-xs font-normal text-muted-foreground">{bal.currency}</span>
+                            </p>
+                            <p className="text-[11px] text-muted-foreground">
+                              Ledger Balance: {bal.ledgerBalance.toLocaleString()} {bal.currency}
+                            </p>
+                          </div>
+
+                          {testInfo && (
+                            <div className={cn(
+                              "text-[11px] rounded p-1.5 leading-snug border",
+                              testInfo.ok ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-700 dark:text-emerald-300" : "bg-rose-500/10 border-rose-500/20 text-rose-700 dark:text-rose-300"
+                            )}>
+                              {testInfo.message}
+                            </div>
+                          )}
+
+                          <div className="pt-2 flex items-center justify-between border-t border-border/50">
+                            <span className="text-[10px] text-muted-foreground">
+                              {isSelected ? "● Active View" : "Click to view data"}
+                            </span>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-6 text-[10px] px-2 gap-1 bg-background"
+                              disabled={isChecking}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleTestChapaAccount(bal.accountId);
+                              }}
+                            >
+                              {isChecking ? <Loader2Icon className="size-2.5 animate-spin" /> : <RefreshCwIcon className="size-2.5" />}
+                              Check Connection
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
               </div>
 
               {/* Accounts Table */}
@@ -329,9 +415,19 @@ export function ExternalApiConsole({ config }: { config: ExternalApiConfig }) {
                       </TableRow>
                     ) : (
                       chapaAccounts.map((acc) => (
-                        <TableRow key={acc.id} className="text-xs">
+                        <TableRow
+                          key={acc.id}
+                          className={cn("text-xs cursor-pointer", selectedChapaAccountId === acc.id && "bg-muted/40 font-medium")}
+                          onClick={() => {
+                            setSelectedChapaAccountId(acc.id);
+                            loadChapaData(acc.id);
+                          }}
+                        >
                           <TableCell className="font-semibold text-foreground">
-                            {acc.name}
+                            <div className="flex items-center gap-1.5">
+                              {selectedChapaAccountId === acc.id && <span className="size-1.5 rounded-full bg-emerald-500 inline-block" />}
+                              {acc.name}
+                            </div>
                           </TableCell>
                           <TableCell className="font-mono text-[11px] text-muted-foreground">
                             {acc.publicKey ? acc.publicKey.slice(0, 24) + "..." : "—"}
@@ -352,7 +448,7 @@ export function ExternalApiConsole({ config }: { config: ExternalApiConfig }) {
                               {acc.active ? "Active" : "Disabled"}
                             </Badge>
                           </TableCell>
-                          <TableCell className="text-right">
+                          <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                             <div className="flex items-center justify-end gap-1">
                               <Button
                                 variant="outline"
@@ -362,7 +458,7 @@ export function ExternalApiConsole({ config }: { config: ExternalApiConfig }) {
                                 onClick={() => handleTestChapaAccount(acc.id)}
                               >
                                 {testing === `chapa-${acc.id}` ? <Loader2Icon className="size-3 animate-spin mr-1" /> : <RefreshCwIcon className="size-3 mr-1" />}
-                                Test
+                                Check Connection
                               </Button>
                               <Button
                                 variant="outline"
@@ -403,9 +499,17 @@ export function ExternalApiConsole({ config }: { config: ExternalApiConfig }) {
 
               {/* Recent Transactions Feed */}
               <div className="space-y-2 pt-2">
-                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                  Recent Chapa Transactions Feed
-                </h4>
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    {selectedChapaAccountId
+                      ? `Live Chapa Transactions (${chapaAccounts.find((a) => a.id === selectedChapaAccountId)?.name || "Selected Business"})`
+                      : "Recent Chapa Transactions Feed (All Businesses)"}
+                  </h4>
+                  <span className="text-[11px] text-muted-foreground">
+                    {chapaTxs.length} {chapaTxs.length === 1 ? "transaction" : "transactions"}
+                  </span>
+                </div>
+
                 <div className="border rounded-lg overflow-hidden">
                   <Table>
                     <TableHeader className="bg-muted/40">
@@ -420,36 +524,44 @@ export function ExternalApiConsole({ config }: { config: ExternalApiConfig }) {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {chapaTxs.map((tx) => (
-                        <TableRow key={tx.id} className="text-xs">
-                          <TableCell className="font-mono text-[11px] font-semibold">{tx.txRef}</TableCell>
-                          <TableCell>{tx.accountName}</TableCell>
-                          <TableCell>
-                            {tx.customerName}
-                            <div className="text-[10px] text-muted-foreground">{tx.customerEmail}</div>
-                          </TableCell>
-                          <TableCell>{tx.paymentMethod}</TableCell>
-                          <TableCell className="font-semibold">
-                            {tx.amount.toLocaleString()} {tx.currency}
-                          </TableCell>
-                          <TableCell>
-                            <Badge
-                              variant="secondary"
-                              className={cn(
-                                "text-[10px]",
-                                tx.status === "success" && "bg-emerald-500/10 text-emerald-600",
-                                tx.status === "pending" && "bg-amber-500/10 text-amber-600",
-                                tx.status === "failed" && "bg-rose-500/10 text-rose-600"
-                              )}
-                            >
-                              {tx.status}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right text-muted-foreground text-[11px]">
-                            {new Date(tx.createdAt).toLocaleDateString()}
+                      {chapaTxs.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={7} className="text-center text-xs py-8 text-muted-foreground">
+                            No live transactions found for this account on the Chapa gateway API.
                           </TableCell>
                         </TableRow>
-                      ))}
+                      ) : (
+                        chapaTxs.map((tx) => (
+                          <TableRow key={tx.id} className="text-xs">
+                            <TableCell className="font-mono text-[11px] font-semibold">{tx.txRef}</TableCell>
+                            <TableCell>{tx.accountName}</TableCell>
+                            <TableCell>
+                              {tx.customerName}
+                              <div className="text-[10px] text-muted-foreground">{tx.customerEmail}</div>
+                            </TableCell>
+                            <TableCell>{tx.paymentMethod}</TableCell>
+                            <TableCell className="font-semibold">
+                              {tx.amount.toLocaleString()} {tx.currency}
+                            </TableCell>
+                            <TableCell>
+                              <Badge
+                                variant="secondary"
+                                className={cn(
+                                  "text-[10px]",
+                                  tx.status === "success" && "bg-emerald-500/10 text-emerald-600",
+                                  tx.status === "pending" && "bg-amber-500/10 text-amber-600",
+                                  tx.status === "failed" && "bg-rose-500/10 text-rose-600"
+                                )}
+                              >
+                                {tx.status}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-right text-muted-foreground text-[11px]">
+                              {new Date(tx.createdAt).toLocaleDateString()}
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
                     </TableBody>
                   </Table>
                 </div>

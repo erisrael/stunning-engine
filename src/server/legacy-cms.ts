@@ -249,6 +249,15 @@ function parseFilamentTable(html: string): Record<string, string>[] {
     if (validTds.length === 0) continue;
 
     const rowObj: Record<string, string> = {};
+    for (const td of validTds) {
+      const linkMatch = td[2].match(/href="([^"]*(?:admin\/[a-z-]+\/(\d+))[^"]*)"/i);
+      if (linkMatch) {
+        if (!rowObj._recordUrl) rowObj._recordUrl = linkMatch[1];
+        if (!rowObj._recordId) rowObj._recordId = linkMatch[2];
+        if (!rowObj.ID && !rowObj.id) rowObj.ID = linkMatch[2];
+      }
+    }
+
     headers.forEach((h, idx) => {
       const td = validTds[idx];
       if (!td) {
@@ -683,22 +692,22 @@ export async function syncLegacyCms(
             let pagesToScrape = 1;
             if (cat.key === "subscription-plans") {
               pagesToScrape = 1;
+            } else if (opts.maxPages && opts.maxPages > 0) {
+              pagesToScrape = Math.min(totalPages, opts.maxPages);
+            } else if (opts.deep || opts.category === cat.key) {
+              pagesToScrape = totalPages; // Scrape ALL pages across category
             } else if (cat.key === "invoices" || cat.key === "subscriptions") {
               pagesToScrape = totalPages;
-            } else if (opts.deep) {
-              pagesToScrape = Math.min(totalPages, opts.maxPages || 150);
-            } else if (opts.category === cat.key) {
-              pagesToScrape = Math.min(totalPages, opts.maxPages || 60);
             } else {
-              pagesToScrape = Math.min(totalPages, opts.maxPages || 30);
+              pagesToScrape = Math.min(totalPages, 50);
             }
 
             if (pagesToScrape > 1) {
               const pageNums: number[] = [];
               for (let p = 2; p <= pagesToScrape; p++) pageNums.push(p);
 
-              // Scrape in concurrent batches of 6
-              const BATCH = 6;
+              // Scrape in concurrent batches of 12 for higher performance
+              const BATCH = 12;
               for (let i = 0; i < pageNums.length; i += BATCH) {
                 const batch = pageNums.slice(i, i + BATCH);
                 const batchResults = await Promise.all(
@@ -1398,5 +1407,310 @@ export async function getLegacyCmsGrowthAnalytics(): Promise<GrowthAnalytics> {
     cityDemographics,
     planPopularity,
     genderBreakdown,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Real-Time Live CMS Page & Search Query
+// ---------------------------------------------------------------------------
+
+export type LiveCmsPageResult = {
+  ok: boolean;
+  message?: string;
+  category: LegacyCmsCategory;
+  currentPage: number;
+  totalPages: number;
+  totalResults: number;
+  from: number;
+  to: number;
+  headers: string[];
+  records: Record<string, string>[];
+};
+
+export async function fetchLegacyCmsLivePage(
+  user: AppUser,
+  opts: { category: LegacyCmsCategory; page?: number; search?: string }
+): Promise<LiveCmsPageResult> {
+  const page = Math.max(1, opts.page || 1);
+  const search = (opts.search || "").trim();
+  const config = await getLegacyCmsConfig();
+  const baseUrl = config.baseUrl.replace(/\/+$/, "");
+
+  let cookieHeader = config.sessionCookie || "";
+  if (!cookieHeader && config.username && config.password) {
+    try {
+      cookieHeader = await authenticateFilament(baseUrl, config.username, config.password);
+    } catch (e) {
+      console.warn("[legacy-cms] Failed to authenticate for live page fetch:", e);
+    }
+  }
+
+  const catPath = LEGACY_CMS_CATEGORIES.find((c) => c.key === opts.category)?.path || `/admin/${opts.category}`;
+  const searchParam = search ? `&tableSearch=${encodeURIComponent(search)}` : "";
+  const targetUrl = `${baseUrl}${catPath}?page=${page}${searchParam}`;
+
+  const headers: Record<string, string> = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    Accept: "text/html,application/xhtml+xml,application/json,*/*",
+  };
+  if (cookieHeader) headers["Cookie"] = cookieHeader;
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 12000);
+    let res = await fetch(targetUrl, { headers, signal: controller.signal, redirect: "manual" });
+    clearTimeout(timeout);
+
+    if (res.status === 302 || res.status === 401 || res.status === 419) {
+      if (config.username && config.password) {
+        cookieHeader = await authenticateFilament(baseUrl, config.username, config.password);
+        headers["Cookie"] = cookieHeader;
+        const retryCtrl = new AbortController();
+        const retryTimeout = setTimeout(() => retryCtrl.abort(), 12000);
+        res = await fetch(targetUrl, { headers, signal: retryCtrl.signal, redirect: "manual" });
+        clearTimeout(retryTimeout);
+      }
+    }
+
+    if (!res.ok && res.status !== 200) {
+      return {
+        ok: false,
+        message: `HTTP ${res.status}: Failed to fetch page from Noor CMS`,
+        category: opts.category,
+        currentPage: page,
+        totalPages: 1,
+        totalResults: 0,
+        from: 0,
+        to: 0,
+        headers: [],
+        records: [],
+      };
+    }
+
+    const html = await res.text();
+    const records = parseFilamentTable(html);
+
+    // Parse "Showing X to Y of Z results"
+    const showingMatch = html.match(/Showing\s+([0-9,]+)\s+to\s+([0-9,]+)\s+of\s+([0-9,]+)\s+results/i);
+    let from = 0;
+    let to = 0;
+    let totalResults = records.length;
+    if (showingMatch) {
+      from = parseInt(showingMatch[1].replace(/,/g, ""), 10);
+      to = parseInt(showingMatch[2].replace(/,/g, ""), 10);
+      totalResults = parseInt(showingMatch[3].replace(/,/g, ""), 10);
+    }
+    const totalPages = Math.max(1, Math.ceil(totalResults / 10));
+    const headersList: string[] = records.length > 0 ? Object.keys(records[0]).filter((k) => !k.startsWith("_")) : [];
+
+    return {
+      ok: true,
+      category: opts.category,
+      currentPage: page,
+      totalPages,
+      totalResults,
+      from,
+      to,
+      headers: headersList,
+      records,
+    };
+  } catch (err: any) {
+    return {
+      ok: false,
+      message: `Failed to load page: ${err?.message || err}`,
+      category: opts.category,
+      currentPage: page,
+      totalPages: 1,
+      totalResults: 0,
+      from: 0,
+      to: 0,
+      headers: [],
+      records: [],
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Invoice Receipt & Slip Extraction (Image / PDF / QR code)
+// ---------------------------------------------------------------------------
+
+export async function fetchLegacyCmsInvoiceReceipt(
+  user: AppUser,
+  invoiceId: string
+): Promise<{
+  ok: boolean;
+  message?: string;
+  invoiceId: string;
+  studentName?: string;
+  amount?: string;
+  paymentMethod?: string;
+  status?: string;
+  date?: string;
+  paidBy?: string;
+  bankReference?: string;
+  imageUrl?: string | null;
+  pdfUrl?: string | null;
+  rawDetails?: Record<string, string>;
+}> {
+  const config = await getLegacyCmsConfig();
+  const baseUrl = config.baseUrl.replace(/\/+$/, "");
+  let cookieHeader = config.sessionCookie || "";
+  if (!cookieHeader && config.username && config.password) {
+    cookieHeader = await authenticateFilament(baseUrl, config.username, config.password);
+  }
+
+  const targetUrl = `${baseUrl}/admin/invoices/${encodeURIComponent(invoiceId)}`;
+  const headers: Record<string, string> = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+  };
+  if (cookieHeader) headers["Cookie"] = cookieHeader;
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 12000);
+    let res = await fetch(targetUrl, { headers, signal: controller.signal, redirect: "manual" });
+    clearTimeout(timeout);
+
+    if (res.status === 302 || res.status === 401 || res.status === 419) {
+      if (config.username && config.password) {
+        cookieHeader = await authenticateFilament(baseUrl, config.username, config.password);
+        headers["Cookie"] = cookieHeader;
+        const retryCtrl = new AbortController();
+        const retryTimeout = setTimeout(() => retryCtrl.abort(), 12000);
+        res = await fetch(targetUrl, { headers, signal: retryCtrl.signal, redirect: "manual" });
+        clearTimeout(retryTimeout);
+      }
+    }
+
+    if (!res.ok && res.status !== 200) {
+      return { ok: false, message: `Could not load invoice #${invoiceId} (HTTP ${res.status})`, invoiceId };
+    }
+
+    const html = await res.text();
+
+    // Extract PDF download link
+    const pdfMatch = html.match(/href="([^"]*\/invoices\/\d+\/download[^"]*)"/i);
+    const pdfUrl = pdfMatch ? (pdfMatch[1].startsWith("http") ? pdfMatch[1] : `${baseUrl}${pdfMatch[1]}`) : null;
+
+    // Extract any image attachments (e.g. /storage/... or image tags)
+    const imgMatches = [...html.matchAll(/<img\b[^>]*src="([^"]+)"[^>]*>/gi)]
+      .map((m) => m[1])
+      .filter((src) => !src.includes("ui-avatars") && !src.includes("data:image/svg"));
+
+    let imageUrl = imgMatches[0] || null;
+    if (imageUrl && !imageUrl.startsWith("http")) {
+      imageUrl = `${baseUrl}${imageUrl.startsWith("/") ? "" : "/"}${imageUrl}`;
+    }
+
+    // Also look for storage link in <a> tags (e.g. uploaded slip)
+    if (!imageUrl) {
+      const storageMatch = html.match(/href="([^"]*(?:\.jpg|\.jpeg|\.png|\.webp|storage\/[^"]+)[^"]*)"/i);
+      if (storageMatch) {
+        imageUrl = storageMatch[1].startsWith("http") ? storageMatch[1] : `${baseUrl}${storageMatch[1]}`;
+      }
+    }
+
+    // Extract field values
+    const rawDetails: Record<string, string> = {};
+    const textSpans = [...html.matchAll(/class="[^"]*fi-sc-text[^"]*"[^>]*>([\s\S]*?)<\/span>/gi)].map((m) =>
+      m[1].replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim()
+    );
+
+    for (const span of textSpans) {
+      if (span.includes("Amount:")) rawDetails.Amount = span.replace("Amount:", "").trim();
+      else if (span.includes("Status:")) rawDetails.Status = span.replace("Status:", "").trim();
+      else if (span.includes("Payment Method:")) rawDetails.PaymentMethod = span.replace("Payment Method:", "").trim();
+      else if (span.includes("Date:")) rawDetails.Date = span.replace("Date:", "").trim();
+      else if (span.includes("Paid By:")) rawDetails.PaidBy = span.replace("Paid By:", "").trim();
+      else if (span.includes("Bank Reference:")) rawDetails.BankReference = span.replace("Bank Reference:", "").trim();
+    }
+
+    // Extract student name from section
+    const studentMatch = html.match(/infolist\.student::section[\s\S]*?<h2[^>]*>([\s\S]*?)<\/h2>/i);
+    const studentName = studentMatch ? studentMatch[1].replace(/<[^>]+>/g, "").trim() : undefined;
+
+    return {
+      ok: true,
+      invoiceId,
+      studentName,
+      amount: rawDetails.Amount,
+      paymentMethod: rawDetails.PaymentMethod,
+      status: rawDetails.Status,
+      date: rawDetails.Date,
+      paidBy: rawDetails.PaidBy,
+      bankReference: rawDetails.BankReference,
+      imageUrl,
+      pdfUrl,
+      rawDetails,
+    };
+  } catch (err: any) {
+    return { ok: false, message: `Failed to inspect receipt: ${err?.message || err}`, invoiceId };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Scraped Archive Storage Management
+// ---------------------------------------------------------------------------
+
+export type CmsStorageCategoryStatus = {
+  category: LegacyCmsCategory;
+  name: string;
+  path: string;
+  count: number;
+  lastSyncedAt: string | null;
+  totalPagesEstimate: number;
+};
+
+export async function getLegacyCmsStorageStatus(): Promise<CmsStorageCategoryStatus[]> {
+  const rows = await all<{ category: string; count: string; last_synced: string }>(
+    "SELECT category, COUNT(*) as count, MAX(synced_at) as last_synced FROM legacy_cms_records GROUP BY category"
+  );
+  const rowMap = new Map(rows.map((r) => [r.category, { count: parseInt(r.count, 10) || 0, lastSynced: r.last_synced }]));
+
+  const estimates: Record<LegacyCmsCategory, number> = {
+    students: 503,
+    parents: 114,
+    "subscription-plans": 1,
+    "subscription-histories": 229,
+    invoices: 41,
+    subscriptions: 68,
+  };
+
+  return LEGACY_CMS_CATEGORIES.map((cat) => {
+    const st = rowMap.get(cat.key);
+    return {
+      category: cat.key,
+      name: cat.label,
+      path: cat.path,
+      count: st?.count || 0,
+      lastSyncedAt: st?.lastSynced || null,
+      totalPagesEstimate: estimates[cat.key] || 1,
+    };
+  });
+}
+
+export async function deleteLegacyCmsCategoryData(
+  user: AppUser,
+  category: LegacyCmsCategory | "all"
+): Promise<{ ok: boolean; count: number; message: string }> {
+  if (!can(user, "data.manage") && !can(user, "users.manage")) {
+    throw new WorkflowError("FORBIDDEN", "Only Admin or Data Managers can delete scraped records.");
+  }
+
+  let count = 0;
+  if (category === "all") {
+    const res = await run("DELETE FROM legacy_cms_records");
+    count = res.changes || 0;
+    await audit({ actor: user }, { action: "clear.legacy_cms_all", summary: `${user.name} cleared all scraped Legacy CMS data (${count} records)` });
+  } else {
+    const res = await run("DELETE FROM legacy_cms_records WHERE category = ?", category);
+    count = res.changes || 0;
+    await audit({ actor: user }, { action: "clear.legacy_cms_category", summary: `${user.name} cleared scraped Legacy CMS data for ${category} (${count} records)` });
+  }
+
+  return {
+    ok: true,
+    count,
+    message: category === "all" ? `Cleared all scraped CMS records (${count} records removed).` : `Cleared scraped records for ${category} (${count} records removed).`,
   };
 }

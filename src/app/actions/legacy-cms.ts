@@ -191,3 +191,101 @@ export async function getLegacyCmsGrowthAnalyticsAction() {
     };
   }
 }
+
+export async function fetchLegacyCmsLivePageAction(opts: {
+  category: LegacyCmsCategory;
+  page?: number;
+  search?: string;
+}) {
+  try {
+    const viewer = await requireViewer();
+    const res = await cms.fetchLegacyCmsLivePage(viewer, opts);
+    return res;
+  } catch (err: any) {
+    return {
+      ok: false,
+      message: String(err?.message || err),
+      category: opts.category,
+      currentPage: 1,
+      totalPages: 1,
+      totalResults: 0,
+      from: 0,
+      to: 0,
+      headers: [],
+      records: [],
+    };
+  }
+}
+
+export async function fetchLegacyCmsInvoiceReceiptAction(invoiceId: string) {
+  try {
+    const viewer = await requireViewer();
+    const res = await cms.fetchLegacyCmsInvoiceReceipt(viewer, invoiceId);
+    return res;
+  } catch (err: any) {
+    return { ok: false, message: String(err?.message || err), invoiceId };
+  }
+}
+
+export async function deleteLegacyCmsCategoryDataAction(category: LegacyCmsCategory | "all") {
+  try {
+    const viewer = await requireViewer();
+    const res = await cms.deleteLegacyCmsCategoryData(viewer, category);
+    return res;
+  } catch (err: any) {
+    return { ok: false, count: 0, message: String(err?.message || err) };
+  }
+}
+
+export async function getLegacyCmsStorageStatusAction() {
+  try {
+    await requireViewer();
+    const data = await cms.getLegacyCmsStorageStatus();
+    return { ok: true, data };
+  } catch (err: any) {
+    return { ok: false, error: String(err?.message || err), data: [] };
+  }
+}
+
+export async function listStaffUsersAction() {
+  try {
+    const { userDirectory } = await import("@/server/users");
+    const users = await userDirectory();
+    return {
+      ok: true,
+      users: users.map((u) => ({
+        id: u.id,
+        name: u.name,
+        handle: u.handle,
+        role: u.roles[0] || "staff",
+      })),
+    };
+  } catch (err: any) {
+    return { ok: false, users: [], error: String(err?.message || err) };
+  }
+}
+
+export async function reportUserIssueToQuestionsAction(input: {
+  ownerId: string;
+  category: string;
+  title: string;
+  question: string;
+  context?: Record<string, unknown>;
+}) {
+  try {
+    const { askQuestionAction } = await import("@/app/actions/collab");
+    const res = await askQuestionAction({
+      ownerId: input.ownerId,
+      question: input.question,
+      contextType: "legacy_cms_issue",
+      context: {
+        category: input.category,
+        title: input.title,
+        ...input.context,
+      },
+    });
+    return res;
+  } catch (err: any) {
+    return { ok: false, error: String(err?.message || err) };
+  }
+}

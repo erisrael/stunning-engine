@@ -162,7 +162,7 @@ export async function deleteChapaAccount(user: AppUser, id: string): Promise<voi
   await audit({ actor: user }, { action: "finance.chapa_account_delete", summary: `${user.name} deleted Chapa account "${existing.name}"` });
 }
 
-export async function testChapaAccount(user: AppUser, id: string): Promise<{ ok: boolean; message: string; balance?: number }> {
+export async function testChapaAccount(user: AppUser, id: string): Promise<{ ok: boolean; message: string; balance?: number; mode?: string }> {
   if (!can(user, "finance.view") && !can(user, "finance.access") && !can(user, "users.manage")) {
     throw new WorkflowError("FORBIDDEN", "Forbidden");
   }
@@ -176,7 +176,11 @@ export async function testChapaAccount(user: AppUser, id: string): Promise<{ ok:
   const secretKey = (await unseal(row.secret_key_enc))?.trim() ?? "";
   if (!secretKey) return { ok: false, message: "Missing secret key." };
 
+  const isTest = secretKey.startsWith("CHASECK_TEST-");
+  const mode = isTest ? "Test Mode" : "Live Production";
+
   try {
+    // 1. First test balances endpoint
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000);
     const res = await fetch("https://api.chapa.co/v1/balances", {
@@ -186,18 +190,19 @@ export async function testChapaAccount(user: AppUser, id: string): Promise<{ ok:
     clearTimeout(timeout);
 
     if (res.ok) {
-      const json = await res.json();
+      const json = await res.json().catch(() => null);
       const balances = Array.isArray(json?.data) ? json.data : (json?.data ? [json.data] : []);
       const matched = balances.find((b: any) => String(b.currency || "").toUpperCase() === (row.currency || "ETB").toUpperCase()) || balances[0];
       const balNum = parseFloat(matched?.available_balance ?? matched?.balance ?? 0) || 0;
       return {
         ok: true,
-        message: `Connected to Chapa successfully (${row.name}) - Real balance: ${balNum.toLocaleString()} ${row.currency}`,
+        message: `Connected successfully to Chapa (${mode}) for "${row.name}". Live Balance: ${balNum.toLocaleString()} ${row.currency || "ETB"}.`,
         balance: balNum,
+        mode,
       };
     }
 
-    // If balances returned non-200 (e.g., test mode keys or restricted merchant balances endpoint), verify key via /v1/banks
+    // 2. If balances returned restricted HTTP (e.g. 400/403 on standard merchant tier), test banks endpoint to verify credentials
     const bCtrl = new AbortController();
     const bTimeout = setTimeout(() => bCtrl.abort(), 8000);
     const bankRes = await fetch("https://api.chapa.co/v1/banks", {
@@ -207,22 +212,21 @@ export async function testChapaAccount(user: AppUser, id: string): Promise<{ ok:
     clearTimeout(bTimeout);
 
     if (bankRes.ok) {
-      const isTest = secretKey.startsWith("CHASECK_TEST-");
+      const bankJson = await bankRes.json().catch(() => null);
+      const bankCount = Array.isArray(bankJson?.data) ? bankJson.data.length : 0;
       return {
         ok: true,
-        message: `API Key verified with Chapa (${isTest ? "Test Mode" : "Live"}). Balance endpoint not enabled on this merchant tier yet.`,
-        balance: isTest ? 84500 : 0,
+        message: `API Key verified with Chapa (${mode}) for "${row.name}". Gateway connection active (${bankCount} banks available).`,
+        balance: 0,
+        mode,
       };
     }
 
     const errJson = await res.json().catch(() => null);
     const errMsg = errJson?.message || `HTTP ${res.status}: ${res.statusText}`;
-    return { ok: false, message: `Chapa authentication failed: ${errMsg}` };
+    return { ok: false, message: `Chapa authentication failed: ${errMsg}`, mode };
   } catch (e: any) {
-    if (secretKey.startsWith("CHASECK_TEST-")) {
-      return { ok: true, message: `Test mode active for "${row.name}".`, balance: 84500 };
-    }
-    return { ok: false, message: `Could not reach Chapa API: ${e?.message || e}` };
+    return { ok: false, message: `Could not reach Chapa API: ${e?.message || e}`, mode };
   }
 }
 
@@ -254,30 +258,29 @@ export async function fetchChapaBalances(user: AppUser): Promise<ChapaBalance[]>
         });
         clearTimeout(timeout);
         if (res.ok) {
-          const json = await res.json();
+          const json = await res.json().catch(() => null);
           const balances = Array.isArray(json?.data) ? json.data : (json?.data ? [json.data] : []);
           const matched = balances.find((b: any) => String(b.currency || "").toUpperCase() === acc.currency.toUpperCase()) || balances[0];
           bal.availableBalance = parseFloat(matched?.available_balance ?? matched?.balance ?? 0) || 0;
           bal.ledgerBalance = parseFloat(matched?.ledger_balance ?? matched?.balance ?? 0) || 0;
           bal.status = secretKey.startsWith("CHASECK_TEST-") ? "test_mode" : "connected";
-        } else if (secretKey.startsWith("CHASECK_TEST-")) {
-          // Fallback realistic balance for test keys if balances endpoint is restricted
-          const isDonation = acc.name.toLowerCase().includes("donation");
-          bal.availableBalance = isDonation ? 128500 : 345000;
-          bal.ledgerBalance = isDonation ? 130000 : 352000;
         } else {
-          bal.status = "error";
-          bal.error = `HTTP ${res.status}`;
+          // If balances is not enabled on standard merchant tier, check bank list to confirm auth
+          const bRes = await fetch("https://api.chapa.co/v1/banks", {
+            headers: { Authorization: `Bearer ${secretKey}` },
+          });
+          if (bRes.ok) {
+            bal.availableBalance = 0;
+            bal.ledgerBalance = 0;
+            bal.status = secretKey.startsWith("CHASECK_TEST-") ? "test_mode" : "connected";
+          } else {
+            bal.status = "error";
+            bal.error = `HTTP ${res.status}`;
+          }
         }
       } catch (err: any) {
-        if (secretKey.startsWith("CHASECK_TEST-")) {
-          const isDonation = acc.name.toLowerCase().includes("donation");
-          bal.availableBalance = isDonation ? 128500 : 345000;
-          bal.ledgerBalance = isDonation ? 130000 : 352000;
-        } else {
-          bal.status = "error";
-          bal.error = err?.message || "Connection error";
-        }
+        bal.status = "error";
+        bal.error = err?.message || "Connection error";
       }
     }
     out.push(bal);
@@ -300,78 +303,56 @@ export async function listChapaTransactions(user: AppUser, accountId?: string): 
   const targetAccounts = accountId ? accounts.filter((a) => a.id === accountId) : accounts;
   if (targetAccounts.length === 0) return [];
 
-  // Realistic transaction records across businesses
-  const mockTx: ChapaTransaction[] = [
-    {
-      id: "tx_ch_001",
-      accountId: targetAccounts[0]?.id || "sub",
-      accountName: targetAccounts[0]?.name || "MySeed Subscriptions",
-      txRef: "TX-SUB-20261106-01",
-      amount: 2200,
-      currency: "ETB",
-      paymentMethod: "Telebirr",
-      status: "success",
-      customerName: "Abebe Bekele",
-      customerEmail: "abebe.b@gmail.com",
-      customerPhone: "+251911223344",
-      createdAt: "2026-11-06T14:22:00Z",
-    },
-    {
-      id: "tx_ch_002",
-      accountId: targetAccounts[1]?.id || targetAccounts[0]?.id || "don",
-      accountName: targetAccounts[1]?.name || "MySeed Donations",
-      txRef: "TX-DON-20261106-02",
-      amount: 5000,
-      currency: "ETB",
-      paymentMethod: "CBE Birr",
-      status: "success",
-      customerName: "Dr. Haile Tadesse",
-      customerEmail: "haile.tadesse@foundation.org",
-      customerPhone: "+251922334455",
-      createdAt: "2026-11-06T12:15:00Z",
-    },
-    {
-      id: "tx_ch_003",
-      accountId: targetAccounts[0]?.id || "sub",
-      accountName: targetAccounts[0]?.name || "MySeed Subscriptions",
-      txRef: "TX-SUB-20261105-03",
-      amount: 3800,
-      currency: "ETB",
-      paymentMethod: "Bank Card (Visa/Mastercard)",
-      status: "success",
-      customerName: "Hanan Mohammed",
-      customerEmail: "hanan.m@gmail.com",
-      customerPhone: "+251933445566",
-      createdAt: "2026-11-05T18:40:00Z",
-    },
-    {
-      id: "tx_ch_004",
-      accountId: targetAccounts[1]?.id || targetAccounts[0]?.id || "don",
-      accountName: targetAccounts[1]?.name || "MySeed Donations",
-      txRef: "TX-DON-20261105-04",
-      amount: 10000,
-      currency: "ETB",
-      paymentMethod: "Commercial Bank of Ethiopia",
-      status: "success",
-      customerName: "Anonymous Supporter",
-      customerEmail: "donor@faith.org",
-      createdAt: "2026-11-05T10:05:00Z",
-    },
-    {
-      id: "tx_ch_005",
-      accountId: targetAccounts[0]?.id || "sub",
-      accountName: targetAccounts[0]?.name || "MySeed Subscriptions",
-      txRef: "TX-SUB-20261104-05",
-      amount: 1500,
-      currency: "ETB",
-      paymentMethod: "Awash Birr",
-      status: "pending",
-      customerName: "Selamawit Kebede",
-      customerEmail: "selam@gmail.com",
-      customerPhone: "+251944556677",
-      createdAt: "2026-11-04T16:50:00Z",
-    },
-  ];
+  const realTxs: ChapaTransaction[] = [];
 
-  return mockTx;
+  for (const acc of targetAccounts) {
+    const row = await get<{ secret_key_enc: string }>("SELECT secret_key_enc FROM chapa_accounts WHERE id = ?", acc.id);
+    const secretKey = row?.secret_key_enc ? ((await unseal(row.secret_key_enc))?.trim() ?? "") : "";
+    if (!secretKey) continue;
+
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
+      const res = await fetch("https://api.chapa.co/v1/transactions", {
+        headers: { Authorization: `Bearer ${secretKey}` },
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+
+      if (res.ok) {
+        const json = await res.json().catch(() => null);
+        const rawList = Array.isArray(json?.data)
+          ? json.data
+          : Array.isArray(json?.data?.transactions)
+          ? json.data.transactions
+          : Array.isArray(json?.transactions)
+          ? json.transactions
+          : [];
+
+        for (const t of rawList) {
+          const txStatus = String(t.status || "").toLowerCase();
+          realTxs.push({
+            id: String(t.id || t.tx_ref || uid("tx_")),
+            accountId: acc.id,
+            accountName: acc.name,
+            txRef: String(t.tx_ref || t.reference || t.id || ""),
+            amount: parseFloat(t.amount ?? 0) || 0,
+            currency: String(t.currency || acc.currency || "ETB").toUpperCase(),
+            paymentMethod: String(t.payment_method || t.method || "Chapa"),
+            status: txStatus === "success" || txStatus === "paid" ? "success" : txStatus === "failed" ? "failed" : "pending",
+            customerName: `${t.first_name || ""} ${t.last_name || ""}`.trim() || t.customer_name || "Customer",
+            customerEmail: t.email || t.customer_email || "—",
+            customerPhone: t.phone_number || t.mobile || undefined,
+            createdAt: t.created_at || t.createdAt || nowIso(),
+          });
+        }
+      }
+    } catch (err) {
+      console.warn(`[chapa] Failed to fetch transactions for account ${acc.name}:`, err);
+    }
+  }
+
+  // Sort descending by date
+  realTxs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  return realTxs;
 }

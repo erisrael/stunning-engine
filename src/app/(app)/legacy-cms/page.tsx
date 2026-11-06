@@ -7,10 +7,11 @@ import {
   getStudentParentRelations,
   getLegacyCmsRevenueAnalytics,
   getLegacyCmsGrowthAnalytics,
+  getLegacyCmsStorageStatus,
   LEGACY_CMS_CATEGORIES,
   type LegacyCmsCategory,
 } from "@/server/legacy-cms";
-import { can } from "@/server/users";
+import { can, userDirectory } from "@/server/users";
 import { PageHeader } from "@/components/app/primitives";
 import { LegacyCmsClient } from "./legacy-cms-client";
 
@@ -48,13 +49,22 @@ export default async function LegacyCmsPage({
     allowedCategories.includes(requestedCategory) ? requestedCategory : allowedCategories[0] || "students";
 
   const config = await getLegacyCmsConfig();
-  const [initialRecords, stats, initialRelations, initialRevenue, initialGrowth] = await Promise.all([
+  const [initialRecords, stats, initialRelations, initialRevenue, initialGrowth, initialStorage, allUsers] = await Promise.all([
     listLegacyCmsRecords(initialCategory, { limit: 100 }),
     getLegacyCmsStats(),
     getStudentParentRelations({ limit: 150 }),
     getLegacyCmsRevenueAnalytics(),
     getLegacyCmsGrowthAnalytics(),
+    getLegacyCmsStorageStatus(),
+    userDirectory(),
   ]);
+
+  const staffUsers = allUsers.map((u) => ({
+    id: u.id,
+    name: u.name,
+    handle: u.handle,
+    role: u.roles[0] || "staff",
+  }));
 
   return (
     <div className="space-y-4">
@@ -73,6 +83,8 @@ export default async function LegacyCmsPage({
         initialRelations={initialRelations}
         initialRevenue={initialRevenue}
         initialGrowth={initialGrowth}
+        initialStorage={initialStorage}
+        staffUsers={staffUsers}
       />
     </div>
   );

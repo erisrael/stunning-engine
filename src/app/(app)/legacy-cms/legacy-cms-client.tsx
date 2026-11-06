@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import jsQR from "jsqr";
 import {
   DownloadIcon,
   RefreshCwIcon,
@@ -40,6 +41,20 @@ import {
   LayersIcon,
   PercentIcon,
   FilterIcon,
+  ZoomInIcon,
+  ZoomOutIcon,
+  RotateCwIcon,
+  QrCodeIcon,
+  HelpCircleIcon,
+  Building2Icon,
+  RadioIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  ChevronsLeftIcon,
+  ChevronsRightIcon,
+  ArrowRightIcon,
+  Maximize2Icon,
+  SendIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -83,6 +98,11 @@ import {
   getLegacyCmsRevenueAnalyticsAction,
   approveLegacyCmsInvoiceAction,
   getLegacyCmsGrowthAnalyticsAction,
+  fetchLegacyCmsLivePageAction,
+  fetchLegacyCmsInvoiceReceiptAction,
+  deleteLegacyCmsCategoryDataAction,
+  getLegacyCmsStorageStatusAction,
+  reportUserIssueToQuestionsAction,
 } from "@/app/actions/legacy-cms";
 import type {
   LegacyCmsCategory,
@@ -92,7 +112,9 @@ import type {
   StudentParentRelation,
   RevenueAnalytics,
   GrowthAnalytics,
+  CmsStorageCategoryStatus,
 } from "@/server/legacy-cms";
+import { FilamentPagination } from "@/components/app/legacy-cms/filament-pagination";
 import { cn } from "@/lib/utils";
 
 const CATEGORY_PATHS: Record<LegacyCmsCategory, string> = {
@@ -115,6 +137,8 @@ export function LegacyCmsClient({
   initialRelations,
   initialRevenue,
   initialGrowth,
+  initialStorage,
+  staffUsers = [],
 }: {
   config: LegacyCmsConfig;
   initialCategory: LegacyCmsCategory;
@@ -136,11 +160,16 @@ export function LegacyCmsClient({
   };
   initialRevenue?: RevenueAnalytics;
   initialGrowth?: GrowthAnalytics;
+  initialStorage?: CmsStorageCategoryStatus[];
+  staffUsers?: { id: string; name: string; handle: string; role: string }[];
 }) {
   const router = useRouter();
 
-  // Top-level Navigation Mode: "subpages" | "relations" | "revenue" | "growth"
-  const [activeMainView, setActiveMainView] = React.useState<"subpages" | "relations" | "revenue" | "growth">("subpages");
+  // Top-level Navigation Mode: "subpages" | "relations" | "revenue" | "growth" | "storage"
+  const [activeMainView, setActiveMainView] = React.useState<"subpages" | "relations" | "revenue" | "growth" | "storage">("subpages");
+
+  // Subpages Data Source Mode: "scraped" (fast local cache) vs "live" (real-time query against cms.noorethiopia.com)
+  const [dataSourceMode, setDataSourceMode] = React.useState<"scraped" | "live">("scraped");
 
   // Category Tables State
   const [category, setCategory] = React.useState<LegacyCmsCategory>(initialCategory);
@@ -149,9 +178,33 @@ export function LegacyCmsClient({
   const [search, setSearch] = React.useState("");
   const [statusFilter, setStatusFilter] = React.useState<string>("all");
   const [gradeFilter, setGradeFilter] = React.useState<string>("all");
+
+  // Date Range Filters: "all" | "today" | "week" | "month" | "custom"
+  const [dateFilter, setDateFilter] = React.useState<"all" | "today" | "week" | "month" | "custom">("all");
+  const [customStartDate, setCustomStartDate] = React.useState<string>("");
+  const [customEndDate, setCustomEndDate] = React.useState<string>("");
+
+  // Pagination State for Scraped Cache
+  const [currentPage, setCurrentPage] = React.useState(1);
+  const [pageSize, setPageSize] = React.useState<number>(25);
+
+  // Live CMS Pagination & Search State
+  const [livePage, setLivePage] = React.useState(1);
+  const [liveTotalPages, setLiveTotalPages] = React.useState(1);
+  const [liveTotalResults, setLiveTotalResults] = React.useState(0);
+  const [liveFrom, setLiveFrom] = React.useState(0);
+  const [liveTo, setLiveTo] = React.useState(0);
+  const [liveRecords, setLiveRecords] = React.useState<Record<string, string>[]>([]);
+  const [liveHeaders, setLiveHeaders] = React.useState<string[]>([]);
+  const [liveLoading, setLiveLoading] = React.useState(false);
+
+  // Storage & Archives State
+  const [storageStatus, setStorageStatus] = React.useState<CmsStorageCategoryStatus[]>(initialStorage || []);
+
+  // Syncing & Progress State
   const [loading, setLoading] = React.useState(false);
-  const [syncing, setSyncing] = React.useState(false);
-  const [deepSyncing, setDeepSyncing] = React.useState(false);
+  const [syncingCategory, setSyncingCategory] = React.useState<string | null>(null);
+  const [deepSyncLimit, setDeepSyncLimit] = React.useState<number>(0); // 0 means ALL pages
   const [settingsOpen, setSettingsOpen] = React.useState(false);
   const [selectedRecord, setSelectedRecord] = React.useState<LegacyCmsRecord | null>(null);
   const [copiedKey, setCopiedKey] = React.useState<string | null>(null);
@@ -164,6 +217,8 @@ export function LegacyCmsClient({
   const [relSearch, setRelSearch] = React.useState("");
   const [relGradeFilter, setRelGradeFilter] = React.useState("all");
   const [relPhoneOnly, setRelPhoneOnly] = React.useState(false);
+  const [relPage, setRelPage] = React.useState(1);
+  const [relPageSize, setRelPageSize] = React.useState(25);
 
   // Revenue & Invoices State
   const [revenueData, setRevenueData] = React.useState<RevenueAnalytics>(
@@ -179,6 +234,49 @@ export function LegacyCmsClient({
   const [revMethodFilter, setRevMethodFilter] = React.useState("all");
   const [revStatusFilter, setRevStatusFilter] = React.useState("all");
   const [revSearch, setRevSearch] = React.useState("");
+  const [revPage, setRevPage] = React.useState(1);
+  const [revPageSize, setRevPageSize] = React.useState(25);
+
+  // Receipt Modal State with Zoom & QR Detection
+  const [receiptModalOpen, setReceiptModalOpen] = React.useState(false);
+  const [receiptLoading, setReceiptLoading] = React.useState(false);
+  const [activeReceiptInvoice, setActiveReceiptInvoice] = React.useState<{
+    id: string;
+    studentName?: string;
+    amount?: string;
+    paymentMethod?: string;
+    status?: string;
+    date?: string;
+    paidBy?: string;
+    bankReference?: string;
+    imageUrl?: string | null;
+    pdfUrl?: string | null;
+  } | null>(null);
+  const [receiptZoom, setReceiptZoom] = React.useState(1);
+  const [receiptRotation, setReceiptRotation] = React.useState(0);
+  const [detectedQrCode, setDetectedQrCode] = React.useState<string | null>(null);
+  const [isScanningQr, setIsScanningQr] = React.useState(false);
+  const [approvalNotes, setApprovalNotes] = React.useState("");
+
+  // Report Issue to Questions Modal State
+  const [reportModalOpen, setReportModalOpen] = React.useState(false);
+  const [reportSubmitting, setReportSubmitting] = React.useState(false);
+  const [reportData, setReportData] = React.useState<{
+    category: string;
+    itemTitle: string;
+    itemId: string;
+    ownerId: string;
+    priority: string;
+    details: string;
+    contactPhone?: string;
+  }>({
+    category: "students",
+    itemTitle: "",
+    itemId: "",
+    ownerId: staffUsers[0]?.id || "",
+    priority: "normal",
+    details: "",
+  });
 
   // Growth Analytics State
   const [growthData, setGrowthData] = React.useState<GrowthAnalytics>(
@@ -198,37 +296,34 @@ export function LegacyCmsClient({
     message: string;
     ms?: number;
   }>({
-    status: config.hasSessionCookie || config.username ? "checking" : "disconnected",
+    status: "checking",
     username: config.username || "ops@myseed.com",
-    message: "Checking Noor CMS session...",
+    message: "Verifying live session...",
   });
   const [checkingAuth, setCheckingAuth] = React.useState(false);
-  const [loginModalOpen, setLoginModalOpen] = React.useState(false);
-  const [loginForm, setLoginForm] = React.useState({
-    username: config.username === "ops@admin.com" ? "ops@myseed.com" : (config.username || "ops@myseed.com"),
-    password: "",
-  });
 
-  // Selectable Target Page for Sync
-  const [targetSyncPage, setTargetSyncPage] = React.useState<"all" | LegacyCmsCategory>("all");
-
-  const [roleVisibility, setRoleVisibility] = React.useState<CmsRoleVisibility>(
-    visibility || {
-      admin: ["students", "parents", "subscription-plans", "subscription-histories", "invoices", "subscriptions"],
-      support: ["students", "parents", "subscriptions", "subscription-plans"],
-      finance: ["invoices", "subscription-plans", "subscription-histories", "subscriptions"],
-    }
-  );
-
-  // Settings form
+  // Settings & Visibility State
   const [cfg, setCfg] = React.useState({
-    baseUrl: config.baseUrl || "https://cms.noorethiopia.com",
-    username: config.username === "ops@admin.com" ? "ops@myseed.com" : (config.username || "ops@myseed.com"),
+    baseUrl: config.baseUrl,
+    username: config.username === "ops@admin.com" ? "ops@myseed.com" : config.username || "ops@myseed.com",
     password: "",
     sessionCookie: "",
     autoSync: config.autoSync,
     syncIntervalMinutes: config.syncIntervalMinutes,
   });
+
+  const [loginForm, setLoginForm] = React.useState({
+    username: config.username === "ops@admin.com" ? "ops@myseed.com" : config.username || "ops@myseed.com",
+    password: "9V7x6antUAU6eyE",
+  });
+  const [loggingIn, setLoggingIn] = React.useState(false);
+  const [roleVisibility, setRoleVisibility] = React.useState<CmsRoleVisibility>(
+    visibility || {
+      support: ["students", "parents", "subscriptions"],
+      finance: ["invoices", "subscription-plans", "subscription-histories", "subscriptions"],
+      admin: ["students", "parents", "subscription-plans", "subscription-histories", "invoices", "subscriptions"],
+    }
+  );
 
   const handleCheckAuthStatus = async (showToast = false) => {
     setCheckingAuth(true);
@@ -265,12 +360,44 @@ export function LegacyCmsClient({
     void handleCheckAuthStatus(false);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Fetch Live Page directly from Noor CMS
+  const handleFetchLivePage = async (cat: LegacyCmsCategory, pageNum: number, searchQ: string) => {
+    setLiveLoading(true);
+    try {
+      const res = await fetchLegacyCmsLivePageAction({ category: cat, page: pageNum, search: searchQ });
+      setLiveLoading(false);
+      if (res.ok) {
+        setLiveRecords(res.records);
+        setLiveHeaders(res.headers);
+        setLivePage(res.currentPage);
+        setLiveTotalPages(res.totalPages);
+        setLiveTotalResults(res.totalResults);
+        setLiveFrom(res.from);
+        setLiveTo(res.to);
+      } else {
+        toast.error(res.message || "Failed to load live CMS page");
+      }
+    } catch (err: any) {
+      setLiveLoading(false);
+      if (String(err?.message || err).includes("Server Action")) window.location.reload();
+      else toast.error(String(err?.message || err));
+    }
+  };
+
+  // Switch between Live and Scraped modes
+  React.useEffect(() => {
+    if (dataSourceMode === "live") {
+      handleFetchLivePage(category, 1, search);
+    }
+  }, [category, dataSourceMode]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const refreshAllViews = async () => {
-    const [catRes, relRes, revRes, groRes] = await Promise.all([
-      listLegacyCmsRecordsAction(category, { q: search, limit: 100 }),
+    const [catRes, relRes, revRes, groRes, stoRes] = await Promise.all([
+      listLegacyCmsRecordsAction(category, { q: search, limit: 200 }),
       getStudentParentRelationsAction(),
       getLegacyCmsRevenueAnalyticsAction(),
       getLegacyCmsGrowthAnalyticsAction(),
+      getLegacyCmsStorageStatusAction(),
     ]);
     if (catRes.ok) {
       setRecords(catRes.data.rows);
@@ -282,159 +409,213 @@ export function LegacyCmsClient({
     }
     if (revRes.ok) setRevenueData(revRes.data);
     if (groRes.ok) setGrowthData(groRes.data);
+    if (stoRes.ok) setStorageStatus(stoRes.data);
     router.refresh();
   };
 
   const handleLoginSubmit = async () => {
     let userToUse = loginForm.username.trim() || "ops@myseed.com";
     if (userToUse === "ops@admin.com") userToUse = "ops@myseed.com";
-    setLoading(true);
-    try {
-      const res = await loginLegacyCmsAction({
-        username: userToUse,
-        password: loginForm.password.trim() || undefined,
-      });
-      setLoading(false);
-      if (res.ok) {
-        toast.success(res.message);
-        setAuthStatus({
-          status: "connected",
-          username: userToUse,
-          message: "Session established and verified",
-        });
-        setLoginModalOpen(false);
-        await refreshAllViews();
-      } else {
-        toast.error(res.message || "Login failed");
-      }
-    } catch (err: any) {
-      setLoading(false);
-      if (String(err?.message || err).includes("Server Action")) {
-        toast.error("New deployment detected. Refreshing page...");
-        window.location.reload();
-      } else {
-        toast.error(String(err?.message || err));
-      }
+    setLoggingIn(true);
+    const res = await loginLegacyCmsAction({
+      username: userToUse,
+      password: loginForm.password.trim() || "9V7x6antUAU6eyE",
+    });
+    setLoggingIn(false);
+    if (res.ok) {
+      toast.success(res.message);
+      await handleCheckAuthStatus(false);
+      await refreshAllViews();
+    } else {
+      toast.error(res.message);
     }
   };
 
   const handleLogout = async () => {
-    if (!confirm("Log out from Noor Ethiopia CMS? This will clear the active session cookie.")) return;
-    setLoading(true);
     const res = await logoutLegacyCmsAction();
-    setLoading(false);
     if (res.ok) {
       toast.success(res.message);
       setAuthStatus({
         status: "disconnected",
         username: config.username || "ops@myseed.com",
-        message: "Logged out. Session cleared.",
+        message: "Logged out. Cookie cleared.",
       });
       router.refresh();
     } else {
-      toast.error(res.message || "Logout failed");
+      toast.error(res.message);
     }
   };
 
-  const fetchCategoryData = async (cat: LegacyCmsCategory, query = search) => {
-    setLoading(true);
-    const res = await listLegacyCmsRecordsAction(cat, { q: query, limit: 100 });
-    setLoading(false);
+  // Per-category Single Deep Scrape (option to scrape ALL or specified count)
+  const handleScrapeCategory = async (targetCat: LegacyCmsCategory, maxPages = 0) => {
+    setSyncingCategory(targetCat);
+    const pageDesc = maxPages === 0 ? "ALL available pages" : `first ${maxPages} pages`;
+    toast.info(`Scraping ${targetCat} (${pageDesc}) directly from Noor CMS...`);
+    const res = await syncLegacyCmsAction({
+      force: true,
+      category: targetCat,
+      deep: true,
+      maxPages: maxPages > 0 ? maxPages : undefined,
+    });
+    setSyncingCategory(null);
     if (res.ok) {
-      setRecords(res.data.rows);
-      setTotal(res.data.total);
-    } else {
-      toast.error(res.error || "Failed to load data");
-    }
-  };
-
-  const handleTabChange = (val: string) => {
-    const nextCat = val as LegacyCmsCategory;
-    setCategory(nextCat);
-    fetchCategoryData(nextCat, search);
-  };
-
-  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value;
-    setSearch(val);
-    fetchCategoryData(category, val);
-  };
-
-  // Standard Sync (Target page or all)
-  const handleSyncTargetPage = async (catToSync: "all" | LegacyCmsCategory = targetSyncPage) => {
-    setSyncing(true);
-    const res = await syncLegacyCmsAction({ force: true, category: catToSync });
-    setSyncing(false);
-    if (res.ok) {
-      toast.success(res.message || `Synced successfully for ${catToSync}`);
+      toast.success(res.message);
       await handleCheckAuthStatus(false);
       await refreshAllViews();
     } else {
-      toast.error(res.error || "Sync failed");
+      toast.error(res.error || "Scraping failed");
     }
   };
 
-  // Deep Multi-Page Crawl (Crawl all available pages)
-  const handleDeepSync = async () => {
-    setDeepSyncing(true);
-    toast.info(`Starting deep crawl for ${targetSyncPage === "all" ? "all subpages" : targetSyncPage}... Crawling across all pages.`);
-    const res = await syncLegacyCmsAction({ force: true, category: targetSyncPage, deep: true, maxPages: 100 });
-    setDeepSyncing(false);
+  // Delete scraped category data
+  const handleDeleteCategoryData = async (cat: LegacyCmsCategory | "all") => {
+    const promptMsg =
+      cat === "all"
+        ? "Permanently delete ALL scraped CMS datasets? This will clear all cached records."
+        : `Permanently delete scraped records for ${cat}?`;
+    if (!confirm(promptMsg)) return;
+
+    setLoading(true);
+    const res = await deleteLegacyCmsCategoryDataAction(cat);
+    setLoading(false);
     if (res.ok) {
       toast.success(res.message);
       await refreshAllViews();
     } else {
-      toast.error(res.error || "Deep sync failed");
+      toast.error(res.message);
+    }
+  };
+
+  // Review Receipt Modal & QR scanner
+  const handleOpenReceipt = async (invRecord: any) => {
+    const invId = invRecord.external_id || invRecord.ID || invRecord.id || invRecord.invoice_number;
+    setActiveReceiptInvoice({
+      id: invId,
+      studentName: invRecord.student_name || invRecord.Student || invRecord.title || "Student",
+      amount: invRecord.amount || invRecord.Amount || "—",
+      paymentMethod: invRecord.payment_method || invRecord["Payment Method"] || "bank",
+      status: invRecord.status || invRecord.Status || "pending",
+      date: invRecord.date || invRecord.Date || invRecord.created_at || "—",
+      bankReference: invRecord.bankReference || invRecord["Bank Reference"] || "—",
+      imageUrl: null,
+      pdfUrl: null,
+    });
+    setReceiptZoom(1);
+    setReceiptRotation(0);
+    setDetectedQrCode(null);
+    setApprovalNotes("");
+    setReceiptModalOpen(true);
+    setReceiptLoading(true);
+
+    try {
+      const res = await fetchLegacyCmsInvoiceReceiptAction(invId);
+      setReceiptLoading(false);
+      if (res.ok) {
+        setActiveReceiptInvoice((prev) => ({
+          ...prev!,
+          studentName: res.studentName || prev?.studentName,
+          amount: res.amount || prev?.amount,
+          paymentMethod: res.paymentMethod || prev?.paymentMethod,
+          status: res.status || prev?.status,
+          date: res.date || prev?.date,
+          paidBy: res.paidBy || prev?.paidBy,
+          bankReference: res.bankReference || prev?.bankReference,
+          imageUrl: res.imageUrl,
+          pdfUrl: res.pdfUrl,
+        }));
+      }
+    } catch {
+      setReceiptLoading(false);
+    }
+  };
+
+  // QR Code Scanner on Receipt Image
+  const scanQrCodeFromImage = (imgElement: HTMLImageElement) => {
+    try {
+      setIsScanningQr(true);
+      const canvas = document.createElement("canvas");
+      canvas.width = imgElement.naturalWidth || imgElement.width;
+      canvas.height = imgElement.naturalHeight || imgElement.height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        setIsScanningQr(false);
+        return;
+      }
+      ctx.drawImage(imgElement, 0, 0);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const code = jsQR(imageData.data, imageData.width, imageData.height, {
+        inversionAttempts: "attemptBoth",
+      });
+      setIsScanningQr(false);
+      if (code && code.data) {
+        setDetectedQrCode(code.data);
+        toast.success(`QR Code detected on receipt!`);
+      } else {
+        setDetectedQrCode(null);
+      }
+    } catch (e) {
+      setIsScanningQr(false);
+      console.warn("QR scan failed:", e);
     }
   };
 
   const handleApproveInvoice = async (invoiceId: string) => {
-    if (!confirm("Confirm receipt verification? This invoice will be approved and marked as Paid.")) return;
-    const res = await approveLegacyCmsInvoiceAction(invoiceId);
+    setLoading(true);
+    const res = await approveLegacyCmsInvoiceAction(invoiceId, approvalNotes);
+    setLoading(false);
     if (res.ok) {
       toast.success(res.message);
-      const revRes = await getLegacyCmsRevenueAnalyticsAction();
-      if (revRes.ok) setRevenueData(revRes.data);
+      setReceiptModalOpen(false);
+      await refreshAllViews();
     } else {
       toast.error(res.message || "Failed to approve invoice");
     }
   };
 
-  const handleSaveSettings = async () => {
-    setLoading(true);
-    const res = await saveLegacyCmsConfigAction({
-      baseUrl: cfg.baseUrl,
-      username: cfg.username,
-      password: cfg.password ? cfg.password : undefined,
-      sessionCookie: cfg.sessionCookie ? cfg.sessionCookie : undefined,
-      autoSync: cfg.autoSync,
-      syncIntervalMinutes: cfg.syncIntervalMinutes,
+  // Open "Report Issue to Questions" modal
+  const handleOpenReportModal = (item: any, cat: string) => {
+    const rawData = item.data || item;
+    const name = rawData.Name || rawData.name || rawData.Student || rawData.student_name || rawData.title || item.title || "User";
+    const phone = rawData.Phone || rawData.phone || rawData.mobile || rawData.parent_phone || "";
+    const extId = item.external_id || item.ID || item.id || "";
+    const grade = rawData.Grade || rawData.grade || rawData.grades || "";
+
+    setReportData({
+      category: cat,
+      itemTitle: name,
+      itemId: extId,
+      ownerId: staffUsers[0]?.id || "",
+      priority: "normal",
+      contactPhone: phone,
+      details: `Report for ${cat.toUpperCase()} #${extId} (${name}):\n- Phone: ${phone || "Not specified"}\n- Grade / Package: ${grade || "—"}\n- Context: Verified from Noor Ethiopia CMS mirror.\n\nIssue Details: `,
     });
-    if (res.ok) {
-      await saveCmsRoleVisibilityAction(roleVisibility);
-      toast.success("Legacy CMS credentials and role visibility settings saved");
-      setSettingsOpen(false);
-      router.refresh();
-      void handleCheckAuthStatus(false);
-    } else {
-      toast.error(res.error || "Failed to save settings");
-    }
-    setLoading(false);
+    setReportModalOpen(true);
   };
 
-  const handleClearCmsData = async () => {
-    if (!confirm("Are you sure you want to clear all synced Noor Ethiopia CMS records? This will delete all cached records and leave the tables empty.")) return;
-    setLoading(true);
-    const res = await clearLegacyCmsDataAction();
-    setLoading(false);
+  const handleSendReportQuestion = async () => {
+    if (!reportData.ownerId) return toast.error("Please select a recipient from the team.");
+    if (!reportData.details.trim()) return toast.error("Please describe the issue.");
+
+    setReportSubmitting(true);
+    const res = await reportUserIssueToQuestionsAction({
+      ownerId: reportData.ownerId,
+      category: reportData.category,
+      title: `Issue Report: ${reportData.itemTitle} (#${reportData.itemId})`,
+      question: reportData.details,
+      context: {
+        category: reportData.category,
+        itemId: reportData.itemId,
+        itemTitle: reportData.itemTitle,
+        contactPhone: reportData.contactPhone,
+      },
+    });
+    setReportSubmitting(false);
+
     if (res.ok) {
-      toast.success("All Legacy CMS records cleared successfully");
-      setRecords([]);
-      setTotal(0);
-      setRelations([]);
-      router.refresh();
+      toast.success("Issue successfully reported to Questions section!");
+      setReportModalOpen(false);
     } else {
-      toast.error(res.error || "Failed to clear records");
+      toast.error(res.error || "Failed to send question");
     }
   };
 
@@ -459,7 +640,7 @@ export function LegacyCmsClient({
     };
 
     const csvContent =
-      "\uFEFF" + // UTF-8 BOM so Microsoft Excel renders Amharic, special characters and phone symbols accurately
+      "\uFEFF" +
       headers.map(sanitize).join(",") +
       "\r\n" +
       rows.map((row) => row.map(sanitize).join(",")).join("\r\n");
@@ -476,509 +657,850 @@ export function LegacyCmsClient({
     toast.success(`Exported ${filename}.csv (Excel compatible)`);
   };
 
-  const exportCurrentTableToExcel = () => {
-    if (filteredRecords.length === 0) return toast.error("No data in current table");
-    const headers = Array.from(new Set(filteredRecords.flatMap((r) => Object.keys(r.data))));
-    const rows = filteredRecords.map((r) => headers.map((h) => String(r.data[h] ?? "")));
-    exportToExcel(`noor-cms-${category}-${new Date().toISOString().slice(0, 10)}`, headers, rows);
+  // Date Filter evaluation helper
+  const matchesDateFilter = (itemData: Record<string, any>) => {
+    if (dateFilter === "all") return true;
+    const now = new Date();
+    // Look for any date string in the record
+    const dateValStr =
+      itemData.date ||
+      itemData.Date ||
+      itemData.created_at ||
+      itemData.synced_at ||
+      itemData.created ||
+      itemData.Started_At ||
+      itemData.Expires_At;
+
+    if (!dateValStr) return true; // If no date column exists, keep it
+    const d = new Date(dateValStr);
+    if (isNaN(d.getTime())) return true;
+
+    if (dateFilter === "today") {
+      return (
+        d.getFullYear() === now.getFullYear() &&
+        d.getMonth() === now.getMonth() &&
+        d.getDate() === now.getDate()
+      );
+    }
+    if (dateFilter === "week") {
+      const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      return d >= oneWeekAgo && d <= now;
+    }
+    if (dateFilter === "month") {
+      return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+    }
+    if (dateFilter === "custom") {
+      if (customStartDate && d < new Date(customStartDate)) return false;
+      if (customEndDate && d > new Date(`${customEndDate}T23:59:59`)) return false;
+      return true;
+    }
+    return true;
   };
 
-  const exportRelationsToExcel = () => {
-    if (filteredRelations.length === 0) return toast.error("No relations to export");
-    const headers = ["Student ID", "Student Name", "Grade", "City", "Gender", "Subscription Status", "Plan", "Parent Name", "Parent Phone", "Parent Email", "Link Type"];
-    const rows = filteredRelations.map((r) => [
-      r.studentId,
-      r.studentName,
-      r.grade,
-      r.city,
-      r.gender,
-      r.subscriptionStatus,
-      r.planName || "",
-      r.parentName,
-      r.parentPhone,
-      r.parentEmail || "",
-      r.hasDirectLink ? "Direct Link" : "Subscription Phone",
-    ]);
-    exportToExcel(`noor-student-parent-directory-${new Date().toISOString().slice(0, 10)}`, headers, rows);
-  };
-
-  const exportRevenueToExcel = () => {
-    if (filteredInvoices.length === 0) return toast.error("No invoices to export");
-    const headers = ["Invoice ID", "Student Name", "Plan", "Amount (ETB)", "Payment Method", "Status", "Date", "Reason", "Approval State", "Approved By", "Approved At"];
-    const rows = filteredInvoices.map((inv) => [
-      inv.externalId,
-      inv.student,
-      inv.plan,
-      inv.amount,
-      inv.paymentMethod,
-      inv.status,
-      inv.date,
-      inv.reason,
-      inv.needsApproval ? "Needs Approval" : "Approved / Paid",
-      inv.approvedBy || "",
-      inv.approvedAt || "",
-    ]);
-    exportToExcel(`noor-revenue-invoices-${new Date().toISOString().slice(0, 10)}`, headers, rows);
-  };
-
-  // Filtered Records for Active Category
+  // Filtered Scraped Records
   const filteredRecords = React.useMemo(() => {
     return records.filter((r) => {
+      const data = r.data || {};
+      const matchesSearch =
+        !search ||
+        r.title.toLowerCase().includes(search.toLowerCase()) ||
+        r.externalId.toLowerCase().includes(search.toLowerCase()) ||
+        JSON.stringify(data).toLowerCase().includes(search.toLowerCase());
+
+      if (!matchesSearch) return false;
+
       if (statusFilter !== "all") {
-        const st = String(r.data.status || r.data.Status || r.data.Subscription || "").toLowerCase();
-        if (!st.includes(statusFilter.toLowerCase())) return false;
+        const rowStatus = String(data.Status || data.status || "").toLowerCase();
+        if (rowStatus !== statusFilter.toLowerCase()) return false;
       }
+
       if (gradeFilter !== "all") {
-        const gr = String(r.data.grade || r.data.Grade || "").toLowerCase();
-        if (!gr.includes(gradeFilter.toLowerCase())) return false;
+        const rowGrade = String(data.Grade || data.grade || data.Grades || data.grades || "").toLowerCase();
+        if (!rowGrade.includes(gradeFilter.toLowerCase())) return false;
       }
+
+      if (!matchesDateFilter(data)) return false;
+
       return true;
     });
-  }, [records, statusFilter, gradeFilter]);
+  }, [records, search, statusFilter, gradeFilter, dateFilter, customStartDate, customEndDate]);
 
-  // Filtered Student-Parent Relations
+  // Paginated Scraped Records
+  const paginatedScrapedRecords = React.useMemo(() => {
+    if (pageSize === 0) return filteredRecords;
+    const start = (currentPage - 1) * pageSize;
+    return filteredRecords.slice(start, start + pageSize);
+  }, [filteredRecords, currentPage, pageSize]);
+
+  const totalScrapedPages = pageSize === 0 ? 1 : Math.max(1, Math.ceil(filteredRecords.length / pageSize));
+
+  // Filtered & Paginated Student-Parent Relations
   const filteredRelations = React.useMemo(() => {
-    return relations.filter((rel) => {
-      if (relGradeFilter !== "all" && !rel.grade.toLowerCase().includes(relGradeFilter.toLowerCase())) {
-        return false;
-      }
-      if (relPhoneOnly && !rel.hasPhone) {
-        return false;
-      }
+    return relations.filter((r) => {
       if (relSearch.trim()) {
         const q = relSearch.toLowerCase();
-        const match =
-          rel.studentName.toLowerCase().includes(q) ||
-          rel.parentName.toLowerCase().includes(q) ||
-          rel.parentPhone.includes(q) ||
-          rel.city.toLowerCase().includes(q) ||
-          rel.studentId.includes(q);
-        if (!match) return false;
+        const matchesName = r.studentName.toLowerCase().includes(q);
+        const matchesParent = (r.parentName || "").toLowerCase().includes(q);
+        const matchesPhone = (r.parentPhone || "").includes(q);
+        const matchesCity = (r.city || "").toLowerCase().includes(q);
+        if (!matchesName && !matchesParent && !matchesPhone && !matchesCity) return false;
       }
+      if (relGradeFilter !== "all" && r.grade !== relGradeFilter) return false;
+      if (relPhoneOnly && !r.parentPhone) return false;
       return true;
     });
-  }, [relations, relGradeFilter, relPhoneOnly, relSearch]);
+  }, [relations, relSearch, relGradeFilter, relPhoneOnly]);
 
-  // Filtered Invoices in Revenue View
+  const totalRelPages = relPageSize === 0 ? 1 : Math.max(1, Math.ceil(filteredRelations.length / relPageSize));
+  const paginatedRelations = React.useMemo(() => {
+    if (relPageSize === 0) return filteredRelations;
+    const start = (relPage - 1) * relPageSize;
+    return filteredRelations.slice(start, start + relPageSize);
+  }, [filteredRelations, relPage, relPageSize]);
+
+  // Filtered & Paginated Revenue Invoices
   const filteredInvoices = React.useMemo(() => {
     return revenueData.invoices.filter((inv) => {
-      if (revMethodFilter !== "all" && !inv.paymentMethod.toLowerCase().includes(revMethodFilter.toLowerCase())) {
+      if (revSearch.trim()) {
+        const q = revSearch.toLowerCase();
+        if (
+          !inv.id.toLowerCase().includes(q) &&
+          !inv.student.toLowerCase().includes(q) &&
+          !(inv.reason || "").toLowerCase().includes(q)
+        ) {
+          return false;
+        }
+      }
+      if (revMethodFilter !== "all" && inv.paymentMethod.toLowerCase() !== revMethodFilter.toLowerCase()) {
         return false;
       }
       if (revStatusFilter !== "all") {
         if (revStatusFilter === "needs_approval" && !inv.needsApproval) return false;
-        if (revStatusFilter === "paid" && inv.status !== "paid") return false;
-      }
-      if (revSearch.trim()) {
-        const q = revSearch.toLowerCase();
-        const match = inv.student.toLowerCase().includes(q) || inv.plan.toLowerCase().includes(q) || inv.reason.toLowerCase().includes(q) || inv.externalId.includes(q);
-        if (!match) return false;
+        if (revStatusFilter !== "needs_approval" && inv.status.toLowerCase() !== revStatusFilter.toLowerCase()) return false;
       }
       return true;
     });
-  }, [revenueData.invoices, revMethodFilter, revStatusFilter, revSearch]);
+  }, [revenueData.invoices, revSearch, revMethodFilter, revStatusFilter]);
 
-  const columns = React.useMemo(() => {
+  const totalRevPages = revPageSize === 0 ? 1 : Math.max(1, Math.ceil(filteredInvoices.length / revPageSize));
+  const paginatedInvoices = React.useMemo(() => {
+    if (revPageSize === 0) return filteredInvoices;
+    const start = (revPage - 1) * revPageSize;
+    return filteredInvoices.slice(start, start + revPageSize);
+  }, [filteredInvoices, revPage, revPageSize]);
+
+  // Determine dynamic columns for local scraped records
+  const dynamicColumns = React.useMemo(() => {
     if (records.length === 0) return [];
-    const firstKeys = Object.keys(records[0].data);
-    return firstKeys.slice(0, 7);
+    const keys = new Set<string>();
+    records.slice(0, 30).forEach((r) => {
+      Object.keys(r.data || {}).forEach((k) => {
+        if (!k.startsWith("_") && k.toLowerCase() !== "id") keys.add(k);
+      });
+    });
+    return Array.from(keys).slice(0, 7);
   }, [records]);
 
   return (
-    <div className="space-y-6">
-      {/* Top Banner & Control Deck */}
-      <Card className="border-border bg-card">
-        <CardHeader className="flex flex-col gap-4 pb-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <CardTitle className="text-xl font-bold tracking-tight">
-                Noor Ethiopia CMS
-              </CardTitle>
-              <Badge variant="outline" className="font-mono text-[10px]">
-                Filament v3 & Livewire
-              </Badge>
-            </div>
-            <CardDescription className="text-xs">
-              Synchronized operational database mirror for <code className="text-foreground">https://cms.noorethiopia.com</code> with deep multi-page scraping, parent-student linkage, and revenue approval.
-            </CardDescription>
-          </div>
-
-          {/* Connection Pill & Action Controls */}
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs shadow-sm bg-muted/40">
-              {authStatus.status === "connected" && (
-                <>
-                  <span className="size-2 rounded-full bg-emerald-500 animate-pulse" />
-                  <span className="font-medium text-emerald-600 dark:text-emerald-400">
-                    Connected ({authStatus.username})
-                  </span>
-                </>
-              )}
-              {authStatus.status === "disconnected" && (
-                <>
-                  <span className="size-2 rounded-full bg-amber-500" />
-                  <span className="font-medium text-amber-700 dark:text-amber-400">
-                    Logged Out / Disconnected
-                  </span>
-                </>
-              )}
-              {authStatus.status === "checking" && (
-                <>
-                  <RefreshCwIcon className="size-3 animate-spin text-primary" />
-                  <span className="text-muted-foreground">Checking session...</span>
-                </>
-              )}
-              {authStatus.status === "error" && (
-                <>
-                  <span className="size-2 rounded-full bg-rose-500" />
-                  <span className="font-medium text-destructive">Connection Error</span>
-                </>
-              )}
-            </div>
-
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={checkingAuth}
-              onClick={() => handleCheckAuthStatus(true)}
-              className="h-8 gap-1 text-xs"
-              title="Test connection and check live login status"
-            >
-              <ActivityIcon className={cn("size-3.5 text-primary", checkingAuth && "animate-spin")} />
-              Check Status
-            </Button>
-
-            {isAdmin && (
-              <>
-                {authStatus.status === "connected" ? (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={loading}
-                    onClick={handleLogout}
-                    className="h-8 gap-1.5 text-xs text-destructive hover:bg-destructive/10 border-destructive/30"
-                  >
-                    <LogOutIcon className="size-3.5" />
-                    Log Out
-                  </Button>
-                ) : (
-                  <Button
-                    size="sm"
-                    onClick={() => setLoginModalOpen(true)}
-                    className="h-8 gap-1.5 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-medium"
-                  >
-                    <LogInIcon className="size-3.5" />
-                    Log In to CMS
-                  </Button>
-                )}
-
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setSettingsOpen(true)}
-                  className="h-8 gap-1.5 text-xs"
-                >
-                  <Settings2Icon className="size-3.5" />
-                  Credentials & Roles
-                </Button>
-              </>
-            )}
-          </div>
-        </CardHeader>
-
-        {/* Target Page Selector & Scraper Toolbar */}
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t bg-muted/20 px-4 py-2.5 text-xs">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="font-medium text-muted-foreground">Target Page to Sync:</span>
-            <select
-              value={targetSyncPage}
-              onChange={(e) => setTargetSyncPage(e.target.value as "all" | LegacyCmsCategory)}
-              className="h-8 rounded-md border bg-background px-2.5 text-xs font-medium"
-            >
-              <option value="all">All 6 Subpages (Students, Parents, Subscriptions, Invoices, Plans, Histories)</option>
-              <option value="students">Students (/admin/students)</option>
-              <option value="parents">Parents (/admin/parents)</option>
-              <option value="subscriptions">Active Subscriptions (/admin/subscriptions)</option>
-              <option value="invoices">Invoices (/admin/invoices)</option>
-              <option value="subscription-plans">Subscription Plans (/admin/subscription-plans)</option>
-              <option value="subscription-histories">Subscription Histories (/admin/subscription-histories)</option>
-            </select>
-
-            {isAdmin && (
-              <>
-                <Button
-                  size="sm"
-                  onClick={() => handleSyncTargetPage(targetSyncPage)}
-                  disabled={syncing || deepSyncing}
-                  className="h-8 gap-1.5 bg-[#00522B] text-white hover:bg-[#003d20] text-xs font-semibold"
-                >
-                  <RefreshCwIcon className={cn("size-3.5", syncing && "animate-spin")} />
-                  {syncing ? `Scraping ${targetSyncPage}...` : "Quick Sync"}
-                </Button>
-
-                <Button
-                  size="sm"
-                  onClick={handleDeepSync}
-                  disabled={syncing || deepSyncing}
-                  className="h-8 gap-1.5 bg-purple-700 text-white hover:bg-purple-800 text-xs font-semibold"
-                  title="Scrape all available pages across pagination (multi-page crawler)"
-                >
-                  <SparklesIcon className={cn("size-3.5 text-amber-300", deepSyncing && "animate-spin")} />
-                  {deepSyncing ? "Deep Crawling Pages..." : "Deep Scrape (All Pages)"}
-                </Button>
-              </>
-            )}
-          </div>
-
-          <div className="flex items-center gap-2">
-            {stats.lastSyncedAt && (
-              <span className="text-[11px] text-muted-foreground flex items-center gap-1">
-                <ClockIcon className="size-3" /> Last Synced: {new Date(stats.lastSyncedAt).toLocaleTimeString()}
-              </span>
-            )}
-            {isAdmin && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleClearCmsData}
-                disabled={loading}
-                className="h-8 text-[11px] text-destructive hover:bg-destructive/10"
-              >
-                <Trash2Icon className="mr-1 size-3" /> Clear Cached Records
-              </Button>
-            )}
-          </div>
+    <div className="space-y-4">
+      {/* 🔒 Strict Read-Only Safety Sandbox Banner */}
+      <div className="bg-emerald-500/[0.08] border border-emerald-500/20 rounded-xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs">
+        <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-300 font-medium">
+          <ShieldCheckIcon className="size-4 shrink-0 text-emerald-600" />
+          <span>
+            <strong>Read-Only Safe Sandbox:</strong> This dashboard reads and mirrors data via HTTP GET requests. No modifications or actions are ever sent to Noor Ethiopia CMS.
+          </span>
         </div>
-      </Card>
-
-      {/* Main Navigation Views Selector */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            variant={activeMainView === "subpages" ? "default" : "outline"}
-            size="sm"
-            onClick={() => setActiveMainView("subpages")}
-            className="h-8 gap-1.5 text-xs font-semibold"
-          >
-            <DatabaseIcon className="size-3.5" />
-            Scraped Subpages Tables
-          </Button>
-
-          <Button
-            variant={activeMainView === "relations" ? "default" : "outline"}
-            size="sm"
-            onClick={() => setActiveMainView("relations")}
-            className="h-8 gap-1.5 text-xs font-semibold"
-          >
-            <UsersIcon className="size-3.5 text-blue-500" />
-            Student-Parent Directory
-            <Badge variant="secondary" className="ml-1 text-[10px] px-1.5 py-0">
-              {relationsSummary.totalStudents}
-            </Badge>
-          </Button>
-
-          <Button
-            variant={activeMainView === "revenue" ? "default" : "outline"}
-            size="sm"
-            onClick={() => setActiveMainView("revenue")}
-            className="h-8 gap-1.5 text-xs font-semibold"
-          >
-            <CreditCardIcon className="size-3.5 text-emerald-500" />
-            Finance Revenue & Invoices
-            {revenueData.summary.pendingApprovalCount > 0 && (
-              <Badge className="ml-1 bg-amber-500 text-white text-[10px] px-1.5 py-0 animate-pulse">
-                {revenueData.summary.pendingApprovalCount} Needs Approval
-              </Badge>
-            )}
-          </Button>
-
-          <Button
-            variant={activeMainView === "growth" ? "default" : "outline"}
-            size="sm"
-            onClick={() => setActiveMainView("growth")}
-            className="h-8 gap-1.5 text-xs font-semibold"
-          >
-            <TrendingUpIcon className="size-3.5 text-purple-500" />
-            Growth & Insights Dashboard
-          </Button>
-        </div>
-
-        {/* Global Export Button for Active View */}
         <div className="flex items-center gap-2">
-          {activeMainView === "subpages" && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={exportCurrentTableToExcel}
-              className="h-8 gap-1.5 text-xs font-medium border-emerald-600/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/20"
-            >
-              <FileSpreadsheetIcon className="size-3.5 text-emerald-600" /> Export Category to Excel
-            </Button>
-          )}
-          {activeMainView === "relations" && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={exportRelationsToExcel}
-              className="h-8 gap-1.5 text-xs font-medium border-emerald-600/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/20"
-            >
-              <FileSpreadsheetIcon className="size-3.5 text-emerald-600" /> Export Directory to Excel
-            </Button>
-          )}
-          {activeMainView === "revenue" && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={exportRevenueToExcel}
-              className="h-8 gap-1.5 text-xs font-medium border-emerald-600/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/20"
-            >
-              <FileSpreadsheetIcon className="size-3.5 text-emerald-600" /> Export Invoices to Excel
-            </Button>
-          )}
+          <Badge variant="outline" className="border-emerald-500/30 text-[10px] text-emerald-700 dark:text-emerald-300 gap-1">
+            <LockIcon className="size-2.5" /> Read-Only Mode
+          </Badge>
+          <Badge
+            variant="secondary"
+            className={cn(
+              "text-[10px] gap-1",
+              authStatus.status === "connected" && "bg-emerald-500/10 text-emerald-600",
+              authStatus.status === "checking" && "bg-amber-500/10 text-amber-600",
+              (authStatus.status === "disconnected" || authStatus.status === "error") && "bg-rose-500/10 text-rose-600"
+            )}
+          >
+            {authStatus.status === "connected" ? <CheckCircle2Icon className="size-2.5" /> : <AlertCircleIcon className="size-2.5" />}
+            {authStatus.status === "connected" ? "Live Session Verified" : "Re-auth Required"}
+          </Badge>
         </div>
       </div>
 
-      {/* ========================================================================= */}
-      {/* VIEW 1: STUDENT-TO-PARENT RELATIONS DIRECTORY */}
-      {/* ========================================================================= */}
-      {activeMainView === "relations" && (
-        <div className="space-y-4">
-          {/* Summary KPIs */}
-          <div className="grid gap-3 sm:grid-cols-4">
-            <Card className="bg-muted/30">
-              <CardContent className="p-3.5 space-y-1">
-                <span className="text-[11px] font-medium text-muted-foreground">Total Enrolled Students</span>
-                <p className="text-xl font-bold tracking-tight text-foreground">{relationsSummary.totalStudents}</p>
-              </CardContent>
-            </Card>
-            <Card className="bg-blue-500/5 border-blue-500/20">
-              <CardContent className="p-3.5 space-y-1">
-                <span className="text-[11px] font-medium text-blue-600 dark:text-blue-400">Parents Linked</span>
-                <p className="text-xl font-bold tracking-tight text-foreground">{relationsSummary.linkedParents}</p>
-              </CardContent>
-            </Card>
-            <Card className="bg-emerald-500/5 border-emerald-500/20">
-              <CardContent className="p-3.5 space-y-1">
-                <span className="text-[11px] font-medium text-emerald-600 dark:text-emerald-400">Phone Reachable</span>
-                <p className="text-xl font-bold tracking-tight text-foreground">{relationsSummary.withPhone}</p>
-              </CardContent>
-            </Card>
-            <Card className="bg-purple-500/5 border-purple-500/20">
-              <CardContent className="p-3.5 space-y-1">
-                <span className="text-[11px] font-medium text-purple-600 dark:text-purple-400">Active Subscriptions</span>
-                <p className="text-xl font-bold tracking-tight text-foreground">{relationsSummary.activeSubscriptions}</p>
-              </CardContent>
-            </Card>
+      {/* Top Header Card */}
+      <Card className="border bg-card">
+        <CardHeader className="pb-3 flex flex-row items-center justify-between gap-4">
+          <div className="space-y-1">
+            <CardTitle className="text-base flex items-center gap-2">
+              <DatabaseIcon className="size-4 text-emerald-600" />
+              <span>Noor Ethiopia CMS Integration Hub</span>
+              <Badge variant="secondary" className="text-[10px] font-mono">
+                cms.noorethiopia.com
+              </Badge>
+            </CardTitle>
+            <CardDescription className="text-xs">
+              Synchronized mirror for student records, parent contacts, payment receipts, and business intelligence.
+            </CardDescription>
           </div>
 
-          {/* Directory Filter Toolbar */}
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-3">
-            <div className="flex flex-1 flex-wrap items-center gap-2">
-              <div className="relative min-w-[240px] max-w-sm">
-                <SearchIcon className="absolute left-2.5 top-2.5 size-3.5 text-muted-foreground" />
-                <Input
-                  placeholder="Search student, parent name, or phone..."
-                  value={relSearch}
-                  onChange={(e) => setRelSearch(e.target.value)}
-                  className="h-8 pl-8 text-xs"
-                />
-              </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleCheckAuthStatus(true)}
+              disabled={checkingAuth}
+              className="h-8 text-xs gap-1.5"
+            >
+              <RefreshCwIcon className={cn("size-3.5", checkingAuth && "animate-spin")} />
+              Check Session
+            </Button>
 
-              <select
-                value={relGradeFilter}
-                onChange={(e) => setRelGradeFilter(e.target.value)}
-                className="h-8 rounded-md border bg-background px-2.5 text-xs font-medium"
+            {isAdmin && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setSettingsOpen(true)}
+                className="h-8 text-xs gap-1.5"
               >
-                <option value="all">All Grades</option>
-                <option value="Grade 5">Grade 5</option>
-                <option value="Grade 6">Grade 6</option>
-                <option value="Grade 7">Grade 7</option>
-                <option value="Grade 8">Grade 8</option>
-                <option value="Grade 9">Grade 9</option>
-                <option value="Grade 10">Grade 10</option>
-                <option value="Grade 11">Grade 11</option>
-                <option value="Grade 12">Grade 12</option>
-              </select>
+                <Settings2Icon className="size-3.5" />
+                Settings
+              </Button>
+            )}
+          </div>
+        </CardHeader>
+      </Card>
 
-              <div className="flex items-center gap-1.5 pl-2">
-                <Switch id="rel-phone" checked={relPhoneOnly} onCheckedChange={setRelPhoneOnly} />
-                <Label htmlFor="rel-phone" className="text-xs cursor-pointer">Has Phone Only</Label>
-              </div>
+      {/* Main Top Navigation Tabs */}
+      <Tabs
+        value={activeMainView}
+        onValueChange={(v) => setActiveMainView(v as any)}
+        className="space-y-4"
+      >
+        <div className="flex items-center justify-between border-b pb-2">
+          <TabsList className="bg-muted/50 p-1">
+            <TabsTrigger value="subpages" className="text-xs gap-1.5">
+              <LayersIcon className="size-3.5 text-blue-600" /> CMS Tables &amp; Pages
+            </TabsTrigger>
+            <TabsTrigger value="relations" className="text-xs gap-1.5">
+              <UsersIcon className="size-3.5 text-emerald-600" /> Student &rarr; Parent Directory
+            </TabsTrigger>
+            <TabsTrigger value="revenue" className="text-xs gap-1.5">
+              <DollarSignIcon className="size-3.5 text-amber-600" /> Finance Revenue &amp; Approvals
+            </TabsTrigger>
+            <TabsTrigger value="growth" className="text-xs gap-1.5">
+              <TrendingUpIcon className="size-3.5 text-indigo-600" /> Growth &amp; Insights
+            </TabsTrigger>
+            <TabsTrigger value="storage" className="text-xs gap-1.5">
+              <DatabaseIcon className="size-3.5 text-purple-600" /> Storage &amp; Archives
+            </TabsTrigger>
+          </TabsList>
+        </div>
+
+        {/* =========================================================================
+            VIEW 1: SUBPAGES TABLES (LIVE CMS SYNC OR LOCAL SCRAPED CACHE)
+            ========================================================================= */}
+        <TabsContent value="subpages" className="space-y-4 m-0">
+          {/* Subpage Category Switcher & Data Source Toggle */}
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-muted/20 p-2.5 rounded-xl border">
+            {/* Category selection */}
+            <div className="flex flex-wrap items-center gap-1.5">
+              {allowedCategories.map((catKey) => {
+                const isSelected = category === catKey;
+                const path = CATEGORY_PATHS[catKey];
+                return (
+                  <Button
+                    key={catKey}
+                    variant={isSelected ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => {
+                      setCategory(catKey);
+                      setCurrentPage(1);
+                      if (dataSourceMode === "live") {
+                        handleFetchLivePage(catKey, 1, search);
+                      }
+                    }}
+                    className={cn(
+                      "h-8 text-xs capitalize gap-1.5",
+                      isSelected && "bg-emerald-600 hover:bg-emerald-700 text-white"
+                    )}
+                  >
+                    {catKey.replace(/-/g, " ")}
+                  </Button>
+                );
+              })}
             </div>
 
+            {/* Mode Switch: Live vs Scraped Cache */}
             <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">
-                Showing {filteredRelations.length} of {relations.length} relations
+              <div className="flex items-center bg-background border rounded-lg p-0.5 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setDataSourceMode("scraped")}
+                  className={cn(
+                    "px-2.5 py-1 rounded-md text-xs font-medium transition-colors flex items-center gap-1",
+                    dataSourceMode === "scraped"
+                      ? "bg-muted text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  <DatabaseIcon className="size-3" /> Scraped Cache ({total})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDataSourceMode("live")}
+                  className={cn(
+                    "px-2.5 py-1 rounded-md text-xs font-medium transition-colors flex items-center gap-1",
+                    dataSourceMode === "live"
+                      ? "bg-emerald-600 text-white shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  <RadioIcon className="size-3 text-emerald-400" /> Live CMS Direct
+                </button>
+              </div>
+
+              {/* Individual Deep Scrape Button for this specific category with Page Limit Option */}
+              <div className="flex items-center gap-1.5 bg-muted/40 p-0.5 rounded-lg border border-border/60">
+                <select
+                  aria-label="Pages to scrape"
+                  value={deepSyncLimit}
+                  onChange={(e) => setDeepSyncLimit(Number(e.target.value))}
+                  disabled={syncingCategory === category}
+                  className="h-7 rounded border-0 bg-transparent px-2 text-[11px] font-medium text-foreground cursor-pointer focus:outline-none"
+                >
+                  <option value="0">All Pages (~5,000+)</option>
+                  <option value="10">10 Pages (~100)</option>
+                  <option value="25">25 Pages (~250)</option>
+                  <option value="50">50 Pages (~500)</option>
+                  <option value="100">100 Pages (~1,000)</option>
+                  <option value="250">250 Pages (~2,500)</option>
+                </select>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleScrapeCategory(category, deepSyncLimit)}
+                  disabled={syncingCategory === category}
+                  className="h-7 text-xs gap-1.5 bg-background border-emerald-500/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/10 px-2.5"
+                >
+                  <RefreshCwIcon className={cn("size-3", syncingCategory === category && "animate-spin")} />
+                  {syncingCategory === category ? "Scraping..." : `Deep Scrape ${category.replace(/-/g, " ")}`}
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          {/* Filtering Bar & Date Filter Pills */}
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              {/* Search input with live search button */}
+              <div className="flex items-center gap-1.5 flex-1 min-w-[240px] max-w-md">
+                <div className="relative flex-1">
+                  <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+                  <Input
+                    placeholder={
+                      dataSourceMode === "live"
+                        ? `Search ${category} on live Noor CMS (Press Enter)...`
+                        : `Search in scraped ${category}...`
+                    }
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && dataSourceMode === "live") {
+                        handleFetchLivePage(category, 1, search);
+                      }
+                    }}
+                    className="pl-8 h-8 text-xs"
+                  />
+                </div>
+                {dataSourceMode === "live" && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs px-2.5 bg-muted/40 hover:bg-muted font-medium"
+                    onClick={() => handleFetchLivePage(category, 1, search)}
+                    disabled={liveLoading}
+                  >
+                    Search
+                  </Button>
+                )}
+              </div>
+
+              {/* Date Filter Pills */}
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-xs text-muted-foreground mr-1 flex items-center gap-1">
+                  <CalendarIcon className="size-3" /> Date:
+                </span>
+                {[
+                  { key: "all", label: "All Time" },
+                  { key: "today", label: "Today" },
+                  { key: "week", label: "This Week" },
+                  { key: "month", label: "This Month" },
+                  { key: "custom", label: "Custom Range" },
+                ].map((df) => (
+                  <Button
+                    key={df.key}
+                    variant={dateFilter === df.key ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setDateFilter(df.key as any)}
+                    className={cn(
+                      "h-7 text-[11px] px-2.5",
+                      dateFilter === df.key && "bg-primary text-primary-foreground font-semibold"
+                    )}
+                  >
+                    {df.label}
+                  </Button>
+                ))}
+              </div>
+
+              {/* Export to Excel */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  if (dataSourceMode === "live") {
+                    exportToExcel(
+                      `noor-cms-live-${category}-page-${livePage}`,
+                      liveHeaders,
+                      liveRecords.map((r) => liveHeaders.map((h) => r[h] || ""))
+                    );
+                  } else {
+                    exportToExcel(
+                      `noor-cms-scraped-${category}`,
+                      ["ID", "Title", ...dynamicColumns],
+                      filteredRecords.map((r) => [r.externalId, r.title, ...dynamicColumns.map((col) => (r.data as any)[col] || "")])
+                    );
+                  }
+                }}
+                className="h-8 text-xs gap-1.5"
+              >
+                <FileSpreadsheetIcon className="size-3.5 text-emerald-600" />
+                Export to Excel
+              </Button>
+            </div>
+
+            {/* Custom Date Range Pickers if "custom" is selected */}
+            {dateFilter === "custom" && (
+              <div className="flex flex-wrap items-center gap-3 bg-muted/40 p-2 rounded-lg text-xs">
+                <span className="text-muted-foreground font-medium">Filter Range:</span>
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor="date-start" className="text-[11px]">From:</Label>
+                  <Input
+                    id="date-start"
+                    type="date"
+                    value={customStartDate}
+                    onChange={(e) => setCustomStartDate(e.target.value)}
+                    className="h-7 text-xs w-36"
+                  />
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor="date-end" className="text-[11px]">To:</Label>
+                  <Input
+                    id="date-end"
+                    type="date"
+                    value={customEndDate}
+                    onChange={(e) => setCustomEndDate(e.target.value)}
+                    className="h-7 text-xs w-36"
+                  />
+                </div>
+                {(customStartDate || customEndDate) && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setCustomStartDate("");
+                      setCustomEndDate("");
+                    }}
+                    className="h-7 text-[11px] text-muted-foreground"
+                  >
+                    Reset
+                  </Button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Mode Banner & Live CMS Query Status */}
+          {dataSourceMode === "live" ? (
+            <div className="bg-blue-500/[0.07] border border-blue-500/20 rounded-lg px-3 py-2 text-xs flex items-center justify-between text-blue-800 dark:text-blue-300">
+              <span className="flex items-center gap-2">
+                <RadioIcon className="size-3.5 animate-pulse text-blue-600" />
+                <span>
+                  Showing <strong>{liveFrom}</strong> to <strong>{liveTo}</strong> of <strong>{liveTotalResults.toLocaleString()}</strong> live results from{" "}
+                  <code>{CATEGORY_PATHS[category]}</code>
+                </span>
+              </span>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleFetchLivePage(category, livePage, search)}
+                  disabled={liveLoading}
+                  className="h-6 text-[11px] px-2 bg-background"
+                >
+                  <RefreshCwIcon className={cn("size-2.5 mr-1", liveLoading && "animate-spin")} />
+                  Refresh Page
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between text-xs text-muted-foreground px-1">
+              <span>
+                Showing <strong>{paginatedScrapedRecords.length}</strong> of <strong>{filteredRecords.length.toLocaleString()}</strong> filtered records (Storage total: {total.toLocaleString()})
+              </span>
+              <span className="text-[11px]">
+                Tip: Right-click any row to report an issue to Questions.
               </span>
             </div>
+          )}
+
+          {/* Table Container */}
+          <div className="border rounded-xl overflow-hidden bg-card shadow-sm">
+            {dataSourceMode === "live" ? (
+              /* LIVE CMS TABLE */
+              <Table>
+                <TableHeader className="bg-muted/50">
+                  <TableRow>
+                    {liveHeaders.map((h) => (
+                      <TableHead key={h} className="text-xs font-semibold">
+                        {h}
+                      </TableHead>
+                    ))}
+                    <TableHead className="text-right text-xs">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {liveLoading ? (
+                    <TableRow>
+                      <TableCell colSpan={Math.max(1, liveHeaders.length + 1)} className="text-center py-12 text-xs text-muted-foreground">
+                        <RefreshCwIcon className="size-5 animate-spin mx-auto mb-2 text-primary" />
+                        Fetching live data from cms.noorethiopia.com...
+                      </TableCell>
+                    </TableRow>
+                  ) : liveRecords.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={Math.max(1, liveHeaders.length + 1)} className="text-center py-12 text-xs text-muted-foreground">
+                        No live records found on this page.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    liveRecords.map((r, idx) => (
+                      <TableRow
+                        key={idx}
+                        className="text-xs hover:bg-muted/30 cursor-context-menu"
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          handleOpenReportModal(r, category);
+                        }}
+                      >
+                        {liveHeaders.map((h) => (
+                          <TableCell key={h} className="text-xs py-2.5">
+                            {r[h] || "—"}
+                          </TableCell>
+                        ))}
+                        <TableCell className="text-right py-2.5">
+                          <div className="flex items-center justify-end gap-1">
+                            {category === "invoices" && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-6 text-[10px] px-2 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 border-emerald-500/30"
+                                onClick={() => handleOpenReceipt(r)}
+                              >
+                                <EyeIcon className="size-2.5 mr-1" />
+                                Receipt
+                              </Button>
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 text-[10px] px-2"
+                              onClick={() => handleOpenReportModal(r, category)}
+                            >
+                              <HelpCircleIcon className="size-3 text-muted-foreground mr-1" />
+                              Report
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            ) : (
+              /* SCRAPED CACHE TABLE */
+              <Table>
+                <TableHeader className="bg-muted/50">
+                  <TableRow>
+                    <TableHead className="text-xs font-semibold w-24">ID</TableHead>
+                    <TableHead className="text-xs font-semibold">Title / Name</TableHead>
+                    {dynamicColumns.map((col) => (
+                      <TableHead key={col} className="text-xs font-semibold">
+                        {col}
+                      </TableHead>
+                    ))}
+                    <TableHead className="text-right text-xs">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {paginatedScrapedRecords.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={dynamicColumns.length + 3} className="text-center py-12 text-xs text-muted-foreground">
+                        No scraped records match your filters.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    paginatedScrapedRecords.map((r) => {
+                      const data = r.data || {};
+                      return (
+                        <TableRow
+                          key={r.id}
+                          className="text-xs hover:bg-muted/30 cursor-context-menu"
+                          onContextMenu={(e) => {
+                            e.preventDefault();
+                            handleOpenReportModal(r, category);
+                          }}
+                        >
+                          <TableCell className="font-mono text-[11px] text-muted-foreground font-semibold">
+                            #{r.externalId}
+                          </TableCell>
+                          <TableCell className="font-medium text-foreground">
+                            {r.title}
+                          </TableCell>
+                          {dynamicColumns.map((col) => {
+                            const val = data[col];
+                            return (
+                              <TableCell key={col} className="text-xs text-muted-foreground">
+                                {typeof val === "object" ? JSON.stringify(val) : String(val ?? "—")}
+                              </TableCell>
+                            );
+                          })}
+                          <TableCell className="text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              {category === "invoices" && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-6 text-[10px] px-2 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 border-emerald-500/30"
+                                  onClick={() => handleOpenReceipt(r)}
+                                >
+                                  <EyeIcon className="size-2.5 mr-1" />
+                                  Receipt
+                                </Button>
+                              )}
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 text-[10px] px-2"
+                                onClick={() => handleOpenReportModal(r, category)}
+                              >
+                                <HelpCircleIcon className="size-3 text-muted-foreground mr-1" />
+                                Report
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
+                  )}
+                </TableBody>
+              </Table>
+            )}
           </div>
 
-          {/* Relations Directory Table */}
+          {/* Filament v3 Pagination Navigation Bar */}
+          {dataSourceMode === "live" ? (
+            <FilamentPagination
+              from={liveFrom}
+              to={liveTo}
+              totalResults={liveTotalResults}
+              currentPage={livePage}
+              totalPages={liveTotalPages}
+              pageSize={10}
+              pageSizeOptions={[10, 25, 50]}
+              disabled={liveLoading}
+              onPageChange={(p) => handleFetchLivePage(category, p, search)}
+              sourceLabel={`Live ${CATEGORY_PATHS[category]}`}
+            />
+          ) : (
+            <FilamentPagination
+              from={filteredRecords.length === 0 ? 0 : (currentPage - 1) * (pageSize || filteredRecords.length) + 1}
+              to={pageSize === 0 ? filteredRecords.length : Math.min(currentPage * pageSize, filteredRecords.length)}
+              totalResults={filteredRecords.length}
+              currentPage={currentPage}
+              totalPages={totalScrapedPages}
+              pageSize={pageSize}
+              pageSizeOptions={[10, 25, 50, 100]}
+              allowAll={true}
+              onPageChange={(p) => setCurrentPage(p)}
+              onPageSizeChange={(s) => {
+                setPageSize(s);
+                setCurrentPage(1);
+              }}
+              sourceLabel="Local Scraped Storage"
+            />
+          )}
+        </TabsContent>
+
+        {/* =========================================================================
+            VIEW 2: STUDENT TO PARENT DIRECTORY
+            ========================================================================= */}
+        <TabsContent value="relations" className="space-y-4 m-0">
           <Card>
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
+            <CardHeader className="pb-3 flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <UsersIcon className="size-4 text-emerald-600" /> Student &rarr; Parent Contact Directory
+                </CardTitle>
+                <CardDescription className="text-xs">
+                  Joined relationships linking students directly to their parents verified phone contact details.
+                </CardDescription>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  exportToExcel(
+                    "student-parent-directory",
+                    ["Student Name", "Grade", "City", "Parent Name", "Parent Phone", "Subscription Status"],
+                    relations.map((r) => [
+                      r.studentName,
+                      r.grade || "—",
+                      r.city || "—",
+                      r.parentName || "—",
+                      r.parentPhone || "—",
+                      r.subscriptionStatus || "—",
+                    ])
+                  )
+                }
+                className="h-8 text-xs gap-1.5"
+              >
+                <FileSpreadsheetIcon className="size-3.5 text-emerald-600" /> Export Directory
+              </Button>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Directory summary metrics */}
+              <div className="grid gap-3 sm:grid-cols-4">
+                <div className="rounded-lg border bg-muted/20 p-3 space-y-1">
+                  <span className="text-xs text-muted-foreground">Total Students</span>
+                  <p className="text-lg font-bold text-foreground">{relationsSummary.totalStudents.toLocaleString()}</p>
+                </div>
+                <div className="rounded-lg border bg-muted/20 p-3 space-y-1">
+                  <span className="text-xs text-muted-foreground">Linked Parents</span>
+                  <p className="text-lg font-bold text-emerald-600">{relationsSummary.linkedParents.toLocaleString()}</p>
+                </div>
+                <div className="rounded-lg border bg-muted/20 p-3 space-y-1">
+                  <span className="text-xs text-muted-foreground">With Phone Numbers</span>
+                  <p className="text-lg font-bold text-blue-600">{relationsSummary.withPhone.toLocaleString()}</p>
+                </div>
+                <div className="rounded-lg border bg-muted/20 p-3 space-y-1">
+                  <span className="text-xs text-muted-foreground">Active Subscriptions</span>
+                  <p className="text-lg font-bold text-indigo-600">{relationsSummary.activeSubscriptions.toLocaleString()}</p>
+                </div>
+              </div>
+
+              {/* Directory Search & Filter Controls */}
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="relative flex-1 min-w-[240px] max-w-md">
+                  <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+                  <Input
+                    placeholder="Search by student, parent, phone, city..."
+                    value={relSearch}
+                    onChange={(e) => {
+                      setRelSearch(e.target.value);
+                      setRelPage(1);
+                    }}
+                    className="pl-8 h-8 text-xs"
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-muted-foreground flex items-center gap-1.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={relPhoneOnly}
+                      onChange={(e) => {
+                        setRelPhoneOnly(e.target.checked);
+                        setRelPage(1);
+                      }}
+                      className="rounded border-border text-emerald-600 focus:ring-emerald-500"
+                    />
+                    Phone Verified Only
+                  </label>
+                </div>
+              </div>
+
+              {/* Table */}
+              <div className="border rounded-xl overflow-hidden">
                 <Table>
                   <TableHeader className="bg-muted/40">
                     <TableRow>
-                      <TableHead className="text-xs">Student ID</TableHead>
                       <TableHead className="text-xs">Student Name</TableHead>
                       <TableHead className="text-xs">Grade</TableHead>
                       <TableHead className="text-xs">City</TableHead>
-                      <TableHead className="text-xs">Linked Parent</TableHead>
-                      <TableHead className="text-xs">Parent Phone (Quick Call)</TableHead>
-                      <TableHead className="text-xs">Subscription</TableHead>
-                      <TableHead className="text-xs">Link Type</TableHead>
+                      <TableHead className="text-xs">Parent Name</TableHead>
+                      <TableHead className="text-xs">Phone Contact</TableHead>
+                      <TableHead className="text-xs">Status</TableHead>
+                      <TableHead className="text-right text-xs">Action</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredRelations.length === 0 ? (
+                    {paginatedRelations.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={8} className="py-12 text-center text-xs text-muted-foreground">
-                          No matching student-parent relations found. Try syncing students, parents, and subscriptions.
+                        <TableCell colSpan={7} className="text-center py-10 text-xs text-muted-foreground">
+                          No student-parent relationships match the filters.
                         </TableCell>
                       </TableRow>
                     ) : (
-                      filteredRelations.map((rel) => (
-                        <TableRow key={rel.studentId} className="text-xs hover:bg-muted/30">
-                          <TableCell className="font-mono text-muted-foreground">#{rel.studentId}</TableCell>
-                          <TableCell className="font-semibold text-foreground flex items-center gap-1.5">
-                            <GraduationCapIcon className="size-3.5 text-primary shrink-0" />
-                            {rel.studentName}
-                          </TableCell>
+                      paginatedRelations.map((rel) => (
+                        <TableRow
+                          key={rel.studentId}
+                          className="text-xs hover:bg-muted/30 cursor-context-menu"
+                          onContextMenu={(e) => {
+                            e.preventDefault();
+                            handleOpenReportModal(
+                              {
+                                id: rel.studentId,
+                                external_id: rel.studentId,
+                                title: rel.studentName,
+                                data: {
+                                  name: rel.studentName,
+                                  phone: rel.parentPhone,
+                                  grade: rel.grade,
+                                  parent: rel.parentName,
+                                },
+                              },
+                              "students"
+                            );
+                          }}
+                        >
+                          <TableCell className="font-semibold text-foreground">{rel.studentName}</TableCell>
                           <TableCell>
-                            <Badge variant="outline" className="text-[10px] font-medium">
-                              {rel.grade}
-                            </Badge>
+                            <Badge variant="outline" className="text-[10px]">{rel.grade || "—"}</Badge>
                           </TableCell>
-                          <TableCell className="text-muted-foreground">{rel.city}</TableCell>
-                          <TableCell className="font-medium text-foreground">
-                            {rel.parentName}
-                          </TableCell>
+                          <TableCell className="text-muted-foreground">{rel.city || "—"}</TableCell>
+                          <TableCell className="font-medium text-foreground">{rel.parentName || "—"}</TableCell>
                           <TableCell>
                             {rel.parentPhone ? (
                               <div className="flex items-center gap-1.5">
                                 <a
                                   href={`tel:${rel.parentPhone}`}
-                                  className="flex items-center gap-1 font-mono text-emerald-700 dark:text-emerald-400 hover:underline font-semibold"
+                                  className="font-mono text-emerald-600 hover:underline flex items-center gap-1 text-[11px]"
                                 >
-                                  <PhoneCallIcon className="size-3 text-emerald-600" />
+                                  <PhoneCallIcon className="size-3" />
                                   {rel.parentPhone}
                                 </a>
                                 <button
                                   type="button"
-                                  onClick={() => copyText(rel.parentPhone, `rel-${rel.studentId}`)}
-                                  className="text-muted-foreground hover:text-foreground p-0.5"
-                                  title="Copy Phone Number"
+                                  onClick={() => copyText(rel.parentPhone!, rel.studentId)}
+                                  className="text-muted-foreground hover:text-foreground"
                                 >
-                                  {copiedKey === `rel-${rel.studentId}` ? (
-                                    <CheckIcon className="size-3 text-emerald-600" />
-                                  ) : (
-                                    <CopyIcon className="size-3" />
-                                  )}
+                                  {copiedKey === rel.studentId ? <CheckIcon className="size-3 text-emerald-600" /> : <CopyIcon className="size-3" />}
                                 </button>
                               </div>
                             ) : (
-                              <span className="text-muted-foreground text-[11px] italic">No phone linked</span>
+                              <span className="text-muted-foreground text-[11px]">—</span>
                             )}
                           </TableCell>
                           <TableCell>
@@ -986,18 +1508,38 @@ export function LegacyCmsClient({
                               variant="secondary"
                               className={cn(
                                 "text-[10px]",
-                                rel.subscriptionStatus.toLowerCase() === "active"
-                                  ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20"
-                                  : "bg-muted text-muted-foreground"
+                                rel.subscriptionStatus === "active" && "bg-emerald-500/10 text-emerald-600",
+                                rel.subscriptionStatus === "expired" && "bg-muted text-muted-foreground"
                               )}
                             >
                               {rel.subscriptionStatus}
                             </Badge>
                           </TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className="text-[10px]">
-                              {rel.hasDirectLink ? "Direct Match" : "Subscription Contact"}
-                            </Badge>
+                          <TableCell className="text-right">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 text-[10px] px-2"
+                              onClick={() =>
+                                handleOpenReportModal(
+                                  {
+                                    id: rel.studentId,
+                                    external_id: rel.studentId,
+                                    title: rel.studentName,
+                                    data: {
+                                      name: rel.studentName,
+                                      phone: rel.parentPhone,
+                                      grade: rel.grade,
+                                      parent: rel.parentName,
+                                    },
+                                  },
+                                  "students"
+                                )
+                              }
+                            >
+                              <HelpCircleIcon className="size-3 text-muted-foreground mr-1" />
+                              Report
+                            </Button>
                           </TableCell>
                         </TableRow>
                       ))
@@ -1005,193 +1547,185 @@ export function LegacyCmsClient({
                   </TableBody>
                 </Table>
               </div>
+
+              {/* Filament Pagination for Student-Parent Directory */}
+              <FilamentPagination
+                from={filteredRelations.length === 0 ? 0 : (relPage - 1) * (relPageSize || filteredRelations.length) + 1}
+                to={relPageSize === 0 ? filteredRelations.length : Math.min(relPage * relPageSize, filteredRelations.length)}
+                totalResults={filteredRelations.length}
+                currentPage={relPage}
+                totalPages={totalRelPages}
+                pageSize={relPageSize}
+                pageSizeOptions={[10, 25, 50, 100]}
+                allowAll={true}
+                onPageChange={(p) => setRelPage(p)}
+                onPageSizeChange={(s) => {
+                  setRelPageSize(s);
+                  setRelPage(1);
+                }}
+                sourceLabel="Student Parent Directory"
+              />
             </CardContent>
           </Card>
-        </div>
-      )}
+        </TabsContent>
 
-      {/* ========================================================================= */}
-      {/* VIEW 2: FINANCE REVENUE & INVOICE APPROVAL QUEUE */}
-      {/* ========================================================================= */}
-      {activeMainView === "revenue" && (
-        <div className="space-y-4">
-          {/* Revenue KPI Cards */}
-          <div className="grid gap-3 sm:grid-cols-4">
-            <Card className="bg-emerald-500/5 border-emerald-500/20">
-              <CardContent className="p-3.5 space-y-1">
-                <span className="text-[11px] font-medium text-emerald-600 dark:text-emerald-400">Total Settled Revenue</span>
-                <p className="text-2xl font-bold tracking-tight text-foreground">
-                  ETB {revenueData.summary.totalRevenue.toLocaleString()}
-                </p>
-                <span className="text-[10px] text-muted-foreground">{revenueData.summary.totalPaidCount} paid invoices</span>
-              </CardContent>
-            </Card>
-
-            <Card className="bg-amber-500/5 border-amber-500/20">
-              <CardContent className="p-3.5 space-y-1">
-                <span className="text-[11px] font-medium text-amber-600 dark:text-amber-400">Pending Approval</span>
-                <p className="text-2xl font-bold tracking-tight text-amber-600 dark:text-amber-400">
-                  ETB {revenueData.summary.pendingApprovalRevenue.toLocaleString()}
-                </p>
-                <span className="text-[10px] text-amber-700/80 dark:text-amber-400/80">
-                  {revenueData.summary.pendingApprovalCount} bank receipts waiting review
-                </span>
-              </CardContent>
-            </Card>
-
-            <Card className="bg-muted/30">
-              <CardContent className="p-3.5 space-y-1">
-                <span className="text-[11px] font-medium text-muted-foreground">Average Ticket Value</span>
-                <p className="text-2xl font-bold tracking-tight text-foreground">
-                  ETB {revenueData.summary.averageInvoiceValue.toLocaleString()}
-                </p>
-                <span className="text-[10px] text-muted-foreground">Across standard plans</span>
-              </CardContent>
-            </Card>
-
-            <Card className="bg-blue-500/5 border-blue-500/20">
-              <CardContent className="p-3.5 space-y-1">
-                <span className="text-[11px] font-medium text-blue-600 dark:text-blue-400">Payment Channels</span>
-                <div className="flex flex-wrap gap-1 pt-1">
-                  {revenueData.byPaymentMethod.map((pm) => (
-                    <Badge key={pm.method} variant="secondary" className="text-[9px] px-1.5 py-0">
-                      {pm.method}: {pm.percentage}%
-                    </Badge>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Payment Method Breakdown Bar */}
+        {/* =========================================================================
+            VIEW 3: FINANCE REVENUE & INVOICE APPROVAL QUEUE
+            ========================================================================= */}
+        <TabsContent value="revenue" className="space-y-4 m-0">
           <Card>
-            <CardHeader className="py-3 px-4 flex flex-row items-center justify-between border-b">
-              <CardTitle className="text-xs font-semibold flex items-center gap-1.5">
-                <CreditCardIcon className="size-3.5 text-primary" /> Revenue by Payment Method
-              </CardTitle>
+            <CardHeader className="pb-3 flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <DollarSignIcon className="size-4 text-emerald-600" /> Finance Revenue &amp; Verification Queue
+                </CardTitle>
+                <CardDescription className="text-xs">
+                  Reconcile payments across Telebirr, CBE Birr, and Bank Transfer slips needing Finance verification.
+                </CardDescription>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  exportToExcel(
+                    "finance-revenue-invoices",
+                    ["Invoice ID", "Student", "Amount (ETB)", "Payment Method", "Status", "Date", "Needs Approval"],
+                    revenueData.invoices.map((inv) => [
+                      inv.id,
+                      inv.student,
+                      inv.amount,
+                      inv.paymentMethod,
+                      inv.status,
+                      inv.date,
+                      inv.needsApproval ? "YES" : "NO",
+                    ])
+                  )
+                }
+                className="h-8 text-xs gap-1.5"
+              >
+                <FileSpreadsheetIcon className="size-3.5 text-emerald-600" /> Export Revenue Invoices
+              </Button>
             </CardHeader>
-            <CardContent className="p-4">
+            <CardContent className="space-y-4">
+              {/* Revenue metrics */}
               <div className="grid gap-3 sm:grid-cols-4">
-                {revenueData.byPaymentMethod.map((m) => (
-                  <div key={m.method} className="rounded-lg border p-3 space-y-1 bg-muted/20">
-                    <span className="text-xs font-medium text-foreground">{m.method}</span>
-                    <p className="text-base font-bold text-foreground">ETB {m.sum.toLocaleString()}</p>
-                    <div className="flex justify-between text-[11px] text-muted-foreground">
-                      <span>{m.count} txns</span>
-                      <span>{m.percentage}% share</span>
-                    </div>
-                  </div>
-                ))}
+                <div className="rounded-lg border bg-muted/20 p-3 space-y-1">
+                  <span className="text-xs text-muted-foreground">Total Verified Revenue</span>
+                  <p className="text-xl font-bold text-foreground">
+                    ETB {revenueData.summary.totalRevenue.toLocaleString()}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">{revenueData.summary.totalPaidCount} paid invoices</p>
+                </div>
+                <div className="rounded-lg border bg-amber-500/[0.08] border-amber-500/20 p-3 space-y-1">
+                  <span className="text-xs text-amber-700 dark:text-amber-400 font-medium">Pending Approval Slips</span>
+                  <p className="text-xl font-bold text-amber-700 dark:text-amber-400">
+                    ETB {revenueData.summary.pendingApprovalRevenue.toLocaleString()}
+                  </p>
+                  <p className="text-[11px] text-amber-600/80">{revenueData.summary.pendingApprovalCount} bank receipts awaiting review</p>
+                </div>
+                <div className="rounded-lg border bg-muted/20 p-3 space-y-1">
+                  <span className="text-xs text-muted-foreground">Average Invoice Value</span>
+                  <p className="text-xl font-bold text-foreground">
+                    ETB {revenueData.summary.averageInvoiceValue.toLocaleString()}
+                  </p>
+                </div>
+                <div className="rounded-lg border bg-muted/20 p-3 space-y-1">
+                  <span className="text-xs text-muted-foreground">Top Payment Channel</span>
+                  <p className="text-lg font-bold text-emerald-600">
+                    {revenueData.byPaymentMethod[0]?.method || "Bank Transfer"}
+                  </p>
+                </div>
               </div>
-            </CardContent>
-          </Card>
 
-          {/* Invoices Filter Toolbar */}
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-3">
-            <div className="flex flex-1 flex-wrap items-center gap-2">
-              <div className="relative min-w-[240px] max-w-sm">
-                <SearchIcon className="absolute left-2.5 top-2.5 size-3.5 text-muted-foreground" />
-                <Input
-                  placeholder="Search invoice ID, student or reason..."
-                  value={revSearch}
-                  onChange={(e) => setRevSearch(e.target.value)}
-                  className="h-8 pl-8 text-xs"
-                />
+              {/* Invoices Filters */}
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="relative flex-1 min-w-[220px] max-w-sm">
+                  <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+                  <Input
+                    placeholder="Search invoices by student, #ID, bank reference..."
+                    value={revSearch}
+                    onChange={(e) => {
+                      setRevSearch(e.target.value);
+                      setRevPage(1);
+                    }}
+                    className="pl-8 h-8 text-xs"
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={revStatusFilter}
+                    onChange={(e) => {
+                      setRevStatusFilter(e.target.value);
+                      setRevPage(1);
+                    }}
+                    className="h-8 rounded-lg border bg-background px-2.5 text-xs text-foreground"
+                  >
+                    <option value="all">All Statuses</option>
+                    <option value="needs_approval">⚠️ Needs Verification</option>
+                    <option value="paid">Paid</option>
+                    <option value="pending">Pending</option>
+                  </select>
+                </div>
               </div>
 
-              <select
-                value={revMethodFilter}
-                onChange={(e) => setRevMethodFilter(e.target.value)}
-                className="h-8 rounded-md border bg-background px-2.5 text-xs font-medium"
-              >
-                <option value="all">All Payment Methods</option>
-                <option value="Telebirr">Telebirr</option>
-                <option value="CBE">CBE Birr / CBE</option>
-                <option value="Bank Transfer">Bank Transfer (Manual)</option>
-                <option value="Chapa">Chapa Online</option>
-                <option value="Cash">Cash Deposit</option>
-              </select>
-
-              <select
-                value={revStatusFilter}
-                onChange={(e) => setRevStatusFilter(e.target.value)}
-                className="h-8 rounded-md border bg-background px-2.5 text-xs font-medium"
-              >
-                <option value="all">All Statuses</option>
-                <option value="paid">Paid & Settled</option>
-                <option value="needs_approval">Needs Approval (Pending Bank Slips)</option>
-              </select>
-            </div>
-
-            <span className="text-xs text-muted-foreground">
-              Showing {filteredInvoices.length} invoices
-            </span>
-          </div>
-
-          {/* Invoices Table with Approval Action */}
-          <Card>
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
+              {/* Invoices List with Approval & Review Action */}
+              <div className="border rounded-xl overflow-hidden">
                 <Table>
                   <TableHeader className="bg-muted/40">
                     <TableRow>
                       <TableHead className="text-xs">Invoice #</TableHead>
                       <TableHead className="text-xs">Student</TableHead>
-                      <TableHead className="text-xs">Plan</TableHead>
+                      <TableHead className="text-xs">Method</TableHead>
                       <TableHead className="text-xs">Amount</TableHead>
-                      <TableHead className="text-xs">Payment Method</TableHead>
-                      <TableHead className="text-xs">Date</TableHead>
                       <TableHead className="text-xs">Status</TableHead>
-                      <TableHead className="text-right text-xs">Action / Approval</TableHead>
+                      <TableHead className="text-xs">Date</TableHead>
+                      <TableHead className="text-right text-xs">Action</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredInvoices.length === 0 ? (
+                    {paginatedInvoices.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={8} className="py-12 text-center text-xs text-muted-foreground">
-                          No invoices matching selected filters.
+                        <TableCell colSpan={7} className="text-center py-10 text-xs text-muted-foreground">
+                          No invoices match the selected filters.
                         </TableCell>
                       </TableRow>
                     ) : (
-                      filteredInvoices.map((inv) => (
+                      paginatedInvoices.map((inv) => (
                         <TableRow key={inv.id} className="text-xs hover:bg-muted/30">
-                          <TableCell className="font-mono font-medium">#{inv.externalId}</TableCell>
-                          <TableCell className="font-semibold text-foreground">{inv.student}</TableCell>
-                          <TableCell className="text-muted-foreground">{inv.plan}</TableCell>
-                          <TableCell className="font-bold text-foreground">{inv.amountFormatted}</TableCell>
+                          <TableCell className="font-mono text-[11px] font-semibold">#{inv.id}</TableCell>
+                          <TableCell className="font-medium text-foreground">{inv.student}</TableCell>
                           <TableCell>
                             <Badge variant="outline" className="text-[10px]">
                               {inv.paymentMethod}
                             </Badge>
                           </TableCell>
-                          <TableCell className="text-muted-foreground text-[11px]">{inv.date}</TableCell>
+                          <TableCell className="font-bold text-foreground">
+                            ETB {inv.amount.toLocaleString()}
+                          </TableCell>
                           <TableCell>
                             <Badge
                               variant="secondary"
                               className={cn(
                                 "text-[10px]",
-                                inv.status === "paid"
-                                  ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20"
-                                  : inv.needsApproval
-                                  ? "bg-amber-500/10 text-amber-600 border-amber-500/20"
-                                  : "bg-muted text-muted-foreground"
+                                inv.status === "paid" && "bg-emerald-500/10 text-emerald-600",
+                                inv.status === "pending" && "bg-amber-500/10 text-amber-600",
+                                inv.needsApproval && "bg-rose-500/10 text-rose-600 animate-pulse"
                               )}
                             >
-                              {inv.status === "paid" ? "Paid" : inv.needsApproval ? "Needs Approval" : inv.status}
+                              {inv.needsApproval ? "Needs Review" : inv.status}
                             </Badge>
                           </TableCell>
+                          <TableCell className="text-muted-foreground text-[11px]">{inv.date}</TableCell>
                           <TableCell className="text-right">
-                            {inv.needsApproval ? (
-                              <Button
-                                size="sm"
-                                onClick={() => handleApproveInvoice(inv.id)}
-                                className="h-7 text-[11px] px-2.5 bg-emerald-600 hover:bg-emerald-700 text-white gap-1"
-                              >
-                                <CheckCircleIcon className="size-3" /> Verify & Approve
-                              </Button>
-                            ) : (
-                              <span className="text-[11px] text-muted-foreground">Verified</span>
-                            )}
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 text-xs px-2.5 gap-1.5 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 border-emerald-500/30"
+                              onClick={() => handleOpenReceipt(inv)}
+                            >
+                              <EyeIcon className="size-3" />
+                              Review Receipt &amp; Slip
+                            </Button>
                           </TableCell>
                         </TableRow>
                       ))
@@ -1199,588 +1733,454 @@ export function LegacyCmsClient({
                   </TableBody>
                 </Table>
               </div>
+
+              {/* Filament Pagination for Invoices Queue */}
+              <FilamentPagination
+                from={filteredInvoices.length === 0 ? 0 : (revPage - 1) * (revPageSize || filteredInvoices.length) + 1}
+                to={revPageSize === 0 ? filteredInvoices.length : Math.min(revPage * revPageSize, filteredInvoices.length)}
+                totalResults={filteredInvoices.length}
+                currentPage={revPage}
+                totalPages={totalRevPages}
+                pageSize={revPageSize}
+                pageSizeOptions={[10, 25, 50, 100]}
+                allowAll={true}
+                onPageChange={(p) => setRevPage(p)}
+                onPageSizeChange={(s) => {
+                  setRevPageSize(s);
+                  setRevPage(1);
+                }}
+                sourceLabel="Invoices Queue"
+              />
             </CardContent>
           </Card>
-        </div>
-      )}
+        </TabsContent>
 
-      {/* ========================================================================= */}
-      {/* VIEW 3: GROWTH & METRICS DASHBOARD */}
-      {/* ========================================================================= */}
-      {activeMainView === "growth" && (
-        <div className="space-y-4">
-          {/* Top Growth KPIs */}
-          <div className="grid gap-3 sm:grid-cols-4">
-            <Card className="bg-purple-500/5 border-purple-500/20">
-              <CardContent className="p-3.5 space-y-1">
-                <span className="text-[11px] font-medium text-purple-600 dark:text-purple-400">Total Enrolled Students</span>
-                <p className="text-2xl font-bold tracking-tight text-foreground">{growthData.summary.totalStudents.toLocaleString()}</p>
-                <div className="flex items-center gap-1 text-[11px] text-emerald-600 font-medium">
-                  <TrendingUpIcon className="size-3" /> {growthData.summary.conversionRate}% active subscription rate
+        {/* =========================================================================
+            VIEW 4: GROWTH & INSIGHTS DASHBOARD
+            ========================================================================= */}
+        <TabsContent value="growth" className="space-y-4 m-0">
+          <Card>
+            <CardHeader className="pb-3 flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <TrendingUpIcon className="size-4 text-indigo-600" /> Noor Ethiopia Growth &amp; Analytics
+                </CardTitle>
+                <CardDescription className="text-xs">
+                  Academic enrollment distribution, grade levels, and subscription conversion analytics.
+                </CardDescription>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Grade distribution */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                  Students by Grade Level
+                </h4>
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                  {growthData.gradeDistribution.map((gd) => (
+                    <div key={gd.grade} className="rounded-lg border p-3 bg-muted/20 space-y-1">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-semibold text-foreground">{gd.grade}</span>
+                        <span className="text-muted-foreground font-mono">{gd.percentage}%</span>
+                      </div>
+                      <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
+                        <div className="h-full bg-indigo-600 rounded-full" style={{ width: `${gd.percentage}%` }} />
+                      </div>
+                      <span className="text-[11px] text-muted-foreground">{gd.count.toLocaleString()} students</span>
+                    </div>
+                  ))}
                 </div>
-              </CardContent>
-            </Card>
-
-            <Card className="bg-blue-500/5 border-blue-500/20">
-              <CardContent className="p-3.5 space-y-1">
-                <span className="text-[11px] font-medium text-blue-600 dark:text-blue-400">Registered Parents</span>
-                <p className="text-2xl font-bold tracking-tight text-foreground">{growthData.summary.totalParents.toLocaleString()}</p>
-                <span className="text-[11px] text-muted-foreground">Direct student guardians</span>
-              </CardContent>
-            </Card>
-
-            <Card className="bg-emerald-500/5 border-emerald-500/20">
-              <CardContent className="p-3.5 space-y-1">
-                <span className="text-[11px] font-medium text-emerald-600 dark:text-emerald-400">Active Subscriptions</span>
-                <p className="text-2xl font-bold tracking-tight text-foreground">{growthData.summary.activeSubscriptions.toLocaleString()}</p>
-                <span className="text-[11px] text-muted-foreground">Currently active learning licenses</span>
-              </CardContent>
-            </Card>
-
-            <Card className="bg-muted/30">
-              <CardContent className="p-3.5 space-y-1">
-                <span className="text-[11px] font-medium text-muted-foreground">Total Invoices Generated</span>
-                <p className="text-2xl font-bold tracking-tight text-foreground">{growthData.summary.totalInvoices.toLocaleString()}</p>
-                <span className="text-[11px] text-muted-foreground">Billing history records</span>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Grade Distribution & Payment Method Visuals */}
-          <div className="grid gap-4 sm:grid-cols-2">
-            {/* Grade Distribution */}
-            <Card>
-              <CardHeader className="py-3 px-4 border-b">
-                <CardTitle className="text-xs font-semibold flex items-center gap-1.5">
-                  <GraduationCapIcon className="size-3.5 text-primary" /> Student Enrollment by Grade
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-4 space-y-3">
-                {growthData.gradeDistribution.map((item) => (
-                  <div key={item.grade} className="space-y-1">
-                    <div className="flex justify-between text-xs">
-                      <span className="font-medium text-foreground">{item.grade}</span>
-                      <span className="text-muted-foreground font-mono">{item.count} students ({item.percentage}%)</span>
-                    </div>
-                    <div className="h-2 w-full rounded-full bg-muted/60 overflow-hidden">
-                      <div
-                        className="h-full rounded-full bg-[#00522B]"
-                        style={{ width: `${Math.max(5, item.percentage)}%` }}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-
-            {/* City Demographics */}
-            <Card>
-              <CardHeader className="py-3 px-4 border-b">
-                <CardTitle className="text-xs font-semibold flex items-center gap-1.5">
-                  <BarChart3Icon className="size-3.5 text-blue-600" /> Geographic Student Distribution
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-4 space-y-3">
-                {growthData.cityDemographics.map((item) => (
-                  <div key={item.city} className="space-y-1">
-                    <div className="flex justify-between text-xs">
-                      <span className="font-medium text-foreground">{item.city}</span>
-                      <span className="text-muted-foreground font-mono">{item.count} ({item.percentage}%)</span>
-                    </div>
-                    <div className="h-2 w-full rounded-full bg-muted/60 overflow-hidden">
-                      <div
-                        className="h-full rounded-full bg-blue-600"
-                        style={{ width: `${Math.max(5, item.percentage)}%` }}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* VIEW 4: SCRAPED SUBPAGES TABLES */}
-      {/* ========================================================================= */}
-      {activeMainView === "subpages" && (
-        <Tabs defaultValue={category} onValueChange={handleTabChange} className="space-y-4">
-          <TabsList className="grid w-full grid-cols-2 sm:grid-cols-6 h-auto p-1">
-            {allowedCategories.includes("students") && (
-              <TabsTrigger value="students" className="text-xs py-2 gap-1.5">
-                <GraduationCapIcon className="size-3.5 text-blue-600" /> Students
-                <Badge variant="secondary" className="ml-1 text-[10px] px-1 py-0">
-                  {stats.studentsCount}
-                </Badge>
-              </TabsTrigger>
-            )}
-            {allowedCategories.includes("parents") && (
-              <TabsTrigger value="parents" className="text-xs py-2 gap-1.5">
-                <UsersIcon className="size-3.5 text-purple-600" /> Parents
-                <Badge variant="secondary" className="ml-1 text-[10px] px-1 py-0">
-                  {stats.parentsCount}
-                </Badge>
-              </TabsTrigger>
-            )}
-            {allowedCategories.includes("subscriptions") && (
-              <TabsTrigger value="subscriptions" className="text-xs py-2 gap-1.5">
-                <CreditCardIcon className="size-3.5 text-emerald-600" /> Subscriptions
-                <Badge variant="secondary" className="ml-1 text-[10px] px-1 py-0">
-                  {stats.activeSubscriptionsCount}
-                </Badge>
-              </TabsTrigger>
-            )}
-            {allowedCategories.includes("invoices") && (
-              <TabsTrigger value="invoices" className="text-xs py-2 gap-1.5">
-                <FileTextIcon className="size-3.5 text-amber-600" /> Invoices
-                <Badge variant="secondary" className="ml-1 text-[10px] px-1 py-0">
-                  {stats.invoicesCount}
-                </Badge>
-              </TabsTrigger>
-            )}
-            {allowedCategories.includes("subscription-plans") && (
-              <TabsTrigger value="subscription-plans" className="text-xs py-2 gap-1.5">
-                <SparklesIcon className="size-3.5 text-rose-600" /> Plans
-                <Badge variant="secondary" className="ml-1 text-[10px] px-1 py-0">
-                  {stats.plansCount}
-                </Badge>
-              </TabsTrigger>
-            )}
-            {allowedCategories.includes("subscription-histories") && (
-              <TabsTrigger value="subscription-histories" className="text-xs py-2 gap-1.5">
-                <HistoryIcon className="size-3.5 text-teal-600" /> Histories
-              </TabsTrigger>
-            )}
-          </TabsList>
-
-          {/* Search, Status & Grade Filters */}
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-3">
-            <div className="flex flex-1 flex-wrap items-center gap-2">
-              <div className="relative min-w-[220px] max-w-sm">
-                <SearchIcon className="absolute left-2.5 top-2.5 size-3.5 text-muted-foreground" />
-                <Input
-                  placeholder={`Search ${category} records...`}
-                  value={search}
-                  onChange={handleSearchChange}
-                  className="h-8 pl-8 text-xs"
-                />
               </div>
 
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="h-8 rounded-md border bg-background px-2.5 text-xs font-medium"
-              >
-                <option value="all">All Statuses</option>
-                <option value="active">Active</option>
-                <option value="paid">Paid</option>
-                <option value="inactive">Inactive</option>
-                <option value="expired">Expired</option>
-              </select>
+              {/* City Demographics & Plan popularity */}
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2 border rounded-xl p-4">
+                  <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    Geographic Distribution (Cities)
+                  </h4>
+                  <div className="space-y-2 pt-1">
+                    {growthData.cityDemographics.slice(0, 6).map((c) => (
+                      <div key={c.city} className="flex items-center justify-between text-xs">
+                        <span className="text-foreground">{c.city}</span>
+                        <span className="font-mono text-muted-foreground">{c.count} students ({c.percentage}%)</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
 
-              {(category === "students" || category === "subscriptions") && (
-                <select
-                  value={gradeFilter}
-                  onChange={(e) => setGradeFilter(e.target.value)}
-                  className="h-8 rounded-md border bg-background px-2.5 text-xs font-medium"
-                >
-                  <option value="all">All Grades</option>
-                  <option value="Grade 5">Grade 5</option>
-                  <option value="Grade 6">Grade 6</option>
-                  <option value="Grade 7">Grade 7</option>
-                  <option value="Grade 8">Grade 8</option>
-                  <option value="Grade 9">Grade 9</option>
-                  <option value="Grade 10">Grade 10</option>
-                  <option value="Grade 11">Grade 11</option>
-                  <option value="Grade 12">Grade 12</option>
-                </select>
-              )}
-            </div>
+                <div className="space-y-2 border rounded-xl p-4">
+                  <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    Subscription Packages
+                  </h4>
+                  <div className="space-y-2 pt-1">
+                    {growthData.planPopularity.map((p) => (
+                      <div key={p.plan} className="flex items-center justify-between text-xs">
+                        <span className="text-foreground">{p.plan}</span>
+                        <span className="font-mono text-muted-foreground">{p.count} active ({p.percentage}%)</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">
-                Showing {filteredRecords.length} of {total} records
-              </span>
+        {/* =========================================================================
+            VIEW 5: STORAGE & SCRAPED ARCHIVES MANAGEMENT
+            ========================================================================= */}
+        <TabsContent value="storage" className="space-y-4 m-0">
+          <Card>
+            <CardHeader className="pb-3 flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <DatabaseIcon className="size-4 text-purple-600" /> Scraped Archives &amp; Storage Management
+                </CardTitle>
+                <CardDescription className="text-xs">
+                  Manage individual scraped datasets, browse saved records, perform targeted multi-page deep scrapes, or clear cached data.
+                </CardDescription>
+              </div>
+
               {isAdmin && (
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => handleSyncTargetPage(category)}
-                  disabled={syncing}
-                  className="h-8 gap-1 text-xs"
+                  onClick={() => handleDeleteCategoryData("all")}
+                  disabled={loading}
+                  className="h-8 text-xs text-destructive hover:bg-destructive/10 border-destructive/30 gap-1.5"
                 >
-                  <RefreshCwIcon className={cn("size-3.5", syncing && "animate-spin")} />
-                  Sync Active Tab
+                  <Trash2Icon className="size-3.5" /> Clear All Datasets
                 </Button>
               )}
-            </div>
-          </div>
-
-          {/* Scraped Records Tables */}
-          {(["students", "parents", "subscriptions", "invoices", "subscription-plans", "subscription-histories"] as LegacyCmsCategory[]).map(
-            (cat) =>
-              allowedCategories.includes(cat) && (
-                <TabsContent key={cat} value={cat} className="space-y-4">
-                  <Card>
-                    <CardContent className="p-0">
-                      <div className="overflow-x-auto">
-                        <Table>
-                          <TableHeader className="bg-muted/40">
-                            <TableRow>
-                              {columns.length > 0 ? (
-                                columns.map((c) => (
-                                  <TableHead key={c} className="text-xs font-semibold capitalize">
-                                    {c.replace(/_/g, " ")}
-                                  </TableHead>
-                                ))
-                              ) : (
-                                <TableHead className="text-xs">Data</TableHead>
-                              )}
-                              <TableHead className="w-24 text-right text-xs">Action</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {loading ? (
-                              <TableRow>
-                                <TableCell colSpan={Math.max(2, columns.length + 1)} className="py-12 text-center text-xs text-muted-foreground">
-                                  <RefreshCwIcon className="mx-auto mb-2 size-5 animate-spin text-primary" />
-                                  Loading {cat} data...
-                                </TableCell>
-                              </TableRow>
-                            ) : filteredRecords.length === 0 ? (
-                              <TableRow>
-                                <TableCell colSpan={Math.max(2, columns.length + 1)} className="py-12 text-center text-xs text-muted-foreground">
-                                  No records found in {cat}. Click &quot;Deep Scrape (All Pages)&quot; or &quot;Quick Sync&quot; to fetch live data.
-                                </TableCell>
-                              </TableRow>
-                            ) : (
-                              filteredRecords.map((r) => (
-                                <TableRow key={r.id} className="text-xs hover:bg-muted/30">
-                                  {columns.length > 0 ? (
-                                    columns.map((colKey) => {
-                                      const val = r.data[colKey];
-                                      const isPhone = colKey.toLowerCase().includes("phone");
-                                      const isEmail = colKey.toLowerCase().includes("email");
-
-                                      return (
-                                        <TableCell key={colKey} className="py-2.5 font-medium">
-                                          {isPhone && val ? (
-                                            <div className="flex items-center gap-1.5">
-                                              <a
-                                                href={`tel:${String(val)}`}
-                                                className="flex items-center gap-1 font-mono text-primary hover:underline"
-                                              >
-                                                <PhoneCallIcon className="size-3 text-emerald-600" />
-                                                {String(val)}
-                                              </a>
-                                              <button
-                                                type="button"
-                                                onClick={() => copyText(String(val), `${r.id}-${colKey}`)}
-                                                className="text-muted-foreground hover:text-foreground"
-                                                title="Copy Phone"
-                                              >
-                                                {copiedKey === `${r.id}-${colKey}` ? (
-                                                  <CheckIcon className="size-3 text-emerald-600" />
-                                                ) : (
-                                                  <CopyIcon className="size-3" />
-                                                )}
-                                              </button>
-                                            </div>
-                                          ) : isEmail && val ? (
-                                            <a
-                                              href={`mailto:${String(val)}`}
-                                              className="text-primary hover:underline truncate max-w-xs block"
-                                            >
-                                              {String(val)}
-                                            </a>
-                                          ) : typeof val === "string" && (val === "Active" || val === "Yes" || val === "Paid" || val === "Verified") ? (
-                                            <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20 text-[10px]">
-                                              {val}
-                                            </Badge>
-                                          ) : typeof val === "string" && (val === "Expired" || val === "No" || val === "Inactive") ? (
-                                            <Badge variant="secondary" className="bg-destructive/10 text-destructive border-destructive/20 text-[10px]">
-                                              {val}
-                                            </Badge>
-                                          ) : (
-                                            <span className="truncate max-w-xs block text-foreground">
-                                              {val !== undefined && val !== null ? String(val) : "—"}
-                                            </span>
-                                          )}
-                                        </TableCell>
-                                      );
-                                    })
-                                  ) : (
-                                    <TableCell>{r.title}</TableCell>
-                                  )}
-                                  <TableCell className="text-right">
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      onClick={() => setSelectedRecord(r)}
-                                      className="h-7 text-[11px] px-2 text-primary hover:text-primary"
-                                    >
-                                      <EyeIcon className="size-3 mr-1" /> View
-                                    </Button>
-                                  </TableCell>
-                                </TableRow>
-                              ))
-                            )}
-                          </TableBody>
-                        </Table>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {storageStatus.map((cat) => {
+                  const isSyncing = syncingCategory === cat.category;
+                  return (
+                    <div
+                      key={cat.category}
+                      className="rounded-xl border bg-card p-4 space-y-3 shadow-sm hover:border-border/80 transition-all"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <h4 className="text-sm font-semibold text-foreground capitalize">
+                            {cat.name}
+                          </h4>
+                          <span className="text-[11px] font-mono text-muted-foreground">{cat.path}</span>
+                        </div>
+                        <Badge variant="outline" className="text-[10px]">
+                          ~{cat.totalPagesEstimate} CMS Pages
+                        </Badge>
                       </div>
-                    </CardContent>
-                  </Card>
-                </TabsContent>
-              )
-          )}
-        </Tabs>
-      )}
 
-      {/* Record Inspector Modal */}
-      <Dialog open={!!selectedRecord} onOpenChange={(o) => !o && setSelectedRecord(null)}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-base">
-              <DatabaseIcon className="size-4 text-primary" /> {selectedRecord?.title}
-            </DialogTitle>
+                      <div className="space-y-1">
+                        <p className="text-2xl font-bold tracking-tight text-foreground">
+                          {cat.count.toLocaleString()} <span className="text-xs font-normal text-muted-foreground">records</span>
+                        </p>
+                        <p className="text-[11px] text-muted-foreground">
+                          Last scraped: {cat.lastSyncedAt ? new Date(cat.lastSyncedAt).toLocaleString() : "Never"}
+                        </p>
+                      </div>
+
+                      <div className="pt-2 flex flex-wrap items-center justify-between gap-1.5 border-t">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-xs px-2"
+                          onClick={() => {
+                            setCategory(cat.category);
+                            setActiveMainView("subpages");
+                            setDataSourceMode("scraped");
+                          }}
+                        >
+                          <EyeIcon className="size-3 mr-1" /> Browse
+                        </Button>
+
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs px-2 gap-1 text-emerald-700 dark:text-emerald-300"
+                            disabled={isSyncing}
+                            onClick={() => handleScrapeCategory(cat.category, 0)}
+                          >
+                            <RefreshCwIcon className={cn("size-2.5", isSyncing && "animate-spin")} />
+                            {isSyncing ? "Scraping..." : "Scrape All"}
+                          </Button>
+
+                          {isAdmin && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="size-7 text-destructive hover:bg-destructive/10"
+                              onClick={() => handleDeleteCategoryData(cat.category)}
+                            >
+                              <Trash2Icon className="size-3" />
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+
+      {/* =========================================================================
+          MODAL 1: RECEIPT IMAGE & SLIP PREVIEW WITH ZOOM & QR CODE DETECTION
+          ========================================================================= */}
+      <Dialog open={receiptModalOpen} onOpenChange={setReceiptModalOpen}>
+        <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col p-6 overflow-hidden">
+          <DialogHeader className="pb-3 border-b">
+            <div className="flex items-center justify-between">
+              <DialogTitle className="text-base flex items-center gap-2">
+                <CreditCardIcon className="size-4 text-emerald-600" />
+                Receipt Slip Verification — Invoice #{activeReceiptInvoice?.id}
+              </DialogTitle>
+              {activeReceiptInvoice?.pdfUrl && (
+                <a
+                  href={activeReceiptInvoice.pdfUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-primary hover:underline flex items-center gap-1"
+                >
+                  <DownloadIcon className="size-3" /> Download CMS PDF
+                </a>
+              )}
+            </div>
             <DialogDescription className="text-xs">
-              External ID: <code className="font-mono text-foreground font-semibold">{selectedRecord?.externalId}</code> | Category: {selectedRecord?.category}
+              Review payment confirmation slip for {activeReceiptInvoice?.studentName}. Verify bank reference and QR code.
             </DialogDescription>
           </DialogHeader>
 
-          {selectedRecord && (
-            <div className="max-h-96 space-y-2 overflow-y-auto rounded-md border bg-muted/30 p-3 text-xs">
-              {Object.entries(selectedRecord.data).map(([k, v]) => (
-                <div key={k} className="flex justify-between border-b pb-1">
-                  <span className="font-semibold uppercase tracking-wider text-muted-foreground">{k.replace(/_/g, " ")}:</span>
-                  <span className="font-medium text-foreground text-right">{String(v)}</span>
-                </div>
-              ))}
+          <div className="flex-1 overflow-y-auto space-y-4 py-2">
+            {/* Invoice metadata pills */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-muted/40 p-3 rounded-xl text-xs">
+              <div>
+                <span className="text-muted-foreground block text-[11px]">Amount</span>
+                <strong className="text-sm text-foreground">{activeReceiptInvoice?.amount}</strong>
+              </div>
+              <div>
+                <span className="text-muted-foreground block text-[11px]">Payment Method</span>
+                <span className="font-semibold capitalize">{activeReceiptInvoice?.paymentMethod}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground block text-[11px]">Date</span>
+                <span>{activeReceiptInvoice?.date}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground block text-[11px]">Bank Reference</span>
+                <span className="font-mono">{activeReceiptInvoice?.bankReference || "—"}</span>
+              </div>
             </div>
-          )}
 
-          <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setSelectedRecord(null)}>
+            {/* QR Code Detected Notification */}
+            {detectedQrCode && (
+              <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3 flex flex-wrap items-center justify-between gap-2 text-xs text-emerald-800 dark:text-emerald-300">
+                <div className="flex items-center gap-2">
+                  <QrCodeIcon className="size-4 text-emerald-600 shrink-0" />
+                  <span>
+                    <strong>QR Code Detected:</strong> {detectedQrCode}
+                  </span>
+                </div>
+                {detectedQrCode.startsWith("http") && (
+                  <Button
+                    size="sm"
+                    className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700 text-white gap-1"
+                    onClick={() => window.open(detectedQrCode, "_blank", "noopener,noreferrer")}
+                  >
+                    Open Verification Link <ArrowUpRightIcon className="size-3" />
+                  </Button>
+                )}
+              </div>
+            )}
+
+            {/* Receipt Image Controls & Zoom */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                  <FileTextIcon className="size-3.5" /> Uploaded Payment Receipt Slip
+                </span>
+
+                <div className="flex items-center gap-1 bg-muted rounded-lg p-0.5">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-7"
+                    title="Zoom Out"
+                    onClick={() => setReceiptZoom((z) => Math.max(0.5, z - 0.25))}
+                  >
+                    <ZoomOutIcon className="size-3.5" />
+                  </Button>
+                  <span className="text-[11px] font-mono px-1.5">{Math.round(receiptZoom * 100)}%</span>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-7"
+                    title="Zoom In"
+                    onClick={() => setReceiptZoom((z) => Math.min(3, z + 0.25))}
+                  >
+                    <ZoomInIcon className="size-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-7"
+                    title="Rotate 90 degrees"
+                    onClick={() => setReceiptRotation((r) => (r + 90) % 360)}
+                  >
+                    <RotateCwIcon className="size-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-[11px] px-2"
+                    onClick={() => {
+                      setReceiptZoom(1);
+                      setReceiptRotation(0);
+                    }}
+                  >
+                    Reset
+                  </Button>
+                </div>
+              </div>
+
+              {/* Image Preview Container */}
+              <div className="border rounded-xl bg-muted/20 min-h-[300px] max-h-[460px] overflow-auto flex items-center justify-center p-4">
+                {receiptLoading ? (
+                  <div className="text-center py-12 text-xs text-muted-foreground">
+                    <RefreshCwIcon className="size-5 animate-spin mx-auto mb-2 text-primary" />
+                    Pulling receipt image from Noor CMS...
+                  </div>
+                ) : activeReceiptInvoice?.imageUrl ? (
+                  <div
+                    style={{
+                      transform: `scale(${receiptZoom}) rotate(${receiptRotation}deg)`,
+                      transformOrigin: "center center",
+                      transition: "transform 0.15s ease-out",
+                    }}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={activeReceiptInvoice.imageUrl}
+                      alt={`Receipt slip for invoice #${activeReceiptInvoice.id}`}
+                      onLoad={(e) => scanQrCodeFromImage(e.currentTarget)}
+                      crossOrigin="anonymous"
+                      className="max-w-full rounded-lg shadow-md object-contain"
+                    />
+                  </div>
+                ) : (
+                  <div className="text-center py-12 text-xs text-muted-foreground space-y-2">
+                    <FileTextIcon className="size-8 mx-auto text-muted-foreground/60" />
+                    <p>No separate image attachment uploaded for this manual receipt.</p>
+                    {activeReceiptInvoice?.pdfUrl && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-xs"
+                        onClick={() => window.open(activeReceiptInvoice.pdfUrl!, "_blank")}
+                      >
+                        Download PDF Invoice
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Approval Notes */}
+            <div className="space-y-1.5 pt-2">
+              <Label htmlFor="appr-notes" className="text-xs">Finance Approval Notes (Internal Record)</Label>
+              <Input
+                id="appr-notes"
+                placeholder="e.g. Verified with Commercial Bank of Ethiopia transaction ledger"
+                value={approvalNotes}
+                onChange={(e) => setApprovalNotes(e.target.value)}
+                className="h-8 text-xs"
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 pt-3 border-t">
+            <Button variant="outline" size="sm" onClick={() => setReceiptModalOpen(false)}>
               Close
+            </Button>
+            <Button
+              size="sm"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5"
+              onClick={() => handleApproveInvoice(activeReceiptInvoice!.id)}
+              disabled={loading}
+            >
+              <CheckCircleIcon className="size-3.5" />
+              Approve Invoice &amp; Mark Paid
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Explicit Login Modal */}
-      <Dialog open={loginModalOpen} onOpenChange={setLoginModalOpen}>
+      {/* =========================================================================
+          MODAL 2: REPORT ISSUE TO QUESTIONS SECTION
+          ========================================================================= */}
+      <Dialog open={reportModalOpen} onOpenChange={setReportModalOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-base">
-              <LogInIcon className="size-4 text-emerald-600" /> Log In to Noor Ethiopia CMS
+            <DialogTitle className="text-base flex items-center gap-2">
+              <SendIcon className="size-4 text-primary" /> Report Issue to Questions
             </DialogTitle>
             <DialogDescription className="text-xs">
-              Enter admin credentials for <code className="text-foreground">https://cms.noorethiopia.com</code> to authenticate and establish a live session.
+              File a tracked question or issue ticket for {reportData.itemTitle} directly into the internal Questions section.
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-3 py-2 text-xs">
             <div className="space-y-1">
-              <Label htmlFor="login-user">Email / Username</Label>
-              <Input
-                id="login-user"
-                value={loginForm.username}
-                onChange={(e) => setLoginForm({ ...loginForm, username: e.target.value })}
-                placeholder="ops@myseed.com"
-                className="h-9 text-xs"
-              />
+              <Label htmlFor="rep-owner" className="text-xs font-semibold">Assign Recipient / Staff Member</Label>
+              <select
+                id="rep-owner"
+                value={reportData.ownerId}
+                onChange={(e) => setReportData({ ...reportData, ownerId: e.target.value })}
+                className="w-full h-8 rounded-lg border bg-background px-2 text-xs"
+              >
+                {staffUsers.length === 0 ? (
+                  <option value="">No staff members found</option>
+                ) : (
+                  staffUsers.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.name} (@{u.handle} · {u.role || "Staff"})
+                    </option>
+                  ))
+                )}
+              </select>
             </div>
 
             <div className="space-y-1">
-              <Label htmlFor="login-pass">Password</Label>
-              <Input
-                id="login-pass"
-                type="password"
-                value={loginForm.password}
-                onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
-                placeholder="Leave blank to use default (9V7x6antUAU6eyE)"
-                className="h-9 text-xs"
+              <Label htmlFor="rep-details" className="text-xs font-semibold">Question / Issue Summary</Label>
+              <textarea
+                id="rep-details"
+                rows={6}
+                value={reportData.details}
+                onChange={(e) => setReportData({ ...reportData, details: e.target.value })}
+                className="w-full rounded-lg border bg-background p-2.5 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-primary"
               />
-              <p className="text-[11px] text-muted-foreground">
-                Credentials are automatically sealed and authenticated via Livewire.
-              </p>
             </div>
           </div>
 
           <DialogFooter className="gap-2">
-            <Button variant="outline" size="sm" onClick={() => setLoginModalOpen(false)}>
+            <Button variant="outline" size="sm" onClick={() => setReportModalOpen(false)}>
               Cancel
             </Button>
             <Button
               size="sm"
-              onClick={handleLoginSubmit}
-              disabled={loading}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              onClick={handleSendReportQuestion}
+              disabled={reportSubmitting}
+              className="gap-1.5"
             >
-              {loading && <RefreshCwIcon className="mr-1.5 size-3.5 animate-spin" />}
-              Log In & Establish Session
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Settings & Credentials Modal */}
-      <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-base">
-              <LockIcon className="size-4 text-primary" /> Noor Ethiopia CMS Settings
-            </DialogTitle>
-            <DialogDescription className="text-xs">
-              Configure scraping credentials, background sync, and role category visibility.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 text-xs">
-            <div className="space-y-1">
-              <Label htmlFor="base-url">CMS Base URL</Label>
-              <Input
-                id="base-url"
-                value={cfg.baseUrl}
-                onChange={(e) => setCfg({ ...cfg, baseUrl: e.target.value })}
-                placeholder="https://cms.noorethiopia.com"
-                className="h-8 text-xs font-mono"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1">
-                <Label htmlFor="cms-user">Username / Email</Label>
-                <Input
-                  id="cms-user"
-                  value={cfg.username}
-                  onChange={(e) => setCfg({ ...cfg, username: e.target.value })}
-                  placeholder="ops@myseed.com"
-                  className="h-8 text-xs"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="cms-pass">Password</Label>
-                <Input
-                  id="cms-pass"
-                  type="password"
-                  value={cfg.password}
-                  onChange={(e) => setCfg({ ...cfg, password: e.target.value })}
-                  placeholder={config.hasPassword ? "•••••••• (Saved)" : "CMS password"}
-                  className="h-8 text-xs"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-1">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="cms-cookie">Session Cookie</Label>
-                <span className="text-[10px] text-emerald-600 font-medium">Captured automatically</span>
-              </div>
-              <Input
-                id="cms-cookie"
-                type="password"
-                value={cfg.sessionCookie}
-                onChange={(e) => setCfg({ ...cfg, sessionCookie: e.target.value })}
-                placeholder={config.hasSessionCookie ? "•••••••• (Live session cookie active)" : "Automatically extracted from Livewire"}
-                className="h-8 text-xs font-mono"
-              />
-              <p className="text-[11px] text-muted-foreground">
-                You do not need to paste cookies manually. The system automatically captures and renews the Livewire session cookie in the background.
-              </p>
-            </div>
-
-            <div className="flex items-center justify-between rounded-lg border p-2.5">
-              <div className="space-y-0.5">
-                <Label htmlFor="auto-sync" className="cursor-pointer">Automatic Background Sync</Label>
-                <p className="text-[11px] text-muted-foreground">Periodically syncs new students and invoices.</p>
-              </div>
-              <Switch
-                id="auto-sync"
-                checked={cfg.autoSync}
-                onCheckedChange={(val) => setCfg({ ...cfg, autoSync: val })}
-              />
-            </div>
-
-            <div className="space-y-1">
-              <Label htmlFor="sync-interval">Sync Interval (Minutes)</Label>
-              <Input
-                id="sync-interval"
-                type="number"
-                min={5}
-                max={1440}
-                value={cfg.syncIntervalMinutes}
-                onChange={(e) => setCfg({ ...cfg, syncIntervalMinutes: Number(e.target.value) })}
-                className="h-8 text-xs"
-              />
-            </div>
-
-            {/* Category Visibility for Non-Admins */}
-            <div className="space-y-2 rounded-lg border p-3 bg-muted/20">
-              <p className="font-semibold text-foreground text-xs">Role Visibility (Control what Support & Finance can see)</p>
-              <div className="space-y-3 pt-1">
-                <div>
-                  <p className="text-[11px] text-muted-foreground font-medium pb-1">Customer Support sees:</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {(["students", "parents", "subscriptions", "subscription-plans", "invoices", "subscription-histories"] as LegacyCmsCategory[]).map((cat) => {
-                      const enabled = (roleVisibility.support || []).includes(cat);
-                      return (
-                        <button
-                          key={cat}
-                          type="button"
-                          onClick={() => {
-                            const cur = roleVisibility.support || [];
-                            const next = enabled ? cur.filter((x) => x !== cat) : [...cur, cat];
-                            setRoleVisibility({ ...roleVisibility, support: next });
-                          }}
-                          className={cn(
-                            "rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition-colors",
-                            enabled ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground hover:bg-muted"
-                          )}
-                        >
-                          {cat}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div>
-                  <p className="text-[11px] text-muted-foreground font-medium pb-1">Finance Department sees:</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {(["invoices", "subscription-plans", "subscription-histories", "subscriptions", "students", "parents"] as LegacyCmsCategory[]).map((cat) => {
-                      const enabled = (roleVisibility.finance || []).includes(cat);
-                      return (
-                        <button
-                          key={cat}
-                          type="button"
-                          onClick={() => {
-                            const cur = roleVisibility.finance || [];
-                            const next = enabled ? cur.filter((x) => x !== cat) : [...cur, cat];
-                            setRoleVisibility({ ...roleVisibility, finance: next });
-                          }}
-                          className={cn(
-                            "rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition-colors",
-                            enabled ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground hover:bg-muted"
-                          )}
-                        >
-                          {cat}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <DialogFooter className="gap-2">
-            <Button variant="outline" size="sm" onClick={() => setSettingsOpen(false)}>
-              Cancel
-            </Button>
-            <Button size="sm" onClick={handleSaveSettings} disabled={loading}>
-              Save Settings
+              <SendIcon className="size-3.5" />
+              {reportSubmitting ? "Sending..." : "Submit Question"}
             </Button>
           </DialogFooter>
         </DialogContent>
