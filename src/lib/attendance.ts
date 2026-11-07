@@ -37,6 +37,8 @@ export type AttendanceConfig = {
   kioskSilenceMin: number;
   // Check-ins a kiosk kept while offline are accepted up to this many hours late.
   offlineMaxHours: number;
+  // QR Code on kiosk tablet rotates every configured seconds interval (prevents screenshot sharing).
+  qrRefreshIntervalSec: number;
   // The written attendance and privacy policy shown to everyone.
   policy: string;
   // Unpaid minutes of lunch and breaks beyond the allowance are deducted in payroll.
@@ -58,6 +60,7 @@ export const DEFAULT_ATTENDANCE: AttendanceConfig = {
   site: { label: "Office", lat: null, lng: null, radiusM: 200 },
   kioskSilenceMin: 30,
   offlineMaxHours: 72,
+  qrRefreshIntervalSec: 15,
   deductBreakOverrun: false,
   policy: [
     "Attendance records the times you start and finish work, so pay, overtime and leave are right.",

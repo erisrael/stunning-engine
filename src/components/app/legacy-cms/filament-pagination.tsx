@@ -1,7 +1,14 @@
 "use client";
 
 import React from "react";
-import { ChevronLeftIcon, ChevronRightIcon, ChevronDownIcon } from "lucide-react";
+import {
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  ChevronDownIcon,
+  ChevronsLeftIcon,
+  ChevronsRightIcon,
+  CornerDownLeftIcon,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export function getFilamentPaginationRange(current: number, total: number): (number | "...")[] {
@@ -47,7 +54,7 @@ export function FilamentPagination({
   currentPage,
   totalPages,
   pageSize = 10,
-  pageSizeOptions = [10, 25, 50, 100],
+  pageSizeOptions = [10, 25, 50, 100, 250],
   allowAll = false,
   disabled = false,
   onPageChange,
@@ -55,7 +62,18 @@ export function FilamentPagination({
   className,
   sourceLabel,
 }: FilamentPaginationProps) {
-  const pages = getFilamentPaginationRange(currentPage, Math.max(1, totalPages));
+  const [jumpPage, setJumpPage] = React.useState("");
+  const safeTotalPages = Math.max(1, totalPages);
+  const pages = getFilamentPaginationRange(currentPage, safeTotalPages);
+
+  const handleJump = (e: React.FormEvent) => {
+    e.preventDefault();
+    const p = parseInt(jumpPage.trim(), 10);
+    if (!isNaN(p) && p >= 1 && p <= safeTotalPages) {
+      onPageChange(p);
+      setJumpPage("");
+    }
+  };
 
   return (
     <div
@@ -75,7 +93,32 @@ export function FilamentPagination({
       </div>
 
       {/* MIDDLE & RIGHT CONTROLS */}
-      <div className="flex flex-wrap items-center gap-3 sm:gap-4 ml-auto">
+      <div className="flex flex-wrap items-center gap-2.5 sm:gap-3.5 ml-auto">
+        {/* JUMP TO PAGE INPUT (When > 5 pages) */}
+        {safeTotalPages > 5 && (
+          <form onSubmit={handleJump} className="hidden sm:flex items-center gap-1">
+            <span className="text-muted-foreground text-[11px] whitespace-nowrap">Go to:</span>
+            <input
+              type="number"
+              min={1}
+              max={safeTotalPages}
+              value={jumpPage}
+              onChange={(e) => setJumpPage(e.target.value)}
+              placeholder={String(currentPage)}
+              disabled={disabled}
+              className="h-7 w-12 rounded-lg border border-border/70 bg-muted/30 px-1.5 text-center text-xs font-mono font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500 disabled:opacity-50"
+            />
+            <button
+              type="submit"
+              disabled={disabled || !jumpPage}
+              className="size-7 rounded-lg border border-border/70 bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground flex items-center justify-center transition-colors disabled:opacity-30 disabled:pointer-events-none"
+              title="Jump to page"
+            >
+              <CornerDownLeftIcon className="size-3" />
+            </button>
+          </form>
+        )}
+
         {/* PER PAGE SELECTOR */}
         {onPageSizeChange && (
           <div className="flex items-center gap-1.5">
@@ -100,16 +143,34 @@ export function FilamentPagination({
           </div>
         )}
 
-        {/* NUMBERED PAGINATION BAR (Filament v3 style) */}
-        <nav aria-label="Pagination navigation" className="flex items-center gap-1">
-          {/* Previous Page Arrow Button */}
+        {/* NUMBERED PAGINATION BAR (Filament v3 grouped pill container) */}
+        <nav
+          aria-label="Pagination navigation"
+          className="inline-flex items-stretch rounded-lg border border-border/70 bg-muted/20 divide-x divide-border/60 overflow-hidden shadow-xs"
+        >
+          {/* First Page Button << */}
+          {currentPage > 2 && safeTotalPages > 4 && (
+            <button
+              type="button"
+              disabled={disabled || currentPage <= 1}
+              onClick={() => onPageChange(1)}
+              aria-label="First page"
+              title="First page"
+              className="px-2 h-7 sm:h-8 text-muted-foreground hover:text-foreground hover:bg-muted/60 flex items-center justify-center transition-colors disabled:opacity-30 disabled:pointer-events-none"
+            >
+              <ChevronsLeftIcon className="size-3.5" />
+            </button>
+          )}
+
+          {/* Previous Page Arrow Button < */}
           {currentPage > 1 && (
             <button
               type="button"
               disabled={disabled || currentPage <= 1}
               onClick={() => onPageChange(currentPage - 1)}
               aria-label="Previous page"
-              className="size-7 sm:size-8 rounded-lg border border-border/60 hover:bg-accent hover:text-foreground text-muted-foreground flex items-center justify-center transition-colors active:scale-95 disabled:opacity-30 disabled:pointer-events-none"
+              title="Previous page"
+              className="px-2.5 h-7 sm:h-8 text-muted-foreground hover:text-foreground hover:bg-muted/60 flex items-center justify-center transition-colors disabled:opacity-30 disabled:pointer-events-none"
             >
               <ChevronLeftIcon className="size-3.5 sm:size-4" />
             </button>
@@ -121,7 +182,7 @@ export function FilamentPagination({
               return (
                 <span
                   key={`ellipsis-${idx}`}
-                  className="px-1.5 sm:px-2 text-muted-foreground font-mono text-xs select-none"
+                  className="px-2.5 h-7 sm:h-8 text-muted-foreground font-mono text-xs flex items-center justify-center select-none bg-muted/10"
                 >
                   ...
                 </span>
@@ -137,10 +198,10 @@ export function FilamentPagination({
                 onClick={() => onPageChange(item)}
                 aria-current={isCurrent ? "page" : undefined}
                 className={cn(
-                  "min-w-7 sm:min-w-8 h-7 sm:h-8 px-2 rounded-lg text-xs font-semibold transition-all flex items-center justify-center select-none",
+                  "min-w-7 sm:min-w-8 h-7 sm:h-8 px-2.5 text-xs font-semibold transition-all flex items-center justify-center select-none",
                   isCurrent
-                    ? "text-emerald-500 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 font-bold shadow-xs"
-                    : "text-muted-foreground hover:text-foreground hover:bg-accent/80 border border-transparent active:scale-95"
+                    ? "text-emerald-500 dark:text-emerald-400 bg-emerald-500/10 font-bold"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted/60 active:scale-95"
                 )}
               >
                 {item}
@@ -148,16 +209,31 @@ export function FilamentPagination({
             );
           })}
 
-          {/* Next Page Arrow Button */}
-          {currentPage < totalPages && (
+          {/* Next Page Arrow Button > */}
+          {currentPage < safeTotalPages && (
             <button
               type="button"
-              disabled={disabled || currentPage >= totalPages}
+              disabled={disabled || currentPage >= safeTotalPages}
               onClick={() => onPageChange(currentPage + 1)}
               aria-label="Next page"
-              className="size-7 sm:size-8 rounded-lg border border-border/60 hover:bg-accent hover:text-foreground text-muted-foreground flex items-center justify-center transition-colors active:scale-95 disabled:opacity-30 disabled:pointer-events-none"
+              title="Next page"
+              className="px-2.5 h-7 sm:h-8 text-muted-foreground hover:text-foreground hover:bg-muted/60 flex items-center justify-center transition-colors disabled:opacity-30 disabled:pointer-events-none"
             >
               <ChevronRightIcon className="size-3.5 sm:size-4" />
+            </button>
+          )}
+
+          {/* Last Page Button >> */}
+          {currentPage < safeTotalPages - 1 && safeTotalPages > 4 && (
+            <button
+              type="button"
+              disabled={disabled || currentPage >= safeTotalPages}
+              onClick={() => onPageChange(safeTotalPages)}
+              aria-label="Last page"
+              title="Last page"
+              className="px-2 h-7 sm:h-8 text-muted-foreground hover:text-foreground hover:bg-muted/60 flex items-center justify-center transition-colors disabled:opacity-30 disabled:pointer-events-none"
+            >
+              <ChevronsRightIcon className="size-3.5" />
             </button>
           )}
         </nav>

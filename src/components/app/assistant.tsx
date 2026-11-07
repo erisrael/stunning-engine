@@ -10,7 +10,7 @@
 import * as React from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { BotIcon, CheckIcon, CircleDotIcon, ExternalLinkIcon, HistoryIcon, Loader2Icon, MessageSquareIcon, MicIcon, MicOffIcon, PanelRightCloseIcon, PanelRightOpenIcon, PlayIcon, RotateCcwIcon, SendIcon, SparklesIcon, Trash2Icon, TriangleAlertIcon, Volume2Icon, VolumeXIcon, XIcon } from "lucide-react";
+import { BotIcon, CheckIcon, CircleDotIcon, ExternalLinkIcon, GripVerticalIcon, HistoryIcon, Loader2Icon, MessageSquareIcon, MicIcon, MicOffIcon, PanelRightCloseIcon, PanelRightOpenIcon, PlayIcon, RotateCcwIcon, SendIcon, SparklesIcon, Trash2Icon, TriangleAlertIcon, Volume2Icon, VolumeXIcon, XIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -414,6 +414,93 @@ export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantCo
   const [convId, setConvId] = React.useState<string | null>(null);
   const [convos, setConvos] = React.useState<Convo[] | null>(null);
   const [showConvos, setShowConvos] = React.useState(false);
+
+  // Movable Floating Widget State (PC / Desktop Draggable)
+  const [pos, setPos] = React.useState<{ x: number; y: number } | null>(null);
+  const containerRef = React.useRef<HTMLDivElement>(null);
+  const isDraggingRef = React.useRef(false);
+  const dragStartRef = React.useRef({ mouseX: 0, mouseY: 0, startX: 0, startY: 0 });
+
+  React.useEffect(() => {
+    try {
+      const saved = localStorage.getItem("assistant_pos_v2");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (typeof parsed?.x === "number" && typeof parsed?.y === "number") {
+          const clampedX = Math.min(Math.max(12, parsed.x), Math.max(12, window.innerWidth - 80));
+          const clampedY = Math.min(Math.max(12, parsed.y), Math.max(12, window.innerHeight - 80));
+          setPos({ x: clampedX, y: clampedY });
+        }
+      }
+    } catch {}
+
+    const handleResize = () => {
+      setPos((prev) => {
+        if (!prev) return null;
+        const clampedX = Math.min(Math.max(12, prev.x), Math.max(12, window.innerWidth - 80));
+        const clampedY = Math.min(Math.max(12, prev.y), Math.max(12, window.innerHeight - 80));
+        return { x: clampedX, y: clampedY };
+      });
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    if (dock && open) return;
+    if (e.button !== 0) return; // Left click only
+    const target = e.target as HTMLElement;
+    if (target.closest("button, input, select, textarea, a, [role='button']")) return;
+
+    const el = containerRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+
+    isDraggingRef.current = true;
+    dragStartRef.current = {
+      mouseX: e.clientX,
+      mouseY: e.clientY,
+      startX: rect.left,
+      startY: rect.top,
+    };
+
+    const handlePointerMove = (ev: PointerEvent) => {
+      if (!isDraggingRef.current) return;
+      const dx = ev.clientX - dragStartRef.current.mouseX;
+      const dy = ev.clientY - dragStartRef.current.mouseY;
+      const currentWidth = el.offsetWidth || 60;
+      const currentHeight = el.offsetHeight || 60;
+      const nextX = Math.min(Math.max(12, dragStartRef.current.startX + dx), Math.max(12, window.innerWidth - currentWidth - 12));
+      const nextY = Math.min(Math.max(12, dragStartRef.current.startY + dy), Math.max(12, window.innerHeight - currentHeight - 12));
+      setPos({ x: nextX, y: nextY });
+    };
+
+    const handlePointerUp = () => {
+      if (!isDraggingRef.current) return;
+      isDraggingRef.current = false;
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      setPos((cur) => {
+        if (cur) {
+          try {
+            localStorage.setItem("assistant_pos_v2", JSON.stringify(cur));
+          } catch {}
+        }
+        return cur;
+      });
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+  };
+
+  const handleResetPos = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setPos(null);
+    try {
+      localStorage.removeItem("assistant_pos_v2");
+    } catch {}
+  };
   React.useEffect(() => {
     const d = readLocal(DOCK_KEY) === "1";
     setDock(d);
@@ -682,7 +769,26 @@ export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantCo
       <RoutineRunner />
       {rec.recording && <RecordBar count={rec.steps.length} onStop={() => setToSave(rec.stop())} onCancel={() => rec.stop()} />}
       {toSave && <SaveRoutineDialog steps={toSave} sharing onClose={() => setToSave(null)} onSaved={() => (setToSave(null), loadRoutines())} />}
-      <div className={cn("no-print fixed z-50 flex flex-col items-end gap-2", dock && open ? "inset-y-0 right-0" : "right-4 bottom-20 md:bottom-4")} data-assistant data-docked={dock && open ? "1" : undefined}>
+      <div
+        ref={containerRef}
+        className={cn(
+          "no-print fixed z-50 flex flex-col items-end gap-2",
+          dock && open ? "inset-y-0 right-0" : pos ? "" : "right-4 bottom-20 md:bottom-4"
+        )}
+        style={
+          pos && (!dock || !open)
+            ? {
+                left: `${pos.x}px`,
+                top: `${pos.y}px`,
+                right: "auto",
+                bottom: "auto",
+                touchAction: "none",
+              }
+            : undefined
+        }
+        data-assistant
+        data-docked={dock && open ? "1" : undefined}
+      >
         {open && (
           <section
             role="dialog"
@@ -692,7 +798,15 @@ export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantCo
               dock ? "h-dvh w-screen border-l shadow-xl sm:w-[26rem]" : "max-h-[min(40rem,calc(100vh-6rem))] w-[24rem] max-w-[calc(100vw-2rem)] rounded-2xl border shadow-2xl",
             )}
           >
-            <header className="flex items-center gap-1.5 border-b bg-gradient-to-r from-[#4285F4]/10 via-[#9334E6]/10 to-[#EA4335]/10 px-3 py-2">
+            <header
+              onPointerDown={handlePointerDown}
+              onDoubleClick={handleResetPos}
+              title={dock ? undefined : "Drag to move assistant · Double-click to reset position"}
+              className={cn(
+                "flex items-center gap-1.5 border-b bg-gradient-to-r from-[#4285F4]/10 via-[#9334E6]/10 to-[#EA4335]/10 px-3 py-2 select-none",
+                !dock && "cursor-grab active:cursor-grabbing"
+              )}
+            >
               <SparklesIcon className="size-4 shrink-0 text-[#9334E6] dark:text-[#C58AF9]" />
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold">Assistant</p>
@@ -987,15 +1101,33 @@ export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantCo
             </form>
           </section>
         )}
-        <div className="flex items-center gap-2">
+        <div
+          className="flex items-center gap-1.5 p-1 rounded-full bg-background/85 backdrop-blur-xs border border-border/70 shadow-lg select-none"
+        >
+          {/* Subtle drag grip handle */}
+          <div
+            onPointerDown={handlePointerDown}
+            onDoubleClick={handleResetPos}
+            className="cursor-grab active:cursor-grabbing px-1 py-2 text-muted-foreground/60 hover:text-foreground transition-colors touch-none"
+            title="Drag to reposition anywhere on PC (Double-click to reset)"
+          >
+            <GripVerticalIcon className="size-3.5" />
+          </div>
           {!open && voiceOn && (
-            <Button size="icon" variant="outline" className="size-9 rounded-full bg-background shadow-md" aria-label="Speak to the assistant" title="Speak (Alt+V)" onClick={listen}>
+            <Button
+              size="icon"
+              variant="outline"
+              className="size-9 rounded-full bg-background shadow-xs hover:bg-muted"
+              aria-label="Speak to the assistant"
+              title="Speak (Alt+V)"
+              onClick={listen}
+            >
               <MicIcon className="text-[#EA4335]" />
             </Button>
           )}
           <Button
             size="icon"
-            className="size-11 rounded-full bg-gradient-to-br from-[#4285F4] via-[#9334E6] to-[#EA4335] text-white shadow-lg hover:opacity-90"
+            className="size-11 rounded-full bg-gradient-to-br from-[#4285F4] via-[#9334E6] to-[#EA4335] text-white shadow-md hover:opacity-95"
             aria-label={open ? "Close the assistant" : "Open the assistant"}
             aria-expanded={open}
             title="Assistant (Alt+A)"

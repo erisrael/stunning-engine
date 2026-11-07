@@ -1429,9 +1429,10 @@ export type LiveCmsPageResult = {
 
 export async function fetchLegacyCmsLivePage(
   user: AppUser,
-  opts: { category: LegacyCmsCategory; page?: number; search?: string }
+  opts: { category: LegacyCmsCategory; page?: number; pageSize?: number; search?: string }
 ): Promise<LiveCmsPageResult> {
   const page = Math.max(1, opts.page || 1);
+  const pageSize = opts.pageSize && opts.pageSize > 0 ? opts.pageSize : 10;
   const search = (opts.search || "").trim();
   const config = await getLegacyCmsConfig();
   const baseUrl = config.baseUrl.replace(/\/+$/, "");
@@ -1447,7 +1448,8 @@ export async function fetchLegacyCmsLivePage(
 
   const catPath = LEGACY_CMS_CATEGORIES.find((c) => c.key === opts.category)?.path || `/admin/${opts.category}`;
   const searchParam = search ? `&tableSearch=${encodeURIComponent(search)}` : "";
-  const targetUrl = `${baseUrl}${catPath}?page=${page}${searchParam}`;
+  const perPageParam = `&tableRecordsPerPage=${pageSize}`;
+  const targetUrl = `${baseUrl}${catPath}?page=${page}${perPageParam}${searchParam}`;
 
   const headers: Record<string, string> = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
@@ -1500,7 +1502,7 @@ export async function fetchLegacyCmsLivePage(
       to = parseInt(showingMatch[2].replace(/,/g, ""), 10);
       totalResults = parseInt(showingMatch[3].replace(/,/g, ""), 10);
     }
-    const totalPages = Math.max(1, Math.ceil(totalResults / 10));
+    const totalPages = Math.max(1, Math.ceil(totalResults / pageSize));
     const headersList: string[] = records.length > 0 ? Object.keys(records[0]).filter((k) => !k.startsWith("_")) : [];
 
     return {

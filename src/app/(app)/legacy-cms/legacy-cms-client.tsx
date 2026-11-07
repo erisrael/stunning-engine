@@ -55,6 +55,7 @@ import {
   ArrowRightIcon,
   Maximize2Icon,
   SendIcon,
+  ShieldIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -115,6 +116,9 @@ import type {
   CmsStorageCategoryStatus,
 } from "@/server/legacy-cms";
 import { FilamentPagination } from "@/components/app/legacy-cms/filament-pagination";
+import { SearchableRecipientCombobox, type QuestionRecipient } from "@/components/app/questions/searchable-recipient-combobox";
+import { QuestionRoutingConfigDialog } from "@/components/app/questions/question-routing-dialog";
+import { getEligibleQuestionRecipientsAction } from "@/app/actions/question-routing";
 import { cn } from "@/lib/utils";
 
 const CATEGORY_PATHS: Record<LegacyCmsCategory, string> = {
@@ -179,8 +183,8 @@ export function LegacyCmsClient({
   const [statusFilter, setStatusFilter] = React.useState<string>("all");
   const [gradeFilter, setGradeFilter] = React.useState<string>("all");
 
-  // Date Range Filters: "all" | "today" | "week" | "month" | "custom"
-  const [dateFilter, setDateFilter] = React.useState<"all" | "today" | "week" | "month" | "custom">("all");
+  // Date Range Filters: "all" | "today" | "yesterday" | "week" | "month" | "30days" | "custom"
+  const [dateFilter, setDateFilter] = React.useState<"all" | "today" | "yesterday" | "week" | "month" | "30days" | "custom">("all");
   const [customStartDate, setCustomStartDate] = React.useState<string>("");
   const [customEndDate, setCustomEndDate] = React.useState<string>("");
 
@@ -190,6 +194,7 @@ export function LegacyCmsClient({
 
   // Live CMS Pagination & Search State
   const [livePage, setLivePage] = React.useState(1);
+  const [livePageSize, setLivePageSize] = React.useState<number>(10);
   const [liveTotalPages, setLiveTotalPages] = React.useState(1);
   const [liveTotalResults, setLiveTotalResults] = React.useState(0);
   const [liveFrom, setLiveFrom] = React.useState(0);
@@ -197,6 +202,10 @@ export function LegacyCmsClient({
   const [liveRecords, setLiveRecords] = React.useState<Record<string, string>[]>([]);
   const [liveHeaders, setLiveHeaders] = React.useState<string[]>([]);
   const [liveLoading, setLiveLoading] = React.useState(false);
+
+  // Question Recipients Routing State
+  const [eligibleRecipients, setEligibleRecipients] = React.useState<QuestionRecipient[]>(staffUsers);
+  const [routingConfigOpen, setRoutingConfigOpen] = React.useState(false);
 
   // Storage & Archives State
   const [storageStatus, setStorageStatus] = React.useState<CmsStorageCategoryStatus[]>(initialStorage || []);
@@ -358,13 +367,19 @@ export function LegacyCmsClient({
 
   React.useEffect(() => {
     void handleCheckAuthStatus(false);
+    getEligibleQuestionRecipientsAction().then((res) => {
+      if (res.ok && res.recipients && res.recipients.length > 0) {
+        setEligibleRecipients(res.recipients);
+      }
+    });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch Live Page directly from Noor CMS
-  const handleFetchLivePage = async (cat: LegacyCmsCategory, pageNum: number, searchQ: string) => {
+  const handleFetchLivePage = async (cat: LegacyCmsCategory, pageNum: number, searchQ: string, size?: number) => {
+    const s = size ?? livePageSize;
     setLiveLoading(true);
     try {
-      const res = await fetchLegacyCmsLivePageAction({ category: cat, page: pageNum, search: searchQ });
+      const res = await fetchLegacyCmsLivePageAction({ category: cat, page: pageNum, pageSize: s, search: searchQ });
       setLiveLoading(false);
       if (res.ok) {
         setLiveRecords(res.records);
@@ -387,7 +402,7 @@ export function LegacyCmsClient({
   // Switch between Live and Scraped modes
   React.useEffect(() => {
     if (dataSourceMode === "live") {
-      handleFetchLivePage(category, 1, search);
+      handleFetchLivePage(category, 1, search, livePageSize);
     }
   }, [category, dataSourceMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -657,41 +672,87 @@ export function LegacyCmsClient({
     toast.success(`Exported ${filename}.csv (Excel compatible)`);
   };
 
+  // Robust Date extraction from any CMS / Filament record
+  const extractDateFromRecord = (itemData: Record<string, any>): Date | null => {
+    if (!itemData || typeof itemData !== "object") return null;
+
+    // Scan prioritized keys (space-insensitive and casing-insensitive)
+    for (const [k, v] of Object.entries(itemData)) {
+      if (!v || typeof v === "object") continue;
+      const cleanKey = k.toLowerCase().replace(/[\s_-]+/g, "");
+      if (
+        cleanKey === "createdat" ||
+        cleanKey === "date" ||
+        cleanKey === "invoicedate" ||
+        cleanKey === "paymentdate" ||
+        cleanKey === "startsat" ||
+        cleanKey === "starts" ||
+        cleanKey === "expiresat" ||
+        cleanKey === "joinedat" ||
+        cleanKey === "registeredat" ||
+        cleanKey === "syncedat" ||
+        cleanKey.includes("date") ||
+        cleanKey.includes("created") ||
+        cleanKey.includes("joined")
+      ) {
+        const strVal = String(v).trim();
+        if (strVal.length >= 8) {
+          const d = new Date(strVal.replace(" ", "T"));
+          if (!isNaN(d.getTime())) return d;
+        }
+      }
+    }
+
+    // Secondary scan for any date-like string
+    for (const v of Object.values(itemData)) {
+      if (typeof v === "string" && /^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}/.test(v.trim())) {
+        const d = new Date(v.trim().replace(" ", "T"));
+        if (!isNaN(d.getTime())) return d;
+      }
+    }
+
+    return null;
+  };
+
   // Date Filter evaluation helper
   const matchesDateFilter = (itemData: Record<string, any>) => {
     if (dateFilter === "all") return true;
-    const now = new Date();
-    // Look for any date string in the record
-    const dateValStr =
-      itemData.date ||
-      itemData.Date ||
-      itemData.created_at ||
-      itemData.synced_at ||
-      itemData.created ||
-      itemData.Started_At ||
-      itemData.Expires_At;
+    const d = extractDateFromRecord(itemData);
+    if (!d) return false; // When an active date filter is selected, records without a valid date do not match!
 
-    if (!dateValStr) return true; // If no date column exists, keep it
-    const d = new Date(dateValStr);
-    if (isNaN(d.getTime())) return true;
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
 
     if (dateFilter === "today") {
-      return (
-        d.getFullYear() === now.getFullYear() &&
-        d.getMonth() === now.getMonth() &&
-        d.getDate() === now.getDate()
-      );
+      return d >= todayStart && d <= todayEnd;
+    }
+    if (dateFilter === "yesterday") {
+      const yestStart = new Date(todayStart.getTime() - 864e5);
+      const yestEnd = new Date(todayStart.getTime() - 1);
+      return d >= yestStart && d <= yestEnd;
     }
     if (dateFilter === "week") {
-      const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-      return d >= oneWeekAgo && d <= now;
+      const oneWeekAgo = new Date(todayEnd.getTime() - 7 * 864e5);
+      return d >= oneWeekAgo && d <= todayEnd;
     }
     if (dateFilter === "month") {
-      return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+      return d >= monthStart && d <= todayEnd;
+    }
+    if (dateFilter === "30days") {
+      const thirtyDaysAgo = new Date(todayEnd.getTime() - 30 * 864e5);
+      return d >= thirtyDaysAgo && d <= todayEnd;
     }
     if (dateFilter === "custom") {
-      if (customStartDate && d < new Date(customStartDate)) return false;
-      if (customEndDate && d > new Date(`${customEndDate}T23:59:59`)) return false;
+      if (customStartDate) {
+        const start = new Date(`${customStartDate}T00:00:00`);
+        if (!isNaN(start.getTime()) && d < start) return false;
+      }
+      if (customEndDate) {
+        const end = new Date(`${customEndDate}T23:59:59.999`);
+        if (!isNaN(end.getTime()) && d > end) return false;
+      }
       return true;
     }
     return true;
@@ -724,6 +785,26 @@ export function LegacyCmsClient({
       return true;
     });
   }, [records, search, statusFilter, gradeFilter, dateFilter, customStartDate, customEndDate]);
+
+  // Filtered Live Records (Enriched direct CMS live filtering)
+  const filteredLiveRecords = React.useMemo(() => {
+    return liveRecords.filter((r) => {
+      // Status filter
+      if (statusFilter !== "all") {
+        const rowStatus = String(r.Status || r.status || r["Payment Status"] || r["Subscription Status"] || "").toLowerCase();
+        if (rowStatus && !rowStatus.includes(statusFilter.toLowerCase())) return false;
+      }
+      // Grade filter
+      if (gradeFilter !== "all") {
+        const rowGrade = String(r.Grade || r.grade || r.Grades || r.grades || r.Plan || r.plan || "").toLowerCase();
+        if (rowGrade && !rowGrade.includes(gradeFilter.toLowerCase())) return false;
+      }
+      // Date filter
+      if (!matchesDateFilter(r)) return false;
+
+      return true;
+    });
+  }, [liveRecords, statusFilter, gradeFilter, dateFilter, customStartDate, customEndDate]);
 
   // Paginated Scraped Records
   const paginatedScrapedRecords = React.useMemo(() => {
@@ -1036,8 +1117,10 @@ export function LegacyCmsClient({
                 {[
                   { key: "all", label: "All Time" },
                   { key: "today", label: "Today" },
+                  { key: "yesterday", label: "Yesterday" },
                   { key: "week", label: "This Week" },
                   { key: "month", label: "This Month" },
+                  { key: "30days", label: "Last 30 Days" },
                   { key: "custom", label: "Custom Range" },
                 ].map((df) => (
                   <Button
@@ -1179,14 +1262,14 @@ export function LegacyCmsClient({
                         Fetching live data from cms.noorethiopia.com...
                       </TableCell>
                     </TableRow>
-                  ) : liveRecords.length === 0 ? (
+                  ) : filteredLiveRecords.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={Math.max(1, liveHeaders.length + 1)} className="text-center py-12 text-xs text-muted-foreground">
-                        No live records found on this page.
+                        {liveRecords.length > 0 ? "No records on this page match your active filters." : "No live records found on this page."}
                       </TableCell>
                     </TableRow>
                   ) : (
-                    liveRecords.map((r, idx) => (
+                    filteredLiveRecords.map((r, idx) => (
                       <TableRow
                         key={idx}
                         className="text-xs hover:bg-muted/30 cursor-context-menu"
@@ -1318,11 +1401,15 @@ export function LegacyCmsClient({
               totalResults={liveTotalResults}
               currentPage={livePage}
               totalPages={liveTotalPages}
-              pageSize={10}
-              pageSizeOptions={[10, 25, 50]}
+              pageSize={livePageSize}
+              pageSizeOptions={[10, 25, 50, 100, 250]}
               disabled={liveLoading}
-              onPageChange={(p) => handleFetchLivePage(category, p, search)}
-              sourceLabel={`Live ${CATEGORY_PATHS[category]}`}
+              onPageChange={(p) => handleFetchLivePage(category, p, search, livePageSize)}
+              onPageSizeChange={(s) => {
+                setLivePageSize(s);
+                handleFetchLivePage(category, 1, search, s);
+              }}
+              sourceLabel={`Live ${CATEGORY_PATHS[category]} (${filteredLiveRecords.length} on page)`}
             />
           ) : (
             <FilamentPagination
@@ -1332,7 +1419,7 @@ export function LegacyCmsClient({
               currentPage={currentPage}
               totalPages={totalScrapedPages}
               pageSize={pageSize}
-              pageSizeOptions={[10, 25, 50, 100]}
+              pageSizeOptions={[10, 25, 50, 100, 250]}
               allowAll={true}
               onPageChange={(p) => setCurrentPage(p)}
               onPageSizeChange={(s) => {
@@ -2138,23 +2225,26 @@ export function LegacyCmsClient({
 
           <div className="space-y-3 py-2 text-xs">
             <div className="space-y-1">
-              <Label htmlFor="rep-owner" className="text-xs font-semibold">Assign Recipient / Staff Member</Label>
-              <select
-                id="rep-owner"
-                value={reportData.ownerId}
-                onChange={(e) => setReportData({ ...reportData, ownerId: e.target.value })}
-                className="w-full h-8 rounded-lg border bg-background px-2 text-xs"
-              >
-                {staffUsers.length === 0 ? (
-                  <option value="">No staff members found</option>
-                ) : (
-                  staffUsers.map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.name} (@{u.handle} · {u.role || "Staff"})
-                    </option>
-                  ))
+              <div className="flex items-center justify-between">
+                <Label htmlFor="rep-owner" className="text-xs font-semibold">Assign Recipient / Staff Member</Label>
+                {isAdmin && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-5 px-1.5 text-[10px] text-muted-foreground hover:text-foreground"
+                    onClick={() => setRoutingConfigOpen(true)}
+                  >
+                    <ShieldIcon className="size-3 mr-1 text-emerald-500" />
+                    Routing Rules
+                  </Button>
                 )}
-              </select>
+              </div>
+              <SearchableRecipientCombobox
+                users={eligibleRecipients}
+                value={reportData.ownerId}
+                onChange={(val) => setReportData({ ...reportData, ownerId: val })}
+              />
             </div>
 
             <div className="space-y-1">
@@ -2185,6 +2275,11 @@ export function LegacyCmsClient({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <QuestionRoutingConfigDialog
+        open={routingConfigOpen}
+        onOpenChange={setRoutingConfigOpen}
+      />
     </div>
   );
 }

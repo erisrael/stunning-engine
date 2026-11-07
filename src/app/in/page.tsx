@@ -15,7 +15,7 @@ export const metadata = { title: "Check in" };
 // After the first sign-in the phone stays signed in, so it is one tap.
 export default async function CheckinPage({ searchParams }: { searchParams: Promise<{ c?: string }> }) {
   const { c } = await searchParams;
-  const code = c && /^[\w-]+\.[\w-]+$/.test(c) ? c : null;
+  const code = c && /^[\w.-]+$/.test(c) ? c : null;
   const viewer = await getViewer();
   if (!viewer) redirect(`/login?next=${encodeURIComponent(code ? `/in?c=${code}` : "/in")}`);
   let body: React.ReactNode;

@@ -177,6 +177,47 @@ async function where(c: CaptureConfig, input: { code?: string | null; lat?: numb
   let site: Site | null = null;
   let via: "qr" | "network" = "network";
   if (input.code) {
+    if (input.code.startsWith("kiosk.")) {
+      const parts = input.code.split(".");
+      const kioskId = parts[1];
+      const timestamp = Number(parts[2]);
+      const sig = parts[3];
+
+      if (!kioskId || !timestamp || !sig) {
+        return { ok: false, reason: "Malformed dynamic kiosk QR code.", site: null, via: "qr", needLocation: false, distance: null, ip, deviceOk: false };
+      }
+
+      const kiosk = await get<{ id: string; name: string; sign_key: string }>("SELECT id, name, sign_key FROM att_kiosks WHERE id = ? AND active = 1", kioskId);
+      if (!kiosk || !kiosk.sign_key) {
+        return { ok: false, reason: "Unrecognized kiosk terminal.", site: null, via: "qr", needLocation: false, distance: null, ip, deviceOk: false };
+      }
+
+      // Verify timestamp freshness: allow within 120 seconds of rotation window
+      const diff = Math.abs(Date.now() - timestamp);
+      if (diff > 120_000) {
+        return { ok: false, reason: "This dynamic QR code has expired. Please scan the refreshing QR code on the kiosk screen.", site: null, via: "qr", needLocation: false, distance: null, ip, deviceOk: false };
+      }
+
+      // Verify cryptographic signature
+      const expectedSig = crypto.createHmac("sha256", kiosk.sign_key).update(`${kiosk.id}:${timestamp}`).digest("base64url");
+      const sigMatch = sig.length === expectedSig.length && crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expectedSig));
+      if (!sigMatch) {
+        return { ok: false, reason: "Invalid kiosk QR security signature.", site: null, via: "qr", needLocation: false, distance: null, ip, deviceOk: false };
+      }
+
+      return {
+        ok: true,
+        reason: null,
+        site: { id: kiosk.id, name: kiosk.name },
+        via: "qr",
+        needLocation: false,
+        distance: null,
+        ip,
+        deviceOk: true,
+      };
+    }
+
+    // Static printed poster code (fail-safe mechanism)
     const [id, key] = input.code.split(".");
     site = c.sites.find((s) => s.id === id) ?? null;
     const same = (a: string, b: string) => crypto.timingSafeEqual(crypto.createHash("sha256").update(a).digest(), crypto.createHash("sha256").update(b).digest());

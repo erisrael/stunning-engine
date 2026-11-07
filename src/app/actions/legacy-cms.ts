@@ -195,6 +195,7 @@ export async function getLegacyCmsGrowthAnalyticsAction() {
 export async function fetchLegacyCmsLivePageAction(opts: {
   category: LegacyCmsCategory;
   page?: number;
+  pageSize?: number;
   search?: string;
 }) {
   try {

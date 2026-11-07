@@ -47,7 +47,7 @@ export function CaptureSetup({ att, cap, status, origin }: { att: AttendanceConf
   const save = async () => {
     setBusy(true);
     const sites = c.sites.map((s, i) => ({ ...s, networks: (nets[i] ?? "").split(/[\s,;]+/).filter(Boolean) }));
-    const r1 = await saveAttendanceConfigAction({ methods: a.methods, faceThreshold: a.faceThreshold, site: a.site, kioskSilenceMin: a.kioskSilenceMin, offlineMaxHours: a.offlineMaxHours });
+    const r1 = await saveAttendanceConfigAction({ methods: a.methods, faceThreshold: a.faceThreshold, site: a.site, kioskSilenceMin: a.kioskSilenceMin, offlineMaxHours: a.offlineMaxHours, qrRefreshIntervalSec: a.qrRefreshIntervalSec });
     const r2 = r1.ok ? await saveCaptureConfigAction({ ...c, sites }) : r1;
     setBusy(false);
     if (!r2.ok) return void toast.error(r2.error);
@@ -257,6 +257,12 @@ export function CaptureSetup({ att, cap, status, origin }: { att: AttendanceConf
           </Row>
           <Row label="Offline check-ins" hint="Hours a kiosk may keep check-ins while the network is down.">
             <Input type="number" min={1} value={a.offlineMaxHours} onChange={(e) => setA({ ...a, offlineMaxHours: num(e.target.value) })} className="w-24" aria-label="Offline hours" />
+          </Row>
+          <Row label="Kiosk QR rotation interval" hint="Seconds between dynamic QR code refreshes on the entrance kiosk tablet display (prevents static screenshot reuse).">
+            <div className="flex items-center gap-2">
+              <Input type="number" min={5} max={120} value={a.qrRefreshIntervalSec ?? 15} onChange={(e) => setA({ ...a, qrRefreshIntervalSec: Math.max(5, num(e.target.value)) })} className="w-24" aria-label="Kiosk QR refresh interval in seconds" />
+              <span className="text-xs text-muted-foreground">seconds</span>
+            </div>
           </Row>
         </CardContent>
       </Card>

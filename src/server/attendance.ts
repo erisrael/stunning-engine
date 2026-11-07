@@ -68,12 +68,13 @@ export async function attendanceConfig(): Promise<AttendanceConfig> {
     },
     site: { ...DEFAULT_ATTENDANCE.site, ...(stored.site ?? {}) },
     shifts: stored.shifts?.length ? stored.shifts : DEFAULT_ATTENDANCE.shifts,
+    qrRefreshIntervalSec: Math.max(5, Math.min(120, Number(stored.qrRefreshIntervalSec ?? DEFAULT_ATTENDANCE.qrRefreshIntervalSec))),
   };
 }
 
 // How people check in (methods, the phone site, face strictness, kiosk timings) is Admin's ("Attendance capture
 // setup"); shifts, breaks and rules are HR's.
-const CAPTURE_KEYS: (keyof AttendanceConfig)[] = ["methods", "site", "faceThreshold", "kioskSilenceMin", "offlineMaxHours"];
+const CAPTURE_KEYS: (keyof AttendanceConfig)[] = ["methods", "site", "faceThreshold", "kioskSilenceMin", "offlineMaxHours", "qrRefreshIntervalSec"];
 
 export async function saveAttendanceConfig(user: AppUser, input: Partial<AttendanceConfig>) {
   const touchesCapture = CAPTURE_KEYS.some((k) => input[k] !== undefined);
@@ -121,6 +122,7 @@ export async function saveAttendanceConfig(user: AppUser, input: Partial<Attenda
     site: { label: clean(site.label, 60) || "Office", lat: lat !== null && Number.isFinite(lat) ? lat : null, lng: lng !== null && Number.isFinite(lng) ? lng : null, radiusM: num(site.radiusM, 200, 20, 5000) },
     kioskSilenceMin: num(input.kioskSilenceMin ?? cur.kioskSilenceMin, 30, 5, 600),
     offlineMaxHours: num(input.offlineMaxHours ?? cur.offlineMaxHours, 72, 1, 240),
+    qrRefreshIntervalSec: num(input.qrRefreshIntervalSec ?? cur.qrRefreshIntervalSec, 15, 5, 120),
     deductBreakOverrun: !!(input.deductBreakOverrun ?? cur.deductBreakOverrun),
     policy: clean(input.policy ?? cur.policy, 6000),
   };
@@ -925,7 +927,17 @@ export async function kioskPing(k: KioskRow) {
   await run("UPDATE att_kiosks SET last_seen_at = ?, alerted_at = NULL WHERE id = ?", nowIso(), k.id);
   const cfg = await attendanceConfig();
   const s = await getSettings();
-  return { name: k.name, signKey: k.sign_key, kioskOn: cfg.methods.kiosk, faceOn: cfg.methods.face, timezone: s.workspace.timezone, workspace: s.workspace.name, offlineMaxHours: cfg.offlineMaxHours };
+  return {
+    id: k.id,
+    name: k.name,
+    signKey: k.sign_key,
+    kioskOn: cfg.methods.kiosk,
+    faceOn: cfg.methods.face,
+    timezone: s.workspace.timezone,
+    workspace: s.workspace.name,
+    offlineMaxHours: cfg.offlineMaxHours,
+    qrRefreshIntervalSec: cfg.qrRefreshIntervalSec ?? 15,
+  };
 }
 
 // Wrong PINs lock that employee number on that kiosk for ten minutes after five tries.

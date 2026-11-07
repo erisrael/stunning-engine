@@ -1,7 +1,22 @@
 "use client";
 
 import * as React from "react";
-import { CameraIcon, CheckCircle2Icon, DeleteIcon, KeyRoundIcon, Loader2Icon, ScanFaceIcon, WifiOffIcon, XCircleIcon } from "lucide-react";
+import QRCode from "qrcode";
+import {
+  CameraIcon,
+  CheckCircle2Icon,
+  DeleteIcon,
+  KeyRoundIcon,
+  Loader2Icon,
+  Maximize2Icon,
+  Minimize2Icon,
+  QrCodeIcon,
+  RefreshCwIcon,
+  ScanFaceIcon,
+  SparklesIcon,
+  WifiOffIcon,
+  XCircleIcon,
+} from "lucide-react";
 import { blinkWatcher, loadFaceApi, readFace } from "./face";
 import { Button } from "@/components/ui/button";
 import { DAY_STATUS_LABELS, type DayStatus, type EventKind } from "@/lib/attendance";
@@ -46,11 +61,16 @@ type Detector = { detect: (src: CanvasImageSource) => Promise<{ rawValue: string
 
 export function KioskScreen({ initialName }: { initialName: string }) {
   const [name, setName] = React.useState(initialName);
+  const [kioskId, setKioskId] = React.useState<string>("");
   const [tz, setTz] = React.useState<string | undefined>(undefined);
   const [now, setNow] = React.useState(() => new Date());
   const [online, setOnline] = React.useState(true);
   const [queued, setQueued] = React.useState(0);
-  const [mode, setMode] = React.useState<"badge" | "code" | "pin" | "face">("badge");
+  const [mode, setMode] = React.useState<"qr_display" | "face" | "badge" | "code" | "pin">("qr_display");
+  const [qrRefreshIntervalSec, setQrRefreshIntervalSec] = React.useState<number>(15);
+  const [qrDataUrl, setQrDataUrl] = React.useState<string>("");
+  const [qrSecondsLeft, setQrSecondsLeft] = React.useState<number>(15);
+  const [isFullscreen, setIsFullscreen] = React.useState(false);
   const [faceOn, setFaceOn] = React.useState(false);
   const [faceMsg, setFaceMsg] = React.useState("");
   const faceVideo = React.useRef<HTMLVideoElement>(null);
@@ -67,6 +87,27 @@ export function KioskScreen({ initialName }: { initialName: string }) {
 
   const clock = (d: Date, withSeconds = false) => d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: withSeconds ? "2-digit" : undefined, hour12: false, timeZone: tz });
 
+  // Dynamic rotating QR Code generation
+  const generateRotatingQr = React.useCallback(async () => {
+    const key = signKey.current;
+    if (!key || !kioskId) return;
+    try {
+      const ts = Date.now();
+      const sig = await sign(key, `${kioskId}:${ts}`);
+      const checkinUrl = `${window.location.origin}/in?c=kiosk.${kioskId}.${ts}.${sig}`;
+      const urlData = await QRCode.toDataURL(checkinUrl, {
+        width: 320,
+        margin: 1,
+        color: { dark: "#0f172a", light: "#ffffff" },
+        errorCorrectionLevel: "M",
+      });
+      setQrDataUrl(urlData);
+      setQrSecondsLeft(qrRefreshIntervalSec);
+    } catch (e) {
+      console.warn("Failed to generate rotating QR code:", e);
+    }
+  }, [kioskId, qrRefreshIntervalSec]);
+
   // Heartbeat: keeps the kiosk counted as working, and fetches the key for offline check-ins.
   const ping = React.useCallback(async () => {
     try {
@@ -76,9 +117,12 @@ export function KioskScreen({ initialName }: { initialName: string }) {
         setName(r.data.name);
         setTz(r.data.timezone);
         setFaceOn(!!r.data.faceOn);
+        if (r.data.id) setKioskId(r.data.id);
+        if (r.data.qrRefreshIntervalSec) setQrRefreshIntervalSec(r.data.qrRefreshIntervalSec);
         signKey.current = r.data.signKey;
         try {
           localStorage.setItem("myseed-kiosk-key", r.data.signKey ?? "");
+          if (r.data.id) localStorage.setItem("myseed-kiosk-id", r.data.id);
         } catch {}
       } else if (r.status === 401) window.location.reload();
     } catch {
@@ -107,6 +151,8 @@ export function KioskScreen({ initialName }: { initialName: string }) {
   React.useEffect(() => {
     try {
       signKey.current = localStorage.getItem("myseed-kiosk-key");
+      const savedId = localStorage.getItem("myseed-kiosk-id");
+      if (savedId) setKioskId(savedId);
     } catch {}
     void ping().then(sync);
     const t1 = setInterval(() => setNow(new Date()), 1000);
@@ -119,6 +165,33 @@ export function KioskScreen({ initialName }: { initialName: string }) {
       window.removeEventListener("online", back);
     };
   }, [ping, sync]);
+
+  // QR rotation timer
+  React.useEffect(() => {
+    if (mode !== "qr_display" || !kioskId) return;
+    void generateRotatingQr();
+
+    const t = setInterval(() => {
+      setQrSecondsLeft((prev) => {
+        if (prev <= 1) {
+          void generateRotatingQr();
+          return qrRefreshIntervalSec;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(t);
+  }, [mode, kioskId, qrRefreshIntervalSec, generateRotatingQr]);
+
+  // Fullscreen toggle for tablet kiosk mode
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().then(() => setIsFullscreen(true)).catch(() => {});
+    } else {
+      document.exitFullscreen().then(() => setIsFullscreen(false)).catch(() => {});
+    }
+  };
 
   // Keep the badge field focused, so a scanner's typing always lands in it.
   React.useEffect(() => {
@@ -268,16 +341,65 @@ export function KioskScreen({ initialName }: { initialName: string }) {
 
   return (
     <div className="flex min-h-dvh flex-col bg-[#14132a] text-[#ecebf7]" style={{ paddingLeft: "max(16px, env(safe-area-inset-left, 0px))", paddingRight: "max(16px, env(safe-area-inset-right, 0px))" }}>
-      <header className="flex items-center gap-3 py-4">
-        <p className="text-lg font-semibold">{name}</p>
-        <span className={cn("ml-auto flex items-center gap-1.5 rounded-full px-3 py-1 text-sm", online ? "bg-emerald-500/15 text-emerald-300" : "bg-amber-500/15 text-amber-300")}>
-          {online ? "Online" : (
-            <>
-              <WifiOffIcon className="size-4" /> Offline: check-ins are kept
-            </>
-          )}
-        </span>
-        {queued > 0 && <span className="rounded-full bg-white/10 px-3 py-1 text-sm">{queued} waiting to send</span>}
+      <header className="flex flex-wrap items-center justify-between gap-3 py-3 border-b border-white/10">
+        <div className="flex items-center gap-3">
+          <p className="text-lg font-bold tracking-tight">{name}</p>
+          <span className={cn("flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium", online ? "bg-emerald-500/15 text-emerald-300" : "bg-amber-500/15 text-amber-300")}>
+            {online ? "Online" : (
+              <>
+                <WifiOffIcon className="size-3.5" /> Offline
+              </>
+            )}
+          </span>
+          {queued > 0 && <span className="rounded-full bg-white/10 px-2.5 py-0.5 text-xs font-mono">{queued} waiting</span>}
+        </div>
+
+        {/* MODE SELECTOR TABS & FULLSCREEN TOGGLE */}
+        <div className="flex items-center gap-2">
+          <div className="flex items-center bg-white/5 border border-white/10 rounded-lg p-0.5 text-xs">
+            <button
+              type="button"
+              onClick={() => setMode("qr_display")}
+              className={cn(
+                "px-3 py-1 rounded-md text-xs font-semibold transition-colors flex items-center gap-1.5",
+                mode === "qr_display" ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30" : "text-[#a9a6c9] hover:text-[#ecebf7]"
+              )}
+            >
+              <QrCodeIcon className="size-3.5" /> Dynamic QR
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode("face")}
+              className={cn(
+                "px-3 py-1 rounded-md text-xs font-semibold transition-colors flex items-center gap-1.5",
+                mode === "face" ? "bg-blue-500/20 text-blue-300 border border-blue-500/30" : "text-[#a9a6c9] hover:text-[#ecebf7]"
+              )}
+            >
+              <ScanFaceIcon className="size-3.5" /> Face Check-In
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode("badge")}
+              className={cn(
+                "px-3 py-1 rounded-md text-xs font-semibold transition-colors flex items-center gap-1.5",
+                mode === "badge" || mode === "code" || mode === "pin" ? "bg-purple-500/20 text-purple-300 border border-purple-500/30" : "text-[#a9a6c9] hover:text-[#ecebf7]"
+              )}
+            >
+              <KeyRoundIcon className="size-3.5" /> Badge / PIN
+            </button>
+          </div>
+
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={toggleFullscreen}
+            className="size-8 rounded-lg bg-white/5 text-[#a9a6c9] hover:text-white hover:bg-white/10"
+            title={isFullscreen ? "Exit Fullscreen" : "Fullscreen Tablet Mode"}
+          >
+            {isFullscreen ? <Minimize2Icon className="size-4" /> : <Maximize2Icon className="size-4" />}
+          </Button>
+        </div>
       </header>
 
       <main className="flex flex-1 flex-col items-center justify-center gap-8 pb-10 text-center">
@@ -316,15 +438,69 @@ export function KioskScreen({ initialName }: { initialName: string }) {
               </>
             )}
           </div>
+        ) : mode === "qr_display" ? (
+          <div className="flex w-full max-w-md flex-col items-center gap-6 animate-in fade-in-0 zoom-in-95 duration-200">
+            {/* Dynamic Rotating QR Card */}
+            <div className="relative rounded-3xl bg-white p-6 shadow-2xl flex flex-col items-center text-slate-900 border-4 border-emerald-500/40">
+              {qrDataUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={qrDataUrl}
+                  alt="Dynamic Refreshing Attendance QR Code"
+                  className="size-64 sm:size-72 rounded-xl object-contain shadow-xs"
+                />
+              ) : (
+                <div className="size-64 sm:size-72 flex flex-col items-center justify-center gap-2 bg-slate-100 rounded-xl">
+                  <Loader2Icon className="size-8 animate-spin text-slate-500" />
+                  <p className="text-xs text-slate-600 font-medium">Generating rotating QR code…</p>
+                </div>
+              )}
+
+              {/* Progress ring & countdown badge */}
+              <div className="mt-4 flex items-center justify-center gap-2 w-full">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold">
+                  <RefreshCwIcon className="size-3 animate-spin text-emerald-600" />
+                  Rotates in <strong className="font-mono text-sm">{qrSecondsLeft}s</strong>
+                </span>
+                <span className="text-[11px] text-slate-500">
+                  (every {qrRefreshIntervalSec}s interval)
+                </span>
+              </div>
+            </div>
+
+            {/* Instruction description */}
+            <div className="space-y-1.5 max-w-sm">
+              <p className="text-xl font-bold tracking-tight text-[#ecebf7]">Scan with your phone camera</p>
+              <p className="text-xs text-[#a9a6c9]">
+                Open the camera or MySeed app to record your check-in or out.
+                This QR code refreshes automatically to prevent screenshot sharing.
+              </p>
+            </div>
+
+            {/* Quick action buttons */}
+            <div className="flex flex-wrap justify-center gap-3 pt-2">
+              <Button size="lg" variant="secondary" className="gap-2 bg-white/10 hover:bg-white/15 text-[#ecebf7]" onClick={() => setMode("face")}>
+                <ScanFaceIcon className="size-4 text-blue-400" /> Check In With Face
+              </Button>
+              <Button size="lg" variant="secondary" className="gap-2 bg-white/10 hover:bg-white/15 text-[#ecebf7]" onClick={() => setMode("badge")}>
+                <KeyRoundIcon className="size-4 text-purple-400" /> Use Badge or PIN
+              </Button>
+            </div>
+          </div>
         ) : mode === "face" ? (
           <div className="flex w-full max-w-xl flex-col items-center gap-4">
             <video ref={faceVideo} muted playsInline className="aspect-[4/3] w-full max-w-md -scale-x-100 rounded-2xl bg-black object-cover" aria-label="Camera" />
             <p className="text-2xl font-semibold" role="status" aria-live="polite">
               {faceMsg}
             </p>
-            <Button size="lg" variant="secondary" onClick={() => setMode("badge")}>
-              Use my badge or PIN instead
-            </Button>
+            <div className="flex flex-wrap justify-center gap-3">
+              <Button size="lg" variant="secondary" className="gap-1.5" onClick={() => setMode("qr_display")}>
+                <QrCodeIcon className="size-4 text-emerald-400" /> Back to QR Screen
+              </Button>
+              <Button size="lg" variant="secondary" onClick={() => setMode("badge")}>
+                Use my badge or PIN instead
+              </Button>
+            </div>
           </div>
         ) : mode === "badge" ? (
           <div className="flex w-full max-w-xl flex-col items-center gap-5">
@@ -343,6 +519,9 @@ export function KioskScreen({ initialName }: { initialName: string }) {
             </form>
             {camera && <video ref={videoRef} muted playsInline className="aspect-video w-full max-w-md rounded-xl bg-black object-cover" />}
             <div className="flex flex-wrap justify-center gap-3">
+              <Button size="lg" variant="secondary" className="gap-1.5" onClick={() => setMode("qr_display")}>
+                <QrCodeIcon className="size-4 text-emerald-400" /> Back to QR Screen
+              </Button>
               {faceOn && online && (
                 <Button size="lg" onClick={() => (setCamera(false), setMode("face"))}>
                   <ScanFaceIcon /> Check in with my face

@@ -63,6 +63,7 @@ export default async function LegacyCmsPage({
     id: u.id,
     name: u.name,
     handle: u.handle,
+    roles: u.roles,
     role: u.roles[0] || "staff",
   }));
 
