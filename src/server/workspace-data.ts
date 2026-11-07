@@ -3,15 +3,12 @@ import { TABLES } from "./schema";
 import { getSettings } from "./settings";
 import { hashPassword } from "./passwords";
 import {
-  acceptHandoff,
   addAsset,
   audit,
   createItem,
   currentAttempt,
   recordStageCompletion,
   releaseToProduction,
-  setChecklist,
-  submitHandoff,
   WorkflowError,
   type Ctx,
 } from "./workflow";
@@ -567,7 +564,6 @@ export async function importCurriculumBackup(
 
   // One production item per part. Parts with videos have been recorded: each video becomes a
   // raw recording identified by its camera code, and the Recording stage is handed to Editing.
-  const settings = await getSettings();
   for (const p of parts) {
     let item = await get<{ id: string; lifecycle: string }>("SELECT id, lifecycle FROM items WHERE source_reference = ?", p.sourceId);
     if (item) summary.items.existing++;
@@ -612,9 +608,12 @@ export async function importCurriculumBackup(
     }
 
     if (markRecorded && inRecording) {
-      for (const c of settings.checklists.recording.filter((c) => c.required)) await setChecklist(ctx, item.id, c.key, true);
-      await submitHandoff(ctx, item.id, { note: "Imported from the curriculum tracker" });
-      await acceptHandoff(ctx, item.id, { note: "Recording imported as complete" });
+      // A raw entry is recording evidence, not a source date or a completed QA checklist.
+      await run("UPDATE items SET provenance = 'historical', exclude_from_metrics = 1 WHERE id = ?", item.id);
+      await recordStageCompletion(ctx, item.id, "recording", {
+        doneAt: p.progress?.recording?.date || null,
+        note: "Recording evidence imported from the curriculum tracker. Any unavailable source recording date remains unknown.",
+      });
       summary.recordedParts++;
     }
     await applyProgress(ctx, item.id, p.progress, summary);
@@ -649,7 +648,7 @@ async function applyProgress(ctx: Ctx, itemId: string, progress: Partial<Record<
   for (const st of STAGES) {
     const p = progress[st];
     if (!p || p.status !== "done") break;
-    const doneAt = p.date && !Number.isNaN(Date.parse(p.date)) ? new Date(p.date).toISOString() : nowIso();
+    const doneAt = p.date && !Number.isNaN(Date.parse(p.date)) ? new Date(p.date).toISOString() : null;
     try {
       await recordStageCompletion(ctx, itemId, st, { doneAt, liveUrl: st === "publication" ? p.link ?? null : null, note: "Imported from tracker JSON" });
     } catch (err) {

@@ -2560,8 +2560,10 @@ export async function once<T>(key: string | undefined, action: string, fn: () =>
 // Marks the item's current stage as done on the given date and opens the next stage (or publishes).
 // Used only by imports: it records past work, so it does not ask for the live evidence checklist,
 // and the history says it was imported.
-export async function recordStageCompletion(ctx: Ctx, itemId: string, stage: Stage, input: { doneAt: string; note?: string | null; liveUrl?: string | null }) {
+export async function recordStageCompletion(ctx: Ctx, itemId: string, stage: Stage, input: { doneAt: string | null; note?: string | null; liveUrl?: string | null }) {
   return await tx(async () => {
+    if (input.doneAt === null && ctx.source !== "import")
+      throw new WorkflowError("VALIDATION", "An unknown source date is only allowed when importing existing history.");
     const now = at(ctx);
     await requireView(ctx, itemId);
     const u = ctx.actor;
@@ -2569,10 +2571,20 @@ export async function recordStageCompletion(ctx: Ctx, itemId: string, stage: Sta
       throw new WorkflowError("FORBIDDEN", `Only the ${STAGE_LABELS[stage]} team can record ${STAGE_LABELS[stage].toLowerCase()} progress.`);
     const item = await getItem(itemId);
     if (item.lifecycle === "draft") await releaseToProduction({ ...ctx, actor: null }, itemId);
+    // Published items have no open attempt, but their source dates can still be corrected.
+    // An unknown incoming date must not erase an existing known date.
+    if (item.lifecycle === "published") {
+      if (input.doneAt !== null)
+        await run(`UPDATE items SET ${STAGE_DATE_COLUMN[stage]} = ? WHERE id = ?`, input.doneAt, itemId);
+      if (stage === "publication" && input.liveUrl?.trim())
+        await run("UPDATE items SET live_url = ? WHERE id = ?", input.liveUrl.trim(), itemId);
+      return "date" as const;
+    }
     const attempt = await requireAttempt(itemId);
     if (stageIndex(stage) < stageIndex(attempt.stage)) {
       // Already past this stage: only the date is corrected.
-      await run(`UPDATE items SET ${STAGE_DATE_COLUMN[stage]} = ? WHERE id = ?`, input.doneAt, itemId);
+      if (input.doneAt !== null)
+        await run(`UPDATE items SET ${STAGE_DATE_COLUMN[stage]} = ? WHERE id = ?`, input.doneAt, itemId);
       await syncItem(itemId, now);
       return "date" as const;
     }
@@ -2580,14 +2592,14 @@ export async function recordStageCompletion(ctx: Ctx, itemId: string, stage: Sta
       throw new WorkflowError("INVALID_STATE", `${item.code} is still in ${STAGE_LABELS[attempt.stage]}. ${STAGE_LABELS[attempt.stage]} must be done first.`);
     await endSessions(attempt.id, now, "imported");
     await run(
-      "UPDATE stage_attempts SET handoff_submitted_at = COALESCE(handoff_submitted_at, ?), completed_at = ?, notes = COALESCE(?, notes) WHERE id = ?",
+      "UPDATE stage_attempts SET handoff_submitted_at = COALESCE(handoff_submitted_at, ?), completed_at = COALESCE(?, completed_at), notes = COALESCE(?, notes) WHERE id = ?",
       input.doneAt,
       input.doneAt,
       input.note ?? null,
       attempt.id,
     );
     await setAttemptStatus(attempt, "completed", now, "Imported progress");
-    await run(`UPDATE items SET ${STAGE_DATE_COLUMN[stage]} = ? WHERE id = ?`, input.doneAt, itemId);
+    await run(`UPDATE items SET ${STAGE_DATE_COLUMN[stage]} = COALESCE(?, ${STAGE_DATE_COLUMN[stage]}) WHERE id = ?`, input.doneAt, itemId);
     await audit(ctx, {
       itemId,
       attemptId: attempt.id,
@@ -2610,7 +2622,7 @@ export async function recordStageCompletion(ctx: Ctx, itemId: string, stage: Sta
         itemId,
       );
       await run(
-        "UPDATE items SET lifecycle = 'published', published_at = ?, publication_verified_at = ?, live_url = COALESCE(?, live_url) WHERE id = ?",
+        "UPDATE items SET lifecycle = 'published', published_at = COALESCE(?, published_at), publication_verified_at = ?, live_url = COALESCE(?, live_url) WHERE id = ?",
         input.doneAt,
         now,
         live,

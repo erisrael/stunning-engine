@@ -174,6 +174,14 @@ export async function importVideoTracker(
       const current = !item || item.lifecycle === "draft" ? 0 : item.lifecycle === "published" ? 4 : STAGES.indexOf(item.stage!);
       const target = reach(g.status);
       row.before = !item ? "Not in the app" : item.lifecycle === "draft" ? "Draft" : positionLabel(current);
+      // A blocker is not evidence of receiving an edited file. Keep its exact source
+      // status in the job trace without completing Recording or Editing.
+      if (/^(blocked|needs title review)$/i.test(g.status.trim())) {
+        row.action = "skip";
+        row.after = row.before;
+        note("Source review/blocker status retained in this import report; no stage completion or date inferred.");
+        continue;
+      }
       if (!lesson && !createMissing) {
         row.action = "skip";
         row.after = row.before;
@@ -193,7 +201,9 @@ export async function importVideoTracker(
       if (target === 0) note("Missing: the uploader has not received the edited file.");
       if (opts.dryRun) continue;
 
-      const doneAt = g.updated ? new Date(g.updated).toISOString() : now;
+      const history = g.notes.some((n) => n.startsWith("[MySeed historical import]"));
+      const doneAt = g.updated ? new Date(g.updated).toISOString() : history ? null : now;
+      if (history && !g.updated) note("Source stage dates are unknown; left blank and excluded from timing metrics.");
       await tx(async () => {
         let unitId = unit?.id;
         if (!unitId) {
@@ -234,6 +244,7 @@ export async function importVideoTracker(
               sourceReference: `vt:${key}`,
             })
           ).id;
+        if (history) await run("UPDATE items SET provenance = 'historical', exclude_from_metrics = 1 WHERE id = ?", itemId);
         for (let s = current; s < target; s++)
           await recordStageCompletion(ctx, itemId, STAGES[s], {
             doneAt,

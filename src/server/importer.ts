@@ -145,7 +145,7 @@ function stageTemplate(stage: Stage): TemplateDef {
     { key: "part_number", label: "Part number", required: false, type: "int", description: "Part number within the unit." },
     { key: "part_title", label: "Part title (reference)", required: false, type: "string", description: "For your reference only. Not imported." },
     { key: "status", label: "Status", required: false, type: "enum", options: () => ["done", "in_process"], description: `done (already ${c.did}) or in_process. Blank means done.` },
-    { key: c.date, label: c.dateLabel, required: false, type: "date", description: `YYYY-MM-DD, the day it was ${c.did}. Defaults to today for done rows.` },
+    { key: c.date, label: c.dateLabel, required: false, type: "date", description: `YYYY-MM-DD, the day it was ${c.did}. Ordinary done rows default to today. An administrator's historical import keeps unknown source dates blank.` },
     ...evidence,
     { key: c.by, label: `${label} by (email)`, required: false, type: "email", description: `Team member who ${c.did} it. Blank keeps the current owner.` },
     { key: "notes", label: "Notes", required: false, type: "string", description: "Saved on the stage." },
@@ -600,7 +600,7 @@ export function runsStage(user: AppUser, stage: Stage) {
 export function canUseTemplate(user: AppUser, t: TemplateDef) {
   if (t.cap) return t.cap.some((c) => can(user, c));
   if (t.stageImport && !can(user, "import.stage") && !can(user, "import.run")) return false;
-  if (t.stage) return runsStage(user, t.stage);
+  if (t.stage) return runsStage(user, t.stage) || (can(user, "import.run") && can(user, "data.manage"));
   return t.stageImport || !t.managerOnly || can(user, "import.run");
 }
 
@@ -1075,10 +1075,13 @@ async function planRow(template: TemplateDef, rec: Row, rowNo: number, mode: Imp
       rec.status ||= "done";
     }
     const stage = rec.stage?.toLowerCase() as Stage;
+    // The data administrator explicitly opts into an existing-history restore.
+    // This does not give a stage-team member permission to bypass the live workflow.
+    const history = !!(can(user, "import.run") && can(user, "data.manage") && rec.notes?.startsWith("[MySeed historical import]"));
     const { item, lookupError } = await resolveItemRecord(rec);
     if (!item && lookupError) errors.push(lookupError);
     if (item && !(await canViewItem(user, item.id))) errors.push(`${item.code} is outside your access.`);
-    if (STAGES.includes(stage) && !isManager(user) && !user.leads.includes(stage) && !user.roles.includes(stage))
+    if (STAGES.includes(stage) && !history && !isManager(user) && !user.leads.includes(stage) && !user.roles.includes(stage))
       errors.push(`You are not on the ${stage} team, so you cannot record ${stage} progress.`);
     const key = `${item?.code ?? rec.item_code}:${stage}`;
     if (seenKeys.has(key)) errors.push("Duplicate stage row for this part in this file.");
@@ -1088,31 +1091,47 @@ async function planRow(template: TemplateDef, rec: Row, rowNo: number, mode: Imp
     if (assignee && STAGES.includes(stage) && !(await userHasRole(assignee.id, stage))) errors.push(`${assignee.name} is not on the ${stage} team.`);
     if (errors.length || !item) return { outcome: out("error", key, "") };
     const done = rec.status?.toLowerCase() === "done";
-    const at = rec.done_date ? new Date(`${rec.done_date}T09:00:00+03:00`).toISOString() : nowIso();
+    // Explicit opt-in in the existing notes column keeps ordinary team imports unchanged.
+    const at = rec.done_date ? new Date(`${rec.done_date}T09:00:00+03:00`).toISOString() : history ? null : nowIso();
     const pos = (s: Stage | null) => (s ? STAGES.indexOf(s) : -1);
     const current = item.lifecycle === "published" ? 4 : item.lifecycle === "in_production" ? pos(item.stage) : 0;
-    if (done && current < pos(stage)) {
+    // A dated/undated editing completion with a master location proves that recording
+    // happened, but supplies neither a recording date nor a raw camera asset.
+    const restoreRecording = !!(history && done && stage === "editing" && current < pos(stage) && rec.link);
+    if (done && current < pos(stage) && !restoreRecording) {
       errors.push(`${item.code} is still in ${item.stage ?? "draft"}; ${stage} cannot be done yet.`);
       return { outcome: out("error", key, "") };
     }
     const already = current > pos(stage);
-    if (already) warnings.push(`${stage} is already done; only the date will be updated.`);
+    if (restoreRecording) warnings.push("Historical editing evidence restores the Recording prerequisite with an unknown date; no raw recording is invented. Excluded from timing metrics.");
+    if (history && done && !rec.done_date) warnings.push("Source completion date is unknown; it stays unknown instead of defaulting to today.");
+    if (already) warnings.push(history && !rec.done_date ? `${stage} is already done; no source date was supplied, so any existing date is preserved.` : `${stage} is already done; only the date will be updated.`);
     const codes = (rec.camera_codes ?? "").split(/[;\n]/).map((c) => c.trim()).filter(Boolean);
     return {
-      outcome: out("update", key, `${item.code}: ${stage} ${done ? (already ? "date updated" : `done on ${rec.done_date || "today"}`) : "in process"}`),
+      outcome: out("update", key, `${item.code}: ${stage} ${done ? (already ? history && !rec.done_date ? "history retained (source date unknown)" : "date updated" : rec.done_date ? `done on ${rec.done_date}` : history ? "done (source date unknown)" : "done on today") : "in process"}`),
       apply: async (ctx) => {
+        // Same system-import context used by curriculum/history imports. The caller's
+        // data-management permission was checked above and the job retains their ID.
+        const evidenceCtx = history ? { ...ctx, actor: null, silent: true } : ctx;
+        if (history && done)
+          await run("UPDATE items SET provenance = 'historical', exclude_from_metrics = 1 WHERE id = ?", item!.id);
+        if (restoreRecording)
+          await recordStageCompletion(evidenceCtx, item!.id, "recording", { doneAt: null, note: "Recording occurred before the source-reported completed edit. Recording date and camera reference are unknown. No raw asset inferred." });
         if (assignee && !already) await assignStage(ctx, item!.id, { stage, userId: assignee.id, reason: "Imported" });
-        const inStage = current === pos(stage) && !already;
+        const inStage = (restoreRecording || current === pos(stage)) && !already;
         if (inStage && stage === "recording")
           for (const c of codes) {
             const exists = await get("SELECT 1 AS x FROM assets WHERE item_id = ? AND kind = 'raw' AND camera_code = ?", item!.id, c);
             if (!exists) await addAsset(ctx, item!.id, { kind: "raw", cameraCode: c, label: rec.video_title || null, notes: rec.notes || null });
           }
         if (inStage && rec.link && (stage === "editing" || stage === "uploading")) {
-          if (stage === "editing") await addAsset(ctx, item!.id, { kind: "master", url: rec.link, label: "Imported master" });
+          if (stage === "editing") {
+            if (!await get("SELECT 1 AS x FROM assets WHERE item_id = ? AND kind = 'master' AND url = ? AND status = 'current'", item!.id, rec.link))
+              await addAsset(evidenceCtx, item!.id, { kind: "master", url: rec.link, label: "Imported master" });
+          }
           else await run("UPDATE publication_targets SET upload_status = 'uploaded', upload_url = ? WHERE item_id = ? AND required = 1", rec.link, item!.id);
         }
-        if (done) await recordStageCompletion(ctx, item!.id, stage, { doneAt: at, note: rec.notes || null, liveUrl: stage === "publication" ? rec.link || null : null });
+        if (done) await recordStageCompletion(evidenceCtx, item!.id, stage, { doneAt: at, note: rec.notes || null, liveUrl: stage === "publication" ? rec.link || null : null });
       },
     };
   }
