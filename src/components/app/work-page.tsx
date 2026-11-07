@@ -20,7 +20,7 @@ import { FinanceAccounting } from "./integrations";
 import { DEPT_VIEW_LABELS, DEPT_VIEWS, deptPath, deptViewPath } from "@/lib/work";
 import { flowHome } from "@/server/dept-flow";
 
-const TABS = ["dashboard", "board", "list", "sheet", "overview", "timeline", "team", "report", "projects", "calendar", "configure", "repos", "accounting", "sprint", "roadmap", "docs", "present", "tools", "analyze"] as const;
+const TABS = ["dashboard", "board", "list", "sheet", "overview", "timeline", "team", "report", "projects", "calendar", "configure", "repos", "accounting", "sprint", "roadmap", "docs", "present", "tools", "analyze", "requests"] as const;
 const SORTS = ["updated", "due", "priority", "code", "title", "status"] as const;
 
 // The Dev and Marketing sections share this page; their vocabulary, workflow and rights come from the configuration.
@@ -74,6 +74,72 @@ export async function WorkPage({ dept, searchParams, view }: { dept: WorkDept; s
     const { Deck } = await import("./deck/deck-client");
     const pg = await deckPage(viewer, `dept:${dept}`, sp.deck ?? null);
     return <Deck scope={`dept:${dept}`} {...pg} back={deptPath(dept)} presenter={sp.presenter === "1"} />;
+  }
+  if (tab === "requests") {
+    const { myRequests, requestTargets } = await import("@/server/work-extras");
+    const { all } = await import("@/server/db");
+    const [targets, mine, incoming] = await Promise.all([
+      requestTargets(viewer),
+      myRequests(viewer),
+      all<{
+        id: string;
+        dept: string;
+        code: string;
+        title: string;
+        description: string | null;
+        status: string;
+        status_category: string;
+        request_state: string | null;
+        assignee_name: string | null;
+        requested_by_name: string | null;
+        created_at: string;
+        due_date: string | null;
+      }>(
+        `SELECT t.id, t.dept, t.code, t.title, t.description, t.status, t.status_category, t.request_state,
+                u.name AS assignee_name, r.name AS requested_by_name, t.created_at, t.due_date
+         FROM dept_tasks t
+         LEFT JOIN users u ON u.id = t.assignee_id
+         LEFT JOIN users r ON r.id = t.requested_by
+         WHERE t.dept = ? AND (t.request_state IS NOT NULL OR t.requested_by IS NOT NULL)
+         ORDER BY t.created_at DESC LIMIT 100`,
+        dept
+      ),
+    ]);
+    const { DeptRequestsView } = await import("./dept-requests");
+    const people = (await deptPeople(dept)).map((p) => ({ id: p.id, name: p.name, position: p.position }));
+    const projects = await listProjects(viewer, dept);
+    return (
+      <div className="space-y-4">
+        {header}
+        <WorkClient
+          dept={dept}
+          tab="board"
+          filter={{}}
+          tasks={[]}
+          projects={projects}
+          people={people}
+          access={{ rights: access.rights, readOnly: access.readOnly }}
+          config={cfg}
+          viewerId={viewer.id}
+          openTaskId={null}
+          showArchived={false}
+          sprints={sprints}
+          timer={timer}
+          extraTabs={extraTabs}
+          panel={
+            <DeptRequestsView
+              dept={dept}
+              deptTitle={cfg.title}
+              canManage={access.rights.assign || access.rights.configure}
+              targets={targets}
+              incoming={incoming.map((x) => ({ ...x, deptTitle: cfg.title, statusLabel: x.status }))}
+              outgoing={mine.map((x) => ({ ...x, description: null }))}
+              people={people}
+            />
+          }
+        />
+      </div>
+    );
   }
   if ((tab === "sprint" && !cfg.features.sprints) || ((tab === "roadmap" || tab === "docs") && !access.view)) redirect(deptViewPath(dept, "board"));
   if (tab === "tools" && !access.view) redirect(deptViewPath(dept, "board"));

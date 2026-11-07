@@ -65,7 +65,10 @@ import { CompassIcon,
   TrophyIcon,
   TargetIcon,
   HeadsetIcon,
+  TabletIcon,
+  ChevronDownIcon,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import type { HomeDept } from "@/server/nav";
 import {
   Sidebar,
@@ -137,6 +140,7 @@ const deptViews = (base: string, extra: { label: string; view: string }[] = [], 
   { label: "Team", href: `${base}/team` },
   { label: "Report", href: `${base}/report` },
   { label: "Analyze", href: `${base}/analyze` },
+  { label: "Requests", href: `${base}/requests` },
   ...extra.map((e) => ({ label: e.label, href: `${base}/${e.view}` })),
   ...(configure ? [{ label: "Configure", href: `${base}/configure` }] : []),
 ];
@@ -223,7 +227,7 @@ function homeGroups(h: HomeDept, viewerId: string): { label: string; items: NavI
         ...(h.studio ? [{ href: `${b}/docs`, label: "Specs and docs", icon: FileTextIcon, exact: true }] : []),
         { href: `${b}/tools`, label: "Releases and quality", icon: WrenchIcon, exact: true },
         ...(h.accounting ? [{ href: `${b}/accounting`, label: "Accounting", icon: CalculatorIcon, exact: true }] : []),
-        { href: "/requests", label: "Requests", icon: InboxIcon },
+        { href: `${b}/requests`, label: "Requests", icon: InboxIcon, exact: true },
       ],
     },
     ...(h.configure ? [{ label: "Department", items: [{ href: `${b}/configure`, label: "Configure", icon: Settings2Icon, exact: true }] }] : []),
@@ -318,6 +322,7 @@ export function AppSidebar({
           { label: "Timesheets", href: "/attendance?tab=timesheets" },
           ...(has("attendance.manage") ? [{ label: "Review", href: "/attendance?tab=review" }, { label: "Edit records", href: "/attendance?tab=records" }, { label: "Employee rules", href: "/attendance?tab=rules" }, { label: "Shifts and settings", href: "/attendance?tab=setup" }] : []),
           ...(has("attendance.capture") ? [{ label: "Capture", href: "/attendance?tab=capture" }] : []),
+          { label: "Kiosk station", href: "/kiosk" },
         ]
       : undefined;
   // Email's parts, for people who send to many or set it up (an inbox alone needs no links).
@@ -509,18 +514,8 @@ export function AppSidebar({
         label: "Other Tools",
         items: [
           { href: "/legacy-cms", label: "Legacy CMS (Noor)", icon: ArrowLeftRightIcon, cap: ["users.manage", "data.manage"] },
+          { href: "/kiosk", label: "Kiosk station", icon: TabletIcon },
           { href: "/admin/data", label: "Data manager", icon: DatabaseIcon, cap: "data.manage" },
-          {
-            href: "/attendance?tab=capture",
-            label: "System Setups",
-            icon: ClockIcon,
-            sub: [
-              { label: "Attendance setup", href: "/attendance?tab=capture" },
-              { label: "Email setup", href: "/email?tab=settings" },
-              { label: "Support setup", href: "/support?tab=settings" },
-              { label: "Recognition setup", href: "/recognition?tab=settings" },
-            ],
-          },
           { href: "/import-export", label: "Import and export", icon: ArrowLeftRightIcon, cap: ["import.run", "import.stage", "import.tracker", "export.run", "export.report", "export.tracker", "export.audit"] },
           { href: "/audit", label: "Audit log", icon: ShieldCheckIcon, cap: ["users.manage", "items.plan"] },
         ],
@@ -656,9 +651,17 @@ export function AppSidebar({
                             }}
                             className="h-8 font-medium text-sidebar-foreground/85 data-[active=true]:bg-sidebar-accent data-[active=true]:font-semibold data-[active=true]:text-sidebar-accent-foreground"
                           >
-                            <Link href={href} onClick={close}>
+                            <Link href={href} onClick={close} className="flex w-full items-center">
                               <AppIcon icon={item.icon} name={brand[keyOf(item)]?.icon} tone={(brand[keyOf(item)]?.tone as Tone | null | undefined) ?? null} />
-                              <span>{item.label}</span>
+                              <span className="truncate">{item.label}</span>
+                              {!!item.sub && (
+                                <ChevronDownIcon
+                                  className={cn(
+                                    "ml-auto size-3.5 shrink-0 text-sidebar-foreground/60 transition-transform duration-200",
+                                    !inSection && "-rotate-90"
+                                  )}
+                                />
+                              )}
                             </Link>
                           </SidebarMenuButton>
                           {!!item.badge && item.badge > 0 && (

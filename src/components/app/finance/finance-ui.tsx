@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { ArrowDownLeftIcon, ArrowLeftRightIcon, ArrowUpRightIcon, ClockIcon, DownloadIcon, LockIcon, PaperclipIcon, PencilIcon, PlusIcon, SparklesIcon, UnlockIcon } from "lucide-react";
+import { ArrowDownLeftIcon, ArrowLeftRightIcon, ArrowUpRightIcon, ClockIcon, DownloadIcon, LockIcon, PaperclipIcon, PencilIcon, PlusIcon, SparklesIcon, UnlockIcon, CheckCircle2Icon, AlertTriangleIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -881,12 +881,14 @@ function Budgets({ ctx, rows, year }: { ctx: Ctx; rows: BudgetRow[]; year: numbe
               {selectedB && testVal > 0 && (
                 <div className="flex items-center gap-2 pt-4 text-xs font-medium">
                   {isAffordable ? (
-                    <span className="inline-flex items-center gap-1 text-emerald-600 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/20">
-                      ✓ Feasible: Headroom remains {fmt(headroom - testVal, ctx.cur)} ({projectedPct}% used)
+                    <span className="inline-flex items-center gap-1.5 text-emerald-600 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/20">
+                      <CheckCircle2Icon className="size-3.5 text-emerald-500" />
+                      Feasible: Headroom remains {fmt(headroom - testVal, ctx.cur)} ({projectedPct}% used)
                     </span>
                   ) : (
-                    <span className="inline-flex items-center gap-1 text-rose-600 bg-rose-500/10 px-2.5 py-1 rounded-full border border-rose-500/20">
-                      ⚠️ Exceeds Budget by {fmt(testVal - headroom, ctx.cur)} (requires {projectedPct}%)
+                    <span className="inline-flex items-center gap-1.5 text-rose-600 bg-rose-500/10 px-2.5 py-1 rounded-full border border-rose-500/20">
+                      <AlertTriangleIcon className="size-3.5 text-rose-500" />
+                      Exceeds Budget by {fmt(testVal - headroom, ctx.cur)} (requires {projectedPct}%)
                     </span>
                   )}
                 </div>

@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import QRCode from "qrcode";
-import { AlertTriangleIcon, ChevronLeftIcon, ChevronRightIcon, ClockIcon, CopyIcon, DownloadIcon, Loader2Icon, LogInIcon, LogOutIcon, MapPinIcon, PlusIcon, PrinterIcon, Trash2Icon } from "lucide-react";
+import { AlertTriangleIcon, ChevronLeftIcon, ChevronRightIcon, ClockIcon, CopyIcon, DownloadIcon, Loader2Icon, LogInIcon, LogOutIcon, MapPinIcon, PlusIcon, PrinterIcon, Trash2Icon, TabletIcon, ExternalLinkIcon, QrCodeIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -1283,11 +1283,46 @@ export function Kiosks({ kiosks }: { kiosks: KioskInfo[] }) {
   };
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>Kiosks</CardTitle>
-        <CardDescription>A tablet or laptop at the entrance, open on the kiosk page. If one stops reporting during working hours, leads and HR are told to record days by hand.</CardDescription>
+      <CardHeader className="flex flex-row items-center justify-between gap-4">
+        <div>
+          <CardTitle>Attendance Kiosks</CardTitle>
+          <CardDescription>
+            Dedicated tablets or kiosks stationed at entrances. Employees scan dynamic QR codes or verify via face recognition.
+          </CardDescription>
+        </div>
+        <Button
+          size="sm"
+          className="gap-2 shrink-0"
+          onClick={() => window.open("/kiosk", "_blank")}
+        >
+          <TabletIcon className="size-4" />
+          Open Kiosk Station (/kiosk)
+          <ExternalLinkIcon className="size-3.5 opacity-70" />
+        </Button>
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="space-y-4">
+        {/* 3-Step Setup Instructions Card */}
+        <div className="rounded-xl border border-border/80 bg-muted/20 p-4 space-y-2 text-xs">
+          <div className="font-semibold text-foreground flex items-center gap-1.5">
+            <TabletIcon className="size-3.5 text-primary" />
+            How to Set Up a Kiosk Station (Tablet, iPad, or Front Desk PC)
+          </div>
+          <div className="grid gap-2 sm:grid-cols-3 text-muted-foreground">
+            <div className="rounded-lg border bg-card p-2.5 space-y-1">
+              <div className="font-semibold text-foreground">1. Open Device</div>
+              <p>On your tablet browser, navigate to <code className="text-foreground font-mono">/kiosk</code>. Add to home screen for fullscreen kiosk mode.</p>
+            </div>
+            <div className="rounded-lg border bg-card p-2.5 space-y-1">
+              <div className="font-semibold text-foreground">2. Enter 6-Digit PIN</div>
+              <p>Click &ldquo;New setup link&rdquo; below for your kiosk. Enter the 6-digit setup PIN or scan the setup QR code.</p>
+            </div>
+            <div className="rounded-lg border bg-card p-2.5 space-y-1">
+              <div className="font-semibold text-foreground">3. Live Check-In</div>
+              <p>The device permanently locks to that entrance/site, displaying auto-refreshing QR codes and instant face check-in.</p>
+            </div>
+          </div>
+        </div>
+
         <ul className="divide-y rounded-lg border">
           {kiosks.map((k) => (
             <li key={k.id} className="flex flex-wrap items-center gap-2 px-3 py-2 text-sm">

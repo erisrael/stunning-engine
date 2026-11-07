@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { CircleCheckIcon, CircleDotIcon, CircleXIcon, ExternalLinkIcon, GitBranchIcon, GitCommitHorizontalIcon, GitPullRequestIcon, Loader2Icon, LockIcon, PlusIcon, RefreshCwIcon, SettingsIcon, StarIcon, TagIcon, Trash2Icon } from "lucide-react";
+import { CircleCheckIcon, CircleDotIcon, CircleXIcon, ExternalLinkIcon, GitBranchIcon, GitCommitHorizontalIcon, GitPullRequestIcon, Loader2Icon, LockIcon, PlusIcon, RefreshCwIcon, SettingsIcon, StarIcon, TagIcon, Trash2Icon, UsersIcon, ShieldCheckIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -63,6 +63,21 @@ export function GithubRepos({ dept, data, projects, taskHref }: { dept: string; 
   );
   return (
     <div className="space-y-4">
+      {/* Role & Access Notice */}
+      <div className="rounded-xl border bg-muted/20 px-3.5 py-2 text-xs flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2 text-muted-foreground">
+          <ShieldCheckIcon className="size-4 text-primary" />
+          <span>
+            {data.canConfigure
+              ? "Team Lead Controls: You have permissions to connect VCS repositories, assign project collaborators, and rotate personal access tokens."
+              : "Developer View: Showing your assigned repositories, linked branch tasks, and open pull requests."}
+          </span>
+        </div>
+        {data.canConfigure && (
+          <span className="font-semibold text-[11px] text-primary">Team Lead Mode</span>
+        )}
+      </div>
+
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex flex-wrap gap-2 text-sm">
           <span className="rounded-lg border bg-card px-3 py-1.5">
@@ -83,8 +98,8 @@ export function GithubRepos({ dept, data, projects, taskHref }: { dept: string; 
             </Button>
           </Hint>
           {data.canConfigure && (
-            <Button size="sm" onClick={() => setSetup(true)}>
-              <SettingsIcon /> Connect repositories
+            <Button size="sm" onClick={() => setSetup(true)} className="gap-1.5">
+              <SettingsIcon className="size-3.5" /> Connect repositories &amp; collaborators
             </Button>
           )}
         </div>
@@ -192,6 +207,21 @@ export function GithubRepos({ dept, data, projects, taskHref }: { dept: string; 
                             <span className="shrink-0 text-muted-foreground">{when(c.at)}</span>
                           </a>
                         ))}
+                      </div>
+                      <div className="pt-2 border-t flex flex-wrap items-center justify-between gap-2 text-xs">
+                        <div className="flex items-center gap-1.5 text-muted-foreground">
+                          <UsersIcon className="size-3.5" />
+                          <span>Collaborators: <strong>Assigned team members</strong></span>
+                        </div>
+                        {data.canConfigure && (
+                          <button
+                            type="button"
+                            onClick={() => setSetup(true)}
+                            className="text-primary hover:underline font-medium text-[11px]"
+                          >
+                            Manage Access &rarr;
+                          </button>
+                        )}
                       </div>
                       <p className="text-[11px] text-muted-foreground">
                         Updated {when(s.fetchedAt)}.{" "}

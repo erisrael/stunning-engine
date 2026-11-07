@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { InboxIcon, Loader2Icon, SendIcon } from "lucide-react";
+import { InboxIcon, Loader2Icon, SendIcon, LaptopIcon, KeyIcon, CoinsIcon, WrenchIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -50,16 +50,20 @@ export function RequestsClient({ targets, mine }: { targets: Target[]; mine: Min
               <span className="text-xs text-muted-foreground font-medium">Quick Templates</span>
               <div className="flex flex-wrap gap-1.5">
                 <Button size="xs" variant="outline" type="button" onClick={() => applyPreset("Hardware / Devices", "Request for New Laptop / Hardware Equipment")}>
-                  💻 Devices &amp; Hardware
+                  <LaptopIcon className="size-3.5 mr-1" />
+                  Devices &amp; Hardware
                 </Button>
                 <Button size="xs" variant="outline" type="button" onClick={() => applyPreset("Software Subscription", "Subscription Renewal / New Tool License")}>
-                  🔑 Software &amp; Subscriptions
+                  <KeyIcon className="size-3.5 mr-1" />
+                  Software &amp; Subscriptions
                 </Button>
                 <Button size="xs" variant="outline" type="button" onClick={() => applyPreset("Budget Allocation", "Budget Allocation Request for Project")}>
-                  💰 Budget Allocation
+                  <CoinsIcon className="size-3.5 mr-1" />
+                  Budget Allocation
                 </Button>
                 <Button size="xs" variant="outline" type="button" onClick={() => applyPreset("Equipment Repair", "Equipment Repair / Replacement Request")}>
-                  🛠️ Repair / Replacement
+                  <WrenchIcon className="size-3.5 mr-1" />
+                  Repair &amp; Replacement
                 </Button>
               </div>
             </div>

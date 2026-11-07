@@ -7,13 +7,34 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowLeftIcon, CheckIcon, DownloadIcon, Loader2Icon, MinusIcon, PlayIcon, PlusIcon, PrinterIcon, SquareCheckIcon, Trash2Icon, XIcon } from "lucide-react";
+import {
+  ArrowLeftIcon,
+  CheckIcon,
+  DownloadIcon,
+  Loader2Icon,
+  MinusIcon,
+  PlayIcon,
+  PlusIcon,
+  PrinterIcon,
+  SquareCheckIcon,
+  Trash2Icon,
+  XIcon,
+  UsersIcon,
+  MessageSquareIcon,
+  KanbanIcon,
+  CheckCircle2Icon,
+  AlertTriangleIcon,
+  CalendarIcon,
+  LayersIcon,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ChartFrame, LinesChart } from "@/components/app/charts";
 import { CAT } from "@/lib/chart-colors";
 import * as A from "@/app/actions/departments";
@@ -51,123 +72,229 @@ export function SprintView({ dept, data, viewerId }: { dept: string; data: Sprin
   const [goal, setGoal] = React.useState("");
   const [closing, setClosing] = React.useState(false);
   const [note, setNote] = React.useState("");
+  const [sprintTab, setSprintTab] = React.useState<"viewer" | "planner" | "whiteboard" | "oneonone">("viewer");
   const s = data.current;
   const unit = data.unit === "points" ? "pts" : "h";
   const total = data.tasks.reduce((n, t) => n + t.units, 0);
   const doneU = data.tasks.filter((t) => t.done).reduce((n, t) => n + t.units, 0);
   return (
     <div className="space-y-4" data-sprint-view>
-      <div className="flex flex-wrap items-center gap-2">
-        <Select value={s?.id ?? ""} onValueChange={(v) => router.push(deptViewPath(dept, "sprint", `sprint=${v}`))}>
-          <SelectTrigger className="w-64" aria-label="Sprint">
-            <SelectValue placeholder="No sprint yet" />
-          </SelectTrigger>
-          <SelectContent>
-            {data.sprints.map((x) => (
-              <SelectItem key={x.id} value={x.id}>
-                {x.name} ({x.status})
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {data.canPlan && (
-          <Button variant="outline" disabled={busy === "new"} onClick={() => run("new", () => A.createNextSprintAction(dept), "Next sprint planned")}>
-            <PlusIcon /> Plan the next sprint
+      {/* Sub-modes for Dev Team Sprint & Collaboration */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-2">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Button
+            size="sm"
+            variant={sprintTab === "viewer" ? "default" : "outline"}
+            onClick={() => setSprintTab("viewer")}
+            className="gap-1.5 text-xs"
+          >
+            <KanbanIcon className="size-3.5" />
+            Sprint Viewer
           </Button>
-        )}
-        <span className="text-xs text-muted-foreground">
-          {data.cfg.lengthWeeks} week{data.cfg.lengthWeeks === 1 ? "" : "s"}, from {DAYS[data.cfg.startDay]}; estimates in {data.unit}; unfinished work goes {data.cfg.carryOver === "next" ? "to the next sprint" : "back to the backlog"}.
-        </span>
+          <Button
+            size="sm"
+            variant={sprintTab === "planner" ? "default" : "outline"}
+            onClick={() => setSprintTab("planner")}
+            className="gap-1.5 text-xs"
+          >
+            <LayersIcon className="size-3.5" />
+            Sprint Planner &amp; Capacity
+          </Button>
+          <Button
+            size="sm"
+            variant={sprintTab === "whiteboard" ? "default" : "outline"}
+            onClick={() => setSprintTab("whiteboard")}
+            className="gap-1.5 text-xs"
+          >
+            <MessageSquareIcon className="size-3.5" />
+            Dev Discussions &amp; Whiteboard
+          </Button>
+          <Button
+            size="sm"
+            variant={sprintTab === "oneonone" ? "default" : "outline"}
+            onClick={() => setSprintTab("oneonone")}
+            className="gap-1.5 text-xs"
+          >
+            <UsersIcon className="size-3.5" />
+            1-on-1 Sessions
+          </Button>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 ml-auto">
+          <Select value={s?.id ?? ""} onValueChange={(v) => router.push(deptViewPath(dept, "sprint", `sprint=${v}`))}>
+            <SelectTrigger className="w-56 h-8 text-xs" aria-label="Sprint">
+              <SelectValue placeholder="No sprint yet" />
+            </SelectTrigger>
+            <SelectContent>
+              {data.sprints.map((x) => (
+                <SelectItem key={x.id} value={x.id}>
+                  {x.name} ({x.status})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {data.canPlan && (
+            <Button size="sm" variant="outline" className="h-8 text-xs gap-1" disabled={busy === "new"} onClick={() => run("new", () => A.createNextSprintAction(dept), "Next sprint planned")}>
+              <PlusIcon className="size-3.5" /> Plan next sprint
+            </Button>
+          )}
+        </div>
       </div>
+
       {!s ? (
         <p className="text-sm text-muted-foreground">No sprint yet. Plan the first one.</p>
       ) : (
         <>
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex flex-wrap items-center gap-2 text-base">
-                {s.name} <Badge variant={s.status === "active" ? "default" : "secondary"}>{s.status}</Badge>
-                <span className="text-sm font-normal text-muted-foreground">
-                  {s.start_date} to {s.end_date}
-                </span>
-              </CardTitle>
-              <CardDescription>{s.goal ? `Goal: ${s.goal}` : "No goal yet."}</CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-wrap items-center gap-4 text-sm">
-              <span>
-                <b className="tabular-nums">{doneU}</b> of <b className="tabular-nums">{total}</b> {unit} done
-              </span>
-              {data.burn && data.burn.added > 0 && <span className="text-amber-700 dark:text-amber-400">{data.burn.added} {unit} added after the start</span>}
-              {data.velocity.average !== null && (
-                <span className="text-muted-foreground">
-                  Velocity: {data.velocity.average} {unit} (last {data.velocity.last.length})
-                </span>
-              )}
-              {data.canPlan && s.status === "planned" && (
-                <span className="ml-auto flex gap-2">
-                  <Input value={goal} onChange={(e) => setGoal(e.target.value)} placeholder="Sprint goal" aria-label="Sprint goal" className="h-8 w-64" />
-                  <Button size="sm" disabled={busy === "start"} onClick={() => run("start", () => A.startSprintAction(dept, s.id, goal || null), "Sprint started")}>
-                    <PlayIcon /> Start
-                  </Button>
-                </span>
-              )}
-              {data.canPlan && s.status === "active" && (
-                <Button size="sm" variant="outline" className="ml-auto" onClick={() => setClosing(!closing)}>
-                  <SquareCheckIcon /> Sprint review and close
-                </Button>
-              )}
-            </CardContent>
-            {closing && s.status === "active" && (
-              <CardContent className="space-y-2 border-t pt-3">
-                <p className="text-sm">
-                  Finished: {data.tasks.filter((t) => t.done).length}. Not finished: {data.tasks.filter((t) => !t.done).length}, which go {data.cfg.carryOver === "next" ? "to the next sprint" : "back to the backlog"}.
-                </p>
-                <Textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Review notes: what was shown, what was learned" aria-label="Review notes" />
-                <Button size="sm" disabled={busy === "close"} onClick={() => run("close", () => A.closeSprintAction(dept, s.id, note || null), "Sprint closed").then((x) => x && setClosing(false))}>
-                  Close the sprint
-                </Button>
-              </CardContent>
-            )}
-          </Card>
+          {/* SPRINT VIEWER MODE */}
+          {sprintTab === "viewer" && (
+            <div className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex flex-wrap items-center gap-2 text-base">
+                    {s.name} <Badge variant={s.status === "active" ? "default" : "secondary"}>{s.status}</Badge>
+                    <span className="text-sm font-normal text-muted-foreground">
+                      {s.start_date} to {s.end_date}
+                    </span>
+                  </CardTitle>
+                  <CardDescription>{s.goal ? `Goal: ${s.goal}` : "No goal yet."}</CardDescription>
+                </CardHeader>
+                <CardContent className="flex flex-wrap items-center gap-4 text-sm">
+                  <span>
+                    <b className="tabular-nums">{doneU}</b> of <b className="tabular-nums">{total}</b> {unit} done
+                  </span>
+                  {data.burn && data.burn.added > 0 && <span className="text-amber-700 dark:text-amber-400">{data.burn.added} {unit} added after the start</span>}
+                  {data.velocity.average !== null && (
+                    <span className="text-muted-foreground">
+                      Velocity: {data.velocity.average} {unit} (last {data.velocity.last.length})
+                    </span>
+                  )}
+                  {data.canPlan && s.status === "planned" && (
+                    <span className="ml-auto flex gap-2">
+                      <Input value={goal} onChange={(e) => setGoal(e.target.value)} placeholder="Sprint goal" aria-label="Sprint goal" className="h-8 w-64" />
+                      <Button size="sm" disabled={busy === "start"} onClick={() => run("start", () => A.startSprintAction(dept, s.id, goal || null), "Sprint started")}>
+                        <PlayIcon /> Start
+                      </Button>
+                    </span>
+                  )}
+                  {data.canPlan && s.status === "active" && (
+                    <Button size="sm" variant="outline" className="ml-auto" onClick={() => setClosing(!closing)}>
+                      <SquareCheckIcon /> Sprint review and close
+                    </Button>
+                  )}
+                </CardContent>
+                {closing && s.status === "active" && (
+                  <CardContent className="space-y-2 border-t pt-3">
+                    <p className="text-sm">
+                      Finished: {data.tasks.filter((t) => t.done).length}. Not finished: {data.tasks.filter((t) => !t.done).length}, which go {data.cfg.carryOver === "next" ? "to the next sprint" : "back to the backlog"}.
+                    </p>
+                    <Textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Review notes: what was shown, what was learned" aria-label="Review notes" />
+                    <Button size="sm" disabled={busy === "close"} onClick={() => run("close", () => A.closeSprintAction(dept, s.id, note || null), "Sprint closed").then((x) => x && setClosing(false))}>
+                      Close the sprint
+                    </Button>
+                  </CardContent>
+                )}
+              </Card>
 
-          {data.burn && (
-            <div className="grid gap-3 lg:grid-cols-2">
-              <ChartFrame
-                title="Burndown"
-                description={`Work left (${unit}) against the ideal line`}
-                table={{ columns: ["Day", "Left", "Ideal"], rows: data.burn.days.map((d, i) => [d, data.burn!.remaining[i] ?? "", data.burn!.ideal[i]!]) }}
-              >
-                <LinesChart
-                  data={data.burn.days.map((d, i) => ({ day: d.slice(5), left: data.burn!.remaining[i] ?? null, ideal: data.burn!.ideal[i] ?? null }))}
-                  xKey="day"
-                  series={[
-                    { key: "left", label: "Left", color: CAT[0]! },
-                    { key: "ideal", label: "Ideal", color: CAT[3]! },
-                  ]}
-                />
-              </ChartFrame>
-              <ChartFrame
-                title="Burnup"
-                description={`Work done against the total; a rising total is scope added (${unit})`}
-                table={{ columns: ["Day", "Done", "Total"], rows: data.burn.days.map((d, i) => [d, data.burn!.done[i] ?? "", data.burn!.scope[i] ?? ""]) }}
-              >
-                <LinesChart
-                  data={data.burn.days.map((d, i) => ({ day: d.slice(5), done: data.burn!.done[i] ?? null, total: data.burn!.scope[i] ?? null }))}
-                  xKey="day"
-                  series={[
-                    { key: "done", label: "Done", color: CAT[1]! },
-                    { key: "total", label: "Total", color: CAT[2]! },
-                  ]}
-                />
-              </ChartFrame>
+              {data.burn && (
+                <div className="grid gap-3 lg:grid-cols-2">
+                  <ChartFrame
+                    title="Burndown"
+                    description={`Work left (${unit}) against the ideal line`}
+                    table={{ columns: ["Day", "Left", "Ideal"], rows: data.burn.days.map((d, i) => [d, data.burn!.remaining[i] ?? "", data.burn!.ideal[i]!]) }}
+                  >
+                    <LinesChart
+                      data={data.burn.days.map((d, i) => ({ day: d.slice(5), left: data.burn!.remaining[i] ?? null, ideal: data.burn!.ideal[i] ?? null }))}
+                      xKey="day"
+                      series={[
+                        { key: "left", label: "Left", color: CAT[0]! },
+                        { key: "ideal", label: "Ideal", color: CAT[3]! },
+                      ]}
+                    />
+                  </ChartFrame>
+                  <ChartFrame
+                    title="Burnup"
+                    description={`Work done against the total; a rising total is scope added (${unit})`}
+                    table={{ columns: ["Day", "Done", "Total"], rows: data.burn.days.map((d, i) => [d, data.burn!.done[i] ?? "", data.burn!.scope[i] ?? ""]) }}
+                  >
+                    <LinesChart
+                      data={data.burn.days.map((d, i) => ({ day: d.slice(5), done: data.burn!.done[i] ?? null, total: data.burn!.scope[i] ?? null }))}
+                      xKey="day"
+                      series={[
+                        { key: "done", label: "Done", color: CAT[1]! },
+                        { key: "total", label: "Total", color: CAT[2]! },
+                      ]}
+                    />
+                  </ChartFrame>
+                </div>
+              )}
+
+              {/* Tasks currently in Sprint */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Work in Active Sprint: {s.name}</CardTitle>
+                  <CardDescription>{data.tasks.length} active tasks committed ({total} {unit})</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="divide-y rounded-lg border">
+                    {data.tasks.map((t) => (
+                      <div key={t.id} className="flex flex-wrap items-center justify-between gap-2 p-2.5 text-xs">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono font-semibold text-muted-foreground">{t.code}</span>
+                          <span className={cn("font-medium", t.done && "line-through text-muted-foreground")}>{t.title}</span>
+                          {t.addedLate && <Badge variant="secondary" className="text-[10px]">late add</Badge>}
+                        </div>
+                        <div className="flex items-center gap-2 ml-auto text-muted-foreground">
+                          <span>{t.assignee ?? "unassigned"}</span>
+                          <span className="font-mono font-semibold">{t.units || "?"} {unit}</span>
+                          <Badge variant={t.done ? "default" : "outline"} className="text-[10px]">
+                            {t.done ? "Done" : "In Progress"}
+                          </Badge>
+                        </div>
+                      </div>
+                    ))}
+                    {!data.tasks.length && (
+                      <div className="p-4 text-center text-xs text-muted-foreground">No tasks committed to this sprint yet. Switch to Sprint Planner to add backlog tasks.</div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+
+              <div className="grid gap-3 xl:grid-cols-2">
+                <Standups dept={dept} data={data} viewerId={viewerId} />
+                <Retro dept={dept} data={data} />
+              </div>
             </div>
           )}
 
-          {s.status !== "closed" && <Planning dept={dept} data={data} />}
-          <div className="grid gap-3 xl:grid-cols-2">
-            <Standups dept={dept} data={data} viewerId={viewerId} />
-            <Retro dept={dept} data={data} />
-          </div>
+          {/* SPRINT PLANNER & CAPACITY MODE */}
+          {sprintTab === "planner" && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between rounded-xl border bg-card p-3 shadow-xs">
+                <div>
+                  <h3 className="font-semibold text-sm">Sprint Scope &amp; Commitment Planning</h3>
+                  <p className="text-xs text-muted-foreground">
+                    Assign backlog tasks into {s.name}, monitor individual capacity thresholds, and ensure zero over-commitment.
+                  </p>
+                </div>
+                <div className="text-right">
+                  <span className="text-xs text-muted-foreground">Sprint Goal</span>
+                  <div className="font-medium text-xs">{s.goal || "No goal defined"}</div>
+                </div>
+              </div>
+              <Planning dept={dept} data={data} />
+            </div>
+          )}
+
+          {/* DEV DISCUSSIONS & WHITEBOARD MODE */}
+          {sprintTab === "whiteboard" && (
+            <DevWhiteboardView dept={dept} canConfigure={data.canPlan} />
+          )}
+
+          {/* 1-ON-1 SESSIONS WITH LEAD */}
+          {sprintTab === "oneonone" && (
+            <OneOnOneView dept={dept} people={data.people} isLead={data.canPlan} viewerId={viewerId} />
+          )}
+
           {data.cfg.definitionOfDone.length > 0 && (
             <Card>
               <CardHeader>
@@ -387,6 +514,478 @@ function Retro({ dept, data }: { dept: string; data: SprintPage }) {
 }
 
 // ---------------------------------------------------------------------------
+// Dev Discussions, Whiteboard & 1-on-1 Sessions
+// ---------------------------------------------------------------------------
+
+type WhiteboardLane = "architecture" | "techdebt" | "spikes" | "discussions";
+
+type WhiteboardItem = {
+  id: string;
+  lane: WhiteboardLane;
+  title: string;
+  author: string;
+  text: string;
+  createdAt: string;
+};
+
+const DEFAULT_WHITEBOARD_ITEMS: WhiteboardItem[] = [
+  {
+    id: "wb-1",
+    lane: "architecture",
+    title: "Micro-frontend vs Modular Architecture",
+    author: "Senior Architect",
+    text: "Evaluate bundling strategy for sub-apps to minimize main bundle payload.",
+    createdAt: "2026-11-06",
+  },
+  {
+    id: "wb-2",
+    lane: "techdebt",
+    title: "Database Indexing on Audit & Attendance Logs",
+    author: "Dev Lead",
+    text: "Add composite index on (created_at, dept) to speed up high-volume reporting queries.",
+    createdAt: "2026-11-06",
+  },
+  {
+    id: "wb-3",
+    lane: "spikes",
+    title: "Offline Syncing for Kiosk Camera Workers",
+    author: "Mobile/Frontend Dev",
+    text: "Test ServiceWorker background sync for offline facial embeddings verification.",
+    createdAt: "2026-11-07",
+  },
+  {
+    id: "wb-4",
+    lane: "discussions",
+    title: "Code Review SLA & Reviewer Rotation",
+    author: "Team Member",
+    text: "Propose maximum 4-hour SLA on PR reviews during core team hours.",
+    createdAt: "2026-11-07",
+  },
+];
+
+function DevWhiteboardView({ dept, canConfigure }: { dept: string; canConfigure: boolean }) {
+  const [enabled, setEnabled] = React.useState(true);
+  const [items, setItems] = React.useState<WhiteboardItem[]>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem(`dev_whiteboard_${dept}`);
+        if (saved) return JSON.parse(saved);
+      } catch {}
+    }
+    return DEFAULT_WHITEBOARD_ITEMS;
+  });
+
+  const [modalOpen, setModalOpen] = React.useState(false);
+  const [newTitle, setNewTitle] = React.useState("");
+  const [newAuthor, setNewAuthor] = React.useState("");
+  const [newText, setNewText] = React.useState("");
+  const [newLane, setNewLane] = React.useState<WhiteboardLane>("architecture");
+
+  const saveItems = (updated: WhiteboardItem[]) => {
+    setItems(updated);
+    try {
+      localStorage.setItem(`dev_whiteboard_${dept}`, JSON.stringify(updated));
+    } catch {}
+  };
+
+  const handleAdd = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newTitle.trim() || !newText.trim()) return toast.error("Provide a title and details.");
+    const newItem: WhiteboardItem = {
+      id: `wb-${Date.now()}`,
+      lane: newLane,
+      title: newTitle.trim(),
+      author: newAuthor.trim() || "Developer",
+      text: newText.trim(),
+      createdAt: new Date().toISOString().slice(0, 10),
+    };
+    saveItems([...items, newItem]);
+    toast.success("Card added to whiteboard.");
+    setNewTitle("");
+    setNewText("");
+    setNewAuthor("");
+    setModalOpen(false);
+  };
+
+  const handleDelete = (id: string) => {
+    saveItems(items.filter((x) => x.id !== id));
+    toast.success("Card removed.");
+  };
+
+  const lanes: { key: WhiteboardLane; label: string; desc: string }[] = [
+    { key: "architecture", label: "Architecture & Systems Design", desc: "System structure, API contracts, scalability." },
+    { key: "techdebt", label: "Technical Debt & Refactoring", desc: "Code quality, dependency updates, test coverage." },
+    { key: "spikes", label: "Spikes & Technical PoCs", desc: "Research tasks, proof-of-concepts, feasibility." },
+    { key: "discussions", label: "Team Discussions & Open Questions", desc: "Team practices, RFCs, open engineering questions." },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-3 shadow-xs">
+        <div>
+          <h3 className="font-semibold text-sm">Engineering Whiteboard &amp; Collaboration Canvas</h3>
+          <p className="text-xs text-muted-foreground">
+            A collaborative canvas for technical discussions, RFC brainstorms, architecture proposals, and spikes.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {canConfigure && (
+            <div className="flex items-center gap-2 border-r pr-3 mr-1 text-xs text-muted-foreground">
+              <span>Whiteboard Status:</span>
+              <Button
+                size="xs"
+                variant={enabled ? "outline" : "secondary"}
+                onClick={() => {
+                  setEnabled(!enabled);
+                  toast.success(enabled ? "Whiteboard closed for new inputs" : "Whiteboard active");
+                }}
+              >
+                {enabled ? "Active (Enabled)" : "Archived (Disabled)"}
+              </Button>
+            </div>
+          )}
+          <Button size="sm" onClick={() => setModalOpen(true)} className="gap-1.5" disabled={!enabled}>
+            <PlusIcon className="size-3.5" /> Post Sticky Card
+          </Button>
+        </div>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {lanes.map((lane) => {
+          const laneItems = items.filter((x) => x.lane === lane.key);
+          return (
+            <div key={lane.key} className="flex flex-col rounded-xl border bg-muted/20 p-3 space-y-3">
+              <div className="border-b pb-2">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-semibold text-xs text-foreground uppercase tracking-wider">{lane.label}</h4>
+                  <Badge variant="outline" className="text-[10px] font-mono">{laneItems.length}</Badge>
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-0.5">{lane.desc}</p>
+              </div>
+
+              <div className="space-y-2.5 flex-1 min-h-48">
+                {laneItems.map((item) => (
+                  <div key={item.id} className="relative rounded-lg border bg-card p-3 shadow-xs space-y-1.5 text-xs">
+                    <div className="flex items-start justify-between gap-1.5">
+                      <div className="font-semibold text-foreground text-xs leading-snug">{item.title}</div>
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(item.id)}
+                        className="text-muted-foreground hover:text-destructive transition-colors"
+                        title="Delete card"
+                      >
+                        <Trash2Icon className="size-3" />
+                      </button>
+                    </div>
+                    <p className="text-muted-foreground text-xs leading-relaxed whitespace-pre-wrap">{item.text}</p>
+                    <div className="flex items-center justify-between pt-1 border-t text-[10px] text-muted-foreground/80 font-mono">
+                      <span>{item.author}</span>
+                      <span>{item.createdAt}</span>
+                    </div>
+                  </div>
+                ))}
+                {!laneItems.length && (
+                  <div className="flex h-32 items-center justify-center rounded-lg border border-dashed border-border/70 text-[11px] text-muted-foreground">
+                    No sticky notes in this lane yet.
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {modalOpen && (
+        <Dialog open onOpenChange={(o) => !o && setModalOpen(false)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Add Whiteboard Sticky Card</DialogTitle>
+              <DialogDescription>
+                Share an architectural proposal, refactoring note, or topic for the team.
+              </DialogDescription>
+            </DialogHeader>
+            <form onSubmit={handleAdd} className="space-y-3 py-2 text-xs">
+              <div className="space-y-1">
+                <Label>Lane / Category</Label>
+                <Select value={newLane} onValueChange={(v) => setNewLane(v as WhiteboardLane)}>
+                  <SelectTrigger className="text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="architecture">Architecture &amp; Systems Design</SelectItem>
+                    <SelectItem value="techdebt">Technical Debt &amp; Refactoring</SelectItem>
+                    <SelectItem value="spikes">Spikes &amp; Technical PoCs</SelectItem>
+                    <SelectItem value="discussions">Team Discussions &amp; Open Questions</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label>Card Title</Label>
+                <Input
+                  value={newTitle}
+                  onChange={(e) => setNewTitle(e.target.value)}
+                  placeholder="e.g. Migration plan to Redis caching"
+                  className="text-xs"
+                  required
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>Author / Proposer</Label>
+                <Input
+                  value={newAuthor}
+                  onChange={(e) => setNewAuthor(e.target.value)}
+                  placeholder="Your Name / Dev Role"
+                  className="text-xs"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>Notes &amp; Details</Label>
+                <Textarea
+                  rows={4}
+                  value={newText}
+                  onChange={(e) => setNewText(e.target.value)}
+                  placeholder="Elaborate on the proposal, trade-offs, and expected outcomes..."
+                  className="text-xs font-mono"
+                  required
+                />
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="ghost" onClick={() => setModalOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit">Post to Whiteboard</Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+      )}
+    </div>
+  );
+}
+
+type OneOnOneItem = {
+  id: string;
+  devId: string;
+  devName: string;
+  topic: string;
+  preferredDate: string;
+  timeSlot: string;
+  notes: string;
+  status: "requested" | "confirmed" | "completed";
+};
+
+function OneOnOneView({
+  dept,
+  people,
+  isLead,
+  viewerId,
+}: {
+  dept: string;
+  people: { id: string; name: string }[];
+  isLead: boolean;
+  viewerId: string;
+}) {
+  const [sessions, setSessions] = React.useState<OneOnOneItem[]>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem(`dev_1on1_${dept}`);
+        if (saved) return JSON.parse(saved);
+      } catch {}
+    }
+    return [
+      {
+        id: "1on1-1",
+        devId: "dev-1",
+        devName: "Frontend Engineer",
+        topic: "Sprint Blocker & Architecture Alignment",
+        preferredDate: new Date().toISOString().slice(0, 10),
+        timeSlot: "10:30 AM",
+        notes: "Discuss GraphQL query complexity and component testing.",
+        status: "confirmed",
+      },
+    ];
+  });
+
+  const [dialogOpen, setDialogOpen] = React.useState(false);
+  const [selectedDev, setSelectedDev] = React.useState(viewerId || people[0]?.id || "");
+  const [topic, setTopic] = React.useState("Sprint Feedback & Technical Alignment");
+  const [date, setDate] = React.useState(new Date().toISOString().slice(0, 10));
+  const [time, setTime] = React.useState("11:00 AM");
+  const [notes, setNotes] = React.useState("");
+
+  const saveSessions = (updated: OneOnOneItem[]) => {
+    setSessions(updated);
+    try {
+      localStorage.setItem(`dev_1on1_${dept}`, JSON.stringify(updated));
+    } catch {}
+  };
+
+  const handleRequest = (e: React.FormEvent) => {
+    e.preventDefault();
+    const devPerson = people.find((p) => p.id === selectedDev) || { name: "Developer" };
+    const newSession: OneOnOneItem = {
+      id: `1on1-${Date.now()}`,
+      devId: selectedDev,
+      devName: devPerson.name,
+      topic,
+      preferredDate: date,
+      timeSlot: time,
+      notes,
+      status: "requested",
+    };
+    saveSessions([newSession, ...sessions]);
+    toast.success("1-on-1 session requested with the Team Lead.");
+    setDialogOpen(false);
+    setNotes("");
+  };
+
+  const handleStatusChange = (id: string, status: "confirmed" | "completed") => {
+    saveSessions(sessions.map((s) => (s.id === id ? { ...s, status } : s)));
+    toast.success(`Session status updated to ${status}.`);
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-3 shadow-xs">
+        <div>
+          <h3 className="font-semibold text-sm">Developer 1-on-1 Sessions with Team Lead</h3>
+          <p className="text-xs text-muted-foreground">
+            Developers can request dedicated 1-on-1 sessions for sprint reflection, technical guidance, blockers, and growth.
+          </p>
+        </div>
+        <Button size="sm" onClick={() => setDialogOpen(true)} className="gap-1.5">
+          <CalendarIcon className="size-3.5" /> Request 1-on-1 Session
+        </Button>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {sessions.map((s) => {
+          const isReq = s.status === "requested";
+          const isConf = s.status === "confirmed";
+          const isComp = s.status === "completed";
+          return (
+            <Card key={s.id} className="p-4 space-y-2 text-xs flex flex-col justify-between">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-foreground text-sm">{s.devName}</span>
+                  <Badge variant={isConf ? "default" : isComp ? "outline" : "secondary"}>
+                    {s.status}
+                  </Badge>
+                </div>
+                <div className="font-medium text-xs text-primary">{s.topic}</div>
+                {s.notes && <p className="text-muted-foreground text-xs whitespace-pre-wrap">{s.notes}</p>}
+                <div className="text-[11px] text-muted-foreground pt-1 border-t space-y-0.5 font-mono">
+                  <div>Date: {s.preferredDate} at {s.timeSlot}</div>
+                </div>
+              </div>
+
+              {isLead && (
+                <div className="flex items-center gap-1.5 pt-3 border-t mt-3">
+                  {isReq && (
+                    <Button
+                      size="xs"
+                      className="flex-1 text-[11px] gap-1"
+                      onClick={() => handleStatusChange(s.id, "confirmed")}
+                    >
+                      <CheckCircle2Icon className="size-3" /> Confirm Time
+                    </Button>
+                  )}
+                  {isConf && (
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      className="flex-1 text-[11px] gap-1 text-emerald-600"
+                      onClick={() => handleStatusChange(s.id, "completed")}
+                    >
+                      <CheckIcon className="size-3" /> Mark Completed
+                    </Button>
+                  )}
+                </div>
+              )}
+            </Card>
+          );
+        })}
+        {!sessions.length && (
+          <div className="col-span-full p-6 text-center text-xs text-muted-foreground border rounded-lg">
+            No 1-on-1 sessions scheduled yet. Click &ldquo;Request 1-on-1 Session&rdquo; to schedule one.
+          </div>
+        )}
+      </div>
+
+      {dialogOpen && (
+        <Dialog open onOpenChange={(o) => !o && setDialogOpen(false)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Request 1-on-1 Session with Team Lead</DialogTitle>
+              <DialogDescription>
+                Schedule dedicated engineering time to discuss technical architecture, blockers, or sprint feedback.
+              </DialogDescription>
+            </DialogHeader>
+            <form onSubmit={handleRequest} className="space-y-3 py-2 text-xs">
+              <div className="space-y-1">
+                <Label>Developer</Label>
+                <Select value={selectedDev} onValueChange={setSelectedDev}>
+                  <SelectTrigger className="text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {people.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label>Discussion Topic</Label>
+                <Select value={topic} onValueChange={setTopic}>
+                  <SelectTrigger className="text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Sprint Feedback & Technical Alignment">Sprint Feedback &amp; Technical Alignment</SelectItem>
+                    <SelectItem value="Architecture Review & Design RFC">Architecture Review &amp; Design RFC</SelectItem>
+                    <SelectItem value="Critical Blocker Escalation">Critical Blocker Escalation</SelectItem>
+                    <SelectItem value="Career & Engineering Growth">Career &amp; Engineering Growth</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <Label>Preferred Date</Label>
+                  <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="text-xs" required />
+                </div>
+                <div className="space-y-1">
+                  <Label>Preferred Time</Label>
+                  <Input value={time} onChange={(e) => setTime(e.target.value)} placeholder="e.g. 11:00 AM" className="text-xs" required />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <Label>Agenda Notes (Optional)</Label>
+                <Textarea
+                  rows={3}
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="What specific items do you want to cover with the lead?"
+                  className="text-xs"
+                />
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="ghost" onClick={() => setDialogOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit">Submit 1-on-1 Request</Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Roadmap
 // ---------------------------------------------------------------------------
 
@@ -449,6 +1048,14 @@ export function RoadmapView({ data, dora }: { data: Roadmap; dora: { deploysPerW
                       </span>
                     )}
                   </p>
+                  <div className="pt-2 border-t mt-1.5 flex items-center justify-between text-[11px]">
+                    <a href={`/dev/docs?project=${p.id}`} className="text-primary hover:underline font-medium">
+                      Project Specs &amp; Architecture &rarr;
+                    </a>
+                    <a href={`/dev/board?project=${p.key}`} className="text-muted-foreground hover:underline">
+                      View Board &rarr;
+                    </a>
+                  </div>
                 </div>
               ))}
           </div>
@@ -601,21 +1208,45 @@ function DocEditor({ dept, id, people, workspace, onBack }: { dept: string; id: 
       <div className="grid gap-3 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Review and approval</CardTitle>
-            <CardDescription>Named reviewers approve; when all have, it is approved.</CardDescription>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base">Document Review &amp; Approval Workflow</CardTitle>
+              <Badge variant={d.status === "approved" ? "default" : d.status === "in_review" ? "secondary" : "outline"}>
+                {d.status === "draft"
+                  ? "Draft (Editable by any Dev)"
+                  : d.status === "in_review"
+                  ? "Under Team Lead Review"
+                  : d.status === "approved"
+                  ? "Approved Specification"
+                  : "Changes Requested"}
+              </Badge>
+            </div>
+            <CardDescription>
+              Any developer can create and edit specs; Team Lead and assigned reviewers review, approve, or request modifications.
+            </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-2 text-sm">
+          <CardContent className="space-y-3 text-sm">
             {d.reviewers.length > 0 && (
-              <ul>
-                {d.reviewers.map((r) => (
-                  <li key={r.id}>
-                    {r.approved ? <CheckIcon className="inline size-4 text-emerald-600" /> : "·"} {r.name}
-                  </li>
-                ))}
-              </ul>
+              <div className="space-y-1">
+                <span className="text-xs text-muted-foreground font-medium">Assigned Reviewers:</span>
+                <ul className="divide-y rounded border text-xs">
+                  {d.reviewers.map((r) => (
+                    <li key={r.id} className="flex items-center justify-between px-2.5 py-1.5">
+                      <span>{r.name}</span>
+                      {r.approved ? (
+                        <span className="inline-flex items-center gap-1 text-emerald-600 font-medium">
+                          <CheckIcon className="size-3.5" /> Approved
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">Pending review</span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
             {d.status === "draft" && d.canEdit && (
-              <>
+              <div className="space-y-2 pt-1 border-t">
+                <span className="text-xs text-muted-foreground">Select Team Lead / Reviewers to evaluate:</span>
                 <div className="flex flex-wrap gap-1.5">
                   {people.map((p) => {
                     const on = reviewers.includes(p.id);
@@ -626,20 +1257,21 @@ function DocEditor({ dept, id, people, workspace, onBack }: { dept: string; id: 
                     );
                   })}
                 </div>
-                <Button size="sm" disabled={!reviewers.length || dirty || busy === "submit"} onClick={async () => (await run("submit", () => A.submitDocAction(dept, id, reviewers), "Sent for review")) && load()}>
-                  Send for review
+                <Button size="sm" className="gap-1.5" disabled={!reviewers.length || dirty || busy === "submit"} onClick={async () => (await run("submit", () => A.submitDocAction(dept, id, reviewers), "Submitted for review")) && load()}>
+                  <CheckCircle2Icon className="size-3.5" /> Submit for Team Lead Review
                 </Button>
-              </>
+              </div>
             )}
             {d.canApprove && (
-              <div className="space-y-2">
-                <Textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Comments (needed to ask for changes)" aria-label="Review comments" />
+              <div className="space-y-2 pt-2 border-t">
+                <span className="text-xs font-semibold text-foreground">Team Lead Decision:</span>
+                <Textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Review feedback or requested modifications..." aria-label="Review comments" />
                 <div className="flex gap-2">
-                  <Button size="sm" onClick={async () => (await run("ok", () => A.decideDocAction(dept, id, true, note), "Approved")) && load()}>
-                    Approve
+                  <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1" onClick={async () => (await run("ok", () => A.decideDocAction(dept, id, true, note), "Specification Approved")) && load()}>
+                    <CheckIcon className="size-3.5" /> Approve Specification
                   </Button>
-                  <Button size="sm" variant="outline" disabled={!note.trim()} onClick={async () => (await run("no", () => A.decideDocAction(dept, id, false, note), "Changes asked")) && load()}>
-                    Ask for changes
+                  <Button size="sm" variant="outline" className="text-rose-600 hover:text-rose-700 gap-1" disabled={!note.trim()} onClick={async () => (await run("no", () => A.decideDocAction(dept, id, false, note), "Changes Requested")) && load()}>
+                    <XIcon className="size-3.5" /> Request Changes
                   </Button>
                 </div>
               </div>
