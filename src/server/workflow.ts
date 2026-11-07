@@ -2,6 +2,7 @@ import { all, get, nowIso, run, tx, uid, parseJson } from "./db";
 import { releaseRequirement } from "./presenters";
 import { getSettings, rulesFor } from "./settings";
 import { handoverStatuses } from "@/lib/team-rules";
+import { isValidFileLocationOrUrl } from "@/lib/import-fix";
 import { can, canViewItem, hasRole, isLeadOf, isManager, type AppUser } from "./users";
 import { managers, notify, roleUsersForItem, teamLeads } from "./notifications";
 import {
@@ -1034,8 +1035,8 @@ export async function addAsset(
       if (input.kind === "raw" || input.kind === "take_notes") {
         if (!url && !cameraCode && !disk) throw new WorkflowError("VALIDATION", "Enter the camera code(s), a storage link or the disk for the recording.");
       } else if (!url && !disk) throw new WorkflowError("VALIDATION", mode === "disk" ? "Give the external disk's name and the folder on it." : "Provide a storage link for the file.");
-      if (url && !/^https?:\/\/|^\\\\|^[a-z]+:\/\//i.test(url))
-        throw new WorkflowError("VALIDATION", "Use a full link such as https://drive.example.com/file or a network path.");
+      if (url && !isValidFileLocationOrUrl(url))
+        throw new WorkflowError("VALIDATION", "Use a full link (https://...), local path (D:\\...), or network path (\\\\Server\\...).");
       const attempt = await currentAttempt(itemId);
       const supporting = input.kind === "document" || input.kind === "transcript";
       if (!supporting) {

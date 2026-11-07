@@ -17,9 +17,10 @@ import {
   type Ctx,
 } from "./workflow";
 import { COMPLEXITIES, PRIORITIES, ROLES, STAGES, type Capability, type Role, type Stage } from "@/lib/domain";
-import { planTaxonomyRow, TAXONOMY_KEYS, taxonomyPrefillRows, type TaxonomyKey } from "./taxonomy-import";
+import { planTaxonomyRow, TAXONOMY_KEYS, taxonomyPrefillRows, normGradeCode, type TaxonomyKey } from "./taxonomy-import";
 import { endOfLocalDayIso, localInputToIso } from "@/lib/format";
 import { notifyStageImport } from "./editorial";
+import { isValidFileLocationOrUrl } from "@/lib/import-fix";
 
 // ---------------------------------------------------------------------------
 // Template definitions
@@ -105,16 +106,16 @@ const STAGE_TEMPLATE_COPY: Record<Stage, { did: string; date: string; dateLabel:
     date: "edited_date",
     dateLabel: "Date edited",
     by: "edited_by",
-    link: { key: "master_link", label: "Edited master link", description: "Link to the final edited file (Drive, Dropbox, server path)." },
-    summary: "Parts you have already edited, with the date and the master file link. Done parts move on to Uploading.",
+    link: { key: "master_link", label: "Master file location", description: "Location of the master file: local path (D:\\...), shared network path (\\\\Server\\...), or web link." },
+    summary: "Parts you have already edited, with the date and master file location. Done parts move on to Uploading.",
   },
   uploading: {
     did: "uploaded",
     date: "uploaded_date",
     dateLabel: "Date uploaded",
     by: "uploaded_by",
-    link: { key: "uploaded_link", label: "Uploaded link", description: "Link to the uploaded video. Marks the required destinations as uploaded." },
-    summary: "Parts you have already uploaded, with the date and the uploaded link. Done parts move on to Publication.",
+    link: { key: "uploaded_link", label: "Uploaded link or location", description: "Link or file location for the uploaded video. Marks the required destinations as uploaded." },
+    summary: "Parts you have already uploaded, with the date and uploaded link/location. Done parts move on to Publication.",
   },
   publication: {
     did: "published",
@@ -137,7 +138,7 @@ function stageTemplate(stage: Stage): TemplateDef {
         ]
       : [{ key: c.link!.key, label: c.link!.label, required: false, type: "url", description: c.link!.description }];
   const fields: TemplateField[] = [
-    { key: "item_code", label: "Item code", required: false, type: "string", description: "Existing item code, for example MY-G05-MATH-U01-L01. Or use grade, subject, unit and part." },
+    { key: "item_code", label: "Item code", required: false, type: "string", description: "Existing item code or reconciliation code, for example G05-MATH-U01-P01 or MY-G05-MATH-U01-L01. Or use grade, subject, unit and part." },
     { key: "grade_code", label: "Grade code", required: false, type: "enum", options: gradeCodes, description: "For example G05." },
     { key: "subject_code", label: "Subject code", required: false, type: "enum", options: subjectCodes, description: "For example MATH." },
     { key: "unit_number", label: "Unit number", required: false, type: "int", description: "Unit number within the grade and subject." },
@@ -326,7 +327,7 @@ export const TEMPLATES: Record<TemplateKey, TemplateDef> = {
       "Files can be CSV, Excel or JSON (an array of rows with these column names).",
     ],
     fields: [
-      { key: "item_code", label: "Item code", required: false, type: "string", description: "Existing item code, for example MY-G05-MATH-U01-L01. Or use the four columns below." },
+      { key: "item_code", label: "Item code", required: false, type: "string", description: "Existing item code or reconciliation code, for example G05-MATH-U01-P01 or MY-G05-MATH-U01-L01. Or use the four columns below." },
       { key: "grade_code", label: "Grade code", required: false, type: "enum", options: gradeCodes, description: "For example G05." },
       { key: "subject_code", label: "Subject code", required: false, type: "enum", options: subjectCodes, description: "For example MATH." },
       { key: "unit_number", label: "Unit number", required: false, type: "int", description: "Unit number within the grade and subject." },
@@ -406,7 +407,7 @@ export const TEMPLATES: Record<TemplateKey, TemplateDef> = {
       "also_in lists secondary curriculum placements such as G09-MATH or G09-MATH-U01, separated by semicolons.",
     ],
     fields: [
-      { key: "item_code", label: "Item code", required: "update", type: "string", description: "Readable code such as MY-G08-MATH-U02-L04. Optional in create mode (generated when blank)." },
+      { key: "item_code", label: "Item code", required: "update", type: "string", description: "Readable code or reconciliation code such as G05-MATH-U01-P01 or MY-G08-MATH-U02-L04. Optional in create mode (generated when blank)." },
       { key: "item_id", label: "Item ID", required: false, type: "string", description: "Immutable system ID. Optional alternative to item_code in update mode." },
       { key: "grade_code", label: "Grade code", required: "create", type: "enum", options: gradeCodes, description: "Primary grade." },
       { key: "subject_code", label: "Subject code", required: "create", type: "enum", options: subjectCodes, description: "Primary subject." },
@@ -782,7 +783,8 @@ function checkField(f: TemplateField, value: string, mode: ImportMode, errors: s
       if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value)) errors.push(`${f.label} is not a valid email.`);
       break;
     case "url":
-      if (!/^https?:\/\/\S+$/i.test(value)) errors.push(`${f.label} must start with https://.`);
+      if (!isValidFileLocationOrUrl(value))
+        errors.push(`${f.label} must be a valid file location (e.g. D:\\... or \\\\Server\\...) or link (https://...).`);
       break;
     case "bool":
       if (!["yes", "no", "true", "false", "1", "0", "y", "n"].includes(value.toLowerCase())) errors.push(`${f.label} must be yes or no.`);
@@ -805,10 +807,30 @@ function checkField(f: TemplateField, value: string, mode: ImportMode, errors: s
 const truthy = (v: string) => ["yes", "true", "1", "y"].includes(v.trim().toLowerCase());
 
 async function gradeByCode(code: string) {
-  return await get<{ id: string; code: string }>("SELECT id, code FROM grades WHERE code = ? COLLATE NOCASE", code);
+  const trimmed = code.trim();
+  if (!trimmed) return undefined;
+  let row = await get<{ id: string; code: string }>("SELECT id, code FROM grades WHERE code = ? COLLATE NOCASE", trimmed);
+  if (row) return row;
+  const numMatch = /(\d+)/.exec(trimmed);
+  if (numMatch) {
+    const padded = `G${numMatch[1].padStart(2, "0")}`;
+    const unpadded = `G${Number(numMatch[1])}`;
+    row = await get<{ id: string; code: string }>(
+      "SELECT id, code FROM grades WHERE code = ? OR code = ? OR code = ? COLLATE NOCASE",
+      padded,
+      unpadded,
+      numMatch[1],
+    );
+    if (row) return row;
+  }
+  return await get<{ id: string; code: string }>("SELECT id, code FROM grades WHERE name = ? COLLATE NOCASE", trimmed);
 }
 async function subjectByCode(code: string) {
-  return await get<{ id: string; code: string }>("SELECT id, code FROM subjects WHERE code = ? COLLATE NOCASE", code);
+  const trimmed = code.trim();
+  if (!trimmed) return undefined;
+  let row = await get<{ id: string; code: string }>("SELECT id, code FROM subjects WHERE code = ? COLLATE NOCASE", trimmed);
+  if (row) return row;
+  return await get<{ id: string; code: string }>("SELECT id, code FROM subjects WHERE name = ? COLLATE NOCASE", trimmed);
 }
 async function offered(gradeId: string, subjectId: string) {
   return !!await get("SELECT 1 AS x FROM grade_subjects WHERE grade_id = ? AND subject_id = ?", gradeId, subjectId);
@@ -821,6 +843,191 @@ async function userByEmail(email: string) {
 }
 async function userHasRole(userId: string, role: Role) {
   return !!await get("SELECT 1 AS x FROM role_assignments WHERE user_id = ? AND role = ?", userId, role);
+}
+
+export type ResolvedItem = {
+  id: string;
+  code: string;
+  lifecycle: string;
+  stage: Stage | null;
+  current_due_at: string | null;
+};
+
+export function parseItemReconciliationCode(rawCode: string): {
+  prefix?: string;
+  gradeCode?: string;
+  subjectCode?: string;
+  unitNumber?: number;
+  partNumber?: number;
+} | null {
+  const code = rawCode.trim();
+  if (!code) return null;
+
+  // Handles reconciliation formats:
+  // G05-MATH-U01-P01, MY-G05-MATH-U01-P01, MY-G05-MATH-U01-L01, G5-MATH-U1-P1, G05_MATH_U01_P01, etc.
+  const m = code.match(
+    /^(?:([A-Za-z0-9]+)[-_.\s]+)?(G\d{1,2}|Grade\s*\d{1,2}|\d{1,2})[-_.\s]+([A-Za-z0-9]+)[-_.\s]+(?:U|UNIT)?\s*(\d{1,3})[-_.\s]+(?:P|PART|L|LESSON)?\s*(\d{1,3})(?:[-_.\s].*)?$/i
+  );
+  if (!m) return null;
+
+  const prefix = m[1];
+  const rawGrade = m[2];
+  const subjectCode = m[3].toUpperCase();
+  const unitNumber = Number(m[4]);
+  const partNumber = Number(m[5]);
+
+  const numMatch = /(\d+)/.exec(rawGrade);
+  const gradeCode = numMatch ? `G${numMatch[1].padStart(2, "0")}` : rawGrade.toUpperCase();
+
+  return {
+    prefix,
+    gradeCode,
+    subjectCode,
+    unitNumber: Number.isNaN(unitNumber) ? undefined : unitNumber,
+    partNumber: Number.isNaN(partNumber) ? undefined : partNumber,
+  };
+}
+
+export async function resolveItemRecord(rec: Row): Promise<{ item?: ResolvedItem; lookupError?: string }> {
+  // 1. By ID if provided
+  if (rec.item_id?.trim()) {
+    const item = await get<ResolvedItem>(
+      "SELECT id, code, lifecycle, stage, current_due_at FROM items WHERE id = ?",
+      rec.item_id.trim()
+    );
+    if (item) return { item };
+    return { lookupError: `No item with ID ${rec.item_id.trim()}.` };
+  }
+
+  const rawCode = rec.item_code?.trim();
+
+  // 2. Direct code lookup
+  if (rawCode) {
+    let item = await get<ResolvedItem>(
+      "SELECT id, code, lifecycle, stage, current_due_at FROM items WHERE code = ? COLLATE NOCASE",
+      rawCode
+    );
+    if (item) return { item };
+
+    // 3. Swap -P (Part) and -L (Lesson)
+    const swapped = rawCode
+      .replace(/-P0*(\d+)/i, (_, n) => `-L${n.padStart(2, "0")}`)
+      .replace(/-PART0*(\d+)/i, (_, n) => `-L${n.padStart(2, "0")}`)
+      .replace(/-L0*(\d+)/i, (_, n) => `-P${n.padStart(2, "0")}`)
+      .replace(/-LESSON0*(\d+)/i, (_, n) => `-P${n.padStart(2, "0")}`);
+
+    if (swapped !== rawCode) {
+      item = await get<ResolvedItem>(
+        "SELECT id, code, lifecycle, stage, current_due_at FROM items WHERE code = ? COLLATE NOCASE",
+        swapped
+      );
+      if (item) return { item };
+    }
+
+    // 4. Try with workspace prefix (e.g. "MY-")
+    const s = await getSettings();
+    const wp = s.workspace.codePrefix;
+    if (wp && !rawCode.toUpperCase().startsWith(`${wp.toUpperCase()}-`)) {
+      const candidates = [`${wp}-${rawCode}`, `${wp}-${swapped}`];
+      for (const cand of candidates) {
+        item = await get<ResolvedItem>(
+          "SELECT id, code, lifecycle, stage, current_due_at FROM items WHERE code = ? COLLATE NOCASE",
+          cand
+        );
+        if (item) return { item };
+      }
+    }
+
+    // 5. Try suffix match (e.g. item code ends with -G05-MATH-U01-L01 or -G05-MATH-U01-P01)
+    const suffixKeys = [
+      rawCode,
+      swapped,
+      rawCode.replace(/^[A-Za-z0-9]+-/, ""),
+      swapped.replace(/^[A-Za-z0-9]+-/, ""),
+    ].filter(Boolean);
+
+    for (const suf of suffixKeys) {
+      const matches = await all<ResolvedItem>(
+        "SELECT id, code, lifecycle, stage, current_due_at FROM items WHERE code LIKE ? COLLATE NOCASE LIMIT 2",
+        `%-${suf}`
+      );
+      if (matches.length === 1) return { item: matches[0] };
+    }
+  }
+
+  // 6. Component match (from explicit row columns or parsed from item_code)
+  const parsed = rawCode ? parseItemReconciliationCode(rawCode) : null;
+  const gradeStr = rec.grade_code?.trim() || parsed?.gradeCode;
+  const subjectStr = rec.subject_code?.trim() || parsed?.subjectCode;
+  const unitNum = rec.unit_number ? Number(rec.unit_number) : parsed?.unitNumber;
+  const partNum =
+    (rec.part_number ? Number(rec.part_number) : undefined) ??
+    (rec.lesson_number ? Number(rec.lesson_number) : undefined) ??
+    parsed?.partNumber;
+
+  if (gradeStr && subjectStr && unitNum != null && !Number.isNaN(unitNum) && partNum != null && !Number.isNaN(partNum)) {
+    const grade = await gradeByCode(gradeStr);
+    const subject = await subjectByCode(subjectStr);
+    if (grade && subject) {
+      const unit = await unitFor(grade.id, subject.id, unitNum);
+      if (unit) {
+        const lesson = await get<{ id: string }>(
+          "SELECT id FROM lessons WHERE unit_id = ? AND number = ?",
+          unit.id,
+          partNum
+        );
+        if (lesson) {
+          let item = await get<ResolvedItem>(
+            "SELECT id, code, lifecycle, stage, current_due_at FROM items WHERE lesson_id = ? AND lifecycle NOT IN ('archived','cancelled') ORDER BY created_at LIMIT 1",
+            lesson.id
+          );
+          if (!item) {
+            item = await get<ResolvedItem>(
+              "SELECT id, code, lifecycle, stage, current_due_at FROM items WHERE lesson_id = ? ORDER BY created_at LIMIT 1",
+              lesson.id
+            );
+          }
+          if (item) return { item };
+        }
+      }
+    }
+
+    // Pattern matching in item code for grade, subject, unit, and part/lesson
+    const gNorm = normGradeCode(gradeStr);
+    const uPad = `U${String(unitNum).padStart(2, "0")}`;
+    const lPad = `L${String(partNum).padStart(2, "0")}`;
+    const pPad = `P${String(partNum).padStart(2, "0")}`;
+
+    const candidates = await all<ResolvedItem>(
+      `SELECT id, code, lifecycle, stage, current_due_at FROM items 
+       WHERE (code LIKE ? OR code LIKE ?) COLLATE NOCASE 
+         AND lifecycle NOT IN ('archived', 'cancelled')
+       LIMIT 2`,
+      `%${gNorm}%${subjectStr}%${uPad}%${lPad}%`,
+      `%${gNorm}%${subjectStr}%${uPad}%${pPad}%`
+    );
+    if (candidates.length === 1) return { item: candidates[0] };
+
+    // Also try unpadded
+    const candUnpadded = await all<ResolvedItem>(
+      `SELECT id, code, lifecycle, stage, current_due_at FROM items 
+       WHERE (code LIKE ? OR code LIKE ?) COLLATE NOCASE 
+         AND lifecycle NOT IN ('archived', 'cancelled')
+       LIMIT 2`,
+      `%${gradeStr}%${subjectStr}%U${unitNum}%L${partNum}%`,
+      `%${gradeStr}%${subjectStr}%U${unitNum}%P${partNum}%`
+    );
+    if (candUnpadded.length === 1) return { item: candUnpadded[0] };
+  }
+
+  // 7. Not found
+  if (rawCode) {
+    return { lookupError: `No item with code ${rawCode}.` };
+  } else if (rec.grade_code && rec.subject_code && rec.unit_number && rec.part_number) {
+    return { lookupError: `No part ${rec.grade_code} ${rec.subject_code} unit ${rec.unit_number} part ${rec.part_number}.` };
+  } else {
+    return { lookupError: "Give an item_code, or grade_code, subject_code, unit_number and part_number." };
+  }
 }
 
 async function parsePlacement(token: string) {
@@ -868,20 +1075,8 @@ async function planRow(template: TemplateDef, rec: Row, rowNo: number, mode: Imp
       rec.status ||= "done";
     }
     const stage = rec.stage?.toLowerCase() as Stage;
-    let item: { id: string; code: string; lifecycle: string; stage: Stage | null } | undefined;
-    if (rec.item_code) {
-      item = await get("SELECT id, code, lifecycle, stage FROM items WHERE code = ? COLLATE NOCASE", rec.item_code);
-      if (!item) errors.push(`No item with code ${rec.item_code}.`);
-    } else if (rec.grade_code && rec.subject_code && rec.unit_number && rec.part_number) {
-      const grade = await gradeByCode(rec.grade_code);
-      const subject = await subjectByCode(rec.subject_code);
-      const unit = grade && subject ? await unitFor(grade.id, subject.id, Number(rec.unit_number)) : undefined;
-      const lesson = unit ? await get<{ id: string }>("SELECT id FROM lessons WHERE unit_id = ? AND number = ?", unit.id, Number(rec.part_number)) : undefined;
-      item = lesson
-        ? await get("SELECT id, code, lifecycle, stage FROM items WHERE lesson_id = ? AND lifecycle NOT IN ('archived','cancelled') ORDER BY created_at LIMIT 1", lesson.id)
-        : undefined;
-      if (!item) errors.push(`No part ${rec.grade_code} ${rec.subject_code} unit ${rec.unit_number} part ${rec.part_number}.`);
-    } else errors.push("Give an item_code, or grade_code, subject_code, unit_number and part_number.");
+    const { item, lookupError } = await resolveItemRecord(rec);
+    if (!item && lookupError) errors.push(lookupError);
     if (item && !(await canViewItem(user, item.id))) errors.push(`${item.code} is outside your access.`);
     if (STAGES.includes(stage) && !isManager(user) && !user.leads.includes(stage) && !user.roles.includes(stage))
       errors.push(`You are not on the ${stage} team, so you cannot record ${stage} progress.`);
@@ -983,12 +1178,8 @@ async function planRow(template: TemplateDef, rec: Row, rowNo: number, mode: Imp
   }
 
   if (template.key === "items") {
-    const existing = rec.item_id
-      ? await get<{ id: string; code: string; current_due_at: string | null }>("SELECT id, code, current_due_at FROM items WHERE id = ?", rec.item_id)
-      : rec.item_code
-        ? await get<{ id: string; code: string; current_due_at: string | null }>("SELECT id, code, current_due_at FROM items WHERE code = ? COLLATE NOCASE", rec.item_code)
-        : undefined;
-    const key = rec.item_code || rec.item_id || `row ${rowNo}`;
+    const { item: existing } = await resolveItemRecord(rec);
+    const key = existing?.code || rec.item_code || rec.item_id || `row ${rowNo}`;
     if (rec.item_code || rec.item_id) {
       if (seenKeys.has(key.toUpperCase())) errors.push(`Item ${key} appears more than once in this file.`);
       seenKeys.add(key.toUpperCase());
@@ -1178,18 +1369,19 @@ async function planRow(template: TemplateDef, rec: Row, rowNo: number, mode: Imp
   }
 
   if (template.key === "recording_sessions") {
-    const item = rec.item_code ? await get<{ id: string; code: string }>("SELECT id, code FROM items WHERE code = ? COLLATE NOCASE", rec.item_code) : undefined;
-    if (rec.item_code && !item) errors.push(`No item with code ${rec.item_code}.`);
+    const { item, lookupError } = await resolveItemRecord(rec);
+    if (rec.item_code && !item) errors.push(lookupError || `No item with code ${rec.item_code}.`);
     if (item && !await canViewItem(user, item.id)) errors.push(`${item.code} is outside your access scope.`);
     const start = rec.scheduled_start ? localInputToIso(rec.scheduled_start.replace(" ", "T"), tz) : null;
-    const key = `${rec.item_code}@${rec.scheduled_start}`;
+    const itemKey = item?.code || rec.item_code;
+    const key = `${itemKey}@${rec.scheduled_start}`;
     if (seenKeys.has(key)) errors.push("Duplicate session in this file.");
     seenKeys.add(key);
     if (item && start && await get("SELECT 1 AS x FROM recording_sessions WHERE item_id = ? AND scheduled_start = ?", item.id, start))
       return { outcome: { ...out("skip", key, "Session already booked"), action: errors.length ? "error" : "skip" } };
     if (start && start < nowIso()) warnings.push("The session time is in the past.");
     return {
-      outcome: out("create", key, `Book ${rec.item_code} at ${rec.scheduled_start}`),
+      outcome: out("create", key, `Book ${itemKey} at ${rec.scheduled_start}`),
       apply: async (ctx) => {
         await run(
                     "INSERT INTO recording_sessions (id, item_id, scheduled_start, duration_min, presenter, location, status, outcome_note, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, 'scheduled', ?, ?, ?)",

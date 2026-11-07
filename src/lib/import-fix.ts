@@ -68,3 +68,39 @@ export function closestOption(v: string, opts: string[]): string | null {
   return best && bestD <= Math.max(1, Math.floor(squash(best).length / 4)) ? best : null;
 }
 
+// Validates a master file location or link:
+// Accepts:
+// 1. Local drive paths: e.g. D:\My Seed EdTech Lecture\Grade 5\... or C:/Videos/...
+// 2. Shared network paths: e.g. \\Server\Production\... or //Server/Production/...
+// 3. Web links: https://... or http://...
+// 4. File URIs: file://...
+// 5. Unix/POSIX paths: /Volumes/..., /mnt/..., /Users/...
+// 6. Custom schemes: drive://..., dropbox://..., smb://...
+// 7. Well-known cloud storage domains without protocol: drive.google.com/..., dropbox.com/...
+export function isValidFileLocationOrUrl(raw: unknown): boolean {
+  if (typeof raw !== "string") return false;
+  const v = raw.trim();
+  if (!v) return false;
+
+  // 1. Web links (http://, https://)
+  if (/^https?:\/\/\S+/i.test(v)) return true;
+
+  // 2. Windows local drive paths (e.g. D:\..., C:\..., D:/...)
+  if (/^[a-zA-Z]:[\\/]\S*/i.test(v)) return true;
+
+  // 3. Shared-drive UNC paths (e.g. \\Server\... or //Server/...)
+  if (/^(?:\\\\|\/\/)[^\\/\s]+[\\/]\S*/i.test(v)) return true;
+
+  // 4. Unix/POSIX root paths (e.g. /Volumes/..., /mnt/..., /Users/...)
+  if (/^\/[^/\s]+[\\/]\S*/i.test(v)) return true;
+
+  // 5. File URI or custom protocols (e.g. file://..., drive://..., smb://...)
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\/\S+/i.test(v)) return true;
+
+  // 6. Common domain storage prefixes without protocol (e.g. drive.google.com/..., dropbox.com/...)
+  if (/^(?:www\.)?(?:drive\.google\.com|dropbox\.com|onedrive\.live\.com|sharepoint\.com|box\.com|youtube\.com|youtu\.be)[\/\S]*/i.test(v)) return true;
+
+  return false;
+}
+
+

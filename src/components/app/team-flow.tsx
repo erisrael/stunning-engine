@@ -28,6 +28,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { isValidFileLocationOrUrl } from "@/lib/import-fix";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
@@ -175,9 +176,9 @@ function WorkPanel({ item, canEdit, lead }: { item: FlowItem; canEdit: boolean; 
   const addAsset = async (kind: "raw" | "master" | "captions" | "thumbnail", value: string, durationMin?: number | null) => {
     const v = value.trim();
     if (!v) return;
-    const isUrl = /^https?:\/\//i.test(v);
-    if (kind !== "raw" && !isUrl) return void toast.error("Paste the link (starting with https://).");
-    if (await act(item.id, { action: "asset", kind, url: isUrl ? v : null, cameraCode: isUrl ? null : v, durationMin: durationMin ?? null }, "Added")) setLink("");
+    const isLocation = isValidFileLocationOrUrl(v);
+    if (kind !== "raw" && !isLocation) return void toast.error("Enter a valid file location (D:\\... or \\\\Server\\...) or link (https://...).");
+    if (await act(item.id, { action: "asset", kind, url: isLocation ? v : null, cameraCode: isLocation ? null : v, durationMin: durationMin ?? null }, "Added")) setLink("");
   };
   // Handed over on an external disk: the disk's name and the folder or file on it.
   const addDisk = async (kind: "raw" | "master" | "captions" | "thumbnail", disk: string, path: string, durationMin?: number | null) =>
@@ -292,7 +293,7 @@ function WorkPanel({ item, canEdit, lead }: { item: FlowItem; canEdit: boolean; 
             <p className="text-xs font-medium">
               {t.label} <span className="font-normal text-muted-foreground">· {t.status}</span>
             </p>
-            <UploadField target={t} disabled={!canEdit} onSave={(v) => act(item.id, { action: "upload", platform: t.platform, status: "uploaded", ...(/^https?:\/\//i.test(v) ? { uploadUrl: v } : { externalId: v }) }, "Upload recorded")} />
+            <UploadField target={t} disabled={!canEdit} onSave={(v) => act(item.id, { action: "upload", platform: t.platform, status: "uploaded", ...(isValidFileLocationOrUrl(v) ? { uploadUrl: v } : { externalId: v }) }, "Upload recorded")} />
             {t.platform === "youtube" && canEdit && !t.externalId && (
               <YoutubeUpload title={item.title} description={item.place} onDone={(id) => act(item.id, { action: "upload", platform: t.platform, status: "uploaded", externalId: id }, "Video ID recorded")} />
             )}
@@ -329,7 +330,7 @@ function LinkField({ label, current, disabled, onSave, bare }: { label: string; 
       )}
       {!disabled && (
         <div className="flex gap-2">
-          <Input value={v} onChange={(e) => setV(e.target.value)} placeholder={current ? "Paste a newer link" : "https://"} aria-label={label} className="h-8 flex-1" />
+          <Input value={v} onChange={(e) => setV(e.target.value)} placeholder={current ? "Paste a newer location or link" : "https:// or D:\\... or \\\\Server\\..."} aria-label={label} className="h-8 flex-1" />
           <Button size="sm" variant="outline" type="submit" disabled={!v.trim()}>
             Save
           </Button>

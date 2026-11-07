@@ -15,7 +15,7 @@ type Viewer = AppUser & { activeRole: string };
 export type CellChange = { row: number; field: string; label: string; from: string; to: string; why: string };
 export type CheckItem = { key: string; label: string; ok: boolean; detail: string };
 
-import { closestOption, normalizeDate } from "@/lib/import-fix";
+import { closestOption, normalizeDate, isValidFileLocationOrUrl } from "@/lib/import-fix";
 const pad = (n: number) => String(n).padStart(2, "0");
 
 function fixValue(f: TemplateField, raw: string): { value: string; why: string } | null {
@@ -62,7 +62,7 @@ function fixValue(f: TemplateField, raw: string): { value: string; why: string }
       break;
     }
     case "url": {
-      if (!/^https?:\/\//i.test(v) && /^[\w-]+(\.[\w-]+)+(\/\S*)?$/.test(v)) (v = `https://${v}`), why.push("https:// added");
+      if (!isValidFileLocationOrUrl(v) && /^[\w-]+(\.[\w-]+)+(\/\S*)?$/.test(v)) (v = `https://${v}`), why.push("https:// added");
       break;
     }
     case "enum": {
