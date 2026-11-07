@@ -32,6 +32,7 @@ import { cn } from "@/lib/utils";
 import { DATASETS, listTokens, type Dataset } from "@/server/feeds";
 import { IntegrationsAdmin } from "@/components/app/integrations";
 import { sidebarDefaults } from "@/server/ui-prefs";
+import { LegacyCmsAdmin } from "./legacy-cms-admin";
 import { SidebarAdmin } from "./sidebar-admin";
 import { listBlocked, listSessions } from "@/server/devices";
 import { SessionsTable } from "@/components/app/security";
@@ -124,6 +125,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
         { id: "teams", label: "Teams" },
         { id: "departments", label: "Departments" },
         { id: "permissions", label: "Roles & Permissions" },
+        { id: "sidebar", label: "Sidebar per Role" },
         { id: "access", label: "Access" },
       ],
     },
@@ -151,6 +153,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
       label: "Integrations & APIs",
       tabs: [
         { id: "external-apis", label: "External APIs & Chapa" },
+        { id: "legacy-cms", label: "Noor CMS Access per User" },
       ],
     },
     {
@@ -331,9 +334,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
                 })())}
             </TabsContent>
             <TabsContent value="system">
-              {tab !== "system" ? (
-                <OpenWithTab tab="system" />
-              ) : (
+              {tab === "system" && (
                 <SystemAdmin
                   data={{
                     health: await healthChecks(),
@@ -354,6 +355,13 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
             </TabsContent>
             <TabsContent value="sidebar">
               <SidebarAdmin defaults={await sidebarDefaults()} />
+            </TabsContent>
+            <TabsContent value="legacy-cms">
+              {tab === "legacy-cms" && (
+                <LegacyCmsAdmin
+                  users={users.filter((u) => u.active).map((u) => ({ id: u.id, name: u.name, email: u.email, role: u.roles[0] || "staff" }))}
+                />
+              )}
             </TabsContent>
             <TabsContent value="integrations">
               <IntegrationsAdmin

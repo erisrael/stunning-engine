@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { CalendarPlusIcon, CheckIcon, ChevronLeftIcon, ChevronRightIcon, PencilIcon, PlusIcon, Trash2Icon, XIcon } from "lucide-react";
+import { CalendarPlusIcon, CheckIcon, ChevronLeftIcon, ChevronRightIcon, EyeIcon, EyeOffIcon, PencilIcon, PlusIcon, Trash2Icon, XIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -24,6 +24,7 @@ import {
   requestLeaveAction,
   saveLeaveTypeAction,
   deleteLeaveTypeAction,
+  toggleLeaveTypeActiveAction,
   addEvidenceAction,
   askHrAction,
   answerQueryAction,
@@ -745,14 +746,30 @@ function LeaveTypes({ types, canManage }: { types: LeaveType[]; canManage: boole
             </div>
             {canManage && (
               <div className="flex items-center gap-1">
-                <Button size="icon-xs" variant="ghost" aria-label={`Edit ${t.label}`} onClick={() => setEditing(t)}>
+                <Button size="icon-xs" variant="ghost" aria-label={`Edit ${t.label}`} title="Edit" onClick={() => setEditing(t)}>
                   <PencilIcon />
+                </Button>
+                <Button
+                  size="icon-xs"
+                  variant="ghost"
+                  className={cn(t.active ? "text-muted-foreground hover:text-amber-600" : "text-emerald-600 hover:text-emerald-700")}
+                  title={t.active ? "Hide / Archive leave type" : "Unhide / Restore leave type"}
+                  aria-label={t.active ? `Hide ${t.label}` : `Unhide ${t.label}`}
+                  onClick={async () => {
+                    const res = await toggleLeaveTypeActiveAction(t.key, !t.active);
+                    if (!res.ok) return toast.error(res.error);
+                    toast.success(t.active ? `"${t.label}" is now hidden from new requests` : `"${t.label}" is now active`);
+                    router.refresh();
+                  }}
+                >
+                  {t.active ? <EyeOffIcon /> : <EyeIcon />}
                 </Button>
                 <Button
                   size="icon-xs"
                   variant="ghost"
                   className="text-muted-foreground hover:text-destructive"
                   aria-label={`Delete ${t.label}`}
+                  title="Delete"
                   onClick={async () => {
                     if (!confirm(`Delete "${t.label}" leave type? This cannot be undone.`)) return;
                     const res = await deleteLeaveTypeAction(t.key);

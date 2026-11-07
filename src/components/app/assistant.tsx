@@ -623,13 +623,108 @@ export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantCo
     return { from: "bot", text: m.answer.a };
   };
   const keywordAnswer = (t: string) => {
+    const lower = t.toLowerCase().trim();
+
+    // "What can you do?" / Help / Amharic capability prompt
+    if (
+      lower.includes("what can you do") ||
+      lower.includes("ምን ማድረግ ትችላለህ") ||
+      lower.includes("help") ||
+      lower.includes("ችሎታ") ||
+      lower.includes("capabilities")
+    ) {
+      const isAm = voice.lang === "am-ET" || /[\u1200-\u137F]/.test(t);
+      const roleName = (ctx as any).userRole || ctx.who.role || "member";
+      if (isAm) {
+        say({
+          from: "bot",
+          text: `እኔ የስራ ረዳትዎ ነኝ። በእርስዎ (${roleName}) ሚና መሰረት የሚከተሉትን ማከናወን እችላለሁ፦\n\n• 🕒 **የስራ ሰዓት (Attendance):** ሰዓት መመዝገብ፣ መግባት/መውጣት እና የስራ ሰዓት ማረጋገጥ\n• 📅 **ፈቃድ (Leave):** የፈቃድ ጥያቄ ማቅረብ እና የቀረዎትን ቀን ማየት\n• 💼 **የስራ ተግባራት (Tasks):** የተሰጡዎትን ተግባራት መመልከት እና ማዘመን\n• 💬 **ጥያቄዎች:** ችግሮችን ሪፖርት ማድረግ\n• 🧭 **ገጾች:** "ሂድ ወደ..." በማለት ወደሚፈልጉት ገጽ መሄድ\n• ⚡ **Routines:** ተደጋጋሚ ስራዎችን በራስ-ሰር ማከናወን`,
+          actions: [
+            { label: "🕒 የስራ ሰዓት መመዝገብ", run: () => router.push("/attendance") },
+            { label: "📅 የፈቃድ ጥያቄ", run: () => router.push("/leave") },
+            { label: "⚡ Routines", run: () => router.push("/routines") },
+          ],
+        });
+      } else {
+        say({
+          from: "bot",
+          text: `I'm your workspace assistant. Scoped to your **${roleName}** role, here is what I can help you with:\n\n• 🕒 **Attendance:** Check in, check out, review daily timesheets\n• 📅 **Leave:** Request leave, check remaining balances & approval progress\n• 💼 **Tasks & Work:** View your assigned tasks and log progress\n• 💬 **Questions:** Report issues or collaborate with teams\n• 🧭 **Navigation:** Say or type "Open [page name]" to jump to any page\n• ⚡ **Routines:** Automate repetitive daily workflows`,
+          actions: [
+            { label: "🕒 Check Attendance", run: () => router.push("/attendance") },
+            { label: "📅 Request Leave", run: () => router.push("/leave") },
+            { label: "⚡ View Routines", run: () => router.push("/routines") },
+          ],
+        });
+      }
+      return;
+    }
+
+    // Sidebar configuration navigation guidance
+    if (lower.includes("sidebar") || lower.includes("ሳይድባር") || lower.includes("configure role")) {
+      say({
+        from: "bot",
+        text: voice.lang === "am-ET"
+          ? "የሳይድባር ማስተካከያ ገጽ በAdmin ስር ይገኛል። ሚናዎችን እና የሚታዩትን ክፍሎች እዚህ ማስተካከል ይችላሉ፦"
+          : "You can configure which sidebar items are visible for each role on the Admin Sidebar configuration page:",
+        actions: [{ label: "Open Role Sidebar Config", run: () => router.push("/admin?tab=sidebar") }],
+      });
+      return;
+    }
+
+    // Routines guidance
+    if (lower.includes("routine") || lower.includes("ሩቲን")) {
+      say({
+        from: "bot",
+        text: voice.lang === "am-ET"
+          ? "የእለት ተግባራትን (Routines) ለማየት፣ ለመቅረጽ ወይም ለማስተካከል ወደ Routines ገጽ ይሂዱ፦"
+          : "To record, manage, or run your automated routines, open the Routines page:",
+        actions: [{ label: "Open Routines", run: () => router.push("/routines") }],
+      });
+      return;
+    }
+
+    // Leave guidance
+    if (lower.includes("leave") || lower.includes("ፈቃድ")) {
+      say({
+        from: "bot",
+        text: voice.lang === "am-ET"
+          ? "የፈቃድ ጥያቄ ማቅረብ ወይም የቀረዎትን የፈቃድ ቀን ማየት ይፈልጋሉ?"
+          : "You can request leave, review remaining days, or check approval status in the Leave section:",
+        actions: [{ label: "Open Leave", run: () => router.push("/leave") }],
+      });
+      return;
+    }
+
+    // Attendance guidance
+    if (
+      lower.includes("attendance") ||
+      lower.includes("check in") ||
+      lower.includes("check out") ||
+      lower.includes("punch") ||
+      lower.includes("ሰዓት")
+    ) {
+      say({
+        from: "bot",
+        text: voice.lang === "am-ET"
+          ? "የስራ ሰዓት ለመመዝገብ፣ መግባት/መውጣት ለማረጋገጥ ወይም የጊዜ ሰሌዳ ለማየት፦"
+          : "To punch in/out, check shifts, or view your timesheet, open Attendance:",
+        actions: [{ label: "Open Attendance", run: () => router.push("/attendance") }],
+      });
+      return;
+    }
+
     const found = matchText(t, ctx.flows, ctx.cfg, ctx.places);
     if (!found.length) {
       log({ event: "nomatch", text: t });
       say({
         from: "bot",
-        text: "I could not find that. These may help, or search Help:",
-        actions: [...ctx.flows.slice(0, 3).map((f) => ({ label: f.title, run: () => startFlow(f) })), { label: "Search Help", run: () => router.push(`/profile/help?q=${encodeURIComponent(t)}`) }],
+        text: voice.lang === "am-ET"
+          ? "ጥያቄዎን ላገኘው አልቻልኩም። እነዚህ ሊረዱዎት ይችላሉ፦"
+          : "I could not find that. These may help, or search Help:",
+        actions: [
+          ...ctx.flows.slice(0, 3).map((f) => ({ label: f.title, run: () => startFlow(f) })),
+          { label: "Search Help", run: () => router.push(`/profile/help?q=${encodeURIComponent(t)}`) },
+        ],
       });
     } else {
       say(reply(found[0]!));
@@ -951,68 +1046,60 @@ export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantCo
                   </div>
                 </div>
               )}
-              {!msgs.length && !doing && !guide && !runFor && routinesOn && (
-                <div className="space-y-1.5" data-assistant-routines>
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs font-medium text-muted-foreground">My routines</p>
-                    <span className="flex items-center gap-1">
-                      <Button size="xs" variant="ghost" asChild>
-                        <a href="/routines">Edit or import</a>
-                      </Button>
-                      <Button size="xs" variant="outline" onClick={() => (rec.start(), setOpen(false), toast("Recording. Do the task as usual, then press Stop and save at the top."))}>
-                        <CircleDotIcon className="text-[#EA4335]" /> Record a routine
-                      </Button>
-                    </span>
-                  </div>
-                  {routines && routines.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5">
-                      {routines.map((r) => (
-                        <button key={r.id} type="button" onClick={() => runRoutine(r)} className="rounded-full border border-[#1A73E8]/30 bg-[#1A73E8]/5 px-2.5 py-1 text-xs hover:bg-[#1A73E8]/10" data-assistant-routine={r.id}>
-                          <PlayIcon className="mr-1 inline size-3" />
-                          {r.name}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
               {!msgs.length && !doing && !guide && !runFor && (
-                <>
-                  <p className="text-muted-foreground">What would you like to do? Pick one, type it in your own words, or press the microphone and say it.</p>
-                  {suggestions.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5">
-                      {suggestions.map((s) => (
-                        <button key={s} type="button" onClick={() => ask(s)} className="rounded-full border border-[#9334E6]/30 bg-[#9334E6]/5 px-2.5 py-1 text-xs hover:bg-[#9334E6]/10" data-assistant-suggest>
-                          {s}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                  <div className="flex flex-wrap gap-1.5">
-                    {ctx.flows
-                      .filter((f) => f.kind !== "guide")
-                      .map((f) => (
-                        <button key={f.key} type="button" onClick={() => startFlow(f)} className="rounded-full border px-2.5 py-1 text-xs hover:bg-muted" data-assistant-flow={f.key}>
-                          {f.title}
-                        </button>
-                      ))}
+                <div className="flex flex-col items-center justify-center py-6 px-3 text-center space-y-4">
+                  <div className="size-12 rounded-2xl bg-gradient-to-tr from-emerald-500/20 via-primary/20 to-purple-500/20 border border-primary/20 flex items-center justify-center shadow-xs">
+                    <SparklesIcon className="size-6 text-primary animate-pulse" />
                   </div>
-                  <details className="rounded-lg border px-2.5 py-1.5" data-assistant-tutorials>
-                    <summary className="cursor-pointer text-xs font-medium">How-to tutorials ({ctx.flows.filter((f) => f.kind === "guide").length})</summary>
-                    <ul className="mt-1.5 max-h-48 space-y-0.5 overflow-y-auto">
-                      {ctx.flows
-                        .filter((f) => f.kind === "guide")
-                        .map((f) => (
-                          <li key={f.key}>
-                            <button type="button" onClick={() => startFlow(f)} className="w-full rounded px-1.5 py-0.5 text-left text-xs hover:bg-muted" data-assistant-flow={f.key}>
-                              {f.title}
-                            </button>
-                          </li>
-                        ))}
-                    </ul>
-                  </details>
-                  <p className="text-[11px] text-muted-foreground">Say &quot;open leave&quot;, &quot;go back&quot;, &quot;scroll down&quot; or ask a question.</p>
-                </>
+                  <div className="space-y-1">
+                    <h3 className="text-base font-semibold text-foreground">
+                      {voice.lang === "am-ET"
+                        ? `ሰላም ${(ctx as any).userName?.split(" ")[0] || ""}፣ ዛሬ በምን ልርዳዎት?`
+                        : `Hi ${(ctx as any).userName?.split(" ")[0] || "there"}, how can I help today?`}
+                    </h3>
+                    <p className="text-xs text-muted-foreground max-w-xs mx-auto">
+                      {voice.lang === "am-ET"
+                        ? "በእንግሊዝኛ ወይም በአማርኛ ጥያቄ ይጠይቁኝ፤ ወይም ድምጽዎን ተጠቅመው ያናግሩኝ።"
+                        : "Ask questions, run workspace actions, or navigate pages. Type or press the microphone."}
+                    </p>
+                  </div>
+
+                  {/* Clean Quick Actions */}
+                  <div className="flex flex-wrap items-center justify-center gap-1.5 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => ask(voice.lang === "am-ET" ? "ምን ማድረግ ትችላለህ?" : "What can you do?")}
+                      className="rounded-full border border-primary/30 bg-primary/5 hover:bg-primary/10 text-primary px-3 py-1 text-xs font-medium flex items-center gap-1.5 transition-colors"
+                    >
+                      <SparklesIcon className="size-3" />
+                      {voice.lang === "am-ET" ? "ምን ማድረግ ትችላለህ?" : "What can you do?"}
+                    </button>
+                    {routinesOn && (
+                      <button
+                        type="button"
+                        onClick={() => router.push("/routines")}
+                        className="rounded-full border border-blue-500/30 bg-blue-500/5 hover:bg-blue-500/10 text-blue-600 dark:text-blue-400 px-3 py-1 text-xs font-medium flex items-center gap-1.5 transition-colors"
+                      >
+                        <PlayIcon className="size-3" />
+                        {voice.lang === "am-ET" ? "የእለት ተግባራት (Routines)" : "View Routines"}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => ask(voice.lang === "am-ET" ? "የዛሬ ሰዓት መመዝገቢያ ሁኔታዬን አሳየኝ" : "Check my attendance status")}
+                      className="rounded-full border border-border bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground px-3 py-1 text-xs transition-colors"
+                    >
+                      {voice.lang === "am-ET" ? "🕒 የስራ ሰዓት" : "🕒 Attendance"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => ask(voice.lang === "am-ET" ? "የቀረኝን የፈቃድ ቀን አሳየኝ" : "Check my leave balances")}
+                      className="rounded-full border border-border bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground px-3 py-1 text-xs transition-colors"
+                    >
+                      {voice.lang === "am-ET" ? "📅 የፈቃድ ቀናት" : "📅 Leave balance"}
+                    </button>
+                  </div>
+                </div>
               )}
               {msgs.map((m, i) =>
                 m.done && m.done.length ? (

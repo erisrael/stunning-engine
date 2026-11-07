@@ -27,6 +27,8 @@ import {
   LockIcon,
   DatabaseIcon,
   Trash2Icon,
+  ArchiveIcon,
+  PlusIcon,
   LogInIcon,
   LogOutIcon,
   ShieldCheckIcon,
@@ -104,6 +106,12 @@ import {
   deleteLegacyCmsCategoryDataAction,
   getLegacyCmsStorageStatusAction,
   reportUserIssueToQuestionsAction,
+  createLegacyCmsSnapshotAction,
+  listLegacyCmsSnapshotsAction,
+  getLegacyCmsSnapshotAction,
+  deleteLegacyCmsSnapshotAction,
+  resolveLegacyCmsFeedbackAction,
+  syncAndLoadStudentParentRelationsAction,
 } from "@/app/actions/legacy-cms";
 import type {
   LegacyCmsCategory,
@@ -114,6 +122,7 @@ import type {
   RevenueAnalytics,
   GrowthAnalytics,
   CmsStorageCategoryStatus,
+  LegacyCmsSnapshot,
 } from "@/server/legacy-cms";
 import { FilamentPagination } from "@/components/app/legacy-cms/filament-pagination";
 import { SearchableRecipientCombobox, type QuestionRecipient } from "@/components/app/questions/searchable-recipient-combobox";
@@ -128,6 +137,7 @@ const CATEGORY_PATHS: Record<LegacyCmsCategory, string> = {
   "subscription-histories": "/admin/subscription-histories",
   invoices: "/admin/invoices",
   subscriptions: "/admin/subscriptions",
+  feedback: "/admin/feedback",
 };
 
 export function LegacyCmsClient({
@@ -136,7 +146,7 @@ export function LegacyCmsClient({
   initialRecords,
   stats,
   isAdmin = true,
-  allowedCategories = ["students", "parents", "subscriptions", "invoices", "subscription-plans", "subscription-histories"],
+  allowedCategories = ["students", "parents", "subscriptions", "invoices", "subscription-plans", "subscription-histories", "feedback"],
   visibility,
   initialRelations,
   initialRevenue,
@@ -298,6 +308,115 @@ export function LegacyCmsClient({
     }
   );
 
+  // Student Parent Sync & Rebuild State
+  const [relSyncLoading, setRelSyncLoading] = React.useState(false);
+  const handleSyncAndLoadRelations = async () => {
+    setRelSyncLoading(true);
+    try {
+      const res = await syncAndLoadStudentParentRelationsAction();
+      setRelSyncLoading(false);
+      if (res.ok && res.data) {
+        setRelations(res.data.relations);
+        setRelationsSummary(res.data.summary);
+        toast.success(`Loaded ${res.data.relations.length} student-parent relationships!`);
+      } else {
+        toast.error(res.error || "Failed to load directory");
+      }
+    } catch (e: any) {
+      setRelSyncLoading(false);
+      toast.error(String(e?.message || e));
+    }
+  };
+
+  // Archive Snapshots & Versioning State
+  const [snapshots, setSnapshots] = React.useState<LegacyCmsSnapshot[]>([]);
+  const [snapshotsLoading, setSnapshotsLoading] = React.useState(false);
+  const [createSnapshotModalOpen, setCreateSnapshotModalOpen] = React.useState(false);
+  const [newSnapshotName, setNewSnapshotName] = React.useState("");
+  const [newSnapshotCategory, setNewSnapshotCategory] = React.useState<LegacyCmsCategory | "all">("all");
+  const [newSnapshotDesc, setNewSnapshotDesc] = React.useState("");
+  const [viewSnapshotData, setViewSnapshotData] = React.useState<LegacyCmsSnapshot | null>(null);
+  const [viewSnapshotModalOpen, setViewSnapshotModalOpen] = React.useState(false);
+  const [snapshotSearch, setSnapshotSearch] = React.useState("");
+
+  const loadSnapshots = async () => {
+    setSnapshotsLoading(true);
+    const res = await listLegacyCmsSnapshotsAction();
+    setSnapshotsLoading(false);
+    if (res.ok) {
+      setSnapshots(res.snapshots);
+    }
+  };
+
+  const handleCreateSnapshot = async () => {
+    if (!newSnapshotName.trim()) return toast.error("Please enter a version name (e.g. v1.0)");
+    setLoading(true);
+    const res = await createLegacyCmsSnapshotAction({
+      versionName: newSnapshotName,
+      category: newSnapshotCategory,
+      description: newSnapshotDesc,
+    });
+    setLoading(false);
+    if (res.ok) {
+      toast.success(res.message || "Snapshot created!");
+      setCreateSnapshotModalOpen(false);
+      setNewSnapshotName("");
+      setNewSnapshotDesc("");
+      loadSnapshots();
+    } else {
+      toast.error(res.message || "Failed to create snapshot");
+    }
+  };
+
+  const handleOpenSnapshotViewer = async (id: string) => {
+    setLoading(true);
+    const res = await getLegacyCmsSnapshotAction(id);
+    setLoading(false);
+    if (res.ok && res.snapshot) {
+      setViewSnapshotData(res.snapshot);
+      setViewSnapshotModalOpen(true);
+    } else {
+      toast.error(res.error || "Could not load snapshot details");
+    }
+  };
+
+  const handleDeleteSnapshot = async (id: string, name: string) => {
+    if (!confirm(`Delete snapshot "${name}"? This cannot be undone.`)) return;
+    setLoading(true);
+    const res = await deleteLegacyCmsSnapshotAction(id);
+    setLoading(false);
+    if (res.ok) {
+      toast.success("Snapshot deleted");
+      loadSnapshots();
+    } else {
+      toast.error(res.message || "Failed to delete snapshot");
+    }
+  };
+
+  // Feedback Resolution State
+  const [feedbackResolveModalOpen, setFeedbackResolveModalOpen] = React.useState(false);
+  const [activeFeedbackItem, setActiveFeedbackItem] = React.useState<any | null>(null);
+  const [feedbackResolveStatus, setFeedbackResolveStatus] = React.useState<"resolved" | "in_review" | "closed">("resolved");
+  const [feedbackResolveNotes, setFeedbackResolveNotes] = React.useState("");
+
+  const handleResolveFeedback = async () => {
+    if (!activeFeedbackItem) return;
+    setLoading(true);
+    const id = activeFeedbackItem.ID || activeFeedbackItem.id || activeFeedbackItem.external_id || "1";
+    const res = await resolveLegacyCmsFeedbackAction(id, {
+      status: feedbackResolveStatus,
+      notes: feedbackResolveNotes,
+    });
+    setLoading(false);
+    if (res.ok) {
+      toast.success(res.message);
+      setFeedbackResolveModalOpen(false);
+      refreshAllViews();
+    } else {
+      toast.error(res.message || "Failed to update feedback");
+    }
+  };
+
   // Authentication & Session Status
   const [authStatus, setAuthStatus] = React.useState<{
     status: "checking" | "connected" | "disconnected" | "error";
@@ -405,6 +524,12 @@ export function LegacyCmsClient({
       handleFetchLivePage(category, 1, search, livePageSize);
     }
   }, [category, dataSourceMode]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  React.useEffect(() => {
+    if (activeMainView === "storage") {
+      void loadSnapshots();
+    }
+  }, [activeMainView]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const refreshAllViews = async () => {
     const [catRes, relRes, revRes, groRes, stoRes] = await Promise.all([
@@ -696,18 +821,46 @@ export function LegacyCmsClient({
         cleanKey.includes("joined")
       ) {
         const strVal = String(v).trim();
-        if (strVal.length >= 8) {
-          const d = new Date(strVal.replace(" ", "T"));
-          if (!isNaN(d.getTime())) return d;
+        // Direct Date parse (handles "Nov 06, 2024", "2024-11-06", "11/06/2024", etc.)
+        const direct = new Date(strVal);
+        if (!isNaN(direct.getTime()) && direct.getFullYear() > 2000 && direct.getFullYear() < 2100) {
+          return direct;
         }
+
+        // Handle ISO-like timestamps with space
+        if (strVal.includes("-") || strVal.includes("/")) {
+          const isoLike = new Date(strVal.replace(" ", "T"));
+          if (!isNaN(isoLike.getTime())) return isoLike;
+        }
+
+        // Relative dates: "2 hours ago", "yesterday", "5 days ago", "just now"
+        const lower = strVal.toLowerCase();
+        const now = Date.now();
+        if (lower.includes("just now") || lower.includes("sec ago")) return new Date(now);
+        const minsMatch = lower.match(/(\d+)\s*min/);
+        if (minsMatch) return new Date(now - parseInt(minsMatch[1], 10) * 60000);
+        const hoursMatch = lower.match(/(\d+)\s*hour/);
+        if (hoursMatch) return new Date(now - parseInt(hoursMatch[1], 10) * 3600000);
+        if (lower.includes("yesterday")) return new Date(now - 86400000);
+        const daysMatch = lower.match(/(\d+)\s*day/);
+        if (daysMatch) return new Date(now - parseInt(daysMatch[1], 10) * 86400000);
+        const weeksMatch = lower.match(/(\d+)\s*week/);
+        if (weeksMatch) return new Date(now - parseInt(weeksMatch[1], 10) * 7 * 86400000);
+        const monthsMatch = lower.match(/(\d+)\s*month/);
+        if (monthsMatch) return new Date(now - parseInt(monthsMatch[1], 10) * 30 * 86400000);
       }
     }
 
-    // Secondary scan for any date-like string
+    // Secondary scan for any date-like string across all fields
     for (const v of Object.values(itemData)) {
-      if (typeof v === "string" && /^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}/.test(v.trim())) {
-        const d = new Date(v.trim().replace(" ", "T"));
-        if (!isNaN(d.getTime())) return d;
+      if (typeof v === "string") {
+        const strVal = v.trim();
+        if (strVal.length >= 8 && strVal.length <= 40) {
+          const direct = new Date(strVal);
+          if (!isNaN(direct.getTime()) && direct.getFullYear() > 2000 && direct.getFullYear() < 2100) {
+            return direct;
+          }
+        }
       }
     }
 
@@ -718,7 +871,7 @@ export function LegacyCmsClient({
   const matchesDateFilter = (itemData: Record<string, any>) => {
     if (dateFilter === "all") return true;
     const d = extractDateFromRecord(itemData);
-    if (!d) return false; // When an active date filter is selected, records without a valid date do not match!
+    if (!d) return false;
 
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
@@ -763,7 +916,7 @@ export function LegacyCmsClient({
     return records.filter((r) => {
       const data = r.data || {};
       const matchesSearch =
-        !search ||
+        !search.trim() ||
         r.title.toLowerCase().includes(search.toLowerCase()) ||
         r.externalId.toLowerCase().includes(search.toLowerCase()) ||
         JSON.stringify(data).toLowerCase().includes(search.toLowerCase());
@@ -771,13 +924,13 @@ export function LegacyCmsClient({
       if (!matchesSearch) return false;
 
       if (statusFilter !== "all") {
-        const rowStatus = String(data.Status || data.status || "").toLowerCase();
-        if (rowStatus !== statusFilter.toLowerCase()) return false;
+        const rowStatus = String(data.Status || data.status || data["Payment Status"] || data["Subscription Status"] || "").toLowerCase();
+        if (rowStatus && !rowStatus.includes(statusFilter.toLowerCase())) return false;
       }
 
       if (gradeFilter !== "all") {
-        const rowGrade = String(data.Grade || data.grade || data.Grades || data.grades || "").toLowerCase();
-        if (!rowGrade.includes(gradeFilter.toLowerCase())) return false;
+        const rowGrade = String(data.Grade || data.grade || data.Grades || data.grades || data.Plan || data.plan || "").toLowerCase();
+        if (rowGrade && !rowGrade.includes(gradeFilter.toLowerCase())) return false;
       }
 
       if (!matchesDateFilter(data)) return false;
@@ -786,9 +939,17 @@ export function LegacyCmsClient({
     });
   }, [records, search, statusFilter, gradeFilter, dateFilter, customStartDate, customEndDate]);
 
-  // Filtered Live Records (Enriched direct CMS live filtering)
+  // Filtered Live Records (Enriched direct CMS live filtering with Search, Status, Grade, and Date)
   const filteredLiveRecords = React.useMemo(() => {
     return liveRecords.filter((r) => {
+      // Live search filter
+      if (search.trim()) {
+        const q = search.toLowerCase();
+        const matches = Object.values(r).some((v) =>
+          typeof v === "string" && v.toLowerCase().includes(q)
+        );
+        if (!matches) return false;
+      }
       // Status filter
       if (statusFilter !== "all") {
         const rowStatus = String(r.Status || r.status || r["Payment Status"] || r["Subscription Status"] || "").toLowerCase();
@@ -804,7 +965,7 @@ export function LegacyCmsClient({
 
       return true;
     });
-  }, [liveRecords, statusFilter, gradeFilter, dateFilter, customStartDate, customEndDate]);
+  }, [liveRecords, search, statusFilter, gradeFilter, dateFilter, customStartDate, customEndDate]);
 
   // Paginated Scraped Records
   const paginatedScrapedRecords = React.useMemo(() => {
@@ -1296,6 +1457,20 @@ export function LegacyCmsClient({
                                 Receipt
                               </Button>
                             )}
+                            {category === "feedback" && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-6 text-[10px] px-2 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 border-emerald-500/30"
+                                onClick={() => {
+                                  setActiveFeedbackItem(r);
+                                  setFeedbackResolveModalOpen(true);
+                                }}
+                              >
+                                <CheckCircleIcon className="size-2.5 mr-1" />
+                                Resolve
+                              </Button>
+                            )}
                             <Button
                               variant="ghost"
                               size="sm"
@@ -1445,27 +1620,38 @@ export function LegacyCmsClient({
                   Joined relationships linking students directly to their parents verified phone contact details.
                 </CardDescription>
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() =>
-                  exportToExcel(
-                    "student-parent-directory",
-                    ["Student Name", "Grade", "City", "Parent Name", "Parent Phone", "Subscription Status"],
-                    relations.map((r) => [
-                      r.studentName,
-                      r.grade || "—",
-                      r.city || "—",
-                      r.parentName || "—",
-                      r.parentPhone || "—",
-                      r.subscriptionStatus || "—",
-                    ])
-                  )
-                }
-                className="h-8 text-xs gap-1.5"
-              >
-                <FileSpreadsheetIcon className="size-3.5 text-emerald-600" /> Export Directory
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  className="h-8 text-xs gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white"
+                  disabled={relSyncLoading}
+                  onClick={handleSyncAndLoadRelations}
+                >
+                  <RefreshCwIcon className={cn("size-3.5", relSyncLoading && "animate-spin")} />
+                  {relSyncLoading ? "Syncing Directory..." : "Load / Rebuild Data"}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    exportToExcel(
+                      "student-parent-directory",
+                      ["Student Name", "Grade", "City", "Parent Name", "Parent Phone", "Subscription Status"],
+                      relations.map((r) => [
+                        r.studentName,
+                        r.grade || "—",
+                        r.city || "—",
+                        r.parentName || "—",
+                        r.parentPhone || "—",
+                        r.subscriptionStatus || "—",
+                      ])
+                    )
+                  }
+                  className="h-8 text-xs gap-1.5"
+                >
+                  <FileSpreadsheetIcon className="size-3.5 text-emerald-600" /> Export Directory
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="space-y-4">
               {/* Directory summary metrics */}
@@ -1535,8 +1721,21 @@ export function LegacyCmsClient({
                   <TableBody>
                     {paginatedRelations.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={7} className="text-center py-10 text-xs text-muted-foreground">
-                          No student-parent relationships match the filters.
+                        <TableCell colSpan={7} className="text-center py-12 text-xs text-muted-foreground space-y-3">
+                          <UsersIcon className="size-8 mx-auto text-muted-foreground/50 mb-1" />
+                          <p className="font-medium text-foreground">No student-parent relationships loaded yet.</p>
+                          <p className="text-[11px] text-muted-foreground max-w-sm mx-auto">
+                            Load student and parent contact pairs directly from the database or synchronize with Noor CMS.
+                          </p>
+                          <Button
+                            size="sm"
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs gap-1.5 mx-auto"
+                            disabled={relSyncLoading}
+                            onClick={handleSyncAndLoadRelations}
+                          >
+                            <RefreshCwIcon className={cn("size-3.5", relSyncLoading && "animate-spin")} />
+                            {relSyncLoading ? "Syncing Directory..." : "Load / Sync Contact Directory"}
+                          </Button>
                         </TableCell>
                       </TableRow>
                     ) : (
@@ -2012,6 +2211,97 @@ export function LegacyCmsClient({
                   );
                 })}
               </div>
+
+              {/* Versioned Archive Snapshots */}
+              <div className="pt-6 border-t space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                      <ArchiveIcon className="size-4 text-purple-600" />
+                      Historical Version Snapshots ({snapshots.length})
+                    </h3>
+                    <p className="text-xs text-muted-foreground">
+                      Point-in-time versioned backups of scraped Noor CMS records that can be inspected, searched, or exported.
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    className="h-8 text-xs gap-1.5 bg-purple-600 hover:bg-purple-700 text-white"
+                    onClick={() => setCreateSnapshotModalOpen(true)}
+                  >
+                    <PlusIcon className="size-3.5" /> Create Snapshot Version
+                  </Button>
+                </div>
+
+                <div className="border rounded-xl overflow-hidden">
+                  <Table>
+                    <TableHeader className="bg-muted/40">
+                      <TableRow>
+                        <TableHead className="text-xs">Version Name</TableHead>
+                        <TableHead className="text-xs">Scope / Category</TableHead>
+                        <TableHead className="text-xs">Records</TableHead>
+                        <TableHead className="text-xs">Created By</TableHead>
+                        <TableHead className="text-xs">Timestamp</TableHead>
+                        <TableHead className="text-right text-xs">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {snapshotsLoading ? (
+                        <TableRow>
+                          <TableCell colSpan={6} className="text-center py-8 text-xs text-muted-foreground">
+                            <RefreshCwIcon className="size-4 animate-spin mx-auto mb-1 text-primary" />
+                            Loading snapshots...
+                          </TableCell>
+                        </TableRow>
+                      ) : snapshots.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={6} className="text-center py-8 text-xs text-muted-foreground">
+                            No version snapshots saved yet. Click &quot;Create Snapshot Version&quot; to snapshot current data.
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        snapshots.map((snap) => (
+                          <TableRow key={snap.id} className="text-xs hover:bg-muted/30">
+                            <TableCell className="font-semibold text-foreground">{snap.versionName}</TableCell>
+                            <TableCell className="capitalize">
+                              <Badge variant="outline" className="text-[10px]">
+                                {snap.category}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="font-mono">{snap.recordCount.toLocaleString()}</TableCell>
+                            <TableCell>{snap.createdBy || "System"}</TableCell>
+                            <TableCell className="text-muted-foreground">
+                              {new Date(snap.createdAt).toLocaleString()}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex items-center justify-end gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 text-xs px-2 gap-1 text-primary"
+                                  onClick={() => handleOpenSnapshotViewer(snap.id)}
+                                >
+                                  <EyeIcon className="size-3" /> View Data
+                                </Button>
+                                {isAdmin && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="size-7 text-destructive hover:bg-destructive/10"
+                                    onClick={() => handleDeleteSnapshot(snap.id, snap.versionName)}
+                                  >
+                                    <Trash2Icon className="size-3" />
+                                  </Button>
+                                )}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
@@ -2144,21 +2434,55 @@ export function LegacyCmsClient({
                     Pulling receipt image from Noor CMS...
                   </div>
                 ) : activeReceiptInvoice?.imageUrl ? (
-                  <div
-                    style={{
-                      transform: `scale(${receiptZoom}) rotate(${receiptRotation}deg)`,
-                      transformOrigin: "center center",
-                      transition: "transform 0.15s ease-out",
-                    }}
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={activeReceiptInvoice.imageUrl}
-                      alt={`Receipt slip for invoice #${activeReceiptInvoice.id}`}
-                      onLoad={(e) => scanQrCodeFromImage(e.currentTarget)}
-                      crossOrigin="anonymous"
-                      className="max-w-full rounded-lg shadow-md object-contain"
-                    />
+                  <div className="flex flex-col items-center gap-3">
+                    <div
+                      style={{
+                        transform: `scale(${receiptZoom}) rotate(${receiptRotation}deg)`,
+                        transformOrigin: "center center",
+                        transition: "transform 0.15s ease-out",
+                      }}
+                      className="flex items-center justify-center"
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={`/api/legacy-cms/image-proxy?url=${encodeURIComponent(activeReceiptInvoice.imageUrl)}`}
+                        alt={`Receipt slip for invoice #${activeReceiptInvoice.id}`}
+                        onLoad={(e) => scanQrCodeFromImage(e.currentTarget)}
+                        crossOrigin="anonymous"
+                        className="max-h-[380px] max-w-full rounded-lg shadow-md object-contain border"
+                        onError={(e) => {
+                          // Fallback to direct URL if proxy fails
+                          const target = e.currentTarget;
+                          if (target.src.includes("/api/legacy-cms/image-proxy")) {
+                            target.src = activeReceiptInvoice.imageUrl!;
+                            target.removeAttribute("crossorigin");
+                          }
+                        }}
+                      />
+                    </div>
+                    <div className="flex items-center gap-2 text-xs">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 text-[11px] gap-1"
+                        onClick={() => window.open(activeReceiptInvoice.imageUrl!, "_blank")}
+                      >
+                        <ExternalLinkIcon className="size-3" /> Open in New Tab
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 text-[11px] gap-1"
+                        onClick={() => {
+                          const a = document.createElement("a");
+                          a.href = `/api/legacy-cms/image-proxy?url=${encodeURIComponent(activeReceiptInvoice.imageUrl!)}`;
+                          a.download = `receipt-invoice-${activeReceiptInvoice.id}.jpg`;
+                          a.click();
+                        }}
+                      >
+                        <DownloadIcon className="size-3" /> Download Slip
+                      </Button>
+                    </div>
                   </div>
                 ) : (
                   <div className="text-center py-12 text-xs text-muted-foreground space-y-2">
@@ -2280,6 +2604,259 @@ export function LegacyCmsClient({
         open={routingConfigOpen}
         onOpenChange={setRoutingConfigOpen}
       />
+
+      {/* =========================================================================
+          MODAL 3: CREATE ARCHIVE VERSION SNAPSHOT
+          ========================================================================= */}
+      <Dialog open={createSnapshotModalOpen} onOpenChange={setCreateSnapshotModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-base flex items-center gap-2">
+              <ArchiveIcon className="size-4 text-purple-600" /> Create Archive Version Snapshot
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Save current scraped records as a named, immutable version that can be reviewed or exported anytime.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2 text-xs">
+            <div className="space-y-1">
+              <Label htmlFor="snap-name" className="text-xs font-semibold">Version Identifier / Name</Label>
+              <Input
+                id="snap-name"
+                placeholder="e.g. v1.0 (End of Semester Sync)"
+                value={newSnapshotName}
+                onChange={(e) => setNewSnapshotName(e.target.value)}
+                className="h-8 text-xs"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <Label htmlFor="snap-cat" className="text-xs font-semibold">Dataset Scope</Label>
+              <select
+                id="snap-cat"
+                value={newSnapshotCategory}
+                onChange={(e) => setNewSnapshotCategory(e.target.value as any)}
+                className="w-full h-8 rounded-md border bg-background px-2 text-xs"
+              >
+                <option value="all">All Datasets Combined</option>
+                <option value="students">Students Only</option>
+                <option value="parents">Parents Only</option>
+                <option value="invoices">Invoices Only</option>
+                <option value="subscriptions">Subscriptions Only</option>
+                <option value="subscription-plans">Subscription Plans Only</option>
+                <option value="feedback">Feedbacks Only</option>
+              </select>
+            </div>
+
+            <div className="space-y-1">
+              <Label htmlFor="snap-desc" className="text-xs font-semibold">Notes / Description (Optional)</Label>
+              <Input
+                id="snap-desc"
+                placeholder="e.g. Captured before batch reconciliation"
+                value={newSnapshotDesc}
+                onChange={(e) => setNewSnapshotDesc(e.target.value)}
+                className="h-8 text-xs"
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" size="sm" onClick={() => setCreateSnapshotModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              className="bg-purple-600 hover:bg-purple-700 text-white gap-1.5"
+              onClick={handleCreateSnapshot}
+              disabled={loading || !newSnapshotName.trim()}
+            >
+              <ArchiveIcon className="size-3.5" />
+              Save Version Snapshot
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* =========================================================================
+          MODAL 4: VIEW ARCHIVE VERSION SNAPSHOT DATA
+          ========================================================================= */}
+      <Dialog open={viewSnapshotModalOpen} onOpenChange={setViewSnapshotModalOpen}>
+        <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col p-6 overflow-hidden">
+          <DialogHeader className="pb-3 border-b">
+            <div className="flex items-center justify-between">
+              <div>
+                <DialogTitle className="text-base flex items-center gap-2">
+                  <ArchiveIcon className="size-4 text-purple-600" />
+                  Snapshot Version: {viewSnapshotData?.versionName}
+                </DialogTitle>
+                <DialogDescription className="text-xs">
+                  Captured on {viewSnapshotData ? new Date(viewSnapshotData.createdAt).toLocaleString() : ""} by {viewSnapshotData?.createdBy || "System"}. Total {viewSnapshotData?.recordCount} records.
+                </DialogDescription>
+              </div>
+
+              {viewSnapshotData?.records && viewSnapshotData.records.length > 0 && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 text-xs gap-1.5"
+                  onClick={() => {
+                    const recs = viewSnapshotData.records || [];
+                    if (!recs.length) return;
+                    const headers = Object.keys(recs[0]?.data || recs[0] || {});
+                    exportToExcel(
+                      `snapshot-${viewSnapshotData.versionName.replace(/\s+/g, "_")}`,
+                      headers,
+                      recs.map((r: any) => {
+                        const d = r.data || r;
+                        return headers.map((h) => d[h] || "");
+                      })
+                    );
+                  }}
+                >
+                  <FileSpreadsheetIcon className="size-3.5 text-emerald-600" /> Export Snapshot (.csv)
+                </Button>
+              )}
+            </div>
+          </DialogHeader>
+
+          {/* Snapshot internal search */}
+          <div className="py-2">
+            <div className="relative">
+              <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+              <Input
+                placeholder="Search within this snapshot..."
+                value={snapshotSearch}
+                onChange={(e) => setSnapshotSearch(e.target.value)}
+                className="pl-8 h-8 text-xs"
+              />
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-auto border rounded-xl">
+            <Table>
+              <TableHeader className="bg-muted/40 sticky top-0 z-10">
+                <TableRow>
+                  <TableHead className="text-xs">Category</TableHead>
+                  <TableHead className="text-xs">Identifier / Title</TableHead>
+                  <TableHead className="text-xs">Key Data</TableHead>
+                  <TableHead className="text-xs">Synced At</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {(() => {
+                  const recs = (viewSnapshotData?.records || []).filter((r: any) => {
+                    if (!snapshotSearch.trim()) return true;
+                    return JSON.stringify(r).toLowerCase().includes(snapshotSearch.toLowerCase());
+                  });
+
+                  if (recs.length === 0) {
+                    return (
+                      <TableRow>
+                        <TableCell colSpan={4} className="text-center py-10 text-xs text-muted-foreground">
+                          No records match search in this snapshot.
+                        </TableCell>
+                      </TableRow>
+                    );
+                  }
+
+                  return recs.slice(0, 100).map((r: any, idx: number) => {
+                    const data = r.data || {};
+                    return (
+                      <TableRow key={r.id || idx} className="text-xs hover:bg-muted/30">
+                        <TableCell className="capitalize font-mono text-[11px]">{r.category || viewSnapshotData?.category}</TableCell>
+                        <TableCell className="font-semibold text-foreground">{r.title || r.externalId || data.Name || data.Student || "Record"}</TableCell>
+                        <TableCell className="font-mono text-[11px] text-muted-foreground max-w-md truncate">
+                          {JSON.stringify(data).slice(0, 120)}...
+                        </TableCell>
+                        <TableCell className="text-muted-foreground text-[11px]">
+                          {r.syncedAt ? new Date(r.syncedAt).toLocaleDateString() : "—"}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  });
+                })()}
+              </TableBody>
+            </Table>
+          </div>
+
+          <DialogFooter className="pt-3 border-t">
+            <Button variant="outline" size="sm" onClick={() => setViewSnapshotModalOpen(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* =========================================================================
+          MODAL 5: RESOLVE / TAKE ACTION ON NOOR CMS FEEDBACK
+          ========================================================================= */}
+      <Dialog open={feedbackResolveModalOpen} onOpenChange={setFeedbackResolveModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-base flex items-center gap-2">
+              <CheckCircleIcon className="size-4 text-emerald-600" />
+              Resolve Feedback #{activeFeedbackItem?.ID || activeFeedbackItem?.id || ""}
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Update the resolution status and record action notes for this feedback submission.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2 text-xs">
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold">User / Title</Label>
+              <p className="font-medium text-foreground">
+                {activeFeedbackItem?.Name || activeFeedbackItem?.Student || activeFeedbackItem?.title || "Feedback Submission"}
+              </p>
+              <p className="text-[11px] text-muted-foreground italic">
+                {activeFeedbackItem?.Message || activeFeedbackItem?.Feedback || activeFeedbackItem?.details || "No message provided."}
+              </p>
+            </div>
+
+            <div className="space-y-1">
+              <Label htmlFor="fb-status" className="text-xs font-semibold">Resolution Status</Label>
+              <select
+                id="fb-status"
+                value={feedbackResolveStatus}
+                onChange={(e) => setFeedbackResolveStatus(e.target.value as any)}
+                className="w-full h-8 rounded-md border bg-background px-2 text-xs"
+              >
+                <option value="resolved">Resolved (Action completed)</option>
+                <option value="in_review">Under Investigation / In Review</option>
+                <option value="closed">Closed / Dismissed</option>
+              </select>
+            </div>
+
+            <div className="space-y-1">
+              <Label htmlFor="fb-notes" className="text-xs font-semibold">Resolution Notes</Label>
+              <textarea
+                id="fb-notes"
+                rows={4}
+                placeholder="Describe actions taken (e.g. Called parent, resolved login password reset, escalated to dev team)..."
+                value={feedbackResolveNotes}
+                onChange={(e) => setFeedbackResolveNotes(e.target.value)}
+                className="w-full rounded-lg border bg-background p-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" size="sm" onClick={() => setFeedbackResolveModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5"
+              onClick={handleResolveFeedback}
+              disabled={loading}
+            >
+              <CheckCircleIcon className="size-3.5" />
+              Confirm Resolution
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

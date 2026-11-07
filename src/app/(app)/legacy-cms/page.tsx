@@ -9,6 +9,7 @@ import {
   getLegacyCmsGrowthAnalytics,
   getLegacyCmsStorageStatus,
   LEGACY_CMS_CATEGORIES,
+  allowedCategoriesForUser,
   type LegacyCmsCategory,
 } from "@/server/legacy-cms";
 import { can, userDirectory } from "@/server/users";
@@ -28,20 +29,13 @@ export default async function LegacyCmsPage({
   const isAdmin = can(viewer, "users.manage") || can(viewer, "settings.manage");
   const visibility = await getCmsRoleVisibility();
 
-  // Determine allowed categories for current user
+  // Determine allowed categories for current user (checks per-user overrides first)
   let allowedCategories: LegacyCmsCategory[] = LEGACY_CMS_CATEGORIES.map((c) => c.key);
+  const userOverrideCategories = await allowedCategoriesForUser(viewer.roles[0] || "staff", viewer.id);
   if (!isAdmin) {
-    const set = new Set<LegacyCmsCategory>();
-    for (const r of viewer.roles) {
-      const allowed = visibility[r] || [];
-      allowed.forEach((cat) => set.add(cat));
-    }
-    // Fallback if none matched
-    if (set.size > 0) {
-      allowedCategories = Array.from(set);
-    } else {
-      allowedCategories = ["students", "parents"];
-    }
+    allowedCategories = userOverrideCategories;
+  } else if (userOverrideCategories.length < LEGACY_CMS_CATEGORIES.length) {
+    allowedCategories = userOverrideCategories;
   }
 
   const requestedCategory = sp.category as LegacyCmsCategory;

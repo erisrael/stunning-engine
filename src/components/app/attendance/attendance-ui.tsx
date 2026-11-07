@@ -886,7 +886,7 @@ export function Timesheets({ rows, month }: { rows: TimesheetRow[]; month: strin
 // ---------------------------------------------------------------------------
 
 type PersonSetup = { id: string; code: string; name: string; department: string | null; shift: string; rota: string[] | null; hasPin: boolean; badge: string | null; face: boolean };
-type KioskInfo = { id: string; name: string; active: boolean; lastSeenAt: string | null; paired: boolean; setupExpires: string | null; createdAt: string };
+type KioskInfo = { id: string; name: string; site?: string; setupPin?: string | null; active: boolean; lastSeenAt: string | null; paired: boolean; setupExpires: string | null; createdAt: string };
 
 function Row({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
@@ -1223,7 +1223,7 @@ function People({ cfg, people }: { cfg: AttendanceConfig; people: PersonSetup[] 
   );
 }
 
-function SetupLink({ code, onClose }: { code: { id: string; code: string; name: string } | null; onClose: () => void }) {
+function SetupLink({ code, onClose }: { code: { id: string; code: string; pin?: string; name: string } | null; onClose: () => void }) {
   const [qr, setQr] = React.useState<string | null>(null);
   const link = code ? `${window.location.origin}/api/attendance/kiosk?setup=${code.code}` : "";
   React.useEffect(() => {
@@ -1236,6 +1236,13 @@ function SetupLink({ code, onClose }: { code: { id: string; code: string; name: 
           <DialogTitle>Set up {code?.name}</DialogTitle>
           <DialogDescription>Open this link once on the kiosk&apos;s tablet or laptop (or scan the code with it). It works for 24 hours and only once. The device then stays signed in as the kiosk, with no personal account.</DialogDescription>
         </DialogHeader>
+        {code?.pin && (
+          <div className="flex flex-col items-center justify-center rounded-xl border border-indigo-500/25 bg-indigo-500/10 p-3 text-center">
+            <span className="text-xs font-semibold text-indigo-400 uppercase tracking-wider">Device Setup 6-Digit PIN</span>
+            <span className="font-mono text-3xl font-extrabold tracking-[0.25em] text-indigo-300 my-1">{code.pin}</span>
+            <span className="text-[11px] text-muted-foreground">Type this 6-digit PIN directly into the tablet screen at /kiosk</span>
+          </div>
+        )}
         {qr && (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={qr} alt="Kiosk setup code" className="mx-auto size-48 rounded border bg-white p-1" />
@@ -1262,10 +1269,13 @@ function SetupLink({ code, onClose }: { code: { id: string; code: string; name: 
   );
 }
 
+const KIOSK_SITES = ["Main Entrance", "Studio / Recording Booth", "Branch 2 (Bole)", "Branch 3", "Operations Office"];
+
 export function Kiosks({ kiosks }: { kiosks: KioskInfo[] }) {
   const { act, busy } = useAct();
   const [name, setName] = React.useState("");
-  const [setup, setSetup] = React.useState<{ id: string; code: string; name: string } | null>(null);
+  const [site, setSite] = React.useState("Main Entrance");
+  const [setup, setSetup] = React.useState<{ id: string; code: string; pin?: string; name: string } | null>(null);
   const ago = (iso: string | null) => {
     if (!iso) return "never";
     const m = Math.round((Date.now() - Date.parse(iso)) / 60e3);
@@ -1282,6 +1292,7 @@ export function Kiosks({ kiosks }: { kiosks: KioskInfo[] }) {
           {kiosks.map((k) => (
             <li key={k.id} className="flex flex-wrap items-center gap-2 px-3 py-2 text-sm">
               <span className="font-medium">{k.name}</span>
+              <Badge variant="outline" className="text-xs font-normal text-muted-foreground">{k.site || "Main Entrance"}</Badge>
               {!k.active ? <Badge variant="secondary">Off</Badge> : k.paired ? <Badge variant="outline">Set up</Badge> : <Badge variant="secondary">Waiting for setup</Badge>}
               <span className="text-xs text-muted-foreground">Last signal {ago(k.lastSeenAt)}</span>
               <span className="ml-auto flex gap-1">
@@ -1290,7 +1301,7 @@ export function Kiosks({ kiosks }: { kiosks: KioskInfo[] }) {
                   variant="outline"
                   disabled={busy}
                   onClick={async () => {
-                    const r = await act<{ id: string; code: string }>(() => A.pairKioskAgainAction(k.id));
+                    const r = await act<{ id: string; code: string; pin?: string }>(() => A.pairKioskAgainAction(k.id));
                     if (r) setSetup({ ...r, name: k.name });
                   }}
                 >
@@ -1308,14 +1319,26 @@ export function Kiosks({ kiosks }: { kiosks: KioskInfo[] }) {
           className="flex flex-wrap gap-2"
           onSubmit={async (e) => {
             e.preventDefault();
-            const r = await act<{ id: string; code: string }>(() => A.createKioskAction(name));
+            const r = await act<{ id: string; code: string; pin?: string }>(() => A.createKioskAction(name, site));
             if (r) {
               setSetup({ ...r, name });
               setName("");
             }
           }}
         >
-          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Main entrance" className="w-56" aria-label="Kiosk name" />
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Kiosk name (e.g. Tablet 1)" className="w-48" aria-label="Kiosk name" />
+          <Select value={site} onValueChange={setSite}>
+            <SelectTrigger className="w-48 text-xs" aria-label="Kiosk site">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {KIOSK_SITES.map((s) => (
+                <SelectItem key={s} value={s}>
+                  {s}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Button type="submit" variant="outline" disabled={busy || !name.trim()}>
             <PlusIcon /> Add kiosk
           </Button>

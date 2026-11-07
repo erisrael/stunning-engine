@@ -23,9 +23,17 @@ export function RequestsClient({ targets, mine }: { targets: Target[]; mine: Min
   const router = useRouter();
   const [dept, setDept] = React.useState(targets[0]?.dept ?? "");
   const target = targets.find((t) => t.dept === dept);
-  const [f, setF] = React.useState({ type: target?.types[0]?.key ?? "", title: "", description: "", dueDate: "" });
+  const [f, setF] = React.useState({ type: target?.types[0]?.key ?? "", title: "", description: "", dueDate: "", estimatedCost: "" });
   const [busy, setBusy] = React.useState(false);
   React.useEffect(() => setF((x) => ({ ...x, type: target?.types[0]?.key ?? "" })), [target]);
+
+  const applyPreset = (category: string, titlePlaceholder: string) => {
+    setF((prev) => ({
+      ...prev,
+      title: prev.title || titlePlaceholder,
+      description: prev.description || `[Category: ${category}]\nJustification:\nRequired Specifications / Details:\nEstimated Cost / Budget Impact:`,
+    }));
+  };
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(0,420px)_1fr]">
       <Card>
@@ -37,6 +45,25 @@ export function RequestsClient({ targets, mine }: { targets: Target[]; mine: Min
         </CardHeader>
         {targets.length > 0 && (
           <CardContent className="space-y-3">
+            {/* Quick request type pills */}
+            <div className="space-y-1">
+              <span className="text-xs text-muted-foreground font-medium">Quick Templates</span>
+              <div className="flex flex-wrap gap-1.5">
+                <Button size="xs" variant="outline" type="button" onClick={() => applyPreset("Hardware / Devices", "Request for New Laptop / Hardware Equipment")}>
+                  💻 Devices &amp; Hardware
+                </Button>
+                <Button size="xs" variant="outline" type="button" onClick={() => applyPreset("Software Subscription", "Subscription Renewal / New Tool License")}>
+                  🔑 Software &amp; Subscriptions
+                </Button>
+                <Button size="xs" variant="outline" type="button" onClick={() => applyPreset("Budget Allocation", "Budget Allocation Request for Project")}>
+                  💰 Budget Allocation
+                </Button>
+                <Button size="xs" variant="outline" type="button" onClick={() => applyPreset("Equipment Repair", "Equipment Repair / Replacement Request")}>
+                  🛠️ Repair / Replacement
+                </Button>
+              </div>
+            </div>
+
             <div className="space-y-1.5">
               <Label>Department</Label>
               <Select value={dept} onValueChange={setDept}>
@@ -71,23 +98,33 @@ export function RequestsClient({ targets, mine }: { targets: Target[]; mine: Min
               <Label htmlFor="rq-title">What do you need?</Label>
               <Input id="rq-title" value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} />
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="rq-desc">Details</Label>
-              <Textarea id="rq-desc" rows={4} value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="rq-due">Needed by (optional)</Label>
+                <Input id="rq-due" type="date" value={f.dueDate} onChange={(e) => setF({ ...f, dueDate: e.target.value })} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="rq-cost">Estimated Budget / Cost (ETB)</Label>
+                <Input id="rq-cost" type="number" placeholder="e.g. 25000" value={f.estimatedCost} onChange={(e) => setF({ ...f, estimatedCost: e.target.value })} />
+              </div>
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="rq-due">Needed by (optional)</Label>
-              <Input id="rq-due" type="date" value={f.dueDate} onChange={(e) => setF({ ...f, dueDate: e.target.value })} className="w-44" />
+              <Label htmlFor="rq-desc">Details &amp; Specifications</Label>
+              <Textarea id="rq-desc" rows={4} value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} />
             </div>
             <Button
               disabled={busy || !f.title.trim() || !f.type}
               onClick={async () => {
                 setBusy(true);
-                const r = await createRequestAction(dept, { title: f.title, description: f.description, type: f.type, dueDate: f.dueDate || null });
+                const fullDesc = [
+                  f.estimatedCost ? `[Estimated Cost: ${Number(f.estimatedCost).toLocaleString()} ETB]` : null,
+                  f.description,
+                ].filter(Boolean).join("\n\n");
+                const r = await createRequestAction(dept, { title: f.title, description: fullDesc, type: f.type, dueDate: f.dueDate || null });
                 setBusy(false);
                 if (!r.ok) return toast.error(r.error);
                 toast.success(`Sent as ${(r.data as { code: string }).code}. You will be told when it is accepted and done.`);
-                setF({ ...f, title: "", description: "", dueDate: "" });
+                setF({ ...f, title: "", description: "", dueDate: "", estimatedCost: "" });
                 router.refresh();
               }}
             >

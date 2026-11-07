@@ -290,3 +290,112 @@ export async function reportUserIssueToQuestionsAction(input: {
     return { ok: false, error: String(err?.message || err) };
   }
 }
+
+export async function createLegacyCmsSnapshotAction(opts: {
+  versionName: string;
+  category: LegacyCmsCategory | "all";
+  description?: string;
+}) {
+  try {
+    const viewer = await requireViewer();
+    const res = await cms.createLegacyCmsSnapshot(viewer, opts);
+    return res;
+  } catch (err: any) {
+    return { ok: false, message: String(err?.message || err) };
+  }
+}
+
+export async function listLegacyCmsSnapshotsAction(category?: LegacyCmsCategory | "all") {
+  try {
+    await requireViewer();
+    const res = await cms.listLegacyCmsSnapshots(category);
+    return { ok: true, snapshots: res };
+  } catch (err: any) {
+    return { ok: false, snapshots: [], error: String(err?.message || err) };
+  }
+}
+
+export async function getLegacyCmsSnapshotAction(snapshotId: string) {
+  try {
+    await requireViewer();
+    const res = await cms.getLegacyCmsSnapshot(snapshotId);
+    return { ok: !!res, snapshot: res };
+  } catch (err: any) {
+    return { ok: false, snapshot: null, error: String(err?.message || err) };
+  }
+}
+
+export async function deleteLegacyCmsSnapshotAction(snapshotId: string) {
+  try {
+    const viewer = await requireViewer();
+    const res = await cms.deleteLegacyCmsSnapshot(viewer, snapshotId);
+    return res;
+  } catch (err: any) {
+    return { ok: false, message: String(err?.message || err) };
+  }
+}
+
+export async function resolveLegacyCmsFeedbackAction(
+  feedbackId: string,
+  resolution: { status: "resolved" | "in_review" | "closed"; notes: string }
+) {
+  try {
+    const viewer = await requireViewer();
+    const res = await cms.resolveLegacyCmsFeedback(viewer, feedbackId, resolution);
+    return res;
+  } catch (err: any) {
+    return { ok: false, message: String(err?.message || err) };
+  }
+}
+
+export async function syncAndLoadStudentParentRelationsAction() {
+  try {
+    const viewer = await requireViewer();
+    // Trigger deep sync for students and parents if needed
+    try {
+      await cms.syncLegacyCms(viewer, { category: "students", deep: true, maxPages: 5 });
+      await cms.syncLegacyCms(viewer, { category: "parents", deep: true, maxPages: 5 });
+    } catch {
+      // Non-blocking if offline/unreachable
+    }
+    const res = await cms.getStudentParentRelations();
+    return { ok: true, data: res };
+  } catch (err: any) {
+    return { ok: false, error: String(err?.message || err) };
+  }
+}
+
+export async function listUserCmsOverridesAction() {
+  try {
+    const viewer = await requireViewer();
+    const data = await cms.listUserCmsOverrides(viewer);
+    return { ok: true, data };
+  } catch (err: any) {
+    return { ok: false, error: String(err?.message || err), data: [] };
+  }
+}
+
+export async function saveUserCmsOverrideAction(override: {
+  userId: string;
+  username?: string;
+  password?: string;
+  allowedTabs: LegacyCmsCategory[];
+}) {
+  try {
+    const viewer = await requireViewer();
+    const res = await cms.saveUserCmsOverride(viewer, override);
+    return res;
+  } catch (err: any) {
+    return { ok: false, message: String(err?.message || err) };
+  }
+}
+
+export async function deleteUserCmsOverrideAction(userId: string) {
+  try {
+    const viewer = await requireViewer();
+    const res = await cms.deleteUserCmsOverride(viewer, userId);
+    return res;
+  } catch (err: any) {
+    return { ok: false, message: String(err?.message || err) };
+  }
+}

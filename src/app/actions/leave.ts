@@ -43,6 +43,9 @@ export async function saveLeaveTypeAction(input: Partial<LeaveType> & { label: s
 export async function deleteLeaveTypeAction(key: string) {
   return wrap(async () => leave.deleteLeaveType(await requireViewer(), key));
 }
+export async function toggleLeaveTypeActiveAction(key: string, active: boolean) {
+  return wrap(async () => leave.toggleLeaveTypeActive(await requireViewer(), key, active));
+}
 export async function addHolidayAction(date: string, name: string) {
   return wrap(async () => leave.addHolidays(await requireViewer(), [{ date, name }]));
 }

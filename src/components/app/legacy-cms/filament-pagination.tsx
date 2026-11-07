@@ -143,30 +143,16 @@ export function FilamentPagination({
           </div>
         )}
 
-        {/* NUMBERED PAGINATION BAR (Filament v3 grouped pill container) */}
+        {/* NUMBERED PAGINATION BAR (Filament v3 grouped pill container matching screenshot) */}
         <nav
           aria-label="Pagination navigation"
-          className="inline-flex items-stretch rounded-lg border border-border/70 bg-muted/20 divide-x divide-border/60 overflow-hidden shadow-xs"
+          className="inline-flex items-stretch rounded-lg border border-border/80 bg-muted/20 divide-x divide-border/60 overflow-hidden shadow-xs"
         >
-          {/* First Page Button << */}
-          {currentPage > 2 && safeTotalPages > 4 && (
-            <button
-              type="button"
-              disabled={disabled || currentPage <= 1}
-              onClick={() => onPageChange(1)}
-              aria-label="First page"
-              title="First page"
-              className="px-2 h-7 sm:h-8 text-muted-foreground hover:text-foreground hover:bg-muted/60 flex items-center justify-center transition-colors disabled:opacity-30 disabled:pointer-events-none"
-            >
-              <ChevronsLeftIcon className="size-3.5" />
-            </button>
-          )}
-
           {/* Previous Page Arrow Button < */}
           {currentPage > 1 && (
             <button
               type="button"
-              disabled={disabled || currentPage <= 1}
+              disabled={disabled}
               onClick={() => onPageChange(currentPage - 1)}
               aria-label="Previous page"
               title="Previous page"
@@ -182,7 +168,7 @@ export function FilamentPagination({
               return (
                 <span
                   key={`ellipsis-${idx}`}
-                  className="px-2.5 h-7 sm:h-8 text-muted-foreground font-mono text-xs flex items-center justify-center select-none bg-muted/10"
+                  className="px-2.5 h-7 sm:h-8 text-muted-foreground/80 font-mono text-xs flex items-center justify-center select-none bg-muted/10"
                 >
                   ...
                 </span>
@@ -198,10 +184,10 @@ export function FilamentPagination({
                 onClick={() => onPageChange(item)}
                 aria-current={isCurrent ? "page" : undefined}
                 className={cn(
-                  "min-w-7 sm:min-w-8 h-7 sm:h-8 px-2.5 text-xs font-semibold transition-all flex items-center justify-center select-none",
+                  "min-w-7 sm:min-w-8 h-7 sm:h-8 px-2.5 text-xs transition-all flex items-center justify-center select-none",
                   isCurrent
-                    ? "text-emerald-500 dark:text-emerald-400 bg-emerald-500/10 font-bold"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted/60 active:scale-95"
+                    ? "text-emerald-500 dark:text-emerald-400 font-bold bg-emerald-500/10"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted/50 font-medium active:scale-95"
                 )}
               >
                 {item}
@@ -213,27 +199,13 @@ export function FilamentPagination({
           {currentPage < safeTotalPages && (
             <button
               type="button"
-              disabled={disabled || currentPage >= safeTotalPages}
+              disabled={disabled}
               onClick={() => onPageChange(currentPage + 1)}
               aria-label="Next page"
               title="Next page"
               className="px-2.5 h-7 sm:h-8 text-muted-foreground hover:text-foreground hover:bg-muted/60 flex items-center justify-center transition-colors disabled:opacity-30 disabled:pointer-events-none"
             >
               <ChevronRightIcon className="size-3.5 sm:size-4" />
-            </button>
-          )}
-
-          {/* Last Page Button >> */}
-          {currentPage < safeTotalPages - 1 && safeTotalPages > 4 && (
-            <button
-              type="button"
-              disabled={disabled || currentPage >= safeTotalPages}
-              onClick={() => onPageChange(safeTotalPages)}
-              aria-label="Last page"
-              title="Last page"
-              className="px-2 h-7 sm:h-8 text-muted-foreground hover:text-foreground hover:bg-muted/60 flex items-center justify-center transition-colors disabled:opacity-30 disabled:pointer-events-none"
-            >
-              <ChevronsRightIcon className="size-3.5" />
             </button>
           )}
         </nav>

@@ -16,22 +16,26 @@ import { seal, unseal } from "./secrets";
 import { can, type AppUser } from "./users";
 import { audit, WorkflowError } from "./workflow";
 
-export type LegacyCmsCategory =
-  | "students"
-  | "parents"
-  | "subscription-plans"
-  | "subscription-histories"
-  | "invoices"
-  | "subscriptions";
+import { LEGACY_CMS_CATEGORIES, type LegacyCmsCategory, type UserCmsOverride } from "@/lib/legacy-cms";
+export { LEGACY_CMS_CATEGORIES, type LegacyCmsCategory, type UserCmsOverride };
 
-export const LEGACY_CMS_CATEGORIES: { key: LegacyCmsCategory; label: string; path: string; description: string }[] = [
-  { key: "students", label: "Students", path: "/admin/students", description: "Enrolled students, grade levels, parent contacts and IDs." },
-  { key: "parents", label: "Parents", path: "/admin/parents", description: "Parent names, phone numbers, emails, and student links." },
-  { key: "subscription-plans", label: "Subscription Plans", path: "/admin/subscription-plans", description: "Available subscription tiers, pricing, and curriculum access." },
-  { key: "subscription-histories", label: "Subscription Histories", path: "/admin/subscription-histories", description: "Past subscription terms, renew cycles, and audit history." },
-  { key: "invoices", label: "Invoices", path: "/admin/invoices", description: "Payment invoices, CBE / Telebirr bank references, and receipts." },
-  { key: "subscriptions", label: "Active Subscriptions", path: "/admin/subscriptions", description: "Currently active subscriptions and expiration dates." },
-];
+export type UserCmsAccess = {
+  enabled: boolean;
+  username?: string;
+  password?: string;
+  categories: LegacyCmsCategory[];
+};
+
+export type LegacyCmsSnapshot = {
+  id: string;
+  versionName: string;
+  category: LegacyCmsCategory | "all";
+  description?: string;
+  recordCount: number;
+  createdBy?: string;
+  createdAt: string;
+  records?: Record<string, any>[];
+};
 
 export type LegacyCmsConfig = {
   baseUrl: string;
@@ -45,13 +49,14 @@ export type LegacyCmsConfig = {
   lastSyncError: string | null;
   hasPassword?: boolean;
   hasSessionCookie?: boolean;
+  userAccess?: Record<string, UserCmsAccess>;
 };
 
 export type CmsRoleVisibility = Record<string, LegacyCmsCategory[]>;
 
 export const DEFAULT_ROLE_VISIBILITY: CmsRoleVisibility = {
-  admin: ["students", "parents", "subscription-plans", "subscription-histories", "invoices", "subscriptions"],
-  support: ["students", "parents", "subscriptions", "subscription-plans"],
+  admin: ["students", "parents", "subscription-plans", "subscription-histories", "invoices", "subscriptions", "feedback"],
+  support: ["students", "parents", "subscriptions", "subscription-plans", "feedback"],
   finance: ["invoices", "subscription-plans", "subscription-histories", "subscriptions"],
 };
 
@@ -276,7 +281,7 @@ function parseFilamentTable(html: string): Record<string, string>[] {
   return rows;
 }
 
-async function authenticateFilament(baseUrl: string, username: string, password: string): Promise<string> {
+export async function authenticateFilament(baseUrl: string, username: string, password: string): Promise<string> {
   const loginUrl = `${baseUrl}/admin/login`;
   const getRes = await fetch(loginUrl, {
     headers: {
@@ -612,6 +617,7 @@ export async function syncLegacyCms(
     "subscription-histories": 0,
     invoices: 0,
     subscriptions: 0,
+    feedback: 0,
   };
 
   const targetCategory = opts.category || "all";
@@ -1447,9 +1453,9 @@ export async function fetchLegacyCmsLivePage(
   }
 
   const catPath = LEGACY_CMS_CATEGORIES.find((c) => c.key === opts.category)?.path || `/admin/${opts.category}`;
-  const searchParam = search ? `&tableSearch=${encodeURIComponent(search)}` : "";
-  const perPageParam = `&tableRecordsPerPage=${pageSize}`;
-  const targetUrl = `${baseUrl}${catPath}?page=${page}${perPageParam}${searchParam}`;
+  const searchParam = search ? `&tableSearch=${encodeURIComponent(search)}&search=${encodeURIComponent(search)}` : "";
+  const perPageParam = `&tableRecordsPerPage=${pageSize}&perPage=${pageSize}`;
+  const targetUrl = `${baseUrl}${catPath}?page=${page}&tablePage=${page}${perPageParam}${searchParam}`;
 
   const headers: Record<string, string> = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
@@ -1676,6 +1682,7 @@ export async function getLegacyCmsStorageStatus(): Promise<CmsStorageCategorySta
     "subscription-histories": 229,
     invoices: 41,
     subscriptions: 68,
+    feedback: 10,
   };
 
   return LEGACY_CMS_CATEGORIES.map((cat) => {
@@ -1715,4 +1722,262 @@ export async function deleteLegacyCmsCategoryData(
     count,
     message: category === "all" ? `Cleared all scraped CMS records (${count} records removed).` : `Cleared scraped records for ${category} (${count} records removed).`,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Scraped Archives Snapshot & Versioning Management
+// ---------------------------------------------------------------------------
+
+export async function createLegacyCmsSnapshot(
+  user: AppUser,
+  opts: { versionName: string; category: LegacyCmsCategory | "all"; description?: string }
+): Promise<{ ok: boolean; snapshotId?: string; count?: number; message?: string }> {
+  try {
+    const records = opts.category === "all"
+      ? await all<{ id: string; category: string; external_id: string; title: string; data_json: string; synced_at: string }>(
+          "SELECT * FROM legacy_cms_records ORDER BY synced_at DESC"
+        )
+      : await all<{ id: string; category: string; external_id: string; title: string; data_json: string; synced_at: string }>(
+          "SELECT * FROM legacy_cms_records WHERE category = ? ORDER BY synced_at DESC",
+          opts.category
+        );
+
+    const snapshotId = `snap_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const parsedRecords = records.map((r) => ({
+      id: r.id,
+      category: r.category,
+      externalId: r.external_id,
+      title: r.title,
+      data: parseJson(r.data_json, {}),
+      syncedAt: r.synced_at,
+    }));
+
+    await run(
+      "INSERT INTO legacy_cms_snapshots (id, version_name, category, description, record_count, created_by, created_at, data_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      snapshotId,
+      opts.versionName.trim() || `Snapshot ${new Date().toLocaleDateString()}`,
+      opts.category,
+      opts.description || null,
+      parsedRecords.length,
+      user.name,
+      new Date().toISOString(),
+      JSON.stringify(parsedRecords)
+    );
+
+    await audit(
+      { actor: user },
+      {
+        action: "create.legacy_cms_snapshot",
+        summary: `${user.name} created snapshot "${opts.versionName}" with ${parsedRecords.length} records.`,
+      }
+    );
+
+    return { ok: true, snapshotId, count: parsedRecords.length, message: `Snapshot saved (${parsedRecords.length} records).` };
+  } catch (err: any) {
+    return { ok: false, message: `Failed to create snapshot: ${err?.message || err}` };
+  }
+}
+
+export async function listLegacyCmsSnapshots(
+  category?: LegacyCmsCategory | "all"
+): Promise<LegacyCmsSnapshot[]> {
+  try {
+    const rows = category && category !== "all"
+      ? await all<{ id: string; version_name: string; category: string; description: string | null; record_count: number; created_by: string | null; created_at: string }>(
+          "SELECT id, version_name, category, description, record_count, created_by, created_at FROM legacy_cms_snapshots WHERE category = ? OR category = 'all' ORDER BY created_at DESC",
+          category
+        )
+      : await all<{ id: string; version_name: string; category: string; description: string | null; record_count: number; created_by: string | null; created_at: string }>(
+          "SELECT id, version_name, category, description, record_count, created_by, created_at FROM legacy_cms_snapshots ORDER BY created_at DESC"
+        );
+
+    return rows.map((r) => ({
+      id: r.id,
+      versionName: r.version_name,
+      category: r.category as LegacyCmsCategory | "all",
+      description: r.description || undefined,
+      recordCount: r.record_count,
+      createdBy: r.created_by || undefined,
+      createdAt: r.created_at,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export async function getLegacyCmsSnapshot(
+  snapshotId: string
+): Promise<LegacyCmsSnapshot | null> {
+  try {
+    const row = await get<{ id: string; version_name: string; category: string; description: string | null; record_count: number; created_by: string | null; created_at: string; data_json: string }>(
+      "SELECT * FROM legacy_cms_snapshots WHERE id = ?",
+      snapshotId
+    );
+    if (!row) return null;
+
+    return {
+      id: row.id,
+      versionName: row.version_name,
+      category: row.category as LegacyCmsCategory | "all",
+      description: row.description || undefined,
+      recordCount: row.record_count,
+      createdBy: row.created_by || undefined,
+      createdAt: row.created_at,
+      records: parseJson(row.data_json, []),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function deleteLegacyCmsSnapshot(
+  user: AppUser,
+  snapshotId: string
+): Promise<{ ok: boolean; message: string }> {
+  try {
+    if (!can(user, "data.manage") && !can(user, "users.manage")) {
+      throw new WorkflowError("FORBIDDEN", "Only Admin or Data Managers can delete snapshots.");
+    }
+    await run("DELETE FROM legacy_cms_snapshots WHERE id = ?", snapshotId);
+    await audit(
+      { actor: user },
+      { action: "delete.legacy_cms_snapshot", summary: `${user.name} deleted snapshot #${snapshotId}` }
+    );
+    return { ok: true, message: "Snapshot removed successfully." };
+  } catch (err: any) {
+    return { ok: false, message: `Failed to remove snapshot: ${err?.message || err}` };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Feedback Actions & Resolutions
+// ---------------------------------------------------------------------------
+
+export async function resolveLegacyCmsFeedback(
+  user: AppUser,
+  feedbackId: string,
+  resolution: { status: "resolved" | "in_review" | "closed"; notes: string }
+): Promise<{ ok: boolean; message: string }> {
+  try {
+    // Record resolution in audit log and update any cached record
+    const existing = await get<{ id: string; data_json: string }>(
+      "SELECT id, data_json FROM legacy_cms_records WHERE category = 'feedback' AND (external_id = ? OR id = ?)",
+      feedbackId,
+      feedbackId
+    );
+
+    if (existing) {
+      const data = parseJson<Record<string, any>>(existing.data_json, {});
+      data.Status = resolution.status;
+      data.ResolutionNotes = resolution.notes;
+      data.ResolvedBy = user.name;
+      data.ResolvedAt = new Date().toISOString();
+      await run("UPDATE legacy_cms_records SET data_json = ? WHERE id = ?", JSON.stringify(data), existing.id);
+    }
+
+    await audit(
+      { actor: user },
+      {
+        action: "resolve.legacy_cms_feedback",
+        summary: `${user.name} marked feedback #${feedbackId} as ${resolution.status}. Notes: ${resolution.notes}`,
+      }
+    );
+
+    return { ok: true, message: `Feedback #${feedbackId} marked as ${resolution.status}.` };
+  } catch (err: any) {
+    return { ok: false, message: `Failed to resolve feedback: ${err?.message || err}` };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Per-User Noor CMS Access & Credentials Configuration
+// ---------------------------------------------------------------------------
+
+export async function allowedCategoriesForUser(role: string, userId?: string): Promise<LegacyCmsCategory[]> {
+  if (userId) {
+    const rawRow = await get<{ value: string }>("SELECT value FROM settings WHERE key = 'cfg.legacy_cms'");
+    const stored = rawRow?.value ? parseJson<StoredCmsConfig & { userOverrides?: Record<string, UserCmsOverride> }>(rawRow.value, {}) : {};
+    if (stored.userOverrides?.[userId]?.allowedTabs?.length) {
+      return stored.userOverrides[userId].allowedTabs;
+    }
+  }
+  const visibility = await getCmsRoleVisibility();
+  return visibility[role] ?? ["students", "parents", "feedback"];
+}
+
+export async function listUserCmsOverrides(user: AppUser): Promise<UserCmsOverride[]> {
+  if (!can(user, "users.manage") && !can(user, "data.manage")) {
+    throw new WorkflowError("FORBIDDEN", "Only Admin can view user CMS configurations.");
+  }
+  const rawRow = await get<{ value: string }>("SELECT value FROM settings WHERE key = 'cfg.legacy_cms'");
+  const stored = rawRow?.value ? parseJson<StoredCmsConfig & { userOverrides?: Record<string, UserCmsOverride> }>(rawRow.value, {}) : {};
+  return Object.values(stored.userOverrides ?? {});
+}
+
+export async function saveUserCmsOverride(
+  user: AppUser,
+  override: { userId: string; username?: string; password?: string; allowedTabs: LegacyCmsCategory[] }
+): Promise<{ ok: boolean; message: string }> {
+  if (!can(user, "users.manage")) {
+    throw new WorkflowError("FORBIDDEN", "Only Admin can configure user CMS access.");
+  }
+  const targetUser = await get<{ id: string; name: string }>("SELECT id, name FROM users WHERE id = ?", override.userId);
+  if (!targetUser) throw new WorkflowError("NOT_FOUND", "User not found.");
+
+  const rawRow = await get<{ value: string }>("SELECT value FROM settings WHERE key = 'cfg.legacy_cms'");
+  const stored = rawRow?.value ? parseJson<StoredCmsConfig & { userOverrides?: Record<string, UserCmsOverride> }>(rawRow.value, {}) : {};
+
+  const userOverrides = stored.userOverrides ?? {};
+  userOverrides[override.userId] = {
+    userId: override.userId,
+    userName: targetUser.name,
+    username: override.username?.trim() || undefined,
+    allowedTabs: override.allowedTabs,
+    updatedAt: new Date().toISOString(),
+  };
+
+  const updated = {
+    ...stored,
+    userOverrides,
+  };
+
+  await run(
+    "INSERT INTO settings (key, value, updated_at, updated_by) VALUES ('cfg.legacy_cms', ?, ?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by",
+    JSON.stringify(updated),
+    nowIso(),
+    user.id
+  );
+
+  await audit(
+    { actor: user },
+    {
+      action: "configure.legacy_cms_user",
+      summary: `${user.name} configured Legacy CMS access for ${targetUser.name} (${override.allowedTabs.join(", ")})`,
+    }
+  );
+
+  return { ok: true, message: `Access configuration saved for ${targetUser.name}.` };
+}
+
+export async function deleteUserCmsOverride(
+  user: AppUser,
+  userId: string
+): Promise<{ ok: boolean; message: string }> {
+  if (!can(user, "users.manage")) {
+    throw new WorkflowError("FORBIDDEN", "Only Admin can remove user CMS access.");
+  }
+  const rawRow = await get<{ value: string }>("SELECT value FROM settings WHERE key = 'cfg.legacy_cms'");
+  const stored = rawRow?.value ? parseJson<StoredCmsConfig & { userOverrides?: Record<string, UserCmsOverride> }>(rawRow.value, {}) : {};
+
+  if (stored.userOverrides && stored.userOverrides[userId]) {
+    delete stored.userOverrides[userId];
+    await run(
+      "UPDATE settings SET value = ?, updated_at = ?, updated_by = ? WHERE key = 'cfg.legacy_cms'",
+      JSON.stringify(stored),
+      nowIso(),
+      user.id
+    );
+  }
+
+  return { ok: true, message: "Custom user CMS access removed." };
 }

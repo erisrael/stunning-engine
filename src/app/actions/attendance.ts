@@ -43,8 +43,8 @@ export async function resetPinAction(employeeId: string) {
 export async function newBadgesAction(employeeIds: string[]) {
   return wrap(async () => att.newBadges(await requireViewer(), employeeIds));
 }
-export async function createKioskAction(name: string) {
-  return wrap(async () => att.createKiosk(await requireViewer(), name));
+export async function createKioskAction(name: string, site = "Main Entrance") {
+  return wrap(async () => att.createKiosk(await requireViewer(), name, site));
 }
 export async function pairKioskAgainAction(id: string) {
   return wrap(async () => att.pairAgain(await requireViewer(), id));

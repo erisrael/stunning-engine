@@ -22,9 +22,9 @@ export function audienceFor(activeRole: Role, leads: Stage[]): Audience {
   if (activeRole === "hr_manager" || activeRole === "hr_officer") return "hr";
   if (activeRole === "finance_manager" || activeRole === "accountant") return "finance";
   if (activeRole === "manager" || activeRole === "admin") return "manager";
-  if (activeRole === "developer" || activeRole === "content" || activeRole === "marketing") return "department";
+  if (activeRole === "developer" || activeRole === "content" || activeRole === "marketing" || activeRole === "support" || activeRole === "sales" || activeRole === "operations") return "department";
   if (activeRole === "publication") return leads.includes("publication") ? "lead" : "publication";
-  return leads.includes(activeRole) ? "lead" : "member";
+  return (leads as string[]).includes(activeRole) ? "lead" : "member";
 }
 
 export type HelpSection = { title: string; text?: string; steps?: string[] };

@@ -1171,6 +1171,13 @@ CREATE TABLE IF NOT EXISTS equipment_events (
 );
 CREATE INDEX IF NOT EXISTS idx_equipment_events ON equipment_events(equipment_id, at);
 
+ALTER TABLE equipment ADD COLUMN IF NOT EXISTS ownership TEXT NOT NULL DEFAULT 'company';
+ALTER TABLE equipment ADD COLUMN IF NOT EXISTS owner_name TEXT;
+ALTER TABLE equipment ADD COLUMN IF NOT EXISTS department TEXT;
+ALTER TABLE equipment ADD COLUMN IF NOT EXISTS repair_status TEXT NOT NULL DEFAULT 'normal';
+ALTER TABLE equipment ADD COLUMN IF NOT EXISTS cost_estimate DOUBLE PRECISION DEFAULT 0;
+ALTER TABLE equipment ADD COLUMN IF NOT EXISTS last_inspected_at TEXT;
+
 -- v14: leave. Types and policy, requests approved by the line manager then HR, balance adjustments. Approved leave
 -- also writes a leave_entries row so capacity counts it.
 CREATE TABLE IF NOT EXISTS leave_types (
@@ -1824,6 +1831,8 @@ CREATE TABLE IF NOT EXISTS att_kiosks (
   created_by TEXT,
   created_at TEXT NOT NULL
 );
+ALTER TABLE att_kiosks ADD COLUMN IF NOT EXISTS site TEXT NOT NULL DEFAULT 'Main Entrance';
+ALTER TABLE att_kiosks ADD COLUMN IF NOT EXISTS setup_pin TEXT;
 -- Studio sessions booked for several parts at once, with a camera operator.
 ALTER TABLE recording_sessions ADD COLUMN IF NOT EXISTS operator_id TEXT;
 ALTER TABLE recording_sessions ADD COLUMN IF NOT EXISTS batch_id TEXT;
@@ -3098,6 +3107,18 @@ CREATE TABLE IF NOT EXISTS legacy_cms_records (
 CREATE INDEX IF NOT EXISTS idx_legacy_cms_cat ON legacy_cms_records(category);
 CREATE INDEX IF NOT EXISTS idx_legacy_cms_ext ON legacy_cms_records(external_id);
 
+CREATE TABLE IF NOT EXISTS legacy_cms_snapshots (
+  id TEXT PRIMARY KEY,
+  version_name TEXT NOT NULL,
+  category TEXT NOT NULL,
+  description TEXT,
+  record_count INTEGER NOT NULL,
+  created_by TEXT,
+  created_at TEXT NOT NULL,
+  data_json TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_legacy_cms_snap_cat ON legacy_cms_snapshots(category);
+
 CREATE TABLE IF NOT EXISTS chapa_accounts (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -3342,6 +3363,7 @@ export const TABLES = [
   "signin_log",
   "att_devices",
   "legacy_cms_records",
+  "legacy_cms_snapshots",
   "chapa_accounts",
   "ai_models",
 ] as const;

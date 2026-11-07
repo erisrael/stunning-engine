@@ -356,7 +356,7 @@ export function getPermissionMatrix(): Promise<PermissionMatrix> {
 
 async function loadPermissionMatrix(): Promise<PermissionMatrix> {
   const row = await get<{ value: string }>("SELECT value FROM settings WHERE key = 'cfg.permissions'");
-  let stored: Partial<PermissionMatrix> & { _v?: number } = {};
+  let stored: any = {};
   try {
     stored = row ? JSON.parse(row.value) : {};
   } catch {

@@ -88,7 +88,17 @@ export async function assistantContext(user: AppUser & { activeRole: string }) {
   const routines = options.routines && (await routinesOpen(user));
   // The pages this person can open (by name), so typed and spoken "open ..." only go there.
   const places = (await (await import("./page-access")).placesFor(user, home?.base ?? null)).map((p) => p.name);
-  return { who, home: home ? { key: home.key, base: home.base, title: home.title, kind: home.kind } : null, flows: flowsFor(who, cfg), cfg, options, routines, places };
+  return {
+    who,
+    userName: user.name,
+    userRole: user.activeRole,
+    home: home ? { key: home.key, base: home.base, title: home.title, kind: home.kind } : null,
+    flows: flowsFor(who, cfg),
+    cfg,
+    options,
+    routines,
+    places,
+  };
 }
 export type AssistantContext = Awaited<ReturnType<typeof assistantContext>>;
 

@@ -22,6 +22,8 @@ import {
   SlidersHorizontalIcon,
   XIcon,
   EyeIcon,
+  ShieldAlertIcon,
+  Loader2Icon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -86,6 +88,9 @@ const ROLE_TONE: Record<Role, string> = {
   hr_officer: "bg-teal-500/10 text-teal-700 dark:text-teal-300",
   finance_manager: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
   accountant: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+  support: "bg-cyan-500/15 text-cyan-700 dark:text-cyan-300",
+  sales: "bg-amber-500/15 text-amber-700 dark:text-amber-300",
+  operations: "bg-indigo-500/15 text-indigo-700 dark:text-indigo-300",
 };
 
 export function RoleBadge({ role }: { role: Role }) {
@@ -636,6 +641,11 @@ export function PermissionsAdmin({ matrix, counts, leadCounts }: { matrix: Permi
   const [selectedGroup, setSelectedGroup] = React.useState<string>("all");
   const [mode, setMode] = React.useState<"matrix" | "table">("table");
   const [editingCap, setEditingCap] = React.useState<{ key: Capability; label: string; group: string } | null>(null);
+  const [createRoleOpen, setCreateRoleOpen] = React.useState(false);
+  const [newRoleName, setNewRoleName] = React.useState("");
+  const [newRoleKey, setNewRoleKey] = React.useState("");
+  const [cloneFromRole, setCloneFromRole] = React.useState<Role>("developer");
+  const [selectedRoleCaps, setSelectedRoleCaps] = React.useState<Capability[]>([]);
 
   const dirty = JSON.stringify(m) !== JSON.stringify(matrix);
   const groups = [...new Set(CAPABILITIES.map((c) => c.group))];
@@ -707,6 +717,20 @@ export function PermissionsAdmin({ matrix, counts, leadCounts }: { matrix: Permi
               <LayoutGridIcon className="size-3.5" /> Matrix View
             </button>
           </div>
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-1.5"
+            onClick={() => {
+              setNewRoleName("");
+              setNewRoleKey("");
+              setCloneFromRole("developer");
+              setSelectedRoleCaps(m["developer"] || []);
+              setCreateRoleOpen(true);
+            }}
+          >
+            <PlusIcon className="size-3.5 text-primary" /> Create Custom Role
+          </Button>
           <Button size="sm" variant="outline" disabled={!dirty || busy} onClick={() => setM(matrix)}>
             Discard
           </Button>
@@ -892,6 +916,143 @@ export function PermissionsAdmin({ matrix, counts, leadCounts }: { matrix: Permi
       )}
 
       {/* Quick Edit Roles Dialog for Table Mode */}
+      {createRoleOpen && (
+        <Dialog open onOpenChange={setCreateRoleOpen}>
+          <DialogContent className="max-w-xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="text-base flex items-center gap-2">
+                <ShieldAlertIcon className="size-4 text-primary" /> Create Custom Role
+              </DialogTitle>
+              <DialogDescription className="text-xs">
+                Define a new role preset with tailored capabilities across modules.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 py-2">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Role Display Name</Label>
+                  <Input
+                    placeholder="e.g. QA Specialist"
+                    value={newRoleName}
+                    onChange={(e) => {
+                      setNewRoleName(e.target.value);
+                      if (!newRoleKey || newRoleKey === newRoleName.toLowerCase().replace(/[^a-z0-9]/g, "_")) {
+                        setNewRoleKey(e.target.value.toLowerCase().replace(/[^a-z0-9]/g, "_"));
+                      }
+                    }}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Role System Key</Label>
+                  <Input
+                    placeholder="e.g. qa_specialist"
+                    value={newRoleKey}
+                    onChange={(e) => setNewRoleKey(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs">Clone Initial Permissions From</Label>
+                <Select
+                  value={cloneFromRole}
+                  onValueChange={(val: Role) => {
+                    setCloneFromRole(val);
+                    setSelectedRoleCaps(m[val] || []);
+                  }}
+                >
+                  <SelectTrigger className="text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ROLES.map((r) => (
+                      <SelectItem key={r} value={r}>
+                        {ROLE_LABELS[r]} ({r})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs text-muted-foreground border-b pb-1">
+                  <span>Granted Capabilities ({selectedRoleCaps.length})</span>
+                  <div className="space-x-2">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedRoleCaps(CAPABILITIES.map((c) => c.key))}
+                      className="text-primary hover:underline"
+                    >
+                      Select All
+                    </button>
+                    <span>•</span>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedRoleCaps([])}
+                      className="text-muted-foreground hover:underline"
+                    >
+                      Clear All
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-1.5 max-h-56 overflow-y-auto pr-1">
+                  {CAPABILITIES.map((c) => {
+                    const active = selectedRoleCaps.includes(c.key);
+                    return (
+                      <label
+                        key={c.key}
+                        className={cn(
+                          "flex items-center gap-2 p-1.5 rounded-md border text-xs cursor-pointer transition-colors",
+                          active ? "bg-primary/5 border-primary/40 text-foreground" : "hover:bg-muted"
+                        )}
+                      >
+                        <Checkbox
+                          checked={active}
+                          onCheckedChange={() => {
+                            setSelectedRoleCaps((prev) =>
+                              prev.includes(c.key) ? prev.filter((k) => k !== c.key) : [...prev, c.key]
+                            );
+                          }}
+                        />
+                        <span className="truncate font-medium">{c.label}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" size="sm" onClick={() => setCreateRoleOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                disabled={!newRoleKey.trim() || !newRoleName.trim() || busy}
+                onClick={async () => {
+                  const key = newRoleKey.trim();
+                  const updatedMatrix = { ...m, [key]: selectedRoleCaps };
+                  setBusy(true);
+                  const res = await savePermissionsAction(updatedMatrix);
+                  setBusy(false);
+                  if (res.ok) {
+                    setM(updatedMatrix);
+                    toast.success(`Custom role "${newRoleName}" created with ${selectedRoleCaps.length} capabilities!`);
+                    setCreateRoleOpen(false);
+                    router.refresh();
+                  } else {
+                    toast.error(res.error || "Failed to save new role");
+                  }
+                }}
+              >
+                {busy ? <Loader2Icon className="size-4 animate-spin" /> : "Save & Create Role"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
       {editingCap && (
         <Dialog open onOpenChange={(o) => !o && setEditingCap(null)}>
           <DialogContent className="sm:max-w-md">

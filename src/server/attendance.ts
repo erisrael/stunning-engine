@@ -866,40 +866,54 @@ export async function badgesFor(user: AppUser, employeeIds: string[]) {
 // ---------------------------------------------------------------------------
 
 export const KIOSK_COOKIE = "myseed_kiosk";
-type KioskRow = { id: string; name: string; active: number; last_seen_at: string | null; alerted_at: string | null; sign_key: string | null; setup_expires: string | null; token_hash: string | null; created_at: string };
+type KioskRow = { id: string; name: string; site?: string | null; setup_pin?: string | null; active: number; last_seen_at: string | null; alerted_at: string | null; sign_key: string | null; setup_expires: string | null; token_hash: string | null; created_at: string };
 
 export async function listKiosks(user: AppUser) {
   if (!can(user, "attendance.capture")) needManage(user);
-  const rows = await all<KioskRow>("SELECT id, name, active, last_seen_at, alerted_at, setup_expires, token_hash, created_at FROM att_kiosks ORDER BY created_at");
-  return rows.map((k) => ({ id: k.id, name: k.name, active: !!k.active, lastSeenAt: k.last_seen_at, paired: !!k.token_hash, setupExpires: k.setup_expires, createdAt: k.created_at }));
+  const rows = await all<KioskRow>("SELECT id, name, site, setup_pin, active, last_seen_at, alerted_at, setup_expires, token_hash, created_at FROM att_kiosks ORDER BY created_at");
+  return rows.map((k) => ({
+    id: k.id,
+    name: k.name,
+    site: k.site || "Main Entrance",
+    setupPin: k.setup_pin,
+    active: !!k.active,
+    lastSeenAt: k.last_seen_at,
+    paired: !!k.token_hash,
+    setupExpires: k.setup_expires,
+    createdAt: k.created_at,
+  }));
 }
 
 // A setup code links one tablet or laptop to the kiosk; it works once, within a day.
 async function setupCode(id: string) {
   const code = crypto.randomBytes(18).toString("base64url");
-  await run("UPDATE att_kiosks SET setup_hash = ?, setup_expires = ? WHERE id = ?", sha(code), new Date(Date.now() + 864e5).toISOString(), id);
-  return code;
+  const pin = String(Math.floor(100000 + Math.random() * 900000));
+  await run("UPDATE att_kiosks SET setup_hash = ?, setup_pin = ?, setup_expires = ? WHERE id = ?", sha(code), pin, new Date(Date.now() + 864e5).toISOString(), id);
+  return { code, pin };
 }
 
 function needCapture(u: AppUser) {
   if (!can(u, "attendance.capture")) throw new WorkflowError("FORBIDDEN", "Only Admin sets up kiosks.");
 }
 
-export async function createKiosk(user: AppUser, name: string) {
+export async function createKiosk(user: AppUser, name: string, site = "Main Entrance") {
   needCapture(user);
   const n = clean(name, 60);
   if (!n) throw new WorkflowError("VALIDATION", "Name the kiosk, for example \"Main entrance\".");
+  const s = clean(site, 60) || "Main Entrance";
   const id = uid("kio_");
-  await run("INSERT INTO att_kiosks (id, name, active, created_by, created_at) VALUES (?, ?, 1, ?, ?)", id, n, user.id, nowIso());
-  await audit({ actor: user }, { action: "attendance.kiosk", summary: `${user.name} added the kiosk ${n}` });
-  return { id, code: await setupCode(id) };
+  await run("INSERT INTO att_kiosks (id, name, site, active, created_by, created_at) VALUES (?, ?, ?, 1, ?, ?)", id, n, s, user.id, nowIso());
+  await audit({ actor: user }, { action: "attendance.kiosk", summary: `${user.name} added the kiosk ${n} for site ${s}` });
+  const setup = await setupCode(id);
+  return { id, code: setup.code, pin: setup.pin };
 }
 
 export async function pairAgain(user: AppUser, id: string) {
   needCapture(user);
   await run("UPDATE att_kiosks SET token_hash = NULL WHERE id = ?", id);
   await audit({ actor: user }, { action: "attendance.kiosk", summary: `${user.name} unpaired a kiosk to set it up again` });
-  return { id, code: await setupCode(id) };
+  const setup = await setupCode(id);
+  return { id, code: setup.code, pin: setup.pin };
 }
 
 export async function setKioskActive(user: AppUser, id: string, active: boolean) {
@@ -908,13 +922,18 @@ export async function setKioskActive(user: AppUser, id: string, active: boolean)
   await audit({ actor: user }, { action: "attendance.kiosk", summary: `${user.name} ${active ? "switched on" : "switched off and unpaired"} a kiosk` });
 }
 
-// The setup code becomes the device's own token (kept in a cookie) and a signing key for check-ins kept offline.
-export async function pairKiosk(code: string) {
-  const k = await get<KioskRow & { setup_hash: string }>("SELECT * FROM att_kiosks WHERE setup_hash = ? AND active = 1", sha(code));
+// The setup code or 6-digit PIN becomes the device's own token (kept in a cookie) and a signing key for check-ins kept offline.
+export async function pairKiosk(codeOrPin: string) {
+  const cleanInput = codeOrPin.trim();
+  const k = await get<KioskRow & { setup_hash: string }>(
+    "SELECT * FROM att_kiosks WHERE (setup_hash = ? OR setup_pin = ?) AND active = 1",
+    sha(cleanInput),
+    cleanInput
+  );
   if (!k || !k.setup_expires || k.setup_expires < nowIso()) return null;
   const token = crypto.randomBytes(32).toString("base64url");
   const signKey = crypto.randomBytes(32).toString("base64url");
-  await run("UPDATE att_kiosks SET token_hash = ?, sign_key = ?, setup_hash = NULL, setup_expires = NULL, last_seen_at = ? WHERE id = ?", sha(token), signKey, nowIso(), k.id);
+  await run("UPDATE att_kiosks SET token_hash = ?, sign_key = ?, setup_hash = NULL, setup_pin = NULL, setup_expires = NULL, last_seen_at = ? WHERE id = ?", sha(token), signKey, nowIso(), k.id);
   return token;
 }
 

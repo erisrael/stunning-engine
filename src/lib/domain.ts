@@ -1,7 +1,7 @@
 // Shared domain vocabulary used by both the server and the client.
 
 // Production roles first, then the department roles (Phase 5). Department positions (head, lead, member) are set in Admin.
-export const ROLES = ["recording", "editing", "uploading", "publication", "manager", "admin", "owner", "developer", "content", "marketing", "hr_manager", "hr_officer", "finance_manager", "accountant"] as const;
+export const ROLES = ["recording", "editing", "uploading", "publication", "manager", "admin", "owner", "developer", "content", "marketing", "hr_manager", "hr_officer", "finance_manager", "accountant", "support", "sales", "operations"] as const;
 export type Role = (typeof ROLES)[number];
 
 export const ROLE_LABELS: Record<Role, string> = {
@@ -19,6 +19,9 @@ export const ROLE_LABELS: Record<Role, string> = {
   hr_officer: "HR Officer",
   finance_manager: "Finance Manager",
   accountant: "Accountant",
+  support: "Customer Support",
+  sales: "Sales & Outreach",
+  operations: "Operations",
 };
 
 export const ROLE_DESCRIPTIONS: Record<Role, string> = {
@@ -36,6 +39,9 @@ export const ROLE_DESCRIPTIONS: Record<Role, string> = {
   hr_officer: "HR: employee records, documents, equipment and day-to-day people operations.",
   finance_manager: "Finance: approves payments, payroll checks, budgets, and closes periods.",
   accountant: "Finance: records bills, invoices, payments and claims, and prepares reports.",
+  support: "Customer support: manages support desk, live inquiries, tickets, feedback and student communication.",
+  sales: "Sales: drives student enrollments, school partnerships, subscription growth and corporate outreach.",
+  operations: "Operations: coordinates logistics, hardware devices, office inventory and operational readiness.",
 };
 
 // Capabilities that can be granted per role in Admin, Roles and permissions.
@@ -124,6 +130,9 @@ export const DEFAULT_PERMISSIONS: Record<Role, Capability[]> = {
   hr_officer: ["hr.access", "attendance.manage", "nav.questions", "email.send"],
   finance_manager: ["finance.access", "finance.approve", "finance.payroll", "finance.view", "nav.questions", "email.send", "chat.channels", "company.view"],
   accountant: ["finance.access", "finance.view", "nav.questions", "email.send"],
+  support: ["nav.questions", "chat.channels", "email.send"],
+  sales: ["marketing.access", "company.view", "nav.questions", "email.send"],
+  operations: ["hr.access", "company.view", "nav.questions", "items.plan"],
   admin: [
     ...FULL_VIEW,
     "items.create",
@@ -163,14 +172,25 @@ export const DEFAULT_PERMISSIONS: Record<Role, Capability[]> = {
 
 // Departments group people by role. Heads and leads (Admin, Departments) see and assign the whole department's
 // work; members see their own. Production keeps its stage team leads.
-export const DEPARTMENTS = ["production", "dev", "studio", "marketing"] as const;
+export const DEPARTMENTS = ["production", "dev", "studio", "marketing", "support", "sales", "operations"] as const;
 export type Department = (typeof DEPARTMENTS)[number];
-export const DEPARTMENT_LABELS: Record<Department, string> = { production: "Production", dev: "Dev team", studio: "Studio", marketing: "Marketing" };
+export const DEPARTMENT_LABELS: Record<Department, string> = {
+  production: "Production",
+  dev: "Dev team",
+  studio: "Studio",
+  marketing: "Marketing",
+  support: "Customer Support",
+  sales: "Sales & Outreach",
+  operations: "Operations",
+};
 export const DEPARTMENT_ROLES: Record<Department, Role[]> = {
   production: ["recording", "editing", "uploading", "publication", "manager"],
   dev: ["developer"],
   studio: ["content"],
   marketing: ["marketing"],
+  support: ["support"],
+  sales: ["sales"],
+  operations: ["operations"],
 };
 export const POSITIONS = ["head", "lead", "member"] as const;
 export type Position = (typeof POSITIONS)[number];
@@ -187,7 +207,7 @@ export const DEFAULT_LEAD_PERMISSIONS: Record<LeadKey, Capability[]> = {
   "lead.publication": LEAD_BASE,
 };
 
-export type PermissionMatrix = Record<Role | LeadKey, Capability[]>;
+export type PermissionMatrix = Record<Role | LeadKey | string, Capability[]>;
 
 export function isStageRole(role: Role): role is Stage {
   return role === "recording" || role === "editing" || role === "uploading" || role === "publication";

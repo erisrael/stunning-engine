@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { ArrowDownLeftIcon, ArrowLeftRightIcon, ArrowUpRightIcon, ClockIcon, DownloadIcon, LockIcon, PaperclipIcon, PencilIcon, PlusIcon, UnlockIcon } from "lucide-react";
+import { ArrowDownLeftIcon, ArrowLeftRightIcon, ArrowUpRightIcon, ClockIcon, DownloadIcon, LockIcon, PaperclipIcon, PencilIcon, PlusIcon, SparklesIcon, UnlockIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -827,66 +827,135 @@ type BudgetRow = { id: string; scope_type: string; scope_key: string; scope_labe
 function Budgets({ ctx, rows, year }: { ctx: Ctx; rows: BudgetRow[]; year: number }) {
   const go = useGo();
   const [edit, setEdit] = React.useState<BudgetRow | "new" | null>(null);
+  const [calcBudget, setCalcBudget] = React.useState<string>(rows[0]?.id ?? "");
+  const [testAmount, setTestAmount] = React.useState<string>("");
+  const selectedB = rows.find((r) => r.id === calcBudget) || rows[0];
+  const testVal = Number(testAmount) || 0;
+  const headroom = selectedB ? Math.max(0, selectedB.amount - selectedB.spent) : 0;
+  const projectedSpent = selectedB ? selectedB.spent + testVal : 0;
+  const projectedPct = selectedB ? Math.round((projectedSpent / Math.max(1, selectedB.amount)) * 100) : 0;
+  const isAffordable = testVal <= headroom;
+
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Budgets {year}</CardTitle>
-        <CardDescription>Spending against the budget for each department, project, campaign or production line. Finance and the department heads are told at the alert level and at 100%.</CardDescription>
-        <CardAction className="flex gap-2">
-          <Input type="number" value={year} onChange={(e) => go({ year: e.target.value })} className="w-24" aria-label="Year" />
-          {ctx.rights.approve && (
-            <Button size="sm" onClick={() => setEdit("new")}>
-              <PlusIcon /> Set budget
-            </Button>
-          )}
-        </CardAction>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {rows.map((b) => {
-          const p = Math.round((b.spent / Math.max(1, b.amount)) * 100);
-          return (
-            <div key={b.id} className="rounded-lg border p-3">
-              <div className="flex flex-wrap items-center gap-2 text-sm">
-                <span className="font-medium">{b.scope_label}</span>
-                <span className="text-xs text-muted-foreground">{BUDGET_SCOPES[b.scope_type as keyof typeof BUDGET_SCOPES]}</span>
-                <span className="ml-auto tabular">
-                  {fmt(b.spent)} of {fmt(b.amount, ctx.cur)} ({p}%)
-                </span>
-                {ctx.rights.approve && (
-                  <Button size="icon-xs" variant="ghost" aria-label="Edit" onClick={() => setEdit(b)}>
-                    <PencilIcon />
-                  </Button>
-                )}
+    <div className="space-y-4">
+      {/* Budget Capability Simulator Card */}
+      {rows.length > 0 && (
+        <Card className="border-indigo-500/20 bg-indigo-500/5">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              <SparklesIcon className="size-4 text-indigo-500" />
+              Budget Capability &amp; Request Feasibility Simulator
+            </CardTitle>
+            <CardDescription className="text-xs">
+              Determine departmental budget headroom and test feasibility before approving hardware, device, subscription or inter-department requests.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 pt-0">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="space-y-1">
+                <span className="text-xs text-muted-foreground">Select Budget Line</span>
+                <select
+                  value={calcBudget}
+                  onChange={(e) => setCalcBudget(e.target.value)}
+                  className="h-8 rounded-md border bg-background px-2 text-xs"
+                >
+                  {rows.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.scope_label} ({fmt(b.amount - b.spent, ctx.cur)} left)
+                    </option>
+                  ))}
+                </select>
               </div>
-              <div className="relative mt-2 h-2.5 overflow-hidden rounded-full bg-muted">
-                <div className={cn("h-full", p >= 100 ? "bg-[var(--st-blocked-fg)]" : p >= b.alert_pct ? "bg-[var(--st-paused-fg)]" : "bg-primary")} style={{ width: `${Math.min(100, p)}%` }} />
-                <div className="absolute top-0 h-full w-0.5 bg-foreground/40" style={{ left: `${b.alert_pct}%` }} title={`Alert at ${b.alert_pct}%`} />
+
+              <div className="space-y-1">
+                <span className="text-xs text-muted-foreground">Proposed Request Cost ({ctx.cur})</span>
+                <Input
+                  type="number"
+                  placeholder="e.g. 50000"
+                  value={testAmount}
+                  onChange={(e) => setTestAmount(e.target.value)}
+                  className="h-8 w-36 text-xs"
+                />
               </div>
+
+              {selectedB && testVal > 0 && (
+                <div className="flex items-center gap-2 pt-4 text-xs font-medium">
+                  {isAffordable ? (
+                    <span className="inline-flex items-center gap-1 text-emerald-600 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/20">
+                      ✓ Feasible: Headroom remains {fmt(headroom - testVal, ctx.cur)} ({projectedPct}% used)
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-rose-600 bg-rose-500/10 px-2.5 py-1 rounded-full border border-rose-500/20">
+                      ⚠️ Exceeds Budget by {fmt(testVal - headroom, ctx.cur)} (requires {projectedPct}%)
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
-          );
-        })}
-        {!rows.length && <EmptyState title="No budgets for this year" description={ctx.rights.approve ? "Press Set budget." : "The Finance Manager sets budgets."} />}
-      </CardContent>
-      {edit && (
-        <FormDialog
-          title={edit === "new" ? "Set a budget" : `Budget: ${edit.scope_label}`}
-          fields={[
-            { key: "scopeType", label: "For a", type: "select", options: recs(BUDGET_SCOPES) },
-            { key: "scopeKey", label: "Department (for departments)", type: "select", options: ctx.departments, placeholder: "Choose" },
-            { key: "project", label: "Or the project, campaign or line name", type: "text", hint: "Use the same name as on transactions and bills." },
-            { key: "amount", label: "Amount for the year", type: "number" },
-            { key: "alertPct", label: "Alert at (%)", type: "number" },
-          ]}
-          initial={edit === "new" ? { scopeType: "department", alertPct: 80 } : { scopeType: edit.scope_type, scopeKey: edit.scope_type === "department" ? edit.scope_key : "", project: edit.scope_type === "department" ? "" : edit.scope_key, amount: edit.amount, alertPct: edit.alert_pct }}
-          onClose={() => setEdit(null)}
-          submit={(v) => {
-            const dept = v.scopeType === "department";
-            const key = String(dept ? v.scopeKey : v.project) || "";
-            return A.saveBudgetAction({ scopeType: String(v.scopeType), scopeKey: key, scopeLabel: dept ? (ctx.departments.find((d) => d.value === key)?.label ?? key) : key, year, amount: Number(v.amount), alertPct: Number(v.alertPct) });
-          }}
-        />
+          </CardContent>
+        </Card>
       )}
-    </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Budgets {year}</CardTitle>
+          <CardDescription>Spending against the budget for each department, project, campaign or production line. Finance and the department heads are told at the alert level and at 100%.</CardDescription>
+          <CardAction className="flex gap-2">
+            <Input type="number" value={year} onChange={(e) => go({ year: e.target.value })} className="w-24" aria-label="Year" />
+            {ctx.rights.approve && (
+              <Button size="sm" onClick={() => setEdit("new")}>
+                <PlusIcon /> Set budget
+              </Button>
+            )}
+          </CardAction>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {rows.map((b) => {
+            const p = Math.round((b.spent / Math.max(1, b.amount)) * 100);
+            return (
+              <div key={b.id} className="rounded-lg border p-3">
+                <div className="flex flex-wrap items-center gap-2 text-sm">
+                  <span className="font-medium">{b.scope_label}</span>
+                  <span className="text-xs text-muted-foreground">{BUDGET_SCOPES[b.scope_type as keyof typeof BUDGET_SCOPES]}</span>
+                  <span className="ml-auto tabular">
+                    {fmt(b.spent)} of {fmt(b.amount, ctx.cur)} ({p}%)
+                  </span>
+                  {ctx.rights.approve && (
+                    <Button size="icon-xs" variant="ghost" aria-label="Edit" onClick={() => setEdit(b)}>
+                      <PencilIcon />
+                    </Button>
+                  )}
+                </div>
+                <div className="relative mt-2 h-2.5 overflow-hidden rounded-full bg-muted">
+                  <div className={cn("h-full", p >= 100 ? "bg-[var(--st-blocked-fg)]" : p >= b.alert_pct ? "bg-[var(--st-paused-fg)]" : "bg-primary")} style={{ width: `${Math.min(100, p)}%` }} />
+                  <div className="absolute top-0 h-full w-0.5 bg-foreground/40" style={{ left: `${b.alert_pct}%` }} title={`Alert at ${b.alert_pct}%`} />
+                </div>
+              </div>
+            );
+          })}
+          {!rows.length && <EmptyState title="No budgets for this year" description={ctx.rights.approve ? "Press Set budget." : "The Finance Manager sets budgets."} />}
+        </CardContent>
+        {edit && (
+          <FormDialog
+            title={edit === "new" ? "Set a budget" : `Budget: ${edit.scope_label}`}
+            fields={[
+              { key: "scopeType", label: "For a", type: "select", options: recs(BUDGET_SCOPES) },
+              { key: "scopeKey", label: "Department (for departments)", type: "select", options: ctx.departments, placeholder: "Choose" },
+              { key: "project", label: "Or the project, campaign or line name", type: "text", hint: "Use the same name as on transactions and bills." },
+              { key: "amount", label: "Amount for the year", type: "number" },
+              { key: "alertPct", label: "Alert at (%)", type: "number" },
+            ]}
+            initial={edit === "new" ? { scopeType: "department", alertPct: 80 } : { scopeType: edit.scope_type, scopeKey: edit.scope_type === "department" ? edit.scope_key : "", project: edit.scope_type === "department" ? "" : edit.scope_key, amount: edit.amount, alertPct: edit.alert_pct }}
+            onClose={() => setEdit(null)}
+            submit={(v) => {
+              const dept = v.scopeType === "department";
+              const key = String(dept ? v.scopeKey : v.project) || "";
+              return A.saveBudgetAction({ scopeType: String(v.scopeType), scopeKey: key, scopeLabel: dept ? (ctx.departments.find((d) => d.value === key)?.label ?? key) : key, year, amount: Number(v.amount), alertPct: Number(v.alertPct) });
+            }}
+          />
+        )}
+      </Card>
+    </div>
   );
 }
 

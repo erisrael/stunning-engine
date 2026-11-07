@@ -101,6 +101,16 @@ export async function deleteLeaveType(user: AppUser, key: string) {
   return true;
 }
 
+export async function toggleLeaveTypeActive(user: AppUser, key: string, active: boolean) {
+  if (!can(user, "hr.manage")) throw new WorkflowError("FORBIDDEN", "Only the HR Manager changes leave policy.");
+  await run("UPDATE leave_types SET active = ? WHERE key = ?", active ? 1 : 0, key);
+  await audit(
+    { actor: user },
+    { action: "toggle.leave_type", summary: `${user.name} ${active ? "activated" : "hid / archived"} leave type "${key}".` }
+  );
+  return { ok: true, active };
+}
+
 // ---------------------------------------------------------------------------
 // Days and balances
 // ---------------------------------------------------------------------------

@@ -21,14 +21,23 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const kiosk = await kioskFromToken((await cookies()).get(KIOSK_COOKIE)?.value);
-  if (!kiosk) return json({ error: "This device is not set up as a kiosk. Ask HR for a setup link." }, 401);
-  let body: { action?: string; items?: KioskPunchInput[] } & KioskPunchInput;
+  let body: { action?: string; code?: string; items?: KioskPunchInput[] } & KioskPunchInput;
   try {
     body = await request.json();
   } catch {
     return json({ error: "Bad request" }, 400);
   }
+
+  if (body.action === "pair") {
+    const code = String(body.code ?? "").trim();
+    const token = code ? await pairKiosk(code) : null;
+    if (!token) return json({ error: "Invalid or expired setup PIN / link code. Please check with HR or Admin." }, 400);
+    (await cookies()).set(KIOSK_COOKIE, token, { httpOnly: true, sameSite: "lax", secure: secure(), path: "/", maxAge: 5 * 365 * 864e2 });
+    return json({ ok: true, message: "Kiosk device paired successfully" });
+  }
+
+  const kiosk = await kioskFromToken((await cookies()).get(KIOSK_COOKIE)?.value);
+  if (!kiosk) return json({ error: "This device is not set up as a kiosk. Ask HR for a setup link or 6-digit PIN." }, 401);
   const fail = (err: unknown) => (err instanceof WorkflowError ? err.message : "Something went wrong. Try again.");
   try {
     if (body.action === "ping") return json(await kioskPing(kiosk));
