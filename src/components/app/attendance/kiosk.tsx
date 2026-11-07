@@ -340,8 +340,8 @@ export function KioskScreen({ initialName }: { initialName: string }) {
   };
 
   return (
-    <div className="flex min-h-dvh flex-col bg-[#14132a] text-[#ecebf7]" style={{ paddingLeft: "max(16px, env(safe-area-inset-left, 0px))", paddingRight: "max(16px, env(safe-area-inset-right, 0px))" }}>
-      <header className="flex flex-wrap items-center justify-between gap-3 py-3 border-b border-white/10">
+    <div className="flex min-h-dvh flex-col bg-card text-foreground" style={{ paddingLeft: "max(16px, env(safe-area-inset-left, 0px))", paddingRight: "max(16px, env(safe-area-inset-right, 0px))" }}>
+      <header className="flex flex-wrap items-center justify-between gap-3 py-3 border-b border-border">
         <div className="flex items-center gap-3">
           <p className="text-lg font-bold tracking-tight">{name}</p>
           <span className={cn("flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium", online ? "bg-emerald-500/15 text-emerald-300" : "bg-amber-500/15 text-amber-300")}>
@@ -351,18 +351,18 @@ export function KioskScreen({ initialName }: { initialName: string }) {
               </>
             )}
           </span>
-          {queued > 0 && <span className="rounded-full bg-white/10 px-2.5 py-0.5 text-xs font-mono">{queued} waiting</span>}
+          {queued > 0 && <span className="rounded-full bg-secondary px-2.5 py-0.5 text-xs font-mono">{queued} waiting</span>}
         </div>
 
         {/* MODE SELECTOR TABS & FULLSCREEN TOGGLE */}
         <div className="flex items-center gap-2">
-          <div className="flex items-center bg-white/5 border border-white/10 rounded-lg p-0.5 text-xs">
+          <div className="flex items-center bg-muted border border-border rounded-lg p-0.5 text-xs">
             <button
               type="button"
               onClick={() => setMode("qr_display")}
               className={cn(
                 "px-3 py-1 rounded-md text-xs font-semibold transition-colors flex items-center gap-1.5",
-                mode === "qr_display" ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30" : "text-[#a9a6c9] hover:text-[#ecebf7]"
+                mode === "qr_display" ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30" : "text-muted-foreground hover:text-foreground"
               )}
             >
               <QrCodeIcon className="size-3.5" /> Dynamic QR
@@ -372,7 +372,7 @@ export function KioskScreen({ initialName }: { initialName: string }) {
               onClick={() => setMode("face")}
               className={cn(
                 "px-3 py-1 rounded-md text-xs font-semibold transition-colors flex items-center gap-1.5",
-                mode === "face" ? "bg-blue-500/20 text-blue-300 border border-blue-500/30" : "text-[#a9a6c9] hover:text-[#ecebf7]"
+                mode === "face" ? "bg-blue-500/20 text-blue-300 border border-blue-500/30" : "text-muted-foreground hover:text-foreground"
               )}
             >
               <ScanFaceIcon className="size-3.5" /> Face Check-In
@@ -382,7 +382,7 @@ export function KioskScreen({ initialName }: { initialName: string }) {
               onClick={() => setMode("badge")}
               className={cn(
                 "px-3 py-1 rounded-md text-xs font-semibold transition-colors flex items-center gap-1.5",
-                mode === "badge" || mode === "code" || mode === "pin" ? "bg-purple-500/20 text-purple-300 border border-purple-500/30" : "text-[#a9a6c9] hover:text-[#ecebf7]"
+                mode === "badge" || mode === "code" || mode === "pin" ? "bg-purple-500/20 text-purple-300 border border-purple-500/30" : "text-muted-foreground hover:text-foreground"
               )}
             >
               <KeyRoundIcon className="size-3.5" /> Badge / PIN
@@ -394,7 +394,7 @@ export function KioskScreen({ initialName }: { initialName: string }) {
             variant="ghost"
             size="icon"
             onClick={toggleFullscreen}
-            className="size-8 rounded-lg bg-white/5 text-[#a9a6c9] hover:text-white hover:bg-white/10"
+            className="size-8 rounded-lg bg-muted text-muted-foreground hover:text-white hover:bg-secondary"
             title={isFullscreen ? "Exit Fullscreen" : "Fullscreen Tablet Mode"}
           >
             {isFullscreen ? <Minimize2Icon className="size-4" /> : <Maximize2Icon className="size-4" />}
@@ -405,7 +405,7 @@ export function KioskScreen({ initialName }: { initialName: string }) {
       <main className="flex flex-1 flex-col items-center justify-center gap-8 pb-10 text-center">
         <div>
           <p className="text-7xl font-semibold tabular-nums sm:text-8xl">{clock(now)}</p>
-          <p className="mt-2 text-xl text-[#a9a6c9]">{now.toLocaleDateString([], { weekday: "long", day: "numeric", month: "long", timeZone: tz })}</p>
+          <p className="mt-2 text-xl text-muted-foreground">{now.toLocaleDateString([], { weekday: "long", day: "numeric", month: "long", timeZone: tz })}</p>
         </div>
 
         {outcome ? (
@@ -416,14 +416,14 @@ export function KioskScreen({ initialName }: { initialName: string }) {
                 {outcome.saved ? (
                   <>
                     <p className="mt-3 text-3xl font-semibold">Saved at {outcome.time}</p>
-                    <p className="mt-2 text-lg text-[#d6d4ee]">The network is down. Your check-in keeps this time and is sent when it is back.</p>
+                    <p className="mt-2 text-lg text-muted-foreground">The network is down. Your check-in keeps this time and is sent when it is back.</p>
                   </>
                 ) : (
                   <>
                     <p className="mt-3 text-3xl font-semibold">
                       {outcome.kind === "in" ? `Welcome, ${outcome.name}` : outcome.kind === "out" ? `Goodbye, ${outcome.name}` : `${outcome.name}`}
                     </p>
-                    <p className="mt-2 text-xl text-[#d6d4ee]">
+                    <p className="mt-2 text-xl text-muted-foreground">
                       {outcome.kind === "in" ? "Checked in" : outcome.kind === "out" ? "Checked out" : outcome.kind === "break_end" ? "Back from break" : outcome.kind === "lunch_end" ? "Back from lunch" : "Recorded"} at {outcome.time}
                       {outcome.kind === "in" && outcome.lateMin ? `, ${outcome.lateMin} min late` : ""}
                       {outcome.kind === "in" && outcome.status && !outcome.lateMin ? `. ${DAY_STATUS_LABELS[outcome.status]}` : ""}
@@ -470,8 +470,8 @@ export function KioskScreen({ initialName }: { initialName: string }) {
 
             {/* Instruction description */}
             <div className="space-y-1.5 max-w-sm">
-              <p className="text-xl font-bold tracking-tight text-[#ecebf7]">Scan with your phone camera</p>
-              <p className="text-xs text-[#a9a6c9]">
+              <p className="text-xl font-bold tracking-tight text-foreground">Scan with your phone camera</p>
+              <p className="text-xs text-muted-foreground">
                 Open the camera or MySeed app to record your check-in or out.
                 This QR code refreshes automatically to prevent screenshot sharing.
               </p>
@@ -479,10 +479,10 @@ export function KioskScreen({ initialName }: { initialName: string }) {
 
             {/* Quick action buttons */}
             <div className="flex flex-wrap justify-center gap-3 pt-2">
-              <Button size="lg" variant="secondary" className="gap-2 bg-white/10 hover:bg-white/15 text-[#ecebf7]" onClick={() => setMode("face")}>
+              <Button size="lg" variant="secondary" className="gap-2 bg-secondary hover:bg-accent text-foreground" onClick={() => setMode("face")}>
                 <ScanFaceIcon className="size-4 text-blue-400" /> Check In With Face
               </Button>
-              <Button size="lg" variant="secondary" className="gap-2 bg-white/10 hover:bg-white/15 text-[#ecebf7]" onClick={() => setMode("badge")}>
+              <Button size="lg" variant="secondary" className="gap-2 bg-secondary hover:bg-accent text-foreground" onClick={() => setMode("badge")}>
                 <KeyRoundIcon className="size-4 text-purple-400" /> Use Badge or PIN
               </Button>
             </div>
@@ -513,7 +513,7 @@ export function KioskScreen({ initialName }: { initialName: string }) {
                 autoFocus
                 autoComplete="off"
                 aria-label="Badge code (from the scanner)"
-                className="w-full rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-center font-mono text-lg text-[#ecebf7] placeholder:text-[#7d7aa0]"
+                className="w-full rounded-xl border border-input bg-muted px-4 py-3 text-center font-mono text-lg text-foreground placeholder:text-muted-foreground"
                 placeholder="Waiting for the scanner…"
               />
             </form>
@@ -541,32 +541,32 @@ export function KioskScreen({ initialName }: { initialName: string }) {
         ) : (
           <div className="flex w-full max-w-sm flex-col items-center gap-4">
             <p className="text-2xl font-semibold">{mode === "code" ? "Your number" : "Your PIN"}</p>
-            <p className="h-14 w-full rounded-xl border border-white/15 bg-white/5 py-2 text-center font-mono text-3xl tracking-[0.3em]" aria-live="polite">
+            <p className="h-14 w-full rounded-xl border border-input bg-muted py-2 text-center font-mono text-3xl tracking-[0.3em]" aria-live="polite">
               {mode === "code" ? code || " " : "•".repeat(pin.length) || " "}
             </p>
             <div className="grid w-full grid-cols-3 gap-3">
               {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((d) => (
-                <button key={d} type="button" onClick={() => press(d)} className="h-16 rounded-xl bg-white/10 text-2xl font-semibold hover:bg-white/15 active:bg-white/25">
+                <button key={d} type="button" onClick={() => press(d)} className="h-16 rounded-xl bg-secondary text-2xl font-semibold hover:bg-accent active:bg-accent">
                   {d}
                 </button>
               ))}
-              <button type="button" onClick={back} aria-label="Delete" className="flex h-16 items-center justify-center rounded-xl bg-white/5 hover:bg-white/10">
+              <button type="button" onClick={back} aria-label="Delete" className="flex h-16 items-center justify-center rounded-xl bg-muted hover:bg-secondary">
                 <DeleteIcon />
               </button>
-              <button type="button" onClick={() => press("0")} className="h-16 rounded-xl bg-white/10 text-2xl font-semibold hover:bg-white/15">
+              <button type="button" onClick={() => press("0")} className="h-16 rounded-xl bg-secondary text-2xl font-semibold hover:bg-accent">
                 0
               </button>
-              <button type="button" onClick={next} disabled={busy || (mode === "code" ? !code : pin.length < 4)} className="h-16 rounded-xl bg-[#8b85ff] text-xl font-semibold text-[#14132a] disabled:opacity-40">
+              <button type="button" onClick={next} disabled={busy || (mode === "code" ? !code : pin.length < 4)} className="h-16 rounded-xl bg-primary text-xl font-semibold text-primary-foreground disabled:opacity-40">
                 {busy ? <Loader2Icon className="mx-auto animate-spin" /> : mode === "code" ? "Next" : "OK"}
               </button>
             </div>
-            <Button variant="ghost" className="text-[#d6d4ee]" onClick={() => (setMode("badge"), setCode(""), setPin(""))}>
+            <Button variant="ghost" className="text-muted-foreground" onClick={() => (setMode("badge"), setCode(""), setPin(""))}>
               Back to badge
             </Button>
           </div>
         )}
       </main>
-      <footer className="pb-4 text-center text-sm text-[#7d7aa0]">Your number is on your Attendance page in the app. Forgot your PIN? Set a new one there, or ask HR.</footer>
+      <footer className="pb-4 text-center text-sm text-muted-foreground">Your number is on your Attendance page in the app. Forgot your PIN? Set a new one there, or ask HR.</footer>
     </div>
   );
 }

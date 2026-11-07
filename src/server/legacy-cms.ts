@@ -1,3 +1,4 @@
+import { queryCmsTable, cmsPagination, type CmsRemoteFilter } from "@/lib/cms-livewire";
 // Legacy CMS Scraper & Synchronizer (Phase 29):
 // Synchronizes data from Noor Ethiopia CMS (https://cms.noorethiopia.com)
 // Subpages:
@@ -1421,6 +1422,8 @@ export async function getLegacyCmsGrowthAnalytics(): Promise<GrowthAnalytics> {
 // ---------------------------------------------------------------------------
 
 export type LiveCmsPageResult = {
+  filters?: CmsRemoteFilter[];
+  pageSize?: number;
   ok: boolean;
   message?: string;
   category: LegacyCmsCategory;
@@ -1435,7 +1438,7 @@ export type LiveCmsPageResult = {
 
 export async function fetchLegacyCmsLivePage(
   user: AppUser,
-  opts: { category: LegacyCmsCategory; page?: number; pageSize?: number; search?: string }
+  opts: { category: LegacyCmsCategory; page?: number; pageSize?: number; search?: string; filters?: Record<string, string> }
 ): Promise<LiveCmsPageResult> {
   const page = Math.max(1, opts.page || 1);
   const pageSize = opts.pageSize && opts.pageSize > 0 ? opts.pageSize : 10;
@@ -1495,24 +1498,17 @@ export async function fetchLegacyCmsLivePage(
       };
     }
 
-    const html = await res.text();
+    const queried = await queryCmsTable(await res.text(), baseUrl, cookieHeader, { page, pageSize, search, filters: opts.filters });
+    const html = queried.html;
     const records = parseFilamentTable(html);
-
-    // Parse "Showing X to Y of Z results"
-    const showingMatch = html.match(/Showing\s+([0-9,]+)\s+to\s+([0-9,]+)\s+of\s+([0-9,]+)\s+results/i);
-    let from = 0;
-    let to = 0;
-    let totalResults = records.length;
-    if (showingMatch) {
-      from = parseInt(showingMatch[1].replace(/,/g, ""), 10);
-      to = parseInt(showingMatch[2].replace(/,/g, ""), 10);
-      totalResults = parseInt(showingMatch[3].replace(/,/g, ""), 10);
-    }
-    const totalPages = Math.max(1, Math.ceil(totalResults / pageSize));
+    const { from, to, totalResults } = cmsPagination(html, records.length, page, queried.pageSize);
+    const totalPages = Math.max(1, Math.ceil(totalResults / queried.pageSize));
     const headersList: string[] = records.length > 0 ? Object.keys(records[0]).filter((k) => !k.startsWith("_")) : [];
 
     return {
       ok: true,
+      filters: queried.filters,
+      pageSize: queried.pageSize,
       category: opts.category,
       currentPage: page,
       totalPages,

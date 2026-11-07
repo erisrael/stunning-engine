@@ -1,0 +1,20 @@
+import assert from "node:assert/strict";
+import { parseCmsDate, cmsDateMatches, cmsChoiceMatches, cmsDate } from "../../src/lib/cms-filters";
+import { cmsPagination, remoteFilters } from "../../src/lib/cms-livewire";
+
+assert.equal(parseCmsDate("06/11/2024")?.toISOString(), "2024-11-05T21:00:00.000Z");
+assert.equal(parseCmsDate("31/02/2024"), null);
+assert.equal(parseCmsDate("2024-11-06")?.toISOString(), "2024-11-05T21:00:00.000Z");
+assert.equal(parseCmsDate("Nov 06, 2024")?.toISOString(), "2024-11-05T21:00:00.000Z");
+assert.equal(parseCmsDate("2024-11-06 12:30:00")?.toISOString(), "2024-11-06T09:30:00.000Z");
+assert.equal(cmsDate({ phone: "20241106", name: "May" }), null);
+assert.equal(cmsChoiceMatches("inactive", "active"), false);
+assert.equal(cmsChoiceMatches("", "active"), false);
+assert.equal(cmsChoiceMatches("Grade 10", "Grade 1"), false);
+assert.equal(cmsDateMatches({ Date: "2024-11-06T20:59:59Z" }, "custom", "2024-11-06", "2024-11-06"), true);
+assert.equal(cmsDateMatches({ Date: "2024-11-06T21:00:00Z" }, "custom", "2024-11-06", "2024-11-06"), false);
+assert.equal(cmsDateMatches({ Date: "2024-11-06" }, "custom", "2024-11-07", "2024-11-05"), false);
+assert.equal(cmsDateMatches({}, "custom", "", ""), true);
+assert.deepEqual(cmsPagination("Showing <span>26</span> to <span>50</span> of <strong>5,139</strong> results", 25, 2, 25), { from: 26, to: 50, totalResults: 5139 });
+assert.deepEqual(remoteFilters('<select wire:model="tableDeferredFilters.status.value"><option value="active"><!-- comment -->Active</option></select>'), [{ key: "status.value", label: "status", options: [{ value: "active", label: "Active" }] }]);
+console.log("PASS CMS date boundaries, exact filters, remote controls and pagination");

@@ -5,23 +5,12 @@ export function GET() {
     description: "MySeed Attendance Tablet & Mobile Kiosk Station",
     start_url: "/kiosk",
     display: "standalone",
-    background_color: "#0a0a14",
-    theme_color: "#14132a",
+    id: "/kiosk",
+    scope: "/kiosk",
+    background_color: "#ffffff",
+    theme_color: "#7b68ee",
     orientation: "any",
-    icons: [
-      {
-        src: "/icon.png",
-        sizes: "192x192",
-        type: "image/png",
-        purpose: "any maskable",
-      },
-      {
-        src: "/icon.png",
-        sizes: "512x512",
-        type: "image/png",
-        purpose: "any maskable",
-      },
-    ],
+    icons: [{ src: "/api/branding/favicon", sizes: "any", purpose: "any" }],
   };
 
   return Response.json(manifest, {

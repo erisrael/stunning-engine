@@ -1,0 +1,72 @@
+// CMS dates without a zone are interpreted in the workspace's Addis Ababa zone.
+export function parseCmsDate(value: unknown, now = new Date()): Date | null {
+  const text = String(value ?? "").trim();
+  if (!text) return null;
+  const relative = text.toLowerCase();
+  if (relative === "just now" || relative === "today") return now;
+  if (relative === "yesterday") return new Date(+now - 86400000);
+  const ago = relative.match(/^(\d+)\s*(second|sec|minute|min|hour|day|week|month|year)s?\s+ago$/);
+  if (ago) {
+    const units: Record<string, number> = { second: 1000, sec: 1000, minute: 60000, min: 60000, hour: 3600000, day: 86400000, week: 604800000, month: 2592000000, year: 31536000000 };
+    return new Date(+now - Number(ago[1]) * units[ago[2]]);
+  }
+  // Slash dates in Noor are day/month/year; parse before the browser's US fallback.
+  const slash = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  const iso = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (slash || iso) {
+    const [year, month, day] = slash ? [Number(slash[3]), Number(slash[2]), Number(slash[1])] : [Number(iso![1]), Number(iso![2]), Number(iso![3])];
+    const date = new Date(Date.UTC(year, month - 1, day));
+    if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return null;
+    return new Date(+date - 10800000);
+  }
+  // Do not treat phone numbers, IDs or arbitrary text as dates.
+  if (!/^\d{4}-\d{2}-\d{2}[T ]/.test(text) && !/\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\b/i.test(text)) return null;
+  const zoned = /(?:Z|[+-]\d{2}:?\d{2}|GMT|UTC)$/i.test(text);
+  const date = new Date(zoned ? text : `${text} GMT+0300`);
+  const isoDate = /^\d{4}-/.test(text) && !zoned ? new Date(text.replace(" ", "T") + "+03:00") : date;
+  return Number.isNaN(+isoDate) ? null : isoDate;
+}
+
+const key = (value: string) => value.toLowerCase().replace(/[\s_-]+/g, "");
+export function cmsField(record: Record<string, unknown>, names: string[]): string {
+  for (const name of names) {
+    const entry = Object.entries(record).find(([k]) => key(k) === key(name));
+    if (entry && entry[1] != null && String(entry[1]).trim()) return String(entry[1]).trim();
+  }
+  return "";
+}
+
+export function cmsDate(record: Record<string, unknown>): Date | null {
+  for (const name of ["created at", "created", "date", "invoice date", "payment date", "joined at", "registered at", "starts at", "expires at"]) {
+    const parsed = parseCmsDate(cmsField(record, [name]));
+    if (parsed) return parsed;
+  }
+  return null;
+}
+
+export function cmsChoiceMatches(value: string, selected: string): boolean {
+  if (selected === "all") return true;
+  return value.toLowerCase().split(/[,;|\n]+/).some((part) => part.trim() === selected.trim().toLowerCase());
+}
+
+export function cmsDateMatches(record: Record<string, unknown>, period: string, start: string, end: string, now = new Date()): boolean {
+  if (period === "all" || (period === "custom" && !start && !end)) return true;
+  const date = cmsDate(record);
+  if (!date) return false;
+  const local = new Date(+now + 10800000);
+  const today = Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate()) - 10800000;
+  let from = today;
+  let until = today + 86400000;
+  if (period === "yesterday") { from -= 86400000; until = today; }
+  if (period === "week") from -= ((local.getUTCDay() + 6) % 7) * 86400000;
+  if (period === "month") from = Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), 1) - 10800000;
+  if (period === "30days") from -= 29 * 86400000;
+  if (period === "custom") {
+    const parsedStart = start ? parseCmsDate(start) : null;
+    const parsedEnd = end ? parseCmsDate(end) : null;
+    if ((start && !parsedStart) || (end && !parsedEnd)) return false;
+    from = parsedStart ? +parsedStart : -Infinity;
+    until = parsedEnd ? +parsedEnd + 86400000 : Infinity;
+  }
+  return +date >= from && +date < until;
+}

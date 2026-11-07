@@ -147,7 +147,7 @@ export function KioskPairing({ initialError }: { initialError?: string }) {
   }, [showCamera]);
 
   return (
-    <main className="flex min-h-dvh flex-col items-center justify-center bg-[#0a0a14] px-4 py-8 text-[#ecebf7]">
+    <main className="flex min-h-dvh flex-col items-center justify-center bg-background px-4 py-8 text-foreground">
       <div className="w-full max-w-md space-y-6 text-center">
         {/* App Title & Header */}
         <div className="space-y-2">
@@ -155,7 +155,7 @@ export function KioskPairing({ initialError }: { initialError?: string }) {
             <TabletIcon className="size-7" />
           </div>
           <h1 className="text-2xl font-bold tracking-tight">Connect Tablet Kiosk</h1>
-          <p className="text-xs text-[#a9a6c9] leading-relaxed">
+          <p className="text-xs text-muted-foreground leading-relaxed">
             Link this tablet or device to an attendance station (Main Entrance, Studio, or Branch).
           </p>
         </div>
@@ -167,12 +167,12 @@ export function KioskPairing({ initialError }: { initialError?: string }) {
         )}
 
         {/* 6-Digit PIN Entry */}
-        <div className="space-y-4 rounded-2xl border border-white/10 bg-white/5 p-5 shadow-xl backdrop-blur-md">
+        <div className="space-y-4 rounded-2xl border border-border bg-muted p-5 shadow-xl backdrop-blur-md">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
               <KeyRoundIcon className="size-3.5 text-indigo-400" /> Enter 6-Digit Setup PIN
             </span>
-            <span className="text-[11px] text-[#7d7aa0]">From Attendance &gt; Setup</span>
+            <span className="text-[11px] text-muted-foreground">From Attendance &gt; Setup</span>
           </div>
 
           {/* PIN display boxes */}
@@ -183,7 +183,7 @@ export function KioskPairing({ initialError }: { initialError?: string }) {
                 className={`flex size-12 items-center justify-center rounded-xl border text-xl font-bold transition-all ${
                   pin[idx]
                     ? "border-indigo-400 bg-indigo-500/20 text-white shadow-inner"
-                    : "border-white/15 bg-white/5 text-[#7d7aa0]"
+                    : "border-input bg-muted text-muted-foreground"
                 }`}
               >
                 {pin[idx] || "•"}
@@ -199,7 +199,7 @@ export function KioskPairing({ initialError }: { initialError?: string }) {
                 type="button"
                 disabled={busy}
                 onClick={() => pressDigit(d)}
-                className="h-12 rounded-xl bg-white/10 text-xl font-bold hover:bg-white/15 active:bg-white/25 transition-all text-[#ecebf7]"
+                className="h-12 rounded-xl bg-secondary text-xl font-bold hover:bg-accent active:bg-accent transition-all text-foreground"
               >
                 {d}
               </button>
@@ -208,7 +208,7 @@ export function KioskPairing({ initialError }: { initialError?: string }) {
               type="button"
               disabled={busy || !pin}
               onClick={backspace}
-              className="h-12 rounded-xl bg-white/5 text-sm font-semibold hover:bg-white/10 active:bg-white/20 transition-all text-[#a9a6c9]"
+              className="h-12 rounded-xl bg-muted text-sm font-semibold hover:bg-secondary active:bg-accent transition-all text-muted-foreground"
             >
               Clear
             </button>
@@ -216,7 +216,7 @@ export function KioskPairing({ initialError }: { initialError?: string }) {
               type="button"
               disabled={busy}
               onClick={() => pressDigit("0")}
-              className="h-12 rounded-xl bg-white/10 text-xl font-bold hover:bg-white/15 active:bg-white/25 transition-all text-[#ecebf7]"
+              className="h-12 rounded-xl bg-secondary text-xl font-bold hover:bg-accent active:bg-accent transition-all text-foreground"
             >
               0
             </button>
@@ -235,7 +235,7 @@ export function KioskPairing({ initialError }: { initialError?: string }) {
         <div className="flex flex-col gap-2.5">
           <Button
             variant="secondary"
-            className="w-full gap-2 border border-white/10 bg-white/5 hover:bg-white/10 text-[#ecebf7]"
+            className="w-full gap-2 border border-border bg-muted hover:bg-secondary text-foreground"
             onClick={() => setShowCamera(!showCamera)}
           >
             <CameraIcon className="size-4 text-emerald-400" />
@@ -243,7 +243,7 @@ export function KioskPairing({ initialError }: { initialError?: string }) {
           </Button>
 
           {showCamera && (
-            <div className="relative rounded-2xl overflow-hidden border border-white/10 bg-black aspect-square max-w-xs mx-auto">
+            <div className="relative rounded-2xl overflow-hidden border border-border bg-black aspect-square max-w-xs mx-auto">
               <video ref={videoRef} playsInline muted className="w-full h-full object-cover" />
               <div className="absolute inset-0 border-2 border-dashed border-emerald-400/70 m-8 rounded-xl pointer-events-none animate-pulse" />
             </div>
@@ -252,7 +252,7 @@ export function KioskPairing({ initialError }: { initialError?: string }) {
           {!isPwaInstalled && (
             <Button
               variant="outline"
-              className="w-full gap-2 border-white/15 bg-transparent hover:bg-white/5 text-[#a9a6c9]"
+              className="w-full gap-2 border-input bg-transparent hover:bg-muted text-muted-foreground"
               onClick={handleInstallClick}
             >
               <DownloadIcon className="size-4 text-blue-400" />
@@ -262,7 +262,7 @@ export function KioskPairing({ initialError }: { initialError?: string }) {
         </div>
 
         {/* Footer help */}
-        <div className="space-y-1 text-xs text-[#7d7aa0]">
+        <div className="space-y-1 text-xs text-muted-foreground">
           <p>Admins can add and manage multiple sites in Attendance &gt; Setup &gt; Kiosks.</p>
           <p>For security, setup links and PINs expire after 24 hours.</p>
         </div>

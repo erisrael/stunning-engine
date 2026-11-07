@@ -193,6 +193,7 @@ export async function getLegacyCmsGrowthAnalyticsAction() {
 }
 
 export async function fetchLegacyCmsLivePageAction(opts: {
+  filters?: Record<string, string>;
   category: LegacyCmsCategory;
   page?: number;
   pageSize?: number;

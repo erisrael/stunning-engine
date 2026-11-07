@@ -1,5 +1,7 @@
 "use client";
 
+import type { CmsRemoteFilter } from "@/lib/cms-livewire";
+import { cmsDateMatches, cmsChoiceMatches, cmsField } from "@/lib/cms-filters";
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -192,6 +194,8 @@ export function LegacyCmsClient({
   const [search, setSearch] = React.useState("");
   const [statusFilter, setStatusFilter] = React.useState<string>("all");
   const [gradeFilter, setGradeFilter] = React.useState<string>("all");
+  const [paymentMethodFilter, setPaymentMethodFilter] = React.useState("all");
+
 
   // Date Range Filters: "all" | "today" | "yesterday" | "week" | "month" | "30days" | "custom"
   const [dateFilter, setDateFilter] = React.useState<"all" | "today" | "yesterday" | "week" | "month" | "30days" | "custom">("all");
@@ -203,6 +207,9 @@ export function LegacyCmsClient({
   const [pageSize, setPageSize] = React.useState<number>(25);
 
   // Live CMS Pagination & Search State
+  const [remoteFilters, setRemoteFilters] = React.useState<CmsRemoteFilter[]>([]);
+  const [remoteValues, setRemoteValues] = React.useState<Record<string, string>>({});
+  const liveRequestId = React.useRef(0);
   const [livePage, setLivePage] = React.useState(1);
   const [livePageSize, setLivePageSize] = React.useState<number>(10);
   const [liveTotalPages, setLiveTotalPages] = React.useState(1);
@@ -212,6 +219,10 @@ export function LegacyCmsClient({
   const [liveRecords, setLiveRecords] = React.useState<Record<string, string>[]>([]);
   const [liveHeaders, setLiveHeaders] = React.useState<string[]>([]);
   const [liveLoading, setLiveLoading] = React.useState(false);
+
+  const paymentMethods = React.useMemo(() => [...new Set(
+    (dataSourceMode === "live" ? liveRecords : records.map(r => r.data)).map(r => cmsField(r, ["payment method", "method", "payment channel"])).filter(Boolean)
+  )].sort(), [dataSourceMode, records, liveRecords]);
 
   // Question Recipients Routing State
   const [eligibleRecipients, setEligibleRecipients] = React.useState<QuestionRecipient[]>(staffUsers);
@@ -496,11 +507,15 @@ export function LegacyCmsClient({
   // Fetch Live Page directly from Noor CMS
   const handleFetchLivePage = async (cat: LegacyCmsCategory, pageNum: number, searchQ: string, size?: number) => {
     const s = size ?? livePageSize;
+    const requestId = ++liveRequestId.current;
     setLiveLoading(true);
     try {
-      const res = await fetchLegacyCmsLivePageAction({ category: cat, page: pageNum, pageSize: s, search: searchQ });
+      const res = await fetchLegacyCmsLivePageAction({ category: cat, page: pageNum, pageSize: s, search: searchQ, filters: remoteValues });
+      if (requestId !== liveRequestId.current) return;
       setLiveLoading(false);
       if (res.ok) {
+        setRemoteFilters(res.filters ?? []);
+        if (res.pageSize) setLivePageSize(res.pageSize);
         setLiveRecords(res.records);
         setLiveHeaders(res.headers);
         setLivePage(res.currentPage);
@@ -512,6 +527,7 @@ export function LegacyCmsClient({
         toast.error(res.message || "Failed to load live CMS page");
       }
     } catch (err: any) {
+      if (requestId !== liveRequestId.current) return;
       setLiveLoading(false);
       if (String(err?.message || err).includes("Server Action")) window.location.reload();
       else toast.error(String(err?.message || err));
@@ -523,7 +539,7 @@ export function LegacyCmsClient({
     if (dataSourceMode === "live") {
       handleFetchLivePage(category, 1, search, livePageSize);
     }
-  }, [category, dataSourceMode]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [category, dataSourceMode, remoteValues]); // eslint-disable-line react-hooks/exhaustive-deps
 
   React.useEffect(() => {
     if (activeMainView === "storage") {
@@ -797,119 +813,8 @@ export function LegacyCmsClient({
     toast.success(`Exported ${filename}.csv (Excel compatible)`);
   };
 
-  // Robust Date extraction from any CMS / Filament record
-  const extractDateFromRecord = (itemData: Record<string, any>): Date | null => {
-    if (!itemData || typeof itemData !== "object") return null;
-
-    // Scan prioritized keys (space-insensitive and casing-insensitive)
-    for (const [k, v] of Object.entries(itemData)) {
-      if (!v || typeof v === "object") continue;
-      const cleanKey = k.toLowerCase().replace(/[\s_-]+/g, "");
-      if (
-        cleanKey === "createdat" ||
-        cleanKey === "date" ||
-        cleanKey === "invoicedate" ||
-        cleanKey === "paymentdate" ||
-        cleanKey === "startsat" ||
-        cleanKey === "starts" ||
-        cleanKey === "expiresat" ||
-        cleanKey === "joinedat" ||
-        cleanKey === "registeredat" ||
-        cleanKey === "syncedat" ||
-        cleanKey.includes("date") ||
-        cleanKey.includes("created") ||
-        cleanKey.includes("joined")
-      ) {
-        const strVal = String(v).trim();
-        // Direct Date parse (handles "Nov 06, 2024", "2024-11-06", "11/06/2024", etc.)
-        const direct = new Date(strVal);
-        if (!isNaN(direct.getTime()) && direct.getFullYear() > 2000 && direct.getFullYear() < 2100) {
-          return direct;
-        }
-
-        // Handle ISO-like timestamps with space
-        if (strVal.includes("-") || strVal.includes("/")) {
-          const isoLike = new Date(strVal.replace(" ", "T"));
-          if (!isNaN(isoLike.getTime())) return isoLike;
-        }
-
-        // Relative dates: "2 hours ago", "yesterday", "5 days ago", "just now"
-        const lower = strVal.toLowerCase();
-        const now = Date.now();
-        if (lower.includes("just now") || lower.includes("sec ago")) return new Date(now);
-        const minsMatch = lower.match(/(\d+)\s*min/);
-        if (minsMatch) return new Date(now - parseInt(minsMatch[1], 10) * 60000);
-        const hoursMatch = lower.match(/(\d+)\s*hour/);
-        if (hoursMatch) return new Date(now - parseInt(hoursMatch[1], 10) * 3600000);
-        if (lower.includes("yesterday")) return new Date(now - 86400000);
-        const daysMatch = lower.match(/(\d+)\s*day/);
-        if (daysMatch) return new Date(now - parseInt(daysMatch[1], 10) * 86400000);
-        const weeksMatch = lower.match(/(\d+)\s*week/);
-        if (weeksMatch) return new Date(now - parseInt(weeksMatch[1], 10) * 7 * 86400000);
-        const monthsMatch = lower.match(/(\d+)\s*month/);
-        if (monthsMatch) return new Date(now - parseInt(monthsMatch[1], 10) * 30 * 86400000);
-      }
-    }
-
-    // Secondary scan for any date-like string across all fields
-    for (const v of Object.values(itemData)) {
-      if (typeof v === "string") {
-        const strVal = v.trim();
-        if (strVal.length >= 8 && strVal.length <= 40) {
-          const direct = new Date(strVal);
-          if (!isNaN(direct.getTime()) && direct.getFullYear() > 2000 && direct.getFullYear() < 2100) {
-            return direct;
-          }
-        }
-      }
-    }
-
-    return null;
-  };
-
-  // Date Filter evaluation helper
-  const matchesDateFilter = (itemData: Record<string, any>) => {
-    if (dateFilter === "all") return true;
-    const d = extractDateFromRecord(itemData);
-    if (!d) return false;
-
-    const now = new Date();
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-    const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
-
-    if (dateFilter === "today") {
-      return d >= todayStart && d <= todayEnd;
-    }
-    if (dateFilter === "yesterday") {
-      const yestStart = new Date(todayStart.getTime() - 864e5);
-      const yestEnd = new Date(todayStart.getTime() - 1);
-      return d >= yestStart && d <= yestEnd;
-    }
-    if (dateFilter === "week") {
-      const oneWeekAgo = new Date(todayEnd.getTime() - 7 * 864e5);
-      return d >= oneWeekAgo && d <= todayEnd;
-    }
-    if (dateFilter === "month") {
-      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
-      return d >= monthStart && d <= todayEnd;
-    }
-    if (dateFilter === "30days") {
-      const thirtyDaysAgo = new Date(todayEnd.getTime() - 30 * 864e5);
-      return d >= thirtyDaysAgo && d <= todayEnd;
-    }
-    if (dateFilter === "custom") {
-      if (customStartDate) {
-        const start = new Date(`${customStartDate}T00:00:00`);
-        if (!isNaN(start.getTime()) && d < start) return false;
-      }
-      if (customEndDate) {
-        const end = new Date(`${customEndDate}T23:59:59.999`);
-        if (!isNaN(end.getTime()) && d > end) return false;
-      }
-      return true;
-    }
-    return true;
-  };
+  const matchesDateFilter = (data: Record<string, unknown>) =>
+    cmsDateMatches(data, dateFilter, customStartDate, customEndDate);
 
   // Filtered Scraped Records
   const filteredRecords = React.useMemo(() => {
@@ -925,19 +830,20 @@ export function LegacyCmsClient({
 
       if (statusFilter !== "all") {
         const rowStatus = String(data.Status || data.status || data["Payment Status"] || data["Subscription Status"] || "").toLowerCase();
-        if (rowStatus && !rowStatus.includes(statusFilter.toLowerCase())) return false;
+        if (!cmsChoiceMatches(rowStatus, statusFilter)) return false;
       }
 
       if (gradeFilter !== "all") {
         const rowGrade = String(data.Grade || data.grade || data.Grades || data.grades || data.Plan || data.plan || "").toLowerCase();
-        if (rowGrade && !rowGrade.includes(gradeFilter.toLowerCase())) return false;
+        if (!cmsChoiceMatches(rowGrade, gradeFilter)) return false;
       }
 
+      if (!cmsChoiceMatches(cmsField(data, ["payment method", "method", "payment channel"]), paymentMethodFilter)) return false;
       if (!matchesDateFilter(data)) return false;
 
       return true;
     });
-  }, [records, search, statusFilter, gradeFilter, dateFilter, customStartDate, customEndDate]);
+  }, [records, search, statusFilter, gradeFilter, paymentMethodFilter, dateFilter, customStartDate, customEndDate]);
 
   // Filtered Live Records (Enriched direct CMS live filtering with Search, Status, Grade, and Date)
   const filteredLiveRecords = React.useMemo(() => {
@@ -950,22 +856,15 @@ export function LegacyCmsClient({
         );
         if (!matches) return false;
       }
-      // Status filter
-      if (statusFilter !== "all") {
-        const rowStatus = String(r.Status || r.status || r["Payment Status"] || r["Subscription Status"] || "").toLowerCase();
-        if (rowStatus && !rowStatus.includes(statusFilter.toLowerCase())) return false;
-      }
-      // Grade filter
-      if (gradeFilter !== "all") {
-        const rowGrade = String(r.Grade || r.grade || r.Grades || r.grades || r.Plan || r.plan || "").toLowerCase();
-        if (rowGrade && !rowGrade.includes(gradeFilter.toLowerCase())) return false;
-      }
       // Date filter
+      if (!cmsChoiceMatches(cmsField(r, ["payment method", "method", "payment channel"]), paymentMethodFilter)) return false;
       if (!matchesDateFilter(r)) return false;
 
       return true;
     });
-  }, [liveRecords, search, statusFilter, gradeFilter, dateFilter, customStartDate, customEndDate]);
+  }, [liveRecords, search, statusFilter, gradeFilter, paymentMethodFilter, dateFilter, customStartDate, customEndDate]);
+
+  React.useEffect(() => { setCurrentPage(1); }, [search, statusFilter, gradeFilter, paymentMethodFilter, dateFilter, customStartDate, customEndDate, pageSize, category]);
 
   // Paginated Scraped Records
   const paginatedScrapedRecords = React.useMemo(() => {
@@ -1270,6 +1169,34 @@ export function LegacyCmsClient({
                 )}
               </div>
 
+              <label className="flex items-center gap-2 text-xs">
+                Payment method
+                <select aria-label="Payment method" className="h-8 rounded-md border bg-background px-2" value={paymentMethodFilter} onChange={e => setPaymentMethodFilter(e.target.value)}>
+                  <option value="all">All methods</option>
+                  {paymentMethods.map(method => <option key={method} value={method}>{method}</option>)}
+                </select>
+              </label>
+              {dataSourceMode === "live" && remoteFilters.map(filter => <label key={filter.key} className="flex items-center gap-2 text-xs capitalize">
+                {filter.label}
+                <select className="h-8 rounded-md border bg-background px-2" value={remoteValues[filter.key] ?? ""} onChange={e => setRemoteValues(v => ({ ...v, [filter.key]: e.target.value }))}>
+                  {filter.options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
+              </label>)}
+              {dataSourceMode === "scraped" && <>
+                <label className="flex items-center gap-2 text-xs">Status
+                  <select aria-label="Status" className="h-8 rounded-md border bg-background px-2" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+                    <option value="all">All statuses</option>
+                    {[...new Set(records.map(r => cmsField(r.data, ["status", "payment status", "subscription status"])).filter(Boolean))].sort().map(v => <option key={v}>{v}</option>)}
+                  </select>
+                </label>
+                <label className="flex items-center gap-2 text-xs">Grade
+                  <select aria-label="Grade" className="h-8 rounded-md border bg-background px-2" value={gradeFilter} onChange={e => setGradeFilter(e.target.value)}>
+                    <option value="all">All grades</option>
+                    {[...new Set(records.map(r => cmsField(r.data, ["grade", "grades", "plan"])).filter(Boolean))].sort().map(v => <option key={v}>{v}</option>)}
+                  </select>
+                </label>
+              </>}
+              {dataSourceMode === "live" && <p className="w-full text-xs text-muted-foreground">CMS filters and Search query all records. Date and payment method narrow the displayed page.</p>}
               {/* Date Filter Pills */}
               <div className="flex flex-wrap items-center gap-1.5">
                 <span className="text-xs text-muted-foreground mr-1 flex items-center gap-1">
@@ -1308,7 +1235,7 @@ export function LegacyCmsClient({
                     exportToExcel(
                       `noor-cms-live-${category}-page-${livePage}`,
                       liveHeaders,
-                      liveRecords.map((r) => liveHeaders.map((h) => r[h] || ""))
+                      filteredLiveRecords.map((r) => liveHeaders.map((h) => r[h] || ""))
                     );
                   } else {
                     exportToExcel(
@@ -1577,7 +1504,7 @@ export function LegacyCmsClient({
               currentPage={livePage}
               totalPages={liveTotalPages}
               pageSize={livePageSize}
-              pageSizeOptions={[10, 25, 50, 100, 250]}
+              pageSizeOptions={[5, 10, 25, 50]}
               disabled={liveLoading}
               onPageChange={(p) => handleFetchLivePage(category, p, search, livePageSize)}
               onPageSizeChange={(s) => {
