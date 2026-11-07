@@ -130,6 +130,8 @@ function translate(sql: string): string {
   let s = sql;
   if (/^\s*INSERT OR IGNORE INTO/i.test(s)) s = s.replace(/INSERT OR IGNORE INTO/i, "INSERT INTO") + " ON CONFLICT DO NOTHING";
   s = s.replace(/([\w.]+)\s*=\s*\?\s+COLLATE NOCASE/gi, "lower($1) = lower(?)");
+  s = s.replace(/([\w.]+)\s+LIKE\s+\?\s+COLLATE NOCASE/gi, "$1 ILIKE ?");
+  s = s.replace(/\s+COLLATE NOCASE/gi, "");
   let n = 0;
   let out = "";
   let quote = false;

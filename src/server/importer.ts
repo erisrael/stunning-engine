@@ -809,28 +809,28 @@ const truthy = (v: string) => ["yes", "true", "1", "y"].includes(v.trim().toLowe
 async function gradeByCode(code: string) {
   const trimmed = code.trim();
   if (!trimmed) return undefined;
-  let row = await get<{ id: string; code: string }>("SELECT id, code FROM grades WHERE code = ? COLLATE NOCASE", trimmed);
+  let row = await get<{ id: string; code: string }>("SELECT id, code FROM grades WHERE lower(code) = lower(?)", trimmed);
   if (row) return row;
   const numMatch = /(\d+)/.exec(trimmed);
   if (numMatch) {
     const padded = `G${numMatch[1].padStart(2, "0")}`;
     const unpadded = `G${Number(numMatch[1])}`;
     row = await get<{ id: string; code: string }>(
-      "SELECT id, code FROM grades WHERE code = ? OR code = ? OR code = ? COLLATE NOCASE",
+      "SELECT id, code FROM grades WHERE lower(code) IN (lower(?), lower(?), lower(?))",
       padded,
       unpadded,
       numMatch[1],
     );
     if (row) return row;
   }
-  return await get<{ id: string; code: string }>("SELECT id, code FROM grades WHERE name = ? COLLATE NOCASE", trimmed);
+  return await get<{ id: string; code: string }>("SELECT id, code FROM grades WHERE lower(name) = lower(?)", trimmed);
 }
 async function subjectByCode(code: string) {
   const trimmed = code.trim();
   if (!trimmed) return undefined;
-  let row = await get<{ id: string; code: string }>("SELECT id, code FROM subjects WHERE code = ? COLLATE NOCASE", trimmed);
+  let row = await get<{ id: string; code: string }>("SELECT id, code FROM subjects WHERE lower(code) = lower(?)", trimmed);
   if (row) return row;
-  return await get<{ id: string; code: string }>("SELECT id, code FROM subjects WHERE name = ? COLLATE NOCASE", trimmed);
+  return await get<{ id: string; code: string }>("SELECT id, code FROM subjects WHERE lower(name) = lower(?)", trimmed);
 }
 async function offered(gradeId: string, subjectId: string) {
   return !!await get("SELECT 1 AS x FROM grade_subjects WHERE grade_id = ? AND subject_id = ?", gradeId, subjectId);
@@ -839,7 +839,7 @@ async function unitFor(gradeId: string, subjectId: string, n: number) {
   return await get<{ id: string; title: string }>("SELECT id, title FROM units WHERE grade_id = ? AND subject_id = ? AND number = ?", gradeId, subjectId, n);
 }
 async function userByEmail(email: string) {
-  return await get<{ id: string; name: string }>("SELECT id, name FROM users WHERE email = ? COLLATE NOCASE AND active = 1", email);
+  return await get<{ id: string; name: string }>("SELECT id, name FROM users WHERE lower(email) = lower(?) AND active = 1", email);
 }
 async function userHasRole(userId: string, role: Role) {
   return !!await get("SELECT 1 AS x FROM role_assignments WHERE user_id = ? AND role = ?", userId, role);
@@ -904,7 +904,7 @@ export async function resolveItemRecord(rec: Row): Promise<{ item?: ResolvedItem
   // 2. Direct code lookup
   if (rawCode) {
     let item = await get<ResolvedItem>(
-      "SELECT id, code, lifecycle, stage, current_due_at FROM items WHERE code = ? COLLATE NOCASE",
+      "SELECT id, code, lifecycle, stage, current_due_at FROM items WHERE lower(code) = lower(?)",
       rawCode
     );
     if (item) return { item };
@@ -918,7 +918,7 @@ export async function resolveItemRecord(rec: Row): Promise<{ item?: ResolvedItem
 
     if (swapped !== rawCode) {
       item = await get<ResolvedItem>(
-        "SELECT id, code, lifecycle, stage, current_due_at FROM items WHERE code = ? COLLATE NOCASE",
+        "SELECT id, code, lifecycle, stage, current_due_at FROM items WHERE lower(code) = lower(?)",
         swapped
       );
       if (item) return { item };
@@ -931,7 +931,7 @@ export async function resolveItemRecord(rec: Row): Promise<{ item?: ResolvedItem
       const candidates = [`${wp}-${rawCode}`, `${wp}-${swapped}`];
       for (const cand of candidates) {
         item = await get<ResolvedItem>(
-          "SELECT id, code, lifecycle, stage, current_due_at FROM items WHERE code = ? COLLATE NOCASE",
+          "SELECT id, code, lifecycle, stage, current_due_at FROM items WHERE lower(code) = lower(?)",
           cand
         );
         if (item) return { item };
@@ -948,7 +948,7 @@ export async function resolveItemRecord(rec: Row): Promise<{ item?: ResolvedItem
 
     for (const suf of suffixKeys) {
       const matches = await all<ResolvedItem>(
-        "SELECT id, code, lifecycle, stage, current_due_at FROM items WHERE code LIKE ? COLLATE NOCASE LIMIT 2",
+        "SELECT id, code, lifecycle, stage, current_due_at FROM items WHERE code ILIKE ? LIMIT 2",
         `%-${suf}`
       );
       if (matches.length === 1) return { item: matches[0] };
@@ -1000,7 +1000,7 @@ export async function resolveItemRecord(rec: Row): Promise<{ item?: ResolvedItem
 
     const candidates = await all<ResolvedItem>(
       `SELECT id, code, lifecycle, stage, current_due_at FROM items 
-       WHERE (code LIKE ? OR code LIKE ?) COLLATE NOCASE 
+       WHERE (code ILIKE ? OR code ILIKE ?) 
          AND lifecycle NOT IN ('archived', 'cancelled')
        LIMIT 2`,
       `%${gNorm}%${subjectStr}%${uPad}%${lPad}%`,
@@ -1011,7 +1011,7 @@ export async function resolveItemRecord(rec: Row): Promise<{ item?: ResolvedItem
     // Also try unpadded
     const candUnpadded = await all<ResolvedItem>(
       `SELECT id, code, lifecycle, stage, current_due_at FROM items 
-       WHERE (code LIKE ? OR code LIKE ?) COLLATE NOCASE 
+       WHERE (code ILIKE ? OR code ILIKE ?) 
          AND lifecycle NOT IN ('archived', 'cancelled')
        LIMIT 2`,
       `%${gradeStr}%${subjectStr}%U${unitNum}%L${partNum}%`,
@@ -1318,7 +1318,7 @@ async function planRow(template: TemplateDef, rec: Row, rowNo: number, mode: Imp
         }
       }
     }
-    const existing = await get<{ id: string }>("SELECT id FROM users WHERE email = ? COLLATE NOCASE", rec.email);
+    const existing = await get<{ id: string }>("SELECT id FROM users WHERE lower(email) = lower(?)", rec.email);
     if (existing && existing.id === user.id && !roles.includes("manager")) errors.push("You cannot remove your own manager role through an import.");
     return {
       outcome: out(existing ? "update" : "create", rec.email, existing ? `Update ${rec.name}: ${roles.join(", ")}` : `Invite ${rec.name} as ${roles.join(", ")}`),
