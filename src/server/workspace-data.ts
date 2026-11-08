@@ -1,6 +1,6 @@
 import { all, get, nowIso, placeholders, run, tx, uid } from "./db";
 import { TABLES } from "./schema";
-import { getSettings } from "./settings";
+import { getPermissionMatrix, getSettings } from "./settings";
 import { hashPassword } from "./passwords";
 import {
   addAsset,
@@ -206,7 +206,8 @@ export async function upsertAccount(a: AccountInput) {
     );
   }
   await run("DELETE FROM role_assignments WHERE user_id = ?", id);
-  for (const r of a.roles.filter((r) => ROLES.includes(r))) await run("INSERT INTO role_assignments (user_id, role) VALUES (?, ?)", id, r);
+  const knownRoles = await getPermissionMatrix();
+  for (const r of a.roles.filter((r) => Object.hasOwn(knownRoles,r) && !r.startsWith("lead."))) await run("INSERT INTO role_assignments (user_id, role) VALUES (?, ?)", id, r);
   return { id, created: !existing };
 }
 

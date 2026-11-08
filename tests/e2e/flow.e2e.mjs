@@ -140,9 +140,10 @@ try {
 
   // Phase 12b: the Sprint, Roadmap and Specs pages.
   await go(lead, "/dev/sprint");
-  await lead.getByRole("button", { name: /Plan the next sprint/ }).click();
+  await lead.getByRole("button", { name: /Plan next sprint/ }).click();
   check("the lead plans a sprint", await toast(lead, /Next sprint planned/));
   await lead.waitForTimeout(1000);
+  await lead.getByRole("button",{name:"Sprint Planner & Capacity",exact:true}).click();
   check("the sprint page shows planning and capacity", await lead.locator("[data-sprint-planning]").isVisible());
   await lead.locator("[data-backlog-task]").first().getByRole("button").click();
   await lead.waitForTimeout(1200);

@@ -22,7 +22,7 @@ export function Field({ label, hint, className, children }: { label: string; hin
 const EMPLOYEE_TONE: Record<EmployeeStatus, Tone> = { active: "done", probation: "paused", on_leave: "queued", left: "neutral" };
 export const EmployeeStatusPill = ({ status }: { status: EmployeeStatus }) => <StatusPill tone={EMPLOYEE_TONE[status]} size="xs" label={EMPLOYEE_STATUS_LABELS[status]} />;
 
-const EQUIPMENT_TONE: Record<EquipmentStatus, Tone> = { available: "done", issued: "active", repair: "paused", retired: "neutral" };
+const EQUIPMENT_TONE: Record<EquipmentStatus, Tone> = { available: "done", issued: "active", repair: "paused", repair_needed: "paused", replacement_needed: "paused", lost: "neutral", retired: "neutral" };
 export const EquipmentStatusPill = ({ status }: { status: EquipmentStatus }) => <StatusPill tone={EQUIPMENT_TONE[status]} size="xs" label={EQUIPMENT_STATUS_LABELS[status]} />;
 
 // Days from today to a YYYY-MM-DD date (negative when it has passed).

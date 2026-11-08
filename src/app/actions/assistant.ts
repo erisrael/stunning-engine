@@ -120,3 +120,12 @@ export async function deleteConversationAction(id: string) {
 export async function agentActivityAction(everyone = false) {
   return wrap(async () => ai.agentActivity(await requireViewer(), { everyone }), { revalidate: false });
 }
+
+export async function equipmentReportAction() {
+  return wrap(async()=>{
+    const user=await requireViewer();
+    const {resourceView,equipmentAdvice}=await import("@/server/resources");
+    const view=await resourceView(user);
+    return {total:view.equipment.length,items:view.equipment.map(e=>({tag:e.tag,name:e.name,status:e.status,advice:equipmentAdvice(e)})).filter(e=>e.advice.length)};
+  },{revalidate:false});
+}

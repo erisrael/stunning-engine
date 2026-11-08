@@ -1,3 +1,5 @@
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
 import { notFound, redirect } from "next/navigation";
 import { requireViewer } from "@/server/auth";
 import { deptPeople } from "@/server/departments";
@@ -111,6 +113,7 @@ export async function WorkPage({ dept, searchParams, view }: { dept: WorkDept; s
     return (
       <div className="space-y-4">
         {header}
+        <Button variant="outline" asChild><Link href={`/resources?department=${encodeURIComponent(dept)}`}>Finance requests &amp; equipment</Link></Button>
         <WorkClient
           dept={dept}
           tab="board"
@@ -168,6 +171,7 @@ export async function WorkPage({ dept, searchParams, view }: { dept: WorkDept; s
           return (
             <DevToolsView
               dept={dept}
+              releaseReview={await (await import("@/server/release-proposals")).releaseProposals(viewer,dept)}
               releases={await dt.releasesWithDeploys(viewer, dept)}
               incidents={await dt.listIncidents(viewer, dept)}
               cases={await dt.listTestCases(viewer, dept)}
@@ -270,7 +274,7 @@ export async function WorkPage({ dept, searchParams, view }: { dept: WorkDept; s
     deptPeople(dept),
     deptViews(viewer, dept),
     tab === "team" ? teamWorkload(viewer, dept, period) : Promise.resolve(null),
-    tab === "report" ? deptReport(viewer, dept, period) : Promise.resolve(null),
+    tab === "report" ? deptReport(viewer, dept, period, {person:sp.person,project:sp.project,status:sp.status,sprint:sp.sprint,projectStatus:sp.projectStatus}) : Promise.resolve(null),
     getSettings(),
   ]);
   return (

@@ -39,6 +39,7 @@ export function LegacyCmsAdmin({ users }: { users: AdminUser[] }) {
   // Form state
   const [selectedUserId, setSelectedUserId] = React.useState(users[0]?.id || "");
   const [username, setUsername] = React.useState("");
+  const [canResolveFeedback,setCanResolveFeedback]=React.useState(false);
   const [password, setPassword] = React.useState("");
   const [allowedTabs, setAllowedTabs] = React.useState<LegacyCmsCategory[]>([
     "students",
@@ -70,16 +71,13 @@ export function LegacyCmsAdmin({ users }: { users: AdminUser[] }) {
       toast.error("Please select a user");
       return;
     }
-    if (allowedTabs.length === 0) {
-      toast.error("Please select at least one allowed tab");
-      return;
-    }
     setBusy(true);
     const res = await saveUserCmsOverrideAction({
       userId: selectedUserId,
       username: username.trim() || undefined,
       password: password.trim() || undefined,
       allowedTabs,
+      canResolveFeedback,
     });
     setBusy(false);
     if (res.ok) {
@@ -154,6 +152,7 @@ export function LegacyCmsAdmin({ users }: { users: AdminUser[] }) {
                     ))}
                   </div>
                 </div>
+                <Button variant="outline" size="sm" onClick={()=>{setSelectedUserId(ov.userId);setUsername(ov.username||"");setPassword("");setAllowedTabs(ov.allowedTabs);setCanResolveFeedback(!!ov.canResolveFeedback);setDialogOpen(true);}}>Edit access</Button>
                 <Button
                   size="sm"
                   variant="ghost"
@@ -181,7 +180,7 @@ export function LegacyCmsAdmin({ users }: { users: AdminUser[] }) {
             <div className="space-y-4 py-2">
               <div className="space-y-1.5">
                 <Label>Select User</Label>
-                <Select value={selectedUserId} onValueChange={setSelectedUserId}>
+                <Select value={selectedUserId} onValueChange={id=>{setSelectedUserId(id);const existing=overrides.find(o=>o.userId===id);setUsername(existing?.username||"");setPassword("");setAllowedTabs(existing?.allowedTabs||["students","parents","feedback"]);setCanResolveFeedback(!!existing?.canResolveFeedback);}}>
                   <SelectTrigger>
                     <SelectValue placeholder="Choose a user" />
                   </SelectTrigger>
@@ -218,6 +217,7 @@ export function LegacyCmsAdmin({ users }: { users: AdminUser[] }) {
               </div>
 
               <div className="space-y-2">
+                <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={canResolveFeedback} onChange={e=>setCanResolveFeedback(e.target.checked)}/>Allow feedback status updates in live Noor CMS</label>
                 <Label>Allowed Categories / Tabs</Label>
                 <div className="grid grid-cols-2 gap-2">
                   {LEGACY_CMS_CATEGORIES.map((cat) => {

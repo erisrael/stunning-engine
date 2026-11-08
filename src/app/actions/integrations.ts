@@ -10,7 +10,7 @@ import type { Role } from "@/lib/domain";
 
 // Every action checks department rights or Admin on the server (github.ts, feeds.ts, accounting.ts, ui-prefs.ts).
 
-export async function saveGithubAction(dept: string, input: { token?: string | null; clearToken?: boolean; repos: { fullName: string; projectId?: string | null }[] }) {
+export async function saveGithubAction(dept: string, input: { token?: string | null; clearToken?: boolean; repos: { fullName: string; projectId?: string | null; members?: string[] }[] }) {
   return wrap(async () => gh.saveGithubSettings(await requireViewer(), dept, input));
 }
 export async function refreshGithubAction(dept: string) {
@@ -31,3 +31,5 @@ export async function accountingExportAction(dept: string, input: { format: acc.
 export async function saveSidebarDefaultsAction(role: Role, hidden: string[]) {
   return wrap(async () => saveSidebarDefaults(await requireViewer(), role, hidden));
 }
+
+export async function addGithubCollaboratorAction(dept:string,input:{repo:string;username:string;permission:string}) { return wrap(async()=> (await import("@/server/github")).addGithubCollaborator(await requireViewer(),dept,input)); }

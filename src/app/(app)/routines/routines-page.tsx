@@ -10,8 +10,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { decideBatchAction, decideRunAction, deleteRoutineAction, importRoutineAction } from "@/app/actions/assistant";
-import { beginBatch, beginRun } from "@/components/app/routines-client";
+import { decideBatchAction, decideRunAction, deleteRoutineAction, importRoutineAction, requestRunAction } from "@/app/actions/assistant";
+import { beginBatch, beginRun, askedSteps, startRoutineRecording } from "@/components/app/routines-client";
 import type { Routine, Run } from "@/server/routines";
 
 const when = (iso: string) => new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
@@ -115,6 +115,9 @@ export function RoutinesPage({ routines, runs, open, imports, tab, viewerId }: {
   const router = useRouter();
   const [notes, setNotes] = React.useState<Record<string, string>>({});
   const [importing, setImporting] = React.useState(false);
+  const [runFor,setRunFor]=React.useState<Routine|null>(null);
+  const [values,setValues]=React.useState<Record<string,string>>({});
+  const [starting,setStarting]=React.useState(false);
   const decide = async (run: Run, approve: boolean, key: string) => {
     const r = run.batchId ? await decideBatchAction(run.batchId, approve, notes[key] ?? null) : await decideRunAction(run.id, approve, notes[key] ?? null);
     if (!r.ok) return void toast.error(r.error);
@@ -165,8 +168,9 @@ export function RoutinesPage({ routines, runs, open, imports, tab, viewerId }: {
         <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
           <div>
             <CardTitle className="text-base">My routines and shared ones</CardTitle>
-            <CardDescription>{open ? "Record a new one from the assistant (bottom right), or import one. Open a routine to change its steps, fill it from a file, or delete it." : "Routines are switched off for your role."}</CardDescription>
+            <CardDescription>{open ? "Record a new routine here, then perform its steps on the relevant pages, or import one. Open a routine to change its steps, fill it from a file, or delete it." : "Routines are switched off for your role."}</CardDescription>
           </div>
+          {open && <Button size="sm" onClick={startRoutineRecording}><PlayIcon /> Record a routine</Button>}
           {open && imports && (
             <Button size="sm" variant="outline" onClick={() => setImporting(true)}>
               <UploadIcon /> Import a routine
@@ -186,6 +190,7 @@ export function RoutinesPage({ routines, runs, open, imports, tab, viewerId }: {
                   {r.description ? ` · ${r.description}` : ""}
                 </p>
               </div>
+              {open && <Button size="sm" onClick={()=>{setRunFor(r);setValues(Object.fromEntries(askedSteps(r.steps).map(({i,s})=>[String(i),s.value??""])));}}><PlayIcon /> Run routine</Button>}
               <Button size="sm" variant="outline" asChild>
                 <Link href={`/routines/${r.id}`}>
                   <PencilIcon /> {r.ownerId === viewerId ? "Edit" : "Open"}
@@ -223,6 +228,7 @@ export function RoutinesPage({ routines, runs, open, imports, tab, viewerId }: {
           ))}
         </CardContent>
       </Card>
+      {runFor && <Dialog open onOpenChange={()=>setRunFor(null)}><DialogContent data-routine-ui data-routine-start><DialogHeader><DialogTitle>Run {runFor.name}</DialogTitle><DialogDescription>Review the values before requesting this run. Your role's approval rules apply.</DialogDescription></DialogHeader>{askedSteps(runFor.steps).map(({i,s})=><label key={i}>{s.label??`Value ${i+1}`}<Input aria-label={s.label??`Value ${i+1}`} value={values[String(i)]??""} onChange={e=>setValues({...values,[String(i)]:e.target.value})}/></label>)}<Button disabled={starting} onClick={async()=>{setStarting(true);try{const r=await requestRunAction(runFor.id,values);if(!r.ok||!r.data){toast.error(!r.ok?r.error:"Unable to start");return;}setRunFor(null);if(r.data.status==="approved")await beginRun(r.data.id);else toast.success("Sent for approval");router.refresh();}finally{setStarting(false);}}}>Confirm and run</Button></DialogContent></Dialog>}
       {importing && <ImportRoutine onClose={() => setImporting(false)} />}
     </div>
   );

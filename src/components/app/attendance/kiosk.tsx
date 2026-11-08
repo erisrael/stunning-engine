@@ -344,7 +344,7 @@ export function KioskScreen({ initialName }: { initialName: string }) {
       <header className="flex flex-wrap items-center justify-between gap-3 py-3 border-b border-border">
         <div className="flex items-center gap-3">
           <p className="text-lg font-bold tracking-tight">{name}</p>
-          <span className={cn("flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium", online ? "bg-emerald-500/15 text-emerald-300" : "bg-amber-500/15 text-amber-300")}>
+          <span className={cn("flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium", online ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300" : "bg-amber-500/15 text-amber-700 dark:text-amber-300")}>
             {online ? "Online" : (
               <>
                 <WifiOffIcon className="size-3.5" /> Offline
@@ -355,34 +355,34 @@ export function KioskScreen({ initialName }: { initialName: string }) {
         </div>
 
         {/* MODE SELECTOR TABS & FULLSCREEN TOGGLE */}
-        <div className="flex items-center gap-2">
-          <div className="flex items-center bg-muted border border-border rounded-lg p-0.5 text-xs">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center bg-muted border border-border rounded-lg p-0.5 text-xs">
             <button
               type="button"
               onClick={() => setMode("qr_display")}
               className={cn(
                 "px-3 py-1 rounded-md text-xs font-semibold transition-colors flex items-center gap-1.5",
-                mode === "qr_display" ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30" : "text-muted-foreground hover:text-foreground"
+                mode === "qr_display" ? "bg-primary/10 text-primary border border-primary/30" : "text-muted-foreground hover:text-foreground"
               )}
             >
               <QrCodeIcon className="size-3.5" /> Dynamic QR
             </button>
-            <button
+            {faceOn && online && <button
               type="button"
               onClick={() => setMode("face")}
               className={cn(
                 "px-3 py-1 rounded-md text-xs font-semibold transition-colors flex items-center gap-1.5",
-                mode === "face" ? "bg-blue-500/20 text-blue-300 border border-blue-500/30" : "text-muted-foreground hover:text-foreground"
+                mode === "face" ? "bg-primary/10 text-primary border border-primary/30" : "text-muted-foreground hover:text-foreground"
               )}
             >
               <ScanFaceIcon className="size-3.5" /> Face Check-In
-            </button>
+            </button>}
             <button
               type="button"
               onClick={() => setMode("badge")}
               className={cn(
                 "px-3 py-1 rounded-md text-xs font-semibold transition-colors flex items-center gap-1.5",
-                mode === "badge" || mode === "code" || mode === "pin" ? "bg-purple-500/20 text-purple-300 border border-purple-500/30" : "text-muted-foreground hover:text-foreground"
+                mode === "badge" || mode === "code" || mode === "pin" ? "bg-primary/10 text-primary border border-primary/30" : "text-muted-foreground hover:text-foreground"
               )}
             >
               <KeyRoundIcon className="size-3.5" /> Badge / PIN
@@ -480,10 +480,10 @@ export function KioskScreen({ initialName }: { initialName: string }) {
             {/* Quick action buttons */}
             <div className="flex flex-wrap justify-center gap-3 pt-2">
               <Button size="lg" variant="secondary" className="gap-2 bg-secondary hover:bg-accent text-foreground" onClick={() => setMode("face")}>
-                <ScanFaceIcon className="size-4 text-blue-400" /> Check In With Face
+                <ScanFaceIcon className="size-4 text-primary" /> Check In With Face
               </Button>
               <Button size="lg" variant="secondary" className="gap-2 bg-secondary hover:bg-accent text-foreground" onClick={() => setMode("badge")}>
-                <KeyRoundIcon className="size-4 text-purple-400" /> Use Badge or PIN
+                <KeyRoundIcon className="size-4 text-primary" /> Use Badge or PIN
               </Button>
             </div>
           </div>

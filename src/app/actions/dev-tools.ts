@@ -45,3 +45,7 @@ export async function applyTemplateAction(dept: string, templateId: string, inpu
 export async function saveBaselineAction(dept: string, projectId: string | null) {
   return wrap(async () => dp.saveBaseline(await requireViewer(), dept, projectId));
 }
+
+export async function reviewTestCaseAction(dept:string,id:string,approve:boolean,note:string) {return wrap(async()=>dt.reviewTestCase(await requireViewer(),dept,id,approve,note));}
+export async function proposeReleaseAction(dept:string,input:{name:string;notes:string;ids:string[]}) {return wrap(async()=> (await import("@/server/release-proposals")).proposeRelease(await requireViewer(),dept,input));}
+export async function decideReleaseAction(dept:string,id:string,approve:boolean,note:string) {return wrap(async()=> (await import("@/server/release-proposals")).decideRelease(await requireViewer(),dept,id,approve,note));}

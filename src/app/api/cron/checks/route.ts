@@ -6,6 +6,8 @@ async function _GET(request: Request) {
   const secret = process.env.CRON_SECRET;
   if (!secret || request.headers.get("authorization") !== `Bearer ${secret}`) return new Response("Not allowed", { status: 401 });
   const counts = await runScheduledChecks(undefined, { trigger: "cron" });
+  const { scheduledCmsSync } = await import("@/server/cms-schedule");
+  await scheduledCmsSync(undefined, true);
   return Response.json({ ok: true, at: new Date().toISOString(), counts });
 }
 

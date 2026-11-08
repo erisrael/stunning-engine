@@ -901,6 +901,8 @@ export async function createKiosk(user: AppUser, name: string, site = "Main Entr
   const n = clean(name, 60);
   if (!n) throw new WorkflowError("VALIDATION", "Name the kiosk, for example \"Main entrance\".");
   const s = clean(site, 60) || "Main Entrance";
+  const configuredSites = (await (await import("./attendance-capture")).captureConfig()).sites;
+  if (configuredSites.length && !configuredSites.some(x => x.name === s)) throw new WorkflowError("VALIDATION", "Choose a configured attendance site.");
   const id = uid("kio_");
   await run("INSERT INTO att_kiosks (id, name, site, active, created_by, created_at) VALUES (?, ?, ?, 1, ?, ?)", id, n, s, user.id, nowIso());
   await audit({ actor: user }, { action: "attendance.kiosk", summary: `${user.name} added the kiosk ${n} for site ${s}` });

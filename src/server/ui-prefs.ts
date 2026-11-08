@@ -1,4 +1,5 @@
 // Workspace-wide interface choices Admin makes: which sidebar entries each role does not see by default.
+import { roleCatalog } from "./role-catalog";
 import { get, nowIso, parseJson, run } from "./db";
 import { audit, WorkflowError } from "./workflow";
 import { can, type AppUser } from "./users";
@@ -12,8 +13,8 @@ export async function sidebarDefaults(): Promise<SidebarDefaults> {
 
 export async function saveSidebarDefaults(user: AppUser, role: Role, hidden: string[]) {
   if (!can(user, "users.manage")) throw new WorkflowError("FORBIDDEN", "Only Admin changes the sidebar for a role.");
-  if (!ROLES.includes(role)) throw new WorkflowError("VALIDATION", "Unknown role.");
-  const all = { ...(await sidebarDefaults()), [role]: [...new Set(hidden.filter((h) => typeof h === "string" && h.startsWith("/") || h === "views"))].slice(0, 60) };
+  if (!(await roleCatalog()).some(r=>r.key===role)) throw new WorkflowError("VALIDATION", "Unknown role.");
+  const all = { ...(await sidebarDefaults()), [role]: [...new Set(hidden.filter((h) => typeof h === "string" && (h.startsWith("/") || h === "views")))].slice(0, 60) };
   await run(
     "INSERT INTO settings (key, value, updated_at, updated_by) VALUES ('ui.sidebar', ?, ?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by",
     JSON.stringify(all),

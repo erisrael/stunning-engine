@@ -3,8 +3,9 @@ import { can, type AppUser } from "./users";
 import { WorkflowError } from "./workflow";
 
 export type QuestionRoutingConfig = {
-  // Mapping of sender role to allowed recipient roles. If empty or includes "*", all roles are allowed.
+  // Mapping of sender role to allowed recipient roles. An empty list denies recipients; "*" allows all roles.
   allowedRolesBySenderRole: Record<string, string[]>;
+  leadOnlyBySenderRole?: Record<string, string[]>;
 };
 
 // Default configurable routing matrix:
@@ -15,7 +16,10 @@ export type QuestionRoutingConfig = {
 // - Finance Department (finance_manager, accountant)
 // - Dev Team Lead (developer)
 export const DEFAULT_QUESTION_ROUTING: QuestionRoutingConfig = {
+  leadOnlyBySenderRole: { support: ["publication", "uploading", "developer"] },
   allowedRolesBySenderRole: {
+    admin: ["*"], owner: ["*"], manager: ["*"],
+    support: ["admin", "publication", "uploading", "finance_manager", "accountant", "developer"],
     staff: ["admin", "owner", "publication", "uploading", "finance_manager", "accountant", "developer", "manager"],
     customer_support: ["admin", "owner", "publication", "uploading", "finance_manager", "accountant", "developer", "manager"],
     editing: ["admin", "owner", "publication", "recording", "manager", "developer"],
@@ -34,6 +38,7 @@ export async function getQuestionRoutingConfig(): Promise<QuestionRoutingConfig>
   if (!row?.value) return DEFAULT_QUESTION_ROUTING;
   const parsed = parseJson<QuestionRoutingConfig>(row.value, DEFAULT_QUESTION_ROUTING);
   return {
+    leadOnlyBySenderRole: { ...DEFAULT_QUESTION_ROUTING.leadOnlyBySenderRole, ...parsed.leadOnlyBySenderRole },
     allowedRolesBySenderRole: {
       ...DEFAULT_QUESTION_ROUTING.allowedRolesBySenderRole,
       ...(parsed.allowedRolesBySenderRole || {}),
@@ -55,11 +60,6 @@ export async function saveQuestionRoutingConfig(user: AppUser, config: QuestionR
 }
 
 export function getAllowedRecipientRoles(senderRoles: string[], config: QuestionRoutingConfig): string[] | "*" {
-  // Admins, owners, and managers have universal routing access
-  if (senderRoles.some((r) => r === "admin" || r === "owner" || r === "manager")) {
-    return "*";
-  }
-
   const allowed = new Set<string>();
   let hasWildcard = false;
 
@@ -78,10 +78,18 @@ export function getAllowedRecipientRoles(senderRoles: string[], config: Question
   }
 
   if (hasWildcard) return "*";
-  if (allowed.size === 0) {
-    return ["admin", "owner", "manager", "developer"];
-  }
 
   return Array.from(allowed);
 }
 
+
+export async function eligibleQuestionRecipients(sender: AppUser) {
+ const { userDirectory } = await import("./users");
+ const { all } = await import("./db");
+ const config=await getQuestionRoutingConfig();
+ const allowed=getAllowedRecipientRoles(sender.roles,config);
+ const leadOnly=new Set(sender.roles.flatMap(r=>config.leadOnlyBySenderRole?.[r]??[]));
+ const leads=await all<{user_id:string;stage:string}>("SELECT user_id,stage FROM team_leads");
+ const positions=await all<{user_id:string;department:string}>("SELECT user_id,department FROM department_positions WHERE position IN ('lead','head')");
+ return (await userDirectory()).filter(u=>u.id!==sender.id && (allowed==="*" || u.roles.some(role=>allowed.includes(role) && (!leadOnly.has(role) || leads.some(l=>l.user_id===u.id&&l.stage===role) || positions.some(p=>p.user_id===u.id&&p.department===(role==="developer"?"dev":role))))));
+}

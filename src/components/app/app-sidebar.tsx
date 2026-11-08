@@ -478,20 +478,19 @@ export function AppSidebar({
           ...(support ? [{ href: "/support", label: "Customer support", icon: HeadsetIcon }] : []),
           ...(counts.approvals > 0 ? [{ href: "/approvals", label: "Approvals", icon: CheckCheckIcon, badge: counts.approvals }] : []),
           ...(counts.routines ? [{ href: "/routines", label: "Routines", icon: ZapIcon, badge: counts.routines }] : []),
-          ...(counts.mailbox ? [{ href: "/email", label: "Email", icon: MailIcon, badge: counts.mail ?? 0, sub: emailSub }] : []),
+          ...((counts.mailbox || has("email.manage") || has("email.send")) ? [{ href: "/email", label: "Email", icon: MailIcon, badge: counts.mail ?? 0, sub: emailSub }] : []),
         ],
       },
       {
         label: "Administration",
         items: [
-          {
-            href: "/admin",
-            label: "Admin",
-            icon: UserCogIcon,
-            cap: ["users.manage", "data.manage"],
-            gather: true,
-            sub: adminSub,
-          },
+          ...([
+            { label: "People & roles", tabs: [["people","People"],["teams","Teams"],["departments","Departments"],["permissions","Roles & permissions"],["sidebar","Sidebar per role"],["access","Access"]] },
+            { label: "Security", tabs: [["signin","Sign-in policy"],["sessions","Sessions & devices"],["privacy","Privacy"]] },
+            { label: "Communication & support", tabs: [["customer-support","Support setup"],["chat","Chat"],["feedback","Feedback"],["reports","Safety reports"]] },
+            { label: "Integrations", tabs: [["external-apis","External APIs"],["legacy-cms","Noor CMS user access"],["integrations","Connections"]] },
+            { label: "System & workspace", tabs: [["system","System & health"],["branding","Branding"],["files","Files & storage"],["usage","Usage"],["clean-data","Clean data"],["presentations","Presentation templates"]] },
+          ]).map(category => ({ href: `/admin?tab=${category.tabs[0][0]}`, label: category.label, icon: UserCogIcon, cap: "users.manage" as Capability, exact:true, sub:category.tabs.map(([tab,label])=>({label,href:`/admin?tab=${tab}`})) })),
           {
             href: "/settings",
             label: "Settings",
@@ -551,6 +550,10 @@ export function AppSidebar({
       { ...dept, items: dept.items.filter((i) => !["/people", "/requests"].includes(i.href)) },
     );
   }
+  const resourceGroup = groups.find(g => g.label === "Other Tools") ?? groups.find(g => g.label === "Tools");
+  const resourceItem: NavItem = { href: "/resources", label: "Finance requests & equipment", icon: InboxIcon };
+  if (resourceGroup) resourceGroup.items.push(resourceItem);
+  else groups.push({ label: "Resources", items: [resourceItem] });
   const keyOf = (i: NavItem) => i.id ?? i.href;
   const hidden = new Set([...roleHidden, ...userHidden]);
   const visible = (i: NavItem) => allowed(i.cap) && (i.locked || !hidden.has(keyOf(i)));
@@ -613,17 +616,17 @@ export function AppSidebar({
                     onClick={() => setOpenGroups((o) => (o.includes(g.label) ? o.filter((x) => x !== g.label) : [...o, g.label]))}
                   >
                     {g.label}
-                    <span className="text-xs normal-case">{folded ? `${items.length} ›` : "⌄"}</span>
+                    <ChevronDownIcon className={cn("size-4 transition-transform",folded && "-rotate-90")} />
                   </button>
                 ) : (
-                  <button
+                  <button data-sidebar="group-label"
                     type="button"
                     className="group/lbl flex h-7 w-full items-center justify-between px-2 text-[11px] font-semibold tracking-wide text-sidebar-foreground/70 uppercase hover:text-sidebar-foreground transition-colors cursor-pointer"
                     aria-expanded={!folded}
                     onClick={() => setOpenGroups((o) => (o.includes(`fold:${g.label}`) ? o.filter((x) => x !== `fold:${g.label}`) : [...o, `fold:${g.label}`]))}
                   >
                     <span>{g.label}</span>
-                    <span className="text-[10px] normal-case opacity-60 group-hover/lbl:opacity-100">{folded ? `${items.length} ›` : "⌄"}</span>
+                    <ChevronDownIcon className={cn("size-4 opacity-70 transition-transform",folded && "-rotate-90")} />
                   </button>
                 )}
                 <SidebarGroupContent className={folded ? "hidden" : undefined}>
@@ -631,7 +634,8 @@ export function AppSidebar({
                     {items.map((item) => {
                       const active = isActive(item);
                       const inSection =
-                        pathname === item.href.split("?")[0] || pathname.startsWith(item.href.split("?")[0] + "/") || (!!item.gather && !!item.sub?.some((s) => pathname === s.href.split("?")[0]));
+                        (item.exact && item.sub ? item.sub.some(s => { const [p,q] = s.href.split("?"); return pathname === p && new URLSearchParams(q).get("tab") === tabParam; }) : pathname === item.href.split("?")[0] || pathname.startsWith(item.href.split("?")[0] + "/") || (!!item.gather && !!item.sub?.some((s) => pathname === s.href.split("?")[0])));
+                      const expanded = openGroups.includes(`item:${item.href}`) || (inSection && !openGroups.includes(`closed:${item.href}`));
                       const href = item.keepFilters ? item.href + scopeQueryString(search) : item.href;
                       const tip = NAV_TIPS[keyOf(item)] ?? NAV_TIPS[item.href.split("?")[0]!];
                       return (
@@ -654,20 +658,14 @@ export function AppSidebar({
                             <Link href={href} onClick={close} className="flex w-full items-center">
                               <AppIcon icon={item.icon} name={brand[keyOf(item)]?.icon} tone={(brand[keyOf(item)]?.tone as Tone | null | undefined) ?? null} />
                               <span className="truncate">{item.label}</span>
-                              {!!item.sub && (
-                                <ChevronDownIcon
-                                  className={cn(
-                                    "ml-auto size-3.5 shrink-0 text-sidebar-foreground/60 transition-transform duration-200",
-                                    !inSection && "-rotate-90"
-                                  )}
-                                />
-                              )}
+
                             </Link>
                           </SidebarMenuButton>
                           {!!item.badge && item.badge > 0 && (
                             <SidebarMenuBadge className="rounded-full bg-sidebar-border/80 px-1.5 text-[10px] tabular">{item.badge > 99 ? "99+" : item.badge}</SidebarMenuBadge>
                           )}
-                          {item.sub && inSection && (
+                          {item.sub && <button type="button" aria-label={`${expanded ? "Collapse" : "Expand"} ${item.label}`} aria-expanded={expanded} className="absolute right-1 top-1 z-10 rounded p-1 hover:bg-sidebar-accent" onClick={() => setOpenGroups(o => [...o.filter(k => k !== `item:${item.href}` && k !== `closed:${item.href}`), `${expanded ? "closed" : "item"}:${item.href}`])}><ChevronDownIcon className={cn("size-4 transition-transform",!expanded && "-rotate-90")} /></button>}
+                          {item.sub && expanded && (
                             <SidebarMenuSub>
                               {item.sub.map((s) => {
                                 const [p, q] = s.href.split("?");
@@ -707,7 +705,7 @@ export function AppSidebar({
           </SidebarMenu>
           <div className="flex items-center gap-1 px-2 group-data-[collapsible=icon]:hidden">
             <p className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
-              Viewing as <span className="font-semibold text-foreground">{ROLE_LABELS[activeRole]}</span>
+              Viewing as <span className="font-semibold text-foreground">{ROLE_LABELS[activeRole] || activeRole}</span>
             </p>
             <Button size="icon-xs" variant="ghost" aria-label="Customize the sidebar" title="Choose what your sidebar shows" onClick={() => setCustomizing(true)}>
               <Settings2Icon />

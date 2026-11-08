@@ -3,6 +3,26 @@
 // translations are added by adding lines (and anything not here stays in English).
 
 export const AM: Record<string, string> = {
+  "Finance requests & equipment": "የፋይናንስ ጥያቄዎች እና መሣሪያዎች",
+  "Equipment & stock": "መሣሪያዎች እና ክምችት",
+  "Maintenance insights": "የጥገና ትንታኔ",
+  "Request from Finance": "ከፋይናንስ ይጠይቁ",
+  "Register equipment": "መሣሪያ ይመዝግቡ",
+  "Budget manager": "የበጀት አስተዳደር",
+  "Customer Support": "የደንበኛ ድጋፍ",
+  "Role sidebars": "የሚና የጎን ምናሌዎች",
+  "All departments": "ሁሉም ክፍሎች",
+  "All statuses": "ሁሉም ሁኔታዎች",
+  "Payment method": "የክፍያ ዘዴ",
+  "All methods": "ሁሉም ዘዴዎች",
+  "All grades": "ሁሉም ክፍሎች",
+  "Export filtered": "የተጣራ መረጃ አውጣ",
+  "Conversation": "ውይይት",
+  "Equipment history": "የመሣሪያ ታሪክ",
+  "Record update": "ለውጥ መዝግብ",
+  "Send to Finance": "ለፋይናንስ ላክ",
+  "One-to-one requested": "የግል ውይይት ተጠይቋል",
+  "What can you do?": "ምን ማድረግ ትችላለህ?",
   // Sidebar groups and entries
   "My space": "የእኔ ቦታ",
   Administration: "አስተዳደር",

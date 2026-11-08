@@ -10,7 +10,7 @@ export async function GET(request: Request) {
   const period = isPeriod(url.searchParams.get("period")) ? (url.searchParams.get("period") as never) : "30d";
   let data;
   try {
-    data = await deptReport(viewer, url.searchParams.get("dept") ?? "", period);
+    data = await deptReport(viewer, url.searchParams.get("dept") ?? "", period, Object.fromEntries(["person","project","status","sprint","projectStatus"].map(k=>[k,url.searchParams.get(k)||undefined])));
   } catch (err) {
     return new Response(err instanceof Error ? err.message : "Not allowed", { status: 403 });
   }

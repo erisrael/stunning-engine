@@ -213,7 +213,7 @@ function RoleSwitcher({ roles, active }: { roles: Role[]; active: Role }) {
   if (roles.length < 2)
     return (
       <span className="hidden h-8 items-center rounded-lg border bg-muted/50 px-2.5 text-xs font-medium sm:inline-flex" title="Your role. Admin sets what each role can see and do.">
-        {ROLE_LABELS[active]}
+        {ROLE_LABELS[active] || active}
       </span>
     );
   return (
@@ -223,7 +223,7 @@ function RoleSwitcher({ roles, active }: { roles: Role[]; active: Role }) {
         start(async () => {
           const r = await switchRoleAction(v as Role).catch(() => ({ ok: false as const, error: "The role could not be switched. Try again." }));
           if (!r.ok) return void toast.error(r.error);
-          toast.success(`Now viewing as ${ROLE_LABELS[v as Role]}`, { description: "The role switcher changes your view, not your permissions." });
+          toast.success(`Now viewing as ${ROLE_LABELS[v as Role] || v}`, { description: "The role switcher changes your view, not your permissions." });
           router.push("/dashboard");
         })
       }
@@ -236,7 +236,7 @@ function RoleSwitcher({ roles, active }: { roles: Role[]; active: Role }) {
       <SelectContent align="end">
         {roles.map((r) => (
           <SelectItem key={r} value={r}>
-            {ROLE_LABELS[r]}
+            {ROLE_LABELS[r] || r}
           </SelectItem>
         ))}
       </SelectContent>

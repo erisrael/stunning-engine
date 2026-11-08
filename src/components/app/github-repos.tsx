@@ -12,7 +12,7 @@ import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle }
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { EmptyState, Hint } from "@/components/app/primitives";
-import { refreshGithubAction, saveGithubAction } from "@/app/actions/integrations";
+import { addGithubCollaboratorAction, refreshGithubAction, saveGithubAction } from "@/app/actions/integrations";
 import type { GithubOverview, RepoStatus } from "@/server/github";
 import { cn } from "@/lib/utils";
 
@@ -49,6 +49,7 @@ function Spark({ weeks }: { weeks: number[] }) {
 export function GithubRepos({ dept, data, projects, taskHref }: { dept: string; data: GithubOverview; projects: { id: string; name: string }[]; taskHref: string }) {
   const router = useRouter();
   const [busy, setBusy] = React.useState(false);
+  const [invite,setInvite]=React.useState({repo:"",username:"",permission:"push"});
   const [setup, setSetup] = React.useState(false);
   const refresh = async () => {
     setBusy(true);
@@ -104,6 +105,7 @@ export function GithubRepos({ dept, data, projects, taskHref }: { dept: string; 
           )}
         </div>
       </div>
+      {data.canConfigure&&data.repos.length>0&&<Card><CardHeader><CardTitle className="text-base">GitHub collaborator access</CardTitle><CardDescription>Send a repository invitation or update existing GitHub access. The connected token needs Administration write permission.</CardDescription></CardHeader><CardContent><form className="flex flex-wrap gap-2" onSubmit={async e=>{e.preventDefault();setBusy(true);try{const r=await addGithubCollaboratorAction(dept,invite);if(!r.ok)toast.error(r.error);else toast.success(r.data?.message);}finally{setBusy(false);}}}><select aria-label="GitHub repository" className="rounded border bg-background p-2" required value={invite.repo} onChange={e=>setInvite({...invite,repo:e.target.value})}><option value="">Choose repository</option>{data.repos.map(r=><option key={r.fullName}>{r.fullName}</option>)}</select><Input aria-label="GitHub username" className="w-48" placeholder="GitHub username" required value={invite.username} onChange={e=>setInvite({...invite,username:e.target.value})}/><select aria-label="GitHub permission" className="rounded border bg-background p-2" value={invite.permission} onChange={e=>setInvite({...invite,permission:e.target.value})}>{["pull","triage","push","maintain","admin"].map(p=><option key={p}>{p}</option>)}</select><Button disabled={busy}>Send invitation / update access</Button></form></CardContent></Card>}
       {!data.repos.length ? (
         <EmptyState
           title="No repositories connected"
@@ -211,7 +213,7 @@ export function GithubRepos({ dept, data, projects, taskHref }: { dept: string; 
                       <div className="pt-2 border-t flex flex-wrap items-center justify-between gap-2 text-xs">
                         <div className="flex items-center gap-1.5 text-muted-foreground">
                           <UsersIcon className="size-3.5" />
-                          <span>Collaborators: <strong>Assigned team members</strong></span>
+                          <span>App access: <strong>{r.members?.length ?? 0} collaborators plus assigned project members</strong></span>
                         </div>
                         {data.canConfigure && (
                           <button
@@ -245,12 +247,12 @@ export function GithubRepos({ dept, data, projects, taskHref }: { dept: string; 
 
 function Setup({ dept, data, projects, onClose }: { dept: string; data: GithubOverview; projects: { id: string; name: string }[]; onClose: () => void }) {
   const router = useRouter();
-  const [repos, setRepos] = React.useState(data.repos.map((r) => ({ fullName: r.fullName, projectId: r.projectId ?? "" })));
+  const [repos, setRepos] = React.useState(data.repos.map((r) => ({ fullName: r.fullName, projectId: r.projectId ?? "", members: r.members ?? [] })));
   const [token, setToken] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const save = async (clearToken = false) => {
     setBusy(true);
-    const r = await saveGithubAction(dept, { token: token || null, clearToken, repos: repos.filter((x) => x.fullName.trim()).map((x) => ({ fullName: x.fullName, projectId: x.projectId || null })) });
+    const r = await saveGithubAction(dept, { token: token || null, clearToken, repos: repos.filter((x) => x.fullName.trim()).map((x) => ({ fullName: x.fullName, projectId: x.projectId || null, members: x.members })) });
     setBusy(false);
     if (!r.ok) return toast.error(r.error);
     toast.success("GitHub connected. Fetching the repositories…");
@@ -267,7 +269,7 @@ function Setup({ dept, data, projects, onClose }: { dept: string; data: GithubOv
         </DialogHeader>
         <div className="space-y-3 text-sm">
           {repos.map((r, i) => (
-            <div key={i} className="flex gap-2">
+            <div key={i} className="flex flex-wrap gap-2">
               <Input value={r.fullName} onChange={(e) => setRepos(repos.map((x, j) => (j === i ? { ...x, fullName: e.target.value } : x)))} placeholder="owner/name or a github.com link" aria-label={`Repository ${i + 1}`} />
               <Select value={r.projectId || "__none"} onValueChange={(v) => setRepos(repos.map((x, j) => (j === i ? { ...x, projectId: v === "__none" ? "" : v } : x)))}>
                 <SelectTrigger className="w-44" aria-label="Project">
@@ -282,12 +284,13 @@ function Setup({ dept, data, projects, onClose }: { dept: string; data: GithubOv
                   ))}
                 </SelectContent>
               </Select>
+              <label className="text-xs">App collaborators<select multiple className="h-24 w-40 rounded border bg-background" value={r.members} onChange={e=>{const members=Array.from(e.target.selectedOptions,o=>o.value);setRepos(repos.map((x,j)=>j===i?{...x,members}:x));}}>{data.people.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
               <Button size="icon" variant="ghost" aria-label="Remove" onClick={() => setRepos(repos.filter((_, j) => j !== i))}>
                 <Trash2Icon />
               </Button>
             </div>
           ))}
-          <Button size="sm" variant="outline" onClick={() => setRepos([...repos, { fullName: "", projectId: "" }])}>
+          <Button size="sm" variant="outline" onClick={() => setRepos([...repos, { fullName: "", projectId: "", members: [] as string[] }])}>
             <PlusIcon /> Add repository
           </Button>
           <div className="space-y-1.5">

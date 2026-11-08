@@ -60,6 +60,7 @@ export default async function QuestionsPage({ searchParams }: { searchParams: Pr
           </Link>
         ))}
       </div>
+      <QuestionsPanel itemId="general" questions={[]} users={users} viewerId={viewer.id} isManager={isManager} tz={tz} defaultOwner={null} stage={null} />
       {shown.length === 0 && <p className="rounded-xl border bg-card p-8 text-center text-sm text-muted-foreground">No questions in this view.</p>}
       {[...groups.entries()].map(([k, qs]) => (
         <section key={k} className="space-y-2 rounded-xl border bg-card p-4">

@@ -167,6 +167,9 @@ FLOWS.push(...TUTORIALS.map((t): Flow => ({ key: t.key, kind: "guide", title: t.
 
 // "Where is ...?": every main page by name.
 export const PLACES: { name: string; href: string; words: string[] }[] = [
+  { name: "Role sidebars", href: "/admin?tab=sidebar", words: ["sidebar", "role navigation", "menu", "የጎን ምናሌ"] },
+  { name: "Finance requests and equipment", href: "/resources", words: ["equipment", "inventory", "repair", "replacement", "subscription request", "budget request", "መሣሪያ", "ጥገና", "በጀት"] },
+  { name: "Noor CMS", href: "/legacy-cms", words: ["noor", "legacy cms", "students", "የተማሪ መረጃ"] },
   { name: "Home", href: "/dashboard", words: ["home", "today", "dashboard", "start page"] },
   { name: "Attendance", href: "/attendance", words: ["attendance", "check in", "timesheet", "shift"] },
   { name: "Approvals", href: "/approvals", words: ["approvals", "approve", "pending"] },

@@ -96,10 +96,8 @@ try {
   await a.screenshot({ path: path.join(shots, "4-setup-kiosk.png") });
   await a.getByRole("dialog").getByRole("button", { name: "Done" }).first().click();
   await a.screenshot({ path: path.join(shots, "5-setup.png"), fullPage: true });
-  const xlsx = await a.evaluate(async (m) => {
-    const r = await fetch(`/api/attendance?month=${m}`);
-    return { status: r.status, type: r.headers.get("content-type"), size: (await r.arrayBuffer()).byteLength };
-  }, yesterday.slice(0, 7));
+  const exportResponse=await a.request.get(`${base}/api/attendance?month=${yesterday.slice(0,7)}`);
+  const xlsx={status:exportResponse.status(),type:exportResponse.headers()["content-type"]||"",size:(await exportResponse.body()).byteLength};
   check("timesheet Excel downloads", xlsx.status === 200 && xlsx.type.includes("spreadsheet") && xlsx.size > 3000, JSON.stringify(xlsx));
   await go(a, `/attendance/badges?ids=${(await a.evaluate(() => 0)) || ""}`);
   const badgePage = await a.context().newPage();
@@ -117,15 +115,17 @@ try {
   const k = await kctx.newPage();
   k.on("pageerror", (e) => check("kiosk no page error", false, e.message));
   await k.goto(`${base}/kiosk`);
-  check("an unpaired device is told to get a setup link", await k.getByText("This device is not a kiosk yet").isVisible());
+  check("an unpaired device is told to get a setup link", await k.getByRole("heading",{name:"Connect Tablet Kiosk"}).isVisible());
   await k.goto(`${base}/api/attendance/kiosk?setup=${prep.setup}`);
   await k.waitForURL(/\/kiosk$/);
   await k.waitForTimeout(1500);
   check("setup link turns the device into the kiosk", await k.getByText("Main entrance").isVisible());
+  await k.getByRole("button",{name:"Badge / PIN",exact:true}).click();
   await k.getByLabel("Badge code (from the scanner)").fill(prep.badge);
   await k.keyboard.press("Enter");
   await k.getByText(/Welcome, Hana/).waitFor({ timeout: 10000 }).then(() => check("badge scan checks in", true), () => check("badge scan checks in", false));
   await k.screenshot({ path: path.join(shots, "7-kiosk-badge.png") });
+  await k.setViewportSize({width:390,height:844});check("Paired kiosk fits a phone screen",await k.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await k.setViewportSize({width:1280,height:800});
   await k.waitForTimeout(4500);
   await k.getByRole("button", { name: "Use my number and PIN" }).click();
   for (const ch of prep.yonasCode.replace("EMP-", "").replace(/^0+/, "")) await k.getByRole("button", { name: ch, exact: true }).click();
@@ -135,14 +135,15 @@ try {
   await k.getByText(/Welcome, Yonas/).waitFor({ timeout: 10000 }).then(() => check("number and PIN check in", true), () => check("number and PIN check in", false));
   await k.waitForTimeout(4500);
   await kctx.setOffline(true);
+  await k.getByRole("button",{name:"Badge / PIN",exact:true}).click();
   await k.getByLabel("Badge code (from the scanner)").fill(prep.badge);
   await k.keyboard.press("Enter");
   await k.getByText(/Saved at/).waitFor({ timeout: 10000 }).then(() => check("offline check-in is kept on the device", true), () => check("offline check-in is kept on the device", false));
-  check("waiting count shows", await k.getByText("1 waiting to send").isVisible());
+  check("waiting count shows", await k.getByText("1 waiting",{exact:true}).isVisible());
   await k.screenshot({ path: path.join(shots, "8-kiosk-offline.png") });
   await kctx.setOffline(false);
   await k.evaluate(() => window.dispatchEvent(new Event("online")));
-  await k.getByText("waiting to send").waitFor({ state: "detached", timeout: 15000 }).then(() => check("sent when the network is back", true), () => check("sent when the network is back", false));
+  await k.getByText(/^\d+ waiting$/).waitFor({ state: "detached", timeout: 15000 }).then(() => check("sent when the network is back", true), () => check("sent when the network is back", false));
   await kctx.close();
 } catch (e) {
   check("run finished", false, e.message);

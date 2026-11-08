@@ -375,7 +375,7 @@ async function loadPermissionMatrix(): Promise<PermissionMatrix> {
   if (version < 11) stored = migrateV11(stored);
   if (version < 12) stored = migrateV12(stored);
   if (version < 13) stored = migrateV13(stored);
-  const keys = [...ROLES, ...STAGES.map(leadKey)] as (keyof PermissionMatrix)[];
+  const keys = [...new Set([...ROLES, ...STAGES.map(leadKey), ...Object.keys(stored).filter(k => /^[a-z][a-z0-9_]{1,39}$/.test(k) && Array.isArray((stored as Record<string, unknown>)[k]))])] as (keyof PermissionMatrix)[];
   const defaults: PermissionMatrix = { ...DEFAULT_PERMISSIONS, ...DEFAULT_LEAD_PERMISSIONS };
   return Object.fromEntries(keys.map((k) => [k, stored[k] ?? defaults[k]])) as PermissionMatrix;
 }

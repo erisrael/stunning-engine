@@ -2,6 +2,7 @@
 
 import { requireViewer } from "@/server/auth";
 import {
+  eligibleQuestionRecipients,
   getQuestionRoutingConfig,
   saveQuestionRoutingConfig,
   getAllowedRecipientRoles,
@@ -14,7 +15,7 @@ export async function getQuestionRoutingAction() {
     const viewer = await requireViewer();
     const config = await getQuestionRoutingConfig();
     const allowed = getAllowedRecipientRoles(viewer.roles, config);
-    return { ok: true, config, allowedRoles: allowed };
+    return { ok: true, config, allowedRoles: allowed, roles:await (await import("@/server/role-catalog")).roleCatalog() };
   } catch (err: any) {
     return { ok: false, error: String(err?.message || err) };
   }
@@ -40,20 +41,7 @@ export async function getEligibleQuestionRecipientsAction() {
 
     const allowed = getAllowedRecipientRoles(viewer.roles, config);
 
-    const eligible = users
-      .filter((u) => u.id !== viewer.id) // Don't assign to oneself
-      .filter((u) => {
-        if (allowed === "*") return true;
-        // User must have at least one allowed role
-        return u.roles.some((r) => allowed.includes(r));
-      })
-      .map((u) => ({
-        id: u.id,
-        name: u.name,
-        handle: u.handle,
-        roles: u.roles,
-        primaryRole: u.roles[0] || "staff",
-      }));
+    const eligible = (await eligibleQuestionRecipients(viewer)).map(u => ({id:u.id,name:u.name,handle:u.handle,roles:u.roles,primaryRole:u.roles[0]||"staff"}));
 
     return { ok: true, recipients: eligible, allowedRoles: allowed };
   } catch (err: any) {

@@ -22,6 +22,7 @@ export type UserCmsOverride = {
   userName?: string;
   username?: string;
   allowedTabs: LegacyCmsCategory[];
+  canResolveFeedback?: boolean;
   updatedAt: string;
 };
 

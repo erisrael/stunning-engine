@@ -1,4 +1,5 @@
 "use client";
+import { LEGACY_CMS_CATEGORIES } from "@/lib/legacy-cms";
 
 import type { CmsRemoteFilter } from "@/lib/cms-livewire";
 import { cmsDateMatches, cmsChoiceMatches, cmsField } from "@/lib/cms-filters";
@@ -154,6 +155,7 @@ export function LegacyCmsClient({
   initialRevenue,
   initialGrowth,
   initialStorage,
+  cmsRoles = [],
   staffUsers = [],
 }: {
   config: LegacyCmsConfig;
@@ -177,6 +179,7 @@ export function LegacyCmsClient({
   initialRevenue?: RevenueAnalytics;
   initialGrowth?: GrowthAnalytics;
   initialStorage?: CmsStorageCategoryStatus[];
+  cmsRoles?: {key:string;label:string}[];
   staffUsers?: { id: string; name: string; handle: string; role: string }[];
 }) {
   const router = useRouter();
@@ -188,6 +191,9 @@ export function LegacyCmsClient({
   const [dataSourceMode, setDataSourceMode] = React.useState<"scraped" | "live">("scraped");
 
   // Category Tables State
+  const [columnFilter,setColumnFilter]=React.useState("");
+  const [columnQuery,setColumnQuery]=React.useState("");
+  const [analyticsProgress,setAnalyticsProgress]=React.useState("");
   const [category, setCategory] = React.useState<LegacyCmsCategory>(initialCategory);
   const [records, setRecords] = React.useState(initialRecords.rows);
   const [total, setTotal] = React.useState(initialRecords.total);
@@ -210,6 +216,9 @@ export function LegacyCmsClient({
   const [remoteFilters, setRemoteFilters] = React.useState<CmsRemoteFilter[]>([]);
   const [remoteValues, setRemoteValues] = React.useState<Record<string, string>>({});
   const liveRequestId = React.useRef(0);
+  const [liveScanProgress, setLiveScanProgress] = React.useState("");
+  const [liveCompleteDataset, setLiveCompleteDataset] = React.useState(false);
+  const liveDataset = React.useRef<{ key: string; records: Record<string, string>[]; headers: string[]; filters: CmsRemoteFilter[] } | null>(null);
   const [livePage, setLivePage] = React.useState(1);
   const [livePageSize, setLivePageSize] = React.useState<number>(10);
   const [liveTotalPages, setLiveTotalPages] = React.useState(1);
@@ -263,6 +272,7 @@ export function LegacyCmsClient({
   );
   const [revMethodFilter, setRevMethodFilter] = React.useState("all");
   const [revStatusFilter, setRevStatusFilter] = React.useState("all");
+  const [revStart,setRevStart]=React.useState(""),[revEnd,setRevEnd]=React.useState("");
   const [revSearch, setRevSearch] = React.useState("");
   const [revPage, setRevPage] = React.useState(1);
   const [revPageSize, setRevPageSize] = React.useState(25);
@@ -303,7 +313,7 @@ export function LegacyCmsClient({
     category: "students",
     itemTitle: "",
     itemId: "",
-    ownerId: staffUsers[0]?.id || "",
+    ownerId: eligibleRecipients[0]?.id || "",
     priority: "normal",
     details: "",
   });
@@ -349,6 +359,11 @@ export function LegacyCmsClient({
   const [viewSnapshotData, setViewSnapshotData] = React.useState<LegacyCmsSnapshot | null>(null);
   const [viewSnapshotModalOpen, setViewSnapshotModalOpen] = React.useState(false);
   const [snapshotSearch, setSnapshotSearch] = React.useState("");
+  const [snapshotCategory,setSnapshotCategory]=React.useState("all"), [snapshotFrom,setSnapshotFrom]=React.useState(""), [snapshotTo,setSnapshotTo]=React.useState("");
+  const [snapshotPage,setSnapshotPage]=React.useState(1),[snapshotSize,setSnapshotSize]=React.useState(25);
+  const filteredSnapshotRecords=(viewSnapshotData?.records||[]).filter(r=>(snapshotCategory==="all"||r.category===snapshotCategory)&&(!snapshotSearch.trim()||JSON.stringify(r).toLowerCase().includes(snapshotSearch.toLowerCase()))&&cmsDateMatches(r.data||r,"custom",snapshotFrom,snapshotTo));
+  React.useEffect(()=>setSnapshotPage(1),[snapshotSearch,snapshotCategory,snapshotFrom,snapshotTo,snapshotSize,viewSnapshotData]);
+
 
   const loadSnapshots = async () => {
     setSnapshotsLoading(true);
@@ -407,13 +422,14 @@ export function LegacyCmsClient({
   // Feedback Resolution State
   const [feedbackResolveModalOpen, setFeedbackResolveModalOpen] = React.useState(false);
   const [activeFeedbackItem, setActiveFeedbackItem] = React.useState<any | null>(null);
-  const [feedbackResolveStatus, setFeedbackResolveStatus] = React.useState<"resolved" | "in_review" | "closed">("resolved");
+  const [feedbackResolveStatus, setFeedbackResolveStatus] = React.useState<"resolved" | "reviewed" | "pending">("resolved");
   const [feedbackResolveNotes, setFeedbackResolveNotes] = React.useState("");
 
   const handleResolveFeedback = async () => {
     if (!activeFeedbackItem) return;
     setLoading(true);
-    const id = activeFeedbackItem.ID || activeFeedbackItem.id || activeFeedbackItem.external_id || "1";
+    const id = String(activeFeedbackItem._recordId || activeFeedbackItem.externalId || activeFeedbackItem.external_id || activeFeedbackItem.ID || "");
+    if(!/^\d+$/.test(id)){setLoading(false);toast.error("No live feedback identifier is available for this record.");return;}
     const res = await resolveLegacyCmsFeedbackAction(id, {
       status: feedbackResolveStatus,
       notes: feedbackResolveNotes,
@@ -422,7 +438,9 @@ export function LegacyCmsClient({
     if (res.ok) {
       toast.success(res.message);
       setFeedbackResolveModalOpen(false);
-      refreshAllViews();
+      liveDataset.current=null;
+      if(dataSourceMode==="live") await handleFetchLivePage(category,livePage,search);
+      else await refreshAllViews();
     } else {
       toast.error(res.message || "Failed to update feedback");
     }
@@ -451,10 +469,6 @@ export function LegacyCmsClient({
     syncIntervalMinutes: config.syncIntervalMinutes,
   });
 
-  const [loginForm, setLoginForm] = React.useState({
-    username: config.username === "ops@admin.com" ? "ops@myseed.com" : config.username || "ops@myseed.com",
-    password: "9V7x6antUAU6eyE",
-  });
   const [loggingIn, setLoggingIn] = React.useState(false);
   const [roleVisibility, setRoleVisibility] = React.useState<CmsRoleVisibility>(
     visibility || {
@@ -498,7 +512,7 @@ export function LegacyCmsClient({
   React.useEffect(() => {
     void handleCheckAuthStatus(false);
     getEligibleQuestionRecipientsAction().then((res) => {
-      if (res.ok && res.recipients && res.recipients.length > 0) {
+      if (res.ok && res.recipients) {
         setEligibleRecipients(res.recipients);
       }
     });
@@ -510,6 +524,44 @@ export function LegacyCmsClient({
     const requestId = ++liveRequestId.current;
     setLiveLoading(true);
     try {
+      const needsAll = dateFilter !== "all" || paymentMethodFilter !== "all" || !!columnQuery.trim();
+      const key = JSON.stringify([cat, searchQ, remoteValues]);
+      if (needsAll) {
+        let dataset = liveDataset.current?.key === key ? liveDataset.current : null;
+        if (!dataset) {
+          const collected: Record<string, string>[] = [];
+          let headers: string[] = [];
+          let filters: CmsRemoteFilter[] = [];
+          let pages = 1;
+          let expectedTotal: number | undefined;
+          for (let p = 1; p <= pages; p++) {
+            setLiveScanProgress(`Loading live page ${p} of ${pages} (${collected.length.toLocaleString()} records)`);
+            const result = await fetchLegacyCmsLivePageAction({ category: cat, page: p, pageSize: 50, search: searchQ, filters: remoteValues });
+            if (requestId !== liveRequestId.current) return;
+            if (!result.ok) throw new Error(result.message || "Live data loading failed. Retry to load a complete result.");
+            if (expectedTotal !== undefined && result.totalResults !== expectedTotal) throw new Error("CMS records changed while loading. Refresh to get a consistent result.");
+            expectedTotal = result.totalResults;
+            pages = result.totalPages;
+            if (p < pages && !result.records.length) throw new Error("CMS returned an incomplete page. Retry the live query.");
+            collected.push(...result.records);
+            if (result.headers.length) headers = result.headers;
+            filters = result.filters ?? [];
+          }
+          if (collected.length !== expectedTotal) throw new Error("CMS row count did not match the complete result. Refresh and retry.");
+          dataset = { key, records: collected, headers, filters };
+          liveDataset.current = dataset;
+        }
+        setLiveRecords(dataset.records);
+        setLiveHeaders(dataset.headers);
+        setRemoteFilters(dataset.filters);
+        setLivePage(pageNum);
+        setLivePageSize(s);
+        setLiveCompleteDataset(true);
+        setLiveLoading(false);
+        setLiveScanProgress("");
+        return;
+      }
+      setLiveCompleteDataset(false);
       const res = await fetchLegacyCmsLivePageAction({ category: cat, page: pageNum, pageSize: s, search: searchQ, filters: remoteValues });
       if (requestId !== liveRequestId.current) return;
       setLiveLoading(false);
@@ -524,10 +576,13 @@ export function LegacyCmsClient({
         setLiveFrom(res.from);
         setLiveTo(res.to);
       } else {
+        setLiveRecords([]);
         toast.error(res.message || "Failed to load live CMS page");
       }
     } catch (err: any) {
       if (requestId !== liveRequestId.current) return;
+      setLiveRecords([]);
+      setLiveScanProgress("");
       setLiveLoading(false);
       if (String(err?.message || err).includes("Server Action")) window.location.reload();
       else toast.error(String(err?.message || err));
@@ -539,7 +594,8 @@ export function LegacyCmsClient({
     if (dataSourceMode === "live") {
       handleFetchLivePage(category, 1, search, livePageSize);
     }
-  }, [category, dataSourceMode, remoteValues]); // eslint-disable-line react-hooks/exhaustive-deps
+    return () => { liveRequestId.current++; };
+  }, [category, dataSourceMode, remoteValues, dateFilter, customStartDate, customEndDate, paymentMethodFilter, columnQuery, columnFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   React.useEffect(() => {
     if (activeMainView === "storage") {
@@ -547,9 +603,14 @@ export function LegacyCmsClient({
     }
   }, [activeMainView]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const refreshLiveAnalytics = async () => {
+    try {for(const category of ["students","parents","subscriptions","invoices"] as const){setAnalyticsProgress(`Loading ${category} from Noor…`);const result=await syncLegacyCmsAction({category,deep:true});if(!result.ok) throw new Error(result.error || result.message);}
+      await refreshAllViews(); toast.success("Analytics rebuilt from live Noor data.");
+    } catch(e){toast.error(e instanceof Error?e.message:"Could not refresh analytics");} finally {setAnalyticsProgress("");}
+  };
   const refreshAllViews = async () => {
     const [catRes, relRes, revRes, groRes, stoRes] = await Promise.all([
-      listLegacyCmsRecordsAction(category, { q: search, limit: 200 }),
+      listLegacyCmsRecordsAction(category, { q: search, limit: 0 }),
       getStudentParentRelationsAction(),
       getLegacyCmsRevenueAnalyticsAction(),
       getLegacyCmsGrowthAnalyticsAction(),
@@ -567,24 +628,6 @@ export function LegacyCmsClient({
     if (groRes.ok) setGrowthData(groRes.data);
     if (stoRes.ok) setStorageStatus(stoRes.data);
     router.refresh();
-  };
-
-  const handleLoginSubmit = async () => {
-    let userToUse = loginForm.username.trim() || "ops@myseed.com";
-    if (userToUse === "ops@admin.com") userToUse = "ops@myseed.com";
-    setLoggingIn(true);
-    const res = await loginLegacyCmsAction({
-      username: userToUse,
-      password: loginForm.password.trim() || "9V7x6antUAU6eyE",
-    });
-    setLoggingIn(false);
-    if (res.ok) {
-      toast.success(res.message);
-      await handleCheckAuthStatus(false);
-      await refreshAllViews();
-    } else {
-      toast.error(res.message);
-    }
   };
 
   const handleLogout = async () => {
@@ -724,7 +767,7 @@ export function LegacyCmsClient({
       setReceiptModalOpen(false);
       await refreshAllViews();
     } else {
-      toast.error(res.message || "Failed to approve invoice");
+      toast.error(res.message || "Failed to verify receipt");
     }
   };
 
@@ -740,7 +783,7 @@ export function LegacyCmsClient({
       category: cat,
       itemTitle: name,
       itemId: extId,
-      ownerId: staffUsers[0]?.id || "",
+      ownerId: eligibleRecipients[0]?.id || "",
       priority: "normal",
       contactPhone: phone,
       details: `Report for ${cat.toUpperCase()} #${extId} (${name}):\n- Phone: ${phone || "Not specified"}\n- Grade / Package: ${grade || "—"}\n- Context: Verified from Noor Ethiopia CMS mirror.\n\nIssue Details: `,
@@ -791,7 +834,8 @@ export function LegacyCmsClient({
     if (rows.length === 0) return toast.error("No data to export");
     const sanitize = (val: unknown) => {
       if (val === null || val === undefined) return '""';
-      const s = String(val).replace(/"/g, '""');
+      const raw=String(val);
+      const s = (/^[=+@\-\t\r]/.test(raw)?"'"+raw:raw).replace(/"/g, '""');
       return `"${s}"`;
     };
 
@@ -839,30 +883,30 @@ export function LegacyCmsClient({
       }
 
       if (!cmsChoiceMatches(cmsField(data, ["payment method", "method", "payment channel"]), paymentMethodFilter)) return false;
+      if (columnQuery.trim() && !String(data[columnFilter] ?? "").toLocaleLowerCase().includes(columnQuery.trim().toLocaleLowerCase())) return false;
       if (!matchesDateFilter(data)) return false;
 
       return true;
     });
-  }, [records, search, statusFilter, gradeFilter, paymentMethodFilter, dateFilter, customStartDate, customEndDate]);
+  }, [records, search, statusFilter, gradeFilter, paymentMethodFilter, dateFilter, customStartDate, customEndDate, columnQuery, columnFilter]);
 
   // Filtered Live Records (Enriched direct CMS live filtering with Search, Status, Grade, and Date)
   const filteredLiveRecords = React.useMemo(() => {
     return liveRecords.filter((r) => {
-      // Live search filter
-      if (search.trim()) {
-        const q = search.toLowerCase();
-        const matches = Object.values(r).some((v) =>
-          typeof v === "string" && v.toLowerCase().includes(q)
-        );
-        if (!matches) return false;
-      }
       // Date filter
       if (!cmsChoiceMatches(cmsField(r, ["payment method", "method", "payment channel"]), paymentMethodFilter)) return false;
+      if (columnQuery.trim() && !String(r[columnFilter] ?? "").toLocaleLowerCase().includes(columnQuery.trim().toLocaleLowerCase())) return false;
       if (!matchesDateFilter(r)) return false;
 
       return true;
     });
-  }, [liveRecords, search, statusFilter, gradeFilter, paymentMethodFilter, dateFilter, customStartDate, customEndDate]);
+  }, [liveRecords, search, statusFilter, gradeFilter, paymentMethodFilter, dateFilter, customStartDate, customEndDate, columnQuery, columnFilter]);
+
+  const displayedLiveRecords = liveCompleteDataset ? filteredLiveRecords.slice((livePage - 1) * livePageSize, livePage * livePageSize) : filteredLiveRecords;
+  const shownLiveTotal = liveCompleteDataset ? filteredLiveRecords.length : liveTotalResults;
+  const shownLivePages = Math.max(1, Math.ceil(shownLiveTotal / livePageSize));
+  const shownLiveFrom = liveCompleteDataset ? (shownLiveTotal ? (livePage - 1) * livePageSize + 1 : 0) : liveFrom;
+  const shownLiveTo = liveCompleteDataset ? Math.min(livePage * livePageSize, shownLiveTotal) : liveTo;
 
   React.useEffect(() => { setCurrentPage(1); }, [search, statusFilter, gradeFilter, paymentMethodFilter, dateFilter, customStartDate, customEndDate, pageSize, category]);
 
@@ -899,9 +943,16 @@ export function LegacyCmsClient({
     return filteredRelations.slice(start, start + relPageSize);
   }, [filteredRelations, relPage, relPageSize]);
 
+  React.useEffect(()=>{
+    if(activeMainView!=="revenue")return;
+    let canceled=false;
+    const timer=setTimeout(()=>{void getLegacyCmsRevenueAnalyticsAction({search:revSearch,method:revMethodFilter,status:revStatusFilter,startDate:revStart,endDate:revEnd}).then(r=>{if(!canceled&&r.ok)setRevenueData(r.data);});},300);
+    return ()=>{canceled=true;clearTimeout(timer);};
+  },[activeMainView,revSearch,revMethodFilter,revStatusFilter,revStart,revEnd]);
   // Filtered & Paginated Revenue Invoices
   const filteredInvoices = React.useMemo(() => {
     return revenueData.invoices.filter((inv) => {
+      if(!cmsDateMatches({Date:inv.date},"custom",revStart,revEnd)) return false;
       if (revSearch.trim()) {
         const q = revSearch.toLowerCase();
         if (
@@ -921,7 +972,7 @@ export function LegacyCmsClient({
       }
       return true;
     });
-  }, [revenueData.invoices, revSearch, revMethodFilter, revStatusFilter]);
+  }, [revenueData.invoices, revSearch, revMethodFilter, revStatusFilter,revStart,revEnd]);
 
   const totalRevPages = revPageSize === 0 ? 1 : Math.max(1, Math.ceil(filteredInvoices.length / revPageSize));
   const paginatedInvoices = React.useMemo(() => {
@@ -944,17 +995,17 @@ export function LegacyCmsClient({
 
   return (
     <div className="space-y-4">
-      {/* 🔒 Strict Read-Only Safety Sandbox Banner */}
+      {/* CMS connection status */}
       <div className="bg-emerald-500/[0.08] border border-emerald-500/20 rounded-xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs">
         <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-300 font-medium">
           <ShieldCheckIcon className="size-4 shrink-0 text-emerald-600" />
           <span>
-            <strong>Read-Only Safe Sandbox:</strong> This dashboard reads and mirrors data via HTTP GET requests. No modifications or actions are ever sent to Noor Ethiopia CMS.
+            <strong>Noor CMS workspace:</strong> Browse live tables or synchronized records. Authorized feedback actions update Noor; receipt verification is recorded locally.
           </span>
         </div>
         <div className="flex items-center gap-2">
           <Badge variant="outline" className="border-emerald-500/30 text-[10px] text-emerald-700 dark:text-emerald-300 gap-1">
-            <LockIcon className="size-2.5" /> Read-Only Mode
+            <LockIcon className="size-2.5" /> Role-based access
           </Badge>
           <Badge
             variant="secondary"
@@ -1057,6 +1108,7 @@ export function LegacyCmsClient({
                     variant={isSelected ? "default" : "outline"}
                     size="sm"
                     onClick={() => {
+                      setColumnQuery("");setColumnFilter("");setRemoteValues({});setStatusFilter("all");setGradeFilter("all");setPaymentMethodFilter("all");setSearch("");
                       setCategory(catKey);
                       setCurrentPage(1);
                       if (dataSourceMode === "live") {
@@ -1169,6 +1221,9 @@ export function LegacyCmsClient({
                 )}
               </div>
 
+              <label className="flex items-center gap-2 text-xs">Filter column<select className="h-8 rounded-md border bg-background px-2" value={columnFilter} onChange={e=>{setColumnQuery("");setColumnFilter(e.target.value);}}><option value="">Choose a column</option>{(dataSourceMode==="live"?liveHeaders:dynamicColumns).map(h=><option key={h} value={h}>{h}</option>)}</select></label>
+              <Input aria-label="Column contains" placeholder="Column contains…" disabled={!columnFilter} value={columnQuery} onChange={e=>setColumnQuery(e.target.value)} className="h-8 w-44 text-xs"/>
+              <Button variant="ghost" size="sm" onClick={()=>{setColumnQuery("");setColumnFilter("");setRemoteValues({});setStatusFilter("all");setGradeFilter("all");setPaymentMethodFilter("all");setDateFilter("all");setSearch("");}}>Clear filters</Button>
               <label className="flex items-center gap-2 text-xs">
                 Payment method
                 <select aria-label="Payment method" className="h-8 rounded-md border bg-background px-2" value={paymentMethodFilter} onChange={e => setPaymentMethodFilter(e.target.value)}>
@@ -1196,7 +1251,7 @@ export function LegacyCmsClient({
                   </select>
                 </label>
               </>}
-              {dataSourceMode === "live" && <p className="w-full text-xs text-muted-foreground">CMS filters and Search query all records. Date and payment method narrow the displayed page.</p>}
+              {dataSourceMode === "live" && <p className="w-full text-xs text-muted-foreground">All filters apply across the matching CMS records. Date and payment filters load all matching pages before showing results.</p>}
               {/* Date Filter Pills */}
               <div className="flex flex-wrap items-center gap-1.5">
                 <span className="text-xs text-muted-foreground mr-1 flex items-center gap-1">
@@ -1299,7 +1354,7 @@ export function LegacyCmsClient({
               <span className="flex items-center gap-2">
                 <RadioIcon className="size-3.5 animate-pulse text-blue-600" />
                 <span>
-                  Showing <strong>{liveFrom}</strong> to <strong>{liveTo}</strong> of <strong>{liveTotalResults.toLocaleString()}</strong> live results from{" "}
+                  Showing <strong>{shownLiveFrom}</strong> to <strong>{shownLiveTo}</strong> of <strong>{shownLiveTotal.toLocaleString()}</strong> live results from{" "}
                   <code>{CATEGORY_PATHS[category]}</code>
                 </span>
               </span>
@@ -1307,7 +1362,7 @@ export function LegacyCmsClient({
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => handleFetchLivePage(category, livePage, search)}
+                  onClick={() => { liveDataset.current = null; handleFetchLivePage(category, 1, search); }}
                   disabled={liveLoading}
                   className="h-6 text-[11px] px-2 bg-background"
                 >
@@ -1347,7 +1402,8 @@ export function LegacyCmsClient({
                     <TableRow>
                       <TableCell colSpan={Math.max(1, liveHeaders.length + 1)} className="text-center py-12 text-xs text-muted-foreground">
                         <RefreshCwIcon className="size-5 animate-spin mx-auto mb-2 text-primary" />
-                        Fetching live data from cms.noorethiopia.com...
+                        {liveScanProgress || "Fetching live data from cms.noorethiopia.com..."}
+                        {liveScanProgress && <Button variant="outline" size="sm" className="ml-3" onClick={() => { liveRequestId.current++; setLiveLoading(false); setLiveScanProgress(""); setLiveRecords([]); }}>Cancel</Button>}
                       </TableCell>
                     </TableRow>
                   ) : filteredLiveRecords.length === 0 ? (
@@ -1357,7 +1413,7 @@ export function LegacyCmsClient({
                       </TableCell>
                     </TableRow>
                   ) : (
-                    filteredLiveRecords.map((r, idx) => (
+                    displayedLiveRecords.map((r, idx) => (
                       <TableRow
                         key={idx}
                         className="text-xs hover:bg-muted/30 cursor-context-menu"
@@ -1498,11 +1554,11 @@ export function LegacyCmsClient({
           {/* Filament v3 Pagination Navigation Bar */}
           {dataSourceMode === "live" ? (
             <FilamentPagination
-              from={liveFrom}
-              to={liveTo}
-              totalResults={liveTotalResults}
+              from={shownLiveFrom}
+              to={shownLiveTo}
+              totalResults={shownLiveTotal}
               currentPage={livePage}
-              totalPages={liveTotalPages}
+              totalPages={shownLivePages}
               pageSize={livePageSize}
               pageSizeOptions={[5, 10, 25, 50]}
               disabled={liveLoading}
@@ -1786,6 +1842,8 @@ export function LegacyCmsClient({
             VIEW 3: FINANCE REVENUE & INVOICE APPROVAL QUEUE
             ========================================================================= */}
         <TabsContent value="revenue" className="space-y-4 m-0">
+          <div className="flex flex-wrap gap-3"><label className="text-xs">Invoice date from<Input type="date" value={revStart} onChange={e=>{setRevStart(e.target.value);setRevPage(1);}}/></label><label className="text-xs">Invoice date to<Input type="date" value={revEnd} onChange={e=>{setRevEnd(e.target.value);setRevPage(1);}}/></label></div>
+          <Button variant="outline" disabled={loading} onClick={async()=>{setLoading(true);try{const r=await syncLegacyCmsAction({category:"invoices",deep:true});if(!r.ok)toast.error(r.error||r.message);else{await refreshAllViews();toast.success("Finance data refreshed from live Noor.");}}finally{setLoading(false);}}}><RefreshCwIcon className="mr-2 size-4"/>Refresh invoices from live Noor</Button>
           <Card>
             <CardHeader className="pb-3 flex flex-row items-center justify-between">
               <div>
@@ -1874,7 +1932,7 @@ export function LegacyCmsClient({
                     className="h-8 rounded-lg border bg-background px-2.5 text-xs text-foreground"
                   >
                     <option value="all">All Statuses</option>
-                    <option value="needs_approval">⚠️ Needs Verification</option>
+                    <option value="needs_approval">Needs Verification</option>
                     <option value="paid">Paid</option>
                     <option value="pending">Pending</option>
                   </select>
@@ -1972,6 +2030,7 @@ export function LegacyCmsClient({
             VIEW 4: GROWTH & INSIGHTS DASHBOARD
             ========================================================================= */}
         <TabsContent value="growth" className="space-y-4 m-0">
+          <div className="flex items-center justify-between gap-3 rounded-lg border bg-card p-3"><p className="text-sm text-muted-foreground">{analyticsProgress || "Insights use the most recent complete synchronized records."}</p><Button disabled={!!analyticsProgress} onClick={refreshLiveAnalytics}><RefreshCwIcon className="mr-2 size-4"/>Refresh from live Noor</Button></div>
           <Card>
             <CardHeader className="pb-3 flex flex-row items-center justify-between">
               <div>
@@ -2237,6 +2296,12 @@ export function LegacyCmsClient({
       {/* =========================================================================
           MODAL 1: RECEIPT IMAGE & SLIP PREVIEW WITH ZOOM & QR CODE DETECTION
           ========================================================================= */}
+      {isAdmin && <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}><DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-auto"><DialogHeader><DialogTitle>Noor CMS settings</DialogTitle><DialogDescription>Configure the shared connection, synchronization and role access. User-specific credentials are configured in Admin.</DialogDescription></DialogHeader>
+        <div className="grid gap-3 sm:grid-cols-2"><label className="text-sm">CMS address<Input type="url" value={cfg.baseUrl} onChange={e=>setCfg({...cfg,baseUrl:e.target.value})}/></label><label className="text-sm">Shared username<Input value={cfg.username} onChange={e=>setCfg({...cfg,username:e.target.value})}/></label><label className="text-sm">New password<Input type="password" autoComplete="new-password" placeholder={config.hasPassword?"Saved password — leave blank to keep":"Enter password"} value={cfg.password} onChange={e=>setCfg({...cfg,password:e.target.value})}/></label><label className="text-sm">Sync interval (minutes)<Input type="number" min="5" value={cfg.syncIntervalMinutes} onChange={e=>setCfg({...cfg,syncIntervalMinutes:Number(e.target.value)})}/></label><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={cfg.autoSync} onChange={e=>setCfg({...cfg,autoSync:e.target.checked})}/>Automatic synchronization</label></div>
+        <div className="flex flex-wrap gap-2"><Button disabled={loading} onClick={async()=>{setLoading(true);try{const r=await saveLegacyCmsConfigAction({...cfg,password:cfg.password||undefined,sessionCookie:undefined});if(r.ok){setCfg(c=>({...c,password:""}));toast.success("CMS settings saved");}else toast.error(r.error);}finally{setLoading(false);}}}>Save connection settings</Button><Button variant="outline" disabled={loggingIn} onClick={async()=>{setLoggingIn(true);try{const r=await loginLegacyCmsAction();if(r.ok){toast.success(r.message);await handleCheckAuthStatus(false);}else toast.error(r.message);}finally{setLoggingIn(false);}}}>Reconnect saved account</Button><Button variant="outline" asChild><a href="/admin?tab=legacy-cms">Per-user credentials & tab access</a></Button></div>
+        <fieldset className="space-y-3 border-t pt-3"><legend className="font-medium">CMS tables by role</legend>{(cmsRoles.length?cmsRoles:Object.keys(roleVisibility).map(key=>({key,label:key}))).map(role=><div key={role.key} className="rounded-lg border p-3"><h3 className="mb-2 text-sm font-medium">{role.label}</h3><div className="flex flex-wrap gap-3">{LEGACY_CMS_CATEGORIES.map(c=><label key={c.key} className="flex items-center gap-1 text-xs"><input type="checkbox" checked={(roleVisibility[role.key]||[]).includes(c.key)} onChange={e=>setRoleVisibility(v=>({...v,[role.key]:e.target.checked?[...(v[role.key]||[]),c.key]:(v[role.key]||[]).filter(k=>k!==c.key)}))}/>{c.label}</label>)}</div></div>)}</fieldset><Button disabled={loading} onClick={async()=>{setLoading(true);try{const r=await saveCmsRoleVisibilityAction(roleVisibility);if(r.ok)toast.success("Role table access saved");else toast.error(r.error);}finally{setLoading(false);}}}>Save role table access</Button>
+        <DialogFooter><Button variant="outline" onClick={()=>setSettingsOpen(false)}>Close</Button></DialogFooter>
+      </DialogContent></Dialog>}
       <Dialog open={receiptModalOpen} onOpenChange={setReceiptModalOpen}>
         <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col p-6 overflow-hidden">
           <DialogHeader className="pb-3 border-b">
@@ -2247,7 +2312,7 @@ export function LegacyCmsClient({
               </DialogTitle>
               {activeReceiptInvoice?.pdfUrl && (
                 <a
-                  href={activeReceiptInvoice.pdfUrl}
+                  href={`/api/legacy-cms/image-proxy?url=${encodeURIComponent(activeReceiptInvoice.pdfUrl)}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-xs text-primary hover:underline flex items-center gap-1"
@@ -2360,6 +2425,8 @@ export function LegacyCmsClient({
                     <RefreshCwIcon className="size-5 animate-spin mx-auto mb-2 text-primary" />
                     Pulling receipt image from Noor CMS...
                   </div>
+                ) : !activeReceiptInvoice?.imageUrl && activeReceiptInvoice?.pdfUrl ? (
+                  <iframe title="Invoice PDF preview" src={`/api/legacy-cms/image-proxy?url=${encodeURIComponent(activeReceiptInvoice.pdfUrl)}`} className="h-[460px] w-full rounded-lg border"/>
                 ) : activeReceiptInvoice?.imageUrl ? (
                   <div className="flex flex-col items-center gap-3">
                     <div
@@ -2377,14 +2444,7 @@ export function LegacyCmsClient({
                         onLoad={(e) => scanQrCodeFromImage(e.currentTarget)}
                         crossOrigin="anonymous"
                         className="max-h-[380px] max-w-full rounded-lg shadow-md object-contain border"
-                        onError={(e) => {
-                          // Fallback to direct URL if proxy fails
-                          const target = e.currentTarget;
-                          if (target.src.includes("/api/legacy-cms/image-proxy")) {
-                            target.src = activeReceiptInvoice.imageUrl!;
-                            target.removeAttribute("crossorigin");
-                          }
-                        }}
+                        onError={() => toast.error("Receipt could not be loaded. Reconnect Noor CMS and retry.")}
                       />
                     </div>
                     <div className="flex items-center gap-2 text-xs">
@@ -2392,7 +2452,7 @@ export function LegacyCmsClient({
                         variant="ghost"
                         size="sm"
                         className="h-7 text-[11px] gap-1"
-                        onClick={() => window.open(activeReceiptInvoice.imageUrl!, "_blank")}
+                        onClick={() => window.open(`/api/legacy-cms/image-proxy?url=${encodeURIComponent(activeReceiptInvoice.imageUrl!)}`, "_blank")}
                       >
                         <ExternalLinkIcon className="size-3" /> Open in New Tab
                       </Button>
@@ -2420,7 +2480,7 @@ export function LegacyCmsClient({
                         size="sm"
                         variant="outline"
                         className="text-xs"
-                        onClick={() => window.open(activeReceiptInvoice.pdfUrl!, "_blank")}
+                        onClick={() => window.open(`/api/legacy-cms/image-proxy?url=${encodeURIComponent(activeReceiptInvoice.pdfUrl!)}`, "_blank")}
                       >
                         Download PDF Invoice
                       </Button>
@@ -2454,7 +2514,7 @@ export function LegacyCmsClient({
               disabled={loading}
             >
               <CheckCircleIcon className="size-3.5" />
-              Approve Invoice &amp; Mark Paid
+              Record local receipt verification
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2628,15 +2688,15 @@ export function LegacyCmsClient({
                   variant="outline"
                   className="h-8 text-xs gap-1.5"
                   onClick={() => {
-                    const recs = viewSnapshotData.records || [];
+                    const recs = filteredSnapshotRecords;
                     if (!recs.length) return;
-                    const headers = Object.keys(recs[0]?.data || recs[0] || {});
+                    const headers = ["Category","Identifier","Synced at",...new Set(recs.flatMap(r=>Object.keys(r.data||r)))];
                     exportToExcel(
                       `snapshot-${viewSnapshotData.versionName.replace(/\s+/g, "_")}`,
                       headers,
                       recs.map((r: any) => {
                         const d = r.data || r;
-                        return headers.map((h) => d[h] || "");
+                        return headers.map((h) => h==="Category"?r.category:h==="Identifier"?r.externalId:h==="Synced at"?r.syncedAt:d[h] ?? "");
                       })
                     );
                   }}
@@ -2647,6 +2707,7 @@ export function LegacyCmsClient({
             </div>
           </DialogHeader>
 
+          <div className="flex flex-wrap gap-2"><label className="text-xs">Category<select className="ml-1 rounded border bg-background p-2" value={snapshotCategory} onChange={e=>setSnapshotCategory(e.target.value)}><option value="all">All categories</option>{LEGACY_CMS_CATEGORIES.map(c=><option key={c.key} value={c.key}>{c.label}</option>)}</select></label><label className="text-xs">Record date from<Input type="date" value={snapshotFrom} onChange={e=>setSnapshotFrom(e.target.value)}/></label><label className="text-xs">Record date to<Input type="date" value={snapshotTo} onChange={e=>setSnapshotTo(e.target.value)}/></label><label className="text-xs">Rows<select className="ml-1 rounded border bg-background p-2" value={snapshotSize} onChange={e=>setSnapshotSize(Number(e.target.value))}>{[10,25,50,100].map(n=><option key={n}>{n}</option>)}</select></label></div>
           {/* Snapshot internal search */}
           <div className="py-2">
             <div className="relative">
@@ -2672,10 +2733,7 @@ export function LegacyCmsClient({
               </TableHeader>
               <TableBody>
                 {(() => {
-                  const recs = (viewSnapshotData?.records || []).filter((r: any) => {
-                    if (!snapshotSearch.trim()) return true;
-                    return JSON.stringify(r).toLowerCase().includes(snapshotSearch.toLowerCase());
-                  });
+                  const recs = filteredSnapshotRecords;
 
                   if (recs.length === 0) {
                     return (
@@ -2687,14 +2745,14 @@ export function LegacyCmsClient({
                     );
                   }
 
-                  return recs.slice(0, 100).map((r: any, idx: number) => {
+                  return recs.slice((snapshotPage-1)*snapshotSize,snapshotPage*snapshotSize).map((r: any, idx: number) => {
                     const data = r.data || {};
                     return (
                       <TableRow key={r.id || idx} className="text-xs hover:bg-muted/30">
                         <TableCell className="capitalize font-mono text-[11px]">{r.category || viewSnapshotData?.category}</TableCell>
                         <TableCell className="font-semibold text-foreground">{r.title || r.externalId || data.Name || data.Student || "Record"}</TableCell>
                         <TableCell className="font-mono text-[11px] text-muted-foreground max-w-md truncate">
-                          {JSON.stringify(data).slice(0, 120)}...
+                          <details><summary className="cursor-pointer">View all fields</summary><pre className="max-w-lg whitespace-pre-wrap break-all">{JSON.stringify(data,null,2)}</pre></details>
                         </TableCell>
                         <TableCell className="text-muted-foreground text-[11px]">
                           {r.syncedAt ? new Date(r.syncedAt).toLocaleDateString() : "—"}
@@ -2707,6 +2765,7 @@ export function LegacyCmsClient({
             </Table>
           </div>
 
+          <div className="flex items-center justify-between text-xs"><span>{filteredSnapshotRecords.length} matching records · page {snapshotPage} of {Math.max(1,Math.ceil(filteredSnapshotRecords.length/snapshotSize))}</span><div className="flex gap-2"><Button size="sm" variant="outline" disabled={snapshotPage<=1} onClick={()=>setSnapshotPage(p=>p-1)}>Previous</Button><Button size="sm" variant="outline" disabled={snapshotPage*snapshotSize>=filteredSnapshotRecords.length} onClick={()=>setSnapshotPage(p=>p+1)}>Next</Button></div></div>
           <DialogFooter className="pt-3 border-t">
             <Button variant="outline" size="sm" onClick={() => setViewSnapshotModalOpen(false)}>
               Close
@@ -2750,8 +2809,8 @@ export function LegacyCmsClient({
                 className="w-full h-8 rounded-md border bg-background px-2 text-xs"
               >
                 <option value="resolved">Resolved (Action completed)</option>
-                <option value="in_review">Under Investigation / In Review</option>
-                <option value="closed">Closed / Dismissed</option>
+                <option value="reviewed">Reviewed / Under investigation</option>
+                <option value="pending">Pending</option>
               </select>
             </div>
 

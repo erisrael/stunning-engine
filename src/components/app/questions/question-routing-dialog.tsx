@@ -21,7 +21,9 @@ const AVAILABLE_ROLES = [
   { key: "accountant", label: "Accountant" },
   { key: "developer", label: "Development Lead" },
   { key: "staff", label: "Customer Support / Staff" },
-  { key: "customer_support", label: "Customer Support" },
+  { key: "support", label: "Customer Support" },
+  { key: "sales", label: "Sales" },
+  { key: "operations", label: "Operations" },
 ];
 
 export function QuestionRoutingConfigDialog({
@@ -31,10 +33,11 @@ export function QuestionRoutingConfigDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const [roles,setRoles]=React.useState(AVAILABLE_ROLES);
   const [config, setConfig] = React.useState<QuestionRoutingConfig | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
-  const [selectedSender, setSelectedSender] = React.useState("staff");
+  const [selectedSender, setSelectedSender] = React.useState("support");
 
   React.useEffect(() => {
     if (open) {
@@ -42,7 +45,7 @@ export function QuestionRoutingConfigDialog({
       getQuestionRoutingAction()
         .then((res) => {
           setLoading(false);
-          if (res.ok && res.config) setConfig(res.config);
+          if (res.ok && res.config) {setConfig(res.config);if(res.roles)setRoles(res.roles.map(r=>({key:r.key,label:r.label})));}
           else toast.error(res.error || "Failed to load routing rules");
         })
         .catch(() => setLoading(false));
@@ -111,14 +114,7 @@ export function QuestionRoutingConfigDialog({
             <div>
               <Label className="text-xs font-semibold mb-1.5 block">When Question is Raised By (Sender Role):</Label>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 p-1 bg-muted/40 rounded-lg border">
-                {[
-                  { key: "staff", label: "Customer Support / Staff" },
-                  { key: "publication", label: "Publication Team" },
-                  { key: "uploading", label: "Uploading Team" },
-                  { key: "editing", label: "Editing Team" },
-                  { key: "recording", label: "Recording Team" },
-                  { key: "accountant", label: "Finance / Accounting" },
-                ].map((s) => (
+                {roles.map((s) => (
                   <button
                     key={s.key}
                     type="button"
@@ -147,7 +143,7 @@ export function QuestionRoutingConfigDialog({
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-56 overflow-y-auto p-1 border rounded-lg bg-card">
-                {AVAILABLE_ROLES.map((r) => {
+                {roles.map((r) => {
                   const isChecked = activeRecipients.includes(r.key);
                   return (
                     <div
@@ -175,6 +171,7 @@ export function QuestionRoutingConfigDialog({
           </div>
         )}
 
+        {config && <fieldset className="space-y-2 rounded border p-3 text-xs"><legend>Restrict recipient roles to team leads</legend>{activeRecipients.filter(r=>r!=="*").map(role=><label key={role} className="mr-3 inline-flex items-center gap-1"><input type="checkbox" checked={config.leadOnlyBySenderRole?.[selectedSender]?.includes(role)??false} onChange={e=>{const current=config.leadOnlyBySenderRole?.[selectedSender]??[];setConfig({...config,leadOnlyBySenderRole:{...config.leadOnlyBySenderRole,[selectedSender]:e.target.checked?[...current,role]:current.filter(r=>r!==role)}});}}/>{roles.find(r=>r.key===role)?.label||role}</label>)}</fieldset>}
         <DialogFooter className="gap-2">
           <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
             Close

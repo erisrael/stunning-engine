@@ -20,7 +20,7 @@ try {
   await k.goto(`${base}/api/attendance/kiosk?setup=${prep.setup}`);
   await k.waitForURL(/\/kiosk$/);
   await k.waitForTimeout(1500);
-  const btn = k.getByRole("button", { name: "Check in with my face" });
+  const btn = k.getByRole("button", { name: "Face Check-In", exact: true });
   check("kiosk offers face check-in", await btn.waitFor({ timeout: 15000 }).then(() => true, () => false));
   await btn.click();
   await k.getByText(/One face in view|Look at the camera|Come a little closer|Move into the middle/).waitFor({ timeout: 30000 }).then(

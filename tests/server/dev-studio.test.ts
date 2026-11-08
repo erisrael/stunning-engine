@@ -103,11 +103,13 @@ async function main() {
   await ds.linkRequirement(lead, "dev", docId, "FR-3", code, true);
   doc = await ds.getDoc(lead, "dev", docId);
   check("a requirement links to a task by its code", doc.trace.find((t) => t.req === "FR-3")?.tasks[0]?.id === t2);
-  check("sending for review needs another person", /at least one reviewer/.test((await throws(() => ds.submitDoc(lead, "dev", docId, [lead.id]))) ?? ""));
-  await ds.submitDoc(lead, "dev", docId, [dev.id, qa.id]);
-  check("only named reviewers decide", !!(await throws(() => ds.decideDoc(admin, "dev", docId, true))));
-  check("one approval of two keeps it in review", (await ds.decideDoc(dev, "dev", docId, true)) === "review");
-  check("all approvals approve it", (await ds.decideDoc(qa, "dev", docId, true)) === "approved");
+  check("sending for review requires a lead other than the author", !!(await throws(() => ds.submitDoc(lead, "dev", docId, [lead.id]))));
+  check("regular developers cannot be final reviewers", !!(await throws(() => ds.submitDoc(lead, "dev", docId, [dev.id, qa.id]))));
+  const reviewer = await mk("reviewer");
+  await setPosition(admin, "dev", reviewer.id, "lead");
+  await ds.submitDoc(lead, "dev", docId, [reviewer.id]);
+  check("only named leads decide", !!(await throws(() => ds.decideDoc(dev, "dev", docId, true))));
+  check("lead approval accepts the document", (await ds.decideDoc(reviewer, "dev", docId, true)) === "approved");
   await ds.saveDoc(lead, "dev", docId, { title: "Requirements: offline lessons", body: `${doc.body}\nFR-7 (Could): Share a download with a classmate.` });
   doc = await ds.getDoc(lead, "dev", docId);
   check("changing an approved document starts a new version", doc.version === 2 && doc.status === "draft" && doc.versions.some((v) => v.version === 1 && v.status === "approved"), { v: doc.version, s: doc.status });

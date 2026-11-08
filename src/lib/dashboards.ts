@@ -85,6 +85,7 @@ export function normalizeLayout(raw: unknown, kind: DashKind): LayoutItem[] {
 }
 
 export const PERIODS = [
+  { key: "today", label: "Today" },
   { key: "7d", label: "Last 7 days" },
   { key: "30d", label: "Last 30 days" },
   { key: "90d", label: "Last 90 days" },
@@ -100,7 +101,7 @@ export function periodRange(p: Period, now = new Date()): { from: string; to: st
   const y = now.getUTCFullYear();
   const m = now.getUTCMonth();
   const from =
-    p === "7d" ? days(7) : p === "30d" ? days(30) : p === "90d" ? days(90) : p === "month" ? `${to.slice(0, 7)}-01` : p === "quarter" ? new Date(Date.UTC(y, m - (m % 3), 1)).toISOString().slice(0, 10) : `${y}-01-01`;
+    p === "today" ? to : p === "7d" ? days(7) : p === "30d" ? days(30) : p === "90d" ? days(90) : p === "month" ? `${to.slice(0, 7)}-01` : p === "quarter" ? new Date(Date.UTC(y, m - (m % 3), 1)).toISOString().slice(0, 10) : `${y}-01-01`;
   return { from, to, label: PERIODS.find((x) => x.key === p)!.label };
 }
 

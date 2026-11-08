@@ -15,6 +15,16 @@ export async function register() {
   };
   setTimeout(tick, 60e3).unref();
   setInterval(tick, 10 * 60e3).unref();
+  const cmsTick = async () => {
+    try {
+      const { scheduledCmsSync } = await import("./server/cms-schedule");
+      await scheduledCmsSync(undefined, true);
+    } catch (e) {
+      console.error("CMS automatic refresh failed", e);
+    }
+  };
+  setTimeout(cmsTick, 90e3).unref();
+  setInterval(cmsTick, 60e3).unref();
 }
 
 // Errors on the server are kept in the app (Admin, System, Errors), with no outside service.

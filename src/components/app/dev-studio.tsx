@@ -4,6 +4,7 @@
 // retrospective, velocity), Roadmap (projects by quarter with health, and DORA measures), and Specs and docs
 // (SRS and the rest from templates, versions, reviewers, requirements traced to tasks, Word and PDF).
 
+import { collaborationViewAction, changeCollaborationAction } from "@/app/actions/dev-collaboration";
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -526,92 +527,42 @@ type WhiteboardItem = {
   author: string;
   text: string;
   createdAt: string;
+  projectId?: string; feature?: string; members?: string[]; replies?: {author:string;text:string;at:string}[];
 };
-
-const DEFAULT_WHITEBOARD_ITEMS: WhiteboardItem[] = [
-  {
-    id: "wb-1",
-    lane: "architecture",
-    title: "Micro-frontend vs Modular Architecture",
-    author: "Senior Architect",
-    text: "Evaluate bundling strategy for sub-apps to minimize main bundle payload.",
-    createdAt: "2026-11-06",
-  },
-  {
-    id: "wb-2",
-    lane: "techdebt",
-    title: "Database Indexing on Audit & Attendance Logs",
-    author: "Dev Lead",
-    text: "Add composite index on (created_at, dept) to speed up high-volume reporting queries.",
-    createdAt: "2026-11-06",
-  },
-  {
-    id: "wb-3",
-    lane: "spikes",
-    title: "Offline Syncing for Kiosk Camera Workers",
-    author: "Mobile/Frontend Dev",
-    text: "Test ServiceWorker background sync for offline facial embeddings verification.",
-    createdAt: "2026-11-07",
-  },
-  {
-    id: "wb-4",
-    lane: "discussions",
-    title: "Code Review SLA & Reviewer Rotation",
-    author: "Team Member",
-    text: "Propose maximum 4-hour SLA on PR reviews during core team hours.",
-    createdAt: "2026-11-07",
-  },
-];
 
 function DevWhiteboardView({ dept, canConfigure }: { dept: string; canConfigure: boolean }) {
   const [enabled, setEnabled] = React.useState(true);
-  const [items, setItems] = React.useState<WhiteboardItem[]>(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const saved = localStorage.getItem(`dev_whiteboard_${dept}`);
-        if (saved) return JSON.parse(saved);
-      } catch {}
-    }
-    return DEFAULT_WHITEBOARD_ITEMS;
-  });
-
+  const [items, setItems] = React.useState<WhiteboardItem[]>([]);
+  const [projects, setProjects] = React.useState<{id:string;name:string}[]>([]);
+  const [people, setPeople] = React.useState<{id:string;name:string}[]>([]);
+  const [projectId, setProjectId] = React.useState("");
+  const [feature, setFeature] = React.useState("");
+  const [members, setMembers] = React.useState<string[]>([]);
+  const [filterProject, setFilterProject] = React.useState("");
+  const [filterText, setFilterText] = React.useState("");
+  const refresh = React.useCallback(async () => {
+    const result = await collaborationViewAction(dept);
+    if (!result.ok) return toast.error(result.error);
+    if (result.data) { setItems(result.data.cards as WhiteboardItem[]); setEnabled(result.data.enabled); setProjects(result.data.projects); setPeople(result.data.people); }
+  }, [dept]);
+  React.useEffect(() => { void refresh(); const timer = setInterval(() => { if (!document.hidden) void refresh(); }, 30000); return () => clearInterval(timer); }, [refresh]);
+  const change = async (input: Parameters<typeof changeCollaborationAction>[1]) => {
+    const result = await changeCollaborationAction(dept, input);
+    if (!result.ok) { toast.error(result.error); return false; }
+    await refresh(); return true;
+  };
   const [modalOpen, setModalOpen] = React.useState(false);
   const [newTitle, setNewTitle] = React.useState("");
-  const [newAuthor, setNewAuthor] = React.useState("");
   const [newText, setNewText] = React.useState("");
   const [newLane, setNewLane] = React.useState<WhiteboardLane>("architecture");
 
-  const saveItems = (updated: WhiteboardItem[]) => {
-    setItems(updated);
-    try {
-      localStorage.setItem(`dev_whiteboard_${dept}`, JSON.stringify(updated));
-    } catch {}
-  };
-
-  const handleAdd = (e: React.FormEvent) => {
+  const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTitle.trim() || !newText.trim()) return toast.error("Provide a title and details.");
-    const newItem: WhiteboardItem = {
-      id: `wb-${Date.now()}`,
-      lane: newLane,
-      title: newTitle.trim(),
-      author: newAuthor.trim() || "Developer",
-      text: newText.trim(),
-      createdAt: new Date().toISOString().slice(0, 10),
-    };
-    saveItems([...items, newItem]);
-    toast.success("Card added to whiteboard.");
-    setNewTitle("");
-    setNewText("");
-    setNewAuthor("");
-    setModalOpen(false);
+    if (await change({ action: "card", card: { title:newTitle, text:newText, lane:newLane, projectId, feature, ...(canConfigure ? {members} : {}) } })) {
+      toast.success("Card shared with the team."); setNewTitle(""); setNewText(""); setModalOpen(false);
+    }
   };
-
-  const handleDelete = (id: string) => {
-    saveItems(items.filter((x) => x.id !== id));
-    toast.success("Card removed.");
-  };
-
+  const handleDelete = async (id: string) => { await change({action:"delete",id}); };
   const lanes: { key: WhiteboardLane; label: string; desc: string }[] = [
     { key: "architecture", label: "Architecture & Systems Design", desc: "System structure, API contracts, scalability." },
     { key: "techdebt", label: "Technical Debt & Refactoring", desc: "Code quality, dependency updates, test coverage." },
@@ -635,10 +586,7 @@ function DevWhiteboardView({ dept, canConfigure }: { dept: string; canConfigure:
               <Button
                 size="xs"
                 variant={enabled ? "outline" : "secondary"}
-                onClick={() => {
-                  setEnabled(!enabled);
-                  toast.success(enabled ? "Whiteboard closed for new inputs" : "Whiteboard active");
-                }}
+                onClick={() => change({action:"enabled",enabled:!enabled})}
               >
                 {enabled ? "Active (Enabled)" : "Archived (Disabled)"}
               </Button>
@@ -650,11 +598,12 @@ function DevWhiteboardView({ dept, canConfigure }: { dept: string; canConfigure:
         </div>
       </div>
 
+      <div className="flex gap-2"><Input aria-label="Search discussions" placeholder="Search discussions or feature" value={filterText} onChange={e=>setFilterText(e.target.value)} /><select aria-label="Filter project" className="rounded border bg-background px-2" value={filterProject} onChange={e=>setFilterProject(e.target.value)}><option value="">All projects</option>{projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select><Button variant="outline" onClick={refresh}>Refresh</Button></div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {lanes.map((lane) => {
-          const laneItems = items.filter((x) => x.lane === lane.key);
+          const laneItems = items.filter((x) => x.lane === lane.key && (!filterProject || x.projectId === filterProject) && (!filterText || `${x.title} ${x.text} ${x.feature ?? ""}`.toLowerCase().includes(filterText.toLowerCase())));
           return (
-            <div key={lane.key} className="flex flex-col rounded-xl border bg-muted/20 p-3 space-y-3">
+            <div key={lane.key} onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); const id = e.dataTransfer.getData("text/plain"); if (items.some(x => x.id === id)) void change({action:"card",id,card:{lane:lane.key}}); }} className="flex flex-col rounded-xl border bg-muted/20 p-3 space-y-3">
               <div className="border-b pb-2">
                 <div className="flex items-center justify-between">
                   <h4 className="font-semibold text-xs text-foreground uppercase tracking-wider">{lane.label}</h4>
@@ -665,7 +614,7 @@ function DevWhiteboardView({ dept, canConfigure }: { dept: string; canConfigure:
 
               <div className="space-y-2.5 flex-1 min-h-48">
                 {laneItems.map((item) => (
-                  <div key={item.id} className="relative rounded-lg border bg-card p-3 shadow-xs space-y-1.5 text-xs">
+                  <div key={item.id} draggable onDragStart={e => e.dataTransfer.setData("text/plain",item.id)} className="relative rounded-lg border bg-card p-3 shadow-xs space-y-1.5 text-xs">
                     <div className="flex items-start justify-between gap-1.5">
                       <div className="font-semibold text-foreground text-xs leading-snug">{item.title}</div>
                       <button
@@ -678,6 +627,9 @@ function DevWhiteboardView({ dept, canConfigure }: { dept: string; canConfigure:
                       </button>
                     </div>
                     <p className="text-muted-foreground text-xs leading-relaxed whitespace-pre-wrap">{item.text}</p>
+                    {item.feature && <Badge variant="outline">{item.feature}</Badge>}
+                    {(item.replies ?? []).map((reply,i) => <p key={i} className="border-l-2 pl-2"><strong>{reply.author}</strong>: {reply.text}</p>)}
+                    <Input placeholder="Reply and press Enter" aria-label={`Reply to ${item.title}`} onKeyDown={async e => { if(e.key === "Enter" && e.currentTarget.value.trim()) { const field=e.currentTarget; if(await change({action:"reply",id:item.id,text:field.value})) field.value=""; } }} />
                     <div className="flex items-center justify-between pt-1 border-t text-[10px] text-muted-foreground/80 font-mono">
                       <span>{item.author}</span>
                       <span>{item.createdAt}</span>
@@ -705,6 +657,9 @@ function DevWhiteboardView({ dept, canConfigure }: { dept: string; canConfigure:
               </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleAdd} className="space-y-3 py-2 text-xs">
+              <label className="grid gap-1">Project<select className="rounded border bg-background p-2" value={projectId} onChange={e=>setProjectId(e.target.value)}><option value="">Whole department</option>{projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+              <Input aria-label="Feature" placeholder="Feature or component (optional)" value={feature} onChange={e=>setFeature(e.target.value)} />
+              {canConfigure && <label className="grid gap-1">Visible to (leave empty for project members)<select multiple className="h-24 rounded border bg-background p-2" value={members} onChange={e=>setMembers(Array.from(e.target.selectedOptions,o=>o.value))}>{people.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>}
               <div className="space-y-1">
                 <Label>Lane / Category</Label>
                 <Select value={newLane} onValueChange={(v) => setNewLane(v as WhiteboardLane)}>
@@ -727,15 +682,6 @@ function DevWhiteboardView({ dept, canConfigure }: { dept: string; canConfigure:
                   placeholder="e.g. Migration plan to Redis caching"
                   className="text-xs"
                   required
-                />
-              </div>
-              <div className="space-y-1">
-                <Label>Author / Proposer</Label>
-                <Input
-                  value={newAuthor}
-                  onChange={(e) => setNewAuthor(e.target.value)}
-                  placeholder="Your Name / Dev Role"
-                  className="text-xs"
                 />
               </div>
               <div className="space-y-1">
@@ -785,27 +731,9 @@ function OneOnOneView({
   isLead: boolean;
   viewerId: string;
 }) {
-  const [sessions, setSessions] = React.useState<OneOnOneItem[]>(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const saved = localStorage.getItem(`dev_1on1_${dept}`);
-        if (saved) return JSON.parse(saved);
-      } catch {}
-    }
-    return [
-      {
-        id: "1on1-1",
-        devId: "dev-1",
-        devName: "Frontend Engineer",
-        topic: "Sprint Blocker & Architecture Alignment",
-        preferredDate: new Date().toISOString().slice(0, 10),
-        timeSlot: "10:30 AM",
-        notes: "Discuss GraphQL query complexity and component testing.",
-        status: "confirmed",
-      },
-    ];
-  });
-
+  const [sessions, setSessions] = React.useState<OneOnOneItem[]>([]);
+  const refreshSessions = React.useCallback(async () => { const result = await collaborationViewAction(dept); if (!result.ok) return toast.error(result.error); if(result.data) setSessions(result.data.sessions); }, [dept]);
+  React.useEffect(() => { void refreshSessions(); }, [refreshSessions]);
   const [dialogOpen, setDialogOpen] = React.useState(false);
   const [selectedDev, setSelectedDev] = React.useState(viewerId || people[0]?.id || "");
   const [topic, setTopic] = React.useState("Sprint Feedback & Technical Alignment");
@@ -813,35 +741,16 @@ function OneOnOneView({
   const [time, setTime] = React.useState("11:00 AM");
   const [notes, setNotes] = React.useState("");
 
-  const saveSessions = (updated: OneOnOneItem[]) => {
-    setSessions(updated);
-    try {
-      localStorage.setItem(`dev_1on1_${dept}`, JSON.stringify(updated));
-    } catch {}
-  };
-
-  const handleRequest = (e: React.FormEvent) => {
+  const handleRequest = async (e: React.FormEvent) => {
     e.preventDefault();
-    const devPerson = people.find((p) => p.id === selectedDev) || { name: "Developer" };
-    const newSession: OneOnOneItem = {
-      id: `1on1-${Date.now()}`,
-      devId: selectedDev,
-      devName: devPerson.name,
-      topic,
-      preferredDate: date,
-      timeSlot: time,
-      notes,
-      status: "requested",
-    };
-    saveSessions([newSession, ...sessions]);
-    toast.success("1-on-1 session requested with the Team Lead.");
-    setDialogOpen(false);
-    setNotes("");
+    const result = await changeCollaborationAction(dept, {action:"session",session:{devId:selectedDev,topic,preferredDate:date,timeSlot:time,notes}});
+    if(!result.ok) return toast.error(result.error);
+    await refreshSessions(); toast.success("One-to-one request sent to the team lead."); setDialogOpen(false); setNotes("");
   };
-
-  const handleStatusChange = (id: string, status: "confirmed" | "completed") => {
-    saveSessions(sessions.map((s) => (s.id === id ? { ...s, status } : s)));
-    toast.success(`Session status updated to ${status}.`);
+  const handleStatusChange = async (id: string, status: "confirmed" | "completed") => {
+    const result = await changeCollaborationAction(dept,{action:"status",id,status});
+    if(!result.ok) return toast.error(result.error);
+    await refreshSessions(); toast.success(`Session ${status}.`);
   };
 
   return (

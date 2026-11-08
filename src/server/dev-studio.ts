@@ -421,9 +421,9 @@ export async function submitDoc(user: AppUser, d: string, id: string, reviewerId
   const r = await get<DocRow>("SELECT * FROM dept_docs WHERE id = ? AND dept = ?", id, a.dept);
   if (!r) throw new WorkflowError("NOT_FOUND", "Document not found.");
   if (r.status !== "draft") throw new WorkflowError("INVALID_STATE", "Only a draft is sent for review.");
-  const people = (await deptPeople(a.dept)).map((p) => p.id);
+  const people = await deptManagers(a.dept);
   const reviewers = [...new Set(reviewerIds.filter((x) => people.includes(x) && x !== user.id))].slice(0, 10);
-  if (!reviewers.length) throw new WorkflowError("VALIDATION", "Choose at least one reviewer (not yourself).");
+  if (!reviewers.length) throw new WorkflowError("VALIDATION", "Choose a team lead or department head as reviewer (not yourself).");
   await run("UPDATE dept_docs SET status = 'review', reviewers = ?, approvals = '[]', updated_at = ? WHERE id = ?", JSON.stringify(reviewers), nowIso(), id);
   await notify(reviewers, { type: "approval", title: `Review: ${r.title}`, body: `${user.name} asks you to review version ${r.version}.`, link: `/dashboard`, dedupeKey: `doc-review:${id}:${r.version}` }, nowIso(), user.id);
 }
@@ -433,7 +433,7 @@ export async function decideDoc(user: AppUser, d: string, id: string, approve: b
   const r = await get<DocRow>("SELECT * FROM dept_docs WHERE id = ? AND dept = ?", id, a.dept);
   if (!r || r.status !== "review") throw new WorkflowError("INVALID_STATE", "This document is not waiting for review.");
   const reviewers = parseJson<string[]>(r.reviewers, []);
-  if (!reviewers.includes(user.id)) throw new WorkflowError("FORBIDDEN", "Only the named reviewers decide.");
+  if (!(await deptManagers(a.dept)).includes(user.id) || !reviewers.includes(user.id)) throw new WorkflowError("FORBIDDEN", "Only the named reviewers decide.");
   const now = nowIso();
   if (!approve) {
     if (!note?.trim()) throw new WorkflowError("VALIDATION", "Say what needs to change.");

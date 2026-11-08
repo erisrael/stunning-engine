@@ -1,5 +1,6 @@
 "use client";
 
+import { createCustomRoleAction } from "@/app/actions/admin";
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -93,8 +94,11 @@ const ROLE_TONE: Record<Role, string> = {
   operations: "bg-indigo-500/15 text-indigo-700 dark:text-indigo-300",
 };
 
+const AdminRoles = React.createContext<{key:Role;label:string}[]>(ROLES.map(key=>({key,label:ROLE_LABELS[key]})));
+export function AdminRoleProvider({roles,children}:{roles:{key:Role;label:string}[];children:React.ReactNode}) { return <AdminRoles.Provider value={roles}>{children}</AdminRoles.Provider>; }
 export function RoleBadge({ role }: { role: Role }) {
-  return <span className={cn("inline-flex h-5 items-center rounded px-1.5 text-[11px] font-medium", ROLE_TONE[role])}>{ROLE_LABELS[role]}</span>;
+  const label=React.useContext(AdminRoles).find(r=>r.key===role)?.label ?? role;
+  return <span className={cn("inline-flex h-5 items-center rounded px-1.5 text-[11px] font-medium", ROLE_TONE[role])}>{label}</span>;
 }
 
 function SecretDialog({ secret, onClose }: { secret: { email: string; password: string } | null; onClose: () => void }) {
@@ -147,6 +151,8 @@ const blankUser: AdminUser = {
 };
 
 export function PeopleAdmin({ users, grades, subjects, viewerId }: { users: AdminUser[]; grades: Opt[]; subjects: Opt[]; viewerId: string }) {
+  const roleCatalog = React.useContext(AdminRoles);
+  const roleKeys = roleCatalog.map(r=>r.key);
   const router = useRouter();
   const [edit, setEdit] = React.useState<AdminUser | null>(null);
   const [secret, setSecret] = React.useState<{ email: string; password: string } | null>(null);
@@ -175,7 +181,7 @@ export function PeopleAdmin({ users, grades, subjects, viewerId }: { users: Admi
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All roles</SelectItem>
-            {ROLES.map((r) => (
+            {roleKeys.map((r) => (
               <SelectItem key={r} value={r}>
                 {ROLE_LABELS[r]}
               </SelectItem>
@@ -451,6 +457,8 @@ function UserDialog({
   onClose: () => void;
   onSaved: (pw: { email: string; password: string } | null) => void;
 }) {
+  const roleCatalog = React.useContext(AdminRoles);
+  const roleKeys = roleCatalog.map(r=>r.key);
   const [u, setU] = React.useState(user);
   const [password, setPassword] = React.useState("");
   const [mustChange, setMustChange] = React.useState(true);
@@ -503,7 +511,7 @@ function UserDialog({
         <section className="space-y-2">
           <h3 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">Roles</h3>
           <div className="grid gap-2 sm:grid-cols-2">
-            {ROLES.map((r) => (
+            {roleKeys.map((r) => (
               <label key={r} className={cn("flex cursor-pointer items-start gap-2 rounded-lg border p-2.5 text-sm", u.roles.includes(r) && "border-primary/50 bg-primary/5")}>
                 <Checkbox
                   className="mt-0.5"
@@ -634,6 +642,8 @@ function UserDialog({
 // ---------------------------------------------------------------------------
 
 export function PermissionsAdmin({ matrix, counts, leadCounts }: { matrix: PermissionMatrix; counts: Record<Role, number>; leadCounts: Record<Stage, number> }) {
+  const roleCatalog = React.useContext(AdminRoles);
+  const roleKeys = roleCatalog.map(r=>r.key);
   const router = useRouter();
   const [m, setM] = React.useState(matrix);
   const [busy, setBusy] = React.useState(false);
@@ -652,7 +662,7 @@ export function PermissionsAdmin({ matrix, counts, leadCounts }: { matrix: Permi
 
   // Roles first, then one column per team lead (Admin, Teams).
   const columns: { key: keyof PermissionMatrix; label: React.ReactNode; name: string; count: number }[] = [
-    ...ROLES.map((r) => ({ key: r, label: <RoleBadge role={r} />, name: ROLE_LABELS[r], count: counts[r] ?? 0 })),
+    ...roleKeys.map((r) => ({ key: r, label: <RoleBadge role={r} />, name: roleCatalog.find(x=>x.key===r)?.label ?? r, count: counts[r] ?? 0 })),
     ...STAGES.map((st) => ({
       key: leadKey(st),
       label: <Badge variant="outline" className="font-medium">{STAGE_LABELS[st]} lead</Badge>,
@@ -966,7 +976,7 @@ export function PermissionsAdmin({ matrix, counts, leadCounts }: { matrix: Permi
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {ROLES.map((r) => (
+                    {roleKeys.map((r) => (
                       <SelectItem key={r} value={r}>
                         {ROLE_LABELS[r]} ({r})
                       </SelectItem>
@@ -1035,7 +1045,7 @@ export function PermissionsAdmin({ matrix, counts, leadCounts }: { matrix: Permi
                   const key = newRoleKey.trim();
                   const updatedMatrix = { ...m, [key]: selectedRoleCaps };
                   setBusy(true);
-                  const res = await savePermissionsAction(updatedMatrix);
+                  const res = await createCustomRoleAction({key,label:newRoleName.trim(),capabilities:selectedRoleCaps});
                   setBusy(false);
                   if (res.ok) {
                     setM(updatedMatrix);

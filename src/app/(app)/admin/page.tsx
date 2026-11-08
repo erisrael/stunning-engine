@@ -1,3 +1,4 @@
+import { roleCatalog } from "@/server/role-catalog";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { DatabaseIcon } from "lucide-react";
@@ -22,7 +23,7 @@ import { ROLE_LABELS } from "@/lib/domain";
 import { bannerSections, banners, navBrand } from "@/server/branding";
 import { PageHeader } from "@/components/app/primitives";
 import { ROLES, STAGES, type Role, type Stage } from "@/lib/domain";
-import { AccessAdmin, DataAdmin, PeopleAdmin, PermissionsAdmin, TeamsAdmin, type AdminUser, type TeamPerson } from "./admin-client";
+import { AdminRoleProvider, AccessAdmin, DataAdmin, PeopleAdmin, PermissionsAdmin, TeamsAdmin, type AdminUser, type TeamPerson } from "./admin-client";
 import { PageImport } from "@/components/app/page-import";
 import { DepartmentsAdmin } from "./departments-admin";
 import { customDepartments, deptPeople } from "@/server/departments";
@@ -42,7 +43,7 @@ import { signInPolicy } from "@/server/signin-config";
 import { listInvites, listSignupRequests, signInLog, twoStepRoster } from "@/server/signin";
 import { redirectUri } from "@/server/oidc";
 import { PROVIDER_IDS } from "@/lib/signin-policy";
-import { OpenWithTab, SystemAdmin } from "./system-admin";
+import { SystemAdmin } from "./system-admin";
 import { healthChecks, jobStatus, listErrors, opsConfig } from "@/server/ops";
 import { backupConfig, backupRuns, defaultBackupDir, listBackups } from "@/server/backups";
 import { googleConnection, GOOGLE_SCOPES } from "@/server/google";
@@ -173,7 +174,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   const activeCategory = categories.find((c) => c.tabs.some((t) => t.id === tab)) || categories[0];
 
   return (
-    <div className="space-y-4">
+    <AdminRoleProvider roles={await roleCatalog()}><div className="space-y-4">
       <PageHeader help="admin" title="Admin" description="People, roles, permissions, access and workspace data. Every change is kept in the audit log." actions={
           <>
             {manageData && (
@@ -192,7 +193,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           </>
         }
       />
-      <Tabs value={tab} className="gap-4">
+      <Tabs key={tab} value={tab} className="gap-4">
         <div className="space-y-2 border-b pb-3">
           {/* Grouped Category Level */}
           <div className="flex flex-wrap items-center gap-1.5 p-1 bg-muted/40 rounded-lg w-fit text-xs font-medium">
@@ -354,7 +355,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
               )}
             </TabsContent>
             <TabsContent value="sidebar">
-              <SidebarAdmin defaults={await sidebarDefaults()} />
+              <SidebarAdmin defaults={await sidebarDefaults()} roles={await roleCatalog()} />
             </TabsContent>
             <TabsContent value="legacy-cms">
               {tab === "legacy-cms" && (
@@ -412,6 +413,6 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           </TabsContent>
         )}
       </Tabs>
-    </div>
+    </div></AdminRoleProvider>
   );
 }

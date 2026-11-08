@@ -49,20 +49,6 @@ function Copyable({ value, label }: { value: string; label: string }) {
   );
 }
 
-// The System tab loads its data (backup lists from Drive and S3 take a moment) only when opened by address.
-export function OpenWithTab({ tab }: { tab: string }) {
-  const router = useRouter();
-  React.useEffect(() => {
-    if (typeof window !== "undefined") {
-      const sp = new URLSearchParams(window.location.search);
-      if (sp.get("tab") !== tab) {
-        router.replace(`/admin?tab=${tab}`);
-      }
-    }
-  }, [router, tab]);
-  return <p className="py-8 text-center text-sm text-muted-foreground">Loading...</p>;
-}
-
 export function SystemAdmin({ data }: { data: SystemData }) {
   const openErrors = data.errors.length;
   const bad = data.health.filter((h) => h.state !== "ok").length;

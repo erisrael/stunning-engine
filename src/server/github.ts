@@ -5,10 +5,11 @@
 import { all, get, nowIso, parseJson, run } from "./db";
 import { audit, WorkflowError } from "./workflow";
 import { seal, unseal } from "./secrets";
+import { deptAccess, deptPeople, requireDept } from "./departments";
 import { workAccess } from "./dept-config";
 import type { AppUser } from "./users";
 
-type Stored = { tokenEnc: string | null; repos: { fullName: string; projectId: string | null }[] };
+type Stored = { tokenEnc: string | null; repos: { fullName: string; projectId: string | null; members?: string[] }[] };
 const TTL_MS = 10 * 60e3;
 const key = (dept: string) => `int.github.${dept}`;
 
@@ -16,12 +17,15 @@ async function stored(dept: string): Promise<Stored> {
   return parseJson<Stored>((await get<{ value: string }>("SELECT value FROM settings WHERE key = ?", key(dept)))?.value, { tokenEnc: null, repos: [] });
 }
 
-export type GithubSettings = { hasToken: boolean; repos: { fullName: string; projectId: string | null }[]; canConfigure: boolean };
+export type GithubSettings = { hasToken: boolean; repos: { fullName: string; projectId: string | null; members?: string[] }[]; canConfigure: boolean; people: {id:string;name:string}[] };
 
 export async function githubSettings(user: AppUser, dept: string): Promise<GithubSettings> {
   const a = await workAccess(user, dept);
   const s = await stored(dept);
-  return { hasToken: !!s.tokenEnc, repos: s.repos, canConfigure: a.rights.configure && !a.readOnly };
+  const access = await deptAccess(user,dept);
+  const projects = await all<{project_id:string}>("SELECT DISTINCT project_id FROM dept_tasks WHERE dept=? AND assignee_id=? AND project_id IS NOT NULL",dept,user.id);
+  const repos = access.manage ? s.repos : s.repos.filter(r => r.members?.includes(user.id) || (r.projectId && projects.some(p=>p.project_id===r.projectId)));
+  return { hasToken: !!s.tokenEnc, repos, canConfigure: access.manage && !a.readOnly, people: access.manage ? (await deptPeople(dept)).map(p=>({id:p.id,name:p.name})) : [] };
 }
 
 const REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
@@ -31,14 +35,16 @@ export function parseRepo(input: string) {
   return REPO_RE.test(v) ? v : null;
 }
 
-export async function saveGithubSettings(user: AppUser, dept: string, input: { token?: string | null; clearToken?: boolean; repos: { fullName: string; projectId?: string | null }[] }) {
+export async function saveGithubSettings(user: AppUser, dept: string, input: { token?: string | null; clearToken?: boolean; repos: { fullName: string; projectId?: string | null; members?: string[] }[] }) {
   const a = await workAccess(user, dept, "write");
-  if (!a.rights.configure) throw new WorkflowError("FORBIDDEN", "Only people who configure the department connect GitHub.");
+  await requireDept(user,dept,"manage");
+  const people = (await deptPeople(dept)).map(p=>p.id);
   const repos: Stored["repos"] = [];
   for (const r of input.repos) {
+    if(r.projectId && !await get("SELECT id FROM dept_projects WHERE id=? AND dept=?",r.projectId,dept)) throw new WorkflowError("VALIDATION","Choose a project in this department.");
     const fullName = parseRepo(r.fullName);
     if (!fullName) throw new WorkflowError("VALIDATION", `${r.fullName} is not a repository. Use owner/name, for example myseed/website.`);
-    if (!repos.some((x) => x.fullName.toLowerCase() === fullName.toLowerCase())) repos.push({ fullName, projectId: r.projectId || null });
+    if (!repos.some((x) => x.fullName.toLowerCase() === fullName.toLowerCase())) repos.push({ fullName, projectId: r.projectId || null, members: [...new Set((r.members ?? []).filter(id=>people.includes(id)))] });
   }
   if (repos.length > 30) throw new WorkflowError("VALIDATION", "Follow at most 30 repositories.");
   const old = await stored(dept);
@@ -245,4 +251,17 @@ export async function cachedPrsByCode(dept: string) {
   const gl = await all<{ code: string; repo: string; number: number; title: string; url: string; branch: string; state: string }>("SELECT code, repo, number, title, url, branch, state FROM dev_merge_requests WHERE dept = ?", dept).catch(() => []);
   for (const r of gl) add(r.code, { number: Number(r.number), title: r.title, url: r.url, branch: r.branch, state: r.state as TaskPr["state"], checks: null, repo: r.repo });
   return out;
+}
+
+export async function addGithubCollaborator(user:AppUser,dept:string,input:{repo:string;username:string;permission:string}) {
+ await requireDept(user,dept,"manage");await workAccess(user,dept,"write");
+ const settings=await stored(dept);
+ if(!settings.repos.some(r=>r.fullName===input.repo)) throw new WorkflowError("FORBIDDEN","Connect this repository to the department first.");
+ if(!/^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,38})$/.test(input.username)||!["pull","triage","push","maintain","admin"].includes(input.permission)) throw new WorkflowError("VALIDATION","Enter a GitHub username and supported permission.");
+ const token=settings.tokenEnc?await unseal(settings.tokenEnc):null;
+ if(!token) throw new WorkflowError("VALIDATION","Add a GitHub token with repository Administration write permission in Connect repositories.");
+ const response=await fetch(`https://api.github.com/repos/${input.repo}/collaborators/${encodeURIComponent(input.username)}`,{method:"PUT",headers:{Authorization:`Bearer ${token}`,Accept:"application/vnd.github+json","X-GitHub-Api-Version":"2026-03-10","Content-Type":"application/json","User-Agent":"myseed-content-manager"},body:JSON.stringify({permission:input.permission}),cache:"no-store",redirect:"error",signal:AbortSignal.timeout(15000)});
+ if(![201,204].includes(response.status)) throw new WorkflowError("VALIDATION",`GitHub rejected the collaborator change (HTTP ${response.status}). Check the token and organization invitation policy.`);
+ await audit({actor:user},{action:"github.collaborator",summary:`${user.name} granted ${input.permission} to ${input.username} on ${input.repo}`});
+ return {message:response.status===201?"GitHub invitation sent; the collaborator must accept it.":"GitHub collaborator access updated."};
 }

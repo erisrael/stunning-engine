@@ -1,5 +1,6 @@
 "use server";
 
+import { eligibleQuestionRecipients } from "@/server/question-routing";
 import { requireViewer } from "@/server/auth";
 import { wrap } from "@/server/action-result";
 import { all, get, nowIso, parseJson, run, uid } from "@/server/db";
@@ -136,6 +137,7 @@ export async function askQuestionAction(input: { itemId?: string | null; ownerId
   return wrap(async () => {
     const viewer = await requireViewer();
     if (!input.question.trim()) throw new WorkflowError("VALIDATION", "Write the question.");
+    if (!(await eligibleQuestionRecipients(viewer)).some(u=>u.id===input.ownerId)) throw new WorkflowError("FORBIDDEN", "Your team's question routing does not allow this recipient.");
     if (input.ownerId === viewer.id) throw new WorkflowError("VALIDATION", "Choose who should answer.");
     if (input.itemId && !(await canViewItem(viewer, input.itemId))) throw new WorkflowError("FORBIDDEN", "This item is outside your access.");
     const id = uid("q_");

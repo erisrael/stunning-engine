@@ -665,7 +665,12 @@ async function spentFor(scopeType: string, scopeKey: string, year: number) {
 export async function listBudgets(user: AppUser, year: number) {
   need(user, "view", "see budgets");
   const rows = await all<{ id: string; scope_type: string; scope_key: string; scope_label: string; year: number; amount: number; alert_pct: number }>("SELECT * FROM fin_budgets WHERE year = ? ORDER BY scope_type, scope_label", year);
-  return Promise.all(rows.map(async (b) => ({ ...b, amount: Number(b.amount), spent: await spentFor(b.scope_type, b.scope_key, b.year) })));
+  return Promise.all(rows.map(async (b) => {
+    const field = b.scope_type === "department" ? "department" : b.scope_type === "project" ? "project" : null;
+    const committed = field ? Number((await get<{s:number}>(`SELECT COALESCE(SUM(estimate),0) AS s FROM fin_purchases WHERE ${field} = ? AND status IN ('approved','ordered') AND created_at >= ? AND created_at < ?`,b.scope_key,`${b.year}-01-01`,`${b.year+1}-01-01`))?.s ?? 0) : 0;
+    const spent = await spentFor(b.scope_type,b.scope_key,b.year);
+    return {...b,amount:Number(b.amount),spent,committed,available:Number(b.amount)-spent-committed};
+  }));
 }
 
 export async function saveBudget(user: AppUser, input: { scopeType: string; scopeKey: string; scopeLabel: string; year: number; amount: number; alertPct?: number }) {

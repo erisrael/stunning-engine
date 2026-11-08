@@ -750,7 +750,7 @@ export async function issueEquipment(user: AppUser, id: string, input: { employe
   const e = await get<{ full_name: string; user_id: string | null; status: string }>("SELECT full_name, user_id, status FROM employees WHERE id = ?", input.employeeId);
   if (!e || e.status === "left") throw new WorkflowError("VALIDATION", "Choose a current employee.");
   const now = nowIso();
-  await run("UPDATE equipment SET status = 'issued', holder_id = ?, issued_at = ?, due_back = ?, updated_at = ? WHERE id = ?", input.employeeId, now.slice(0, 10), day(input.dueBack), now, id);
+  await run("UPDATE equipment SET status = 'issued', assigned_to = ?, holder_id = ?, issued_at = ?, due_back = ?, updated_at = ? WHERE id = ?", e.user_id, input.employeeId, now.slice(0, 10), day(input.dueBack), now, id);
   await logEquipment(id, "issued", user, { employeeId: input.employeeId, note: clean(input.note, 400) });
   if (e.user_id) await notify([e.user_id], { type: "hr", title: `Issued to you: ${q.name} (${q.tag})`, body: input.dueBack ? `Please return it by ${input.dueBack}.` : undefined, link: "/profile?tab=record" }, now, user.id);
 }
@@ -761,7 +761,7 @@ export async function returnEquipment(user: AppUser, id: string, input: { condit
   if (!q || q.status !== "issued") throw new WorkflowError("INVALID_STATE", "This equipment is not issued to anyone.");
   const condition = oneOf(input.condition, CONDITIONS, "good");
   await run(
-    "UPDATE equipment SET status = ?, condition = ?, holder_id = NULL, issued_at = NULL, due_back = NULL, updated_at = ? WHERE id = ?",
+    "UPDATE equipment SET status = ?, condition = ?, holder_id = NULL, assigned_to = NULL, issued_at = NULL, due_back = NULL, updated_at = ? WHERE id = ?",
     condition === "damaged" ? "repair" : "available",
     condition,
     nowIso(),

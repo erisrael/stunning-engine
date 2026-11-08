@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 import { requireCapability, requireManager, requireViewer } from "@/server/auth";
 import { wrap } from "@/server/action-result";
 import { all, get, nowIso, parseJson, run, tx, uid } from "@/server/db";
-import { getSettings, savePermissionMatrix, saveSetting, type Settings } from "@/server/settings";
+import { getPermissionMatrix, getSettings, savePermissionMatrix, saveSetting, type Settings } from "@/server/settings";
 import { hashPassword } from "@/server/passwords";
 import { newPasswordProblem, setPassword } from "@/server/signin";
 import { uniqueHandle } from "@/server/importer";
@@ -199,7 +199,8 @@ export async function saveUserAction(input: UserInput) {
     // Someone only in a created department (for example Customer Support) may have no role.
     if (!input.roles.length && !(input.id && (await get("SELECT 1 AS x FROM department_positions WHERE user_id = ?", input.id))))
       throw new WorkflowError("VALIDATION", "Give the person at least one role.");
-    if (input.roles.some((r) => !ROLES.includes(r))) throw new WorkflowError("VALIDATION", "Unknown role.");
+    const knownRoles = await getPermissionMatrix();
+    if (input.roles.some((r) => !Object.hasOwn(knownRoles,r) || r.startsWith("lead."))) throw new WorkflowError("VALIDATION", "Unknown role.");
     if (input.id === viewer.id && !input.roles.some((r) => r === "admin" || r === "manager"))
       throw new WorkflowError("VALIDATION", "You cannot remove your own Admin or Manager role.");
     if (input.id === viewer.id && !input.active) throw new WorkflowError("VALIDATION", "You cannot deactivate your own account.");
@@ -294,7 +295,7 @@ export async function savePermissionsAction(matrix: PermissionMatrix) {
   return wrap(async () => {
     const viewer = await requireCapability("users.manage");
     const valid = new Set<string>(CAPABILITIES.map((c) => c.key));
-    const keys = [...ROLES, ...STAGES.map(leadKey)] as (keyof PermissionMatrix)[];
+    const keys = Object.keys(await getPermissionMatrix()) as (keyof PermissionMatrix)[];
     const clean = Object.fromEntries(keys.map((k) => [k, [...new Set((matrix[k] ?? []).filter((c) => valid.has(c)))]])) as PermissionMatrix;
     // Someone must always be able to manage users, or the workspace locks itself out.
     if (!clean.admin.includes("users.manage") && !clean.manager.includes("users.manage"))
@@ -472,4 +473,19 @@ export async function setOwnWorkOnlyAction(userId: string, on: boolean) {
     const name = (await get<{ name: string }>("SELECT name FROM users WHERE id = ?", userId))?.name;
     await audit({ actor: viewer }, { action: "team.own_work", summary: `${viewer.name} ${on ? "limited" : "unlimited"} ${name} to their own work` });
   });
+}
+
+export async function createCustomRoleAction(input:{key:string;label:string;capabilities:Capability[]}) {
+ return wrap(async()=>{
+  const viewer=await requireCapability("users.manage");
+  const key=input.key.trim(); const label=input.label.trim();
+  const matrix=await getPermissionMatrix();
+  if(!/^[a-z][a-z0-9_]{1,39}$/.test(key)||Object.hasOwn(matrix,key)||!label||label.length>80) throw new WorkflowError("VALIDATION","Choose a unique role key and a name up to 80 characters.");
+  const valid=new Set(CAPABILITIES.map(c=>c.key));
+  await savePermissionMatrix({...matrix,[key]:[...new Set(input.capabilities.filter(c=>valid.has(c)))]},viewer.id);
+  const row=await get<{value:string}>("SELECT value FROM settings WHERE key='cfg.role_labels'");
+  const labels=row?JSON.parse(row.value):{};
+  await run("INSERT INTO settings (key,value,updated_at,updated_by) VALUES ('cfg.role_labels',?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at,updated_by=excluded.updated_by",JSON.stringify({...labels,[key]:label}),nowIso(),viewer.id);
+  await audit({actor:viewer},{action:"role.created",summary:`${viewer.name} created role ${label}`});
+ });
 }

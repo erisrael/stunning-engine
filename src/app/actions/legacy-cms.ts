@@ -7,7 +7,7 @@ import type { LegacyCmsCategory, CmsRoleVisibility } from "@/server/legacy-cms";
 export async function getLegacyCmsConfigAction() {
   try {
     const viewer = await requireViewer();
-    const data = await cms.getLegacyCmsConfig();
+    const data = cms.publicCmsConfig(await cms.getLegacyCmsConfigForUser(viewer));
     return { ok: true, data };
   } catch (err: any) {
     return { ok: false, error: String(err?.message || err) };
@@ -99,7 +99,8 @@ export async function listLegacyCmsRecordsAction(
   opts?: { q?: string; limit?: number; offset?: number }
 ) {
   try {
-    await requireViewer();
+    const viewer = await requireViewer();
+    await cms.requireCmsCategories(viewer, [category]);
     const data = await cms.listLegacyCmsRecords(category, opts);
     return { ok: true, data };
   } catch (err: any) {
@@ -109,8 +110,10 @@ export async function listLegacyCmsRecordsAction(
 
 export async function searchLegacyCmsAction(q: string) {
   try {
-    await requireViewer();
+    const viewer=await requireViewer();
+    const allowed=new Set((await Promise.all(viewer.roles.map(r=>cms.allowedCategoriesForUser(r,viewer.id)))).flat());
     const data = await cms.searchLegacyCms(q);
+    for(const key of Object.keys(data) as (keyof typeof data)[]) if(!allowed.has(key)) data[key]=[];
     return { ok: true, data };
   } catch (err: any) {
     return { ok: false, error: String(err?.message || err), data: { students: [], parents: [], invoices: [], subscriptions: [] } };
@@ -119,8 +122,9 @@ export async function searchLegacyCmsAction(q: string) {
 
 export async function getLegacyCmsStatsAction() {
   try {
-    await requireViewer();
-    const data = await cms.getLegacyCmsStats();
+    const viewer = await requireViewer();
+    const allowed=[...new Set((await Promise.all(viewer.roles.map(role=>cms.allowedCategoriesForUser(role,viewer.id)))).flat())];
+    const data = await cms.getLegacyCmsStats(allowed);
     return { ok: true, data };
   } catch (err: any) {
     return { ok: false, error: String(err?.message || err) };
@@ -129,7 +133,8 @@ export async function getLegacyCmsStatsAction() {
 
 export async function getStudentParentRelationsAction(opts?: Parameters<typeof cms.getStudentParentRelations>[0]) {
   try {
-    await requireViewer();
+    const viewer = await requireViewer();
+    await cms.requireCmsCategories(viewer, ["students", "parents"]);
     const data = await cms.getStudentParentRelations(opts);
     return { ok: true, data };
   } catch (err: any) {
@@ -143,7 +148,8 @@ export async function getStudentParentRelationsAction(opts?: Parameters<typeof c
 
 export async function getLegacyCmsRevenueAnalyticsAction(opts?: Parameters<typeof cms.getLegacyCmsRevenueAnalytics>[0]) {
   try {
-    await requireViewer();
+    const viewer = await requireViewer();
+    await cms.requireCmsCategories(viewer, ["invoices"]);
     const data = await cms.getLegacyCmsRevenueAnalytics(opts);
     return { ok: true, data };
   } catch (err: any) {
@@ -174,7 +180,8 @@ export async function approveLegacyCmsInvoiceAction(invoiceId: string, notes?: s
 
 export async function getLegacyCmsGrowthAnalyticsAction() {
   try {
-    await requireViewer();
+    const viewer = await requireViewer();
+    await cms.requireCmsCategories(viewer, ["students", "parents", "invoices", "subscriptions"]);
     const data = await cms.getLegacyCmsGrowthAnalytics();
     return { ok: true, data };
   } catch (err: any) {
@@ -241,8 +248,9 @@ export async function deleteLegacyCmsCategoryDataAction(category: LegacyCmsCateg
 
 export async function getLegacyCmsStorageStatusAction() {
   try {
-    await requireViewer();
-    const data = await cms.getLegacyCmsStorageStatus();
+    const viewer=await requireViewer();
+    const allowed=new Set((await Promise.all(viewer.roles.map(r=>cms.allowedCategoriesForUser(r,viewer.id)))).flat());
+    const data = (await cms.getLegacyCmsStorageStatus()).filter(s=>allowed.has(s.category));
     return { ok: true, data };
   } catch (err: any) {
     return { ok: false, error: String(err?.message || err), data: [] };
@@ -251,6 +259,7 @@ export async function getLegacyCmsStorageStatusAction() {
 
 export async function listStaffUsersAction() {
   try {
+    await requireViewer();
     const { userDirectory } = await import("@/server/users");
     const users = await userDirectory();
     return {
@@ -308,8 +317,9 @@ export async function createLegacyCmsSnapshotAction(opts: {
 
 export async function listLegacyCmsSnapshotsAction(category?: LegacyCmsCategory | "all") {
   try {
-    await requireViewer();
-    const res = await cms.listLegacyCmsSnapshots(category);
+    const viewer=await requireViewer();
+    const allowed=new Set((await Promise.all(viewer.roles.map(r=>cms.allowedCategoriesForUser(r,viewer.id)))).flat());
+    const res = (await cms.listLegacyCmsSnapshots(category)).filter(s=>s.category==="all"?cms.LEGACY_CMS_CATEGORIES.every(c=>allowed.has(c.key)):allowed.has(s.category));
     return { ok: true, snapshots: res };
   } catch (err: any) {
     return { ok: false, snapshots: [], error: String(err?.message || err) };
@@ -318,8 +328,9 @@ export async function listLegacyCmsSnapshotsAction(category?: LegacyCmsCategory 
 
 export async function getLegacyCmsSnapshotAction(snapshotId: string) {
   try {
-    await requireViewer();
+    const viewer=await requireViewer();
     const res = await cms.getLegacyCmsSnapshot(snapshotId);
+    if(res) await cms.requireCmsCategories(viewer,res.category==="all" ? cms.LEGACY_CMS_CATEGORIES.map(c=>c.key) : [res.category]);
     return { ok: !!res, snapshot: res };
   } catch (err: any) {
     return { ok: false, snapshot: null, error: String(err?.message || err) };
@@ -338,7 +349,7 @@ export async function deleteLegacyCmsSnapshotAction(snapshotId: string) {
 
 export async function resolveLegacyCmsFeedbackAction(
   feedbackId: string,
-  resolution: { status: "resolved" | "in_review" | "closed"; notes: string }
+  resolution: { status: "resolved" | "reviewed" | "pending"; notes: string }
 ) {
   try {
     const viewer = await requireViewer();
@@ -352,12 +363,10 @@ export async function resolveLegacyCmsFeedbackAction(
 export async function syncAndLoadStudentParentRelationsAction() {
   try {
     const viewer = await requireViewer();
-    // Trigger deep sync for students and parents if needed
-    try {
-      await cms.syncLegacyCms(viewer, { category: "students", deep: true, maxPages: 5 });
-      await cms.syncLegacyCms(viewer, { category: "parents", deep: true, maxPages: 5 });
-    } catch {
-      // Non-blocking if offline/unreachable
+    await cms.requireCmsCategories(viewer, ["students", "parents", "subscriptions"]);
+    for (const category of ["students", "parents", "subscriptions"] as const) {
+      const sync = await cms.syncLegacyCms(viewer, { category, deep: true });
+      if (!sync.ok) throw new Error(sync.message);
     }
     const res = await cms.getStudentParentRelations();
     return { ok: true, data: res };
@@ -381,6 +390,7 @@ export async function saveUserCmsOverrideAction(override: {
   username?: string;
   password?: string;
   allowedTabs: LegacyCmsCategory[];
+  canResolveFeedback?: boolean;
 }) {
   try {
     const viewer = await requireViewer();

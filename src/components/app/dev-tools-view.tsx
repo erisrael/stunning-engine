@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils";
 
 type Releases = { environments: { name: string; latest: { version: string | null; at: string; status: string } | null }[]; releases: { id: string; name: string; version: string | null; task_count: number; created_at: string; deployments: { environment: string; status: string; at: string }[] }[] };
 type Incident = { id: string; title: string; severity: string; status: string; started_at: string; resolved_at: string | null; source: string; url: string | null; bug_task_id: string | null; postmortem_doc_id: string | null; timeline: { at: string; text: string }[] };
-type Case = { id: string; title: string; steps: string; expected: string; requirement: string | null; doc_id: string | null; last: { result: string; at: string } | null; runs: number };
+type Case = { review_status:string; review_note:string|null; id: string; title: string; steps: string; expected: string; requirement: string | null; doc_id: string | null; last: { result: string; at: string } | null; runs: number };
 type Template = { id: string; name: string; description: string; builtIn: boolean; body: { epics: { title: string; tasks: { title: string }[] }[]; milestones: { name: string }[] } };
 type Tools = { keyHint: string | null; webhooks: { id: string; url: string; events: string[] }[]; slack: boolean; telegram: { chatId: string } | null; notify: string[] } | null;
 type Trace = { title: string; rows: { requirement: string; tasks: { code: string; done: boolean }[]; pullRequests: { number: number; state: string }[]; tests: { title: string; result: string | null }[]; release: string | null; covered: boolean }[]; uncovered: string[] };
@@ -42,7 +42,7 @@ function Section({ id, title, description, children }: { id: string; title: stri
   );
 }
 
-export function DevToolsView(props: { dept: string; releases: Releases; incidents: Incident[]; cases: Case[]; docs: { id: string; title: string; kind: string }[]; templates: Template[]; tools: Tools; nextVersion: string; canWrite: boolean; canProjects: boolean; canConfigure: boolean; epics: Epic[]; drift: Drift; portfolio: Portfolio[] | null }) {
+export function DevToolsView(props: { releaseReview:Awaited<ReturnType<typeof import("@/server/release-proposals").releaseProposals>>; dept: string; releases: Releases; incidents: Incident[]; cases: Case[]; docs: { id: string; title: string; kind: string }[]; templates: Template[]; tools: Tools; nextVersion: string; canWrite: boolean; canProjects: boolean; canConfigure: boolean; epics: Epic[]; drift: Drift; portfolio: Portfolio[] | null }) {
   const router = useRouter();
   const d = props.dept;
   const [busy, setBusy] = React.useState<string | null>(null);
@@ -57,9 +57,10 @@ export function DevToolsView(props: { dept: string; releases: Releases; incident
     router.refresh();
     return r.data;
   };
+  const [proposal,setProposal]=React.useState({name:"",notes:"",ids:[] as string[]});
   const [inc, setInc] = React.useState({ title: "", severity: "sev3" });
   const [note, setNote] = React.useState<Record<string, string>>({});
-  const [tc, setTc] = React.useState({ title: "", steps: "", expected: "", requirement: "", docId: "" });
+  const [tc, setTc] = React.useState<{id?:string;title:string;steps:string;expected:string;requirement:string;docId:string}>({ title: "", steps: "", expected: "", requirement: "", docId: "" });
   const [trace, setTrace] = React.useState<Trace | null>(null);
   const [tpl, setTpl] = React.useState<{ id: string; name: string; key: string; start: string } | null>(null);
   const [imp, setImp] = React.useState<{ source: "jira" | "trello" | "asana"; text: string; includeDone: boolean }>({ source: "jira", text: "", includeDone: false });
@@ -74,6 +75,9 @@ export function DevToolsView(props: { dept: string; releases: Releases; incident
   return (
     <div className="space-y-4" data-dev-tools>
       <Section id="releases" title="Releases and deployments" description={`Versions like 1.4.0 (next: ${props.nextVersion}). CI/CD reports each deployment with the API key; a deployment links to its release by version.`}>
+        {props.canWrite&&<div className="grid gap-2 rounded-lg border p-3"><h3 className="font-medium">Propose a release for team-lead approval</h3><Input aria-label="Release name" placeholder="Release name / version" value={proposal.name} onChange={e=>setProposal({...proposal,name:e.target.value})}/><Textarea aria-label="Release notes" placeholder="Release notes and verification results" value={proposal.notes} onChange={e=>setProposal({...proposal,notes:e.target.value})}/><div className="max-h-40 overflow-auto">{props.releaseReview.tasks.map(t=><label key={t.id} className="flex gap-2 py-1"><input type="checkbox" checked={proposal.ids.includes(t.id)} onChange={e=>setProposal({...proposal,ids:e.target.checked?[...proposal.ids,t.id]:proposal.ids.filter(id=>id!==t.id)})}/>{t.code}: {t.title}</label>)}{!props.releaseReview.tasks.length&&<p className="text-muted-foreground">No assigned tasks are ready for release yet.</p>}</div><Button disabled={!!busy||!proposal.ids.length} onClick={()=>go("proposal",()=>A.proposeReleaseAction(d,proposal),()=>{setProposal({name:"",notes:"",ids:[]});return "Release submitted to the lead";})}>Submit release proposal</Button></div>}
+        {props.releaseReview.proposals.map(p=><article key={p.id} className="space-y-2 rounded-lg border p-3"><strong>{p.name}</strong><p>{p.status} · {p.author} · {p.taskIds.length} tasks</p><p className="whitespace-pre-wrap text-muted-foreground">{p.notes}</p>{p.review_note&&<p>{p.review_note}</p>}{props.releaseReview.canApprove&&p.status==="submitted"&&<div className="flex flex-wrap gap-2"><Input aria-label={`Review note for ${p.name}`} placeholder="Review note (required for changes)" value={note[p.id]||""} onChange={e=>setNote({...note,[p.id]:e.target.value})}/><Button disabled={!!busy} onClick={()=>go("release-review",()=>A.decideReleaseAction(d,p.id,true,note[p.id]||""),()=>"Release approved and published")}>Approve and release</Button><Button variant="outline" disabled={!!busy} onClick={()=>go("release-review",()=>A.decideReleaseAction(d,p.id,false,note[p.id]||""),()=>"Changes requested")}>Request changes</Button></div>}</article>)}
+
         <div className="flex flex-wrap gap-2">
           {props.releases.environments.length ? (
             props.releases.environments.map((e) => (
@@ -192,7 +196,9 @@ export function DevToolsView(props: { dept: string; releases: Releases; incident
               <span className="w-14 text-xs font-medium">{c.requirement ?? "-"}</span>
               <span className="flex-1">{c.title}</span>
               <span className={cn("text-xs font-medium", RES[c.last?.result ?? ""])}>{c.last ? `${c.last.result} · ${when(c.last.at)}` : "not run"}</span>
-              {props.canWrite &&
+              <span className="text-xs">{c.review_status}</span>{props.canWrite&&<Button variant="ghost" size="xs" onClick={()=>setTc({id:c.id,title:c.title,steps:c.steps,expected:c.expected,requirement:c.requirement||"",docId:c.doc_id||""})}>Revise test</Button>}{c.review_note&&<p className="w-full text-xs">{c.review_note}</p>}
+              {props.releaseReview.canApprove&&c.review_status==="submitted"&&<><Input aria-label={`Review note for ${c.title}`} placeholder="Review note" value={note[c.id]||""} onChange={e=>setNote({...note,[c.id]:e.target.value})}/><Button size="xs" onClick={()=>go("test-review",()=>A.reviewTestCaseAction(d,c.id,true,note[c.id]||""),()=>"Test accepted")}>Accept test</Button><Button size="xs" variant="outline" onClick={()=>go("test-review",()=>A.reviewTestCaseAction(d,c.id,false,note[c.id]||""),()=>"Changes requested")}>Request changes</Button></>}
+              {props.canWrite && c.review_status==="approved" &&
                 (["pass", "fail", "blocked"] as const).map((r) => (
                   <Button key={r} size="xs" variant="outline" onClick={() => go("run", () => A.recordTestRunAction(d, { caseId: c.id, result: r }), (x) => ((x as { bugTaskId?: string } | undefined)?.bugTaskId ? "Failed; a bug was filed" : `Recorded ${r}`))}>
                     {r === "pass" ? "Pass" : r === "fail" ? "Fail" : "Blocked"}

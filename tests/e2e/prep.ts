@@ -33,6 +33,8 @@ async function attendance() {
   const cfg = await att.attendanceConfig();
   // This test checks in from the Attendance page, so Admin allows "from the app anywhere" (off by default).
   await att.saveAttendanceConfig(a, { shifts: cfg.shifts.map((s) => ({ ...s, workdays: [0, 1, 2, 3, 4, 5, 6] })), methods: { ...cfg.methods, anywhere: true } });
+  const {captureConfig,saveCaptureConfig}=await import("../../src/server/attendance-capture");
+  await saveCaptureConfig(a,{...(await captureConfig()),sites:[{id:"",name:"Main Entrance",networks:[],lat:null,lng:null,radiusM:150,checks:{network:false,location:false,device:true},posterKey:"",posterAt:""}]});
   const k = await att.createKiosk(a, "Main entrance");
   const pin = await att.resetPin(a, yonas.id);
   await att.newBadges(a, [hana.id]);
@@ -366,6 +368,16 @@ const PREPS: Record<string, () => Promise<unknown>> = {
     const pin = await att.resetPin(a, yonas.id);
     return { siteId: c.sites[0]!.id, code: posterCode(c.sites[0]!), pin, yonasCode: yonas.code };
   },
+};
+
+PREPS["repair-ui"]=async()=>{
+ await PREPS.navigation();const a=await admin();
+ const {saveLegacyCmsConfig,createLegacyCmsSnapshot}=await import("../../src/server/legacy-cms");
+ await saveLegacyCmsConfig(a,{baseUrl:"http://127.0.0.1:9",username:"fixture",password:"fixture",autoSync:false});
+ for(let i=0;i<125;i++) await run("INSERT INTO legacy_cms_records (id,category,external_id,title,data_json,synced_at) VALUES (?,?,?,?,?,?)",`fixture-${i}`,"students",String(i),`Fixture student ${i}`,JSON.stringify({Name:`Fixture student ${i}`,Grade:i%2?"Grade 10":"Grade 1",Status:i%2?"inactive":"active",Date:i<100?"2026-10-01":"2026-11-06",Phone:`090000${String(i).padStart(4,"0")}`}),new Date().toISOString());
+ await createLegacyCmsSnapshot(a,{versionName:"Browser verification",category:"students"});
+ const {captureConfig,saveCaptureConfig}=await import("../../src/server/attendance-capture");const cfg=await captureConfig();await saveCaptureConfig(a,{...cfg,sites:["Main office","Branch office"].map(name=>({id:"",name,networks:[],lat:null,lng:null,radiusM:100,checks:{network:false,location:false,device:true},posterKey:"",posterAt:""}))});
+ return {};
 };
 
 async function main() {

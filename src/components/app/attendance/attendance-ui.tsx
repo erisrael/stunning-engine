@@ -438,12 +438,17 @@ type MarkForm = { ids: string[]; names: string; status: MarkStatus; inTime: stri
 
 export function TeamBoard({ board, today, canManage, myId }: { board: Board; today: string; canManage: boolean; myId: string | null }) {
   const { act, busy } = useAct();
+  const router = useRouter();
+  const [page, setPage] = React.useState(1);
+  const [pageSize, setPageSize] = React.useState(25);
   const [q, setQ] = React.useState("");
   const [only, setOnly] = React.useState<string>("all");
   const [picked, setPicked] = React.useState<Set<string>>(new Set());
   const [form, setForm] = React.useState<MarkForm | null>(null);
   const needle = q.trim().toLowerCase();
   const rows = board.rows.filter((r) => (only === "all" || r.result.status === only) && (!needle || `${r.name} ${r.code} ${r.department ?? ""}`.toLowerCase().includes(needle)));
+  React.useEffect(() => { setPage(1); setPicked(new Set()); }, [q, only, pageSize, board.day]);
+  const shownRows = rows.slice((page - 1) * pageSize, page * pageSize);
   const markable = (r: BoardRow) => canManage || r.employeeId !== myId;
   const open = (list: BoardRow[]) =>
     setForm({
@@ -488,13 +493,14 @@ export function TeamBoard({ board, today, canManage, myId }: { board: Board; tod
           </p>
         </div>
       )}
+      <div className="flex items-center gap-2 text-sm"><label>Rows <select aria-label="Attendance rows per page" className="rounded border bg-background p-1" value={pageSize} onChange={e=>setPageSize(Number(e.target.value))}>{[10,25,50,100].map(n=><option key={n}>{n}</option>)}</select></label><span>{rows.length} matching people</span><Button variant="outline" size="sm" disabled={page<=1} onClick={()=>setPage(p=>p-1)}>Previous</Button><span>Page {page} of {Math.max(1,Math.ceil(rows.length/pageSize))}</span><Button variant="outline" size="sm" disabled={page*pageSize>=rows.length} onClick={()=>setPage(p=>p+1)}>Next</Button></div>
       <div className="flex flex-wrap items-center gap-2">
         <Button size="icon-sm" variant="outline" asChild aria-label="Previous day">
           <Link href={`/attendance?tab=team&day=${shiftDay(board.day, -1)}`}>
             <ChevronLeftIcon />
           </Link>
         </Button>
-        <span className="min-w-36 text-center text-sm font-semibold">{fmtDate(board.day)}</span>
+        <Input type="date" aria-label="Attendance date" max={today} value={board.day} className="w-40" onChange={e => { if(e.target.value) router.push(`/attendance?tab=team&day=${e.target.value}`); }} />
         <Button size="icon-sm" variant="outline" asChild aria-label="Next day" disabled={board.day >= today}>
           <Link href={`/attendance?tab=team&day=${shiftDay(board.day, 1)}`} aria-disabled={board.day >= today}>
             <ChevronRightIcon />
@@ -543,7 +549,7 @@ export function TeamBoard({ board, today, canManage, myId }: { board: Board; tod
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
+              {shownRows.map((r) => (
                 <tr key={r.employeeId} className="border-t">
                   <td className="px-2 py-1.5">
                     {markable(r) && (
@@ -1269,12 +1275,12 @@ function SetupLink({ code, onClose }: { code: { id: string; code: string; pin?: 
   );
 }
 
-const KIOSK_SITES = ["Main Entrance", "Studio / Recording Booth", "Branch 2 (Bole)", "Branch 3", "Operations Office"];
 
-export function Kiosks({ kiosks }: { kiosks: KioskInfo[] }) {
+
+export function Kiosks({ kiosks, sites }: { kiosks: KioskInfo[]; sites: {id:string;name:string}[] }) {
   const { act, busy } = useAct();
   const [name, setName] = React.useState("");
-  const [site, setSite] = React.useState("Main Entrance");
+  const [site, setSite] = React.useState(sites[0]?.name ?? "");
   const [setup, setSetup] = React.useState<{ id: string; code: string; pin?: string; name: string } | null>(null);
   const ago = (iso: string | null) => {
     if (!iso) return "never";
@@ -1350,6 +1356,7 @@ export function Kiosks({ kiosks }: { kiosks: KioskInfo[] }) {
           ))}
           {!kiosks.length && <li className="px-3 py-3 text-sm text-muted-foreground">No kiosks yet.</li>}
         </ul>
+        {!sites.length && <p className="text-sm text-muted-foreground">Add a site in Attendance capture setup above before pairing a kiosk.</p>}
         <form
           className="flex flex-wrap gap-2"
           onSubmit={async (e) => {
@@ -1367,14 +1374,14 @@ export function Kiosks({ kiosks }: { kiosks: KioskInfo[] }) {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {KIOSK_SITES.map((s) => (
-                <SelectItem key={s} value={s}>
-                  {s}
+              {sites.map((s) => (
+                <SelectItem key={s.id} value={s.name}>
+                  {s.name}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
-          <Button type="submit" variant="outline" disabled={busy || !name.trim()}>
+          <Button type="submit" variant="outline" disabled={busy || !name.trim() || !site}>
             <PlusIcon /> Add kiosk
           </Button>
         </form>

@@ -151,7 +151,7 @@ export function KioskPairing({ initialError }: { initialError?: string }) {
       <div className="w-full max-w-md space-y-6 text-center">
         {/* App Title & Header */}
         <div className="space-y-2">
-          <div className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
+          <div className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-primary/10 border border-primary/20 text-primary">
             <TabletIcon className="size-7" />
           </div>
           <h1 className="text-2xl font-bold tracking-tight">Connect Tablet Kiosk</h1>
@@ -169,10 +169,10 @@ export function KioskPairing({ initialError }: { initialError?: string }) {
         {/* 6-Digit PIN Entry */}
         <div className="space-y-4 rounded-2xl border border-border bg-muted p-5 shadow-xl backdrop-blur-md">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-              <KeyRoundIcon className="size-3.5 text-indigo-400" /> Enter 6-Digit Setup PIN
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+              <KeyRoundIcon className="size-3.5 text-primary" /> Enter 6-Digit Setup PIN
             </span>
-            <span className="text-[11px] text-muted-foreground">From Attendance &gt; Setup</span>
+            <span className="text-[11px] text-muted-foreground">From Attendance &gt; Capture</span>
           </div>
 
           {/* PIN display boxes */}
@@ -182,7 +182,7 @@ export function KioskPairing({ initialError }: { initialError?: string }) {
                 key={idx}
                 className={`flex size-12 items-center justify-center rounded-xl border text-xl font-bold transition-all ${
                   pin[idx]
-                    ? "border-indigo-400 bg-indigo-500/20 text-white shadow-inner"
+                    ? "border-primary bg-primary/10 text-foreground shadow-inner"
                     : "border-input bg-muted text-muted-foreground"
                 }`}
               >
@@ -224,7 +224,7 @@ export function KioskPairing({ initialError }: { initialError?: string }) {
               type="button"
               disabled={busy || pin.length < 6}
               onClick={() => handlePair(pin)}
-              className="h-12 rounded-xl bg-indigo-600 font-semibold text-white hover:bg-indigo-500 active:bg-indigo-700 transition-all disabled:opacity-40 flex items-center justify-center"
+              className="h-12 rounded-xl bg-primary font-semibold text-primary-foreground hover:bg-primary/90 active:bg-primary/80 transition-all disabled:opacity-40 flex items-center justify-center"
             >
               {busy ? <Loader2Icon className="size-5 animate-spin" /> : "Connect"}
             </button>
@@ -255,7 +255,7 @@ export function KioskPairing({ initialError }: { initialError?: string }) {
               className="w-full gap-2 border-input bg-transparent hover:bg-muted text-muted-foreground"
               onClick={handleInstallClick}
             >
-              <DownloadIcon className="size-4 text-blue-400" />
+              <DownloadIcon className="size-4 text-primary" />
               Install Kiosk App on this Device
             </Button>
           )}
@@ -263,7 +263,7 @@ export function KioskPairing({ initialError }: { initialError?: string }) {
 
         {/* Footer help */}
         <div className="space-y-1 text-xs text-muted-foreground">
-          <p>Admins can add and manage multiple sites in Attendance &gt; Setup &gt; Kiosks.</p>
+          <p>Admins can add and manage multiple sites in Attendance &gt; Capture &gt; Kiosks.</p>
           <p>For security, setup links and PINs expire after 24 hours.</p>
         </div>
       </div>

@@ -7,6 +7,8 @@
 // either does the task with pickers, a summary and Confirm (the same actions as the pages), or shows the way: it
 // opens the page, dims it, rings what to press with a short note, and moves on when it is pressed.
 
+import fallbackIntents from "@/lib/assistant-fallback.json";
+import { translate } from "@/lib/amharic";
 import * as React from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -14,7 +16,7 @@ import { BotIcon, CheckIcon, CircleDotIcon, ExternalLinkIcon, GripVerticalIcon, 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { askAiAction, assistantDataAction, confirmProposalAction, deleteConversationAction, listConversationsAction, listRoutinesAction, loadConversationAction, logAssistantAction, requestRunAction } from "@/app/actions/assistant";
+import { equipmentReportAction, askAiAction, assistantDataAction, confirmProposalAction, deleteConversationAction, listConversationsAction, listRoutinesAction, loadConversationAction, logAssistantAction, requestRunAction } from "@/app/actions/assistant";
 import { askedSteps, beginRun, RecordBar, RoutineRunner, SaveRoutineDialog, useRecorder } from "@/components/app/routines-client";
 import type { Routine, RoutineStep } from "@/server/routines";
 import { punchAction } from "@/app/actions/attendance";
@@ -635,44 +637,21 @@ export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantCo
     ) {
       const isAm = voice.lang === "am-ET" || /[\u1200-\u137F]/.test(t);
       const roleName = (ctx as any).userRole || ctx.who.role || "member";
-      if (isAm) {
-        say({
-          from: "bot",
-          text: `እኔ የስራ ረዳትዎ ነኝ። በእርስዎ (${roleName}) ሚና መሰረት የሚከተሉትን ማከናወን እችላለሁ፦\n\n• 🕒 **የስራ ሰዓት (Attendance):** ሰዓት መመዝገብ፣ መግባት/መውጣት እና የስራ ሰዓት ማረጋገጥ\n• 📅 **ፈቃድ (Leave):** የፈቃድ ጥያቄ ማቅረብ እና የቀረዎትን ቀን ማየት\n• 💼 **የስራ ተግባራት (Tasks):** የተሰጡዎትን ተግባራት መመልከት እና ማዘመን\n• 💬 **ጥያቄዎች:** ችግሮችን ሪፖርት ማድረግ\n• 🧭 **ገጾች:** "ሂድ ወደ..." በማለት ወደሚፈልጉት ገጽ መሄድ\n• ⚡ **Routines:** ተደጋጋሚ ስራዎችን በራስ-ሰር ማከናወን`,
-          actions: [
-            { label: "🕒 የስራ ሰዓት መመዝገብ", run: () => router.push("/attendance") },
-            { label: "📅 የፈቃድ ጥያቄ", run: () => router.push("/leave") },
-            { label: "⚡ Routines", run: () => router.push("/routines") },
-          ],
-        });
-      } else {
-        say({
-          from: "bot",
-          text: `I'm your workspace assistant. Scoped to your **${roleName}** role, here is what I can help you with:\n\n• 🕒 **Attendance:** Check in, check out, review daily timesheets\n• 📅 **Leave:** Request leave, check remaining balances & approval progress\n• 💼 **Tasks & Work:** View your assigned tasks and log progress\n• 💬 **Questions:** Report issues or collaborate with teams\n• 🧭 **Navigation:** Say or type "Open [page name]" to jump to any page\n• ⚡ **Routines:** Automate repetitive daily workflows`,
-          actions: [
-            { label: "🕒 Check Attendance", run: () => router.push("/attendance") },
-            { label: "📅 Request Leave", run: () => router.push("/leave") },
-            { label: "⚡ View Routines", run: () => router.push("/routines") },
-          ],
-        });
-      }
+      const capabilities = ctx.flows.map(f => isAm ? translate(f.title) : f.title);
+      say({from:"bot",text: `${isAm ? "በእርስዎ ሚና መሠረት በሚከተሉት ሥራዎች ልረዳዎት እችላለሁ፦" : `For your ${roleName} role, I can guide you through:`}\n${capabilities.map(t=>`• ${t}`).join("\n")}\n\n${isAm ? "የሚፈልጉትን ገጽ ስም በመጻፍ እንድከፍት ይጠይቁኝ።" : "Ask me to open a page available to your role, or tell me what you need help with."}`});
       return;
     }
 
-    // Sidebar configuration navigation guidance
-    if (lower.includes("sidebar") || lower.includes("ሳይድባር") || lower.includes("configure role")) {
-      say({
-        from: "bot",
-        text: voice.lang === "am-ET"
-          ? "የሳይድባር ማስተካከያ ገጽ በAdmin ስር ይገኛል። ሚናዎችን እና የሚታዩትን ክፍሎች እዚህ ማስተካከል ይችላሉ፦"
-          : "You can configure which sidebar items are visible for each role on the Admin Sidebar configuration page:",
-        actions: [{ label: "Open Role Sidebar Config", run: () => router.push("/admin?tab=sidebar") }],
-      });
+    const intent = fallbackIntents.find(i => i.phrases.some(p => lower.includes(p.toLowerCase())));
+    if(intent) {
+      const place=PLACES.find(p=>p.name===intent.place && ctx.places.includes(p.name));
+      say({from:"bot",text:place ? `Open ${place.name} to continue.` : "This page is not available to your role.",actions:place ? [{label:place.name,run:()=>router.push(place.href)}] : []});
       return;
     }
 
     // Routines guidance
     if (lower.includes("routine") || lower.includes("ሩቲን")) {
+      if (!routinesOn) { say({from:"bot",text:"Routines are not enabled for your role."}); return; }
       say({
         from: "bot",
         text: voice.lang === "am-ET"
@@ -780,6 +759,13 @@ export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantCo
     if (!t) return;
     viaVoice.current = spoken;
     setText("");
+    if (/what can you do|\bcapabilities\b|^help$|ምን ማድረግ ትችላለህ|\broutines?\b|ሩቲን/i.test(t)) {
+      setMsgs(m=>[...m,{from:"me",text:t}]); keywordAnswer(t); return;
+    }
+    if(/repair|replacement|maintenance|inventory report|ጥገና|መሳሪያ/.test(t.toLowerCase())) {
+      setMsgs(m=>[...m,{from:"me",text:t}]);setThinking(true);
+      void equipmentReportAction().then(r=>{if(!r.ok || !r.data) say({from:"bot",text:!r.ok?r.error:"Unable to load equipment."});else say({from:"bot",text:`Checked ${r.data.total} equipment records available to your role.\n`+(r.data.items.length?r.data.items.map(e=>`${e.tag} — ${e.name}: ${e.advice.join(" ")}`).join("\n"):"No maintenance, replacement or stock alerts found."),actions:[{label:"Equipment & maintenance",run:()=>router.push("/resources?tab=insights")}]});}).catch(()=>say({from:"bot",text:"Could not load equipment. Please try again."})).finally(()=>setThinking(false));return;
+    }
     const cmd = localCommand(t, base, ctx.places);
     if (cmd) {
       if (spoken) log({ event: "voice", text: t });
@@ -802,7 +788,7 @@ export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantCo
     const rt = want && routines ? routines.find((r) => r.name.toLowerCase() === want) ?? routines.find((r) => r.name.toLowerCase().includes(want)) : null;
     if (rt) {
       setMsgs((m) => [...m, { from: "me", text: t }]);
-      runRoutine(rt);
+      router.push("/routines");
       return;
     }
     setMsgs((m) => [...m, { from: "me", text: t }]);
@@ -945,24 +931,7 @@ export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantCo
                 <XIcon />
               </Button>
             </header>
-            {agent && (
-              <div className="flex items-center gap-1 border-b px-3 py-1.5 text-xs" role="radiogroup" aria-label="Assistant mode" data-assistant-mode={mode}>
-                {(["ask", "agent"] as const).map((m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    role="radio"
-                    aria-checked={mode === m}
-                    onClick={() => pickMode(m)}
-                    className={cn("flex items-center gap-1 rounded-full border px-2.5 py-0.5", mode === m ? (m === "agent" ? "border-[#188038] bg-[#188038] text-white" : "border-primary bg-primary text-primary-foreground") : "hover:bg-muted")}
-                  >
-                    {m === "agent" ? <BotIcon className="size-3" /> : <MessageSquareIcon className="size-3" />}
-                    {m === "agent" ? "Agent" : "Ask"}
-                  </button>
-                ))}
-                <span className="ml-1 truncate text-muted-foreground">{mode === "agent" ? "Does the allowed actions itself, as you" : "Answers and prepares actions to confirm"}</span>
-              </div>
-            )}
+
             {showConvos && (
               <div className="max-h-64 overflow-y-auto border-b p-2 text-xs" data-assistant-convos>
                 {!convos ? (
@@ -1084,20 +1053,7 @@ export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantCo
                         {voice.lang === "am-ET" ? "የእለት ተግባራት (Routines)" : "View Routines"}
                       </button>
                     )}
-                    <button
-                      type="button"
-                      onClick={() => ask(voice.lang === "am-ET" ? "የዛሬ ሰዓት መመዝገቢያ ሁኔታዬን አሳየኝ" : "Check my attendance status")}
-                      className="rounded-full border border-border bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground px-3 py-1 text-xs transition-colors"
-                    >
-                      {voice.lang === "am-ET" ? "🕒 የስራ ሰዓት" : "🕒 Attendance"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => ask(voice.lang === "am-ET" ? "የቀረኝን የፈቃድ ቀን አሳየኝ" : "Check my leave balances")}
-                      className="rounded-full border border-border bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground px-3 py-1 text-xs transition-colors"
-                    >
-                      {voice.lang === "am-ET" ? "📅 የፈቃድ ቀናት" : "📅 Leave balance"}
-                    </button>
+
                   </div>
                 </div>
               )}

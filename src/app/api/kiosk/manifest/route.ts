@@ -10,7 +10,7 @@ export function GET() {
     background_color: "#ffffff",
     theme_color: "#7b68ee",
     orientation: "any",
-    icons: [{ src: "/api/branding/favicon", sizes: "any", purpose: "any" }],
+    icons: [192,512].map(size=>({src:`/brand/kiosk-${size}.png`,sizes:`${size}x${size}`,type:"image/png",purpose:"any maskable"})),
   };
 
   return Response.json(manifest, {

@@ -1,68 +1,40 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getLegacyCmsConfig, authenticateFilament } from "@/server/legacy-cms";
+import { getLegacyCmsConfigForUser, authenticateFilament, requireCmsCategories } from "@/server/legacy-cms";
+import { requireViewer } from "@/server/auth";
 
 export async function GET(request: NextRequest) {
+  let viewer;
   try {
-    const { searchParams } = new URL(request.url);
-    const targetUrl = searchParams.get("url");
-
-    if (!targetUrl) {
-      return new NextResponse("Missing url parameter", { status: 400 });
+    viewer = await requireViewer();
+    await requireCmsCategories(viewer, ["invoices"]);
+  } catch {
+    return new NextResponse("Receipt access denied", { status: 403 });
+  }
+  try {
+    const target = request.nextUrl.searchParams.get("url");
+    if (!target) return new NextResponse("Missing receipt URL", { status: 400 });
+    const config = await getLegacyCmsConfigForUser(viewer);
+    const base = new URL(config.baseUrl);
+    const url = new URL(target, base);
+    if (url.origin !== base.origin || url.username || url.password || !["https:", "http:"].includes(url.protocol)) {
+      return new NextResponse("Receipt must belong to the configured CMS", { status: 400 });
     }
-
-    const config = await getLegacyCmsConfig();
-    const baseUrl = config.baseUrl.replace(/\/+$/, "");
-
-    // Normalize full target URL
-    let fullUrl = targetUrl;
-    if (targetUrl.startsWith("/")) {
-      fullUrl = `${baseUrl}${targetUrl}`;
-    } else if (!targetUrl.startsWith("http")) {
-      fullUrl = `${baseUrl}/${targetUrl}`;
+    const cookie = config.username && config.password ? await authenticateFilament(base.origin, config.username, config.password) : config.sessionCookie || "";
+    let current = url;
+    let response: Response | undefined;
+    for (let i = 0; i < 4; i++) {
+      response = await fetch(current, { headers: { Cookie: cookie, Accept: "image/*,application/pdf" }, redirect: "manual", cache: "no-store", signal: AbortSignal.timeout(20000) });
+      if (![301, 302, 303, 307, 308].includes(response.status)) break;
+      const location = response.headers.get("location");
+      if (!location) break;
+      current = new URL(location, current);
+      if (current.origin !== base.origin || current.pathname.includes("/login")) return new NextResponse("CMS receipt session expired or redirected outside the CMS", { status: 502 });
     }
-
-    // Prepare auth headers
-    let cookieHeader = config.sessionCookie || "";
-    if (!cookieHeader && config.username && config.password) {
-      try {
-        cookieHeader = await authenticateFilament(baseUrl, config.username, config.password);
-      } catch (err) {
-        console.warn("[image-proxy] Auth error:", err);
-      }
-    }
-
-    const headers: Record<string, string> = {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-      Accept: "image/*,application/pdf,*/*",
-    };
-    if (cookieHeader) headers["Cookie"] = cookieHeader;
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 12000);
-
-    const upstreamRes = await fetch(fullUrl, {
-      headers,
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-
-    if (!upstreamRes.ok) {
-      return new NextResponse(`Upstream returned HTTP ${upstreamRes.status}`, { status: upstreamRes.status });
-    }
-
-    const contentType = upstreamRes.headers.get("content-type") || "image/jpeg";
-    const arrayBuffer = await upstreamRes.arrayBuffer();
-
-    return new NextResponse(arrayBuffer, {
-      status: 200,
-      headers: {
-        "Content-Type": contentType,
-        "Cache-Control": "public, max-age=86400, stale-while-revalidate=43200",
-        "Access-Control-Allow-Origin": "*",
-      },
-    });
-  } catch (err: any) {
-    return new NextResponse(`Failed to fetch image: ${err?.message || err}`, { status: 500 });
+    if (!response?.ok) return new NextResponse(`Noor could not provide this receipt (HTTP ${response?.status ?? "unavailable"}). Open the invoice in Noor or ask its administrator to check receipt access.`, { status: 502 });
+    const contentType = response.headers.get("content-type")?.split(";")[0] || "";
+    if (!/^image\/(jpeg|png|webp|gif|avif)$/.test(contentType) && contentType !== "application/pdf") return new NextResponse("The CMS returned a page instead of a receipt", { status: 502 });
+    return new NextResponse(response.body, { headers: { "Content-Type": contentType, "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "sandbox" } });
+  } catch {
+    return new NextResponse("Unable to load receipt from CMS", { status: 502 });
   }
 }
-

@@ -12,7 +12,7 @@ import { SIDEBAR_ENTRIES } from "@/lib/nav";
 import { ROLES, ROLE_LABELS, type Role } from "@/lib/domain";
 
 // Admin chooses what each role's sidebar shows by default; people can hide more for themselves.
-export function SidebarAdmin({ defaults }: { defaults: Partial<Record<Role, string[]>> }) {
+export function SidebarAdmin({ defaults, roles }: { defaults: Partial<Record<Role, string[]>>; roles:{key:Role;label:string}[] }) {
   const router = useRouter();
   const [role, setRole] = React.useState<Role>("editing");
   const [hidden, setHidden] = React.useState<string[]>(defaults[role] ?? []);
@@ -30,9 +30,9 @@ export function SidebarAdmin({ defaults }: { defaults: Partial<Record<Role, stri
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {ROLES.map((r) => (
+            {roles.map(({key:r,label}) => (
               <SelectItem key={r} value={r}>
-                {ROLE_LABELS[r]}
+                {label}
               </SelectItem>
             ))}
           </SelectContent>

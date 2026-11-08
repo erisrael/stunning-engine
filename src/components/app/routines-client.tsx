@@ -69,11 +69,16 @@ function labelOf(el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement)
 // Recording
 // ---------------------------------------------------------------------------
 
+export function startRoutineRecording() { window.dispatchEvent(new Event("myseed:start-recording")); }
+
 export function useRecorder() {
   const [steps, setSteps] = React.useState<RoutineStep[] | null>(null);
   React.useEffect(() => {
     const r = read<RoutineStep[]>(REC);
     if (r) setSteps(r);
+    const start = () => { write(REC, []); setSteps([]); };
+    window.addEventListener("myseed:start-recording", start);
+    return () => window.removeEventListener("myseed:start-recording", start);
   }, []);
   const recording = steps !== null;
   React.useEffect(() => {

@@ -19,6 +19,7 @@ const dept = (key: string, view?: string) => async (u: AppUser) => {
 
 // Longest prefix first.
 const RULES: Rule[] = [
+  { prefix: "/legacy-cms", check: async u => (await Promise.all(u.roles.map(r => import("./legacy-cms").then(c=>c.allowedCategoriesForUser(r,u.id))))).some(a=>a.length>0) },
   { prefix: "/admin/data", any: ["data.manage"] },
   { prefix: "/admin", any: ["users.manage", "data.manage"] },
   { prefix: "/audit", any: ["users.manage"] },
@@ -61,6 +62,7 @@ const RULES: Rule[] = [
 
 export async function canOpenPath(u: AppUser, href: string): Promise<boolean> {
   const path = href.split(/[?#]/)[0]!;
+  if(path === "/admin" && new URLSearchParams(href.split("?")[1] ?? "").get("tab") !== "data") return can(u,"users.manage");
   if (!path.startsWith("/") || path.startsWith("//")) return false;
   const d = path.match(/^\/d\/([a-z0-9-]+)(?:\/(\w+))?/) ?? path.match(/^\/(dev|marketing)(?:\/(\w+))?$/);
   if (d) return dept(d[1]!, d[2])(u);

@@ -4,6 +4,7 @@
 // finished and what is overdue. Printable (or saved as PDF from the print dialog), and downloadable as Excel.
 
 import * as React from "react";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { DownloadIcon, PrinterIcon, FilterIcon, CalendarIcon, UserIcon, FolderIcon, BarChart3Icon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -22,35 +23,12 @@ export type DevReportKind =
 export function ReportView({ dept, data, period, workspace }: { dept: string; data: DeptReportData; period: Period; workspace: string }) {
   const t = data.names.tasks.toLowerCase();
 
-  // Report Type & Filters
-  const [reportKind, setReportKind] = React.useState<DevReportKind>("standup");
-  const [filterDeveloper, setFilterDeveloper] = React.useState<string>("all");
-  const [filterProject, setFilterProject] = React.useState<string>("all");
-  const [filterStatus, setFilterStatus] = React.useState<string>("all");
-
-  // Filtered task lists
-  const filteredDone = data.doneList.filter((item) => {
-    if (filterDeveloper !== "all" && item.assignee !== filterDeveloper) return false;
-    return true;
-  });
-
-  const filteredOverdue = data.overdueList.filter((item) => {
-    if (filterDeveloper !== "all" && item.assignee !== filterDeveloper) return false;
-    return true;
-  });
-
-  // Filtered People
-  const filteredPeople = data.people.filter((p) => {
-    if (filterDeveloper !== "all" && p.name !== filterDeveloper) return false;
-    return true;
-  });
-
-  // Filtered Projects
-  const filteredProjects = data.projects.filter((p) => {
-    if (filterProject !== "all" && p.key !== filterProject) return false;
-    return true;
-  });
-
+  const router=useRouter(), pathname=usePathname(), params=useSearchParams();
+  const change=(key:string,value:string)=>{const q=new URLSearchParams(params); if(value==="all") q.delete(key); else q.set(key,value);router.push(`${pathname}?${q}`);};
+  const filterDeveloper=data.filters.person || "all", filterProject=data.filters.project || "all", filterStatus=data.filters.status || "all";
+  const reportKind = data.filters.sprint ? "retro" : period==="today" ? "standup" : period==="7d" ? "weekly" : "velocity";
+  const filteredDone=data.doneList, filteredOverdue=data.overdueList, filteredPeople=data.people, filteredProjects=data.projects;
+  const exportQuery=new URLSearchParams({dept,period,...Object.fromEntries(Object.entries(data.filters).filter((e):e is [string,string]=>!!e[1]))});
   const table = (head: string[], rows: (string | number | null)[][], empty: string) =>
     rows.length ? (
       <table className="w-full text-sm">
@@ -96,14 +74,14 @@ export function ReportView({ dept, data, period, workspace }: { dept: string; da
           {/* Report Kind Selector */}
           <div className="flex items-center gap-1.5">
             <span className="text-xs font-semibold text-muted-foreground">Type:</span>
-            <Select value={reportKind} onValueChange={(v) => setReportKind(v as DevReportKind)}>
+            <Select value={reportKind} onValueChange={(v) => {const q=new URLSearchParams(params);q.delete("sprint");q.set("period",v==="standup"?"today":v==="weekly"?"7d":"month");router.push(`${pathname}?${q}`);}}>
               <SelectTrigger className="h-8 w-56 text-xs">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="standup">Daily Standup Report</SelectItem>
                 <SelectItem value="weekly">Weekly Engineering Report</SelectItem>
-                <SelectItem value="retro">Sprint Retrospective Report</SelectItem>
+
                 <SelectItem value="velocity">Monthly Velocity &amp; Delivery</SelectItem>
               </SelectContent>
             </Select>
@@ -112,15 +90,15 @@ export function ReportView({ dept, data, period, workspace }: { dept: string; da
           {/* Filter by Single Developer */}
           <div className="flex items-center gap-1.5">
             <span className="text-xs font-semibold text-muted-foreground">Developer:</span>
-            <Select value={filterDeveloper} onValueChange={setFilterDeveloper}>
+            <Select value={filterDeveloper} onValueChange={v=>change("person",v)}>
               <SelectTrigger className="h-8 w-44 text-xs">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Developers</SelectItem>
-                {data.people.map((p) => (
-                  <SelectItem key={p.name} value={p.name}>
-                    {p.name}
+                {data.options.people.map((p) => (
+                  <SelectItem key={p} value={p}>
+                    {p}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -130,15 +108,15 @@ export function ReportView({ dept, data, period, workspace }: { dept: string; da
           {/* Filter by Project */}
           <div className="flex items-center gap-1.5">
             <span className="text-xs font-semibold text-muted-foreground">Project:</span>
-            <Select value={filterProject} onValueChange={setFilterProject}>
+            <Select value={filterProject} onValueChange={v=>change("project",v)}>
               <SelectTrigger className="h-8 w-44 text-xs">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Projects</SelectItem>
-                {data.projects.map((p) => (
-                  <SelectItem key={p.key} value={p.key}>
-                    {p.key} - {p.name}
+                {data.options.projects.map((p) => (
+                  <SelectItem key={p} value={p}>
+                    {p}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -148,7 +126,7 @@ export function ReportView({ dept, data, period, workspace }: { dept: string; da
           {/* Filter by Team Status */}
           <div className="flex items-center gap-1.5">
             <span className="text-xs font-semibold text-muted-foreground">Status:</span>
-            <Select value={filterStatus} onValueChange={setFilterStatus}>
+            <Select value={filterStatus} onValueChange={v=>change("status",v)}>
               <SelectTrigger className="h-8 w-36 text-xs">
                 <SelectValue />
               </SelectTrigger>
@@ -162,12 +140,14 @@ export function ReportView({ dept, data, period, workspace }: { dept: string; da
           </div>
         </div>
 
+        <label className="text-xs">Sprint<select className="ml-2 rounded border bg-background p-2" value={data.filters.sprint || "all"} onChange={e=>change("sprint",e.target.value)}><option value="all">All sprints</option>{data.options.sprints.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></label>
+        <label className="text-xs">Project status<select className="ml-2 rounded border bg-background p-2" value={data.filters.projectStatus || "all"} onChange={e=>change("projectStatus",e.target.value)}><option value="all">All statuses</option>{data.options.projectStatuses.map(s=><option key={s.key} value={s.key}>{s.label}</option>)}</select></label>
         <div className="flex items-center gap-2 ml-auto">
           <Button size="sm" onClick={() => window.print()} className="gap-1.5">
             <PrinterIcon className="size-4" /> Print / Save PDF
           </Button>
           <Button size="sm" variant="outline" asChild className="gap-1.5">
-            <a href={`/api/dept-report?dept=${encodeURIComponent(dept)}&period=${period}`}>
+            <a href={`/api/dept-report?${exportQuery}`}>
               <DownloadIcon className="size-4" /> Excel
             </a>
           </Button>
@@ -243,15 +223,15 @@ export function ReportView({ dept, data, period, workspace }: { dept: string; da
             <div className="grid gap-3 sm:grid-cols-3 text-xs">
               <div className="rounded border bg-card p-3 space-y-1">
                 <div className="font-semibold text-emerald-600">What went well</div>
-                <p className="text-muted-foreground">High velocity on core modules; {filteredDone.length} items completed on target.</p>
+                <p className="text-muted-foreground">{filteredDone.length} items completed in the selected sprint.</p>
               </div>
               <div className="rounded border bg-card p-3 space-y-1">
                 <div className="font-semibold text-amber-600">What can improve</div>
-                <p className="text-muted-foreground">Address estimation drift on long-running tasks and eliminate carry-over.</p>
+                <p className="text-muted-foreground">{filteredOverdue.length} open items have passed their due dates. Review their blockers with the assignees.</p>
               </div>
               <div className="rounded border bg-card p-3 space-y-1">
                 <div className="font-semibold text-primary">Action items for next sprint</div>
-                <p className="text-muted-foreground">Refine acceptance criteria during backlog grooming and set daily standup check-ins.</p>
+                <p className="text-muted-foreground">Use the sprint planner to capture agreed retrospective actions and assign owners.</p>
               </div>
             </div>
           </section>

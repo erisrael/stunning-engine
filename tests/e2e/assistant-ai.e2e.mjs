@@ -43,8 +43,8 @@ try {
   await dev.keyboard.press("Alt+KeyA");
   const panel = dev.getByRole("dialog", { name: "Assistant" });
   check("Alt+A opens the assistant", await panel.waitFor({ timeout: 5000 }).then(() => true, () => false));
-  check("AI suggestions are offered", (await dev.locator("[data-assistant-suggest]").count()) === 3);
-  check("Create a task is offered to a developer", await dev.locator('[data-assistant-flow="do.task"]').isVisible());
+  check("Chat starts without bulky suggestion lists", (await dev.locator("[data-assistant-suggest]").count()) === 0);
+  check("Capability help is available on demand", await dev.getByRole("button",{name:"What can you do?",exact:true}).isVisible());
 
   // An AI answer with a page to open.
   await dev.getByLabel("Ask the assistant").fill("where is attendance");
@@ -69,23 +69,18 @@ try {
   check("voice controls are there (read aloud, language)", (await dev.getByLabel("Voice language").count()) === 1 && (await dev.getByRole("button", { name: "Read answers aloud" }).count()) === 1);
   await dev.getByRole("button", { name: "Close the assistant" }).first().click();
 
-  // A tutorial.
-  await dev.goto(`${base}/dev`);
-  await dev.keyboard.press("Alt+KeyA");
-  if (await dev.getByRole("button", { name: "New conversation" }).count()) await dev.getByRole("button", { name: "New conversation" }).click();
-  await dev.locator("[data-assistant-tutorials] summary").click();
-  await dev.locator('[data-assistant-flow="t.twostep"]').click();
-  const g = dev.locator('[data-assistant-guide="t.twostep"]');
-  check("a tutorial shows its steps", await g.waitFor({ timeout: 5000 }).then(() => true, () => false) && (await g.locator("li").count()) === 4);
-  await g.getByRole("button", { name: "Next" }).click();
-  check("and moves on step by step", /Set up with an app/.test(await g.locator("li.font-medium").innerText()));
-  await g.getByRole("button", { name: "Back" }).click();
-  await dev.getByRole("button", { name: "Close the assistant" }).first().click();
+  // Capabilities are requested in chat, and routines live on their own page.
+  await dev.goto(`${base}/dev`);await dev.keyboard.press("Alt+KeyA");
+  await dev.getByLabel("Ask the assistant").fill("What can you do?");await dev.getByRole("button",{name:"Ask",exact:true}).click();
+  check("Capability help uses the person's role",await dev.getByText(/For your .* role, I can guide you through:/).waitFor({timeout:5000}).then(()=>true,()=>false));
+  await dev.getByLabel("Ask the assistant").fill("routines");await dev.getByRole("button",{name:"Ask",exact:true}).click();
+  await dev.getByRole("button",{name:"Open Routines",exact:true}).click();await dev.waitForURL(/routines/);
+  check("Assistant routes to the Routines page",dev.url().endsWith("/routines"));
+  await dev.getByRole("button",{name:"Close the assistant"}).first().click();
 
   // Record a routine: create a task as usual.
-  await dev.reload();
-  await dev.keyboard.press("Alt+KeyA");
-  await dev.locator("[data-assistant-routines]").getByRole("button", { name: "Record a routine" }).click();
+  await dev.getByRole("button", { name: "Record a routine",exact:true }).click();
+  await dev.goto(`${base}/dev`);
   check("recording shows at the top", await dev.getByRole("status", { name: "Recording a routine" }).waitFor({ timeout: 5000 }).then(() => true, () => false));
   await dev.getByRole("button", { name: "New task" }).first().click();
   await dev.getByRole("dialog").getByLabel("Title", { exact: true }).fill("Weekly notes");
@@ -101,9 +96,9 @@ try {
   check("routine saved", await toast(dev, /Routine "Weekly notes task" saved/));
 
   // Run it with another title; the person confirms (Admin's default).
-  await dev.keyboard.press("Alt+KeyA");
-  await dev.locator("[data-assistant-routine]").filter({ hasText: "Weekly notes task" }).click();
-  const runBox = dev.locator("[data-assistant-run]");
+  await dev.goto(`${base}/routines`);
+  await dev.locator("[data-routine]").filter({hasText:"Weekly notes task"}).getByRole("button",{name:"Run routine",exact:true}).click();
+  const runBox = dev.locator("[data-routine-start]");
   await runBox.getByLabel("Title").fill("Second note from the routine");
   await runBox.getByRole("button", { name: "Confirm and run" }).click();
   check("the routine runs by itself", await dev.locator("[data-routine-runner]").waitFor({ timeout: 10000 }).then(() => true, () => false));
@@ -118,7 +113,7 @@ try {
   await admin.goto(`${base}/admin/assistant`);
   const card = admin.locator("[data-ai-admin]");
   check("Admin sees the AI card", await card.waitFor({ timeout: 10000 }).then(() => true, () => false));
-  check("it is on, with the key kept sealed", (await card.getByRole("switch", { name: "Use AI answers" }).getAttribute("aria-checked")) === "true" && /Saved \(sealed\)/.test((await card.getByLabel("Anthropic API key").getAttribute("placeholder")) ?? ""));
+  check("AI is enabled without exposing the saved API key",(await card.getByRole("switch",{name:"Enable Smart AI Assistant across workspace"}).getAttribute("aria-checked"))==="true" && !(await admin.locator("body").innerText()).includes("sk-ant-e2e"));
   check("usage is counted", /[1-9]\d* questions/.test(await card.locator("[data-ai-usage]").innerText()));
   await admin.screenshot({ path: path.join(shots, "3-admin-ai.png"), fullPage: true });
 } catch (e) {

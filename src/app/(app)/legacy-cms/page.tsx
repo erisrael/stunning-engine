@@ -1,6 +1,9 @@
+import { eligibleQuestionRecipients } from "@/server/question-routing";
+import { redirect } from "next/navigation";
 import { requireViewer } from "@/server/auth";
 import {
-  getLegacyCmsConfig,
+  getLegacyCmsConfigForUser,
+  publicCmsConfig,
   listLegacyCmsRecords,
   getLegacyCmsStats,
   getCmsRoleVisibility,
@@ -12,7 +15,7 @@ import {
   allowedCategoriesForUser,
   type LegacyCmsCategory,
 } from "@/server/legacy-cms";
-import { can, userDirectory } from "@/server/users";
+import { can } from "@/server/users";
 import { PageHeader } from "@/components/app/primitives";
 import { LegacyCmsClient } from "./legacy-cms-client";
 
@@ -30,27 +33,22 @@ export default async function LegacyCmsPage({
   const visibility = await getCmsRoleVisibility();
 
   // Determine allowed categories for current user (checks per-user overrides first)
-  let allowedCategories: LegacyCmsCategory[] = LEGACY_CMS_CATEGORIES.map((c) => c.key);
-  const userOverrideCategories = await allowedCategoriesForUser(viewer.roles[0] || "staff", viewer.id);
-  if (!isAdmin) {
-    allowedCategories = userOverrideCategories;
-  } else if (userOverrideCategories.length < LEGACY_CMS_CATEGORIES.length) {
-    allowedCategories = userOverrideCategories;
-  }
+  const allowedCategories:LegacyCmsCategory[]=[...new Set((await Promise.all(viewer.roles.map(role=>allowedCategoriesForUser(role,viewer.id)))).flat())];
 
+  if (!allowedCategories.length) redirect("/dashboard?denied=permission");
   const requestedCategory = sp.category as LegacyCmsCategory;
   const initialCategory: LegacyCmsCategory =
     allowedCategories.includes(requestedCategory) ? requestedCategory : allowedCategories[0] || "students";
 
-  const config = await getLegacyCmsConfig();
+  const config = publicCmsConfig(await getLegacyCmsConfigForUser(viewer));
   const [initialRecords, stats, initialRelations, initialRevenue, initialGrowth, initialStorage, allUsers] = await Promise.all([
-    listLegacyCmsRecords(initialCategory, { limit: 100 }),
-    getLegacyCmsStats(),
-    getStudentParentRelations({ limit: 150 }),
-    getLegacyCmsRevenueAnalytics(),
-    getLegacyCmsGrowthAnalytics(),
+    listLegacyCmsRecords(initialCategory, { limit: 0 }),
+    getLegacyCmsStats(allowedCategories),
+    allowedCategories.includes("students") && allowedCategories.includes("parents") ? getStudentParentRelations() : Promise.resolve({ relations: [], summary: { totalStudents: 0, linkedParents: 0, withPhone: 0, activeSubscriptions: 0 } }),
+    allowedCategories.includes("invoices") ? getLegacyCmsRevenueAnalytics() : Promise.resolve({ summary: { totalRevenue: 0, totalPaidCount: 0, pendingApprovalRevenue: 0, pendingApprovalCount: 0, averageInvoiceValue: 0 }, byPaymentMethod: [], byStatus: [], byMonth: [], byPlan: [], invoices: [] }),
+    ["students", "parents", "invoices", "subscriptions"].every(c => allowedCategories.includes(c as LegacyCmsCategory)) ? getLegacyCmsGrowthAnalytics() : Promise.resolve({ summary: { totalStudents: 0, totalParents: 0, totalInvoices: 0, activeSubscriptions: 0, conversionRate: 0 }, gradeDistribution: [], cityDemographics: [], planPopularity: [], genderBreakdown: [] }),
     getLegacyCmsStorageStatus(),
-    userDirectory(),
+    eligibleQuestionRecipients(viewer),
   ]);
 
   const staffUsers = allUsers.map((u) => ({
@@ -68,6 +66,7 @@ export default async function LegacyCmsPage({
         description="Synchronized database mirror of cms.noorethiopia.com. Search students, parents, invoices, subscriptions, and revenue."
       />
       <LegacyCmsClient
+        cmsRoles={isAdmin?await (await import("@/server/role-catalog")).roleCatalog():[]}
         config={config}
         initialCategory={initialCategory}
         initialRecords={initialRecords}
@@ -78,7 +77,7 @@ export default async function LegacyCmsPage({
         initialRelations={initialRelations}
         initialRevenue={initialRevenue}
         initialGrowth={initialGrowth}
-        initialStorage={initialStorage}
+        initialStorage={initialStorage.filter(s=>allowedCategories.includes(s.category))}
         staffUsers={staffUsers}
       />
     </div>

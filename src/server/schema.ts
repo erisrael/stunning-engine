@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 55;
+export const SCHEMA_VERSION = 56;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -3096,6 +3096,44 @@ CREATE TABLE IF NOT EXISTS brand_banners (
 );
 
 -- v30: Legacy Noor Ethiopia CMS scraped data & multi-business Chapa accounts
+-- Extend the existing HR asset register, preserving issued assets and their history.
+ALTER TABLE equipment ADD COLUMN IF NOT EXISTS owner_id TEXT REFERENCES users(id);
+ALTER TABLE equipment ADD COLUMN IF NOT EXISTS assigned_to TEXT REFERENCES users(id);
+ALTER TABLE equipment ADD COLUMN IF NOT EXISTS quantity INTEGER NOT NULL DEFAULT 1 CHECK(quantity >= 0);
+ALTER TABLE equipment ADD COLUMN IF NOT EXISTS reorder_level INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE equipment ADD COLUMN IF NOT EXISTS purchase_cost DOUBLE PRECISION NOT NULL DEFAULT 0;
+ALTER TABLE equipment ADD COLUMN IF NOT EXISTS repair_cost DOUBLE PRECISION NOT NULL DEFAULT 0;
+ALTER TABLE equipment ADD COLUMN IF NOT EXISTS repairs INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE equipment ADD COLUMN IF NOT EXISTS maintenance_due TEXT;
+ALTER TABLE equipment ADD COLUMN IF NOT EXISTS warranty_until TEXT;
+ALTER TABLE equipment_events ADD COLUMN IF NOT EXISTS quantity_delta INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE equipment_events ADD COLUMN IF NOT EXISTS cost DOUBLE PRECISION NOT NULL DEFAULT 0;
+UPDATE equipment SET department = 'general' WHERE department IS NULL;
+UPDATE equipment SET assigned_to = employees.user_id FROM employees WHERE equipment.holder_id = employees.id AND equipment.assigned_to IS NULL;
+ALTER TABLE dev_test_cases ADD COLUMN IF NOT EXISTS review_status TEXT NOT NULL DEFAULT 'approved';
+ALTER TABLE dev_test_cases ADD COLUMN IF NOT EXISTS review_note TEXT;
+ALTER TABLE dev_test_cases ADD COLUMN IF NOT EXISTS reviewed_by TEXT REFERENCES users(id);
+CREATE TABLE IF NOT EXISTS dev_release_proposals (
+ id TEXT PRIMARY KEY, dept TEXT NOT NULL, name TEXT NOT NULL, notes TEXT NOT NULL, task_ids TEXT NOT NULL,
+ author_id TEXT NOT NULL REFERENCES users(id), status TEXT NOT NULL DEFAULT 'submitted',
+ review_note TEXT, reviewed_by TEXT REFERENCES users(id), release_id TEXT REFERENCES dept_releases(id), created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS resource_comments (
+ id TEXT PRIMARY KEY, purchase_id TEXT NOT NULL REFERENCES fin_purchases(id), author_id TEXT NOT NULL REFERENCES users(id), body TEXT NOT NULL, created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS dev_collaboration (
+  id TEXT PRIMARY KEY,
+  dept TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  author_id TEXT NOT NULL REFERENCES users(id),
+  project_id TEXT REFERENCES dept_projects(id) ON DELETE SET NULL,
+  body_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_dev_collab_scope ON dev_collaboration(dept, kind, project_id);
+
 CREATE TABLE IF NOT EXISTS legacy_cms_records (
   id TEXT PRIMARY KEY,
   category TEXT NOT NULL,
@@ -3362,6 +3400,9 @@ export const TABLES = [
   "password_history",
   "signin_log",
   "att_devices",
+  "resource_comments",
+  "dev_release_proposals",
+  "dev_collaboration",
   "legacy_cms_records",
   "legacy_cms_snapshots",
   "chapa_accounts",

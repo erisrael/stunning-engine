@@ -1,5 +1,6 @@
 "use client";
 
+import { getEligibleQuestionRecipientsAction } from "@/app/actions/question-routing";
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -671,6 +672,8 @@ export function QuestionsPanel({
   defaultOwner: string | null;
   stage: string | null;
 }) {
+  const [recipients,setRecipients] = React.useState<{id:string;name:string}[]>([]);
+  React.useEffect(()=>{ if(allowAsk) void getEligibleQuestionRecipientsAction().then(r=>{if(r.ok&&r.recipients)setRecipients(r.recipients);}); },[allowAsk]);
   const router = useRouter();
   const names = Object.fromEntries(users.map((u) => [u.id, u.name]));
   const [q, setQ] = React.useState("");
@@ -727,17 +730,17 @@ export function QuestionsPanel({
           )}
         </div>
       ))}
-      {isManager && allowAsk && (
+      {allowAsk && (
         <div className="space-y-2 rounded-lg border border-dashed p-3">
           <p className="text-sm font-medium">Ask a tracked question</p>
           <Textarea value={q} onChange={(e) => setQ(e.target.value)} placeholder="Can this still meet its release date?" />
           <div className="grid gap-2 sm:grid-cols-[1fr_180px_auto]">
-            <Combobox options={users.map((u) => ({ value: u.id, label: u.name }))} value={owner} onChange={setOwner} placeholder="Who should answer" />
+            <Combobox options={recipients.map((u) => ({ value: u.id, label: u.name }))} value={owner} onChange={setOwner} placeholder="Who should answer" />
             <Input type="datetime-local" value={due} onChange={(e) => setDue(e.target.value)} aria-label="Answer by" />
             <Button
               disabled={!q.trim() || !owner}
               onClick={async () => {
-                const res = await askQuestionAction({ itemId, ownerId: owner!, question: q, dueAt: due ? localInputToIso(due, tz) : null, stage });
+                const res = await askQuestionAction({ itemId: itemId === "general" ? null : itemId, ownerId: owner!, question: q, dueAt: due ? localInputToIso(due, tz) : null, stage });
                 if (!res.ok) return toast.error(res.error);
                 toast.success("Question sent");
                 setQ("");

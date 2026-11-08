@@ -419,34 +419,41 @@ export function taskToInput(t: Task) {
 // Department report (printable page and Excel)
 // ---------------------------------------------------------------------------
 
-export async function deptReport(user: AppUser, d: string, period: Period) {
+export type ReportFilters = { person?: string; project?: string; status?: string; sprint?: string; projectStatus?: string };
+export async function deptReport(user: AppUser, d: string, period: Period, filters: ReportFilters = {}) {
   const dp = await dept(d);
   const a = await workAccess(user, dp);
   const cfg = a.config;
-  const range = periodRange(period);
+  const sprints = await all<{id:string;name:string;start_date:string;end_date:string}>("SELECT id,name,start_date,end_date FROM dept_sprints WHERE dept=? ORDER BY start_date DESC", dp);
+  const sprint = filters.sprint ? sprints.find(s=>s.id===filters.sprint) : undefined;
+  if (filters.sprint && !sprint) throw new WorkflowError("VALIDATION", "Sprint not found in this department.");
+  const range = sprint ? {from:sprint.start_date,to:sprint.end_date,label:sprint.name} : periodRange(period);
   const end = `${range.to}T23:59:59.999Z`;
   const own = a.rights.seeAll ? "" : " AND (t.assignee_id = ? OR t.reporter_id = ?)";
   const ownP = a.rights.seeAll ? [] : [user.id, user.id];
-  const tasks = await all<{ id: string; code: string; title: string; type: string; status: string; status_category: string; priority: string; assignee_name: string | null; project_key: string | null; due_date: string | null; created_at: string; completed_at: string | null; estimate_hours: number | null; spent_hours: number | null; fields: string }>(
-    `SELECT t.id, t.code, t.title, t.type, t.status, t.status_category, t.priority, u.name AS assignee_name, p.key AS project_key, t.due_date, t.created_at, t.completed_at, t.estimate_hours, t.spent_hours, t.fields
+  const availableTasks = await all<{ id: string; project_id: string | null; sprint_id: string | null; project_status:string | null; code: string; title: string; type: string; status: string; status_category: string; priority: string; assignee_name: string | null; project_key: string | null; due_date: string | null; created_at: string; completed_at: string | null; estimate_hours: number | null; spent_hours: number | null; fields: string }>(
+    `SELECT t.id, t.project_id, t.sprint_id, p.status AS project_status, t.code, t.title, t.type, t.status, t.status_category, t.priority, u.name AS assignee_name, p.key AS project_key, t.due_date, t.created_at, t.completed_at, t.estimate_hours, t.spent_hours, t.fields
      FROM dept_tasks t LEFT JOIN users u ON u.id = t.assignee_id LEFT JOIN dept_projects p ON p.id = t.project_id WHERE t.dept = ?${own} ORDER BY t.code`,
     dp,
     ...ownP,
   );
-  const inP = (iso: string | null) => !!iso && iso >= range.from && iso <= end;
   const today = nowIso().slice(0, 10);
+  const tasks = availableTasks.filter(t => (!filters.person || (t.assignee_name ?? "Unassigned")===filters.person) && (!filters.project || t.project_key===filters.project) && (!filters.sprint || t.sprint_id===filters.sprint) && (!filters.projectStatus || t.project_status===filters.projectStatus) && (!filters.status || (filters.status==="done" ? t.status_category==="done" : filters.status==="overdue" ? OPEN_CATEGORIES.includes(t.status_category as never) && !!t.due_date && t.due_date<today : filters.status==="open" ? OPEN_CATEGORIES.includes(t.status_category as never) : t.status===filters.status)));
+  const options = { people:[...new Set(availableTasks.map(t=>t.assignee_name ?? "Unassigned"))].sort(), projects:[...new Set(availableTasks.map(t=>t.project_key).filter((p):p is string=>!!p))].sort(), sprints, projectStatuses:cfg.projectStatuses };
+  const inP = (iso: string | null) => !!iso && iso >= range.from && iso <= end;
   const open = tasks.filter((t) => OPEN_CATEGORIES.includes(t.status_category as never));
   const done = tasks.filter((t) => t.status_category === "done" && inP(t.completed_at));
   const created = tasks.filter((t) => inP(t.created_at));
-  const time = await all<{ user_name: string; minutes: number }>(
-    "SELECT u.name AS user_name, SUM(e.minutes) AS minutes FROM dept_time_entries e JOIN users u ON u.id = e.user_id WHERE e.dept = ? AND e.started_at >= ? AND e.started_at <= ? AND e.ended_at IS NOT NULL GROUP BY u.name ORDER BY u.name",
+  const time = tasks.length ? await all<{ user_name: string; minutes: number }>(
+    `SELECT u.name AS user_name, SUM(e.minutes) AS minutes FROM dept_time_entries e JOIN users u ON u.id = e.user_id WHERE e.dept = ? AND e.started_at >= ? AND e.started_at <= ? AND e.ended_at IS NOT NULL AND e.task_id IN (${tasks.map(()=>"?").join(",")}) GROUP BY u.name ORDER BY u.name`,
     dp,
     range.from,
     end,
-  );
+    ...tasks.map(t=>t.id),
+  ) : [];
   const projects = await all<{ id: string; key: string; name: string; status: string; due_date: string | null; budget: number | null }>("SELECT id, key, name, status, due_date, budget FROM dept_projects WHERE dept = ? AND archived = 0 ORDER BY key", dp);
-  const projTasks = await all<{ project_id: string; status_category: string }>("SELECT project_id, status_category FROM dept_tasks WHERE dept = ? AND project_id IS NOT NULL AND status_category <> 'cancelled'", dp);
-  const kpis = cfg.features.kpis
+  const projTasks = tasks.filter(t=>t.status_category!=="cancelled");
+  const kpis = cfg.features.kpis && !filters.person && !filters.project && !filters.status && !filters.sprint && !filters.projectStatus && a.rights.seeAll
     ? await all<{ metric: string; total: number }>(
         "SELECT m.metric, SUM(m.value) AS total FROM dept_metrics m JOIN dept_projects p ON p.id = m.project_id WHERE p.dept = ? AND m.recorded_on >= ? AND m.recorded_on <= ? GROUP BY m.metric",
         dp,
@@ -463,6 +470,7 @@ export async function deptReport(user: AppUser, d: string, period: Period) {
   }));
   const moneyFields = cfg.fields.filter((f) => f.active && f.type === "money");
   return {
+    options, filters,
     title: cfg.title,
     names: cfg.names,
     period: range,
@@ -470,7 +478,7 @@ export async function deptReport(user: AppUser, d: string, period: Period) {
     byStatus: cfg.statuses.map((s) => ({ label: s.label, count: tasks.filter((t) => t.status === s.key && (s.category === "done" ? inP(t.completed_at) : true)).length })).filter((x) => x.count),
     byType: cfg.types.map((ty) => ({ label: ty.label, open: open.filter((t) => t.type === ty.key).length, done: done.filter((t) => t.type === ty.key).length })).filter((x) => x.open || x.done),
     people,
-    projects: projects.map((p) => {
+    projects: projects.filter(p=>tasks.some(t=>t.project_id===p.id)).map((p) => {
       const list = projTasks.filter((t) => t.project_id === p.id);
       const d2 = list.filter((t) => t.status_category === "done").length;
       return { key: p.key, name: p.name, status: labelOf(cfg.projectStatuses, p.status), due: p.due_date, budget: p.budget == null ? null : n(p.budget), total: list.length, done: d2, progress: list.length ? Math.round((d2 / list.length) * 100) : 0 };

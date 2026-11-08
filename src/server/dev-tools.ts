@@ -14,7 +14,7 @@ import { all, get, nowIso, parseJson, run, uid } from "./db";
 import { seal, unseal } from "./secrets";
 import { loadUser, type AppUser } from "./users";
 import { audit, WorkflowError } from "./workflow";
-import { deptManagers } from "./departments";
+import { deptManagers, deptAccess, requireDept } from "./departments";
 import { getDeptConfig } from "./dept-config";
 import { importTasks, listTasks, saveTask } from "./work";
 import { workAccess } from "./dept-config";
@@ -336,21 +336,27 @@ export async function timeToRestoreHours(d: string) {
 
 export async function saveTestCase(user: AppUser, d: string, input: { id?: string | null; title: string; steps: string; expected: string; requirement?: string | null; docId?: string | null }) {
   const a = await workAccess(user, d, "write");
+  const lead=(await deptAccess(user,d)).manage;
   const title = input.title.trim().slice(0, 200);
   if (!title) throw new WorkflowError("VALIDATION", "Give the test a title.");
   const req = input.requirement?.trim().toUpperCase().slice(0, 20) || null;
+  if (input.docId && !await get("SELECT id FROM dept_docs WHERE id=? AND dept=?",input.docId,d)) throw new WorkflowError("VALIDATION","Choose a document in this department.");
   if (input.id) {
+    const old=await get<{created_by:string}>("SELECT created_by FROM dev_test_cases WHERE id=? AND dept=?",input.id,d);
+    if(!old || (!lead && old.created_by!==user.id)) throw new WorkflowError("FORBIDDEN","Only the author or team lead can edit a test case.");
     await run("UPDATE dev_test_cases SET title = ?, steps = ?, expected = ?, requirement = ?, doc_id = ? WHERE id = ? AND dept = ?", title, input.steps.slice(0, 4000), input.expected.slice(0, 2000), req, input.docId ?? null, input.id, a.dept);
+    await run("UPDATE dev_test_cases SET review_status=?,reviewed_by=?,review_note=NULL WHERE id=?",lead?"approved":"submitted",lead?user.id:null,input.id);
     return input.id;
   }
   const id = uid("tc_");
   await run("INSERT INTO dev_test_cases (id, dept, title, steps, expected, requirement, doc_id, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", id, a.dept, title, input.steps.slice(0, 4000), input.expected.slice(0, 2000), req, input.docId ?? null, user.id, nowIso());
+  await run("UPDATE dev_test_cases SET review_status=?,reviewed_by=? WHERE id=?",lead?"approved":"submitted",lead?user.id:null,id);
   return id;
 }
 
 export async function listTestCases(user: AppUser, d: string) {
   const a = await workAccess(user, d);
-  const cases = await all<{ id: string; title: string; steps: string; expected: string; requirement: string | null; doc_id: string | null }>("SELECT id, title, steps, expected, requirement, doc_id FROM dev_test_cases WHERE dept = ? ORDER BY requirement NULLS LAST, title", a.dept);
+  const cases = await all<{ review_status:string; review_note:string|null; id: string; title: string; steps: string; expected: string; requirement: string | null; doc_id: string | null }>("SELECT review_status, review_note, id, title, steps, expected, requirement, doc_id FROM dev_test_cases WHERE dept = ? ORDER BY requirement NULLS LAST, title", a.dept);
   const runs = await all<{ case_id: string; result: string; at: string; release: string | null; bug_task_id: string | null }>(
     "SELECT r.case_id, r.result, r.at, rl.name AS release, r.bug_task_id FROM dev_test_runs r LEFT JOIN dept_releases rl ON rl.id = r.release_id WHERE r.dept = ? ORDER BY r.at DESC",
     a.dept,
@@ -365,6 +371,8 @@ export async function recordTestRun(user: AppUser, d: string, input: { caseId: s
 async function addRun(d: string, user: AppUser, input: { caseId: string; result: "pass" | "fail" | "blocked"; note?: string | null; releaseId?: string | null }) {
   const c = await get<{ title: string; steps: string; expected: string; requirement: string | null }>("SELECT title, steps, expected, requirement FROM dev_test_cases WHERE id = ? AND dept = ?", input.caseId, d);
   if (!c) throw new WorkflowError("NOT_FOUND", "Test case not found.");
+  const review=await get<{review_status:string}>("SELECT review_status FROM dev_test_cases WHERE id=?",input.caseId);
+  if(review?.review_status!=="approved") throw new WorkflowError("INVALID_STATE","The team lead must accept this test case before it can run.");
   if (!["pass", "fail", "blocked"].includes(input.result)) throw new WorkflowError("VALIDATION", "The result is pass, fail or blocked.");
   let bug: string | null = null;
   if (input.result === "fail") {
@@ -402,7 +410,7 @@ export async function traceability(user: AppUser, d: string, docId: string) {
   const tasks = new Map((await listTasks(user, a.dept, { open: false })).tasks.map((t) => [t.id, t]));
   // GitHub's pull requests and GitLab's merge requests together (cachedPrsByCode includes both).
   const prs = await cachedPrsByCode(a.dept);
-  const cases = await all<{ id: string; title: string; requirement: string | null }>("SELECT id, title, requirement FROM dev_test_cases WHERE dept = ? AND (doc_id = ? OR doc_id IS NULL)", a.dept, docId);
+  const cases = await all<{ review_status:string; review_note:string|null; id: string; title: string; requirement: string | null }>("SELECT id, title, requirement FROM dev_test_cases WHERE dept = ? AND (doc_id = ? OR doc_id IS NULL)", a.dept, docId);
   const lastRun = async (caseId: string) => (await get<{ result: string }>("SELECT result FROM dev_test_runs WHERE case_id = ? ORDER BY at DESC LIMIT 1", caseId))?.result ?? null;
   const rels = new Map((await all<{ id: string; name: string; version: string | null }>("SELECT id, name, version FROM dept_releases WHERE dept = ?", a.dept)).map((r) => [r.id, r]));
   const rows = [];
@@ -501,4 +509,13 @@ export async function exportJiraCsv(user: AppUser, d: string) {
   const head = ["Issue key", "Summary", "Issue Type", "Status", "Priority", "Assignee", "Reporter", "Created", "Updated", "Due Date", "Labels", "Description", "Parent"];
   const lines = ts.map((t) => [t.code, t.title, lab(a.config.types, t.type), lab(a.config.statuses, t.status), lab(a.config.priorities, t.priority), t.assignee_name, t.reporter_name, t.created_at, t.updated_at, t.due_date, t.labels.join(" "), t.description, t.parent_code].map(cell).join(","));
   return [head.map(cell).join(","), ...lines].join("\r\n");
+}
+
+export async function reviewTestCase(user:AppUser,d:string,id:string,approve:boolean,note:string) {
+ await requireDept(user,d,"manage");
+ if(!approve && !note.trim()) throw new WorkflowError("VALIDATION","Explain the requested changes.");
+ const row=await get<{review_status:string}>("SELECT review_status FROM dev_test_cases WHERE id=? AND dept=?",id,d);
+ if(!row || row.review_status!=="submitted") throw new WorkflowError("INVALID_STATE","Only submitted tests can be reviewed.");
+ await run("UPDATE dev_test_cases SET review_status=?,reviewed_by=?,review_note=? WHERE id=?",approve?"approved":"changes_requested",user.id,note.trim().slice(0,2000),id);
+ await audit({actor:user},{action:"dev.test.review",summary:`${user.name} ${approve?"accepted":"returned"} test ${id}`});
 }

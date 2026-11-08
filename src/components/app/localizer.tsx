@@ -43,7 +43,7 @@ export function Localizer({ defaultCalendar = "gregorian" }: { defaultCalendar?:
 
     // What each text node showed before we changed it, and what we set, so page updates are followed.
     const seen = new WeakMap<Text, { from: string; to: string }>();
-    const attrs = new WeakMap<Element, string>();
+    const attrs = new WeakMap<Element, Record<string, {from:string;to:string}>>();
     let lang = root.dataset.lang ?? "en";
     // No choice of their own: the workspace's calendar (Settings).
     let cal = root.dataset.calendar || defaultCalendar;
@@ -68,17 +68,17 @@ export function Localizer({ defaultCalendar = "gregorian" }: { defaultCalendar?:
       } else if (prev && out === base) seen.delete(node);
     };
     const fixAttrs = (el: Element) => {
-      if (lang !== "am" || !hydrated(el) || el.closest("[data-no-localize]")) return;
-      for (const a of ["placeholder", "title"] as const) {
-        const v = el.getAttribute(a);
-        if (!v) continue;
-        const base = attrs.get(el) && v === AM[attrs.get(el)!] ? attrs.get(el)! : v;
-        const am = AM[base.trim()];
-        if (am && v !== am) {
-          attrs.set(el, base);
-          el.setAttribute(a, am);
-        }
+      if (!hydrated(el) || el.closest("[data-no-localize]")) return;
+      const saved = attrs.get(el) ?? {};
+      for (const attribute of ["placeholder", "title", "aria-label"] as const) {
+        const current = el.getAttribute(attribute);
+        if (!current) continue;
+        const previous = saved[attribute];
+        const base = previous && current === previous.to ? previous.from : current;
+        const translated = lang === "am" ? AM[base.trim()] || base : base;
+        if (current !== translated) { saved[attribute] = {from:base,to:translated}; el.setAttribute(attribute,translated); }
       }
+      attrs.set(el,saved);
     };
     const walk = (n: Node) => {
       if (n.nodeType === Node.TEXT_NODE) return fix(n as Text);
@@ -100,7 +100,16 @@ export function Localizer({ defaultCalendar = "gregorian" }: { defaultCalendar?:
       while (c) {
         const s = seen.get(c);
         if (s && c.nodeValue === s.to) c.nodeValue = s.from;
+        seen.delete(c);
         c = w.nextNode() as Text | null;
+      }
+      for (const el of document.body.querySelectorAll("[placeholder], [title], [aria-label]")) {
+        const saved = attrs.get(el);
+        if (!saved) continue;
+        for (const [attribute, value] of Object.entries(saved)) {
+          if (el.getAttribute(attribute) === value.to) el.setAttribute(attribute, value.from);
+        }
+        attrs.delete(el);
       }
     };
     // Now, and a few more sweeps for parts of the page that hydrate a little later (streamed in).
@@ -128,6 +137,7 @@ export function Localizer({ defaultCalendar = "gregorian" }: { defaultCalendar?:
             }
           } else if (lang !== "en" || cal !== "gregorian") {
             if (m.type === "characterData") fix(m.target as Text);
+            else if (m.type === "attributes") fixAttrs(m.target as Element);
             else m.addedNodes.forEach(walk);
           }
         }
@@ -135,11 +145,12 @@ export function Localizer({ defaultCalendar = "gregorian" }: { defaultCalendar?:
         busy = false;
       }
     });
-    obs.observe(document.body, { subtree: true, childList: true, characterData: true });
+    obs.observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["placeholder", "title", "aria-label"] });
     obs.observe(root, { attributes: true, attributeFilter: ["data-lang", "data-calendar"] });
     return () => {
       obs.disconnect();
       sweeps.forEach((t) => window.clearTimeout(t));
+      restore();
     };
   }, [pathname, defaultCalendar]);
   return null;

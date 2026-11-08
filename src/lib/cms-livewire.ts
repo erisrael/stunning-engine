@@ -42,3 +42,32 @@ export function cmsPagination(html: string, count: number, page: number, pageSiz
   const number = (s: string) => Number(s.replace(/,/g, ""));
   return match ? { from: number(match[1]), to: number(match[2]), totalResults: number(match[3]) } : { from: count ? (page - 1) * pageSize + 1 : 0, to: count ? (page - 1) * pageSize + count : 0, totalResults: count };
 }
+
+// Mount the remote form first; its signed snapshot and field names remain server-owned.
+export async function updateCmsFeedback(baseUrl:string,cookie:string,id:string,status:string,note:string) {
+  if(!/^\d+$/.test(id)) throw new Error("Choose a live feedback record.");
+  const page=new URL(`/admin/feedback/${id}`,baseUrl);
+  const response=await fetch(page,{headers:{Cookie:cookie},redirect:"error",cache:"no-store",signal:AbortSignal.timeout(20000)});
+  if(!response.ok) throw new Error(`Feedback unavailable (HTTP ${response.status})`);
+  const html=await response.text();
+  let snapshot=[...html.matchAll(/wire:snapshot="([^"]+)"/g)].map(m=>decode(m[1])).find(s=>JSON.parse(s).memo?.name?.endsWith("ViewFeedback"));
+  const csrf=html.match(/name="csrf-token"\s+content="([^"]+)"/)?.[1];
+  const uri=html.match(/data-update-uri="([^"]+)"/)?.[1];
+  if(!snapshot || !csrf || !uri || !html.includes("update_status")) throw new Error("Your Noor account cannot update this feedback.");
+  const endpoint=new URL(decode(uri),baseUrl);
+  if(endpoint.origin!==page.origin) throw new Error("Unexpected CMS endpoint.");
+  const send=async(method:string,params:unknown[],updates:Record<string,unknown>)=>{
+    const r=await fetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json","X-Livewire":"true","X-CSRF-TOKEN":decode(csrf),Cookie:cookie},body:JSON.stringify({_token:decode(csrf),components:[{snapshot,updates,calls:[{path:"",method,params}]}]}),redirect:"error",cache:"no-store",signal:AbortSignal.timeout(20000)});
+    if(!r.ok) throw new Error(`Noor feedback update failed (HTTP ${r.status})`);
+    const c=(await r.json()).components?.[0];
+    if(!c?.snapshot || c.effects?.redirect) throw new Error("Noor did not confirm the feedback action.");
+    snapshot=c.snapshot;
+    const state=JSON.parse(c.snapshot);
+    if(Object.keys(state.memo?.errors || {}).length) throw new Error("Noor rejected the feedback form. Check the status and note.");
+    return state.data;
+  };
+  const mounted=await send("mountAction",["update_status",{}, {recordKey:id}],{});
+  if(!JSON.stringify(mounted.mountedActions).includes("admin_note")) throw new Error("The Noor feedback form changed. Open the record in Noor to update it.");
+  const saved=await send("callMountedAction",[],{"mountedActions.0.data.status":status,"mountedActions.0.data.admin_note":note.trim().slice(0,5000)});
+  if(JSON.stringify(saved.mountedActions).includes("update_status")) throw new Error("Noor kept the form open; the change was not confirmed.");
+}

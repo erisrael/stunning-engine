@@ -112,7 +112,7 @@ async function hydrate(row: UserRow, rel?: Related): Promise<AppUser> {
 export async function permsFor(roles: Role[], leads: Stage[] = []): Promise<Capability[]> {
   const matrix = await getPermissionMatrix();
   const out = new Set<Capability>();
-  for (const r of roles) for (const c of matrix[r]) out.add(c);
+  for (const r of roles) for (const c of matrix[r] ?? []) out.add(c);
   for (const st of leads) for (const c of matrix[leadKey(st)]) out.add(c);
   return [...out];
 }

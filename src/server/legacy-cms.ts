@@ -1,3 +1,4 @@
+import { cmsField, cmsDateMatches, parseCmsDate } from "@/lib/cms-filters";
 import { queryCmsTable, cmsPagination, type CmsRemoteFilter } from "@/lib/cms-livewire";
 // Legacy CMS Scraper & Synchronizer (Phase 29):
 // Synchronizes data from Noor Ethiopia CMS (https://cms.noorethiopia.com)
@@ -62,6 +63,8 @@ export const DEFAULT_ROLE_VISIBILITY: CmsRoleVisibility = {
 };
 
 type StoredCmsConfig = {
+  userCredentials?: Record<string, { username: string; passwordEnc: string }>;
+  userOverrides?: Record<string, UserCmsOverride>;
   baseUrl?: string;
   username?: string;
   passwordEnc?: string;
@@ -143,6 +146,7 @@ export async function saveLegacyCmsConfig(
       : stored.sessionCookieEnc;
 
   const next: StoredCmsConfig = {
+    ...stored,
     baseUrl: (input.baseUrl ?? cur.baseUrl).trim().replace(/\/+$/, ""),
     username: (input.username ?? cur.username).trim(),
     passwordEnc,
@@ -242,6 +246,7 @@ function parseFilamentTable(html: string): Record<string, string>[] {
   const trMatches = [...tbodyMatch[0].matchAll(/<tr\b[\s\S]*?>([\s\S]*?)<\/tr>/gi)];
   const rows: Record<string, string>[] = [];
   for (const tr of trMatches) {
+    if (/colspan=/.test(tr[1]) && !/wire:key=/.test(tr[0])) continue;
     const tdMatches = [...tr[1].matchAll(/<td\b([\s\S]*?)>([\s\S]*?)<\/td>/gi)];
     // Filter out selection cell and action cell
     const validTds = tdMatches.filter((td) => {
@@ -441,133 +446,22 @@ export async function loginLegacyCms(
   }
 }
 
-export async function checkLegacyCmsAuth(
-  user: AppUser
-): Promise<{ ok: boolean; status: "connected" | "disconnected" | "error"; username: string; message: string; ms: number }> {
-  const start = Date.now();
-  const config = await getLegacyCmsConfig();
-  const baseUrl = config.baseUrl.replace(/\/+$/, "");
-  let username = config.username || "ops@myseed.com";
-  if (username === "ops@admin.com") username = "ops@myseed.com";
-  let password = config.password || DEFAULT_PASSWORD;
-
-  let cookieHeader = config.sessionCookie || "";
-
-  if (!cookieHeader) {
-    try {
-      cookieHeader = await authenticateFilament(baseUrl, username, password);
-      const cookieEnc = await seal(cookieHeader);
-      const rawRow = await get<{ value: string }>("SELECT value FROM settings WHERE key = 'cfg.legacy_cms'");
-      const stored = rawRow?.value ? parseJson<StoredCmsConfig>(rawRow.value, {}) : {};
-      await run("UPDATE settings SET value = ? WHERE key = 'cfg.legacy_cms'", JSON.stringify({ ...stored, username, sessionCookieEnc: cookieEnc }));
-    } catch (err: any) {
-      if (password !== DEFAULT_PASSWORD) {
-        try {
-          cookieHeader = await authenticateFilament(baseUrl, username, DEFAULT_PASSWORD);
-          const cookieEnc = await seal(cookieHeader);
-          const rawRow = await get<{ value: string }>("SELECT value FROM settings WHERE key = 'cfg.legacy_cms'");
-          const stored = rawRow?.value ? parseJson<StoredCmsConfig>(rawRow.value, {}) : {};
-          await run("UPDATE settings SET value = ? WHERE key = 'cfg.legacy_cms'", JSON.stringify({ ...stored, username, sessionCookieEnc: cookieEnc }));
-        } catch {
-          return {
-            ok: false,
-            status: "disconnected",
-            username,
-            message: `Not connected: ${err?.message || err}`,
-            ms: Date.now() - start,
-          };
-        }
-      } else {
-        return {
-          ok: false,
-          status: "disconnected",
-          username,
-          message: `Not connected: ${err?.message || err}`,
-          ms: Date.now() - start,
-        };
-      }
-    }
-  }
-
-  if (!cookieHeader) {
-    return {
-      ok: false,
-      status: "disconnected",
-      username: config.username,
-      message: "No active session cookie or credentials found.",
-      ms: Date.now() - start,
-    };
-  }
-
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 12000);
-    let res = await fetch(`${baseUrl}/admin/students`, {
-      headers: {
-        Cookie: cookieHeader,
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-      },
-      redirect: "manual",
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-
-    // Auto-refresh session if expired
-    const loc = res.headers.get("location") || "";
-    if ((res.status === 302 && loc.includes("/login")) || res.status === 401 || res.status === 419) {
-      if (config.username && config.password) {
-        try {
-          cookieHeader = await authenticateFilament(baseUrl, config.username, config.password);
-          const cookieEnc = await seal(cookieHeader);
-          const rawRow = await get<{ value: string }>("SELECT value FROM settings WHERE key = 'cfg.legacy_cms'");
-          const stored = rawRow?.value ? parseJson<StoredCmsConfig>(rawRow.value, {}) : {};
-          await run("UPDATE settings SET value = ? WHERE key = 'cfg.legacy_cms'", JSON.stringify({ ...stored, sessionCookieEnc: cookieEnc }));
-
-          const retryCtrl = new AbortController();
-          const retryTimeout = setTimeout(() => retryCtrl.abort(), 12000);
-          res = await fetch(`${baseUrl}/admin/students`, {
-            headers: {
-              Cookie: cookieHeader,
-              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-            },
-            redirect: "manual",
-            signal: retryCtrl.signal,
-          });
-          clearTimeout(retryTimeout);
-        } catch {
-          // ignore error here and handle below
-        }
-      }
-    }
-
-    const ms = Date.now() - start;
-    const retryLoc = res.headers.get("location") || "";
-    if (res.status === 200 && !retryLoc.includes("/login")) {
-      return {
-        ok: true,
-        status: "connected",
-        username: config.username,
-        message: `Session active and verified with Noor CMS (HTTP 200)`,
-        ms,
-      };
-    }
-
-    return {
-      ok: false,
-      status: "disconnected",
-      username: config.username,
-      message: `Session expired (HTTP ${res.status})`,
-      ms,
-    };
-  } catch (err: any) {
-    return {
-      ok: false,
-      status: "error",
-      username: config.username,
-      message: `CMS unreachable: ${err?.message || err}`,
-      ms: Date.now() - start,
-    };
-  }
+export async function checkLegacyCmsAuth(user:AppUser):Promise<{ok:boolean;status:"connected"|"disconnected"|"error";username:string;message:string;ms:number}> {
+ const start=Date.now();const config=await getLegacyCmsConfigForUser(user);
+ try{
+  const allowed=[...new Set((await Promise.all(user.roles.map(r=>allowedCategoriesForUser(r,user.id)))).flat())];
+  if(!allowed.length) throw new WorkflowError("FORBIDDEN","No CMS tables are enabled for your account.");
+  let cookie=config.sessionCookie || await authenticateFilament(config.baseUrl,config.username,config.password || "");
+  const path=LEGACY_CMS_CATEGORIES.find(c=>c.key===allowed[0])!.path;
+  const inspect=()=>fetch(new URL(path,config.baseUrl),{headers:{Cookie:cookie},redirect:"manual",cache:"no-store",signal:AbortSignal.timeout(15000)});
+  let result=await inspect();
+  if([302,401,419].includes(result.status)){cookie=await authenticateFilament(config.baseUrl,config.username,config.password || "");result=await inspect();}
+  if(!result.ok) return {ok:false,status:"disconnected",username:config.username,message:`Noor access check returned HTTP ${result.status}.`,ms:Date.now()-start};
+  const row=await get<{value:string}>("SELECT value FROM settings WHERE key='cfg.legacy_cms'");
+  const stored=row?parseJson<StoredCmsConfig>(row.value,{}):{};
+  if(!stored.userCredentials?.[user.id]) await patchCmsState({sessionCookieEnc:await seal(cookie)});
+  return {ok:true,status:"connected",username:config.username,message:"Your Noor account is connected.",ms:Date.now()-start};
+ }catch(err){return {ok:false,status:"error",username:config.username,message:err instanceof Error?err.message:"Unable to connect to Noor.",ms:Date.now()-start};}
 }
 
 export async function logoutLegacyCms(user: AppUser): Promise<{ ok: boolean; message: string }> {
@@ -597,19 +491,15 @@ export async function syncLegacyCms(
   user: AppUser,
   opts: { force?: boolean; category?: LegacyCmsCategory | "all"; deep?: boolean; maxPages?: number } = {}
 ): Promise<{ ok: boolean; message: string; counts: Record<LegacyCmsCategory, number>; targetCategory: string }> {
-  if (!can(user, "data.manage") && !can(user, "users.manage")) {
-    throw new WorkflowError("FORBIDDEN", "Only Admin or Data Managers can trigger Legacy CMS sync.");
-  }
+  if (!can(user, "data.manage") && !can(user, "users.manage") && (!opts.category || opts.category === "all")) throw new WorkflowError("FORBIDDEN", "Choose an authorized CMS table to refresh.");
+  await requireCmsCategories(user, opts.category && opts.category!=="all" ? [opts.category] : LEGACY_CMS_CATEGORIES.map(c=>c.key));
 
   const config = await getLegacyCmsConfig();
   const rawRow = await get<{ value: string }>("SELECT value FROM settings WHERE key = 'cfg.legacy_cms'");
   const stored = rawRow?.value ? parseJson<StoredCmsConfig>(rawRow.value, {}) : {};
 
   // Mark status syncing
-  await run(
-    "UPDATE settings SET value = ? WHERE key = 'cfg.legacy_cms'",
-    JSON.stringify({ ...stored, lastSyncStatus: "syncing" })
-  );
+  await patchCmsState({lastSyncStatus:"syncing"});
 
   const counts: Record<LegacyCmsCategory, number> = {
     students: 0,
@@ -627,11 +517,11 @@ export async function syncLegacyCms(
     const baseUrl = config.baseUrl.replace(/\/+$/, "");
     let cookieHeader = config.sessionCookie || "";
 
-    // Authenticate with Livewire if credentials provided and no explicit cookie
-    if (!cookieHeader && config.username && config.password) {
+    // Scheduled refreshes must not keep reusing an expired saved session.
+    if (config.username && config.password) {
       cookieHeader = await authenticateFilament(baseUrl, config.username, config.password);
       const cookieEnc = await seal(cookieHeader);
-      await run("UPDATE settings SET value = ? WHERE key = 'cfg.legacy_cms'", JSON.stringify({ ...stored, sessionCookieEnc: cookieEnc }));
+      await patchCmsState({sessionCookieEnc:cookieEnc});
     }
 
     const headers: Record<string, string> = {
@@ -647,107 +537,39 @@ export async function syncLegacyCms(
       : LEGACY_CMS_CATEGORIES.filter((c) => c.key === opts.category);
 
     for (const cat of targetCategories) {
-      let records: Record<string, unknown>[] = [];
+      await requireCmsCategories(user, [cat.key]);
       const targetUrl = `${baseUrl}${cat.path}`;
-
-      try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 20000);
-        let res = await fetch(targetUrl, { headers, signal: controller.signal });
-        clearTimeout(timeout);
-
-        // If session expired or redirected to login, auto-refresh and retry once
-        if (res.url.includes("/login") || res.status === 401 || res.status === 419) {
-          if (config.username && config.password) {
-            try {
-              cookieHeader = await authenticateFilament(baseUrl, config.username, config.password);
-              headers["Cookie"] = cookieHeader;
-              const cookieEnc = await seal(cookieHeader);
-              await run("UPDATE settings SET value = ? WHERE key = 'cfg.legacy_cms'", JSON.stringify({ ...stored, sessionCookieEnc: cookieEnc }));
-
-              const retryCtrl = new AbortController();
-              const retryTimeout = setTimeout(() => retryCtrl.abort(), 20000);
-              res = await fetch(targetUrl, { headers, signal: retryCtrl.signal });
-              clearTimeout(retryTimeout);
-            } catch (authErr) {
-              console.warn(`[legacy-cms] Auto re-auth failed during sync:`, authErr);
-            }
-          }
+      const response = await fetch(targetUrl, { headers, signal: AbortSignal.timeout(20000), redirect: "manual", cache: "no-store" });
+      if (!response.ok) throw new Error(`CMS ${cat.label} could not be loaded (HTTP ${response.status}). Existing records were preserved.`);
+      const html = await response.text();
+      const records: Record<string, string>[] = [];
+      let pagesToScrape = 1;
+      let totalPages = 1;
+      let expectedTotal = 0;
+      for (let page = 1; page <= pagesToScrape; page++) {
+        const result = await queryCmsTable(html, baseUrl, cookieHeader, { page, pageSize: 50, search: "" });
+        const rows = parseFilamentTable(result.html);
+        const pagination = cmsPagination(result.html, rows.length, page, result.pageSize);
+        if (page === 1) {
+          expectedTotal = pagination.totalResults;
+          totalPages = Math.max(1, Math.ceil(expectedTotal / result.pageSize));
+          pagesToScrape = opts.maxPages && opts.maxPages > 0 ? Math.min(totalPages, opts.maxPages) : totalPages;
+        } else if (pagination.totalResults !== expectedTotal) {
+          throw new Error(`CMS ${cat.label} changed during sync. Retry; existing data was preserved.`);
         }
-
-        if (res.ok && !res.url.includes("/login")) {
-          const contentType = res.headers.get("content-type") || "";
-          if (contentType.includes("application/json")) {
-            const json = await res.json();
-            records = Array.isArray(json) ? json : json.data || json.rows || json.items || [];
-          } else {
-            const html = await res.text();
-            const p1 = parseFilamentTable(html);
-            records.push(...p1);
-
-            // Check total count from Filament pagination (e.g. "Showing 1 to 10 of 5,024 results")
-            const totalMatch = html.match(/Showing \d+ to \d+ of ([0-9,]+) results/i);
-            const totalItems = totalMatch ? parseInt(totalMatch[1].replace(/,/g, ""), 10) : p1.length;
-            const totalPages = Math.ceil(totalItems / 10);
-
-            // Determine how many pages to scrape:
-            // - subscription-plans: 1
-            // - invoices: ALL pages (e.g. 41 pages ~ 403 invoices)
-            // - subscriptions: ALL pages (e.g. 68 pages ~ 677 subscriptions)
-            // - parents: all or deep (default 50-114 pages)
-            // - students: 30-100 pages (~300-1000 students) or deep all
-            let pagesToScrape = 1;
-            if (cat.key === "subscription-plans") {
-              pagesToScrape = 1;
-            } else if (opts.maxPages && opts.maxPages > 0) {
-              pagesToScrape = Math.min(totalPages, opts.maxPages);
-            } else if (opts.deep || opts.category === cat.key) {
-              pagesToScrape = totalPages; // Scrape ALL pages across category
-            } else if (cat.key === "invoices" || cat.key === "subscriptions") {
-              pagesToScrape = totalPages;
-            } else {
-              pagesToScrape = Math.min(totalPages, 50);
-            }
-
-            if (pagesToScrape > 1) {
-              const pageNums: number[] = [];
-              for (let p = 2; p <= pagesToScrape; p++) pageNums.push(p);
-
-              // Scrape in concurrent batches of 12 for higher performance
-              const BATCH = 12;
-              for (let i = 0; i < pageNums.length; i += BATCH) {
-                const batch = pageNums.slice(i, i + BATCH);
-                const batchResults = await Promise.all(
-                  batch.map(async (p) => {
-                    try {
-                      const pRes = await fetch(`${targetUrl}?page=${p}`, { headers });
-                      if (pRes.ok && !pRes.url.includes("/login")) {
-                        const pHtml = await pRes.text();
-                        return parseFilamentTable(pHtml);
-                      }
-                    } catch (err) {
-                      console.warn(`[legacy-cms] Page ${p} fetch failed for ${cat.key}:`, err);
-                    }
-                    return [];
-                  })
-                );
-                for (const rows of batchResults) {
-                  records.push(...rows);
-                }
-              }
-            }
-          }
-        }
-      } catch (fetchErr) {
-        console.warn(`[legacy-cms] Failed to fetch ${targetUrl}:`, fetchErr);
+        if (page < totalPages && rows.length !== result.pageSize) throw new Error("Incomplete CMS page. Existing cache was preserved.");
+        records.push(...rows);
       }
+      const complete = pagesToScrape === totalPages;
+      if (complete && records.length !== expectedTotal) throw new Error("CMS row count mismatch. Existing cache was preserved.");
 
       // Persist real scraped records into database transaction
       await tx(async () => {
-        await run("DELETE FROM legacy_cms_records WHERE category = ?", cat.key);
+        if (complete) await run("DELETE FROM legacy_cms_records WHERE category = ?", cat.key);
         for (const r of records) {
           const recordId = uid();
-          const extId = String(r.id || r.ID || r.student_id || r.code || r.invoice_number || uid());
+          const extId = String(r._recordId || r.id || r.ID || r.student_id || r.code || r.invoice_number || uid());
+          if (!complete) await run("DELETE FROM legacy_cms_records WHERE category = ? AND external_id = ?", cat.key, extId);
           const title = String(r.name || r.Name || r.title || r.Title || r.student_name || r.Student || r.Parent || extId);
           await run(
             "INSERT INTO legacy_cms_records (id, category, external_id, title, data_json, synced_at) VALUES (?, ?, ?, ?, ?, ?)",
@@ -765,12 +587,11 @@ export async function syncLegacyCms(
     }
 
     const updatedStored: StoredCmsConfig = {
-      ...stored,
       lastSyncedAt: nowIso(),
       lastSyncStatus: "success",
       lastSyncError: null,
     };
-    await run("UPDATE settings SET value = ? WHERE key = 'cfg.legacy_cms'", JSON.stringify(updatedStored));
+    await patchCmsState(updatedStored);
 
     const totalScraped = Object.values(counts).reduce((a, b) => a + b, 0);
     const targetLabel = opts.category && opts.category !== "all" ? `target page "${opts.category}"` : "all pages";
@@ -785,11 +606,10 @@ export async function syncLegacyCms(
   } catch (err: any) {
     const errorMsg = String(err?.message || err);
     const updatedStored: StoredCmsConfig = {
-      ...stored,
       lastSyncStatus: "error",
       lastSyncError: errorMsg,
     };
-    await run("UPDATE settings SET value = ? WHERE key = 'cfg.legacy_cms'", JSON.stringify(updatedStored));
+    await patchCmsState(updatedStored);
     return { ok: false, message: `Sync failed: ${errorMsg}`, counts, targetCategory };
   }
 }
@@ -811,7 +631,7 @@ export async function listLegacyCmsRecords(
   category: LegacyCmsCategory,
   opts: { q?: string; limit?: number; offset?: number } = {}
 ): Promise<{ rows: LegacyCmsRecord[]; total: number }> {
-  const limit = Math.min(200, Math.max(1, opts.limit ?? 50));
+  const limit = opts.limit === 0 ? 0 : Math.min(1000, Math.max(1, opts.limit ?? 50));
   const offset = Math.max(0, opts.offset ?? 0);
   const q = opts.q?.trim().toLowerCase();
 
@@ -827,8 +647,8 @@ export async function listLegacyCmsRecords(
   const countRow = await get<{ c: number }>(query.replace("SELECT id, category, external_id, title, data_json, synced_at", "SELECT COUNT(*) as c"), ...params);
   const total = Number(countRow?.c ?? 0);
 
-  query += " ORDER BY title ASC LIMIT ? OFFSET ?";
-  params.push(limit, offset);
+  query += " ORDER BY title ASC, id ASC";
+  if (limit) { query += " LIMIT ? OFFSET ?"; params.push(limit, offset); }
 
   const raw = await all<{ id: string; category: string; external_id: string; title: string; data_json: string; synced_at: string }>(query, ...params);
 
@@ -873,7 +693,7 @@ export async function searchLegacyCms(q: string): Promise<{
   };
 }
 
-export async function getLegacyCmsStats(): Promise<{
+export async function getLegacyCmsStats(allowed?: LegacyCmsCategory[]): Promise<{
   studentsCount: number;
   parentsCount: number;
   plansCount: number;
@@ -883,6 +703,7 @@ export async function getLegacyCmsStats(): Promise<{
 }> {
   const cfg = await getLegacyCmsConfig();
   const getCatCount = async (cat: LegacyCmsCategory) => {
+    if (allowed && !allowed.includes(cat)) return 0;
     const row = await get<{ c: number }>("SELECT COUNT(*) AS c FROM legacy_cms_records WHERE category = ?", cat);
     return Number(row?.c ?? 0);
   };
@@ -981,7 +802,7 @@ export async function getStudentParentRelations(opts?: {
     const sName = String(data.Student || s.title || "").trim().toLowerCase();
     const phone = cleanPhone(String(data.Phone || ""));
     const plan = String(data.Plan || "");
-    const status = String(data.Status || "active");
+    const status = String(data.Status || "unknown");
     const end = String(data["End Date"] || "");
     if (sName) {
       subByStudent.set(sName, { phone, plan, status, end });
@@ -998,23 +819,13 @@ export async function getStudentParentRelations(opts?: {
     const studentName = String(d.Name || st.title || "").trim();
     const studentGrade = String(d.Grade || "").trim();
     const rawParent = String(d.Parent || "").trim();
-    const city = String(d.City || "Addis Ababa").trim();
+    const city = String(d.City || "Unspecified").trim();
     const gender = String(d.Gender || "").trim();
     const allGrades = String(d["All Grades"] || "").trim();
-    const subStatus = String(d.Subscription || "None").trim();
+    const subStatus = String(d.Subscription || d["Subscription status"] || d["Subscription Status"] || "").trim();
 
     // Match parent
     let matchedParent = rawParent ? parentsByName.get(rawParent.toLowerCase()) : undefined;
-    if (!matchedParent && rawParent) {
-      // Partial match
-      for (const [key, pObj] of parentsByName.entries()) {
-        if (key.includes(rawParent.toLowerCase()) || rawParent.toLowerCase().includes(key)) {
-          matchedParent = pObj;
-          break;
-        }
-      }
-    }
-
     // Match subscription info
     const subInfo = subByStudent.get(studentName.toLowerCase()) || (rawParent ? subByStudent.get(rawParent.toLowerCase()) : undefined);
 
@@ -1036,8 +847,8 @@ export async function getStudentParentRelations(opts?: {
     const item: StudentParentRelation = {
       studentId: st.external_id || st.id,
       studentName,
-      grade: studentGrade || "Grade 5",
-      city: city || "Addis Ababa",
+      grade: studentGrade || "Unknown",
+      city: city || "Unknown",
       gender,
       subscriptionStatus: subStatus || (subInfo ? subInfo.status : "None"),
       allGrades,
@@ -1146,19 +957,19 @@ export async function getLegacyCmsRevenueAnalytics(opts?: {
   for (const r of rows) {
     const d = parseJson<Record<string, unknown>>(r.data_json, {});
     const student = String(d.Student || r.title || "").trim();
-    const plan = String(d.Plan || "3 month package").trim();
+    const plan = String(d.Plan || "Unspecified").trim();
     const rawAmt = String(d.Amount || "");
     const amount = cleanAmount(rawAmt);
     const amountFormatted = rawAmt || `ETB ${amount.toLocaleString()}`;
     const rawStatus = String(d.Status || d.status || "pending").toLowerCase();
-    const paymentMethodRaw = String(d["Payment Method"] || d.payment_method || "bank").toLowerCase();
-    const date = String(d.Date || d.created_at || "").trim();
+    const paymentMethodRaw = String(cmsField(d,["payment method","payment_method","method"]) || "unspecified").toLowerCase();
+    const date = cmsField(d,["date","created at","created_at","created","issued at","issued on"]).trim();
     const reason = String(d.Reason || `Subscription · ${student}`).trim();
     const approvedAt = d.approved_at ? String(d.approved_at) : undefined;
     const approvedBy = d.approved_by ? String(d.approved_by) : undefined;
 
     // Normalizing payment method names for clean display
-    let paymentMethod = "Bank Transfer";
+    let paymentMethod = /bank|transfer/.test(paymentMethodRaw) ? "Bank Transfer" : paymentMethodRaw || "Unspecified";
     if (paymentMethodRaw.includes("telebirr")) paymentMethod = "Telebirr";
     else if (paymentMethodRaw.includes("cbe")) paymentMethod = "CBE Birr / CBE";
     else if (paymentMethodRaw.includes("chapa")) paymentMethod = "Chapa Online";
@@ -1166,9 +977,13 @@ export async function getLegacyCmsRevenueAnalytics(opts?: {
     else if (paymentMethodRaw.includes("card")) paymentMethod = "Debit / Credit Card";
 
     // Invoices needing approval: manual bank slips or pending confirmation
-    const needsApproval = rawStatus === "pending" || rawStatus === "approval_needed" || (paymentMethod === "Bank Transfer" && rawStatus !== "paid");
+    const needsApproval = ["pending","pending_review","approval_needed"].includes(rawStatus);
+    if(!cmsDateMatches({Date:date},"custom",opts?.startDate || "",opts?.endDate || "")) continue;
+    if(opts?.method && opts.method!=="all" && paymentMethod.toLowerCase()!==opts.method.toLowerCase()) continue;
+    if(opts?.status && opts.status!=="all" && (opts.status==="needs_approval" ? !needsApproval : rawStatus!==opts.status)) continue;
+    if(opts?.search && ![student,plan,reason,r.external_id].some(v=>v.toLowerCase().includes(opts.search!.toLowerCase()))) continue;
 
-    if (rawStatus === "paid" || approvedAt) {
+    if (rawStatus === "paid") {
       totalRevenue += amount;
       totalPaidCount++;
     } else if (needsApproval) {
@@ -1183,19 +998,19 @@ export async function getLegacyCmsRevenueAnalytics(opts?: {
     methodMap.set(paymentMethod, curMethod);
 
     // Status aggregate
-    const statusLabel = rawStatus === "paid" || approvedAt ? "Paid" : needsApproval ? "Needs Approval" : "Cancelled / Failed";
+    const statusLabel = rawStatus === "paid" ? "Paid" : needsApproval ? "Needs Approval" : "Cancelled / Failed";
     const curStatus = statusMap.get(statusLabel) || { count: 0, sum: 0 };
     curStatus.count++;
     curStatus.sum += amount;
     statusMap.set(statusLabel, curStatus);
 
     // Month trend aggregate
-    const parsedDate = new Date(date);
-    const monthKey = !isNaN(parsedDate.getTime())
-      ? `${parsedDate.getFullYear()}-${String(parsedDate.getMonth() + 1).padStart(2, "0")}`
-      : "2026-08";
+    const parsedDate = parseCmsDate(date);
+    const monthKey = parsedDate !== null
+      ? parsedDate.toLocaleDateString("en-CA", { timeZone: "Africa/Addis_Ababa" }).slice(0, 7)
+      : "Unknown date";
     const curMonth = monthMap.get(monthKey) || { revenue: 0, count: 0 };
-    if (rawStatus === "paid" || approvedAt) {
+    if (rawStatus === "paid") {
       curMonth.revenue += amount;
     }
     curMonth.count++;
@@ -1213,7 +1028,7 @@ export async function getLegacyCmsRevenueAnalytics(opts?: {
     }
     if (opts?.status && opts.status !== "all") {
       if (opts.status === "needs_approval" && !needsApproval) continue;
-      if (opts.status === "paid" && rawStatus !== "paid" && !approvedAt) continue;
+      if (opts.status === "paid" && rawStatus !== "paid") continue;
     }
     if (opts?.search) {
       const q = opts.search.toLowerCase();
@@ -1229,9 +1044,9 @@ export async function getLegacyCmsRevenueAnalytics(opts?: {
       amount,
       amountFormatted,
       paymentMethod,
-      date: date || "Aug 2026",
+      date,
       reason,
-      status: rawStatus === "paid" || approvedAt ? "paid" : needsApproval ? "needs_approval" : rawStatus,
+      status: rawStatus === "paid" ? "paid" : needsApproval ? "needs_approval" : rawStatus,
       needsApproval,
       approvedAt,
       approvedBy,
@@ -1292,26 +1107,26 @@ export async function approveLegacyCmsInvoice(
     throw new WorkflowError("FORBIDDEN", "Only Finance officers or Admins can approve receipts and invoices.");
   }
 
+  await requireCmsCategories(user,["invoices"]);
   const row = await get<{ id: string; external_id: string; title: string; data_json: string }>(
-    "SELECT id, external_id, title, data_json FROM legacy_cms_records WHERE id = ? AND category = 'invoices'",
-    invoiceId
+    "SELECT id, external_id, title, data_json FROM legacy_cms_records WHERE (id = ? OR external_id = ?) AND category = 'invoices'",
+    invoiceId, invoiceId
   );
   if (!row) throw new WorkflowError("NOT_FOUND", "Invoice record not found.");
 
   const data = parseJson<Record<string, unknown>>(row.data_json, {});
   const updatedData = {
     ...data,
-    Status: "paid",
-    status: "paid",
+    local_verification: "verified",
     approved_at: nowIso(),
     approved_by: user.name,
     approval_notes: notes || "Manually verified by Finance officer",
   };
 
-  await run("UPDATE legacy_cms_records SET data_json = ? WHERE id = ?", JSON.stringify(updatedData), invoiceId);
+  await run("UPDATE legacy_cms_records SET data_json = ? WHERE id = ?", JSON.stringify(updatedData), row.id);
   await audit({ actor: user }, { action: "finance.invoice_approve", summary: `${user.name} approved invoice #${row.external_id} (${row.title})` });
 
-  return { ok: true, message: `Invoice #${row.external_id} successfully verified and marked as Paid.` };
+  return { ok: true, message: `Invoice #${row.external_id} verified in this workspace. Its payment status in Noor is unchanged; complete payment approval in Noor.` };
 }
 
 // ---------------------------------------------------------------------------
@@ -1352,9 +1167,9 @@ export async function getLegacyCmsGrowthAnalytics(): Promise<GrowthAnalytics> {
   for (const s of studentsRaw) {
     const d = parseJson<Record<string, unknown>>(s.data_json, {});
     const grade = String(d.Grade || "Unassigned").trim();
-    const city = String(d.City || "Addis Ababa").trim();
+    const city = String(d.City || "Unspecified").trim();
     const gender = String(d.Gender || "unspecified").trim().toLowerCase();
-    const sub = String(d.Subscription || "").toLowerCase();
+    const sub = cmsField(d,["Subscription","Subscription status","Status"]).toLowerCase();
 
     if (sub === "active") activeSubsCount++;
 
@@ -1366,7 +1181,7 @@ export async function getLegacyCmsGrowthAnalytics(): Promise<GrowthAnalytics> {
   const planMap = new Map<string, number>();
   for (const sub of subscriptionsRaw) {
     const d = parseJson<Record<string, unknown>>(sub.data_json, {});
-    const plan = String(d.Plan || "3 month package").trim();
+    const plan = String(d.Plan || "Unspecified").trim();
     planMap.set(plan, (planMap.get(plan) || 0) + 1);
   }
 
@@ -1440,10 +1255,11 @@ export async function fetchLegacyCmsLivePage(
   user: AppUser,
   opts: { category: LegacyCmsCategory; page?: number; pageSize?: number; search?: string; filters?: Record<string, string> }
 ): Promise<LiveCmsPageResult> {
+  await requireCmsCategories(user, [opts.category]);
   const page = Math.max(1, opts.page || 1);
   const pageSize = opts.pageSize && opts.pageSize > 0 ? opts.pageSize : 10;
   const search = (opts.search || "").trim();
-  const config = await getLegacyCmsConfig();
+  const config = await getLegacyCmsConfigForUser(user);
   const baseUrl = config.baseUrl.replace(/\/+$/, "");
 
   let cookieHeader = config.sessionCookie || "";
@@ -1556,7 +1372,8 @@ export async function fetchLegacyCmsInvoiceReceipt(
   pdfUrl?: string | null;
   rawDetails?: Record<string, string>;
 }> {
-  const config = await getLegacyCmsConfig();
+  await requireCmsCategories(user, ["invoices"]);
+  const config = await getLegacyCmsConfigForUser(user);
   const baseUrl = config.baseUrl.replace(/\/+$/, "");
   let cookieHeader = config.sessionCookie || "";
   if (!cookieHeader && config.username && config.password) {
@@ -1599,7 +1416,7 @@ export async function fetchLegacyCmsInvoiceReceipt(
     // Extract any image attachments (e.g. /storage/... or image tags)
     const imgMatches = [...html.matchAll(/<img\b[^>]*src="([^"]+)"[^>]*>/gi)]
       .map((m) => m[1])
-      .filter((src) => !src.includes("ui-avatars") && !src.includes("data:image/svg"));
+      .filter((src) => /(?:\/storage\/|\/uploads\/|\.(?:jpe?g|png|webp)(?:\?|$))/i.test(src) && !/avatar|logo|favicon|previewUrl/i.test(src));
 
     let imageUrl = imgMatches[0] || null;
     if (imageUrl && !imageUrl.startsWith("http")) {
@@ -1729,6 +1546,7 @@ export async function createLegacyCmsSnapshot(
   opts: { versionName: string; category: LegacyCmsCategory | "all"; description?: string }
 ): Promise<{ ok: boolean; snapshotId?: string; count?: number; message?: string }> {
   try {
+    await requireCmsCategories(user, opts.category === "all" ? LEGACY_CMS_CATEGORIES.map(c=>c.key) : [opts.category]);
     const records = opts.category === "all"
       ? await all<{ id: string; category: string; external_id: string; title: string; data_json: string; synced_at: string }>(
           "SELECT * FROM legacy_cms_records ORDER BY synced_at DESC"
@@ -1852,9 +1670,18 @@ export async function deleteLegacyCmsSnapshot(
 export async function resolveLegacyCmsFeedback(
   user: AppUser,
   feedbackId: string,
-  resolution: { status: "resolved" | "in_review" | "closed"; notes: string }
+  resolution: { status: "resolved" | "reviewed" | "pending"; notes: string }
 ): Promise<{ ok: boolean; message: string }> {
   try {
+    await requireCmsCategories(user, ["feedback"]);
+    const cfgRow=await get<{value:string}>("SELECT value FROM settings WHERE key='cfg.legacy_cms'");
+    const access=cfgRow ? parseJson<StoredCmsConfig>(cfgRow.value,{}).userOverrides?.[user.id] : undefined;
+    if(!can(user,"users.manage") && !access?.canResolveFeedback) throw new WorkflowError("FORBIDDEN","Admin has not enabled feedback actions for your account.");
+    if(!["pending","reviewed","resolved"].includes(resolution.status) || !resolution.notes.trim()) throw new WorkflowError("VALIDATION","Choose a supported status and describe the action taken.");
+    const config=await getLegacyCmsConfigForUser(user);
+    const cookie=await authenticateFilament(config.baseUrl,config.username,config.password || "");
+    const { updateCmsFeedback } = await import("@/lib/cms-livewire");
+    await updateCmsFeedback(config.baseUrl,cookie,feedbackId,resolution.status,resolution.notes);
     // Record resolution in audit log and update any cached record
     const existing = await get<{ id: string; data_json: string }>(
       "SELECT id, data_json FROM legacy_cms_records WHERE category = 'feedback' AND (external_id = ? OR id = ?)",
@@ -1893,12 +1720,12 @@ export async function allowedCategoriesForUser(role: string, userId?: string): P
   if (userId) {
     const rawRow = await get<{ value: string }>("SELECT value FROM settings WHERE key = 'cfg.legacy_cms'");
     const stored = rawRow?.value ? parseJson<StoredCmsConfig & { userOverrides?: Record<string, UserCmsOverride> }>(rawRow.value, {}) : {};
-    if (stored.userOverrides?.[userId]?.allowedTabs?.length) {
+    if (stored.userOverrides?.[userId]) {
       return stored.userOverrides[userId].allowedTabs;
     }
   }
   const visibility = await getCmsRoleVisibility();
-  return visibility[role] ?? ["students", "parents", "feedback"];
+  return visibility[role] ?? [];
 }
 
 export async function listUserCmsOverrides(user: AppUser): Promise<UserCmsOverride[]> {
@@ -1912,7 +1739,7 @@ export async function listUserCmsOverrides(user: AppUser): Promise<UserCmsOverri
 
 export async function saveUserCmsOverride(
   user: AppUser,
-  override: { userId: string; username?: string; password?: string; allowedTabs: LegacyCmsCategory[] }
+  override: { userId: string; username?: string; password?: string; allowedTabs: LegacyCmsCategory[]; canResolveFeedback?: boolean }
 ): Promise<{ ok: boolean; message: string }> {
   if (!can(user, "users.manage")) {
     throw new WorkflowError("FORBIDDEN", "Only Admin can configure user CMS access.");
@@ -1925,6 +1752,7 @@ export async function saveUserCmsOverride(
 
   const userOverrides = stored.userOverrides ?? {};
   userOverrides[override.userId] = {
+    canResolveFeedback: !!override.canResolveFeedback,
     userId: override.userId,
     userName: targetUser.name,
     username: override.username?.trim() || undefined,
@@ -1932,9 +1760,20 @@ export async function saveUserCmsOverride(
     updatedAt: new Date().toISOString(),
   };
 
+  const userCredentials = stored.userCredentials ?? {};
+  if (override.username?.trim()) {
+    const previous = userCredentials[override.userId];
+    if (!override.password && previous?.username !== override.username.trim()) {
+      throw new WorkflowError("VALIDATION", "Enter the password when changing the CMS login.");
+    }
+    userCredentials[override.userId] = { username: override.username.trim(), passwordEnc: override.password ? await seal(override.password) : previous!.passwordEnc };
+  } else {
+    delete userCredentials[override.userId];
+  }
   const updated = {
     ...stored,
     userOverrides,
+    userCredentials,
   };
 
   await run(
@@ -1967,6 +1806,7 @@ export async function deleteUserCmsOverride(
 
   if (stored.userOverrides && stored.userOverrides[userId]) {
     delete stored.userOverrides[userId];
+    if (stored.userCredentials) delete stored.userCredentials[userId];
     await run(
       "UPDATE settings SET value = ?, updated_at = ?, updated_by = ? WHERE key = 'cfg.legacy_cms'",
       JSON.stringify(stored),
@@ -1976,4 +1816,27 @@ export async function deleteUserCmsOverride(
   }
 
   return { ok: true, message: "Custom user CMS access removed." };
+}
+
+export async function requireCmsCategories(user: AppUser, categories: LegacyCmsCategory[]) {
+  const allowed = new Set((await Promise.all(user.roles.map(role => allowedCategoriesForUser(role, user.id)))).flat());
+  if (categories.some(category => !allowed.has(category))) throw new WorkflowError("FORBIDDEN", "Your CMS access does not include this table.");
+}
+
+export async function getLegacyCmsConfigForUser(user: AppUser): Promise<LegacyCmsConfig> {
+  const config = await getLegacyCmsConfig();
+  const row = await get<{ value: string }>("SELECT value FROM settings WHERE key = 'cfg.legacy_cms'");
+  const stored = row ? parseJson<StoredCmsConfig>(row.value, {}) : {};
+  const credentials = stored.userCredentials?.[user.id];
+  if (!credentials) return config;
+  return { ...config, username: credentials.username, password: (await unseal(credentials.passwordEnc)) ?? "", sessionCookie: "", hasPassword: true, hasSessionCookie: false };
+}
+
+export function publicCmsConfig(config: LegacyCmsConfig): LegacyCmsConfig {
+  const { password, sessionCookie, userAccess, ...safe } = config;
+  return safe;
+}
+
+async function patchCmsState(patch:Partial<StoredCmsConfig>){
+ await tx(async()=>{const row=await get<{value:string}>("SELECT value FROM settings WHERE key='cfg.legacy_cms' FOR UPDATE");const stored=row?parseJson<StoredCmsConfig>(row.value,{}):{};await run("INSERT INTO settings (key,value,updated_at) VALUES ('cfg.legacy_cms',?,?) ON CONFLICT (key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at",JSON.stringify({...stored,...patch}),nowIso());});
 }

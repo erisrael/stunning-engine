@@ -187,14 +187,15 @@ async function where(c: CaptureConfig, input: { code?: string | null; lat?: numb
         return { ok: false, reason: "Malformed dynamic kiosk QR code.", site: null, via: "qr", needLocation: false, distance: null, ip, deviceOk: false };
       }
 
-      const kiosk = await get<{ id: string; name: string; sign_key: string }>("SELECT id, name, sign_key FROM att_kiosks WHERE id = ? AND active = 1", kioskId);
+      const kiosk = await get<{ id: string; name: string; site: string; sign_key: string }>("SELECT id, name, site, sign_key FROM att_kiosks WHERE id = ? AND active = 1", kioskId);
       if (!kiosk || !kiosk.sign_key) {
         return { ok: false, reason: "Unrecognized kiosk terminal.", site: null, via: "qr", needLocation: false, distance: null, ip, deviceOk: false };
       }
 
-      // Verify timestamp freshness: allow within 120 seconds of rotation window
-      const diff = Math.abs(Date.now() - timestamp);
-      if (diff > 120_000) {
+      // Verify freshness against the configured rotation, with five seconds for clock/network skew.
+      const interval = (await (await import("./attendance")).attendanceConfig()).qrRefreshIntervalSec;
+      const diff = Date.now() - timestamp;
+      if (diff < -5000 || diff > (interval + 5) * 1000) {
         return { ok: false, reason: "This dynamic QR code has expired. Please scan the refreshing QR code on the kiosk screen.", site: null, via: "qr", needLocation: false, distance: null, ip, deviceOk: false };
       }
 
@@ -208,7 +209,7 @@ async function where(c: CaptureConfig, input: { code?: string | null; lat?: numb
       return {
         ok: true,
         reason: null,
-        site: { id: kiosk.id, name: kiosk.name },
+        site: { id: c.sites.find(s => s.name === kiosk.site)?.id ?? kiosk.id, name: kiosk.site || kiosk.name },
         via: "qr",
         needLocation: false,
         distance: null,

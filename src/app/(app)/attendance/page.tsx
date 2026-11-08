@@ -117,7 +117,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
       <div className="space-y-4">
         <CaptureSetup att={cfg} cap={cap} status={status} origin={origin} />
         <GeofenceAdmin config={await geofenceConfig()} sites={cap.sites.map((s) => ({ id: s.id, name: s.name, located: s.lat !== null && s.lng !== null }))} />
-        <Kiosks kiosks={kiosks} />
+        <Kiosks kiosks={kiosks} sites={cap.sites} />
       </div>
     );
   }

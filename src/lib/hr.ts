@@ -33,9 +33,9 @@ export const CONDITIONS = ["new", "good", "fair", "damaged"] as const;
 export type Condition = (typeof CONDITIONS)[number];
 export const CONDITION_LABELS: Record<Condition, string> = { new: "New", good: "Good", fair: "Fair", damaged: "Damaged" };
 
-export const EQUIPMENT_STATUSES = ["available", "issued", "repair", "retired"] as const;
+export const EQUIPMENT_STATUSES = ["available", "issued", "repair", "repair_needed", "replacement_needed", "retired", "lost"] as const;
 export type EquipmentStatus = (typeof EQUIPMENT_STATUSES)[number];
-export const EQUIPMENT_STATUS_LABELS: Record<EquipmentStatus, string> = { available: "Available", issued: "Issued", repair: "In repair", retired: "Retired" };
+export const EQUIPMENT_STATUS_LABELS: Record<EquipmentStatus, string> = { available: "Available", issued: "Issued", repair: "In repair", repair_needed: "Repair needed", replacement_needed: "Replacement needed", retired: "Retired", lost: "Lost" };
 
 export type EmergencyContact = { name: string; relation: string; phone: string };
 
