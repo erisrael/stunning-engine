@@ -51,6 +51,8 @@ async function main(){
  const matrix=await getPermissionMatrix(); await savePermissionMatrix({...matrix,qa_coordinator:["nav.questions"]},admin.id);
  assert.ok((await roleCatalog()).some(r=>String(r.key)==="qa_coordinator"));
  const custom=await make("custom",["qa_coordinator" as never]); assert.ok(custom.perms.includes("nav.questions"));
+ await savePermissionMatrix({...await getPermissionMatrix(),qa_2026:["nav.questions"]},admin.id);
+ const assistant=await import("../../src/server/assistant");await assistant.saveRoleOptions(admin,{qa_2026:{voice:false,ai:false}});assert.equal((await assistant.roleOptions("qa_2026")).voice,false);assert.equal((await assistant.roleOptions("qa_2026")).ai,false);
  await saveUserCmsOverride(admin,{userId:dev.id,username:"own@example.test",password:"not-a-real-password",allowedTabs:["students"]});
  assert.deepEqual(await allowedCategoriesForUser("developer",dev.id),["students"]);
  const config=await getLegacyCmsConfigForUser(dev); assert.equal(config.username,"own@example.test");assert.equal(config.password,"not-a-real-password");assert.equal(config.sessionCookie,"");assert.equal(publicCmsConfig(config).password,undefined);

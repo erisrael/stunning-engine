@@ -1,6 +1,8 @@
 "use client";
 import { LEGACY_CMS_CATEGORIES } from "@/lib/legacy-cms";
 
+import { waitForCmsTask } from "@/lib/cms-task-client";
+import type { LiveCmsPageResult } from "@/server/legacy-cms";
 import type { CmsRemoteFilter } from "@/lib/cms-livewire";
 import { cmsDateMatches, cmsChoiceMatches, cmsField } from "@/lib/cms-filters";
 import * as React from "react";
@@ -217,6 +219,20 @@ export function LegacyCmsClient({
   const [remoteValues, setRemoteValues] = React.useState<Record<string, string>>({});
   const liveRequestId = React.useRef(0);
   const [liveScanProgress, setLiveScanProgress] = React.useState("");
+  const [liveError,setLiveError] = React.useState("");
+  const livePartial = React.useRef<{key:string;records:Record<string,string>[];headers:string[];filters:CmsRemoteFilter[];next:number;pages:number;total?:number}|null>(null);
+  const [cmsProgress,setCmsProgress] = React.useState("");
+  const syncCancelled = React.useRef(false);
+  const syncBusy = React.useRef(false);
+  const synchronizeCms = async (opts:{category?:LegacyCmsCategory|"all";maxPages?:number;deep?:boolean;force?:boolean}) => {
+    if(syncBusy.current) return {ok:false,error:"A CMS refresh is already running.",message:"A CMS refresh is already running."};
+    syncBusy.current=true;syncCancelled.current=false;setCmsProgress("Starting CMS refresh…");
+    try {
+      return await waitForCmsTask<Awaited<ReturnType<typeof syncLegacyCmsAction>>>({kind:"sync",category:opts.category || "all",maxPages:opts.maxPages},setCmsProgress,()=>syncCancelled.current);
+    } catch(error) {const message=error instanceof Error?error.message:"CMS refresh failed";return {ok:false,error:message,message};}
+    finally {syncBusy.current=false;setCmsProgress("");}
+  };
+
   const [liveCompleteDataset, setLiveCompleteDataset] = React.useState(false);
   const liveDataset = React.useRef<{ key: string; records: Record<string, string>[]; headers: string[]; filters: CmsRemoteFilter[] } | null>(null);
   const [livePage, setLivePage] = React.useState(1);
@@ -332,9 +348,11 @@ export function LegacyCmsClient({
   // Student Parent Sync & Rebuild State
   const [relSyncLoading, setRelSyncLoading] = React.useState(false);
   const handleSyncAndLoadRelations = async () => {
+    if(syncBusy.current) {toast.error("A CMS refresh is already running.");return;}
     setRelSyncLoading(true);
     try {
-      const res = await syncAndLoadStudentParentRelationsAction();
+      syncBusy.current=true;syncCancelled.current=false;
+      const res = await waitForCmsTask<Awaited<ReturnType<typeof syncAndLoadStudentParentRelationsAction>>>({kind:"contacts"},setCmsProgress,()=>syncCancelled.current);
       setRelSyncLoading(false);
       if (res.ok && res.data) {
         setRelations(res.data.relations);
@@ -346,7 +364,7 @@ export function LegacyCmsClient({
     } catch (e: any) {
       setRelSyncLoading(false);
       toast.error(String(e?.message || e));
-    }
+    } finally {syncBusy.current=false;setCmsProgress("");}
   };
 
   // Archive Snapshots & Versioning State
@@ -482,7 +500,7 @@ export function LegacyCmsClient({
     setCheckingAuth(true);
     setAuthStatus((prev) => ({ ...prev, status: "checking", message: "Verifying session with Noor CMS..." }));
     try {
-      const res = await checkLegacyCmsAuthAction();
+      const res = await waitForCmsTask<Awaited<ReturnType<typeof checkLegacyCmsAuthAction>>>({kind:"auth"});
       setCheckingAuth(false);
       if (res.ok) {
         setAuthStatus({
@@ -523,29 +541,32 @@ export function LegacyCmsClient({
     const s = size ?? livePageSize;
     const requestId = ++liveRequestId.current;
     setLiveLoading(true);
+    setLiveError("");
     try {
       const needsAll = dateFilter !== "all" || paymentMethodFilter !== "all" || !!columnQuery.trim();
       const key = JSON.stringify([cat, searchQ, remoteValues]);
       if (needsAll) {
         let dataset = liveDataset.current?.key === key ? liveDataset.current : null;
         if (!dataset) {
-          const collected: Record<string, string>[] = [];
-          let headers: string[] = [];
-          let filters: CmsRemoteFilter[] = [];
-          let pages = 1;
-          let expectedTotal: number | undefined;
-          for (let p = 1; p <= pages; p++) {
-            setLiveScanProgress(`Loading live page ${p} of ${pages} (${collected.length.toLocaleString()} records)`);
-            const result = await fetchLegacyCmsLivePageAction({ category: cat, page: p, pageSize: 50, search: searchQ, filters: remoteValues });
+          const partial = livePartial.current?.key===key ? livePartial.current : {key,records:[],headers:[],filters:[],next:1,pages:1,total:undefined};
+          livePartial.current=partial;
+          const collected=partial.records;
+          let headers=partial.headers, filters=partial.filters;
+          let pages=partial.pages, expectedTotal=partial.total;
+          for (let p = partial.next; p <= pages; p++) {
+            const result = await waitForCmsTask<LiveCmsPageResult>({kind:"live",category:cat,page:p,pageSize:50,search:searchQ,filters:remoteValues},message=>{
+              if(requestId===liveRequestId.current) setLiveScanProgress(`${collected.length.toLocaleString()} records loaded • ${message}`);
+            },()=>requestId!==liveRequestId.current);
             if (requestId !== liveRequestId.current) return;
-            if (!result.ok) throw new Error(result.message || "Live data loading failed. Retry to load a complete result.");
-            if (expectedTotal !== undefined && result.totalResults !== expectedTotal) throw new Error("CMS records changed while loading. Refresh to get a consistent result.");
+            if (!result.ok) throw new Error(result.message || "Live data loading failed. Retry to continue.");
+            if (expectedTotal !== undefined && result.totalResults !== expectedTotal) {livePartial.current=null;throw new Error("CMS records changed while loading. Refresh to get a consistent result.");}
             expectedTotal = result.totalResults;
             pages = result.totalPages;
             if (p < pages && !result.records.length) throw new Error("CMS returned an incomplete page. Retry the live query.");
             collected.push(...result.records);
             if (result.headers.length) headers = result.headers;
             filters = result.filters ?? [];
+            Object.assign(partial,{headers,filters,next:p+1,pages,total:expectedTotal});
           }
           if (collected.length !== expectedTotal) throw new Error("CMS row count did not match the complete result. Refresh and retry.");
           dataset = { key, records: collected, headers, filters };
@@ -562,9 +583,10 @@ export function LegacyCmsClient({
         return;
       }
       setLiveCompleteDataset(false);
-      const res = await fetchLegacyCmsLivePageAction({ category: cat, page: pageNum, pageSize: s, search: searchQ, filters: remoteValues });
+      const res = await waitForCmsTask<LiveCmsPageResult>({kind:"live",category:cat,page:pageNum,pageSize:s,search:searchQ,filters:remoteValues},message=>{if(requestId===liveRequestId.current)setLiveScanProgress(message);},()=>requestId!==liveRequestId.current);
       if (requestId !== liveRequestId.current) return;
       setLiveLoading(false);
+      setLiveScanProgress("");
       if (res.ok) {
         setRemoteFilters(res.filters ?? []);
         if (res.pageSize) setLivePageSize(res.pageSize);
@@ -585,16 +607,14 @@ export function LegacyCmsClient({
       setLiveScanProgress("");
       setLiveLoading(false);
       if (String(err?.message || err).includes("Server Action")) window.location.reload();
-      else toast.error(String(err?.message || err));
+      else {setLiveError(String(err?.message || err));toast.error(String(err?.message || err));}
     }
   };
 
   // Switch between Live and Scraped modes
   React.useEffect(() => {
-    if (dataSourceMode === "live") {
-      handleFetchLivePage(category, 1, search, livePageSize);
-    }
-    return () => { liveRequestId.current++; };
+    const timer=setTimeout(()=>{if(dataSourceMode === "live") void handleFetchLivePage(category,1,search,livePageSize);},300);
+    return () => { clearTimeout(timer);liveRequestId.current++; };
   }, [category, dataSourceMode, remoteValues, dateFilter, customStartDate, customEndDate, paymentMethodFilter, columnQuery, columnFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   React.useEffect(() => {
@@ -604,7 +624,7 @@ export function LegacyCmsClient({
   }, [activeMainView]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const refreshLiveAnalytics = async () => {
-    try {for(const category of ["students","parents","subscriptions","invoices"] as const){setAnalyticsProgress(`Loading ${category} from Noor…`);const result=await syncLegacyCmsAction({category,deep:true});if(!result.ok) throw new Error(result.error || result.message);}
+    try {for(const category of ["students","parents","subscriptions","invoices"] as const){setAnalyticsProgress(`Loading ${category} from Noor…`);const result=await synchronizeCms({category,deep:true});if(!result.ok) throw new Error(result.error || result.message);}
       await refreshAllViews(); toast.success("Analytics rebuilt from live Noor data.");
     } catch(e){toast.error(e instanceof Error?e.message:"Could not refresh analytics");} finally {setAnalyticsProgress("");}
   };
@@ -650,7 +670,7 @@ export function LegacyCmsClient({
     setSyncingCategory(targetCat);
     const pageDesc = maxPages === 0 ? "ALL available pages" : `first ${maxPages} pages`;
     toast.info(`Scraping ${targetCat} (${pageDesc}) directly from Noor CMS...`);
-    const res = await syncLegacyCmsAction({
+    const res = await synchronizeCms({
       force: true,
       category: targetCat,
       deep: true,
@@ -662,7 +682,7 @@ export function LegacyCmsClient({
       await handleCheckAuthStatus(false);
       await refreshAllViews();
     } else {
-      toast.error(res.error || "Scraping failed");
+      toast.error(res.error || res.message || "Scraping failed");
     }
   };
 
@@ -995,6 +1015,8 @@ export function LegacyCmsClient({
 
   return (
     <div className="space-y-4">
+      {cmsProgress && <div role="status" className="flex items-center justify-between gap-3 rounded-lg border bg-muted/40 p-3 text-sm"><span><RefreshCwIcon className="mr-2 inline size-4 animate-spin"/>{cmsProgress}</span><Button variant="outline" size="sm" onClick={()=>{syncCancelled.current=true;setCmsProgress("Cancelling after the current page…");}}>Cancel refresh</Button></div>}
+      {dataSourceMode==="live" && liveError && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm"><span>{liveError} Completed scan pages are kept for retry.</span><Button variant="outline" size="sm" onClick={()=>handleFetchLivePage(category,1,search)}>Retry query</Button></div>}
       {/* CMS connection status */}
       <div className="bg-emerald-500/[0.08] border border-emerald-500/20 rounded-xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs">
         <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-300 font-medium">
@@ -1164,7 +1186,7 @@ export function LegacyCmsClient({
                   disabled={syncingCategory === category}
                   className="h-7 rounded border-0 bg-transparent px-2 text-[11px] font-medium text-foreground cursor-pointer focus:outline-none"
                 >
-                  <option value="0">All Pages (~5,000+)</option>
+                  <option value="0">All pages</option>
                   <option value="10">10 Pages (~100)</option>
                   <option value="25">25 Pages (~250)</option>
                   <option value="50">50 Pages (~500)</option>
@@ -1362,7 +1384,7 @@ export function LegacyCmsClient({
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => { liveDataset.current = null; handleFetchLivePage(category, 1, search); }}
+                  onClick={() => { liveDataset.current = null; livePartial.current=null; handleFetchLivePage(category, 1, search); }}
                   disabled={liveLoading}
                   className="h-6 text-[11px] px-2 bg-background"
                 >
@@ -1843,7 +1865,7 @@ export function LegacyCmsClient({
             ========================================================================= */}
         <TabsContent value="revenue" className="space-y-4 m-0">
           <div className="flex flex-wrap gap-3"><label className="text-xs">Invoice date from<Input type="date" value={revStart} onChange={e=>{setRevStart(e.target.value);setRevPage(1);}}/></label><label className="text-xs">Invoice date to<Input type="date" value={revEnd} onChange={e=>{setRevEnd(e.target.value);setRevPage(1);}}/></label></div>
-          <Button variant="outline" disabled={loading} onClick={async()=>{setLoading(true);try{const r=await syncLegacyCmsAction({category:"invoices",deep:true});if(!r.ok)toast.error(r.error||r.message);else{await refreshAllViews();toast.success("Finance data refreshed from live Noor.");}}finally{setLoading(false);}}}><RefreshCwIcon className="mr-2 size-4"/>Refresh invoices from live Noor</Button>
+          <Button variant="outline" disabled={loading} onClick={async()=>{setLoading(true);try{const r=await synchronizeCms({category:"invoices",deep:true});if(!r.ok)toast.error(r.error||r.message);else{await refreshAllViews();toast.success("Finance data refreshed from live Noor.");}}finally{setLoading(false);}}}><RefreshCwIcon className="mr-2 size-4"/>Refresh invoices from live Noor</Button>
           <Card>
             <CardHeader className="pb-3 flex flex-row items-center justify-between">
               <div>

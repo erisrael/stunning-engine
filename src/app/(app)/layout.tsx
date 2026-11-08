@@ -18,6 +18,7 @@ import { can } from "@/server/users";
 import { GetStarted } from "@/components/app/get-started";
 import { audienceFor } from "@/lib/help";
 import { sidebarDefaults } from "@/server/ui-prefs";
+import { canOpenPath } from "@/server/page-access";
 import { avatarsFor } from "@/server/profiles";
 import { touchPresence } from "@/server/chat-extras";
 import { PreviewBanner } from "@/components/app/security";
@@ -56,6 +57,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <CallLayer disabled={!!viewer.previewBy}>
     <SidebarProvider defaultOpen={sidebarCookie !== "false"}>
       <AppSidebar
+        cmsAccess={await canOpenPath(viewer, "/legacy-cms")}
         home={await homeDepartment(viewer)}
         studioBooking={(await (await import("@/server/handover-config")).handoverConfig()).studioBooking}
         legacy={(await (await import("@/server/legacy")).legacyConfig()).on}

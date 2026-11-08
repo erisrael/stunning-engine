@@ -28,7 +28,7 @@ export async function queryCmsTable(html: string, baseUrl: string, cookie: strin
     updates[`tableDeferredFilters.${filter.key}`] = value || null;
   }
   const calls = [...(filters.length ? [{ path: "", method: "applyTableFilters", params: [] }] : []), { path: "", method: "gotoPage", params: [input.page, "page"] }];
-  const response = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json", "X-Livewire": "true", "X-CSRF-TOKEN": decode(csrf), Cookie: cookie }, body: JSON.stringify({ _token: decode(csrf), components: [{ snapshot, updates, calls }] }), signal: AbortSignal.timeout(20000), redirect: "error", cache: "no-store" });
+  const response = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json", "X-Livewire": "true", "X-CSRF-TOKEN": decode(csrf), Cookie: cookie }, body: JSON.stringify({ _token: decode(csrf), components: [{ snapshot, updates, calls }] }), signal: AbortSignal.timeout(60_000), redirect: "error", cache: "no-store" });
   if (!response.ok) throw new Error(`CMS table query failed (HTTP ${response.status})`);
   const result = await response.json();
   const component = result.components?.[0];

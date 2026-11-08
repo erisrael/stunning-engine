@@ -211,25 +211,6 @@ export function WorkClient({
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        {/* The other views are in the sidebar; Board, List and Sheet show the same tasks, so they switch here. */}
-        {(tab === "board" || tab === "list" || tab === "sheet") && (
-          <div className="inline-flex rounded-lg bg-muted p-0.5" role="group" aria-label="View">
-            {(
-              [
-                ["board", KanbanIcon, "Board"],
-                ["list", ListIcon, "List"],
-                ["sheet", SheetIcon, "Sheet"],
-              ] as const
-            )
-              // The Sheet (editing everyone's tasks in a grid) is for leads.
-              .filter(([v]) => v !== "sheet" || access.rights.seeAll)
-              .map(([v, Icon, label]) => (
-              <Button key={v} size="sm" variant={tab === v ? "secondary" : "ghost"} aria-pressed={tab === v} className={tab === v ? "bg-background shadow-xs" : ""} onClick={() => go({ tab: v, task: null })}>
-                <Icon className="size-3.5" /> {label}
-              </Button>
-            ))}
-          </div>
-        )}
         <div className="ml-auto flex flex-wrap gap-2">
           {timer && <RunningTimer timer={timer} onStop={async () => {
             const r = await stopTimerAction();

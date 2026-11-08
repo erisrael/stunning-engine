@@ -41,11 +41,10 @@ try {
   await d.waitForURL(/\/dev\/board$/);
   check("Board has its own address", true);
   check("the Board entry is the active one", (await sideLink(d, "Board").getAttribute("data-active")) === "true" && (await sideLink(d, "My board").getAttribute("data-active")) !== "true");
-  await d.getByRole("group", { name: "View" }).waitFor({ timeout: 20000 }).catch(() => null);
-  check("the page has no tab bar, only the Board and List switch (Sheet is for leads)", (await d.getByRole("tab", { name: /Timeline|Overview|Projects/ }).count()) === 0 && (await d.getByRole("group", { name: "View" }).isVisible()) && (await d.getByRole("group", { name: "View" }).getByRole("button", { name: "Sheet" }).count()) === 0);
-  await d.getByRole("group", { name: "View" }).getByRole("button", { name: "List" }).click();
+  check("duplicate page navigation is removed", (await d.getByRole("group", { name: "View" }).count()) === 0 && (await d.getByRole("tab", { name: /Timeline|Overview|Projects/ }).count()) === 0);
+  await sideLink(d, "List").click();
   await d.waitForURL(/\/dev\/list/);
-  check("the switch moves to /dev/list", true);
+  check("the sidebar opens /dev/list", true);
   await sideLink(d, "My board").click();
   await d.waitForURL(/\/dev\/board\?assignee=/);
   check("My board is the board filtered to me, and is the active entry", (await sideLink(d, "My board").getAttribute("data-active")) === "true");
@@ -69,6 +68,48 @@ try {
   check("the department's views fold out under it", await visible(side(a).getByRole("link", { name: "Timeline", exact: true })));
   check("including Configure for Admin", await visible(side(a).getByRole("link", { name: "Configure", exact: true })));
   await a.screenshot({ path: path.join(shots, "3-admin.png") });
+
+  check("a user granted Noor CMS access gets a direct sidebar link", await sideLink(d,"Legacy CMS (Noor)").isVisible());
+  await a.goto(`${base}/admin?tab=sidebar`);
+  check("Admin has no duplicate category navigation", await a.locator('main a[href="/admin?tab=people"]').count()===0);
+  await a.getByRole("combobox",{name:"Role",exact:true}).click();
+  await a.getByRole("option",{name:"Developer",exact:true}).click();
+  await a.getByRole("checkbox",{name:"Dev team",exact:true}).uncheck();
+  await a.getByRole("checkbox",{name:"Noor legacy CMS",exact:true}).uncheck();
+  await a.getByRole("button",{name:"Save for Developer",exact:true}).click();
+  await a.getByText("Sidebar saved for Developer",{exact:true}).waitFor();
+  await d.evaluate(()=>window.dispatchEvent(new Event("focus")));
+  await sideLink(d,"Board").waitFor({state:"hidden",timeout:15000});
+  await sideLink(d,"Legacy CMS (Noor)").waitFor({state:"hidden",timeout:15000});
+  check("Admin-hidden sections disappear in an already-open member session", await side(d).locator('a[href^="/dev"]').count()===0 && await sideLink(d,"Legacy CMS (Noor)").count()===0);
+  await a.getByRole("checkbox",{name:"Dev team",exact:true}).check();
+  await a.getByRole("checkbox",{name:"Noor legacy CMS",exact:true}).check();
+  await a.getByRole("button",{name:"Save for Developer",exact:true}).click();
+  await d.evaluate(()=>window.dispatchEvent(new Event("focus")));
+  await sideLink(d,"Board").waitFor({timeout:15000});
+  check("Restoring sidebar choices restores access links",await sideLink(d,"Legacy CMS (Noor)").isVisible());
+  const y=await as("meron@demo.local");
+  const row=sideLink(y,"Handovers").locator('xpath=..');
+  const badge=row.locator('[data-nav-count]'), arrow=row.getByRole("button");
+  const badgeBox=await badge.boundingBox(), arrowBox=await arrow.boundingBox(), linkBox=await sideLink(y,"Handovers").boundingBox();
+  check("Counters, labels and dropdown buttons have separate space", !!badgeBox && !!arrowBox && linkBox.x+linkBox.width<=badgeBox.x && badgeBox.x+badgeBox.width<=arrowBox.x);
+  await arrow.click();
+  check("Dropdown opens independently of its counter",await side(y).getByRole("link",{name:"Rejected",exact:true}).isVisible());
+  await arrow.click();
+  check("Dropdown closes independently of its counter",await side(y).getByRole("link",{name:"Rejected",exact:true}).count()===0);
+  await y.screenshot({path:path.join(shots,"5-counter-dropdown.png")});
+
+  await y.locator('[data-sidebar="trigger"]').click();
+  await y.waitForTimeout(250);
+  check("Collapsed sidebar hides counters and dropdown controls",await side(y).locator('[data-nav-controls]:visible').count()===0);
+  await y.locator('[data-sidebar="trigger"]').click();
+  await y.setViewportSize({width:390,height:844});
+  await y.locator('[data-sidebar="trigger"]').click();
+  const mobileGroup=side(y).getByRole("button",{name:"Workflow",exact:true});
+  await mobileGroup.click();
+  check("Mobile group opens",await mobileGroup.getAttribute("aria-expanded")==="true");
+  await mobileGroup.click();
+  check("Mobile group closes",await mobileGroup.getAttribute("aria-expanded")==="false");
 
   // Profile tabs and old addresses
   await d.goto(`${base}/me`);

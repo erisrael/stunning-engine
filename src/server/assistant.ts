@@ -14,6 +14,7 @@ import { myEmployeeId } from "./hr";
 import { stateOf } from "./attendance";
 import { DEFAULT_ASSISTANT, FLOWS, flowsFor, type AssistantConfig } from "@/lib/assistant";
 import { STAGES } from "@/lib/domain";
+import { roleCatalog } from "./role-catalog";
 
 export async function assistantConfig(): Promise<AssistantConfig> {
   const v = parseJson<Partial<AssistantConfig>>((await get<{ value: string }>("SELECT value FROM settings WHERE key = 'cfg.assistant'"))?.value, {});
@@ -56,8 +57,9 @@ export async function roleOptions(role: string): Promise<RoleOptions> {
 export async function saveRoleOptions(user: AppUser, input: Record<string, Partial<RoleOptions>>) {
   if (!can(user, "users.manage")) throw new WorkflowError("FORBIDDEN", "Only Admin sets up the assistant.");
   const out: Record<string, RoleOptions> = {};
-  for (const [role, o] of Object.entries(input ?? {}).slice(0, 40)) {
-    if (!/^[a-z_]{2,30}$/.test(role)) continue;
+  const knownRoles = new Set((await roleCatalog()).map(r => String(r.key)));
+  for (const [role, o] of Object.entries(input ?? {})) {
+    if (!knownRoles.has(role)) continue;
     out[role] = {
       ai: o.ai !== false,
       voice: o.voice !== false,

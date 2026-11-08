@@ -79,7 +79,6 @@ import {
   SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
-  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarMenuSub,
@@ -94,6 +93,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { MyseedLogo } from "@/components/app/logo";
 import { BrandMark } from "@/components/app/brand-mark";
+import { sidebarVisibilityAction } from "@/app/actions/integrations";
+import { ADMIN_SIDEBAR_GROUPS } from "@/lib/nav";
+import { pruneSidebar, sidebarHidden } from "@/lib/sidebar-visibility";
 import { savePrefsAction } from "@/app/actions/admin";
 import { NAV_TIPS } from "@/lib/help";
 import { ROLE_LABELS, type Capability, type Role } from "@/lib/domain";
@@ -112,7 +114,7 @@ type NavItem = {
   // Other paths that count as this entry (the four work views share one entry).
   also?: string[];
   // Links shown under the entry while you are in that section.
-  sub?: { label: string; href: string }[];
+  sub?: { label: string; href: string; keepFilters?: boolean }[];
   // The sub links open while you are on any of their pages (entries that gather pages from several paths).
   gather?: boolean;
   locked?: boolean;
@@ -242,7 +244,8 @@ export function AppSidebar({
   reportsLink = false,
   customDepts = [],
   userHidden = [],
-  roleHidden = [],
+  roleHidden: initialRoleHidden = [],
+  cmsAccess: initialCmsAccess = false,
   home = null,
   viewerId = "",
   approver = false,
@@ -281,12 +284,23 @@ export function AppSidebar({
   // Hidden by this person, and by Admin for the role they are viewing as.
   userHidden?: string[];
   roleHidden?: string[];
+  cmsAccess?: boolean;
 }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const search = searchParams.toString();
   const { setOpenMobile, isMobile } = useSidebar();
   const [customizing, setCustomizing] = React.useState(false);
+  const [roleHidden,setRoleHidden]=React.useState(initialRoleHidden);
+  const [cmsAccess,setCmsAccess]=React.useState(initialCmsAccess);
+  React.useEffect(()=>{setRoleHidden(initialRoleHidden);setCmsAccess(initialCmsAccess);},[initialRoleHidden,initialCmsAccess]);
+  React.useEffect(()=>{
+    let cancelled=false, pending=false;
+    const refresh=async()=>{if(pending||document.visibilityState!=="visible")return;pending=true;try{const r=await sidebarVisibilityAction();if(!cancelled&&r.ok&&r.data){setRoleHidden(current=>JSON.stringify(current)===JSON.stringify(r.data!.hidden)?current:r.data!.hidden);setCmsAccess(r.data.cmsAccess);}}catch{}finally{pending=false;}};
+    const timer=window.setInterval(refresh,60000);window.addEventListener("focus",refresh);document.addEventListener("visibilitychange",refresh);
+    return()=>{cancelled=true;window.clearInterval(timer);window.removeEventListener("focus",refresh);document.removeEventListener("visibilitychange",refresh);};
+  },[activeRole]);
+
   const has = (c: Capability) => perms.includes(c);
   const allowed = (cap?: NavItem["cap"]) => !cap || (Array.isArray(cap) ? cap.some(has) : has(cap));
   const lead = has("team.view");
@@ -304,7 +318,6 @@ export function AppSidebar({
           { label: "External APIs & Chapa", href: "/admin?tab=external-apis" },
           { label: "Customer support", href: "/admin?tab=customer-support" },
           { label: "Clean data", href: "/admin?tab=clean-data" },
-          { label: "Legacy CMS (Noor)", href: "/legacy-cms" },
           { label: "System & workspace", href: "/admin?tab=system" },
           { label: "Platform & health", href: "/admin/platform?tab=status" },
         ]
@@ -363,7 +376,7 @@ export function AppSidebar({
       items: [
         { href: "/overview", label: "Overview", icon: ListTreeIcon, keepFilters: true, cap: "nav.overview" },
         ...(views.length
-          ? [{ id: "views", href: views[0]!.href, label: "Work views", icon: LayersIcon, keepFilters: true, also: views.map((v) => v.href), badge: counts.myWork }]
+          ? [{ id: "views", href: views[0]!.href, label: "Work views", icon: LayersIcon, keepFilters: true, also: views.map((v) => v.href), badge: counts.myWork, gather:true, sub:views.map(v=>({href:v.href,label:v.href==="/content"?"List":v.href==="/sheet"?"Sheet":v.href==="/pipeline"?"Board":"Calendar",keepFilters:true})) }]
           : []),
         { href: "/handovers", label: "Handovers", icon: PackageCheckIcon, badge: counts.incoming, cap: "nav.handovers", sub: [{ label: "Handovers", href: "/handovers" }, { label: "Rejected", href: "/handovers/rejected" }, { label: "Report", href: "/handovers/report" }] },
         ...(studioBooking !== "off" && (sessionsManager || has("items.plan") || has("team.view") || activeRole === "recording") ? [{ href: "/sessions", label: "Studio sessions", icon: VideoIcon }] : []),
@@ -383,7 +396,7 @@ export function AppSidebar({
       items: [
         { href: "/company", label: "Company overview", icon: Building2Icon, cap: "company.view" },
         { href: "/present", label: "Company presentation", icon: PresentationIcon, cap: "company.view" },
-        { href: "/dev", label: "Dev team", icon: CodeIcon, cap: ["dev.access", "owners.view"], sub: deptViews("/dev", [{ label: "Repositories", view: "repos" }, { label: "Roadmap", view: "roadmap" }, { label: "Specs and docs", view: "docs" }, { label: "Releases and quality", view: "tools" }], has("users.manage")) },
+        { href: "/dev", label: "Dev team", icon: CodeIcon, cap: ["dev.access", "owners.view"], sub: deptViews("/dev", [{ label: "Sprint", view: "sprint" }, { label: "Repositories", view: "repos" }, { label: "Roadmap", view: "roadmap" }, { label: "Specs and docs", view: "docs" }, { label: "Releases and quality", view: "tools" }], has("users.manage")) },
         { href: "/studio", label: "Studio", icon: BookOpenIcon, cap: ["studio.access", "owners.view"] },
         { href: "/marketing", label: "Marketing", icon: MegaphoneIcon, cap: ["marketing.access", "owners.view"], sub: deptViews("/marketing", [], has("users.manage")) },
         ...customDepts.map((d) => ({ href: `/d/${d.key}`, label: d.title, icon: BriefcaseIcon, sub: deptViews(`/d/${d.key}`, [], has("users.manage")) })),
@@ -484,13 +497,7 @@ export function AppSidebar({
       {
         label: "Administration",
         items: [
-          ...([
-            { label: "People & roles", tabs: [["people","People"],["teams","Teams"],["departments","Departments"],["permissions","Roles & permissions"],["sidebar","Sidebar per role"],["access","Access"]] },
-            { label: "Security", tabs: [["signin","Sign-in policy"],["sessions","Sessions & devices"],["privacy","Privacy"]] },
-            { label: "Communication & support", tabs: [["customer-support","Support setup"],["chat","Chat"],["feedback","Feedback"],["reports","Safety reports"]] },
-            { label: "Integrations", tabs: [["external-apis","External APIs"],["legacy-cms","Noor CMS user access"],["integrations","Connections"]] },
-            { label: "System & workspace", tabs: [["system","System & health"],["branding","Branding"],["files","Files & storage"],["usage","Usage"],["clean-data","Clean data"],["presentations","Presentation templates"]] },
-          ]).map(category => ({ href: `/admin?tab=${category.tabs[0][0]}`, label: category.label, icon: UserCogIcon, cap: "users.manage" as Capability, exact:true, sub:category.tabs.map(([tab,label])=>({label,href:`/admin?tab=${tab}`})) })),
+          ...ADMIN_SIDEBAR_GROUPS.map(category=>({href:category.links[0].href,label:category.label,icon:UserCogIcon,cap:"users.manage" as Capability,exact:true,gather:true,sub:category.links})),
           {
             href: "/settings",
             label: "Settings",
@@ -512,7 +519,6 @@ export function AppSidebar({
       {
         label: "Other Tools",
         items: [
-          { href: "/legacy-cms", label: "Legacy CMS (Noor)", icon: ArrowLeftRightIcon, cap: ["users.manage", "data.manage"] },
           { href: "/kiosk", label: "Kiosk station", icon: TabletIcon },
           { href: "/admin/data", label: "Data manager", icon: DatabaseIcon, cap: "data.manage" },
           { href: "/import-export", label: "Import and export", icon: ArrowLeftRightIcon, cap: ["import.run", "import.stage", "import.tracker", "export.run", "export.report", "export.tracker", "export.audit"] },
@@ -530,7 +536,7 @@ export function AppSidebar({
             gather: true,
             sub: [
               { label: "Overview", href: "/overview" },
-              ...views.map((v) => ({ label: v.href === "/content" ? "List" : v.href === "/sheet" ? "Sheet" : v.href === "/pipeline" ? "Board" : "Calendar", href: v.href })),
+              ...views.map((v) => ({ label: v.href === "/content" ? "List" : v.href === "/sheet" ? "Sheet" : v.href === "/pipeline" ? "Board" : "Calendar", href: v.href, keepFilters:true })),
               { label: "Handovers", href: "/handovers" },
               { label: "Rejected", href: "/handovers/rejected" },
               { label: "Handover report", href: "/handovers/report" },
@@ -554,9 +560,10 @@ export function AppSidebar({
   const resourceItem: NavItem = { href: "/resources", label: "Finance requests & equipment", icon: InboxIcon };
   if (resourceGroup) resourceGroup.items.push(resourceItem);
   else groups.push({ label: "Resources", items: [resourceItem] });
+  if(cmsAccess){const cmsItem:NavItem={href:"/legacy-cms",label:"Legacy CMS (Noor)",icon:ArrowLeftRightIcon};const target=groups.find(g=>g.label==="Other Tools")??groups.find(g=>g.label==="Tools");if(target)target.items.push(cmsItem);else groups.push({label:"Tools",items:[cmsItem]});}
+
   const keyOf = (i: NavItem) => i.id ?? i.href;
-  const hidden = new Set([...roleHidden, ...userHidden]);
-  const visible = (i: NavItem) => allowed(i.cap) && (i.locked || !hidden.has(keyOf(i)));
+  const hidden = [...roleHidden, ...userHidden];
   const tabParam = searchParams.get("tab");
   // Department entries match on the whole address; of several matching ones (Board, My board), the one with the
   // most matching query parts wins.
@@ -601,11 +608,12 @@ export function AppSidebar({
         </SidebarHeader>
         <SidebarContent className="gap-0 py-1">
           {groups.map((g) => {
-            const items = g.items.filter(visible);
+            const items = pruneSidebar(g.items.filter(i=>allowed(i.cap)),hidden);
             if (!items.length) return null;
             // On phones, fewer choices at once: the first group and the one you are in are open; the others fold.
             const here = items.some((i) => isActive(i));
-            const folded = (isMobile && !here && g !== groups[0] && !openGroups.includes(g.label)) || openGroups.includes(`fold:${g.label}`);
+            const folded = openGroups.includes(`fold:${g.label}`) || (isMobile && !here && g !== groups[0] && !openGroups.includes(`open:${g.label}`));
+            const toggleGroup=()=>setOpenGroups(o=>[...o.filter(k=>k!==`fold:${g.label}`&&k!==`open:${g.label}`),`${folded?"open":"fold"}:${g.label}`]);
             return (
               <SidebarGroup key={g.label} className="py-1" data-nav-group={g.label} data-folded={folded ? "1" : undefined}>
                 {isMobile ? (
@@ -613,7 +621,7 @@ export function AppSidebar({
                     type="button"
                     className="flex h-9 w-full items-center justify-between px-2 text-[11px] font-semibold tracking-wide text-sidebar-foreground/70 uppercase"
                     aria-expanded={!folded}
-                    onClick={() => setOpenGroups((o) => (o.includes(g.label) ? o.filter((x) => x !== g.label) : [...o, g.label]))}
+                    onClick={toggleGroup}
                   >
                     {g.label}
                     <ChevronDownIcon className={cn("size-4 transition-transform",folded && "-rotate-90")} />
@@ -621,9 +629,9 @@ export function AppSidebar({
                 ) : (
                   <button data-sidebar="group-label"
                     type="button"
-                    className="group/lbl flex h-7 w-full items-center justify-between px-2 text-[11px] font-semibold tracking-wide text-sidebar-foreground/70 uppercase hover:text-sidebar-foreground transition-colors cursor-pointer"
+                    className="group/lbl group-data-[collapsible=icon]:hidden flex h-7 w-full items-center justify-between px-2 text-[11px] font-semibold tracking-wide text-sidebar-foreground/70 uppercase hover:text-sidebar-foreground transition-colors cursor-pointer"
                     aria-expanded={!folded}
-                    onClick={() => setOpenGroups((o) => (o.includes(`fold:${g.label}`) ? o.filter((x) => x !== `fold:${g.label}`) : [...o, `fold:${g.label}`]))}
+                    onClick={toggleGroup}
                   >
                     <span>{g.label}</span>
                     <ChevronDownIcon className={cn("size-4 opacity-70 transition-transform",folded && "-rotate-90")} />
@@ -640,6 +648,7 @@ export function AppSidebar({
                       const tip = NAV_TIPS[keyOf(item)] ?? NAV_TIPS[item.href.split("?")[0]!];
                       return (
                         <SidebarMenuItem key={keyOf(item)}>
+                          <div className="flex min-w-0 items-center gap-1" data-nav-row>
                           <SidebarMenuButton
                             asChild
                             isActive={active || (inSection && !!item.sub)}
@@ -653,18 +662,19 @@ export function AppSidebar({
                                 </div>
                               ),
                             }}
-                            className="h-8 font-medium text-sidebar-foreground/85 data-[active=true]:bg-sidebar-accent data-[active=true]:font-semibold data-[active=true]:text-sidebar-accent-foreground"
+                            className="h-8 min-w-0 flex-1 font-medium text-sidebar-foreground/85 data-[active=true]:bg-sidebar-accent data-[active=true]:font-semibold data-[active=true]:text-sidebar-accent-foreground"
                           >
                             <Link href={href} onClick={close} className="flex w-full items-center">
                               <AppIcon icon={item.icon} name={brand[keyOf(item)]?.icon} tone={(brand[keyOf(item)]?.tone as Tone | null | undefined) ?? null} />
-                              <span className="truncate">{item.label}</span>
+                              <span className="min-w-0 flex-1 truncate">{item.label}</span>
 
                             </Link>
                           </SidebarMenuButton>
-                          {!!item.badge && item.badge > 0 && (
-                            <SidebarMenuBadge className="rounded-full bg-sidebar-border/80 px-1.5 text-[10px] tabular">{item.badge > 99 ? "99+" : item.badge}</SidebarMenuBadge>
-                          )}
-                          {item.sub && <button type="button" aria-label={`${expanded ? "Collapse" : "Expand"} ${item.label}`} aria-expanded={expanded} className="absolute right-1 top-1 z-10 rounded p-1 hover:bg-sidebar-accent" onClick={() => setOpenGroups(o => [...o.filter(k => k !== `item:${item.href}` && k !== `closed:${item.href}`), `${expanded ? "closed" : "item"}:${item.href}`])}><ChevronDownIcon className={cn("size-4 transition-transform",!expanded && "-rotate-90")} /></button>}
+                          <div className="flex shrink-0 items-center gap-1 pr-1 group-data-[collapsible=icon]:hidden" data-nav-controls>
+                          {!!item.badge && item.badge>0 && <span data-sidebar="menu-badge" data-nav-count={item.badge} title={String(item.badge)} aria-label={`${item.label}: ${item.badge}`} className="pointer-events-none flex h-5 min-w-5 items-center justify-center rounded-full bg-sidebar-border/80 px-1.5 text-[10px] tabular-nums">{item.badge>99?"99+":item.badge}</span>}
+                          {item.sub && <button type="button" aria-label={`${expanded?"Collapse":"Expand"} ${item.label}`} aria-expanded={expanded} className="flex size-7 shrink-0 items-center justify-center rounded-md hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-sidebar-ring" onClick={()=>setOpenGroups(o=>[...o.filter(k=>k!==`item:${item.href}`&&k!==`closed:${item.href}`),`${expanded?"closed":"item"}:${item.href}`])}><ChevronDownIcon className={cn("size-4 transition-transform",!expanded&&"-rotate-90")}/></button>}
+                          </div>
+                          </div>
                           {item.sub && expanded && (
                             <SidebarMenuSub>
                               {item.sub.map((s) => {
@@ -674,7 +684,7 @@ export function AppSidebar({
                                 return (
                                   <SidebarMenuSubItem key={s.href}>
                                     <SidebarMenuSubButton asChild isActive={on}>
-                                      <Link href={s.href} onClick={close}>
+                                      <Link href={s.keepFilters?s.href+scopeQueryString(search):s.href} onClick={close}>
                                         {s.label}
                                       </Link>
                                     </SidebarMenuSubButton>
@@ -716,7 +726,7 @@ export function AppSidebar({
       <SidebarRail />
       {customizing && (
         <CustomizeSidebar
-          groups={groups.map((g) => ({ label: g.label, items: g.items.filter((i) => allowed(i.cap)).map((i) => ({ key: keyOf(i), label: i.label, locked: !!i.locked, byAdmin: roleHidden.includes(keyOf(i)) })) }))}
+          groups={groups.map((g) => ({ label: g.label, items: g.items.filter((i) => allowed(i.cap)).map((i) => ({ key: keyOf(i), label: i.label, locked: !!i.locked, byAdmin: sidebarHidden(i.href,roleHidden,i.id) })) }))}
           hidden={userHidden}
           onClose={() => setCustomizing(false)}
         />

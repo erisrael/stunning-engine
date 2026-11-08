@@ -1,3 +1,5 @@
+import { cmsSession, cmsTableSeed } from "./cms-session";
+import { cmsReceiptAttachments } from "@/lib/cms-receipts";
 import { cmsField, cmsDateMatches, parseCmsDate } from "@/lib/cms-filters";
 import { queryCmsTable, cmsPagination, type CmsRemoteFilter } from "@/lib/cms-livewire";
 // Legacy CMS Scraper & Synchronizer (Phase 29):
@@ -290,6 +292,7 @@ function parseFilamentTable(html: string): Record<string, string>[] {
 export async function authenticateFilament(baseUrl: string, username: string, password: string): Promise<string> {
   const loginUrl = `${baseUrl}/admin/login`;
   const getRes = await fetch(loginUrl, {
+    signal: AbortSignal.timeout(60_000), cache: "no-store",
     headers: {
       "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
     },
@@ -317,6 +320,7 @@ export async function authenticateFilament(baseUrl: string, username: string, pa
     ? updateUriMatch[1]
     : `${baseUrl}${updateUriMatch[1].startsWith("/") ? "" : "/"}${updateUriMatch[1]}`;
 
+  if (new URL(updateUrl).origin !== new URL(baseUrl).origin) throw new Error("Unexpected CMS authentication endpoint.");
   const payload = {
     _token: csrf,
     components: [
@@ -333,6 +337,7 @@ export async function authenticateFilament(baseUrl: string, username: string, pa
   };
 
   const lwRes = await fetch(updateUrl, {
+    signal: AbortSignal.timeout(60_000), redirect: "error", cache: "no-store",
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -344,6 +349,7 @@ export async function authenticateFilament(baseUrl: string, username: string, pa
     body: JSON.stringify(payload),
   });
 
+  if (!lwRes.ok) throw new Error(`CMS sign-in failed (HTTP ${lwRes.status}).`);
   const lwCookies = (lwRes.headers as any).getSetCookie ? (lwRes.headers as any).getSetCookie() : [lwRes.headers.get("set-cookie") || ""];
   // Merge livewire cookies into jar so newly issued authenticated session overwrites initial unauthenticated cookie
   parseCookiesToJar(lwCookies, jar);
@@ -451,11 +457,11 @@ export async function checkLegacyCmsAuth(user:AppUser):Promise<{ok:boolean;statu
  try{
   const allowed=[...new Set((await Promise.all(user.roles.map(r=>allowedCategoriesForUser(r,user.id)))).flat())];
   if(!allowed.length) throw new WorkflowError("FORBIDDEN","No CMS tables are enabled for your account.");
-  let cookie=config.sessionCookie || await authenticateFilament(config.baseUrl,config.username,config.password || "");
+  let cookie=await cmsSession(config,authenticateFilament);
   const path=LEGACY_CMS_CATEGORIES.find(c=>c.key===allowed[0])!.path;
-  const inspect=()=>fetch(new URL(path,config.baseUrl),{headers:{Cookie:cookie},redirect:"manual",cache:"no-store",signal:AbortSignal.timeout(15000)});
+  const inspect=()=>fetch(new URL(path,config.baseUrl),{headers:{Cookie:cookie},redirect:"manual",cache:"no-store",signal:AbortSignal.timeout(60_000)});
   let result=await inspect();
-  if([302,401,419].includes(result.status)){cookie=await authenticateFilament(config.baseUrl,config.username,config.password || "");result=await inspect();}
+  if([302,401,419].includes(result.status)){cookie=await cmsSession(config,authenticateFilament,true);result=await inspect();}
   if(!result.ok) return {ok:false,status:"disconnected",username:config.username,message:`Noor access check returned HTTP ${result.status}.`,ms:Date.now()-start};
   const row=await get<{value:string}>("SELECT value FROM settings WHERE key='cfg.legacy_cms'");
   const stored=row?parseJson<StoredCmsConfig>(row.value,{}):{};
@@ -489,7 +495,8 @@ export async function logoutLegacyCms(user: AppUser): Promise<{ ok: boolean; mes
 
 export async function syncLegacyCms(
   user: AppUser,
-  opts: { force?: boolean; category?: LegacyCmsCategory | "all"; deep?: boolean; maxPages?: number } = {}
+  opts: { force?: boolean; category?: LegacyCmsCategory | "all"; deep?: boolean; maxPages?: number } = {},
+  progress?: (message: string) => Promise<void>
 ): Promise<{ ok: boolean; message: string; counts: Record<LegacyCmsCategory, number>; targetCategory: string }> {
   if (!can(user, "data.manage") && !can(user, "users.manage") && (!opts.category || opts.category === "all")) throw new WorkflowError("FORBIDDEN", "Choose an authorized CMS table to refresh.");
   await requireCmsCategories(user, opts.category && opts.category!=="all" ? [opts.category] : LEGACY_CMS_CATEGORIES.map(c=>c.key));
@@ -538,8 +545,9 @@ export async function syncLegacyCms(
 
     for (const cat of targetCategories) {
       await requireCmsCategories(user, [cat.key]);
+      await progress?.(`Opening ${cat.label}…`);
       const targetUrl = `${baseUrl}${cat.path}`;
-      const response = await fetch(targetUrl, { headers, signal: AbortSignal.timeout(20000), redirect: "manual", cache: "no-store" });
+      const response = await fetch(targetUrl, { headers, signal: AbortSignal.timeout(60_000), redirect: "manual", cache: "no-store" });
       if (!response.ok) throw new Error(`CMS ${cat.label} could not be loaded (HTTP ${response.status}). Existing records were preserved.`);
       const html = await response.text();
       const records: Record<string, string>[] = [];
@@ -547,7 +555,14 @@ export async function syncLegacyCms(
       let totalPages = 1;
       let expectedTotal = 0;
       for (let page = 1; page <= pagesToScrape; page++) {
-        const result = await queryCmsTable(html, baseUrl, cookieHeader, { page, pageSize: 50, search: "" });
+        await progress?.(`Loading ${cat.label}: page ${page}${page > 1 ? ` of ${pagesToScrape}` : ""}, ${records.length.toLocaleString()} records`);
+        let result;
+        try { result = await queryCmsTable(html, baseUrl, cookieHeader, { page, pageSize: 50, search: "" }); }
+        catch (error) {
+          if (!/timeout|abort|fetch failed|HTTP (429|502|503|504)/i.test(String(error))) throw error;
+          await progress?.(`Retrying ${cat.label}, page ${page} after a slow response…`);
+          result = await queryCmsTable(html, baseUrl, cookieHeader, { page, pageSize: 50, search: "" });
+        }
         const rows = parseFilamentTable(result.html);
         const pagination = cmsPagination(result.html, rows.length, page, result.pageSize);
         if (page === 1) {
@@ -563,6 +578,7 @@ export async function syncLegacyCms(
       const complete = pagesToScrape === totalPages;
       if (complete && records.length !== expectedTotal) throw new Error("CMS row count mismatch. Existing cache was preserved.");
 
+      await progress?.(`Saving ${records.length.toLocaleString()} ${cat.label} records…`);
       // Persist real scraped records into database transaction
       await tx(async () => {
         if (complete) await run("DELETE FROM legacy_cms_records WHERE category = ?", cat.key);
@@ -1262,59 +1278,22 @@ export async function fetchLegacyCmsLivePage(
   const config = await getLegacyCmsConfigForUser(user);
   const baseUrl = config.baseUrl.replace(/\/+$/, "");
 
-  let cookieHeader = config.sessionCookie || "";
-  if (!cookieHeader && config.username && config.password) {
-    try {
-      cookieHeader = await authenticateFilament(baseUrl, config.username, config.password);
-    } catch (e) {
-      console.warn("[legacy-cms] Failed to authenticate for live page fetch:", e);
-    }
-  }
-
-  const catPath = LEGACY_CMS_CATEGORIES.find((c) => c.key === opts.category)?.path || `/admin/${opts.category}`;
-  const searchParam = search ? `&tableSearch=${encodeURIComponent(search)}&search=${encodeURIComponent(search)}` : "";
-  const perPageParam = `&tableRecordsPerPage=${pageSize}&perPage=${pageSize}`;
-  const targetUrl = `${baseUrl}${catPath}?page=${page}&tablePage=${page}${perPageParam}${searchParam}`;
-
-  const headers: Record<string, string> = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-    Accept: "text/html,application/xhtml+xml,application/json,*/*",
-  };
-  if (cookieHeader) headers["Cookie"] = cookieHeader;
-
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 12000);
-    let res = await fetch(targetUrl, { headers, signal: controller.signal, redirect: "manual" });
-    clearTimeout(timeout);
-
-    if (res.status === 302 || res.status === 401 || res.status === 419) {
-      if (config.username && config.password) {
-        cookieHeader = await authenticateFilament(baseUrl, config.username, config.password);
-        headers["Cookie"] = cookieHeader;
-        const retryCtrl = new AbortController();
-        const retryTimeout = setTimeout(() => retryCtrl.abort(), 12000);
-        res = await fetch(targetUrl, { headers, signal: retryCtrl.signal, redirect: "manual" });
-        clearTimeout(retryTimeout);
+    let cookieHeader = await cmsSession(config, authenticateFilament);
+    const catPath = LEGACY_CMS_CATEGORIES.find(c=>c.key===opts.category)!.path;
+    let queried;
+    // One retry handles an expired session or a transient upstream timeout.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const seed = await cmsTableSeed(`${baseUrl}${catPath}`, cookieHeader, attempt > 0);
+        queried = await queryCmsTable(seed, baseUrl, cookieHeader, { page, pageSize, search, filters: opts.filters });
+        break;
+      } catch (error) {
+        if (attempt || /Invalid .* filter/.test(String(error))) throw error;
+        if (/HTTP (302|401|419)|session|Reconnect/i.test(String(error))) cookieHeader = await cmsSession(config, authenticateFilament, true);
       }
     }
-
-    if (!res.ok && res.status !== 200) {
-      return {
-        ok: false,
-        message: `HTTP ${res.status}: Failed to fetch page from Noor CMS`,
-        category: opts.category,
-        currentPage: page,
-        totalPages: 1,
-        totalResults: 0,
-        from: 0,
-        to: 0,
-        headers: [],
-        records: [],
-      };
-    }
-
-    const queried = await queryCmsTable(await res.text(), baseUrl, cookieHeader, { page, pageSize, search, filters: opts.filters });
+    if (!queried) throw new Error("Noor CMS did not return a table. Retry this page.");
     const html = queried.html;
     const records = parseFilamentTable(html);
     const { from, to, totalResults } = cmsPagination(html, records.length, page, queried.pageSize);
@@ -1409,27 +1388,7 @@ export async function fetchLegacyCmsInvoiceReceipt(
 
     const html = await res.text();
 
-    // Extract PDF download link
-    const pdfMatch = html.match(/href="([^"]*\/invoices\/\d+\/download[^"]*)"/i);
-    const pdfUrl = pdfMatch ? (pdfMatch[1].startsWith("http") ? pdfMatch[1] : `${baseUrl}${pdfMatch[1]}`) : null;
-
-    // Extract any image attachments (e.g. /storage/... or image tags)
-    const imgMatches = [...html.matchAll(/<img\b[^>]*src="([^"]+)"[^>]*>/gi)]
-      .map((m) => m[1])
-      .filter((src) => /(?:\/storage\/|\/uploads\/|\.(?:jpe?g|png|webp)(?:\?|$))/i.test(src) && !/avatar|logo|favicon|previewUrl/i.test(src));
-
-    let imageUrl = imgMatches[0] || null;
-    if (imageUrl && !imageUrl.startsWith("http")) {
-      imageUrl = `${baseUrl}${imageUrl.startsWith("/") ? "" : "/"}${imageUrl}`;
-    }
-
-    // Also look for storage link in <a> tags (e.g. uploaded slip)
-    if (!imageUrl) {
-      const storageMatch = html.match(/href="([^"]*(?:\.jpg|\.jpeg|\.png|\.webp|storage\/[^"]+)[^"]*)"/i);
-      if (storageMatch) {
-        imageUrl = storageMatch[1].startsWith("http") ? storageMatch[1] : `${baseUrl}${storageMatch[1]}`;
-      }
-    }
+    const { imageUrl, pdfUrl } = cmsReceiptAttachments(html, `${baseUrl}/`);
 
     // Extract field values
     const rawDetails: Record<string, string> = {};

@@ -36,7 +36,25 @@ Updated 2026-11-08. Implementation and verification are tracked separately. Setu
 
 ## External acceptance limits
 
-- A sampled pending-review invoice's download endpoint returned HTTP 403 under the supplied Noor account and exposed no slip image. The app now reports that access error; it cannot create an absent attachment or bypass Noor permissions. No real payment was approved during testing.
+- Fresh authentication on 2026-11-08 returned HTTP 200 / application/pdf for four sampled invoices (two pending review and two paid), including the invoice that previously returned 403. No separate image attachments were exposed in these samples. Missing or denied upstream attachments remain explicit errors; no real payment was approved during testing.
 - GitHub invitations and feedback resolution are implemented, but no real collaborator invitation or customer feedback modification was sent as a test. Their live success requires the configured account's upstream permissions.
 - Physical tablet/phone installation, real face matching/camera behavior and site connectivity must be checked on the intended hardware. Browser coverage does not replace those checks.
 - Maintenance recommendations are based on recorded inventory data, not a physical equipment inspection. No unverified third-party “free API key” was added; assistant fallback works locally.
+
+## Follow-up verification, 2026-11-08
+
+- [x] Separate uploaded PDF slips from image attachments; preserve signed URL query separators, relative links and lazy-loaded images.
+- [x] Include custom roles in assistant admin controls and persist options for role keys containing digits.
+- [x] Separate sidebar labels, counters and dropdown controls; compact counters preserve the full accessible count.
+- [x] Apply role and personal visibility to nested links, department sections and filtered destinations; retain hidden rules beyond 60 selections and refresh already-open sessions on focus/every minute.
+- [x] Expand Admin sidebar configuration to admin subpages, department views, settings and custom departments; support custom-role labels.
+- [x] Remove duplicate Admin category/page navigation and Board/List/Sheet switches; preserve functional tabs and carry filters between sidebar work views.
+- [x] Show the direct Noor CMS link for users with granted CMS access, including per-user overrides.
+- [x] Live CMS, connection checks, full scrapes, directory rebuilds and analytics refreshes use tracked background jobs with short browser status requests, progress, cancellation and private per-user results.
+- [x] Slow source responses get a bounded 60-second budget and a retry; authenticated sessions/table snapshots are reused. Live full-result filter scans retain completed pages after failure and resume on Retry query.
+- [x] Database workers claim jobs once; interrupted jobs become retryable errors; completed job data expires after 24 hours. Existing cache survives failed scrapes.
+- [x] Focused server verification: 74 checks passed across eight files. Production build passed with existing backup tracing warnings.
+- [x] Read-only Noor verification: 5,290 students; 25-row pages returned ranges 1–25 and 26–50; unmatched search returned zero. Authentication took 1.9 seconds; first page 4.7 seconds and reused-session second page 2.5 seconds.
+- [x] Sidebar browser verification: 36 checks passed, including admin visibility in an open session, counter/dropdown spacing, collapsed controls and phone group toggles. Repair screens: 23 checks passed.
+- [x] Production database backup created before publishing: myseed-20261108-1613.json.gz, 24,856 rows.
+- [x] Final browser verification: 69 checks passed (navigation 36, repair screens 23, CMS background flow 10). The CMS browser fixture delays its first response by 22 seconds, checks responsive controls, row counts and paging, retries HTTP 503, publishes a full cache and resumes a date-filter scan after page two fails.

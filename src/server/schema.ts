@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 56;
+export const SCHEMA_VERSION = 57;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -3134,6 +3134,19 @@ CREATE TABLE IF NOT EXISTS dev_collaboration (
 );
 CREATE INDEX IF NOT EXISTS idx_dev_collab_scope ON dev_collaboration(dept, kind, project_id);
 
+CREATE TABLE IF NOT EXISTS cms_tasks (
+  id TEXT PRIMARY KEY,
+  actor_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,
+  options_json TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'queued',
+  progress TEXT NOT NULL DEFAULT 'Waiting to start',
+  result_json TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_cms_tasks_actor ON cms_tasks(actor_id, status);
+
 CREATE TABLE IF NOT EXISTS legacy_cms_records (
   id TEXT PRIMARY KEY,
   category TEXT NOT NULL,
@@ -3403,6 +3416,7 @@ export const TABLES = [
   "resource_comments",
   "dev_release_proposals",
   "dev_collaboration",
+  "cms_tasks",
   "legacy_cms_records",
   "legacy_cms_snapshots",
   "chapa_accounts",

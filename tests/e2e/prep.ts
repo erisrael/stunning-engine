@@ -293,7 +293,7 @@ const PREPS: Record<string, () => Promise<unknown>> = {
   },
   // A Dev team member (Dina) and a Dev lead (Leul), for the department sidebar.
   async navigation() {
-    await passwordOnly();
+    await production();
     const seen = JSON.stringify({ tour: { seen: ["member", "lead", "publication", "manager", "owner", "department", "hr", "finance"] } });
     for (const [name, email] of [["Dina", "dina@demo.local"], ["Leul", "leul@demo.local"]]) {
       const u = await upsertAccount({ name, email, title: "Developer", roles: ["developer"], password: "Demo-Workflow-2026", mustChangePassword: false });
@@ -302,6 +302,11 @@ const PREPS: Record<string, () => Promise<unknown>> = {
     const leul = (await get<{ id: string }>("SELECT id FROM users WHERE email = 'leul@demo.local'"))!.id;
     await run("INSERT INTO department_positions (department, user_id, position) VALUES ('dev', ?, 'lead') ON CONFLICT DO NOTHING", leul);
     await syncFromUsers(await admin());
+    const dina=(await get<{id:string}>("SELECT id FROM users WHERE email='dina@demo.local'"))!.id;
+    const cms=await import("../../src/server/legacy-cms");
+    await cms.saveLegacyCmsConfig(await admin(),{baseUrl:"http://127.0.0.1:9",autoSync:false});
+    await cms.saveUserCmsOverride(await admin(),{userId:dina,allowedTabs:["students"]});
+
   },
   // Passkeys: two-step sign-in optional for everyone (a passkey makes it apply), passkeys on.
   async passkeys() {
@@ -372,6 +377,7 @@ const PREPS: Record<string, () => Promise<unknown>> = {
 
 PREPS["repair-ui"]=async()=>{
  await PREPS.navigation();const a=await admin();
+ const settings=await import("../../src/server/settings");await settings.savePermissionMatrix({...await settings.getPermissionMatrix(),qa_2026:["nav.questions"]},a.id);
  const {saveLegacyCmsConfig,createLegacyCmsSnapshot}=await import("../../src/server/legacy-cms");
  await saveLegacyCmsConfig(a,{baseUrl:"http://127.0.0.1:9",username:"fixture",password:"fixture",autoSync:false});
  for(let i=0;i<125;i++) await run("INSERT INTO legacy_cms_records (id,category,external_id,title,data_json,synced_at) VALUES (?,?,?,?,?,?)",`fixture-${i}`,"students",String(i),`Fixture student ${i}`,JSON.stringify({Name:`Fixture student ${i}`,Grade:i%2?"Grade 10":"Grade 1",Status:i%2?"inactive":"active",Date:i<100?"2026-10-01":"2026-11-06",Phone:`090000${String(i).padStart(4,"0")}`}),new Date().toISOString());
@@ -379,6 +385,8 @@ PREPS["repair-ui"]=async()=>{
  const {captureConfig,saveCaptureConfig}=await import("../../src/server/attendance-capture");const cfg=await captureConfig();await saveCaptureConfig(a,{...cfg,sites:["Main office","Branch office"].map(name=>({id:"",name,networks:[],lat:null,lng:null,radiusM:100,checks:{network:false,location:false,device:true},posterKey:"",posterAt:""}))});
  return {};
 };
+
+PREPS["cms-background"] = PREPS["repair-ui"];
 
 async function main() {
   const name = process.argv[2]!;

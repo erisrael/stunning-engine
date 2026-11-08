@@ -1,5 +1,27 @@
+export const ADMIN_SIDEBAR_GROUPS = [
+ {label:"People & roles",links:[["people","People"],["teams","Teams"],["departments","Departments"],["permissions","Roles & permissions"],["sidebar","Sidebar per role"],["access","Access"]]},
+ {label:"Security",links:[["signin","Sign-in policy"],["sessions","Sessions & devices"],["privacy","Privacy"]]},
+ {label:"Communication & support",links:[["customer-support","Support setup"],["chat","Chat"],["feedback","Feedback"],["reports","Safety reports"]]},
+ {label:"Integrations",links:[["external-apis","External APIs"],["legacy-cms","Noor CMS user access"],["integrations","Connections"]]},
+ {label:"System & workspace",links:[["system","System & health"],["branding","Branding"],["files","Files & storage"],["usage","Usage"],["clean-data","Clean data"],["presentations","Presentation templates"],["/admin/assistant","Assistant"],["/admin/platform?tab=status","Platform & health"]]},
+].map(g=>({label:g.label,links:g.links.map(([key,label])=>({label,href:key.startsWith("/")?key:`/admin?tab=${key}`}))}));
+
 // Sidebar entries Admin can hide for a role (the sidebar still shows only what the role's permissions allow).
 export const SIDEBAR_ENTRIES: { key: string; label: string; group: string }[] = [
+  ...ADMIN_SIDEBAR_GROUPS.flatMap(g=>g.links.map(l=>({key:l.href,label:l.label,group:`Admin: ${g.label}`}))),
+  {key:"/admin",label:"All administration pages",group:"Manage"},
+  ...[["/my-work","My work"],["/routines","Routines"],["/announcements","Announcements"],["/recognition","Recognition"],["/performance","Performance"],["/strategy","Strategy and M&E"],["/support","Customer support"],["/kiosk","Kiosk station"]].map(([key,label])=>({key,label,group:"My space"})),
+  ...["dev","marketing"].flatMap(dept=>["board","list","sheet","overview","timeline","calendar","projects","team","report","analyze","requests","sprint","roadmap","docs","repos","tools","configure"].map(view=>({key:`/${dept}/${view}`,label:({docs:"Specs and docs",repos:"Repositories",tools:"Releases and quality"} as Record<string,string>)[view] ?? view[0].toUpperCase()+view.slice(1),group:`${dept} pages`}))),
+  ...["team","corrections","timesheets","review","records","rules","setup","capture"].map(tab=>({key:`/attendance?tab=${tab}`,label:tab[0].toUpperCase()+tab.slice(1),group:"Attendance pages"})),
+  ...["compose","sent","templates","settings"].map(tab=>({key:`/email?tab=${tab}`,label:tab[0].toUpperCase()+tab.slice(1),group:"Email pages"})),
+  ...Object.entries({
+    hr:["leave","hiring","lifecycle","performance","training","cases","reports","due","org","equipment"],
+    finance:["transactions","bills","invoices","receipts","claims","purchasing","budgets","payroll","parties","accounts","reports","settings"],
+    settings:["recording","editing","uploading","publication","sla","destinations","calendar","lists","workspace","calls"],
+    studio:["board","calendar","note","exam","flashcards","questions","team","configure"],
+  }).flatMap(([section,tabs])=>tabs.map(tab=>({key:`/${section}?tab=${tab}`,label:tab[0].toUpperCase()+tab.slice(1),group:`${section} pages`}))),
+  {key:"/admin/data",label:"Data manager",group:"Manage"},
+  {key:"/presenters",label:"Presenters",group:"Workflow"},
   { key: "/resources", label: "Finance requests & equipment", group: "Departments" },
   { key: "/legacy-cms", label: "Noor legacy CMS", group: "Departments" },
   { key: "/attendance", label: "Attendance", group: "My space" },

@@ -1,7 +1,7 @@
 import { requireCapability } from "@/server/auth";
 import { assistantConfig, assistantStats } from "@/server/assistant";
 import { PageHeader } from "@/components/app/primitives";
-import { ROLES, ROLE_LABELS } from "@/lib/domain";
+import { roleCatalog } from "@/server/role-catalog";
 import { FLOWS } from "@/lib/assistant";
 import { AssistantAdmin } from "./assistant-admin";
 import { AiAdmin } from "./ai-admin";
@@ -17,7 +17,7 @@ export const metadata = { title: "Assistant" };
 // assistant is used: flows started and finished, where people give up, what matched nothing.
 export default async function AssistantAdminPage() {
   const viewer = await requireCapability("users.manage");
-  const [cfg, stats, ai, usage, roleOpts, rc, savedModels] = await Promise.all([
+  const [cfg, stats, ai, usage, roleOpts, rc, savedModels, roles] = await Promise.all([
     assistantConfig(),
     assistantStats(viewer),
     aiConfig(),
@@ -25,13 +25,14 @@ export default async function AssistantAdminPage() {
     allRoleOptions(),
     routinesConfig(),
     listAiModels(viewer),
+    roleCatalog(),
   ]);
   return (
     <div className="space-y-4">
       <PageHeader title="Assistant" description="The guide in the corner of every page, by typing or by voice. It follows written flows; with AI answers on, Claude also answers questions from each person's own data and prepares actions they confirm." />
-      <AiAdmin config={ai} usage={usage} models={AI_MODELS.map((m) => ({ id: m.id, label: m.label, provider: m.provider }))} roles={ROLES.map((r) => ({ key: r, label: ROLE_LABELS[r] }))} savedModels={savedModels} />
-      <RolesAdmin roles={ROLES.map((r) => ({ key: r, label: ROLE_LABELS[r] }))} ops={OPS.map((o) => ({ key: o.key, label: o.label, group: o.group }))} options={roleOpts} routines={rc} />
-      <AssistantAdmin config={cfg} stats={stats} flows={FLOWS.map((f) => ({ key: f.key, title: f.title, keywords: f.keywords }))} roles={ROLES.map((r) => ({ key: r, label: ROLE_LABELS[r] }))} />
+      <AiAdmin config={ai} usage={usage} models={AI_MODELS.map((m) => ({ id: m.id, label: m.label, provider: m.provider }))} roles={roles} savedModels={savedModels} />
+      <RolesAdmin roles={roles} ops={OPS.map((o) => ({ key: o.key, label: o.label, group: o.group }))} options={roleOpts} routines={rc} />
+      <AssistantAdmin config={cfg} stats={stats} flows={FLOWS.map((f) => ({ key: f.key, title: f.title, keywords: f.keywords }))} roles={roles} />
     </div>
   );
 }

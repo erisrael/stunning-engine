@@ -17,6 +17,7 @@ export async function register() {
   setInterval(tick, 10 * 60e3).unref();
   const cmsTick = async () => {
     try {
+      await (await import("./server/cms-tasks")).runQueuedCmsTasks();
       const { scheduledCmsSync } = await import("./server/cms-schedule");
       await scheduledCmsSync(undefined, true);
     } catch (e) {

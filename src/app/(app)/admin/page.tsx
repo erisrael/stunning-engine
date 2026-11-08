@@ -117,62 +117,6 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   const roleCounts = Object.fromEntries(ROLES.map((r) => [r, users.filter((u) => u.active && u.roles.includes(r)).length])) as Record<Role, number>;
   const leadCounts = Object.fromEntries(STAGES.map((st) => [st, team.filter((u) => u.leads.includes(st)).length])) as Record<Stage, number>;
 
-  const categories = [
-    {
-      id: "org",
-      label: "Users & Org",
-      tabs: [
-        { id: "people", label: `People (${users.filter((u) => u.active).length})` },
-        { id: "teams", label: "Teams" },
-        { id: "departments", label: "Departments" },
-        { id: "permissions", label: "Roles & Permissions" },
-        { id: "sidebar", label: "Sidebar per Role" },
-        { id: "access", label: "Access" },
-      ],
-    },
-    {
-      id: "security",
-      label: "Security & Sessions",
-      tabs: [
-        { id: "signin", label: "Sign-in Policy" },
-        { id: "sessions", label: "Sessions & Devices" },
-        { id: "privacy", label: "Privacy & Audits" },
-      ],
-    },
-    {
-      id: "support",
-      label: "Comms & Support",
-      tabs: [
-        { id: "customer-support", label: "Support Setup" },
-        { id: "chat", label: "Chat" },
-        { id: "feedback", label: "Feedback" },
-        { id: "reports", label: "Safety Reports" },
-      ],
-    },
-    {
-      id: "integrations",
-      label: "Integrations & APIs",
-      tabs: [
-        { id: "external-apis", label: "External APIs & Chapa" },
-        { id: "legacy-cms", label: "Noor CMS Access per User" },
-      ],
-    },
-    {
-      id: "system",
-      label: "System & Workspace",
-      tabs: [
-        { id: "clean-data", label: "Clean Data" },
-        { id: "system", label: "System & Health" },
-        { id: "branding", label: "Branding" },
-        { id: "files", label: "Files & Storage" },
-        { id: "usage", label: "Usage" },
-        ...(manageData ? [{ id: "data", label: "Data Manager" }] : []),
-      ],
-    },
-  ];
-
-  const activeCategory = categories.find((c) => c.tabs.some((t) => t.id === tab)) || categories[0];
-
   return (
     <AdminRoleProvider roles={await roleCatalog()}><div className="space-y-4">
       <PageHeader help="admin" title="Admin" description="People, roles, permissions, access and workspace data. Every change is kept in the audit log." actions={
@@ -194,47 +138,6 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
         }
       />
       <Tabs key={tab} value={tab} className="gap-4">
-        <div className="space-y-2 border-b pb-3">
-          {/* Grouped Category Level */}
-          <div className="flex flex-wrap items-center gap-1.5 p-1 bg-muted/40 rounded-lg w-fit text-xs font-medium">
-            {categories.map((cat) => {
-              const isCatActive = cat.id === activeCategory.id;
-              const firstTab = cat.tabs[0]?.id || "people";
-              return (
-                <Link
-                  key={cat.id}
-                  href={`/admin?tab=${firstTab}`}
-                  className={cn(
-                    "px-3 py-1.5 rounded-md transition-all",
-                    isCatActive
-                      ? "bg-background text-foreground shadow-sm font-semibold"
-                      : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
-                  )}
-                >
-                  {cat.label}
-                </Link>
-              );
-            })}
-          </div>
-
-          {/* Subtabs for Active Category */}
-          <div className="flex flex-wrap items-center gap-1.5 text-xs pt-0.5">
-            {activeCategory.tabs.map((t) => (
-              <Link
-                key={t.id}
-                href={`/admin?tab=${t.id}`}
-                className={cn(
-                  "px-2.5 py-1 rounded-md transition-colors",
-                  tab === t.id
-                    ? "bg-primary text-primary-foreground font-semibold shadow-xs"
-                    : "bg-muted/50 hover:bg-muted text-muted-foreground"
-                )}
-              >
-                {t.label}
-              </Link>
-            ))}
-          </div>
-        </div>
         <TabsList className="hidden">
           {manageUsers && <TabsTrigger value="people">People ({users.filter((u) => u.active).length})</TabsTrigger>}
           {manageUsers && <TabsTrigger value="teams">Teams</TabsTrigger>}
@@ -355,7 +258,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
               )}
             </TabsContent>
             <TabsContent value="sidebar">
-              <SidebarAdmin defaults={await sidebarDefaults()} roles={await roleCatalog()} />
+              <SidebarAdmin defaults={await sidebarDefaults()} roles={await roleCatalog()} departments={await customDepartments()} />
             </TabsContent>
             <TabsContent value="legacy-cms">
               {tab === "legacy-cms" && (

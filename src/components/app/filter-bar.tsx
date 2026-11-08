@@ -1,18 +1,12 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import {
   BookmarkIcon,
-  CalendarDaysIcon,
-  ChartColumnIcon,
-  FileSpreadsheetIcon,
-  KanbanIcon,
   SearchIcon,
   SlidersHorizontalIcon,
-  TableIcon,
   Trash2Icon,
   XIcon,
 } from "lucide-react";
@@ -47,14 +41,6 @@ import {
 import { DATE_FIELD_LABELS, FILTER_FLAG_LABELS, FILTER_KEYS, MULTI_KEYS, parseFilters, scopeQueryString, type Filters } from "@/lib/filters";
 import { cn } from "@/lib/utils";
 
-const VIEWS = [
-  { href: "/content", label: "Table", icon: TableIcon },
-  { href: "/sheet", label: "Sheet", icon: FileSpreadsheetIcon },
-  { href: "/pipeline", label: "Board", icon: KanbanIcon },
-  { href: "/calendar", label: "Calendar", icon: CalendarDaysIcon },
-  { href: "/reports", label: "Reports", icon: ChartColumnIcon },
-];
-
 export function useFilters() {
   const params = useSearchParams();
   const router = useRouter();
@@ -81,7 +67,6 @@ export function FilterBar({
   options,
   total,
   totalLabel = "items",
-  showViews = true,
   extra,
   hideKeys = [],
   note,
@@ -172,7 +157,6 @@ export function FilterBar({
   };
 
   const show = (k: string) => !hideKeys.includes(k);
-  const qs = scopeQueryString(params.toString());
 
   return (
     <div className="space-y-2 rounded-xl border bg-card p-2.5 sm:p-3">
@@ -213,7 +197,7 @@ export function FilterBar({
           );
         })}
       </div>
-      {(chips.length > 0 || total !== undefined || showViews) && (
+      {(chips.length > 0 || total !== undefined || !!note) && (
         <div className="flex flex-wrap items-center gap-2 border-t pt-2">
           {total !== undefined && (
             <span className="text-xs text-muted-foreground tabular" aria-live="polite">
@@ -234,27 +218,7 @@ export function FilterBar({
             </Button>
           )}
           {note && <span className="text-xs text-muted-foreground">{note}</span>}
-          {showViews && (
-            <nav className="ml-auto flex items-center gap-0.5 rounded-lg border bg-muted/40 p-0.5" aria-label="Views of the same records">
-              {VIEWS.filter((v) => options.allowedViews.includes(v.href) || pathname === v.href).map((v) => {
-                const active = pathname === v.href;
-                return (
-                  <Link
-                    key={v.href}
-                    href={v.href + qs}
-                    className={cn(
-                      "flex h-7 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground",
-                      active && "bg-background text-foreground shadow-sm",
-                    )}
-                    aria-current={active ? "page" : undefined}
-                  >
-                    <v.icon className="size-3.5" />
-                    <span className="hidden sm:inline">{v.label}</span>
-                  </Link>
-                );
-              })}
-            </nav>
-          )}
+
         </div>
       )}
       <MoreFilters open={moreOpen} onOpenChange={setMoreOpen} options={options} filters={filters} onApply={(patch) => update(patch)} />

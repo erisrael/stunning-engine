@@ -5,7 +5,8 @@ import { wrap } from "@/server/action-result";
 import * as gh from "@/server/github";
 import * as feeds from "@/server/feeds";
 import * as acc from "@/server/accounting";
-import { saveSidebarDefaults } from "@/server/ui-prefs";
+import { saveSidebarDefaults, sidebarDefaults } from "@/server/ui-prefs";
+import { canOpenPath } from "@/server/page-access";
 import type { Role } from "@/lib/domain";
 
 // Every action checks department rights or Admin on the server (github.ts, feeds.ts, accounting.ts, ui-prefs.ts).
@@ -30,6 +31,13 @@ export async function accountingExportAction(dept: string, input: { format: acc.
 }
 export async function saveSidebarDefaultsAction(role: Role, hidden: string[]) {
   return wrap(async () => saveSidebarDefaults(await requireViewer(), role, hidden));
+}
+
+export async function sidebarVisibilityAction() {
+  return wrap(async () => {
+    const viewer = await requireViewer();
+    return { hidden: (await sidebarDefaults())[viewer.activeRole] ?? [], cmsAccess: await canOpenPath(viewer, "/legacy-cms") };
+  }, { revalidate: false });
 }
 
 export async function addGithubCollaboratorAction(dept:string,input:{repo:string;username:string;permission:string}) { return wrap(async()=> (await import("@/server/github")).addGithubCollaborator(await requireViewer(),dept,input)); }
