@@ -914,36 +914,37 @@ function EmailSettings({ smtp, senders, people, presets, secretSource, viewerEma
         <CardHeader>
           <CardTitle className="text-base">Email delivery: SMTP, Brevo or Resend</CardTitle>
           <CardDescription>
-            {fromEnv
-              ? "Set in the hosting environment variables (SMTP_HOST, SMTP_USER, SMTP_PASS, SMTP_FROM). Change it there."
-              : "The account the app sends through. Choose Brevo or Resend for web API delivery, or cPanel / SMTP for mail servers."}
+            The account the app sends through. Choose Brevo or Resend for web API delivery, or cPanel / SMTP for mail servers.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          {!fromEnv && (
-            <div className="space-y-1.5">
-              <Label>Email provider</Label>
-              <Select value={currentProviderValue} onValueChange={selectProvider}>
-                <SelectTrigger className="w-full" aria-label="Email delivery provider">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="brevo">Brevo web API</SelectItem>
-                  <SelectItem value="resend">Resend web API</SelectItem>
-                  <SelectItem value="cpanel">cPanel hosting (your own domain)</SelectItem>
-                  <SelectItem value="gmail">Gmail (app password)</SelectItem>
-                  <SelectItem value="workspace">Google Workspace</SelectItem>
-                  <SelectItem value="zoho">Zoho Mail</SelectItem>
-                  <SelectItem value="outlook">Microsoft 365 / Outlook</SelectItem>
-                  <SelectItem value="custom">Other SMTP server</SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                Use Brevo or Resend web API when the hosting blocks SMTP ports (such as cloud hosting plans). Use cPanel hosting for company domains.
-              </p>
+          {fromEnv && (
+            <div className="rounded-md border bg-muted/40 p-2.5 text-xs text-muted-foreground">
+              Currently using defaults from hosting environment variables. Selecting a provider and clicking <strong>Save</strong> will store and activate your settings in the app.
             </div>
           )}
-          {!fromEnv && api && (
+          <div className="space-y-1.5">
+            <Label>Email provider</Label>
+            <Select value={currentProviderValue} onValueChange={selectProvider}>
+              <SelectTrigger className="w-full" aria-label="Email delivery provider">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="brevo">Brevo web API</SelectItem>
+                <SelectItem value="resend">Resend web API</SelectItem>
+                <SelectItem value="cpanel">cPanel hosting (your own domain)</SelectItem>
+                <SelectItem value="gmail">Gmail (app password)</SelectItem>
+                <SelectItem value="workspace">Google Workspace</SelectItem>
+                <SelectItem value="zoho">Zoho Mail</SelectItem>
+                <SelectItem value="outlook">Microsoft 365 / Outlook</SelectItem>
+                <SelectItem value="custom">Other SMTP server</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Use Brevo or Resend web API when the hosting blocks SMTP ports (such as cloud hosting plans). Use cPanel hosting for company domains.
+            </p>
+          </div>
+          {api && (
             <>
               <ol className="list-decimal space-y-1 rounded-lg border bg-muted/40 py-2 pr-3 pl-8 text-xs text-muted-foreground">
                 {via === "brevo" ? (
@@ -969,10 +970,10 @@ function EmailSettings({ smtp, senders, people, presets, secretSource, viewerEma
               </div>
             </>
           )}
-          {!fromEnv && !api && hint && (
+          {!api && hint && (
             <p className="text-xs text-muted-foreground">{hint}</p>
           )}
-          {!fromEnv && !api && preset === "cpanel" && (
+          {!api && preset === "cpanel" && (
             <ol className="list-decimal space-y-1 rounded-lg border bg-muted/40 py-2 pr-3 pl-8 text-xs text-muted-foreground">
               <li>In cPanel, open Email Accounts and note the outgoing server, port, and username for the mailbox.</li>
               <li>Enter the mailbox password and save.</li>
@@ -987,21 +988,20 @@ function EmailSettings({ smtp, senders, people, presets, secretSource, viewerEma
           <div className="grid gap-3 sm:grid-cols-[1fr_100px]">
             <div className="space-y-1.5">
               <Label>Server</Label>
-              <Input disabled={fromEnv} value={f.host} onChange={(e) => setF({ ...f, host: e.target.value })} placeholder="smtp.gmail.com" />
+              <Input value={f.host} onChange={(e) => setF({ ...f, host: e.target.value })} placeholder="smtp.gmail.com" />
             </div>
             <div className="space-y-1.5">
               <Label>Port</Label>
-              <Input disabled={fromEnv} type="number" value={f.port} onChange={(e) => setF({ ...f, port: Number(e.target.value) })} />
+              <Input type="number" value={f.port} onChange={(e) => setF({ ...f, port: Number(e.target.value) })} />
             </div>
           </div>
           <label className="flex items-center gap-2 text-sm">
-            <Switch disabled={fromEnv} checked={f.secure} onCheckedChange={(v) => setF({ ...f, secure: v })} /> Encrypted connection from the start (port 465). Off uses STARTTLS (port 587).
+            <Switch checked={f.secure} onCheckedChange={(v) => setF({ ...f, secure: v })} /> Encrypted connection from the start (port 465). Off uses STARTTLS (port 587).
           </label>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label>Sign-in name</Label>
               <Input
-                disabled={fromEnv}
                 value={f.user}
                 onChange={(e) => {
                   const user = e.target.value;
@@ -1020,7 +1020,6 @@ function EmailSettings({ smtp, senders, people, presets, secretSource, viewerEma
             <div className="space-y-1.5">
               <Label>Password or app password</Label>
               <Input
-                disabled={fromEnv}
                 type="password"
                 value={f.password}
                 onChange={(e) => setF({ ...f, password: e.target.value })}
@@ -1034,40 +1033,36 @@ function EmailSettings({ smtp, senders, people, presets, secretSource, viewerEma
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label>Default sender name</Label>
-              <Input disabled={fromEnv} value={f.fromName} onChange={(e) => setF({ ...f, fromName: e.target.value })} />
+              <Input value={f.fromName} onChange={(e) => setF({ ...f, fromName: e.target.value })} />
             </div>
             <div className="space-y-1.5">
               <Label>Default sender address</Label>
-              <Input disabled={fromEnv} value={f.fromAddress} onChange={(e) => setF({ ...f, fromAddress: e.target.value })} placeholder="team@yourdomain.com" />
+              <Input value={f.fromAddress} onChange={(e) => setF({ ...f, fromAddress: e.target.value })} placeholder="team@yourdomain.com" />
             </div>
           </div>
-          {!fromEnv && (
-            <div className="space-y-1.5">
-              <Label>Reply-to (optional)</Label>
-              <Input value={f.replyTo} onChange={(e) => setF({ ...f, replyTo: e.target.value })} placeholder="Where replies to the default address go" />
-            </div>
-          )}
+          <div className="space-y-1.5">
+            <Label>Reply-to (optional)</Label>
+            <Input value={f.replyTo} onChange={(e) => setF({ ...f, replyTo: e.target.value })} placeholder="Where replies to the default address go" />
+          </div>
           <p className="text-xs text-muted-foreground">
             Passwords are stored encrypted{secretSource === "APP_SECRET" ? " with the key in APP_SECRET." : ". Set APP_SECRET in the hosting settings to keep the key outside the database (then enter the passwords again)."}
           </p>
           <div className="flex flex-wrap gap-2">
-            {!fromEnv && (
-              <Button
-                disabled={!!busy}
-                onClick={async () => {
-                  setBusy("save");
-                  const r = await saveSmtpAction({ ...f, password: f.password || null, relay: api ? via : null, relayKey: relayKey || null });
-                  setBusy(null);
-                  if (!r.ok) return toast.error(r.error);
-                  toast.success("Email settings saved");
-                  setF({ ...f, password: "" });
-                  setRelayKey("");
-                  router.refresh();
-                }}
-              >
-                {busy === "save" && <Loader2Icon className="animate-spin" />} Save
-              </Button>
-            )}
+            <Button
+              disabled={!!busy}
+              onClick={async () => {
+                setBusy("save");
+                const r = await saveSmtpAction({ ...f, password: f.password || null, relay: api ? via : null, relayKey: relayKey || null });
+                setBusy(null);
+                if (!r.ok) return toast.error(r.error);
+                toast.success("Email settings saved");
+                setF({ ...f, password: "" });
+                setRelayKey("");
+                router.refresh();
+              }}
+            >
+              {busy === "save" && <Loader2Icon className="animate-spin" />} Save
+            </Button>
             <Input value={testTo} onChange={(e) => setTestTo(e.target.value)} className="w-56" aria-label="Send the test to" />
             <Button
               variant="outline"

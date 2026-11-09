@@ -72,24 +72,51 @@ function envRelay(): { provider: RelayProvider; key: string } | null {
 }
 
 export async function smtpSettings(): Promise<SmtpSettings> {
+  const s = await storedSmtp();
   const env = envSmtp();
   const er = envRelay();
-  if (env)
-    return { host: env.host, port: env.port, secure: env.secure, user: env.user, hasPassword: !!env.pass, fromName: env.fromName, fromAddress: env.fromAddress, replyTo: "", source: "env", relay: er?.provider ?? null, hasRelayKey: !!er };
-  const s = await storedSmtp();
-  if (!s) return { host: "", port: 587, secure: false, user: "", hasPassword: false, fromName: "Myseed", fromAddress: "", replyTo: "", source: "none", relay: er?.provider ?? null, hasRelayKey: !!er };
+  if (s) {
+    return {
+      host: s.host,
+      port: s.port,
+      secure: s.secure,
+      user: s.user,
+      hasPassword: !!s.passEnc,
+      fromName: s.fromName,
+      fromAddress: s.fromAddress,
+      replyTo: s.replyTo,
+      source: "app",
+      relay: s.relay ?? null,
+      hasRelayKey: !!s.relayKeyEnc,
+    };
+  }
+  if (env) {
+    return {
+      host: env.host,
+      port: env.port,
+      secure: env.secure,
+      user: env.user,
+      hasPassword: !!env.pass,
+      fromName: env.fromName,
+      fromAddress: env.fromAddress,
+      replyTo: "",
+      source: "env",
+      relay: er?.provider ?? null,
+      hasRelayKey: !!er,
+    };
+  }
   return {
-    host: s.host,
-    port: s.port,
-    secure: s.secure,
-    user: s.user,
-    hasPassword: !!s.passEnc,
-    fromName: s.fromName,
-    fromAddress: s.fromAddress,
-    replyTo: s.replyTo,
-    source: "app",
-    relay: er?.provider ?? s.relay ?? null,
-    hasRelayKey: !!er || !!s.relayKeyEnc,
+    host: "",
+    port: 587,
+    secure: false,
+    user: "",
+    hasPassword: false,
+    fromName: "Myseed",
+    fromAddress: "",
+    replyTo: "",
+    source: "none",
+    relay: null,
+    hasRelayKey: false,
   };
 }
 
@@ -97,7 +124,6 @@ export async function saveSmtp(
   user: AppUser,
   input: { host: string; port: number; secure: boolean; user: string; password?: string | null; fromName: string; fromAddress: string; replyTo?: string; relay?: RelayProvider | null; relayKey?: string | null },
 ) {
-  if (envSmtp()) throw new WorkflowError("INVALID_STATE", "SMTP is set in the hosting environment variables (SMTP_HOST). Change it there.");
   const relay = input.relay && RELAY_PROVIDERS.includes(input.relay) ? input.relay : null;
   const host = input.host.trim();
   // With a web API the SMTP server is optional (kept for when the hosting allows SMTP again).
@@ -251,13 +277,16 @@ function relayTransport(provider: RelayProvider, key: string) {
 }
 
 async function activeRelay(): Promise<{ provider: RelayProvider; key: string } | null> {
+  const s = await storedSmtp();
+  if (s) {
+    if (!s.relay || !s.relayKeyEnc) return null;
+    const key = await unseal(s.relayKeyEnc);
+    if (key === null) throw new WorkflowError("INVALID_STATE", "The saved API key cannot be read (the encryption key changed). Enter it again in Email, Settings.");
+    return { provider: s.relay, key };
+  }
   const er = envRelay();
   if (er) return er;
-  const s = await storedSmtp();
-  if (!s?.relay || !s.relayKeyEnc) return null;
-  const key = await unseal(s.relayKeyEnc);
-  if (key === null) throw new WorkflowError("INVALID_STATE", "The saved API key cannot be read (the encryption key changed). Enter it again in Email, Settings.");
-  return { provider: s.relay, key };
+  return null;
 }
 
 export function isEmail(v: string) {
@@ -268,8 +297,8 @@ type Transport = { transporter: nodemailer.Transporter; host: string; port: numb
 
 // The connection for a sender: its own login when it has one, otherwise the shared account.
 export async function transportFor(sender: SenderRow | null): Promise<Transport> {
-  const env = envSmtp();
-  const s = env ? null : await storedSmtp();
+  const s = await storedSmtp();
+  const env = s ? null : envSmtp();
   const relay = await activeRelay();
   if (relay) {
     // Through the web API every sender address goes out on the one key; the domain must be verified there.
@@ -278,17 +307,17 @@ export async function transportFor(sender: SenderRow | null): Promise<Transport>
       host: RELAY_HOST[relay.provider],
       port: 443,
       authUser: relay.provider === "brevo" ? "Brevo API key" : "Resend API key",
-      fromAddress: sender?.address ?? env?.fromAddress ?? s?.fromAddress ?? "",
-      fromName: sender?.display_name ?? env?.fromName ?? s?.fromName ?? "Myseed",
-      replyTo: env ? "" : (s?.replyTo ?? ""),
+      fromAddress: sender?.address ?? s?.fromAddress ?? env?.fromAddress ?? "",
+      fromName: sender?.display_name ?? s?.fromName ?? env?.fromName ?? "Myseed",
+      replyTo: s?.replyTo ?? "",
     };
   }
   if (!env && !s) throw new WorkflowError("INVALID_STATE", "Email is not set up yet. An administrator adds the SMTP account in Email, Settings.");
-  const host = env?.host ?? s!.host;
-  const port = env?.port ?? s!.port;
-  const secure = env?.secure ?? s!.secure;
-  let authUser = env?.user ?? s!.user;
-  let authPass = env ? env.pass : s!.passEnc ? await unseal(s!.passEnc) : "";
+  const host = s?.host ?? env!.host;
+  const port = s?.port ?? env!.port;
+  const secure = s ? s.secure : env!.secure;
+  let authUser = s?.user ?? env!.user;
+  let authPass = s ? (s.passEnc ? await unseal(s.passEnc) : "") : env!.pass;
   if (sender?.smtp_user && sender.smtp_pass_enc) {
     authUser = sender.smtp_user;
     authPass = await unseal(sender.smtp_pass_enc);
@@ -310,9 +339,9 @@ export async function transportFor(sender: SenderRow | null): Promise<Transport>
     host,
     port,
     authUser,
-    fromAddress: sender?.address ?? env?.fromAddress ?? s!.fromAddress,
-    fromName: sender?.display_name ?? env?.fromName ?? s!.fromName,
-    replyTo: env ? "" : (s!.replyTo ?? ""),
+    fromAddress: sender?.address ?? s?.fromAddress ?? env!.fromAddress,
+    fromName: sender?.display_name ?? s?.fromName ?? env!.fromName,
+    replyTo: s?.replyTo ?? "",
   };
 }
 

@@ -15,6 +15,14 @@ async function main(){
  assert.equal((await smtpSettings()).relay,"resend");assert.equal((await smtpSettings()).hasRelayKey,true);
  const stored=await get<{value:string}>("SELECT value FROM settings WHERE key='cfg.smtp'");
  assert.ok(!stored!.value.includes("test-resend-key"));
+
+ process.env.SMTP_HOST = "mail.env-host.test";
+ process.env.SMTP_USER = "envuser@env-host.test";
+ assert.equal((await smtpSettings()).source, "app");
+ assert.equal((await smtpSettings()).relay, "resend");
+ await saveSmtp(admin, { ...base, relay: "brevo", relayKey: "new-brevo-key" });
+ assert.equal((await smtpSettings()).relay, "brevo");
+ console.log("PASS Email settings save and override environment variables");
  console.log("PASS Provider configuration persists encrypted keys and cannot reuse another provider's credentials");
 }
 main().catch(e=>{console.error(e);console.log("FAIL email provider");process.exitCode=1;}).finally(()=>closeDb());
