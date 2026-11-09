@@ -1,0 +1,36 @@
+import assert from "node:assert/strict";
+import { checkinCodeFrom } from "../../src/lib/checkin-code";
+import { closeDb, get, run } from "../../src/server/db";
+import { loadUser } from "../../src/server/users";
+import * as att from "../../src/server/attendance";
+import { captureConfig, saveCaptureConfig } from "../../src/server/attendance-capture";
+async function main() {
+ const origin="https://example.test", code=`kiosk.kio_123.1794240000000.${"a".repeat(43)}`;
+ assert.equal(checkinCodeFrom(code,origin),code);
+ assert.equal(checkinCodeFrom(`${origin}/in?c=${code}`,origin),code);
+ assert.equal(checkinCodeFrom(`${origin}/in?c=office.poster-key`,origin),"office.poster-key");
+ for (const value of [`https://other.test/in?c=${code}`,`${origin}/api/attendance/kiosk?setup=abc`,`${code}.extra`,"kiosk.bad.1.sig"]) assert.equal(checkinCodeFrom(value,origin),null);
+ console.log("PASS Rotating and printed QR codes accepted; foreign, setup and malformed codes rejected");
+ const admin=(await loadUser((await get<{id:string}>("SELECT id FROM users WHERE email='admin@demo.local'"))!.id))!;
+ const member=(await loadUser((await get<{id:string}>("SELECT id FROM users WHERE email='dawit@demo.local'"))!.id))!;
+ const cfg=await captureConfig();
+ await saveCaptureConfig(admin,{...cfg,sites:[{id:"office-one",name:"Office one",posterKey:"poster",posterAt:new Date().toISOString(),lat:null,lng:null,radiusM:100,networks:[],checks:{network:false,location:false,device:true}}]});
+ await att.saveAttendanceConfig(admin,{methods:{anywhere:false,kiosk:true,mobile:false,face:false}});
+ const k=await att.createKiosk(admin,"Test tablet","Office one");
+ assert.equal((await att.checkKioskConnection(admin,k.id)).ok,false);
+ const token=await att.pairKiosk(k.code);assert.ok(token);
+ assert.equal((await att.checkKioskConnection(admin,k.id)).ok,true);
+ const officeId=(await captureConfig()).sites[0]!.id;
+ await att.setKioskSite(admin,k.id,officeId);
+ assert.equal((await att.checkKioskConnection(admin,k.id)).site,"Office one");
+ await assert.rejects(()=>att.checkKioskConnection(member,k.id),/Admin/);
+ await assert.rejects(()=>att.setKioskSite(member,k.id,"office-one"),/Admin/);
+ await assert.rejects(()=>att.setKioskSite(admin,k.id,"missing"),/configured/);
+ await run("UPDATE att_kiosks SET last_seen_at = ? WHERE id = ?","2020-01-01T00:00:00Z",k.id);
+ assert.equal((await att.checkKioskConnection(admin,k.id)).ok,false);
+ assert.equal((await get<{last_seen_at:string}>("SELECT last_seen_at FROM att_kiosks WHERE id = ?",k.id))!.last_seen_at,"2020-01-01T00:00:00Z");
+ await run("UPDATE att_kiosks SET site = 'deleted-office' WHERE id = ?",k.id);
+ assert.match((await att.checkKioskConnection(admin,k.id)).message,/Office missing/);
+ console.log("PASS Office connection checks detect missing pairing, stale heartbeat and missing office without faking device contact; admin-only changes enforced");
+}
+main().catch(e=>{console.error(e);console.log("FAIL kiosk connection");process.exitCode=1;}).finally(()=>closeDb());

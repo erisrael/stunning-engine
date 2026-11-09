@@ -183,7 +183,7 @@ async function where(c: CaptureConfig, input: { code?: string | null; lat?: numb
       const timestamp = Number(parts[2]);
       const sig = parts[3];
 
-      if (!kioskId || !timestamp || !sig) {
+      if (parts.length !== 4 || !kioskId || !Number.isSafeInteger(timestamp) || !timestamp || !sig) {
         return { ok: false, reason: "Malformed dynamic kiosk QR code.", site: null, via: "qr", needLocation: false, distance: null, ip, deviceOk: false };
       }
 
@@ -191,6 +191,10 @@ async function where(c: CaptureConfig, input: { code?: string | null; lat?: numb
       if (!kiosk || !kiosk.sign_key) {
         return { ok: false, reason: "Unrecognized kiosk terminal.", site: null, via: "qr", needLocation: false, distance: null, ip, deviceOk: false };
       }
+
+      const office = c.sites.find(s => s.id === kiosk.site || s.name === kiosk.site);
+      if (!office) return { ok: false, reason: "This kiosk is not connected to a configured office. Ask Admin to check its connection in Attendance > Capture.", site: null, via: "qr", needLocation: false, distance: null, ip, deviceOk: false };
+      if (!(await (await import("./attendance")).attendanceConfig()).methods.kiosk) return { ok: false, reason: "Kiosk attendance is switched off.", site: null, via: "qr", needLocation: false, distance: null, ip, deviceOk: false };
 
       // Verify freshness against the configured rotation, with five seconds for clock/network skew.
       const interval = (await (await import("./attendance")).attendanceConfig()).qrRefreshIntervalSec;
@@ -209,7 +213,7 @@ async function where(c: CaptureConfig, input: { code?: string | null; lat?: numb
       return {
         ok: true,
         reason: null,
-        site: { id: c.sites.find(s => s.name === kiosk.site)?.id ?? kiosk.id, name: kiosk.site || kiosk.name },
+        site: { id: office.id, name: office.name },
         via: "qr",
         needLocation: false,
         distance: null,

@@ -884,6 +884,29 @@ export async function listKiosks(user: AppUser) {
   }));
 }
 
+// Read-only diagnostics: never mark a device online just because an admin checks it.
+export async function checkKioskConnection(user: AppUser, id: string) {
+  needCapture(user);
+  const k = await get<KioskRow>("SELECT * FROM att_kiosks WHERE id = ?", id);
+  if (!k) throw new WorkflowError("VALIDATION", "Kiosk not found.");
+  const sites = (await (await import("./attendance-capture")).captureConfig()).sites;
+  const cfg = await attendanceConfig();
+  const site = sites.find(s => s.id === k.site || s.name === k.site);
+  const recent = !!k.last_seen_at && Date.now() - Date.parse(k.last_seen_at) < cfg.kioskSilenceMin * 60000;
+  const issues = [!site && "Office missing: select a configured office.", !k.active && "Device is switched off.", !k.token_hash && "Device is not paired: create a setup link and enter its PIN on the tablet.", !cfg.methods.kiosk && "Kiosk attendance is switched off in Capture settings.", k.token_hash && !recent && "Device has stopped reporting: check its internet connection and open the kiosk app."].filter(Boolean);
+  return { ok: issues.length === 0, site: site?.name ?? k.site ?? "Unassigned", message: issues.length ? issues.join(" ") : "Office connected; device paired and reporting.", lastSeenAt: k.last_seen_at };
+}
+
+export async function setKioskSite(user: AppUser, id: string, siteId: string) {
+  needCapture(user);
+  const sites = (await (await import("./attendance-capture")).captureConfig()).sites;
+  const site = sites.find(s => s.id === siteId);
+  if (!site) throw new WorkflowError("VALIDATION", "Choose a configured office.");
+  if (!await get("SELECT id FROM att_kiosks WHERE id = ?", id)) throw new WorkflowError("VALIDATION", "Kiosk not found.");
+  await run("UPDATE att_kiosks SET site = ? WHERE id = ?", site.id, id);
+  await audit({ actor: user }, { action: "attendance.kiosk", summary: `${user.name} connected a kiosk to ${site.name}` });
+}
+
 // A setup code links one tablet or laptop to the kiosk; it works once, within a day.
 async function setupCode(id: string) {
   const code = crypto.randomBytes(18).toString("base64url");

@@ -95,6 +95,11 @@ try {
   check("new kiosk gives a setup link with a QR code", (await a.getByRole("dialog").locator("img[alt='Kiosk setup code']").count()) === 1 && (await a.getByLabel("Setup link").inputValue()).includes("/api/attendance/kiosk?setup="));
   await a.screenshot({ path: path.join(shots, "4-setup-kiosk.png") });
   await a.getByRole("dialog").getByRole("button", { name: "Done" }).first().click();
+  const station = a.locator("li").filter({ hasText: "Studio door" });
+  await station.getByRole("button", { name: "Check connection" }).click();
+  await station.getByRole("status").waitFor();
+  check("office connection checker identifies an unpaired tablet", /not paired/.test(await station.getByRole("status").innerText()));
+  check("existing kiosks have an office assignment control", await station.getByRole("combobox", { name: "Office for Studio door" }).isVisible());
   await a.screenshot({ path: path.join(shots, "5-setup.png"), fullPage: true });
   const exportResponse=await a.request.get(`${base}/api/attendance?month=${yesterday.slice(0,7)}`);
   const xlsx={status:exportResponse.status(),type:exportResponse.headers()["content-type"]||"",size:(await exportResponse.body()).byteLength};

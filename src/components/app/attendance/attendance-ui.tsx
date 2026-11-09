@@ -1281,6 +1281,7 @@ export function Kiosks({ kiosks, sites }: { kiosks: KioskInfo[]; sites: {id:stri
   const { act, busy } = useAct();
   const [name, setName] = React.useState("");
   const [site, setSite] = React.useState(sites[0]?.name ?? "");
+  const [connections, setConnections] = React.useState<Record<string, { ok: boolean; message: string; site: string; lastSeenAt: string | null }>>({});
   const [setup, setSetup] = React.useState<{ id: string; code: string; pin?: string; name: string } | null>(null);
   const ago = (iso: string | null) => {
     if (!iso) return "never";
@@ -1333,9 +1334,18 @@ export function Kiosks({ kiosks, sites }: { kiosks: KioskInfo[]; sites: {id:stri
           {kiosks.map((k) => (
             <li key={k.id} className="flex flex-wrap items-center gap-2 px-3 py-2 text-sm">
               <span className="font-medium">{k.name}</span>
-              <Badge variant="outline" className="text-xs font-normal text-muted-foreground">{k.site || "Main Entrance"}</Badge>
+              <Badge variant="outline" className="text-xs font-normal text-muted-foreground">{sites.find(s => s.id === k.site || s.name === k.site)?.name || k.site || "Unassigned office"}</Badge>
               {!k.active ? <Badge variant="secondary">Off</Badge> : k.paired ? <Badge variant="outline">Set up</Badge> : <Badge variant="secondary">Waiting for setup</Badge>}
               <span className="text-xs text-muted-foreground">Last signal {ago(k.lastSeenAt)}</span>
+              <Select value={sites.find(s => s.id === k.site || s.name === k.site)?.id ?? ""} onValueChange={async (value) => { await act(() => A.setKioskSiteAction(k.id, value), "Office connected"); setConnections({}); }} disabled={busy}>
+                <SelectTrigger className="w-44" aria-label={`Office for ${k.name}`}><SelectValue placeholder="Connect office" /></SelectTrigger>
+                <SelectContent>{sites.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
+              </Select>
+              <Button size="xs" variant="outline" disabled={busy} onClick={async () => {
+                const result = await act<{ ok: boolean; message: string; site: string; lastSeenAt: string | null }>(() => A.checkKioskConnectionAction(k.id));
+                if (result) setConnections(prev => ({ ...prev, [k.id]: result }));
+              }}>Check connection</Button>
+              {connections[k.id] && <p role="status" className="w-full text-xs text-muted-foreground">{connections[k.id].site}: {connections[k.id].message} Last signal {ago(connections[k.id].lastSeenAt)}.</p>}
               <span className="ml-auto flex gap-1">
                 <Button
                   size="xs"

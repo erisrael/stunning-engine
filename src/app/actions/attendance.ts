@@ -86,3 +86,10 @@ export async function saveAttendanceRulesAction(input: Partial<import("@/server/
 export async function publishRulesAction(text: string) {
   return wrap(async () => (await import("@/server/attendance-admin")).publishRules(await requireViewer(), text));
 }
+
+export async function checkKioskConnectionAction(id: string) {
+  return wrap(async () => att.checkKioskConnection(await requireViewer(), id), { revalidate: false });
+}
+export async function setKioskSiteAction(id: string, siteId: string) {
+  return wrap(async () => att.setKioskSite(await requireViewer(), id, siteId));
+}

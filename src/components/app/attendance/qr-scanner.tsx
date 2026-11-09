@@ -10,19 +10,8 @@ import { Loader2Icon, QrCodeIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
-// A code from the poster: a link to /in?c=<code> on this site, or the code alone.
-export function checkinCodeFrom(text: string, origin: string): string | null {
-  const t = text.trim();
-  if (/^[\w-]+\.[\w-]+$/.test(t)) return t;
-  try {
-    const u = new URL(t, origin);
-    if (u.origin !== origin || u.pathname !== "/in") return null;
-    const c = u.searchParams.get("c");
-    return c && /^[\w-]+\.[\w-]+$/.test(c) ? c : null;
-  } catch {
-    return null;
-  }
-}
+import { checkinCodeFrom } from "@/lib/checkin-code";
+export { checkinCodeFrom } from "@/lib/checkin-code";
 
 type Detector = { detect(src: CanvasImageSource): Promise<{ rawValue: string }[]> };
 
@@ -60,10 +49,11 @@ function QrScanDialog({ onClose }: { onClose: () => void }) {
     const native = W.BarcodeDetector ? new W.BarcodeDetector({ formats: ["qr_code"] }) : null;
     const found = (text: string) => {
       const code = checkinCodeFrom(text, window.location.origin);
-      if (!code) return setWrong(true);
+      if (!code) { setWrong(true); return false; }
       stopped = true;
       onClose();
       router.push(`/in?c=${encodeURIComponent(code)}`);
+      return true;
     };
     const tick = async () => {
       if (stopped) return;
@@ -72,14 +62,14 @@ function QrScanDialog({ onClose }: { onClose: () => void }) {
         try {
           if (native) {
             const r = await native.detect(v);
-            if (r[0]?.rawValue) return found(r[0].rawValue);
+            if (r[0]?.rawValue && found(r[0].rawValue)) return;
           } else if (ctx) {
             canvas.width = v.videoWidth;
             canvas.height = v.videoHeight;
             ctx.drawImage(v, 0, 0);
             const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
             const r = jsQR(img.data, img.width, img.height, { inversionAttempts: "dontInvert" });
-            if (r?.data) return found(r.data);
+            if (r?.data && found(r.data)) return;
           }
         } catch {}
       }
@@ -111,7 +101,7 @@ function QrScanDialog({ onClose }: { onClose: () => void }) {
       <DialogContent className="sm:max-w-md" data-qr-dialog>
         <DialogHeader>
           <DialogTitle>Scan the QR at the entrance</DialogTitle>
-          <DialogDescription>Point the camera at the printed code. Checking in follows on the next page.</DialogDescription>
+          <DialogDescription>Point the camera at the kiosk screen or printed poster. Checking in follows on the next page.</DialogDescription>
         </DialogHeader>
         <div className="relative aspect-square overflow-hidden rounded-xl bg-black">
           <video ref={video} className="size-full object-cover" playsInline muted />
@@ -123,7 +113,7 @@ function QrScanDialog({ onClose }: { onClose: () => void }) {
           )}
         </div>
         {error && <p className="text-sm text-destructive">{error}</p>}
-        {wrong && !error && <p className="text-sm text-[var(--st-paused-fg)]">That code is not this workspace&apos;s check-in poster.</p>}
+        {wrong && !error && <p className="text-sm text-[var(--st-paused-fg)]">This is not a check-in code for this workspace. Scan the rotating attendance QR or printed poster; device setup codes belong on the kiosk pairing screen.</p>}
       </DialogContent>
     </Dialog>
   );

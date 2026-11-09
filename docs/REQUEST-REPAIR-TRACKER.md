@@ -63,9 +63,20 @@ Updated 2026-11-08. Implementation and verification are tracked separately. Setu
 
 - [x] Restore attendance sections for admins/leads and add Attendance to the admin sidebar.
 - [x] Restore working page tabs in Admin, Settings, Email, Studio, Owners, HR and Finance; Settings includes Teams.
-- [ ] Verify and deploy the attendance/tab restoration before subsequent changes.
+- [x] Verified and deployed attendance/tab restoration as afc4d5f; public health and login checks passed.
 - [ ] Verify Brevo/Resend configuration and Data Manager import display.
 - [ ] Require import previews and team-lead approval; deny regular-member imports unless Admin explicitly enables them.
 - [ ] Add appropriate Finance requests/equipment import templates and workflows.
 - [ ] Verify configurable automatic backups and point-in-time restore behavior.
 - [ ] Add verified Gmail account linking, configurable Google sign-in/password recovery and admin-controlled editable profile fields.
+
+### Attendance QR and office connection follow-up (2026-11-09)
+
+- [x] Recognize both rotating kiosk QR codes and printed fail-safe posters in the in-app scanner; continue scanning after an unrelated code.
+- [x] Add admin-only office assignment and a read-only connection checker under Attendance > Capture > Kiosks (pairing, office, enabled state, last heartbeat).
+- [x] Resolve stable office IDs and legacy office names when validating kiosk QR codes; report missing offices clearly.
+- [x] Server verification: 86 checks across attendance, QR rules and kiosk connection regressions; production build passed.
+- [x] Browser attendance verification: 29 checks passed, including office assignment controls and connection diagnostics.
+- [ ] Deploy the QR/office connection follow-up.
+
+Remaining work resumes with provider setup and imports, then approval/permission enforcement, resource templates, backup restore verification, and Google/profile controls. No partial implementation of those changes is included in this attendance release.
