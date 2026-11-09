@@ -143,7 +143,7 @@ export function StudioClient({
   const writable = !access.readOnly;
   const nav = (
     <Tabs value={current} onValueChange={(v) => (v === "dashboard" ? router.push(pathname) : go({ tab: v, status: null, sort: null, type: null, difficulty: null, period: null, person: null, grade: null }))}>
-      <TabsList className="hidden">
+      <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1">
         <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
         <TabsTrigger value="board">Board</TabsTrigger>
         <TabsTrigger value="calendar">Calendar</TabsTrigger>

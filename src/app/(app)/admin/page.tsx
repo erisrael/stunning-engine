@@ -138,29 +138,29 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
         }
       />
       <Tabs key={tab} value={tab} className="gap-4">
-        <TabsList className="hidden">
-          {manageUsers && <TabsTrigger value="people">People ({users.filter((u) => u.active).length})</TabsTrigger>}
-          {manageUsers && <TabsTrigger value="teams">Teams</TabsTrigger>}
-          {manageUsers && <TabsTrigger value="departments">Departments</TabsTrigger>}
-          {manageUsers && <TabsTrigger value="permissions">Roles and permissions</TabsTrigger>}
-          {manageUsers && <TabsTrigger value="access">Access</TabsTrigger>}
-          {manageUsers && <TabsTrigger value="sessions">Sessions and devices</TabsTrigger>}
-          {manageUsers && <TabsTrigger value="chat">Chat</TabsTrigger>}
-          {manageUsers && <TabsTrigger value="feedback">Feedback</TabsTrigger>}
-          {manageUsers && <TabsTrigger value="reports">Safety reports</TabsTrigger>}
-          {manageUsers && <TabsTrigger value="signin">Sign-in</TabsTrigger>}
-          {manageUsers && <TabsTrigger value="sidebar">Sidebar</TabsTrigger>}
-          {manageUsers && <TabsTrigger value="branding">Branding</TabsTrigger>}
-          {manageUsers && <TabsTrigger value="presentations">Presentation templates</TabsTrigger>}
-          {manageUsers && <TabsTrigger value="usage">Usage</TabsTrigger>}
-          {manageUsers && <TabsTrigger value="privacy">Privacy</TabsTrigger>}
-          {manageUsers && <TabsTrigger value="files">Files and publishing</TabsTrigger>}
-          {manageUsers && <TabsTrigger value="integrations">Integrations</TabsTrigger>}
-          {manageUsers && <TabsTrigger value="customer-support">Customer support</TabsTrigger>}
-          {manageUsers && <TabsTrigger value="external-apis">External APIs</TabsTrigger>}
-          {manageUsers && <TabsTrigger value="clean-data">Clean data</TabsTrigger>}
-          {manageUsers && <TabsTrigger value="system">System</TabsTrigger>}
-          {manageData && <TabsTrigger value="data">Data</TabsTrigger>}
+        <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1">
+          {manageUsers && <TabsTrigger value="people" asChild><Link href="/admin?tab=people">People ({users.filter((u) => u.active).length})</Link></TabsTrigger>}
+          {manageUsers && <TabsTrigger value="teams" asChild><Link href="/admin?tab=teams">Teams</Link></TabsTrigger>}
+          {manageUsers && <TabsTrigger value="departments" asChild><Link href="/admin?tab=departments">Departments</Link></TabsTrigger>}
+          {manageUsers && <TabsTrigger value="permissions" asChild><Link href="/admin?tab=permissions">Roles and permissions</Link></TabsTrigger>}
+          {manageUsers && <TabsTrigger value="access" asChild><Link href="/admin?tab=access">Access</Link></TabsTrigger>}
+          {manageUsers && <TabsTrigger value="sessions" asChild><Link href="/admin?tab=sessions">Sessions and devices</Link></TabsTrigger>}
+          {manageUsers && <TabsTrigger value="chat" asChild><Link href="/admin?tab=chat">Chat</Link></TabsTrigger>}
+          {manageUsers && <TabsTrigger value="feedback" asChild><Link href="/admin?tab=feedback">Feedback</Link></TabsTrigger>}
+          {manageUsers && <TabsTrigger value="reports" asChild><Link href="/admin?tab=reports">Safety reports</Link></TabsTrigger>}
+          {manageUsers && <TabsTrigger value="signin" asChild><Link href="/admin?tab=signin">Sign-in</Link></TabsTrigger>}
+          {manageUsers && <TabsTrigger value="sidebar" asChild><Link href="/admin?tab=sidebar">Sidebar</Link></TabsTrigger>}
+          {manageUsers && <TabsTrigger value="branding" asChild><Link href="/admin?tab=branding">Branding</Link></TabsTrigger>}
+          {manageUsers && <TabsTrigger value="presentations" asChild><Link href="/admin?tab=presentations">Presentation templates</Link></TabsTrigger>}
+          {manageUsers && <TabsTrigger value="usage" asChild><Link href="/admin?tab=usage">Usage</Link></TabsTrigger>}
+          {manageUsers && <TabsTrigger value="privacy" asChild><Link href="/admin?tab=privacy">Privacy</Link></TabsTrigger>}
+          {manageUsers && <TabsTrigger value="files" asChild><Link href="/admin?tab=files">Files and publishing</Link></TabsTrigger>}
+          {manageUsers && <TabsTrigger value="integrations" asChild><Link href="/admin?tab=integrations">Integrations</Link></TabsTrigger>}
+          {manageUsers && <TabsTrigger value="customer-support" asChild><Link href="/admin?tab=customer-support">Customer support</Link></TabsTrigger>}
+          {manageUsers && <TabsTrigger value="external-apis" asChild><Link href="/admin?tab=external-apis">External APIs</Link></TabsTrigger>}
+          {manageUsers && <TabsTrigger value="clean-data" asChild><Link href="/admin?tab=clean-data">Clean data</Link></TabsTrigger>}
+          {manageUsers && <TabsTrigger value="system" asChild><Link href="/admin?tab=system">System</Link></TabsTrigger>}
+          {manageData && <TabsTrigger value="data" asChild><Link href="/admin?tab=data">Data</Link></TabsTrigger>}
         </TabsList>
         {manageUsers && (
           <>

@@ -108,7 +108,7 @@ export function EmailClient(props: {
   const ready = props.smtp.source !== "none";
   return (
     <Tabs value={props.tab} onValueChange={(v) => go({ tab: v === props.defaultTab ? null : v, box: null })} className="gap-4">
-      <TabsList className="hidden">
+      <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1">
         {props.inbox && <TabsTrigger value="inbox">Inbox</TabsTrigger>}
         <TabsTrigger value="compose">{props.inbox ? "Send to many" : "Compose"}</TabsTrigger>
         <TabsTrigger value="sent">Sent log</TabsTrigger>

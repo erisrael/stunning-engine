@@ -133,7 +133,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
         }
       />
       {/* Leads, HR and Admin get these as links under Attendance in the sidebar. */}
-      {tabs.length > 1 && !lead && !admin && <AttTabs tab={tab} tabs={tabs} />}
+      {tabs.length > 1 && <AttTabs tab={tab} tabs={tabs} />}
       {panel}
     </div>
   );

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { requireCapability } from "@/server/auth";
 import { all } from "@/server/db";
 import { getSettings } from "@/server/settings";
@@ -28,15 +29,15 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         actions={<PageImport viewer={viewer} page="curriculum" label="Import curriculum" />}
       />
       <Tabs value={tab} className="gap-4">
-        <TabsList className="hidden">
-          <TabsTrigger value="taxonomy">Curriculum</TabsTrigger>
-          <TabsTrigger value="workflow">Workflow</TabsTrigger>
-          <TabsTrigger value="teams">Teams</TabsTrigger>
-          <TabsTrigger value="destinations">Destinations</TabsTrigger>
-          <TabsTrigger value="calendar">Calendar and alerts</TabsTrigger>
-          <TabsTrigger value="lists">Lists</TabsTrigger>
-          <TabsTrigger value="workspace">Workspace</TabsTrigger>
-          <TabsTrigger value="calls">Calls</TabsTrigger>
+        <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1">
+          <TabsTrigger value="taxonomy" asChild><Link href="/settings?tab=taxonomy">Curriculum</Link></TabsTrigger>
+          <TabsTrigger value="workflow" asChild><Link href="/settings?tab=workflow">Workflow</Link></TabsTrigger>
+          <TabsTrigger value="teams" asChild><Link href="/settings?tab=teams">Teams</Link></TabsTrigger>
+          <TabsTrigger value="destinations" asChild><Link href="/settings?tab=destinations">Destinations</Link></TabsTrigger>
+          <TabsTrigger value="calendar" asChild><Link href="/settings?tab=calendar">Calendar and alerts</Link></TabsTrigger>
+          <TabsTrigger value="lists" asChild><Link href="/settings?tab=lists">Lists</Link></TabsTrigger>
+          <TabsTrigger value="workspace" asChild><Link href="/settings?tab=workspace">Workspace</Link></TabsTrigger>
+          <TabsTrigger value="calls" asChild><Link href="/settings?tab=calls">Calls</Link></TabsTrigger>
         </TabsList>
         <TabsContent value="taxonomy">
           <TaxonomySettings t={{ grades: tax.grades, subjects: tax.subjects, gradeSubjects: tax.gradeSubjects, units: tax.units, lessons, terms: s.lists.terms }} />

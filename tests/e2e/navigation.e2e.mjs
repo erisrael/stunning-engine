@@ -41,7 +41,7 @@ try {
   await d.waitForURL(/\/dev\/board$/);
   check("Board has its own address", true);
   check("the Board entry is the active one", (await sideLink(d, "Board").getAttribute("data-active")) === "true" && (await sideLink(d, "My board").getAttribute("data-active")) !== "true");
-  check("duplicate page navigation is removed", (await d.getByRole("group", { name: "View" }).count()) === 0 && (await d.getByRole("tab", { name: /Timeline|Overview|Projects/ }).count()) === 0);
+  check("Board and List page navigation is restored", await d.getByRole("group", { name: "View" }).isVisible());
   await sideLink(d, "List").click();
   await d.waitForURL(/\/dev\/list/);
   check("the sidebar opens /dev/list", true);
@@ -71,7 +71,7 @@ try {
 
   check("a user granted Noor CMS access gets a direct sidebar link", await sideLink(d,"Legacy CMS (Noor)").isVisible());
   await a.goto(`${base}/admin?tab=sidebar`);
-  check("Admin has no duplicate category navigation", await a.locator('main a[href="/admin?tab=people"]').count()===0);
+  check("Admin page navigation is restored", await a.locator('main a[href="/admin?tab=people"]').isVisible());
   await a.getByRole("combobox",{name:"Role",exact:true}).click();
   await a.getByRole("option",{name:"Developer",exact:true}).click();
   await a.getByRole("checkbox",{name:"Dev team",exact:true}).uncheck();

@@ -484,6 +484,7 @@ export function AppSidebar({
         label: "My space",
         items: [
           { href: "/dashboard", label: "Home", icon: HomeIcon, locked: true },
+          { href: "/attendance", label: "Attendance", icon: ClockIcon, sub: attSub },
           { href: "/announcements", label: "Announcements", icon: MegaphoneIcon },
           ...(recognition ? [{ href: "/recognition", label: "Recognition", icon: TrophyIcon }] : []),
           { href: "/performance", label: "Performance", icon: TargetIcon },

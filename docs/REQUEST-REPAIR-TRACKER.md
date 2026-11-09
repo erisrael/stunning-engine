@@ -58,3 +58,14 @@ Updated 2026-11-08. Implementation and verification are tracked separately. Setu
 - [x] Sidebar browser verification: 36 checks passed, including admin visibility in an open session, counter/dropdown spacing, collapsed controls and phone group toggles. Repair screens: 23 checks passed.
 - [x] Production database backup created before publishing: myseed-20261108-1613.json.gz, 24,856 rows.
 - [x] Final browser verification: 69 checks passed (navigation 36, repair screens 23, CMS background flow 10). The CMS browser fixture delays its first response by 22 seconds, checks responsive controls, row counts and paging, retries HTTP 503, publishes a full cache and resumes a date-filter scan after page two fails.
+
+## Follow-up requested 2026-11-09
+
+- [x] Restore attendance sections for admins/leads and add Attendance to the admin sidebar.
+- [x] Restore working page tabs in Admin, Settings, Email, Studio, Owners, HR and Finance; Settings includes Teams.
+- [ ] Verify and deploy the attendance/tab restoration before subsequent changes.
+- [ ] Verify Brevo/Resend configuration and Data Manager import display.
+- [ ] Require import previews and team-lead approval; deny regular-member imports unless Admin explicitly enables them.
+- [ ] Add appropriate Finance requests/equipment import templates and workflows.
+- [ ] Verify configurable automatic backups and point-in-time restore behavior.
+- [ ] Add verified Gmail account linking, configurable Google sign-in/password recovery and admin-controlled editable profile fields.
