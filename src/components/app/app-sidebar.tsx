@@ -102,6 +102,14 @@ import { ROLE_LABELS, type Capability, type Role } from "@/lib/domain";
 import { scopeQueryString } from "@/lib/filters";
 import { AppIcon, type Tone } from "@/components/app/app-icon";
 
+const ADMIN_CATEGORY_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
+  "People & roles": UsersRoundIcon,
+  "Security": ShieldCheckIcon,
+  "Communication & support": HeadsetIcon,
+  "Integrations": ZapIcon,
+  "System & workspace": Settings2Icon,
+};
+
 type NavItem = {
   href: string;
   // Key used for hiding and tooltips when the link changes (the work views).
@@ -498,7 +506,15 @@ export function AppSidebar({
       {
         label: "Administration",
         items: [
-          ...ADMIN_SIDEBAR_GROUPS.map(category=>({href:category.links[0].href,label:category.label,icon:UserCogIcon,cap:"users.manage" as Capability,exact:true,gather:true,sub:category.links})),
+          ...ADMIN_SIDEBAR_GROUPS.map((category) => ({
+            href: category.links[0].href,
+            label: category.label,
+            icon: ADMIN_CATEGORY_ICONS[category.label] ?? UserCogIcon,
+            cap: "users.manage" as Capability,
+            exact: true,
+            gather: true,
+            sub: category.links,
+          })),
           {
             href: "/settings",
             label: "Settings",
@@ -672,7 +688,7 @@ export function AppSidebar({
                             </Link>
                           </SidebarMenuButton>
                           <div className="flex shrink-0 items-center gap-1 pr-1 group-data-[collapsible=icon]:hidden" data-nav-controls>
-                          {!!item.badge && item.badge>0 && <span data-sidebar="menu-badge" data-nav-count={item.badge} title={String(item.badge)} aria-label={`${item.label}: ${item.badge}`} className="pointer-events-none flex h-5 min-w-5 items-center justify-center rounded-full bg-sidebar-border/80 px-1.5 text-[10px] tabular-nums">{item.badge>99?"99+":item.badge}</span>}
+                          {!!item.badge && item.badge>0 && <span data-sidebar="menu-badge" data-nav-count={item.badge} title={String(item.badge)} aria-label={`${item.label}: ${item.badge}`} className="pointer-events-none flex h-5 min-w-5 items-center justify-center rounded-full bg-primary/15 text-primary border border-primary/25 px-1.5 text-[10px] font-semibold tabular-nums shadow-xs">{item.badge>99?"99+":item.badge}</span>}
                           {item.sub && <button type="button" aria-label={`${expanded?"Collapse":"Expand"} ${item.label}`} aria-expanded={expanded} className="flex size-7 shrink-0 items-center justify-center rounded-md hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-sidebar-ring" onClick={()=>setOpenGroups(o=>[...o.filter(k=>k!==`item:${item.href}`&&k!==`closed:${item.href}`),`${expanded?"closed":"item"}:${item.href}`])}><ChevronDownIcon className={cn("size-4 transition-transform",!expanded&&"-rotate-90")}/></button>}
                           </div>
                           </div>

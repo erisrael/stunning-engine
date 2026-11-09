@@ -8,7 +8,7 @@ import { evaluateRequirements, getItem, WorkflowError } from "@/server/workflow"
 import * as wf from "@/server/workflow";
 import { audit } from "@/server/workflow";
 import { REDO_LABELS, RETURN_REASON_LABELS, type AssetKind, type Stage } from "@/lib/domain";
-import { postCard, stageGroup } from "@/server/chat";
+import { directGroup, postCard, stageGroup } from "@/server/chat";
 import { managers, notify, teamLeads } from "@/server/notifications";
 import { addReviewNote, deleteReviewNote, resolveReviewNote } from "@/server/review-notes";
 
@@ -111,20 +111,24 @@ export async function itemAction(itemId: string, input: ItemActionInput, opts: {
               else await wf.reopenStage(ctx, itemId, { target: input.target, reasonCategory: input.reasonCategory, note: input.note, expectedVersion: v });
               const item = await getItem(itemId);
               const label = REDO_LABELS[input.target];
-              // The team that has to redo it hears straight away, besides the card in its chat.
+              // Redo notification: notify the team lead only (not the whole previous team).
               const leads = await teamLeads(input.target);
+              const recipients = leads.length ? leads : await managers();
               await notify(
-                leads.length ? leads : await managers(),
-                { type: "handoff", title: `${label}: ${item.code}`, body: `${viewer.name}: ${input.note}`, link: "/dashboard", itemId, dedupeKey: `redo:${itemId}:${nowIso()}` },
+                recipients,
+                { type: "handoff", title: `${label}: ${item.code}`, body: `${viewer.name}: ${input.note}`, link: `/items/${itemId}`, itemId, dedupeKey: `redo:${itemId}:${nowIso()}` },
                 nowIso(),
                 viewer.id,
               );
-              await postCard(await stageGroup(input.target), viewer.id, {
-                kind: "request",
-                body: `${label} for ${item.code} (${item.title}): ${input.note}`,
-                itemId,
-                meta: { label, target: input.target, from, reason: RETURN_REASON_LABELS[input.reasonCategory] ?? input.reasonCategory },
-              });
+              for (const recipientId of recipients) {
+                const dmGroup = await directGroup(viewer.id, recipientId);
+                await postCard(dmGroup, viewer.id, {
+                  kind: "request",
+                  body: `${label} for ${item.code} (${item.title}): ${input.note}`,
+                  itemId,
+                  meta: { label, target: input.target, from, reason: RETURN_REASON_LABELS[input.reasonCategory] ?? input.reasonCategory },
+                });
+              }
               return;
             }
             case "stageDate":

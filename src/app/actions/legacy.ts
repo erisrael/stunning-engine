@@ -13,8 +13,8 @@ export async function addSubjectAction(gradeId: string, name: string) {
 export async function addUnitAction(gradeId: string, subjectId: string, title: string) {
   return wrap(async () => lg.addUnit(await requireViewer(), gradeId, subjectId, title));
 }
-export async function addPartAction(unitId: string, title: string) {
-  return wrap(async () => lg.addPart(await requireViewer(), unitId, title));
+export async function addPartAction(unitId: string, title: string, opts?: lg.AddPartOptions) {
+  return wrap(async () => lg.addPart(await requireViewer(), unitId, title, opts));
 }
 export async function editPartAction(id: string, title: string) {
   return wrap(async () => renamePart(await requireViewer(), id, title));

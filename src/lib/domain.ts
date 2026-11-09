@@ -352,6 +352,7 @@ const COMMON_OPTIONS: SheetStatusOption[] = [
   { value: "in_progress", label: "In progress" },
   { value: "paused", label: "Paused" },
   { value: "blocked", label: "Blocked" },
+  { value: "ready_for_handover", label: "Ready for handover" },
   { value: "awaiting_handoff", label: "Handed over" },
   { value: "completed", label: "Done" },
 ];
@@ -365,6 +366,7 @@ export const SHEET_STATUS_OPTIONS: Record<Stage, SheetStatusOption[]> = {
     { value: "sub:processing", label: "Processing" },
     { value: "sub:failed", label: "Upload failed" },
     { value: "blocked", label: "Blocked" },
+    { value: "ready_for_handover", label: "Ready for handover" },
     { value: "awaiting_handoff", label: "Handed over" },
     { value: "completed", label: "Done" },
   ],

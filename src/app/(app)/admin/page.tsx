@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { DatabaseIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { requireViewer } from "@/server/auth";
-import { all, databaseLabel } from "@/server/db";
+import { all, get, databaseLabel } from "@/server/db";
 import { getPermissionMatrix } from "@/server/settings";
 import { taxonomy } from "@/server/queries";
 import { can, listUsers } from "@/server/users";
@@ -117,6 +117,81 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     }));
   const roleCounts = Object.fromEntries(ROLES.map((r) => [r, users.filter((u) => u.active && u.roles.includes(r)).length])) as Record<Role, number>;
   const leadCounts = Object.fromEntries(STAGES.map((st) => [st, team.filter((u) => u.leads.includes(st)).length])) as Record<Stage, number>;
+  const openFeedback = Number((await get<{ c: number }>("SELECT COUNT(*) AS c FROM feedback WHERE status = 'open'").catch(() => null))?.c ?? 0);
+  const openReports = Number((await get<{ c: number }>("SELECT COUNT(*) AS c FROM safety_reports WHERE status = 'open'").catch(() => null))?.c ?? 0);
+
+  const ADMIN_TAB_GROUPS: {
+    key: string;
+    label: string;
+    tabs: { id: string; label: string; count?: number }[];
+  }[] = [
+    ...(manageUsers
+      ? [
+          {
+            key: "people",
+            label: "People & roles",
+            tabs: [
+              { id: "people", label: "People", count: users.filter((u) => u.active).length },
+              { id: "teams", label: "Teams", count: team.length },
+              { id: "departments", label: "Departments" },
+              { id: "permissions", label: "Roles & permissions" },
+              { id: "access", label: "Access" },
+              { id: "sidebar", label: "Sidebar" },
+            ],
+          },
+          {
+            key: "security",
+            label: "Security",
+            tabs: [
+              { id: "signin", label: "Sign-in" },
+              { id: "sessions", label: "Sessions & devices" },
+              { id: "privacy", label: "Privacy" },
+            ],
+          },
+          {
+            key: "comms",
+            label: "Communication & support",
+            tabs: [
+              { id: "customer-support", label: "Support setup" },
+              { id: "chat", label: "Chat" },
+              { id: "feedback", label: "Feedback", count: openFeedback },
+              { id: "reports", label: "Safety reports", count: openReports },
+            ],
+          },
+          {
+            key: "integrations",
+            label: "Integrations",
+            tabs: [
+              { id: "external-apis", label: "External APIs" },
+              { id: "integrations", label: "Integrations" },
+            ],
+          },
+          {
+            key: "system",
+            label: "System & workspace",
+            tabs: [
+              { id: "system", label: "System" },
+              { id: "branding", label: "Branding" },
+              { id: "files", label: "Files & publishing" },
+              { id: "usage", label: "Usage" },
+              { id: "clean-data", label: "Clean data" },
+              { id: "presentations", label: "Presentation templates" },
+              ...(manageData ? [{ id: "data", label: "Data" }] : []),
+            ],
+          },
+        ]
+      : manageData
+        ? [
+            {
+              key: "data",
+              label: "Data",
+              tabs: [{ id: "data", label: "Data" }],
+            },
+          ]
+        : []),
+  ];
+
+  const currentGroup = ADMIN_TAB_GROUPS.find((g) => g.tabs.some((t) => t.id === tab)) ?? ADMIN_TAB_GROUPS[0];
 
   return (
     <AdminRoleProvider roles={await roleCatalog()}><div className="space-y-4">
@@ -138,31 +213,45 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           </>
         }
       />
-      <Tabs key={tab} value={tab} className="gap-4">
-        <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1">
-          {manageUsers && <TabsTrigger value="people" asChild><Link href="/admin?tab=people">People ({users.filter((u) => u.active).length})</Link></TabsTrigger>}
-          {manageUsers && <TabsTrigger value="teams" asChild><Link href="/admin?tab=teams">Teams</Link></TabsTrigger>}
-          {manageUsers && <TabsTrigger value="departments" asChild><Link href="/admin?tab=departments">Departments</Link></TabsTrigger>}
-          {manageUsers && <TabsTrigger value="permissions" asChild><Link href="/admin?tab=permissions">Roles and permissions</Link></TabsTrigger>}
-          {manageUsers && <TabsTrigger value="access" asChild><Link href="/admin?tab=access">Access</Link></TabsTrigger>}
-          {manageUsers && <TabsTrigger value="sessions" asChild><Link href="/admin?tab=sessions">Sessions and devices</Link></TabsTrigger>}
-          {manageUsers && <TabsTrigger value="chat" asChild><Link href="/admin?tab=chat">Chat</Link></TabsTrigger>}
-          {manageUsers && <TabsTrigger value="feedback" asChild><Link href="/admin?tab=feedback">Feedback</Link></TabsTrigger>}
-          {manageUsers && <TabsTrigger value="reports" asChild><Link href="/admin?tab=reports">Safety reports</Link></TabsTrigger>}
-          {manageUsers && <TabsTrigger value="signin" asChild><Link href="/admin?tab=signin">Sign-in</Link></TabsTrigger>}
-          {manageUsers && <TabsTrigger value="sidebar" asChild><Link href="/admin?tab=sidebar">Sidebar</Link></TabsTrigger>}
-          {manageUsers && <TabsTrigger value="branding" asChild><Link href="/admin?tab=branding">Branding</Link></TabsTrigger>}
-          {manageUsers && <TabsTrigger value="presentations" asChild><Link href="/admin?tab=presentations">Presentation templates</Link></TabsTrigger>}
-          {manageUsers && <TabsTrigger value="usage" asChild><Link href="/admin?tab=usage">Usage</Link></TabsTrigger>}
-          {manageUsers && <TabsTrigger value="privacy" asChild><Link href="/admin?tab=privacy">Privacy</Link></TabsTrigger>}
-          {manageUsers && <TabsTrigger value="files" asChild><Link href="/admin?tab=files">Files and publishing</Link></TabsTrigger>}
-          {manageUsers && <TabsTrigger value="integrations" asChild><Link href="/admin?tab=integrations">Integrations</Link></TabsTrigger>}
-          {manageUsers && <TabsTrigger value="customer-support" asChild><Link href="/admin?tab=customer-support">Customer support</Link></TabsTrigger>}
-          {manageUsers && <TabsTrigger value="external-apis" asChild><Link href="/admin?tab=external-apis">External APIs</Link></TabsTrigger>}
-          {manageUsers && <TabsTrigger value="clean-data" asChild><Link href="/admin?tab=clean-data">Clean data</Link></TabsTrigger>}
-          {manageUsers && <TabsTrigger value="system" asChild><Link href="/admin?tab=system">System</Link></TabsTrigger>}
-          {manageData && <TabsTrigger value="data" asChild><Link href="/admin?tab=data">Data</Link></TabsTrigger>}
-        </TabsList>
+      <div className="space-y-3">
+        {ADMIN_TAB_GROUPS.length > 1 && (
+          <div className="flex flex-wrap items-center gap-1.5 border-b border-border/60 pb-2.5">
+            {ADMIN_TAB_GROUPS.map((g) => {
+              const isCurrent = g.key === currentGroup?.key;
+              return (
+                <Link
+                  key={g.key}
+                  href={`/admin?tab=${g.tabs[0].id}`}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-all",
+                    isCurrent
+                      ? "bg-primary text-primary-foreground shadow-xs font-semibold ring-1 ring-primary/30"
+                      : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  )}
+                >
+                  <span>{g.label}</span>
+                </Link>
+              );
+            })}
+          </div>
+        )}
+        <Tabs key={tab} value={tab} className="gap-4">
+          {currentGroup && (
+            <TabsList className="inline-flex h-9 w-auto max-w-full items-center justify-start gap-1 overflow-x-auto rounded-lg bg-muted/60 p-1 text-muted-foreground">
+              {currentGroup.tabs.map((t) => (
+                <TabsTrigger key={t.id} value={t.id} className="h-7 px-3 text-xs" asChild>
+                  <Link href={`/admin?tab=${t.id}`} className="flex items-center gap-1.5">
+                    <span>{t.label}</span>
+                    {t.count !== undefined && t.count > 0 && (
+                      <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-primary/15 px-1 text-[10px] font-semibold text-primary tabular-nums">
+                        {t.count}
+                      </span>
+                    )}
+                  </Link>
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          )}
         {manageUsers && (
           <>
             <TabsContent value="people" className="space-y-4">
@@ -317,6 +406,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           </TabsContent>
         )}
       </Tabs>
+      </div>
     </div></AdminRoleProvider>
   );
 }

@@ -32,7 +32,7 @@ async function main() {
   await gf.saveGeofenceConfig(admin, { mode: "break_then_checkout", graceMin: 10, checkoutAfterMin: 60 });
 
   check("checked out: nothing is watched", !(await gf.geofenceStatus(dawit)).watch);
-  await punchKind(emp, "in", { at: ago(120), source: "web" });
+  await punchKind(emp, "in", { at: ago(15), source: "web" });
   check("checked in: the phone watches", (await gf.geofenceStatus(dawit)).watch);
 
   const t0 = await gf.geofenceTick(dawit, here);

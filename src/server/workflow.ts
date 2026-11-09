@@ -716,7 +716,7 @@ async function openAttempt(ctx: Ctx, itemId: string, stage: Stage, cause: string
         now,
         actorId(ctx) ?? undefined,
       );
-    if (owner)
+    if (owner && cause !== "reopened")
       await notify(
                 [owner],
                 {

@@ -8,7 +8,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowRightIcon, BookOpenIcon, BoxesIcon, CheckCheckIcon, ChevronRightIcon, DownloadIcon, FileTextIcon, FilmIcon, HomeIcon, LayersIcon, Loader2Icon, PencilIcon, PlusIcon, SettingsIcon, Trash2Icon, UploadIcon, VideoIcon } from "lucide-react";
+import { ArrowRightIcon, BookOpenIcon, BoxesIcon, CheckCheckIcon, ChevronRightIcon, DownloadIcon, FileTextIcon, FilmIcon, HomeIcon, LayersIcon, ListPlusIcon, Loader2Icon, PencilIcon, PlusIcon, SettingsIcon, SparklesIcon, Trash2Icon, UploadIcon, VideoIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -679,9 +679,184 @@ function ReadyView({ rows, lead }: { rows: ReadyRow[]; lead: boolean }) {
   );
 }
 
+type AddPartState = {
+  insertAt?: number | null;
+  kind?: "standard" | "review" | "custom";
+};
+
+const isReviewPart = (title: string) => /^(?:review|summary|ክለሳ|ፈተና|exam)/i.test(String(title ?? "").trim());
+
+function AddPartDialog({
+  unitNumber,
+  existingParts,
+  initial,
+  onClose,
+  onSave,
+}: {
+  unitNumber: number;
+  existingParts: LegacyPart[];
+  initial: AddPartState;
+  onClose: () => void;
+  onSave: (title: string, opts: { insertAt?: number | null; kind: "standard" | "review" | "custom" }) => Promise<boolean>;
+}) {
+  const [kind, setKind] = React.useState<"standard" | "review" | "custom">(initial.kind ?? "standard");
+  const nextNum = (existingParts.at(-1)?.number ?? 0) + 1;
+  const [insertAt, setInsertAt] = React.useState<number | "end">(
+    initial.insertAt && initial.insertAt <= nextNum ? initial.insertAt : "end"
+  );
+
+  const defaultTitle = (k: "standard" | "review" | "custom", pos: number | "end") => {
+    const num = pos === "end" ? nextNum : pos;
+    if (k === "standard") return `Part ${num}: `;
+    if (k === "review") return `Review: Unit ${unitNumber}`;
+    return "";
+  };
+
+  const [title, setTitle] = React.useState(() => defaultTitle(initial.kind ?? "standard", initial.insertAt ?? "end"));
+  const [busy, setBusy] = React.useState(false);
+
+  const handleKindChange = (nextK: "standard" | "review" | "custom") => {
+    setKind(nextK);
+    setTitle(defaultTitle(nextK, insertAt));
+  };
+
+  const handleInsertAtChange = (val: string) => {
+    const nextPos = val === "end" ? "end" : Number(val);
+    setInsertAt(nextPos);
+    if (kind === "standard" && title.startsWith("Part ")) {
+      const num = nextPos === "end" ? nextNum : nextPos;
+      const rest = title.replace(/^Part\s*\d+\s*[:.\-–]?\s*/i, "");
+      setTitle(`Part ${num}: ${rest}`);
+    }
+  };
+
+  const save = async () => {
+    if (!title.trim()) return;
+    setBusy(true);
+    const chosenInsertAt = insertAt === "end" ? null : insertAt;
+    const ok = await onSave(title.trim(), { insertAt: chosenInsertAt, kind });
+    setBusy(false);
+    if (ok) onClose();
+  };
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-md" data-legacy-dialog>
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            {kind === "review" ? <SparklesIcon className="size-5 text-amber-500" /> : <LayersIcon className="size-5 text-primary" />}
+            {kind === "review" ? "Add Review Part" : kind === "custom" ? "Add Custom Part" : "Add Part"}
+          </DialogTitle>
+          <DialogDescription>
+            Add a lesson, review session, or custom part to Unit {unitNumber}.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 py-2">
+          {/* Part Type Selection */}
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold uppercase text-muted-foreground">Part Type</Label>
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() => handleKindChange("standard")}
+                className={`flex flex-col items-center justify-center rounded-lg border p-2.5 text-center text-xs transition-colors ${
+                  kind === "standard"
+                    ? "border-primary bg-primary/10 font-semibold text-primary shadow-sm"
+                    : "border-border hover:bg-muted/50 text-muted-foreground"
+                }`}
+              >
+                <LayersIcon className="mb-1 size-4" />
+                <span>Standard Part</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleKindChange("review")}
+                className={`flex flex-col items-center justify-center rounded-lg border p-2.5 text-center text-xs transition-colors ${
+                  kind === "review"
+                    ? "border-amber-500 bg-amber-500/10 font-semibold text-amber-600 dark:text-amber-400 shadow-sm"
+                    : "border-border hover:bg-muted/50 text-muted-foreground"
+                }`}
+              >
+                <SparklesIcon className="mb-1 size-4" />
+                <span>Review Part</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleKindChange("custom")}
+                className={`flex flex-col items-center justify-center rounded-lg border p-2.5 text-center text-xs transition-colors ${
+                  kind === "custom"
+                    ? "border-primary bg-primary/10 font-semibold text-primary shadow-sm"
+                    : "border-border hover:bg-muted/50 text-muted-foreground"
+                }`}
+              >
+                <FileTextIcon className="mb-1 size-4" />
+                <span>Custom Part</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Placement / Position Selection */}
+          <div className="space-y-1.5">
+            <Label htmlFor="lg-part-pos" className="text-xs font-semibold uppercase text-muted-foreground">Placement</Label>
+            <select
+              id="lg-part-pos"
+              className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              value={String(insertAt)}
+              onChange={(e) => handleInsertAtChange(e.target.value)}
+            >
+              <option value="end">At end (Position {nextNum})</option>
+              {existingParts.map((p) => (
+                <option key={p.id} value={p.number}>
+                  Insert at position {p.number} (before: {p.title || `Part ${p.number}`})
+                </option>
+              ))}
+            </select>
+            {insertAt !== "end" && (
+              <p className="text-xs text-muted-foreground">
+                Existing parts from #{insertAt} onward will automatically shift down by 1.
+              </p>
+            )}
+          </div>
+
+          {/* Part Title Input */}
+          <div className="space-y-1.5">
+            <Label htmlFor="lg-part-title" className="text-xs font-semibold uppercase text-muted-foreground">
+              {kind === "review" ? "Review Title" : kind === "custom" ? "Custom Part Title" : "Part Title"}
+            </Label>
+            <Input
+              id="lg-part-title"
+              autoFocus
+              placeholder={
+                kind === "review"
+                  ? "e.g. Unit Review, Review Part 1, ክለሳ"
+                  : kind === "custom"
+                  ? "e.g. Lab Exercise, Special Topic, Exam Prep"
+                  : `Part ${insertAt === "end" ? nextNum : insertAt}: Topic name`
+              }
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && title.trim() && void save()}
+            />
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button disabled={busy || !title.trim()} onClick={save}>
+            {busy && <Loader2Icon className="animate-spin" />} Save
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function PartsView({ unit, parts, canRemove, config }: Props & { unit: NonNullable<Props["unit"]> }) {
   const act = useAct();
-  const [adding, setAdding] = React.useState(false);
+  const [adding, setAdding] = React.useState<AddPartState | null>(null);
   const [edit, setEdit] = React.useState<LegacyPart | null>(null);
   const [del, setDel] = React.useState<LegacyPart | null>(null);
   const [addVideo, setAddVideo] = React.useState<LegacyPart | null>(null);
@@ -693,9 +868,14 @@ function PartsView({ unit, parts, canRemove, config }: Props & { unit: NonNullab
         <h2 className="text-lg font-semibold">
           Unit {unit.number}: {unit.title}
         </h2>
-        <Button size="sm" onClick={() => setAdding(true)}>
-          <PlusIcon /> Add new part
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" onClick={() => setAdding({ insertAt: null, kind: "review" })}>
+            <SparklesIcon className="mr-1 size-3.5 text-amber-500" /> Add review part
+          </Button>
+          <Button size="sm" onClick={() => setAdding({ insertAt: null, kind: "standard" })}>
+            <PlusIcon /> Add new part
+          </Button>
+        </div>
       </div>
       {!parts.length ? (
         <EmptyState icon={<LayersIcon className="size-5" />} title="No parts in this unit yet" description="Add part 1." />
@@ -704,15 +884,29 @@ function PartsView({ unit, parts, canRemove, config }: Props & { unit: NonNullab
           <Card key={p.id} data-legacy-part={p.number}>
             <CardContent className="space-y-3">
               <div className="flex flex-wrap items-center gap-2 border-b pb-3">
-                <LayersIcon className="size-4 text-primary" />
+                {isReviewPart(p.title) ? (
+                  <SparklesIcon className="size-4 text-amber-500" />
+                ) : (
+                  <LayersIcon className="size-4 text-primary" />
+                )}
                 <h3 className="font-semibold">
-                  Part {p.number}: {p.title}
+                  {isReviewPart(p.title)
+                    ? p.title
+                    : p.title.toLowerCase().startsWith("part ")
+                    ? p.title
+                    : `Part ${p.number}: ${p.title}`}
                 </h3>
+                {isReviewPart(p.title) && (
+                  <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300 font-medium">
+                    Review
+                  </Badge>
+                )}
+                <span className="text-xs text-muted-foreground font-mono">#{p.number}</span>
                 <Badge variant="secondary">{many(p.videos.length, "video")}</Badge>
                 <Badge variant="outline" data-legacy-where>
                   {p.where}
                 </Badge>
-                {isPlaceholderTitle(p.title) && <Badge variant="outline" className="border-[var(--st-paused-fg)] text-[var(--st-paused-fg)]">Needs a real name</Badge>}
+                {!isReviewPart(p.title) && isPlaceholderTitle(p.title) && <Badge variant="outline" className="border-[var(--st-paused-fg)] text-[var(--st-paused-fg)]">Needs a real name</Badge>}
                 <span className="ml-auto flex flex-wrap items-center gap-1">
                   {p.canMark && (
                     <Button size="sm" variant="outline" onClick={() => void act(markRecordedAction(p.id), "Done. It waits on Ready to hand off.")}>
@@ -726,6 +920,9 @@ function PartsView({ unit, parts, canRemove, config }: Props & { unit: NonNullab
                   )}
                   <Button size="sm" disabled={!p.canLog} title={p.canLog ? undefined : "This part has left Recording"} onClick={() => setAddVideo(p)}>
                     <VideoIcon /> Add video
+                  </Button>
+                  <Button size="icon-sm" variant="ghost" title="Insert part before this one" aria-label={`Insert part before ${p.number}`} onClick={() => setAdding({ insertAt: p.number, kind: "standard" })}>
+                    <ListPlusIcon className="size-4" />
                   </Button>
                   <Button size="icon-sm" variant="ghost" aria-label={`Edit part ${p.number}`} onClick={() => setEdit(p)}>
                     <PencilIcon />
@@ -781,7 +978,15 @@ function PartsView({ unit, parts, canRemove, config }: Props & { unit: NonNullab
           </Card>
         ))
       )}
-      {adding && <NameDialog title={`Add part to unit ${unit.number}`} label="Part title" value={`Part ${(parts.at(-1)?.number ?? 0) + 1}: `} onClose={() => setAdding(false)} onSave={(v) => act(addPartAction(unit.id, v), "Part added")} />}
+      {adding && (
+        <AddPartDialog
+          unitNumber={unit.number}
+          existingParts={parts}
+          initial={adding}
+          onClose={() => setAdding(null)}
+          onSave={async (title, opts) => act(addPartAction(unit.id, title, opts), opts.kind === "review" ? "Review part added" : "Part added")}
+        />
+      )}
       {edit && <NameDialog title={`Edit part ${edit.number}`} label="Part title" value={edit.title} onClose={() => setEdit(null)} onSave={(v) => act(editPartAction(edit.id, v), "Part name updated")} />}
       {del && <ConfirmDelete text={`Delete part ${del.number}, "${del.title}"?`} detail={del.videos.length ? `Its ${many(del.videos.length, "video shot")} go too. If it has gone past Recording, it stays.` : "If it has gone past Recording, it stays."} onClose={() => setDel(null)} onYes={() => act(deletePartAction(del.id), "Part deleted")} />}
       {addVideo && <VideoDialog part={addVideo} onClose={() => setAddVideo(null)} />}

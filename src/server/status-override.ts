@@ -92,6 +92,7 @@ async function applyHere(sys: Ctx, actor: AppUser, itemId: string, attempt: Atte
       await setAttemptStatus(attempt, value, now, reason);
       break;
     case "awaiting_handoff":
+    case "ready_for_handover":
       await submit(sys, actor, itemId, attempt, reason);
       break;
     case "completed":

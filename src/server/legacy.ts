@@ -251,21 +251,68 @@ export async function addUnit(user: AppUser, gradeId: string, subjectId: string,
   return { id, number };
 }
 
+export type AddPartOptions = {
+  insertAt?: number | null;
+  kind?: "standard" | "review" | "custom";
+};
+
 // A part is planned work: the part and its production item are made together, as an import does.
-export async function addPart(user: AppUser, unitId: string, rawTitle: string) {
+export async function addPart(user: AppUser, unitId: string, rawTitle: string, opts: AddPartOptions = {}) {
   need(user);
   const u = await get<{ grade_id: string; subject_id: string }>("SELECT grade_id, subject_id FROM units WHERE id = ?", unitId);
   if (!u) throw new WorkflowError("NOT_FOUND", "Unit not found.");
   const t = tidy(rawTitle);
   if (!t) throw new WorkflowError("VALIDATION", "Part title cannot be empty!");
-  const number = await nextNumber("lessons", "unit_id = ?", [unitId], numberIn(t));
-  const title = cleanName(t, "part");
-  const am = ETHIOPIC.test(title);
+
+  const isReview = opts.kind === "review" || /^(?:review|summary|ክለሳ|ፈተና|exam)/i.test(t);
+  const isCustom = opts.kind === "custom";
+
+  let number: number;
+  if (opts.insertAt != null && Number.isFinite(opts.insertAt) && opts.insertAt > 0) {
+    number = Math.floor(opts.insertAt);
+  } else {
+    number = await nextNumber("lessons", "unit_id = ?", [unitId], numberIn(t));
+  }
+
+  let finalTitle: string;
+  if (isReview || isCustom) {
+    finalTitle = t || (isReview ? "Review" : "Custom Part");
+  } else {
+    const cleaned = cleanName(t, "part");
+    finalTitle = isPlaceholderTitle(cleaned) ? `Part ${number}` : cleaned;
+  }
+  const am = ETHIOPIC.test(finalTitle);
+
   return await tx(async () => {
+    if (opts.insertAt != null && Number.isFinite(opts.insertAt) && opts.insertAt > 0) {
+      const exists = await get<{ id: string }>("SELECT id FROM lessons WHERE unit_id = ? AND number >= ? LIMIT 1", unitId, String(number));
+      if (exists) {
+        // Safe 2-step shift avoiding unique(unit_id, number) constraint collision
+        await run("UPDATE lessons SET number = number + 1000000 WHERE unit_id = ? AND number >= ?", unitId, String(number));
+        await run("UPDATE lessons SET number = number - 999999 WHERE unit_id = ? AND number >= ?", unitId, String(number + 1000000));
+      }
+    }
     const id = uid("les_");
-    await run("INSERT INTO lessons (id, unit_id, number, title, title_am, language, planned_deliverables, created_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?)", id, unitId, String(number), isPlaceholderTitle(title) ? `Part ${number}` : title, am ? title : null, am ? "am" : "en", nowIso());
-    const item = await wf.createItem(SYS, { lessonId: id, gradeId: u.grade_id, subjectId: u.subject_id, title: isPlaceholderTitle(title) ? `Part ${number}` : title, titleAm: am ? title : null, language: am ? "am" : "en", provenance: "live" });
-    await logged(user, "part", `${user.name} added part ${number} "${title}"`, item.id);
+    await run(
+      "INSERT INTO lessons (id, unit_id, number, title, title_am, language, planned_deliverables, created_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?)",
+      id,
+      unitId,
+      String(number),
+      finalTitle,
+      am ? finalTitle : null,
+      am ? "am" : "en",
+      nowIso()
+    );
+    const item = await wf.createItem(SYS, {
+      lessonId: id,
+      gradeId: u.grade_id,
+      subjectId: u.subject_id,
+      title: finalTitle,
+      titleAm: am ? finalTitle : null,
+      language: am ? "am" : "en",
+      provenance: "live",
+    });
+    await logged(user, "part", `${user.name} added ${isReview ? "review part" : isCustom ? "custom part" : "part"} ${number} "${finalTitle}"`, item.id);
     return { id, number, itemId: item.id };
   });
 }

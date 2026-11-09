@@ -154,8 +154,9 @@ export function SheetGrid({
         return track(key, () => run(item, { action: "pause", reason: "Paused from sheet" }, { source: "sheet" }));
       case "blocked":
         return open("block", item);
+      case "ready_for_handover":
       case "awaiting_handoff":
-        return open(st === "uploading" ? "submit" : "submit", item);
+        return open("submit", item);
       case "completed":
         if (st === "publication") return open("live", item);
         return r.stage_status === "awaiting_handoff" ? open("accept", item) : open("submit", item);
