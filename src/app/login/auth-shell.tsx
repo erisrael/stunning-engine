@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { BrandMark } from "@/components/app/brand-mark";
 import { identity } from "@/server/identity";
 
@@ -24,6 +25,15 @@ export async function AuthShell({ title, subtitle, children }: { title: string; 
             {subtitle && <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>}
           </div>
           {children}
+        </div>
+        <div className="mt-6 flex items-center justify-center gap-3 text-xs text-muted-foreground">
+          <Link href="/privacy" className="underline hover:text-foreground">
+            Privacy Policy
+          </Link>
+          <span>&bull;</span>
+          <Link href="/terms" className="underline hover:text-foreground">
+            Terms of Service
+          </Link>
         </div>
       </div>
     </div>

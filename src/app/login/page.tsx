@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getViewer } from "@/server/auth";
 import { LoginForm } from "./login-form";
@@ -48,6 +49,16 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
           <br />
           Times are shown in Africa/Addis_Ababa.
         </p>
+
+        <div className="mt-4 flex items-center justify-center gap-3 text-xs text-muted-foreground">
+          <Link href="/privacy" className="underline hover:text-foreground">
+            Privacy Policy
+          </Link>
+          <span>&bull;</span>
+          <Link href="/terms" className="underline hover:text-foreground">
+            Terms of Service
+          </Link>
+        </div>
       </div>
     </div>
   );
