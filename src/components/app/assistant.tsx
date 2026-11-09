@@ -626,8 +626,59 @@ export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantCo
   };
   const keywordAnswer = (t: string) => {
     const lower = t.toLowerCase().trim();
+    const isAm = voice.lang === "am-ET" || /[\u1200-\u137F]/.test(t);
 
-    // "What can you do?" / Help / Amharic capability prompt
+    // Basic Greetings & Welcome Communication
+    const isGreeting = /^(hi|hello|hey|hola|greetings|selam|ሰላም|ጤና\s*ይስጥልኝ|good\s*(morning|afternoon|evening))\b/i.test(lower);
+    if (isGreeting) {
+      say({
+        from: "bot",
+        text: isAm
+          ? "ሰላም! እኔ የሥራ ረዳትዎ ነኝ። በምን ልርዳዎት? የሚከተሉትን ፈጣን እርምጃዎች መምረጥ ወይም የሚፈልጉትን መጻፍ ይችላሉ፦"
+          : "Hello! I am your workspace assistant. How can I help you today? Pick a quick action or tell me what you need:",
+        actions: [
+          { label: isAm ? "የስራ ሰዓት (Check in/out)" : "Check in / out", run: () => router.push("/attendance") },
+          { label: isAm ? "ሥራዬ (My work)" : "My work", run: () => router.push("/my-work") },
+          { label: isAm ? "ፈቃድ መጠየቅ" : "Ask for leave", run: () => router.push("/leave") },
+          { label: isAm ? "የሰው ኃይል (HR)" : "HR desk", run: () => router.push("/hr") },
+          { label: isAm ? "እርዳታ (Help)" : "Help & Guides", run: () => router.push("/profile/help") },
+        ],
+      });
+      return;
+    }
+
+    // Gratitude & Sign-off
+    const isThanks = /^(thanks|thank you|thx|bye|goodbye|cya|አመሰግናለሁ|ደህና\s*ሁኑ)\b/i.test(lower);
+    if (isThanks) {
+      say({
+        from: "bot",
+        text: isAm ? "ምንም አይደል! ሁልጊዜ እዚህ ነኝ። መልካም የሥራ ቀን ይሁንልዎ!" : "You're very welcome! I'm always here to help. Have a productive day!",
+      });
+      return;
+    }
+
+    // Direct Navigation ("go to ...", "open ...", "take me to ...", "navigate to ...", "show me ...")
+    const asksNav = /\b(go to|open|take me to|navigate to|show me|where is|ወደ|ክፈት|አሳየኝ)\b/i.test(lower);
+    if (asksNav) {
+      const targetQuery = lower.replace(/\b(go to|open|take me to|navigate to|show me|where is|page|the|ወደ|ክፈት|አሳየኝ)\b/gi, "").trim();
+      const placeMatch = PLACES.find((p) =>
+        ctx.places.includes(p.name) &&
+        (p.name.toLowerCase() === targetQuery ||
+         p.words.some((w) => w.toLowerCase() === targetQuery || targetQuery.includes(w) || w.includes(targetQuery)))
+      );
+      if (placeMatch) {
+        const href = fill(placeMatch.href, ctx.home?.base ?? null);
+        say({
+          from: "bot",
+          text: `Opening ${placeMatch.name}:`,
+          actions: [{ label: `Open ${placeMatch.name}`, run: () => router.push(href) }],
+        });
+        if (viaVoice.current) router.push(href);
+        return;
+      }
+    }
+
+    // "What can you do?" / Help / Capabilities prompt
     if (
       lower.includes("what can you do") ||
       lower.includes("ምን ማድረግ ትችላለህ") ||
@@ -635,10 +686,56 @@ export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantCo
       lower.includes("ችሎታ") ||
       lower.includes("capabilities")
     ) {
-      const isAm = voice.lang === "am-ET" || /[\u1200-\u137F]/.test(t);
       const roleName = (ctx as any).userRole || ctx.who.role || "member";
       const capabilities = ctx.flows.map(f => isAm ? translate(f.title) : f.title);
       say({from:"bot",text: `${isAm ? "በእርስዎ ሚና መሠረት በሚከተሉት ሥራዎች ልረዳዎት እችላለሁ፦" : `For your ${roleName} role, I can guide you through:`}\n${capabilities.map(t=>`• ${t}`).join("\n")}\n\n${isAm ? "የሚፈልጉትን ገጽ ስም በመጻፍ እንድከፍት ይጠይቁኝ።" : "Ask me to open a page available to your role, or tell me what you need help with."}`});
+      return;
+    }
+
+    // HR deep guidance & actions
+    if (
+      lower.includes("hr") ||
+      lower.includes("human resources") ||
+      lower.includes("employee") ||
+      lower.includes("staff") ||
+      lower.includes("hiring") ||
+      lower.includes("onboarding") ||
+      lower.includes("የሰው ኃይል") ||
+      lower.includes("ሠራተኛ")
+    ) {
+      say({
+        from: "bot",
+        text: isAm
+          ? "የሰው ኃይል (HR) ዳሽቦርድ፣ የሠራተኞች ዝርዝር፣ የቅጥር ሁኔታ፣ የሥራ ሰዓት እና ማስታወቂያዎችን ለመመልከት፦"
+          : "HR Management: view staff directory, audit daily attendance, review leave queue, or handle HR operations:",
+        actions: [
+          { label: isAm ? "የሰው ኃይል ገጽ" : "Open HR", run: () => router.push("/hr") },
+          { label: isAm ? "ማጽደቂያዎች (Approvals)" : "Approvals", run: () => router.push("/approvals") },
+          { label: isAm ? "የስራ ሰዓት (Attendance)" : "Attendance", run: () => router.push("/attendance") },
+        ],
+      });
+      return;
+    }
+
+    // Finance & Payroll guidance
+    if (
+      lower.includes("payroll") ||
+      lower.includes("salary") ||
+      lower.includes("payslip") ||
+      lower.includes("finance") ||
+      lower.includes("ደመወዝ") ||
+      lower.includes("ፋይናንስ")
+    ) {
+      say({
+        from: "bot",
+        text: isAm
+          ? "የፋይናንስ መረጃ፣ ደመወዝ፣ የወጪ ማካካሻ እና ክፍያዎችን ለማየት፦"
+          : "Finance & Payroll: review budgets, bills, claims, and payroll summaries:",
+        actions: [
+          { label: isAm ? "ክፍያ እና ወጪ" : "Pay & claims", run: () => router.push("/profile?tab=pay") },
+          { label: isAm ? "ፋይናንስ" : "Finance desk", run: () => router.push("/finance") },
+        ],
+      });
       return;
     }
 

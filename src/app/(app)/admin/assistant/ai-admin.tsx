@@ -95,7 +95,7 @@ export function AiAdmin({
   const [mForm, setMForm] = React.useState({
     name: "",
     provider: "gemini" as AiProvider,
-    model: "gemini-2.5-flash",
+    model: "gemini-2.0-flash",
     apiKey: "",
     customBaseUrl: "",
     isDefault: false,
@@ -109,7 +109,7 @@ export function AiAdmin({
     setMForm({
       name: "",
       provider: "gemini",
-      model: "gemini-2.5-flash",
+      model: "gemini-2.0-flash",
       apiKey: "",
       customBaseUrl: "",
       isDefault: modelList.length === 0,
@@ -509,7 +509,7 @@ export function AiAdmin({
                   value={mForm.provider}
                   onChange={(e) => {
                     const p = e.target.value as AiProvider;
-                    const defaultModel = models.find((m) => m.provider === p)?.id || (p === "gemini" ? "gemini-2.5-flash" : p === "openai" ? "gpt-4o" : "claude-opus-5-5");
+                    const defaultModel = models.find((m) => m.provider === p)?.id || (p === "gemini" ? "gemini-2.0-flash" : p === "openai" ? "gpt-4o" : "claude-3-5-sonnet-latest");
                     setMForm({ ...mForm, provider: p, model: defaultModel });
                   }}
                 >
@@ -525,11 +525,37 @@ export function AiAdmin({
                 <Label htmlFor="m-model">Model Identifier</Label>
                 <Input
                   id="m-model"
-                  placeholder="e.g. gemini-2.5-flash, gpt-4o, claude-opus-5-5"
+                  placeholder="e.g. gemini-2.0-flash, gpt-4o, claude-3-5-sonnet-latest"
                   value={mForm.model}
                   onChange={(e) => setMForm({ ...mForm, model: e.target.value })}
                 />
               </div>
+            </div>
+
+            {/* Quick model suggestions */}
+            <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+              <span className="text-[11px] text-muted-foreground mr-1">Suggestions:</span>
+              {(mForm.provider === "gemini"
+                ? ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-3.8-flash"]
+                : mForm.provider === "openai"
+                ? ["gpt-4o", "gpt-4o-mini", "o3-mini", "o1"]
+                : mForm.provider === "anthropic"
+                ? ["claude-3-5-sonnet-latest", "claude-3-5-haiku-latest", "claude-3-opus-latest"]
+                : ["deepseek-chat", "deepseek-reasoner", "llama-3.3-70b-versatile"]
+              ).map((sug) => (
+                <button
+                  key={sug}
+                  type="button"
+                  className={`text-[11px] px-2 py-0.5 rounded border transition-colors ${
+                    mForm.model === sug
+                      ? "border-primary bg-primary/10 text-primary font-medium"
+                      : "border-border hover:bg-muted text-muted-foreground"
+                  }`}
+                  onClick={() => setMForm({ ...mForm, model: sug })}
+                >
+                  {sug}
+                </button>
+              ))}
             </div>
 
             {mForm.provider === "custom" && (

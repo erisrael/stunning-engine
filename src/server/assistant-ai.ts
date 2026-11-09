@@ -36,26 +36,36 @@ export const AI_PROVIDERS = [
   { id: "anthropic", label: "Anthropic (Claude)" },
   { id: "gemini", label: "Google (Gemini)" },
   { id: "openai", label: "OpenAI (GPT / o-series)" },
-  { id: "custom", label: "Custom / OpenAI-Compatible (DeepSeek, Local LLM)" },
+  { id: "custom", label: "Custom / OpenAI-Compatible (DeepSeek, Groq, Ollama, Local)" },
 ] as const;
 
 export type AiProvider = (typeof AI_PROVIDERS)[number]["id"];
 
 export const AI_MODELS = [
-  // Anthropic
-  { id: "claude-opus-5-5", label: "Claude Opus 5.5 (best answers)", provider: "anthropic" },
-  { id: "claude-sonnet-5-5", label: "Claude Sonnet 5.5 (faster, cheaper)", provider: "anthropic" },
-  { id: "claude-haiku-5-5", label: "Claude Haiku 5.5 (fastest, cheapest)", provider: "anthropic" },
   // Google Gemini
-  { id: "gemini-2.5-flash", label: "Google Gemini 2.5 Flash (Ultra Fast & Smart)", provider: "gemini" },
-  { id: "gemini-2.5-pro", label: "Google Gemini 2.5 Pro (Deep Reasoning)", provider: "gemini" },
-  { id: "gemini-1.5-flash", label: "Google Gemini 1.5 Flash", provider: "gemini" },
-  { id: "gemini-1.5-pro", label: "Google Gemini 1.5 Pro", provider: "gemini" },
+  { id: "gemini-2.0-flash", label: "Google Gemini 2.0 Flash (Recommended, Fast & Smart)", provider: "gemini" },
+  { id: "gemini-1.5-flash", label: "Google Gemini 1.5 Flash (Fast, Production Stable)", provider: "gemini" },
+  { id: "gemini-1.5-pro", label: "Google Gemini 1.5 Pro (Deep Reasoning)", provider: "gemini" },
+  { id: "gemini-2.5-flash", label: "Google Gemini 2.5 Flash", provider: "gemini" },
+  { id: "gemini-2.5-pro", label: "Google Gemini 2.5 Pro", provider: "gemini" },
+  { id: "gemini-3.8-flash", label: "Google Gemini 3.8 Flash (Latest Preview)", provider: "gemini" },
   // OpenAI
-  { id: "gpt-4o", label: "OpenAI GPT-4o (Omni flagship)", provider: "openai" },
+  { id: "gpt-4o", label: "OpenAI GPT-4o (Omni Flagship)", provider: "openai" },
   { id: "gpt-4o-mini", label: "OpenAI GPT-4o Mini (Cost-efficient)", provider: "openai" },
+  { id: "o1", label: "OpenAI o1 (Full Reasoning)", provider: "openai" },
   { id: "o3-mini", label: "OpenAI o3-mini (High reasoning)", provider: "openai" },
-  // Custom
+  { id: "chatgpt-4o-latest", label: "OpenAI ChatGPT-4o Latest", provider: "openai" },
+  // Anthropic
+  { id: "claude-3-5-sonnet-latest", label: "Claude 3.5 Sonnet (Best Answers)", provider: "anthropic" },
+  { id: "claude-3-5-haiku-latest", label: "Claude 3.5 Haiku (Fastest, Cheapest)", provider: "anthropic" },
+  { id: "claude-3-opus-latest", label: "Claude 3 Opus (Complex Analysis)", provider: "anthropic" },
+  { id: "claude-opus-5-5", label: "Claude Opus 5.5", provider: "anthropic" },
+  { id: "claude-sonnet-5-5", label: "Claude Sonnet 5.5", provider: "anthropic" },
+  { id: "claude-haiku-5-5", label: "Claude Haiku 5.5", provider: "anthropic" },
+  // Custom / OpenAI-Compatible (DeepSeek, Groq, Ollama, etc.)
+  { id: "deepseek-chat", label: "DeepSeek V3 (deepseek-chat)", provider: "custom" },
+  { id: "deepseek-reasoner", label: "DeepSeek R1 (deepseek-reasoner)", provider: "custom" },
+  { id: "llama-3.3-70b-versatile", label: "Groq Llama 3.3 70B", provider: "custom" },
   { id: "custom-model", label: "Custom Model (configured via base URL)", provider: "custom" },
 ] as const;
 export const AI_EFFORTS = ["low", "medium", "high"] as const;
@@ -89,24 +99,29 @@ async function stored(): Promise<Stored> {
 async function apiKey(): Promise<string | null> {
   const s = await stored();
   if (s.keyEnc) return await unseal(s.keyEnc);
+  const def = await get<{ api_key_enc: string | null }>("SELECT api_key_enc FROM ai_models WHERE is_default = 1 AND active = 1 AND api_key_enc IS NOT NULL");
+  if (def?.api_key_enc) return await unseal(def.api_key_enc);
   if (s.provider === "gemini") return process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || null;
-  if (s.provider === "openai") return process.env.OPENAI_API_KEY || null;
+  if (s.provider === "openai" || s.provider === "custom") return process.env.OPENAI_API_KEY || null;
   return process.env.ANTHROPIC_API_KEY || null;
 }
 
 export async function aiConfig() {
   const { keyEnc, ...rest } = await stored();
-  return { ...rest, hasKey: !!keyEnc, envKey: !!(process.env.ANTHROPIC_API_KEY || process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY), fake: fake() };
+  const def = await get<{ id: string }>("SELECT id FROM ai_models WHERE is_default = 1 AND active = 1 AND api_key_enc IS NOT NULL");
+  const hasKey = !!keyEnc || !!def;
+  return { ...rest, hasKey, envKey: !!(process.env.ANTHROPIC_API_KEY || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.OPENAI_API_KEY), fake: fake() };
 }
 export type AiConfigView = Awaited<ReturnType<typeof aiConfig>>;
 
 export async function saveAiConfig(user: AppUser, input: Partial<AiConfig> & { key?: string | null; clearKey?: boolean }) {
   if (!can(user, "users.manage")) throw new WorkflowError("FORBIDDEN", "Only Admin sets up the assistant.");
   const cur = await stored();
+  const chosenModel = input.model && input.model.trim() ? input.model.trim() : (cur.model || "gemini-2.0-flash");
   const next: Stored = {
     on: !!input.on,
-    provider: input.provider ?? cur.provider ?? "anthropic",
-    model: AI_MODELS.some((m) => m.id === input.model) ? input.model! : (input.model || cur.model),
+    provider: input.provider ?? cur.provider ?? "gemini",
+    model: chosenModel,
     customBaseUrl: input.customBaseUrl !== undefined ? (input.customBaseUrl ? input.customBaseUrl.trim() : null) : (cur.customBaseUrl ?? null),
     effort: (AI_EFFORTS as readonly string[]).includes(input.effort ?? "") ? input.effort! : cur.effort,
     offRoles: (input.offRoles ?? cur.offRoles).map(String).slice(0, 30),
@@ -338,8 +353,8 @@ export async function testAiModelById(user: AppUser, id: string): Promise<{ ok: 
 
   try {
     if (row.provider === "gemini") {
-      const model = row.model.startsWith("gemini") ? row.model : "gemini-2.5-flash";
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+      const cleanModel = (row.model || "gemini-2.0-flash").trim().replace(/^models\//, "");
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${cleanModel}:generateContent?key=${key}`;
       const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -348,8 +363,8 @@ export async function testAiModelById(user: AppUser, id: string): Promise<{ ok: 
         }),
       });
       if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`);
+        const text = await res.text().catch(() => "");
+        throw new Error(`HTTP ${res.status}: ${text.slice(0, 300) || res.statusText}`);
       }
       const data = await res.json();
       const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || "Connected successfully.";
@@ -362,14 +377,14 @@ export async function testAiModelById(user: AppUser, id: string): Promise<{ ok: 
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
         body: JSON.stringify({
-          model: row.model,
+          model: row.model || "gpt-4o",
           messages: [{ role: "user", content: "Hello, reply in one sentence confirming you are online." }],
           max_tokens: 50,
         }),
       });
       if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`);
+        const text = await res.text().catch(() => "");
+        throw new Error(`HTTP ${res.status}: ${text.slice(0, 300) || res.statusText}`);
       }
       const data = await res.json();
       const content = data.choices?.[0]?.message?.content?.trim() || "Connected successfully.";
@@ -377,7 +392,7 @@ export async function testAiModelById(user: AppUser, id: string): Promise<{ ok: 
     } else {
       const client = new Anthropic({ apiKey: key!, timeout: 30_000 });
       const res = await client.messages.create({
-        model: row.model,
+        model: row.model || "claude-3-5-haiku-latest",
         max_tokens: 50,
         messages: [{ role: "user", content: "Hello, reply in one sentence confirming you are online." }],
       });
@@ -394,7 +409,8 @@ export async function aiAvailable(user: AppUser & { activeRole: string }) {
   const c = await stored();
   if (!c.on || c.offRoles.includes(user.activeRole)) return false;
   if (!(await roleOptions(user.activeRole)).ai) return false;
-  return fake() || !!(c.keyEnc || process.env.ANTHROPIC_API_KEY);
+  const key = await apiKey();
+  return fake() || !!key;
 }
 
 // Whether this person may switch to Agent mode (Admin's switch, their role's option, and actions allowed at all).
@@ -933,24 +949,47 @@ async function runTool(user: Viewer, name: string, input: unknown, out: Out, all
 }
 
 // The frozen part of the instructions (cached): who the assistant is, the pages and walk-throughs, the rules.
-const SYSTEM = `You are the assistant inside Myseed's work app (an Ethiopian education company making video lessons). People from every department use it: production (Recording, Editing, Uploading, Publication), the Dev team, Marketing, Studio, HR, Finance and departments Admin created.
+const SYSTEM = `You are the AI assistant inside Myseed's work app (an Ethiopian education company making video lessons). People from every department use it: production (Recording, Editing, Uploading, Publication), the Dev team, Marketing, Content Studio, HR, Finance, Operations and Admin.
 
-How to answer:
-- Short, plain and friendly; the person may be listening (voice), so no tables or code. Use "- " bullets only for lists. Answer in the language the person writes in (English or Amharic).
+How to answer & communicate:
+- Polite, helpful and conversational. Respond naturally to basic greetings ("hi", "hello", "selam", "ሰላም", "good morning") with a warm, friendly welcome and offer the top relevant actions for the user's role.
+- Short, plain and friendly; the person may be listening (voice), so avoid markdown tables or code blocks unless requested. Use "- " bullets only for lists. Answer in the language the person writes in (English or Amharic).
+- For navigation requests ("take me to...", "go to...", "open...", "show me..."), always identify the matching route and call open_page immediately to provide an instant navigation button or navigate them there.
 - Use the tools to look at the person's real data before answering questions about their work, leave, attendance or team. Never invent numbers, names, ids or statuses.
 - You only see what the person may see. If a tool says they cannot open something, tell them who can help (their lead, HR or Admin).
-- To do something (leave, attendance corrections, claims, tasks in any department, requests to other departments, approvals, running one of their routines), look up what you need, then call propose. Nothing happens until they press Confirm, so say what will happen and ask them to confirm. Never claim it is done. If the propose tool is missing or refuses the kind, tell them to do it on the page (offer open_page or show_me).
-- When they ask where something is or to go somewhere, call open_page. When they want to be shown how, call show_me if a walk-through fits, else explain the steps and open the page.
+- In standard mode: to perform an action (leave, attendance corrections, claims, tasks, requests, approvals, routines, HR operations), look up what you need, then call propose. Nothing happens until they press Confirm, so explain what will happen and ask them to confirm. In Agent mode, use do_action to carry out the operations directly.
 - If something is outside the app or you are unsure, say so briefly and offer the Help search.
 
-Pages: each question comes with the list of pages this person can open; offer only those (open_page refuses others). {home} is the person's own department page. Never suggest pages, actions or data outside what they may use; if they ask for something their role cannot do, say so plainly and name who can (their lead, HR, Finance or Admin).
+Pages and navigation:
+Each question comes with the list of pages this person can open. You know every page, action, and route across all departments:
+- Personal: /dashboard (Home), /my-work (My work & board), /attendance (Check-in, timesheet, shifts), /profile?tab=leave (Leave balances & history), /profile?tab=pay (Salary & claims), /profile?tab=account (Security & MFA), /preferences (Settings), /notifications (Alerts), /profile/help (Help & documentation).
+- Communication & Requests: /chat (Chat & calls), /email (Company email), /requests (Cross-department requests), /people (Employee directory).
+- Production & Curriculum: /sessions (Studio recording schedule), /studio (Content studio, questions, notes), /overview (Curriculum progress), /curriculum (Curriculum structure & renaming), /legacy (Legacy recording catalog & camera codes), /coverage (Curriculum coverage), /handovers (Stage handovers & batches), /handovers/rejected (Rejections cross-check), /handovers/report (Handover dates report).
+- Operations & Resources: /resources (Equipment register, stock & finance requests), /calendar (Company schedule).
+- Department Workspaces: /dev (Dev team, sprints, PR reviews), /marketing (Marketing campaigns), /company (Executive overview), /reports (Analytics & stats), /audit (Audit log).
+- Administration: /admin (Admin workspace, people & roles, security, email providers, AI integrations, backups & database).
 
-Working well:
-- For a request with several parts, plan the steps, read what you need first (ids, names, dates), then act or propose, and end with a short summary of what was done and what is left.
-- Ask one short question when a detail is missing (which person, which day); otherwise use sensible defaults (today, this month).
-- Prefer facts from the tools over guesses, and say when something has no data.
-
-HR work (only for people with HR rights; the tools tell you): look people up (hr_people, hr_employee), see today's attendance (hr_attendance_day), the leave queue (hr_leave_queue), what falls due (probation, contracts, documents: hr_due) and the year's people numbers (hr_report). Then record a day or a missed check-in, approve or reject leave, adjust leave balances, open a case, record a one-to-one, assign training, open a job, or post an announcement. Always name the person and the day back to the user, and give a reason when the action asks for one.
+Deep HR capabilities:
+For users with HR rights (HR Manager, HR Officer, People Operations), you are equipped to perform end-to-end HR management autonomously:
+1. Daily Attendance & Timesheets:
+   - Check attendance: Use hr_attendance_day to audit who is present, late, absent, or on leave.
+   - Record status: Use hr_mark_day (args: employee name/code, day YYYY-MM-DD, status [present, late, half_day, absent, leave], in_time HH:MM, out_time HH:MM, note).
+   - Log missed punch: Use hr_log_attendance (args: employee, day, kind [in, out, break_start, break_end, lunch_start, lunch_end], time HH:MM, note).
+2. Leave Management & Balances:
+   - Inspect queue: Use hr_leave_queue to see pending employee leave requests and staff on leave today.
+   - Approve/reject: Use decide_leave (args: request_id, decision [approve/reject], note).
+   - Adjust balance: Use hr_adjust_leave (args: employee, leave_type [annual, sick, etc.], days [positive to credit, negative to deduct], note, year).
+3. Employee Lifecycle & Compliance:
+   - Dossier lookup: Use hr_people and hr_employee to review complete profiles, manager, department, and documents.
+   - Due dates: Use hr_due to monitor probation cutoffs, contract expirations, and document renewals.
+   - One-on-one meetings: Use hr_one_on_one (args: employee, date YYYY-MM-DD, notes, actions).
+   - Disciplinary & Grievances: Use hr_open_case (args: employee, kind [disciplinary, grievance, investigation], title, note).
+   - Training & Development: Use hr_assign_course (args: course title, employees comma-separated, due YYYY-MM-DD).
+   - Recruitment: Use hr_open_job (args: title, department, positions count, description, closes YYYY-MM-DD).
+4. Broadcasts & Approvals:
+   - Announcements: Use hr_announce (args: title, body, kind [news, policy], department [empty for everyone]).
+   - Corrections & Claims: Use decide_correction and decide_claim to review and approve staff submissions.
+Always name the person, the day, and the exact action clearly back to the user.
 
 Walk-throughs for show_me (pointing on the page): ${FLOWS.filter((f) => f.kind === "show").map((f) => `${f.key} (${f.title})`).join("; ")}.
 Step-by-step tutorials for show_me: ${FLOWS.filter((f) => f.kind === "guide").map((f) => `${f.key} (${f.title})`).join("; ")}.
@@ -1057,7 +1096,7 @@ export async function askAi(user: Viewer, input: { history: Turn[]; text: string
 }
 
 // The extra instructions in Agent mode.
-const AGENT = `Agent mode is on: the person asked you to do things for them. Use do_action to do each step yourself, with their own permissions, instead of proposing. Before acting, look up what you need (ids, statuses, people). Do only what they asked; when a request is unclear or would change other people's work in a way they did not ask for, ask first. After acting, say in one or two lines what you did and anything that failed. Never claim something was done when do_action returned an error.`;
+const AGENT = `Agent mode is on: the person asked you to do things for them directly. Use do_action to do each step yourself autonomously, with their own permissions, instead of proposing. Before acting, look up what you need (ids, statuses, employees, tasks). Do what they asked efficiently; for HR tasks (logging attendance, marking daily statuses, approving leave, opening cases, recording one-to-ones, assigning courses, publishing announcements, opening jobs), carry out the full job end-to-end based on the given instruction set and rules. When a request is ambiguous or missing critical info, ask one targeted question. After acting, state clearly what was done and provide links. Never claim something was done when do_action returned an error.`;
 
 // ---------------------------------------------------------------------------
 // Conversations (the side panel's history) and the agent's log
@@ -1151,14 +1190,14 @@ async function realModel(cfg: Stored): Promise<ModelCall> {
   if (!key) throw new WorkflowError("INVALID_STATE", "No API key is set (Admin, Assistant, AI).");
 
   if (cfg.provider === "gemini") {
-    const model = cfg.model.startsWith("gemini") ? cfg.model : "gemini-2.5-flash";
+    const cleanModel = (cfg.model || "gemini-2.0-flash").trim().replace(/^models\//, "");
     return async ({ system, messages }) => {
       try {
         const contents = messages.map((m) => ({
           role: m.role === "assistant" ? "model" : "user",
           parts: [{ text: typeof m.content === "string" ? m.content : JSON.stringify(m.content) }],
         }));
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${cleanModel}:generateContent?key=${key}`;
         const res = await fetch(url, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1168,7 +1207,8 @@ async function realModel(cfg: Stored): Promise<ModelCall> {
           }),
         });
         if (!res.ok) {
-          throw new WorkflowError("INVALID_STATE", `Gemini API returned status ${res.status}: ${res.statusText}`);
+          const errBody = await res.text().catch(() => "");
+          throw new WorkflowError("INVALID_STATE", `Gemini API returned status ${res.status}: ${errBody.slice(0, 300) || res.statusText}`);
         }
         const data = await res.json();
         const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || "No response received";
@@ -1184,7 +1224,7 @@ async function realModel(cfg: Stored): Promise<ModelCall> {
 
   if (cfg.provider === "openai" || cfg.provider === "custom") {
     const baseUrl = (cfg.customBaseUrl || "https://api.openai.com/v1").replace(/\/+$/, "");
-    const model = cfg.provider === "custom" ? (cfg.model || "custom-model") : (cfg.model.startsWith("gpt") || cfg.model.startsWith("o") ? cfg.model : "gpt-4o-mini");
+    const model = cfg.model || (cfg.provider === "custom" ? "custom-model" : "gpt-4o");
     return async ({ system, messages }) => {
       try {
         const formattedMessages = [
@@ -1206,7 +1246,8 @@ async function realModel(cfg: Stored): Promise<ModelCall> {
           }),
         });
         if (!res.ok) {
-          throw new WorkflowError("INVALID_STATE", `OpenAI API returned status ${res.status}: ${res.statusText}`);
+          const errBody = await res.text().catch(() => "");
+          throw new WorkflowError("INVALID_STATE", `OpenAI API returned status ${res.status}: ${errBody.slice(0, 300) || res.statusText}`);
         }
         const data = await res.json();
         const text = data?.choices?.[0]?.message?.content || "No response received";

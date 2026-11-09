@@ -167,46 +167,49 @@ FLOWS.push(...TUTORIALS.map((t): Flow => ({ key: t.key, kind: "guide", title: t.
 
 // "Where is ...?": every main page by name.
 export const PLACES: { name: string; href: string; words: string[] }[] = [
-  { name: "Role sidebars", href: "/admin?tab=sidebar", words: ["sidebar", "role navigation", "menu", "የጎን ምናሌ"] },
-  { name: "Finance requests and equipment", href: "/resources", words: ["equipment", "inventory", "repair", "replacement", "subscription request", "budget request", "መሣሪያ", "ጥገና", "በጀት"] },
-  { name: "Noor CMS", href: "/legacy-cms", words: ["noor", "legacy cms", "students", "የተማሪ መረጃ"] },
-  { name: "Home", href: "/dashboard", words: ["home", "today", "dashboard", "start page"] },
-  { name: "Attendance", href: "/attendance", words: ["attendance", "check in", "timesheet", "shift"] },
-  { name: "Approvals", href: "/approvals", words: ["approvals", "approve", "pending"] },
-  { name: "Leave", href: "/profile?tab=leave", words: ["leave", "holiday", "balance"] },
-  { name: "Pay and claims", href: "/profile?tab=pay", words: ["pay", "payslip", "salary", "claims"] },
-  { name: "My record", href: "/profile?tab=record", words: ["my record", "documents", "contract", "hr record"] },
-  { name: "Account and password", href: "/profile?tab=account", words: ["password", "two-step", "account", "sessions", "devices"] },
-  { name: "My work", href: "/my-work", words: ["my work", "my tasks", "my board", "my tickets", "assigned to me"] },
-  { name: "Settings", href: "/preferences", words: ["my settings", "preferences", "font", "contrast", "language", "theme", "dark mode", "notification settings"] },
-  { name: "Notifications", href: "/notifications", words: ["notifications", "notices", "alerts"] },
-  { name: "Chat", href: "/chat", words: ["chat", "messages", "group", "call"] },
-  { name: "Email", href: "/email", words: ["email", "mail", "send email"] },
-  { name: "Requests", href: "/requests", words: ["requests", "ask another department"] },
-  { name: "People", href: "/people", words: ["people", "directory", "colleagues", "phone number"] },
-  { name: "Studio sessions", href: "/sessions", words: ["sessions", "recording schedule", "studio booking"] },
-  { name: "Overview", href: "/overview", words: ["overview", "progress", "curriculum progress", "presentation"] },
-  { name: "Help", href: "/profile/help", words: ["help", "guide", "manual", "how to"] },
-  { name: "Board", href: "{home}/board", words: ["board", "kanban"] },
-  { name: "Sprint", href: "{home}/sprint", words: ["sprint", "burndown"] },
-  { name: "Roadmap", href: "{home}/roadmap", words: ["roadmap", "projects health", "dora"] },
+  { name: "Home", href: "/dashboard", words: ["home", "today", "dashboard", "start page", "start", "hom", "መነሻ", "ዳሽቦርድ"] },
+  { name: "My work", href: "/my-work", words: ["my work", "my tasks", "my board", "my tickets", "assigned to me", "to do", "todo", "work", "tasks", "ሥራዬ", "ተግባራት"] },
+  { name: "Attendance", href: "/attendance", words: ["attendance", "atendance", "check in", "check out", "chekin", "timesheet", "shift", "clock in", "clock out", "punch", "መግቢያ", "መውጫ", "ሰዓት", "አቴንዳንስ"] },
+  { name: "Leave", href: "/profile?tab=leave", words: ["leave", "leav", "holiday", "balance", "vacation", "day off", "sick leave", "annual leave", "time off", "timeoff", "ፈቃድ", "ዕረፍት"] },
+  { name: "Pay and claims", href: "/profile?tab=pay", words: ["pay", "payslip", "salary", "salaray", "claims", "expense", "reimbursement", "claim money", "ደመወዝ", "ክፍያ", "ወጪ"] },
+  { name: "Approvals", href: "/approvals", words: ["approvals", "approve", "pending", "pending approval", "ማጽደቂያ", "ውሳኔ"] },
+  { name: "My record", href: "/profile?tab=record", words: ["my record", "documents", "contract", "hr record", "personal file", "የግል ማህደር"] },
+  { name: "Account and password", href: "/profile?tab=account", words: ["password", "two-step", "account", "sessions", "devices", "security", "የይለፍ ቃል", "መለያ"] },
+  { name: "Settings", href: "/preferences", words: ["my settings", "preferences", "font", "contrast", "language", "theme", "dark mode", "notification settings", "ማስተካከያ"] },
+  { name: "Notifications", href: "/notifications", words: ["notifications", "notices", "alerts", "inbox notices", "ማሳወቂያ"] },
+  { name: "Chat", href: "/chat", words: ["chat", "messages", "group", "call", "dm", "talk to", "ጭውውት", "መልእክት"] },
+  { name: "Email", href: "/email", words: ["email", "mail", "send email", "inbox", "compose", "ኢሜይል"] },
+  { name: "Requests", href: "/requests", words: ["requests", "ask another department", "department request", "ጥያቄዎች"] },
+  { name: "People", href: "/people", words: ["people", "pepole", "directory", "colleagues", "staff", "phone number", "contacts", "ሠራተኞች", "ስልክ"] },
+  { name: "Studio sessions", href: "/sessions", words: ["sessions", "recording schedule", "studio booking", "studio session", "book studio", "ስቱዲዮ", "ቀረጻ"] },
+  { name: "Studio", href: "/studio", words: ["studio", "content studio", "notes", "exams", "flash cards", "question bank", "ፈተናዎች"] },
+  { name: "Overview", href: "/overview", words: ["overview", "progress", "curriculum progress", "presentation", "አጠቃላይ እይታ"] },
+  { name: "Help", href: "/profile/help", words: ["help", "guide", "manual", "how to", "documentation", "እርዳታ", "መመሪያ"] },
+  { name: "Board", href: "{home}/board", words: ["board", "kanban", "department board", "task board"] },
+  { name: "Sprint", href: "{home}/sprint", words: ["sprint", "burndown", "sprint planning", "backlog", "velocity"] },
+  { name: "Roadmap", href: "{home}/roadmap", words: ["roadmap", "projects health", "dora", "milestones"] },
   { name: "Specs and docs", href: "{home}/docs", words: ["docs", "srs", "spec", "requirements", "documents"] },
   { name: "Configure", href: "{home}/configure", words: ["configure", "settings of the department", "flow", "statuses"] },
-  { name: "Admin", href: "/admin", words: ["admin", "users", "roles", "sign-in settings"] },
-  { name: "HR", href: "/hr", words: ["hr", "human resources", "employees", "staff records"] },
-  { name: "Finance", href: "/finance", words: ["finance", "accounts", "bills", "invoices", "budget"] },
-  { name: "Dev team", href: "/dev", words: ["dev", "developers", "dev team", "software"] },
-  { name: "Marketing", href: "/marketing", words: ["marketing", "campaigns", "social media"] },
-  { name: "Studio", href: "/studio", words: ["studio", "content studio", "notes", "exams", "flash cards", "question bank"] },
-  { name: "Handovers", href: "/handovers", words: ["handovers", "batches", "incoming work"] },
-  { name: "Rejected handovers", href: "/handovers/rejected", words: ["rejected", "rejections", "cross-check", "cross check"] },
+  { name: "Admin", href: "/admin", words: ["admin", "users", "roles", "sign-in settings", "አድሚን"] },
+  { name: "HR", href: "/hr", words: ["hr", "human resources", "employees", "staff records", "hr people", "hiring", "onboarding", "contracts", "የሰው ኃይል", "ሠራተኞች"] },
+  { name: "Attendance badges", href: "/attendance/badges", words: ["badges", "staff badges", "qr badge", "id badge", "የመግቢያ ባጅ"] },
+  { name: "Attendance poster", href: "/attendance/poster", words: ["poster", "office poster", "kiosk poster", "qr poster", "ፖስተር"] },
+  { name: "Finance", href: "/finance", words: ["finance", "accounts", "bills", "invoices", "budget", "payroll", "ፋይናንስ"] },
+  { name: "Dev team", href: "/dev", words: ["dev", "developers", "dev team", "software", "code review", "ደቭ", "ፕሮግራመር"] },
+  { name: "Marketing", href: "/marketing", words: ["marketing", "campaigns", "social media", "ማርኬቲንግ"] },
+  { name: "Handovers", href: "/handovers", words: ["handovers", "batches", "incoming work", "stage handover", "ርክክብ"] },
+  { name: "Rejected handovers", href: "/handovers/rejected", words: ["rejected", "rejections", "cross-check", "cross check", "የተመለሱ"] },
   { name: "Handover report", href: "/handovers/report", words: ["handover report", "handover dates", "approval dates", "rejected dates"] },
-  { name: "Curriculum", href: "/curriculum", words: ["curriculum", "fix names", "wrong subject", "rename part", "rename lesson", "auto assign", "auto-assign"] },
-  { name: "Legacy catalog", href: "/legacy", words: ["legacy", "old catalog", "camera code", "video shots", "recording catalog"] },
+  { name: "Curriculum", href: "/curriculum", words: ["curriculum", "fix names", "wrong subject", "rename part", "rename lesson", "auto assign", "auto-assign", "ሥርዓተ ትምህርት"] },
+  { name: "Legacy catalog", href: "/legacy", words: ["legacy", "old catalog", "camera code", "video shots", "recording catalog", "review parts"] },
   { name: "Coverage", href: "/coverage", words: ["coverage", "curriculum", "what is missing"] },
-  { name: "Reports", href: "/reports", words: ["reports", "statistics", "numbers"] },
-  { name: "Calendar", href: "/calendar", words: ["calendar", "schedule", "events"] },
-  { name: "Company", href: "/company", words: ["company", "owners", "whole company"] },
+  { name: "Reports", href: "/reports", words: ["reports", "statistics", "numbers", "analytics", "ሪፖርት"] },
+  { name: "Calendar", href: "/calendar", words: ["calendar", "schedule", "events", "ቀን መቁጠሪያ"] },
+  { name: "Audit log", href: "/audit", words: ["audit", "audit log", "security log", "activity history", "ኦዲት"] },
+  { name: "Company", href: "/company", words: ["company", "owners", "whole company", "ኩባንያ"] },
+  { name: "Finance requests and equipment", href: "/resources", words: ["equipment", "inventory", "repair", "replacement", "subscription request", "budget request", "መሣሪያ", "ጥገና", "በጀት", "ዕቃዎች"] },
+  { name: "Role sidebars", href: "/admin?tab=sidebar", words: ["sidebar", "role navigation", "menu", "የጎን ምናሌ"] },
+  { name: "Noor CMS", href: "/legacy-cms", words: ["noor", "legacy cms", "students", "የተማሪ መረጃ"] },
 ];
 
 // "What does ... mean?": the app's words.
@@ -244,14 +247,49 @@ const norm = (s: string) =>
     .replace(/[^a-z0-9ሀ-፿]+/g, " ")
     .trim()} `;
 
-// Two words alike enough to be a typo of each other (one letter added, missing, changed or swapped).
+export function levenshtein(a: string, b: string): number {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+  const d: number[][] = [];
+  for (let i = 0; i <= a.length; i++) d[i] = [i];
+  for (let j = 0; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost);
+    }
+  }
+  return d[a.length][b.length];
+}
+
+// Two words alike enough to be a typo of each other (supports deletions, insertions, typos, and swaps).
 export function nearly(a: string, b: string) {
   if (a === b) return true;
-  if (Math.abs(a.length - b.length) > 1 || Math.min(a.length, b.length) < 4) return false;
-  let i = 0;
-  while (i < a.length && a[i] === b[i]) i++;
-  if (a.length === b.length) return a.slice(i + 1) === b.slice(i + 1) || (a[i] === b[i + 1] && a[i + 1] === b[i] && a.slice(i + 2) === b.slice(i + 2));
-  return a.length > b.length ? a.slice(i + 1) === b.slice(i) : a.slice(i) === b.slice(i + 1);
+  const la = a.length;
+  const lb = b.length;
+  if (Math.min(la, lb) < 4) return false;
+  if (Math.abs(la - lb) > 2) return false;
+  const dist = levenshtein(a, b);
+  if (dist <= 1) return true;
+  // Adjacent transposition (swap like assgin -> assign)
+  if (la === lb && dist === 2) {
+    let diffs = 0;
+    let i1 = -1;
+    let i2 = -1;
+    for (let i = 0; i < la; i++) {
+      if (a[i] !== b[i]) {
+        diffs++;
+        if (i1 === -1) i1 = i;
+        else if (i2 === -1) i2 = i;
+      }
+    }
+    if (diffs === 2 && i2 === i1 + 1 && a[i1] === b[i2] && a[i2] === b[i1]) {
+      return true;
+    }
+  }
+  // For longer words (>= 7 chars), allow edit distance 2 (e.g. attandence -> attendance)
+  return Math.min(la, lb) >= 7 && dist <= 2;
 }
 
 // Scores a phrase against keywords: a whole keyword counts most, single shared words a little, and words with a
@@ -280,14 +318,17 @@ export type Match =
 // The best matches for what someone typed, among the flows open to them.
 export function matchText(text: string, flows: Flow[], cfg: AssistantConfig, places?: string[]): Match[] {
   const t = norm(text);
-  const asksWhere = /\b(where|find|open|go to|page)\b/.test(t);
-  const asksMeaning = /\b(what (does|is)|mean|meaning)\b/.test(t);
+  const asksWhere = /\b(where|find|open|go to|take me|navigate|show me|page|open page|ክፈት|ሂድ|አሳየኝ)\b/i.test(t);
+  const asksMeaning = /\b(what (does|is)|mean|meaning|ምንድን ነው|ትርጉም)\b/i.test(t);
   const out: Match[] = [];
   for (const f of flows) out.push({ type: "flow", flow: f, score: score(text, [...f.keywords, ...(cfg.keywords[f.key] ?? []), f.title]) });
-  for (const p of PLACES.filter((x) => !places || places.includes(x.name))) out.push({ type: "place", place: p, score: score(text, [...p.words, p.name]) + (asksWhere ? 2 : 0) });
-  for (const g of GLOSSARY) out.push({ type: "term", term: g, score: score(text, [...g.words, g.term]) + (asksMeaning ? 3 : 0) });
-  for (const a of cfg.answers) out.push({ type: "answer", answer: a, score: score(text, [...a.words, a.q]) + 1 });
-  return out.filter((m) => m.score >= 3).sort((x, y) => y.score - x.score).slice(0, 4);
+  for (const p of PLACES.filter((x) => !places || places.includes(x.name))) {
+    const bonus = asksWhere ? 4 : 0;
+    out.push({ type: "place", place: p, score: score(text, [...p.words, p.name]) + bonus });
+  }
+  for (const g of GLOSSARY) out.push({ type: "term", term: g, score: score(text, [...g.words, g.term]) + (asksMeaning ? 4 : 0) });
+  for (const a of cfg.answers) out.push({ type: "answer", answer: a, score: score(text, [...a.words, a.q]) + 2 });
+  return out.filter((m) => m.score >= 2).sort((x, y) => y.score - x.score).slice(0, 4);
 }
 
 // The flows open to someone: by their audience, minus what Admin switched off for their role.
