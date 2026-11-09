@@ -16,8 +16,12 @@ const hash = (t: string) => crypto.createHash("sha256").update(t).digest("hex");
 
 export async function appOrigin() {
   if (process.env.APP_URL) return process.env.APP_URL.replace(/\/+$/, "");
-  const h = await headers();
-  return `${h.get("x-forwarded-proto") ?? (process.env.NODE_ENV === "production" ? "https" : "http")}://${h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000"}`;
+  try {
+    const h = await headers();
+    return `${h.get("x-forwarded-proto") ?? (process.env.NODE_ENV === "production" ? "https" : "http")}://${h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000"}`;
+  } catch {
+    return process.env.NODE_ENV === "production" ? "https://localhost:3000" : "http://localhost:3000";
+  }
 }
 
 export async function createResetToken(userId: string, via: "email" | "google") {
@@ -36,7 +40,23 @@ export async function createResetToken(userId: string, via: "email" | "google") 
 
 // Always answers the same way, so nobody can learn which emails have accounts.
 export async function requestEmailReset(email: string) {
-  const u = await get<{ id: string; name: string; email: string; active: number }>("SELECT id, name, email, active FROM users WHERE lower(email) = lower(?)", email.trim());
+  const clean = email.trim().toLowerCase();
+  let u = await get<{ id: string; name: string; email: string; active: number }>("SELECT id, name, email, active FROM users WHERE lower(email) = ?", clean);
+  let sendTo = clean;
+  if (!u) {
+    const gt = await get<{ user_id: string }>("SELECT user_id FROM google_tokens WHERE lower(email) = ?", clean);
+    if (gt) {
+      u = await get<{ id: string; name: string; email: string; active: number }>("SELECT id, name, email, active FROM users WHERE id = ?", gt.user_id);
+      sendTo = clean;
+    }
+  }
+  if (!u) {
+    const prof = await get<{ user_id: string }>("SELECT user_id FROM profiles WHERE lower(gmail) = ?", clean);
+    if (prof) {
+      u = await get<{ id: string; name: string; email: string; active: number }>("SELECT id, name, email, active FROM users WHERE id = ?", prof.user_id);
+      sendTo = clean;
+    }
+  }
   if (!u || !u.active) return;
   // At most one link every two minutes per person.
   const recent = await get("SELECT 1 AS x FROM password_resets WHERE user_id = ? AND created_at > ?", u.id, new Date(Date.now() - 120e3).toISOString());
@@ -46,7 +66,7 @@ export async function requestEmailReset(email: string) {
   const ws = (await getSettings()).workspace.name;
   try {
     await sendSystemEmail(
-      u.email,
+      sendTo,
       `Reset your ${ws} password`,
       `Hello ${u.name},\n\nSomeone asked to reset the password for your ${ws} account. If it was you, open this link within ${LINK_MINUTES} minutes:\n\n${link}\n\nIf it was not you, ignore this email; your password stays the same.`,
       `<p>Hello ${u.name.replace(/[<>&]/g, "")},</p><p>Someone asked to reset the password for your ${ws.replace(/[<>&]/g, "")} account. If it was you, open this link within ${LINK_MINUTES} minutes:</p><p><a href="${link}">Choose a new password</a></p><p>If it was not you, ignore this email; your password stays the same.</p>`,
@@ -54,7 +74,7 @@ export async function requestEmailReset(email: string) {
   } catch (e) {
     console.error("Password reset email failed", e);
   }
-  await audit({ actor: null }, { action: "user.password_reset", summary: `A password reset link was emailed to ${u.name}` });
+  await audit({ actor: null }, { action: "user.password_reset", summary: `A password reset link was emailed to ${u.name} (${sendTo})` });
 }
 
 export async function checkResetToken(token: string) {
@@ -81,34 +101,62 @@ export async function completeReset(token: string, password: string) {
 // Google sign-in (for proving the account during a reset)
 // ---------------------------------------------------------------------------
 
-type GoogleStored = { clientId: string; secretEnc: string | null };
+type GoogleStored = { clientId: string; secretEnc: string | null; googleSignIn?: boolean; googleReset?: boolean };
 
-export async function googleConfig(): Promise<{ clientId: string; secret: string } | null> {
-  if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) return { clientId: process.env.GOOGLE_CLIENT_ID, secret: process.env.GOOGLE_CLIENT_SECRET };
+export async function googleConfig(): Promise<{ clientId: string; secret: string; googleSignIn: boolean; googleReset: boolean } | null> {
   const s = parseJson<GoogleStored | null>((await get<{ value: string }>("SELECT value FROM settings WHERE key = 'cfg.google'"))?.value, null);
+  if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+    return {
+      clientId: process.env.GOOGLE_CLIENT_ID,
+      secret: process.env.GOOGLE_CLIENT_SECRET,
+      googleSignIn: s?.googleSignIn ?? true,
+      googleReset: s?.googleReset ?? true,
+    };
+  }
   if (!s?.clientId || !s.secretEnc) return null;
   const secret = await unseal(s.secretEnc);
-  return secret ? { clientId: s.clientId, secret } : null;
+  return secret ? { clientId: s.clientId, secret, googleSignIn: s?.googleSignIn ?? true, googleReset: s?.googleReset ?? true } : null;
 }
 
 export async function googleSettings() {
   const s = parseJson<GoogleStored | null>((await get<{ value: string }>("SELECT value FROM settings WHERE key = 'cfg.google'"))?.value, null);
-  return { fromEnv: !!process.env.GOOGLE_CLIENT_ID, clientId: process.env.GOOGLE_CLIENT_ID ?? s?.clientId ?? "", hasSecret: !!process.env.GOOGLE_CLIENT_SECRET || !!s?.secretEnc, redirectUri: `${await appOrigin()}/api/auth/google/callback` };
+  return {
+    fromEnv: !!process.env.GOOGLE_CLIENT_ID,
+    clientId: process.env.GOOGLE_CLIENT_ID ?? s?.clientId ?? "",
+    hasSecret: !!process.env.GOOGLE_CLIENT_SECRET || !!s?.secretEnc,
+    redirectUri: `${await appOrigin()}/api/auth/google/callback`,
+    googleSignIn: s?.googleSignIn ?? true,
+    googleReset: s?.googleReset ?? true,
+  };
 }
 
-export async function saveGoogleSettings(user: AppUser, input: { clientId: string; secret?: string | null }) {
+export async function saveGoogleSettings(user: AppUser, input: { clientId: string; secret?: string | null; googleSignIn?: boolean; googleReset?: boolean }) {
   if (!can(user, "users.manage")) throw new WorkflowError("FORBIDDEN", "Only Admin sets up Google sign-in.");
   const clientId = input.clientId.trim();
   if (clientId && !/\.apps\.googleusercontent\.com$/.test(clientId)) throw new WorkflowError("VALIDATION", "The client ID ends with .apps.googleusercontent.com.");
   const old = parseJson<GoogleStored | null>((await get<{ value: string }>("SELECT value FROM settings WHERE key = 'cfg.google'"))?.value, null);
-  const next: GoogleStored = { clientId, secretEnc: input.secret?.trim() ? await seal(input.secret.trim()) : clientId ? (old?.secretEnc ?? null) : null };
+  const secretEnc = input.secret?.trim() ? await seal(input.secret.trim()) : clientId ? (old?.secretEnc ?? null) : null;
+  const googleSignIn = input.googleSignIn ?? old?.googleSignIn ?? true;
+  const googleReset = input.googleReset ?? old?.googleReset ?? true;
+  const next: GoogleStored = { clientId, secretEnc, googleSignIn, googleReset };
   await run(
     "INSERT INTO settings (key, value, updated_at, updated_by) VALUES ('cfg.google', ?, ?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by",
     JSON.stringify(next),
     nowIso(),
     user.id,
   );
-  await audit({ actor: user }, { action: "settings.google", summary: `${user.name} ${clientId ? "set up" : "turned off"} Google for password resets` });
+  if (next.clientId && next.secretEnc && next.googleSignIn) {
+    const { signInPolicy, saveSignInPolicy } = await import("./signin-config");
+    const p = await signInPolicy();
+    p.providers.google.enabled = true;
+    await saveSignInPolicy(user, { policy: p });
+  } else if (!next.clientId || !next.googleSignIn) {
+    const { signInPolicy, saveSignInPolicy } = await import("./signin-config");
+    const p = await signInPolicy();
+    p.providers.google.enabled = false;
+    await saveSignInPolicy(user, { policy: p });
+  }
+  await audit({ actor: user }, { action: "settings.google", summary: `${user.name} ${clientId ? "updated" : "turned off"} Google sign-in and password recovery settings` });
 }
 
 // Exchanges Google's code for the verified email address.

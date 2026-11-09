@@ -409,3 +409,47 @@ export async function testRestore(user?: AppUser): Promise<{ ok: boolean; detail
   if (!ok) await alertAdmins("Backup test restore failed", detail, "/admin?tab=system", "backup");
   return { ok, detail };
 }
+
+export async function restoreBackup(user: AppUser, target: TargetId, ref: string): Promise<{ ok: boolean; file: string; restoredRows: number }> {
+  if (!can(user, "users.manage")) throw new WorkflowError("FORBIDDEN", "Only Admin restores backups.");
+  const c = await load();
+  const raw = await readBackup(user, target, ref);
+  const snapshot = decodeBackup(raw, c.passphraseEnc ? await unseal(c.passphraseEnc) : null);
+  let totalRestored = 0;
+  const { tx } = await import("./db");
+  await tx(async () => {
+    // Truncate tables in dependency order
+    await run(`TRUNCATE ${TABLES.join(", ")} RESTART IDENTITY CASCADE`);
+    for (const t of TABLES) {
+      const rows = snapshot.tables[t] ?? [];
+      for (const row of rows) {
+        const cols = Object.keys(row);
+        if (!cols.length) continue;
+        await run(
+          `INSERT INTO ${t} (${cols.join(", ")}) VALUES (${cols.map(() => "?").join(", ")})`,
+          ...cols.map((col) => row[col] as string | number | null),
+        );
+        totalRestored++;
+      }
+    }
+    // Update serial sequences
+    for (const [t, col] of [["access_scopes", "id"], ["leave_entries", "id"], ["stage_intervals", "id"], ["deadline_revisions", "id"], ["audit_events", "seq"], ["chat_messages", "seq"]]) {
+      try {
+        await run(`SELECT setval(pg_get_serial_sequence('${t}', '${col}'), GREATEST(COALESCE((SELECT MAX(${col}) FROM ${t}), 0), 1))`);
+      } catch {}
+    }
+  });
+  await audit({ actor: user }, { action: "backup.restore", summary: `${user.name} restored workspace from backup point ${ref}` });
+  const runId = uid("bkp_");
+  await run(
+    "INSERT INTO backup_runs (id, kind, started_at, finished_at, ok, file, rows, detail, by_user) VALUES (?, 'restore', ?, ?, 1, ?, ?, ?, ?)",
+    runId,
+    nowIso(),
+    nowIso(),
+    ref,
+    totalRestored,
+    `Restored from ${TARGET_LABELS[target]}: ${totalRestored} rows`,
+    user.id,
+  );
+  return { ok: true, file: ref, restoredRows: totalRestored };
+}

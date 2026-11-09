@@ -13,7 +13,15 @@ export async function GET(request: Request) {
   if (!state || state !== url.searchParams.get("state") || !url.searchParams.get("code")) return Response.redirect(`${origin}/login/forgot?error=google-failed`, 302);
   const email = await googleEmail(url.searchParams.get("code")!).catch(() => null);
   if (!email) return Response.redirect(`${origin}/login/forgot?error=google-failed`, 302);
-  const u = await get<{ id: string; name: string; active: number }>("SELECT id, name, active FROM users WHERE lower(email) = ?", email);
+  let u = await get<{ id: string; name: string; active: number }>("SELECT id, name, active FROM users WHERE lower(email) = ?", email);
+  if (!u) {
+    const gt = await get<{ user_id: string }>("SELECT user_id FROM google_tokens WHERE lower(email) = ?", email);
+    if (gt) u = await get<{ id: string; name: string; active: number }>("SELECT id, name, active FROM users WHERE id = ?", gt.user_id);
+  }
+  if (!u) {
+    const prof = await get<{ user_id: string }>("SELECT user_id FROM profiles WHERE lower(gmail) = ?", email);
+    if (prof) u = await get<{ id: string; name: string; active: number }>("SELECT id, name, active FROM users WHERE id = ?", prof.user_id);
+  }
   if (!u?.active) return Response.redirect(`${origin}/login/forgot?error=no-account`, 302);
   const token = await createResetToken(u.id, "google");
   await audit({ actor: null }, { action: "user.password_reset", summary: `${u.name} proved their account with Google to reset the password` });

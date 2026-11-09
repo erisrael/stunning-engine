@@ -19,3 +19,8 @@ export async function deleteProfileFileAction(id: string) {
 export async function savePeopleVisibilityAction(input: Partial<prof.PeopleVisibility>) {
   return wrap(async () => prof.savePeopleVisibility(await requireViewer(), input));
 }
+
+// Admin: which profile fields are editable by regular users.
+export async function saveProfileFieldsConfigAction(fields: prof.ProfileFieldKey[]) {
+  return wrap(async () => prof.saveProfileFieldsConfig(await requireViewer(), fields));
+}

@@ -48,6 +48,8 @@ export type TemplateKey =
   | "users"
   | "recording_sessions"
   | "historical"
+  | "equipment"
+  | "finance_requests"
   | TaxonomyKey;
 export type ImportMode = "create" | "update" | "upsert";
 
@@ -588,6 +590,62 @@ export const TEMPLATES: Record<TemplateKey, TemplateDef> = {
         live_url: "https://app.myseed.example/lessons/legacy-0142",
         notes: "Edited date unknown in source",
       },
+    ],
+  },
+  equipment: {
+    key: "equipment",
+    title: "Equipment & stock register",
+    summary: "Register assets, IT equipment, cameras, accessories and stock quantities with maintenance dates.",
+    managerOnly: false,
+    cap: ["finance.access", "users.manage", "data.manage"],
+    modes: ["create", "update", "upsert"],
+    notes: [
+      "Asset tag is the unique identifier (e.g. EQ-001).",
+      "Status can be: available, assigned, repair_needed, under_repair, replacement_needed, retired, lost.",
+      "Ownership can be: company, personal, leased.",
+      "Department can be: dev, hr, finance, marketing, or general.",
+    ],
+    fields: [
+      { key: "tag", label: "Asset tag", required: true, type: "string", description: "Unique asset tag." },
+      { key: "name", label: "Name", required: true, type: "string", description: "Device or equipment name." },
+      { key: "department", label: "Department", required: true, type: "string", description: "Department code (e.g. dev, hr, finance, general)." },
+      { key: "category", label: "Category", required: false, type: "string", description: "Category/model (e.g. Laptop, Camera, Mic)." },
+      { key: "ownership", label: "Ownership", required: false, type: "enum", options: () => ["company", "personal", "leased"], description: "company, personal, or leased." },
+      { key: "status", label: "Status", required: false, type: "enum", options: () => ["available", "assigned", "repair_needed", "under_repair", "replacement_needed", "retired", "lost"], description: "Equipment status." },
+      { key: "quantity", label: "Quantity", required: false, type: "int", description: "Stock quantity (default 1)." },
+      { key: "reorder_level", label: "Reorder level", required: false, type: "int", description: "Low stock alert threshold." },
+      { key: "purchase_cost", label: "Purchase cost", required: false, type: "number", description: "Purchase cost per unit." },
+      { key: "assigned_to", label: "Assigned person", required: false, type: "email", description: "Email or name of employee assigned." },
+      { key: "maintenance_due", label: "Maintenance due", required: false, type: "date", description: "YYYY-MM-DD." },
+      { key: "warranty_until", label: "Warranty until", required: false, type: "date", description: "YYYY-MM-DD." },
+      { key: "notes", label: "Notes", required: false, type: "string", description: "Serial number, specs, or location notes." },
+    ],
+    examples: () => [
+      { tag: "EQ-101", name: "Dell Latitude 5520", department: "dev", category: "Laptop", ownership: "company", status: "assigned", quantity: "1", reorder_level: "0", purchase_cost: "1200", assigned_to: "admin@demo.local", maintenance_due: "2027-01-01", warranty_until: "2028-01-01", notes: "Serial #DL-99210" },
+      { tag: "EQ-102", name: "Sony A7 IV Camera", department: "general", category: "Camera", ownership: "company", status: "available", quantity: "1", reorder_level: "0", purchase_cost: "2500", assigned_to: "", maintenance_due: "", warranty_until: "2027-06-01", notes: "Studio 1 kit" },
+    ],
+  },
+  finance_requests: {
+    key: "finance_requests",
+    title: "Finance requests",
+    summary: "Requests for devices, subscriptions, budgets, repairs, or replacements sent to Finance.",
+    managerOnly: false,
+    modes: ["create"],
+    notes: [
+      "Department: dev, hr, finance, marketing, or general.",
+      "Kind: device, subscription, budget, repair, replacement, other.",
+    ],
+    fields: [
+      { key: "department", label: "Department", required: true, type: "string", description: "Department code." },
+      { key: "kind", label: "Request type", required: true, type: "enum", options: () => ["device", "subscription", "budget", "repair", "replacement", "other"], description: "Type of request." },
+      { key: "title", label: "Title", required: true, type: "string", description: "What is requested." },
+      { key: "description", label: "Description", required: true, type: "string", description: "Justification and details." },
+      { key: "amount", label: "Estimated cost", required: false, type: "number", description: "Estimated cost." },
+      { key: "quantity", label: "Quantity", required: false, type: "int", description: "Quantity requested (default 1)." },
+    ],
+    examples: () => [
+      { department: "dev", kind: "device", title: "Testing Android Phone", description: "For QA kiosk and app testing", amount: "350", quantity: "2" },
+      { department: "general", kind: "subscription", title: "Brevo Email API Plan", description: "Transactional email plan", amount: "25", quantity: "1" },
     ],
   },
 };
@@ -1415,6 +1473,85 @@ async function planRow(template: TemplateDef, rec: Row, rowNo: number, mode: Imp
                     ctx.now ?? nowIso(),
                   );
         await audit(ctx, { itemId: item!.id, stage: "recording", action: "recording.scheduled", summary: `Recording session booked for ${rec.scheduled_start}` });
+      },
+    };
+  }
+
+  if (template.key === "equipment") {
+    const tag = rec.tag?.trim();
+    if (!tag) {
+      errors.push("Asset tag is required.");
+      return { outcome: out("error", `row ${rowNo}`, "Missing asset tag") };
+    }
+    const existing = await get<{ id: string; status: string }>("SELECT id, status FROM equipment WHERE tag = ?", tag);
+    if (mode === "create" && existing) {
+      errors.push(`Equipment with tag ${tag} already exists.`);
+      return { outcome: out("error", tag, `Tag ${tag} already exists`) };
+    }
+    if (mode === "update" && !existing) {
+      errors.push(`Equipment with tag ${tag} does not exist.`);
+      return { outcome: out("error", tag, `Tag ${tag} not found`) };
+    }
+    const action = existing ? "update" : "create";
+    let assignedUserId: string | null = null;
+    if (rec.assigned_to?.trim()) {
+      const emailOrName = rec.assigned_to.trim().toLowerCase();
+      const u = await get<{ id: string }>("SELECT id FROM users WHERE lower(email) = ? OR lower(name) = ?", emailOrName, emailOrName);
+      if (u) assignedUserId = u.id;
+      else warnings.push(`Assignee ${rec.assigned_to} was not found; left unassigned.`);
+    }
+    const status = rec.status?.trim() || "available";
+    const ownership = rec.ownership?.trim() || "company";
+    const quantity = Math.max(0, parseInt(rec.quantity || "1", 10) || 1);
+    const reorderLevel = Math.max(0, parseInt(rec.reorder_level || "0", 10) || 0);
+    const cost = Math.max(0, parseFloat(rec.purchase_cost || "0") || 0);
+    return {
+      outcome: out(action, tag, `${action === "create" ? "Add" : "Update"} ${rec.name || tag} (${tag})`),
+      apply: async () => {
+        const { saveEquipment } = await import("./resources");
+        await saveEquipment(user, {
+          id: existing?.id,
+          tag,
+          name: rec.name?.trim() || tag,
+          department: rec.department?.trim() || "general",
+          category: rec.category?.trim() || "equipment",
+          ownership,
+          status,
+          quantity,
+          reorder_level: reorderLevel,
+          purchase_cost: cost,
+          assigned_to: assignedUserId,
+          maintenance_due: rec.maintenance_due?.trim() || null,
+          warranty_until: rec.warranty_until?.trim() || null,
+          notes: rec.notes?.trim() || "",
+        });
+      },
+    };
+  }
+
+  if (template.key === "finance_requests") {
+    const dept = rec.department?.trim() || "general";
+    const kind = rec.kind?.trim() || "other";
+    const title = rec.title?.trim();
+    const desc = rec.description?.trim() || title;
+    if (!title) {
+      errors.push("Title is required.");
+      return { outcome: out("error", `row ${rowNo}`, "Missing title") };
+    }
+    const amount = Math.max(0, parseFloat(rec.amount || "0") || 0);
+    const qty = Math.max(1, parseInt(rec.quantity || "1", 10) || 1);
+    return {
+      outcome: out("create", `${dept}: ${title}`, `Request ${kind}: ${title}`),
+      apply: async () => {
+        const { resourceRequest } = await import("./resources");
+        await resourceRequest(user, {
+          department: dept,
+          kind,
+          title,
+          description: desc,
+          amount,
+          quantity: qty,
+        });
       },
     };
   }

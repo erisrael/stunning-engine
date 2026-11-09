@@ -50,7 +50,7 @@ import { googleConnection, GOOGLE_SCOPES } from "@/server/google";
 import { smtpSettings } from "@/server/email";
 import { SignInAdmin } from "./signin-admin";
 import { PeopleVisibilityAdmin } from "./people-visibility-admin";
-import { peopleVisibility } from "@/server/profiles";
+import { peopleVisibility, profileFieldsConfig } from "@/server/profiles";
 import { ChatAdmin, FeedbackAdmin, ReportsAdmin } from "./support-admin";
 import { chatConfig, chatUsage } from "@/server/chat-extras";
 import { maxUploadBytes } from "@/server/storage";
@@ -214,7 +214,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
                   unconfirmed: await (await import("@/server/email-verify")).unconfirmedPeople(viewer),
                 }}
               />
-              <SignInAdmin google={await googleSettings()} emailReady={(await smtpSettings()).source !== "none"} />
+              <SignInAdmin google={await googleSettings()} emailReady={(await smtpSettings()).source !== "none"} profileFields={await profileFieldsConfig()} />
             </TabsContent>
             <TabsContent value="files">
               {tab === "files" && <FilesAdmin storage={await storageConfig()} app={await appConfigView()} broken={await brokenLinks()} outside={await linksOutside()} />}

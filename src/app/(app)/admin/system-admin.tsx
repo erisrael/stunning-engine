@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { AlertTriangleIcon, CheckCircle2Icon, CheckIcon, CopyIcon, DatabaseBackupIcon, DownloadIcon, FlaskConicalIcon, PlayIcon, SaveIcon, SendIcon, XCircleIcon } from "lucide-react";
+import { AlertTriangleIcon, CheckCircle2Icon, CheckIcon, CopyIcon, DatabaseBackupIcon, DownloadIcon, FlaskConicalIcon, PlayIcon, RotateCcwIcon, SaveIcon, SendIcon, XCircleIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,7 +12,7 @@ import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { backupNowAction, resolveErrorsAction, runJobsNowAction, saveBackupConfigAction, saveOpsConfigAction, testAlertAction, testRestoreAction } from "@/app/actions/system";
+import { backupNowAction, resolveErrorsAction, restoreBackupAction, runJobsNowAction, saveBackupConfigAction, saveOpsConfigAction, testAlertAction, testRestoreAction } from "@/app/actions/system";
 import type { ErrorRow, HealthCheck, JobRow, OpsConfig } from "@/server/ops";
 import type { BackupConfig, BackupFile, BackupRun, TargetId } from "@/server/backups";
 import { fmtDateTime } from "@/lib/format";
@@ -185,7 +185,7 @@ function Backups({ data }: { data: SystemData }) {
   const [c, setC] = React.useState<BackupConfig>(data.backup);
   const [passphrase, setPassphrase] = React.useState("");
   const [s3Secret, setS3Secret] = React.useState("");
-  const [busy, setBusy] = React.useState<null | "save" | "backup" | "test">(null);
+  const [busy, setBusy] = React.useState<string | null>(null);
   const dirty = JSON.stringify(c) !== JSON.stringify(data.backup) || !!passphrase || !!s3Secret;
   const set = (v: Partial<BackupConfig>) => setC((o) => ({ ...o, ...v }));
   const save = async () => {
@@ -366,7 +366,26 @@ function Backups({ data }: { data: SystemData }) {
                   <TableCell className="font-mono text-xs">{f.name}</TableCell>
                   <TableCell>{TARGETS[f.target]}</TableCell>
                   <TableCell>{mb(f.size)}</TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="text-right space-x-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={busy === `restore-${f.ref}`}
+                      onClick={async () => {
+                        if (!window.confirm(`Restore workspace from point-in-time backup: ${f.name}?\n\nWarning: Current data will be replaced by the records in this backup.`)) return;
+                        setBusy(`restore-${f.ref}`);
+                        try {
+                          const r = await restoreBackupAction(f.target, f.ref);
+                          if (!r.ok || !r.data) return void toast.error(!r.ok ? r.error : "Restore failed");
+                          toast.success(`Restored ${r.data.restoredRows} rows from ${f.name}`);
+                          router.refresh();
+                        } finally {
+                          setBusy(null);
+                        }
+                      }}
+                    >
+                      <RotateCcwIcon className="size-3.5" /> Restore
+                    </Button>
                     <Button size="sm" variant="ghost" asChild>
                       <a href={`/api/admin/backups?target=${f.target}&ref=${encodeURIComponent(f.ref)}&name=${encodeURIComponent(f.name)}`} aria-label={`Download ${f.name}`}>
                         <DownloadIcon /> Download

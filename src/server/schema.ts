@@ -1531,6 +1531,7 @@ CREATE TABLE IF NOT EXISTS chat_receipts (
 CREATE INDEX IF NOT EXISTS idx_chat_receipts ON chat_receipts(group_id, upto_seq);
 ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS forwarded_from TEXT;
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS contact TEXT NOT NULL DEFAULT '{}';
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS gmail TEXT;
 
 CREATE TABLE IF NOT EXISTS feedback (
   id TEXT PRIMARY KEY,

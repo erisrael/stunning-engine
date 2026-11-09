@@ -81,6 +81,6 @@ export async function resetPasswordAction(_prev: { error?: string } | undefined,
   redirect(next);
 }
 
-export async function saveGoogleSettingsAction(input: { clientId: string; secret?: string | null }) {
+export async function saveGoogleSettingsAction(input: { clientId: string; secret?: string | null; googleSignIn?: boolean; googleReset?: boolean }) {
   return wrap(async () => saveGoogleSettings(await requireViewer(), input));
 }

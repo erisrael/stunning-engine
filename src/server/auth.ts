@@ -22,17 +22,25 @@ const secure = () => process.env.NODE_ENV === "production" && process.env.MYSEED
 // The visitor's address as our own proxy saw it (see client-ip.ts): used for sign-in limits, the sign-in log and
 // the office-network check for attendance, so it must not be something the visitor can write.
 export async function requestIp() {
-  return clientIpFrom(await headers());
+  try {
+    return clientIpFrom(await headers());
+  } catch {
+    return null;
+  }
 }
 
 export async function deviceId(create: boolean) {
-  const jar = await cookies();
-  const existing = jar.get(DEVICE_COOKIE)?.value;
-  if (existing && /^[a-f0-9]{32}$/.test(existing)) return existing;
-  if (!create) return null;
-  const id = crypto.randomBytes(16).toString("hex");
-  jar.set(DEVICE_COOKIE, id, { httpOnly: true, sameSite: "lax", secure: secure(), path: "/", maxAge: 2 * 365 * 864e2 });
-  return id;
+  try {
+    const jar = await cookies();
+    const existing = jar.get(DEVICE_COOKIE)?.value;
+    if (existing && /^[a-f0-9]{32}$/.test(existing)) return existing;
+    if (!create) return null;
+    const id = crypto.randomBytes(16).toString("hex");
+    jar.set(DEVICE_COOKIE, id, { httpOnly: true, sameSite: "lax", secure: secure(), path: "/", maxAge: 2 * 365 * 864e2 });
+    return id;
+  } catch {
+    return null;
+  }
 }
 
 export async function isDeviceBlocked(id: string | null) {
@@ -48,7 +56,12 @@ export async function startSession(userId: string): Promise<{ ok: true; sessionI
   const now = new Date();
   // The session ends at the shortest maximum length of the person's roles (Admin, Sign-in, Sessions).
   const expires = new Date(now.getTime() + sessionLimitFor(await signInPolicy(), user.roles).maxHours * 3600e3);
-  const ua = (await headers()).get("user-agent")?.slice(0, 300) ?? null;
+  let ua: string | null = null;
+  try {
+    ua = (await headers()).get("user-agent")?.slice(0, 300) ?? null;
+  } catch {
+    ua = null;
+  }
   const defaultRole = pickDefaultRole(user.roles);
   await run(
         "INSERT INTO sessions (id, user_id, active_role, created_at, expires_at, user_agent, ip, device_id, last_seen_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -63,7 +76,9 @@ export async function startSession(userId: string): Promise<{ ok: true; sessionI
         now.toISOString(),
       );
   await run("UPDATE users SET last_login_at = ? WHERE id = ?", now.toISOString(), userId);
-  (await cookies()).set(COOKIE, id, { httpOnly: true, sameSite: "lax", secure: secure(), path: "/", expires });
+  try {
+    (await cookies()).set(COOKIE, id, { httpOnly: true, sameSite: "lax", secure: secure(), path: "/", expires });
+  } catch {}
   return { ok: true, sessionId: id, deviceId: device };
 }
 

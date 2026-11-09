@@ -884,12 +884,29 @@ function EmailSettings({ smtp, senders, people, presets, secretSource, viewerEma
   const [via, setVia] = React.useState<"smtp" | "brevo" | "resend">(smtp.relay ?? "smtp");
   const [relayKey, setRelayKey] = React.useState("");
   const api = via !== "smtp";
-  const [preset, setPreset] = React.useState<string>(presets.find((p) => p.host && p.host === smtp.host)?.key ?? (/^mail\./i.test(smtp.host) ? "cpanel" : "custom"));
+  const initialPreset = presets.find((p) => p.host && p.host === smtp.host)?.key ?? (/^mail\./i.test(smtp.host) ? "cpanel" : "custom");
+  const [preset, setPreset] = React.useState<string>(smtp.relay ?? initialPreset);
   const [checks, setChecks] = React.useState<{ title: string; steps: CheckStep[] } | null>(null);
   const [testTo, setTestTo] = React.useState(viewerEmail);
   const [busy, setBusy] = React.useState<string | null>(null);
   const [editing, setEditing] = React.useState<Sender | "new" | null>(null);
   const hint = presets.find((p) => p.key === preset)?.hint;
+
+  const selectProvider = (val: string) => {
+    if (val === "brevo" || val === "resend") {
+      setVia(val);
+      setRelayKey("");
+      setPreset(val);
+    } else {
+      setVia("smtp");
+      setPreset(val);
+      const p = presets.find((x) => x.key === val);
+      if (p && p.host) setF((x) => ({ ...x, host: p.host, port: p.port, secure: p.secure }));
+      if (val === "cpanel") setF((x) => ({ ...x, host: mailHostFor(x.user || x.fromAddress) || x.host, port: 465, secure: true }));
+    }
+  };
+
+  const currentProviderValue = via !== "smtp" ? via : preset;
 
   return (
     <div className="grid gap-4 xl:grid-cols-2">
@@ -899,25 +916,30 @@ function EmailSettings({ smtp, senders, people, presets, secretSource, viewerEma
           <CardDescription>
             {fromEnv
               ? "Set in the hosting environment variables (SMTP_HOST, SMTP_USER, SMTP_PASS, SMTP_FROM). Change it there."
-              : "The account the app sends through. Gmail works with an app password; Google Workspace and Zoho work with your own domain."}
+              : "The account the app sends through. Choose Brevo or Resend for web API delivery, or cPanel / SMTP for mail servers."}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           {!fromEnv && (
             <div className="space-y-1.5">
-              <Label>Send through</Label>
-              <Select value={via} onValueChange={(v) => { setVia(v as typeof via); setRelayKey(""); }}>
+              <Label>Email provider</Label>
+              <Select value={currentProviderValue} onValueChange={selectProvider}>
                 <SelectTrigger className="w-full" aria-label="Email delivery provider">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="smtp">SMTP (your mail server)</SelectItem>
                   <SelectItem value="brevo">Brevo web API</SelectItem>
                   <SelectItem value="resend">Resend web API</SelectItem>
+                  <SelectItem value="cpanel">cPanel hosting (your own domain)</SelectItem>
+                  <SelectItem value="gmail">Gmail (app password)</SelectItem>
+                  <SelectItem value="workspace">Google Workspace</SelectItem>
+                  <SelectItem value="zoho">Zoho Mail</SelectItem>
+                  <SelectItem value="outlook">Microsoft 365 / Outlook</SelectItem>
+                  <SelectItem value="custom">Other SMTP server</SelectItem>
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                Use a web API when the hosting blocks the SMTP ports (Render&apos;s free plan blocks 25, 465 and 587). It sends over HTTPS from your own address; your mailbox stays where it is.
+                Use Brevo or Resend web API when the hosting blocks SMTP ports (such as cloud hosting plans). Use cPanel hosting for company domains.
               </p>
             </div>
           )}
@@ -947,31 +969,8 @@ function EmailSettings({ smtp, senders, people, presets, secretSource, viewerEma
               </div>
             </>
           )}
-          {!fromEnv && !api && (
-            <div className="space-y-1.5">
-              <Label>Provider</Label>
-              <Select
-                value={preset}
-                onValueChange={(v) => {
-                  setPreset(v);
-                  const p = presets.find((x) => x.key === v);
-                  if (p && p.host) setF((x) => ({ ...x, host: p.host, port: p.port, secure: p.secure }));
-                  if (p?.key === "cpanel") setF((x) => ({ ...x, host: mailHostFor(x.user || x.fromAddress) || x.host, port: p.port, secure: p.secure }));
-                }}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {presets.map((p) => (
-                    <SelectItem key={p.key} value={p.key}>
-                      {p.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
-            </div>
+          {!fromEnv && !api && hint && (
+            <p className="text-xs text-muted-foreground">{hint}</p>
           )}
           {!fromEnv && !api && preset === "cpanel" && (
             <ol className="list-decimal space-y-1 rounded-lg border bg-muted/40 py-2 pr-3 pl-8 text-xs text-muted-foreground">

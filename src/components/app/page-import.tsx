@@ -9,6 +9,7 @@ export const PAGE_IMPORTS = {
   curriculum: ["structure", "grades", "subjects", "units", "parts", "curriculum"],
   people: ["users"],
   admin: ["users", "structure", "items", "historical"],
+  resources: ["equipment", "finance_requests"],
 } satisfies Record<string, TemplateKey[]>;
 
 const COPY: Record<keyof typeof PAGE_IMPORTS, { title: string; description: string }> = {
@@ -20,6 +21,7 @@ const COPY: Record<keyof typeof PAGE_IMPORTS, { title: string; description: stri
   },
   people: { title: "Import people", description: "Add or update accounts, roles and grade or subject access." },
   admin: { title: "Import workspace data", description: "People, the curriculum structure, items and historical records." },
+  resources: { title: "Import equipment & requests", description: "Register equipment stock, assets or purchase requests in bulk using standard CSV or Excel templates." },
 };
 
 export function PageImport({ viewer, page, label = "Import", only }: { viewer: AppUser; page: keyof typeof PAGE_IMPORTS; label?: string; only?: TemplateKey[] }) {

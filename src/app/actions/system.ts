@@ -3,8 +3,12 @@
 import { requireCapability } from "@/server/auth";
 import { wrap } from "@/server/action-result";
 import { resolveErrors, saveOpsConfig, testAlert, type OpsConfig } from "@/server/ops";
-import { runBackup, saveBackupConfig, testRestore, type BackupConfig } from "@/server/backups";
+import { restoreBackup, runBackup, saveBackupConfig, testRestore, type BackupConfig, type TargetId } from "@/server/backups";
 import { runScheduledChecks } from "@/server/jobs";
+
+export async function restoreBackupAction(target: TargetId, ref: string) {
+  return wrap(async () => restoreBackup(await requireCapability("users.manage"), target, ref));
+}
 
 export async function saveOpsConfigAction(input: OpsConfig & { telegramToken?: string | null }) {
   return wrap(async () => saveOpsConfig(await requireCapability("users.manage"), input));

@@ -14,7 +14,7 @@ import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/componen
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { UserAvatar } from "@/components/app/primitives";
 import { addProfileFileAction, deleteProfileFileAction, saveProfileAction } from "@/app/actions/profile";
-import type { Contact, Cover, Education, Experience, Language, LinkItem, Profile, ProfileSection, Skill, Visibility } from "@/server/profiles";
+import type { Contact, Cover, Education, Experience, Language, LinkItem, Profile, ProfileFieldKey, ProfileSection, Skill, Visibility } from "@/server/profiles";
 import { PhoneIcon } from "lucide-react";
 import { ContactSheet } from "@/app/(app)/chat/chat-plus";
 import { cn } from "@/lib/utils";
@@ -62,6 +62,7 @@ export function ProfileCard({ profile }: { profile: Profile }) {
   const [contactOpen, setContactOpen] = React.useState(false);
   React.useEffect(() => setP(profile), [profile]);
   const photo = React.useRef<HTMLInputElement>(null);
+  const canEditField = (key: ProfileFieldKey) => !profile.editableFields || profile.editableFields.includes(key);
   const save = async (patch: Partial<Profile> = p) => {
     setBusy(true);
     const r = await saveProfileAction({
@@ -78,6 +79,7 @@ export function ProfileCard({ profile }: { profile: Profile }) {
       studyStatus: patch.studyStatus,
       hidden: patch.hidden,
       contact: patch.contact ?? undefined,
+      gmail: patch.gmail,
     });
     setBusy(false);
     if (!r.ok) return void toast.error(r.error);
@@ -448,6 +450,38 @@ export function ProfileCard({ profile }: { profile: Profile }) {
           </Card>
         )}
         {p.canEdit && p.contact && <ContactEditor profile={p} onSave={(contact) => save({ ...p, contact })} busy={busy} />}
+        {p.canEdit && (
+          <Card className="lg:col-span-2">
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <GlobeIcon className="size-4" /> Attached Gmail for Google Sign-in & Recovery
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-xs text-muted-foreground">
+                Attach your personal or work Gmail address. When you sign in with Google or request a password reset, you can sign in directly with this Gmail account.
+              </p>
+              <div className="flex flex-wrap items-center gap-2 max-w-md">
+                <Input
+                  id="profile-gmail-input"
+                  aria-label="Attached Gmail"
+                  type="email"
+                  value={p.gmail ?? ""}
+                  disabled={!canEditField("gmail")}
+                  onChange={(e) => setP({ ...p, gmail: e.target.value })}
+                  placeholder="your.name@gmail.com"
+                />
+                {!canEditField("gmail") ? (
+                  <span className="text-xs text-muted-foreground">(Locked by Admin)</span>
+                ) : (
+                  <Button size="sm" onClick={() => save({ ...p, gmail: p.gmail })} disabled={busy}>
+                    Save Gmail
+                  </Button>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
         {p.files && <Files profile={p} />}
       </div>
       <ContactSheet userId={contactOpen ? p.userId : null} onClose={() => setContactOpen(false)} />

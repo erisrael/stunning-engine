@@ -39,7 +39,12 @@ export type FirstStep = { ok: true; next: string; twoStep: boolean } | { ok: fal
 // ---------------------------------------------------------------------------
 
 export async function logSignIn(e: { userId?: string | null; email?: string | null; event: SignInEvent; method?: string | null; detail?: string | null }) {
-  const ua = (await headers()).get("user-agent")?.slice(0, 300) ?? null;
+  let ua: string | null = null;
+  try {
+    ua = (await headers()).get("user-agent")?.slice(0, 300) ?? null;
+  } catch {
+    ua = null;
+  }
   await run(
     "INSERT INTO signin_log (id, user_id, email, event, method, ip, device_id, user_agent, detail, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     uid("sil_"),
@@ -278,7 +283,9 @@ export async function afterFirstFactor(userId: string, method: string, next: str
     new Date(Date.now() + CHALLENGE_MINUTES * 60e3).toISOString(),
     nowIso(),
   );
-  (await cookies()).set(CHALLENGE_COOKIE, token, { httpOnly: true, sameSite: "lax", secure: secure(), path: "/", maxAge: CHALLENGE_MINUTES * 60 });
+  try {
+    (await cookies()).set(CHALLENGE_COOKIE, token, { httpOnly: true, sameSite: "lax", secure: secure(), path: "/", maxAge: CHALLENGE_MINUTES * 60 });
+  } catch {}
   return { ok: true, next: "/login/verify", twoStep: true };
 }
 
@@ -292,7 +299,13 @@ async function finishSignIn(userId: string, method: string, next: string): Promi
     const seen = await get("SELECT 1 AS x FROM signin_log WHERE user_id = ? AND device_id = ? AND event = 'signin'", userId, s.deviceId);
     const before = await get("SELECT 1 AS x FROM signin_log WHERE user_id = ? AND event = 'signin'", userId);
     if (!seen && before) {
-      const d = parseAgent((await headers()).get("user-agent"));
+      let agentStr: string | null = null;
+      try {
+        agentStr = (await headers()).get("user-agent");
+      } catch {
+        agentStr = null;
+      }
+      const d = parseAgent(agentStr);
       const where = `${d.browser} on ${d.os}${(await requestIp()) ? `, address ${await requestIp()}` : ""}`;
       await notify([userId], { type: "security", title: "New sign-in to your account", body: `${where}. If it was not you, end that session and change your password.`, link: "/profile?tab=account" }, nowIso());
       void mail(u.email, "New sign-in to your account", `Your account was just used to sign in from a new device: ${where}.\n\nIf it was you, there is nothing to do. If not, open Profile, Account to end that session, and change your password.`);
@@ -652,6 +665,24 @@ export async function providerSignIn(provider: ProviderId, claims: { subject: st
       await run("INSERT INTO user_identities (provider, subject, user_id, email, created_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT (provider, subject) DO NOTHING", provider, claims.subject, u.id, email, nowIso());
       await logSignIn({ userId: u.id, email, event: "provider_linked", method: provider, detail: "matched by email" });
       userId = u.id;
+    }
+  }
+  if (!userId && provider === "google") {
+    // Check attached Gmail in google_tokens
+    const gt = await get<{ user_id: string }>("SELECT user_id FROM google_tokens WHERE lower(email) = ?", email);
+    if (gt) {
+      await run("INSERT INTO user_identities (provider, subject, user_id, email, created_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT (provider, subject) DO NOTHING", provider, claims.subject, gt.user_id, email, nowIso());
+      await logSignIn({ userId: gt.user_id, email, event: "provider_linked", method: provider, detail: "matched by attached google token email" });
+      userId = gt.user_id;
+    }
+  }
+  if (!userId && provider === "google") {
+    // Check attached Gmail in profiles
+    const prof = await get<{ user_id: string }>("SELECT user_id FROM profiles WHERE lower(gmail) = ?", email);
+    if (prof) {
+      await run("INSERT INTO user_identities (provider, subject, user_id, email, created_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT (provider, subject) DO NOTHING", provider, claims.subject, prof.user_id, email, nowIso());
+      await logSignIn({ userId: prof.user_id, email, event: "provider_linked", method: provider, detail: "matched by attached profile gmail" });
+      userId = prof.user_id;
     }
   }
   if (userId) {

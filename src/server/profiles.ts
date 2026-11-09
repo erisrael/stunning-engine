@@ -36,6 +36,26 @@ export type Contact = {
 };
 export const CONTACT_DEFAULT: Contact = { phone: "", phone2: "", workEmail: "", telegram: "", whatsapp: "", office: "", phoneVisible: "team", emailVisible: "everyone", messengersVisible: "team" };
 
+import { PROFILE_FIELDS, type ProfileFieldKey } from "@/lib/profile-fields";
+export { PROFILE_FIELDS, type ProfileFieldKey };
+
+export async function profileFieldsConfig(): Promise<{ editable: ProfileFieldKey[] }> {
+  const row = await get<{ value: string }>("SELECT value FROM settings WHERE key = 'cfg.profile_fields'");
+  if (!row) return { editable: PROFILE_FIELDS.map((f) => f.key) };
+  return parseJson<{ editable: ProfileFieldKey[] }>(row.value, { editable: PROFILE_FIELDS.map((f) => f.key) });
+}
+
+export async function saveProfileFieldsConfig(user: AppUser, editable: ProfileFieldKey[]) {
+  if (!can(user, "users.manage")) throw new WorkflowError("FORBIDDEN", "Only Admin sets profile field permissions.");
+  await run(
+    "INSERT INTO settings (key, value, updated_at, updated_by) VALUES ('cfg.profile_fields', ?, ?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by",
+    JSON.stringify({ editable }),
+    nowIso(),
+    user.id,
+  );
+  await audit({ actor: user }, { action: "settings.profiles", summary: `${user.name} updated editable profile fields policy (${editable.length} fields editable)` });
+}
+
 export type Profile = {
   userId: string;
   name: string;
@@ -55,8 +75,10 @@ export type Profile = {
   hidden: ProfileSection[];
   // The person's own contact settings (for themselves only).
   contact: Contact | null;
+  gmail: string | null;
   files: { id: string; kind: string; title: string; name: string; size: number; createdAt: string }[] | null;
   canEdit: boolean;
+  editableFields: ProfileFieldKey[];
 };
 
 const MAX_AVATAR = 400 * 1024;
@@ -93,7 +115,7 @@ export async function getProfile(viewer: AppUser, userId: string): Promise<Profi
   const u = await loadUser(userId);
   if (!u?.active && viewer.id !== userId) return null;
   if (!u) return null;
-  const p = await get<{ headline: string | null; about: string | null; location: string | null; avatar: string | null; cover: Cover; skills: string; education: string; experience: string; languages: string; links: string; study_status: Profile["studyStatus"]; hidden_sections: string; contact: string }>(
+  const p = await get<{ headline: string | null; about: string | null; location: string | null; avatar: string | null; cover: Cover; skills: string; education: string; experience: string; languages: string; links: string; study_status: Profile["studyStatus"]; hidden_sections: string; contact: string; gmail: string | null }>(
     "SELECT * FROM profiles WHERE user_id = ?",
     userId,
   );
@@ -109,6 +131,9 @@ export async function getProfile(viewer: AppUser, userId: string): Promise<Profi
         createdAt: f.created_at,
       }))
     : null;
+  const googleTokenEmail = (await get<{ email: string }>("SELECT email FROM google_tokens WHERE user_id = ?", userId))?.email ?? null;
+  const gmail = p?.gmail ?? googleTokenEmail ?? null;
+  const cfg = await profileFieldsConfig();
   // Sections the person hid are left out for everyone else.
   const shows = (k: ProfileSection) => self || !hidden.includes(k);
   return {
@@ -130,66 +155,91 @@ export async function getProfile(viewer: AppUser, userId: string): Promise<Profi
     // Sections the person hid are hidden from others, not from themselves.
     hidden,
     contact: self ? { ...CONTACT_DEFAULT, ...parseJson<Partial<Contact>>(p?.contact, {}) } : null,
+    gmail,
     files: self || !hidden.includes("files") ? files : can(viewer, "hr.access") ? files : null,
     canEdit: self,
+    editableFields: cfg.editable,
   };
 }
 
-export type ProfileInput = Partial<Omit<Profile, "userId" | "name" | "email" | "roles" | "files" | "canEdit" | "contact">> & { contact?: Partial<Contact> };
+export type ProfileInput = Partial<Omit<Profile, "userId" | "name" | "email" | "roles" | "files" | "canEdit" | "contact" | "editableFields">> & { contact?: Partial<Contact>; gmail?: string | null };
 
 export async function saveProfile(user: AppUser, input: ProfileInput) {
   const cur = await getProfile(user, user.id);
   if (!cur) throw new WorkflowError("NOT_FOUND", "Your account was not found.");
-  const pick = <T>(v: T | undefined, d: T) => (v === undefined ? d : v);
-  const avatar = pick(input.avatar, cur.avatar);
-  if (avatar && (!/^data:image\/(png|jpe?g|webp);base64,/.test(avatar) || avatar.length > MAX_AVATAR * 1.4)) throw new WorkflowError("VALIDATION", "The photo must be a PNG, JPEG or WebP under 400 KB.");
-  const skills = pick(input.skills, cur.skills)
-    .map((s) => ({ name: str(s.name, 60), level: SKILL_LEVELS.includes(s.level) ? s.level : "good" }))
-    .filter((s) => s.name)
-    .slice(0, 40);
-  const education = pick(input.education, cur.education)
-    .map((e) => ({ school: str(e.school, 120), degree: str(e.degree, 80), field: str(e.field, 120), from: str(e.from, 10), to: str(e.to, 10), status: e.status === "ongoing" ? ("ongoing" as const) : ("completed" as const) }))
-    .filter((e) => e.school)
-    .slice(0, 15);
-  const experience = pick(input.experience, cur.experience)
-    .map((e) => ({ org: str(e.org, 120), title: str(e.title, 120), from: str(e.from, 10), to: str(e.to, 10), note: str(e.note, 500) }))
-    .filter((e) => e.org)
-    .slice(0, 20);
-  const languages = pick(input.languages, cur.languages)
-    .map((l) => ({ name: str(l.name, 40), level: str(l.level, 30) }))
-    .filter((l) => l.name)
-    .slice(0, 10);
-  const links = pick(input.links, cur.links)
-    .map((l) => ({ label: str(l.label, 40), url: str(l.url, 300) }))
-    .filter((l) => /^https?:\/\//i.test(l.url))
-    .slice(0, 10);
-  const cover = COVERS.includes(input.cover as Cover) ? (input.cover as Cover) : cur.cover;
-  const study = input.studyStatus === undefined ? cur.studyStatus : STUDY_STATUSES.includes(input.studyStatus as never) ? input.studyStatus : null;
-  const hidden = pick(input.hidden, cur.hidden).filter((h) => PROFILE_SECTIONS.includes(h));
+  const cfg = await profileFieldsConfig();
+  const isAdmin = can(user, "users.manage");
+  const isEditable = (key: ProfileFieldKey) => isAdmin || cfg.editable.includes(key);
+
+  const rawAvatar = isEditable("avatar") && input.avatar !== undefined ? input.avatar : cur.avatar;
+  if (rawAvatar && (!/^data:image\/(png|jpe?g|webp);base64,/.test(rawAvatar) || rawAvatar.length > MAX_AVATAR * 1.4)) throw new WorkflowError("VALIDATION", "The photo must be a PNG, JPEG or WebP under 400 KB.");
+
+  const skills = isEditable("skills") && input.skills !== undefined
+    ? input.skills.map((s) => ({ name: str(s.name, 60), level: SKILL_LEVELS.includes(s.level) ? s.level : "good" })).filter((s) => s.name).slice(0, 40)
+    : cur.skills;
+
+  const education = isEditable("education") && input.education !== undefined
+    ? input.education.map((e) => ({ school: str(e.school, 120), degree: str(e.degree, 80), field: str(e.field, 120), from: str(e.from, 10), to: str(e.to, 10), status: e.status === "ongoing" ? ("ongoing" as const) : ("completed" as const) })).filter((e) => e.school).slice(0, 15)
+    : cur.education;
+
+  const experience = isEditable("experience") && input.experience !== undefined
+    ? input.experience.map((e) => ({ org: str(e.org, 120), title: str(e.title, 120), from: str(e.from, 10), to: str(e.to, 10), note: str(e.note, 500) })).filter((e) => e.org).slice(0, 20)
+    : cur.experience;
+
+  const languages = isEditable("languages") && input.languages !== undefined
+    ? input.languages.map((l) => ({ name: str(l.name, 40), level: str(l.level, 30) })).filter((l) => l.name).slice(0, 10)
+    : cur.languages;
+
+  const links = isEditable("links") && input.links !== undefined
+    ? input.links.map((l) => ({ label: str(l.label, 40), url: str(l.url, 300) })).filter((l) => /^https?:\/\//i.test(l.url)).slice(0, 10)
+    : cur.links;
+
+  const cover = isEditable("cover") && input.cover !== undefined && COVERS.includes(input.cover as Cover) ? (input.cover as Cover) : cur.cover;
+  const study = isEditable("studyStatus") && input.studyStatus !== undefined ? (STUDY_STATUSES.includes(input.studyStatus as never) ? input.studyStatus : null) : cur.studyStatus;
+  const hidden = (input.hidden !== undefined ? input.hidden : cur.hidden).filter((h) => PROFILE_SECTIONS.includes(h));
+
   const vis = (v: unknown, d: Visibility) => (VISIBILITY.includes(v as Visibility) ? (v as Visibility) : d);
-  const cc = { ...(cur.contact ?? CONTACT_DEFAULT), ...(input.contact ?? {}) };
-  const contact: Contact = {
-    phone: str(cc.phone, 40),
-    phone2: str(cc.phone2, 40),
-    workEmail: str(cc.workEmail, 120),
-    telegram: str(cc.telegram, 60).replace(/^@/, ""),
-    whatsapp: str(cc.whatsapp, 40),
-    office: str(cc.office, 120),
-    phoneVisible: vis(cc.phoneVisible, "team"),
-    emailVisible: vis(cc.emailVisible, "everyone"),
-    messengersVisible: vis(cc.messengersVisible, "team"),
-  };
+  let contact: Contact = cur.contact ?? CONTACT_DEFAULT;
+  if (isEditable("contact") && input.contact !== undefined) {
+    const cc = { ...(cur.contact ?? CONTACT_DEFAULT), ...input.contact };
+    contact = {
+      phone: str(cc.phone, 40),
+      phone2: str(cc.phone2, 40),
+      workEmail: str(cc.workEmail, 120),
+      telegram: str(cc.telegram, 60).replace(/^@/, ""),
+      whatsapp: str(cc.whatsapp, 40),
+      office: str(cc.office, 120),
+      phoneVisible: vis(cc.phoneVisible, "team"),
+      emailVisible: vis(cc.emailVisible, "everyone"),
+      messengersVisible: vis(cc.messengersVisible, "team"),
+    };
+  }
+
+  let gmail = cur.gmail;
+  if (isEditable("gmail") && input.gmail !== undefined) {
+    const cleanG = input.gmail?.trim().toLowerCase() || null;
+    if (cleanG && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanG)) throw new WorkflowError("VALIDATION", "Enter a valid Gmail address.");
+    gmail = cleanG;
+    if (cleanG) {
+      await run("INSERT INTO user_identities (provider, subject, user_id, email, created_at) VALUES ('google', ?, ?, ?, ?) ON CONFLICT (provider, subject) DO NOTHING", cleanG, user.id, cleanG, nowIso());
+    }
+  }
+
+  const headline = isEditable("headline") && input.headline !== undefined ? str(input.headline, 120) || null : cur.headline;
+  const about = isEditable("about") && input.about !== undefined ? str(input.about, 2000) || null : cur.about;
+  const location = isEditable("location") && input.location !== undefined ? str(input.location, 80) || null : cur.location;
+
   await run(
-    `INSERT INTO profiles (user_id, headline, about, location, avatar, cover, skills, education, experience, languages, links, study_status, hidden_sections, contact, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO profiles (user_id, headline, about, location, avatar, cover, skills, education, experience, languages, links, study_status, hidden_sections, contact, gmail, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT (user_id) DO UPDATE SET headline = excluded.headline, about = excluded.about, location = excluded.location, avatar = excluded.avatar, cover = excluded.cover,
        skills = excluded.skills, education = excluded.education, experience = excluded.experience, languages = excluded.languages, links = excluded.links,
-       study_status = excluded.study_status, hidden_sections = excluded.hidden_sections, contact = excluded.contact, updated_at = excluded.updated_at`,
+       study_status = excluded.study_status, hidden_sections = excluded.hidden_sections, contact = excluded.contact, gmail = excluded.gmail, updated_at = excluded.updated_at`,
     user.id,
-    str(pick(input.headline, cur.headline) ?? "", 120) || null,
-    str(pick(input.about, cur.about) ?? "", 2000) || null,
-    str(pick(input.location, cur.location) ?? "", 80) || null,
-    avatar,
+    headline,
+    about,
+    location,
+    rawAvatar,
     cover,
     JSON.stringify(skills),
     JSON.stringify(education),
@@ -199,8 +249,10 @@ export async function saveProfile(user: AppUser, input: ProfileInput) {
     study,
     JSON.stringify(hidden),
     JSON.stringify(contact),
+    gmail,
     nowIso(),
   );
+  await audit({ actor: user }, { action: "user.profile", summary: `${user.name} saved profile details` });
 }
 
 export async function addProfileFile(user: AppUser, input: { kind: string; title?: string; file: { name: string; mime: string; base64: string } }) {
