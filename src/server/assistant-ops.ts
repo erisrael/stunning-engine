@@ -48,9 +48,16 @@ export const OPS: { key: string; label: string; group: string; args: string; who
   { key: "hr_adjust_leave", label: "Add or take away leave days", group: "HR", args: "employee, leave_type, days (negative to take away), note, year", who: "hr" },
   { key: "hr_announce", label: "Post an announcement", group: "HR", args: "title, body, kind (news|policy), department (empty: everyone)", who: "announce" },
   { key: "hr_open_case", label: "Open an HR case", group: "HR", args: "employee, kind (disciplinary|grievance|investigation), title, note", who: "cases" },
+  { key: "hr_update_case", label: "Update an HR case", group: "HR", args: "case_id, status (open|investigating|action_taken|closed), note, outcome", who: "cases" },
   { key: "hr_one_on_one", label: "Record a one-to-one meeting", group: "HR", args: "employee, date, notes, actions", who: "hr" },
+  { key: "hr_save_goal", label: "Set or update an employee goal", group: "HR", args: "employee (name or code), title, detail, due, progress (0-100)", who: "hr" },
   { key: "hr_assign_course", label: "Assign a training course", group: "HR", args: "course (title), employees (names, comma separated), due", who: "hr" },
   { key: "hr_open_job", label: "Open a job opening", group: "HR", args: "title, department, positions, description, closes (YYYY-MM-DD)", who: "hr" },
+  { key: "hr_schedule_interview", label: "Schedule an applicant interview", group: "HR", args: "applicant_id, scheduled_at (YYYY-MM-DD HH:MM), duration_min, location", who: "hr" },
+  { key: "hr_move_applicant", label: "Move applicant hiring stage", group: "HR", args: "applicant_id, stage (applied|screening|interview|offer|hired|rejected), reason", who: "hr" },
+  { key: "hr_start_onboarding", label: "Start an onboarding/offboarding checklist", group: "HR", args: "employee, kind (onboarding|offboarding)", who: "hr" },
+  { key: "hr_issue_equipment", label: "Assign equipment to employee", group: "HR", args: "equipment_id, employee, due_back, note", who: "hr" },
+  { key: "hr_return_equipment", label: "Record equipment return", group: "HR", args: "equipment_id, condition, note", who: "hr" },
 ];
 export const OP_KEYS = OPS.map((o) => o.key);
 
@@ -187,7 +194,9 @@ export async function prepareOp(user: Viewer, kind: string, a: Args): Promise<Pr
     case "hr_log_attendance":
     case "hr_adjust_leave":
     case "hr_open_case":
-    case "hr_one_on_one": {
+    case "hr_one_on_one":
+    case "hr_save_goal":
+    case "hr_start_onboarding": {
       const e = await findEmployee(user, a.employee);
       p.employeeId = e.id;
       lines.push(`${e.name}${e.code ? ` (${e.code})` : ""}`);
@@ -216,12 +225,68 @@ export async function prepareOp(user: Viewer, kind: string, a: Args): Promise<Pr
         if (!["disciplinary", "grievance", "investigation"].includes(k) || !str(a.title)) throw new WorkflowError("VALIDATION", "Give the kind (disciplinary, grievance or investigation) and a short title.");
         lines.push(`${k} case: ${a.title}`, "Only HR managers see it");
         Object.assign(p, { caseKind: k, title: str(a.title, 160), note: str(a.note, 1000) });
+      } else if (kind === "hr_save_goal") {
+        const t = str(a.title, 200);
+        if (!t) throw new WorkflowError("VALIDATION", "Goal title is required.");
+        const prog = typeof a.progress === "number" ? Math.max(0, Math.min(100, a.progress)) : 0;
+        lines.push(`Goal: "${t}"`, ...(day(a.due) ? [`Due: ${a.due}`] : []), `Progress: ${prog}%`);
+        Object.assign(p, { title: t, detail: str(a.detail, 2000), due: day(a.due), progress: prog });
+      } else if (kind === "hr_start_onboarding") {
+        const k = String(a.kind ?? "").toLowerCase();
+        if (k !== "onboarding" && k !== "offboarding") throw new WorkflowError("VALIDATION", "Kind must be onboarding or offboarding.");
+        lines.push(`Start ${k} checklist`);
+        Object.assign(p, { checklistKind: k });
       } else {
         const d = day(a.date) ?? new Date().toISOString().slice(0, 10);
         if (!str(a.notes)) throw new WorkflowError("VALIDATION", "Give the meeting's notes.");
         lines.push(`One-to-one on ${d}`, String(a.notes).slice(0, 200), ...(str(a.actions) ? [`Actions: ${a.actions}`] : []));
         Object.assign(p, { date: d, notes: str(a.notes, 3000), actions: str(a.actions, 1000) });
       }
+      break;
+    }
+    case "hr_update_case": {
+      const cid = str(a.case_id);
+      if (!cid) throw new WorkflowError("VALIDATION", "Case ID is required.");
+      const st = str(a.status);
+      lines.push(`Update case ${cid}`, ...(st ? [`Status: ${st}`] : []), ...(a.note ? [`Note: ${a.note}`] : []), ...(a.outcome ? [`Outcome: ${a.outcome}`] : []));
+      Object.assign(p, { caseId: cid, status: st, note: str(a.note, 2000), outcome: str(a.outcome, 2000) });
+      break;
+    }
+    case "hr_schedule_interview": {
+      const aid = str(a.applicant_id);
+      if (!aid) throw new WorkflowError("VALIDATION", "Applicant ID is required.");
+      const when = str(a.scheduled_at);
+      if (!when) throw new WorkflowError("VALIDATION", "Interview date and time required (YYYY-MM-DD HH:MM).");
+      const dur = Number(a.duration_min) || 45;
+      lines.push(`Interview on ${when} (${dur} mins)`, ...(a.location ? [`Location: ${a.location}`] : []));
+      Object.assign(p, { applicantId: aid, scheduledAt: when, durationMin: dur, location: str(a.location, 200) });
+      break;
+    }
+    case "hr_move_applicant": {
+      const aid = str(a.applicant_id);
+      if (!aid) throw new WorkflowError("VALIDATION", "Applicant ID is required.");
+      const stage = str(a.stage);
+      if (!stage || !["applied", "screening", "interview", "offer", "hired", "rejected"].includes(stage)) {
+        throw new WorkflowError("VALIDATION", "Stage must be applied, screening, interview, offer, hired, or rejected.");
+      }
+      lines.push(`Move applicant to "${stage}"`, ...(a.reason ? [`Reason: ${a.reason}`] : []));
+      Object.assign(p, { applicantId: aid, stage, reason: str(a.reason, 500) });
+      break;
+    }
+    case "hr_issue_equipment": {
+      const eqId = str(a.equipment_id);
+      if (!eqId) throw new WorkflowError("VALIDATION", "Equipment ID is required.");
+      const emp = await findEmployee(user, a.employee);
+      lines.push(`Assign equipment to ${emp.name} (${emp.code})`, ...(day(a.due_back) ? [`Due back: ${a.due_back}`] : []));
+      Object.assign(p, { equipmentId: eqId, employeeId: emp.id, dueBack: day(a.due_back), note: str(a.note, 500) });
+      break;
+    }
+    case "hr_return_equipment": {
+      const eqId = str(a.equipment_id);
+      if (!eqId) throw new WorkflowError("VALIDATION", "Equipment ID is required.");
+      const cond = str(a.condition) ?? "good";
+      lines.push(`Record return for equipment (condition: ${cond})`, ...(a.note ? [`Note: ${a.note}`] : []));
+      Object.assign(p, { equipmentId: eqId, condition: cond, note: str(a.note, 500) });
       break;
     }
     case "hr_announce": {
@@ -385,6 +450,41 @@ export async function executeOp(user: Viewer, p: Record<string, unknown>): Promi
       const dep = s("department");
       await saveAnnouncement(user, { title: s("title")!, body: s("body")!, kind: p.policy ? "policy" : "news", audience: { all: !dep, departments: dep ? [dep] : [], roles: [] }, notify: true });
       return { done: "Announcement posted", href: "/announcements" };
+    }
+    case "hr_save_goal": {
+      const { saveGoal } = await import("./hr-growth");
+      await saveGoal(user, { employeeId: s("employeeId")!, title: s("title")!, detail: s("detail"), dueDate: s("due"), progress: typeof p.progress === "number" ? p.progress : 0 });
+      return { done: "Employee goal saved", href: `/hr/${s("employeeId")}` };
+    }
+    case "hr_update_case": {
+      const { updateCase } = await import("./hr-growth");
+      await updateCase(user, s("caseId")!, { status: s("status") ?? undefined, note: s("note"), outcome: s("outcome") });
+      return { done: "HR case updated", href: "/hr?tab=cases" };
+    }
+    case "hr_schedule_interview": {
+      const { scheduleInterview } = await import("./hr-hiring");
+      await scheduleInterview(user, s("applicantId")!, { scheduledAt: s("scheduledAt")!, durationMin: Number(p.durationMin) || 45, location: s("location"), interviewerIds: [user.id] });
+      return { done: "Interview scheduled", href: "/hr?tab=hiring" };
+    }
+    case "hr_move_applicant": {
+      const { moveApplicant } = await import("./hr-hiring");
+      await moveApplicant(user, s("applicantId")!, { stage: s("stage")!, reason: s("reason") });
+      return { done: `Applicant moved to ${s("stage")}`, href: "/hr?tab=hiring" };
+    }
+    case "hr_start_onboarding": {
+      const { startChecklist } = await import("./hr-hiring");
+      await startChecklist(user, s("employeeId")!, s("checklistKind") as "onboarding" | "offboarding");
+      return { done: `${s("checklistKind")} checklist started`, href: "/hr?tab=checklists" };
+    }
+    case "hr_issue_equipment": {
+      const { issueEquipment } = await import("./hr");
+      await issueEquipment(user, s("equipmentId")!, { employeeId: s("employeeId")!, dueBack: s("dueBack"), note: s("note") });
+      return { done: "Equipment issued to employee", href: "/hr?tab=equipment" };
+    }
+    case "hr_return_equipment": {
+      const { returnEquipment } = await import("./hr");
+      await returnEquipment(user, s("equipmentId")!, { condition: s("condition") ?? "good", note: s("note") });
+      return { done: "Equipment return recorded", href: "/hr?tab=equipment" };
     }
   }
   const d = s("dept")!;

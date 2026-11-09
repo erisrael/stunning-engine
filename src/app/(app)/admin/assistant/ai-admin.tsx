@@ -53,11 +53,74 @@ import { cn } from "@/lib/utils";
 type Usage = { questions: number; confirmed: number; people: number; byRole: { role: string; n: number }[] };
 
 const PROVIDERS = [
-  { id: "anthropic" as const, label: "Anthropic (Claude)" },
-  { id: "gemini" as const, label: "Google (Gemini 2.5 & 1.5)" },
-  { id: "openai" as const, label: "OpenAI (GPT-4o & o3-mini)" },
-  { id: "custom" as const, label: "Custom / OpenAI-Compatible (DeepSeek, Local)" },
+  { id: "gemini" as const, label: "Google (Gemini 2.0 & 1.5)", provider: "gemini" as AiProvider, defaultModel: "gemini-2.0-flash", baseUrl: "" },
+  { id: "openai" as const, label: "OpenAI (GPT-4o & o3-mini)", provider: "openai" as AiProvider, defaultModel: "gpt-4o", baseUrl: "" },
+  { id: "anthropic" as const, label: "Anthropic (Claude 3.7 & 3.5)", provider: "anthropic" as AiProvider, defaultModel: "claude-3-7-sonnet", baseUrl: "" },
+  { id: "deepseek" as const, label: "DeepSeek (V3 & R1)", provider: "custom" as AiProvider, defaultModel: "deepseek-chat", baseUrl: "https://api.deepseek.com/v1" },
+  { id: "groq" as const, label: "Groq (Ultra-Fast Llama 3.3)", provider: "custom" as AiProvider, defaultModel: "llama-3.3-70b-versatile", baseUrl: "https://api.groq.com/openai/v1" },
+  { id: "openrouter" as const, label: "OpenRouter (Multi-model)", provider: "custom" as AiProvider, defaultModel: "meta-llama/llama-3.3-70b-instruct", baseUrl: "https://openrouter.ai/api/v1" },
+  { id: "mistral" as const, label: "Mistral AI (Large & Codestral)", provider: "custom" as AiProvider, defaultModel: "mistral-large-latest", baseUrl: "https://api.mistral.ai/v1" },
+  { id: "ollama" as const, label: "Ollama (Localhost)", provider: "custom" as AiProvider, defaultModel: "llama3.2:latest", baseUrl: "http://localhost:11434/v1" },
+  { id: "custom" as const, label: "Custom OpenAI-Compatible", provider: "custom" as AiProvider, defaultModel: "custom-model", baseUrl: "" },
 ];
+
+const CURATED_MODELS: Record<string, { id: string; label: string; desc: string }[]> = {
+  gemini: [
+    { id: "gemini-2.0-flash", label: "Gemini 2.0 Flash", desc: "Recommended · Ultra fast, multimodal, 1M context" },
+    { id: "gemini-2.0-flash-lite", label: "Gemini 2.0 Flash-Lite", desc: "High throughput, cost efficient" },
+    { id: "gemini-1.5-pro", label: "Gemini 1.5 Pro", desc: "Deep reasoning, large 2M context" },
+    { id: "gemini-1.5-flash", label: "Gemini 1.5 Flash", desc: "Fast general-purpose assistant" },
+    { id: "gemini-1.5-flash-8b", label: "Gemini 1.5 Flash-8B", desc: "High frequency, economical" },
+    { id: "gemini-2.5-pro", label: "Gemini 2.5 Pro", desc: "Advanced reasoning preview" },
+    { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash", desc: "Experimental preview" },
+    { id: "gemini-3.8-flash", label: "Gemini 3.8 Flash", desc: "Next-gen experimental preview" },
+  ],
+  openai: [
+    { id: "gpt-4o", label: "GPT-4o", desc: "Flagship omni multimodal model" },
+    { id: "gpt-4o-mini", label: "GPT-4o Mini", desc: "Fast, lightweight & smart" },
+    { id: "o3-mini", label: "o3-mini", desc: "High-speed STEM, coding & math reasoning" },
+    { id: "o1", label: "o1", desc: "Full deep reasoning & complex problem solving" },
+    { id: "o1-mini", label: "o1-mini", desc: "Fast reasoning model" },
+    { id: "gpt-4-turbo", label: "GPT-4 Turbo", desc: "128k context, broad knowledge" },
+    { id: "gpt-4", label: "GPT-4", desc: "Standard reliable" },
+    { id: "chatgpt-4o-latest", label: "ChatGPT-4o Latest", desc: "Dynamic checkpoint" },
+  ],
+  anthropic: [
+    { id: "claude-3-7-sonnet", label: "Claude 3.7 Sonnet", desc: "Hybrid instant + extended thinking" },
+    { id: "claude-3-5-sonnet-latest", label: "Claude 3.5 Sonnet", desc: "Leading coding & analysis" },
+    { id: "claude-3-5-haiku-latest", label: "Claude 3.5 Haiku", desc: "Ultra-fast & responsive" },
+    { id: "claude-3-opus-latest", label: "Claude 3 Opus", desc: "Comprehensive reasoning & writing" },
+  ],
+  deepseek: [
+    { id: "deepseek-chat", label: "DeepSeek V3 (deepseek-chat)", desc: "High performance general & coding" },
+    { id: "deepseek-reasoner", label: "DeepSeek R1 (deepseek-reasoner)", desc: "Chain-of-thought reasoning" },
+  ],
+  groq: [
+    { id: "llama-3.3-70b-versatile", label: "Llama 3.3 70B", desc: "Groq ultra-low latency (300+ tok/s)" },
+    { id: "llama-3.1-8b-instant", label: "Llama 3.1 8B", desc: "Groq instant responses" },
+    { id: "mixtral-8x7b-32768", label: "Mixtral 8x7B", desc: "Groq 32k context" },
+  ],
+  openrouter: [
+    { id: "meta-llama/llama-3.3-70b-instruct", label: "Llama 3.3 70B Instruct", desc: "OpenRouter versatile" },
+    { id: "qwen/qwen-2.5-72b-instruct", label: "Qwen 2.5 72B Instruct", desc: "OpenRouter top performer" },
+  ],
+  mistral: [
+    { id: "mistral-large-latest", label: "Mistral Large", desc: "Flagship top-tier reasoning" },
+    { id: "mistral-small-latest", label: "Mistral Small", desc: "Fast cost-effective" },
+    { id: "codestral-latest", label: "Codestral", desc: "Specialized code assistant" },
+  ],
+  ollama: [
+    { id: "llama3.2:latest", label: "Llama 3.2", desc: "Local Ollama 3.2" },
+    { id: "deepseek-r1:latest", label: "DeepSeek R1", desc: "Local Ollama R1" },
+    { id: "qwen2.5-coder:latest", label: "Qwen 2.5 Coder", desc: "Local Ollama coding" },
+    { id: "mistral:latest", label: "Mistral", desc: "Local Ollama general" },
+  ],
+  custom: [
+    { id: "deepseek-chat", label: "DeepSeek V3", desc: "Compatible chat endpoint" },
+    { id: "deepseek-reasoner", label: "DeepSeek R1", desc: "Compatible reasoning endpoint" },
+    { id: "llama-3.3-70b-versatile", label: "Llama 3.3 70B", desc: "Compatible endpoint" },
+  ],
+};
 
 export function AiAdmin({
   config,
@@ -94,6 +157,7 @@ export function AiAdmin({
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [mForm, setMForm] = React.useState({
     name: "",
+    presetId: "gemini",
     provider: "gemini" as AiProvider,
     model: "gemini-2.0-flash",
     apiKey: "",
@@ -107,7 +171,8 @@ export function AiAdmin({
   const openAddModal = () => {
     setEditingId(null);
     setMForm({
-      name: "",
+      name: "Google Gemini 2.0 Flash",
+      presetId: "gemini",
       provider: "gemini",
       model: "gemini-2.0-flash",
       apiKey: "",
@@ -118,10 +183,24 @@ export function AiAdmin({
     setModalOpen(true);
   };
 
+  const detectPreset = (m: StoredAiModel) => {
+    const url = (m.customBaseUrl || "").toLowerCase();
+    if (url.includes("deepseek")) return "deepseek";
+    if (url.includes("groq")) return "groq";
+    if (url.includes("openrouter")) return "openrouter";
+    if (url.includes("mistral")) return "mistral";
+    if (url.includes("localhost") || url.includes("11434")) return "ollama";
+    if (m.provider === "gemini") return "gemini";
+    if (m.provider === "openai") return "openai";
+    if (m.provider === "anthropic") return "anthropic";
+    return "custom";
+  };
+
   const openEditModal = (m: StoredAiModel) => {
     setEditingId(m.id);
     setMForm({
       name: m.name,
+      presetId: detectPreset(m),
       provider: m.provider,
       model: m.model,
       apiKey: "",
@@ -457,10 +536,106 @@ export function AiAdmin({
             </div>
           </div>
 
+          {/* Global Fallback Provider & Model Engine */}
+          <div className="rounded-lg border p-3 bg-muted/20 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="font-medium text-xs">Global Fallback Engine & Key</span>
+              <span className="text-[11px] text-muted-foreground">Used when no dedicated model is active</span>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <div className="space-y-1">
+                <Label htmlFor="ai-glob-provider" className="text-xs">Provider</Label>
+                <select
+                  id="ai-glob-provider"
+                  className="h-8 w-full rounded border bg-background px-2 text-xs"
+                  value={c.provider}
+                  onChange={(e) => {
+                    const p = e.target.value as AiProvider;
+                    const def = p === "gemini" ? "gemini-2.0-flash" : p === "openai" ? "gpt-4o" : p === "anthropic" ? "claude-3-7-sonnet" : "deepseek-chat";
+                    setC({ ...c, provider: p, model: def });
+                  }}
+                >
+                  <option value="gemini">Google (Gemini 2.0 & 1.5)</option>
+                  <option value="openai">OpenAI (GPT-4o & o3-mini)</option>
+                  <option value="anthropic">Anthropic (Claude 3.7 & 3.5)</option>
+                  <option value="custom">Custom / OpenAI-Compatible (DeepSeek, Groq, Ollama)</option>
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <Label htmlFor="ai-glob-model-select" className="text-xs">Model Catalog</Label>
+                <select
+                  id="ai-glob-model-select"
+                  className="h-8 w-full rounded border bg-background px-2 text-xs"
+                  value={
+                    (CURATED_MODELS[c.provider] || []).some((m) => m.id === c.model)
+                      ? c.model
+                      : "__custom__"
+                  }
+                  onChange={(e) => {
+                    if (e.target.value === "__custom__") return;
+                    setC({ ...c, model: e.target.value });
+                  }}
+                >
+                  {(CURATED_MODELS[c.provider] || []).map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.label} ({m.id})
+                    </option>
+                  ))}
+                  <option value="__custom__">-- Custom Model Identifier --</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid gap-2 sm:grid-cols-2">
+              <div className="space-y-1">
+                <Label htmlFor="ai-glob-model-id" className="text-xs">Model Identifier</Label>
+                <Input
+                  id="ai-glob-model-id"
+                  className="h-8 font-mono text-xs"
+                  placeholder="e.g. gemini-2.0-flash, gpt-4o, claude-3-7-sonnet"
+                  value={c.model}
+                  onChange={(e) => setC({ ...c, model: e.target.value })}
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label htmlFor="ai-glob-key" className="text-xs">Global API Key {config.hasKey ? "(Sealed key saved)" : ""}</Label>
+                <Input
+                  id="ai-glob-key"
+                  type="password"
+                  autoComplete="off"
+                  className="h-8 font-mono text-xs"
+                  placeholder={config.hasKey ? "Leave blank to keep saved key" : "Enter API key"}
+                  value={key}
+                  onChange={(e) => setKey(e.target.value)}
+                />
+              </div>
+            </div>
+
+            {c.provider === "custom" && (
+              <div className="space-y-1">
+                <Label htmlFor="ai-glob-base" className="text-xs">Custom Base URL</Label>
+                <Input
+                  id="ai-glob-base"
+                  className="h-8 font-mono text-xs"
+                  placeholder="https://api.deepseek.com/v1 or http://localhost:11434/v1"
+                  value={c.customBaseUrl}
+                  onChange={(e) => setC({ ...c, customBaseUrl: e.target.value })}
+                />
+              </div>
+            )}
+          </div>
+
           <div className="flex flex-wrap gap-2 pt-2">
             <Button size="sm" disabled={busy === "save-general"} onClick={() => handleSaveGeneralConfig()}>
               {busy === "save-general" && <Loader2Icon className="animate-spin mr-1.5" />} Save Global AI Settings
             </Button>
+            {config.hasKey && (
+              <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => handleSaveGeneralConfig({ clearKey: true })}>
+                Remove Global Key
+              </Button>
+            )}
             <Button size="sm" variant="outline" disabled={!!busy || !keyed} onClick={async () => {
               setBusy("test-global");
               const r = await testAiAction();
@@ -502,15 +677,24 @@ export function AiAdmin({
 
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
-                <Label htmlFor="m-provider">Provider</Label>
+                <Label htmlFor="m-provider">Provider Platform</Label>
                 <select
                   id="m-provider"
                   className="h-9 w-full rounded-md border bg-background px-2 text-sm"
-                  value={mForm.provider}
+                  value={mForm.presetId}
                   onChange={(e) => {
-                    const p = e.target.value as AiProvider;
-                    const defaultModel = models.find((m) => m.provider === p)?.id || (p === "gemini" ? "gemini-2.0-flash" : p === "openai" ? "gpt-4o" : "claude-3-5-sonnet-latest");
-                    setMForm({ ...mForm, provider: p, model: defaultModel });
+                    const preset = PROVIDERS.find((p) => p.id === e.target.value) || PROVIDERS[0];
+                    const curated = CURATED_MODELS[preset.id] || [];
+                    const defaultModel = curated[0]?.id || preset.defaultModel;
+                    const defaultName = curated[0]?.label || `${preset.label} Model`;
+                    setMForm({
+                      ...mForm,
+                      presetId: preset.id,
+                      provider: preset.provider,
+                      customBaseUrl: preset.baseUrl,
+                      model: defaultModel,
+                      name: defaultName,
+                    });
                   }}
                 >
                   {PROVIDERS.map((p) => (
@@ -522,40 +706,71 @@ export function AiAdmin({
               </div>
 
               <div className="space-y-1">
-                <Label htmlFor="m-model">Model Identifier</Label>
-                <Input
-                  id="m-model"
-                  placeholder="e.g. gemini-2.0-flash, gpt-4o, claude-3-5-sonnet-latest"
-                  value={mForm.model}
-                  onChange={(e) => setMForm({ ...mForm, model: e.target.value })}
-                />
+                <Label htmlFor="m-model-select">Select Catalog Model</Label>
+                <select
+                  id="m-model-select"
+                  className="h-9 w-full rounded-md border bg-background px-2 text-sm"
+                  value={
+                    (CURATED_MODELS[mForm.presetId] || []).some((m) => m.id === mForm.model)
+                      ? mForm.model
+                      : "__custom__"
+                  }
+                  onChange={(e) => {
+                    if (e.target.value === "__custom__") return;
+                    const picked = (CURATED_MODELS[mForm.presetId] || []).find((m) => m.id === e.target.value);
+                    if (picked) {
+                      setMForm({
+                        ...mForm,
+                        model: picked.id,
+                        name: picked.label,
+                      });
+                    }
+                  }}
+                >
+                  {(CURATED_MODELS[mForm.presetId] || []).map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.label} ({m.id})
+                    </option>
+                  ))}
+                  <option value="__custom__">-- Custom Model Identifier --</option>
+                </select>
               </div>
             </div>
 
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="m-model">Model Identifier (editable)</Label>
+                <span className="text-[11px] text-muted-foreground font-mono">Any valid identifier</span>
+              </div>
+              <Input
+                id="m-model"
+                placeholder="e.g. gemini-2.0-flash, gpt-4o, claude-3-7-sonnet, deepseek-chat"
+                value={mForm.model}
+                onChange={(e) => setMForm({ ...mForm, model: e.target.value })}
+                className="font-mono text-xs"
+              />
+            </div>
+
             {/* Quick model suggestions */}
-            <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-              <span className="text-[11px] text-muted-foreground mr-1">Suggestions:</span>
-              {(mForm.provider === "gemini"
-                ? ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-3.8-flash"]
-                : mForm.provider === "openai"
-                ? ["gpt-4o", "gpt-4o-mini", "o3-mini", "o1"]
-                : mForm.provider === "anthropic"
-                ? ["claude-3-5-sonnet-latest", "claude-3-5-haiku-latest", "claude-3-opus-latest"]
-                : ["deepseek-chat", "deepseek-reasoner", "llama-3.3-70b-versatile"]
-              ).map((sug) => (
-                <button
-                  key={sug}
-                  type="button"
-                  className={`text-[11px] px-2 py-0.5 rounded border transition-colors ${
-                    mForm.model === sug
-                      ? "border-primary bg-primary/10 text-primary font-medium"
-                      : "border-border hover:bg-muted text-muted-foreground"
-                  }`}
-                  onClick={() => setMForm({ ...mForm, model: sug })}
-                >
-                  {sug}
-                </button>
-              ))}
+            <div className="space-y-1 pt-0.5">
+              <span className="text-[11px] text-muted-foreground">Available Models ({mForm.presetId}):</span>
+              <div className="flex flex-wrap items-center gap-1.5 max-h-24 overflow-y-auto p-1.5 rounded border bg-muted/20">
+                {(CURATED_MODELS[mForm.presetId] || []).map((sug) => (
+                  <button
+                    key={sug.id}
+                    type="button"
+                    title={sug.desc}
+                    className={`text-[11px] px-2 py-0.5 rounded border transition-colors ${
+                      mForm.model === sug.id
+                        ? "border-primary bg-primary/10 text-primary font-medium"
+                        : "border-border hover:bg-muted text-muted-foreground"
+                    }`}
+                    onClick={() => setMForm({ ...mForm, model: sug.id, name: sug.label })}
+                  >
+                    {sug.id}
+                  </button>
+                ))}
+              </div>
             </div>
 
             {mForm.provider === "custom" && (

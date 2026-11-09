@@ -43,29 +43,50 @@ export type AiProvider = (typeof AI_PROVIDERS)[number]["id"];
 
 export const AI_MODELS = [
   // Google Gemini
-  { id: "gemini-2.0-flash", label: "Google Gemini 2.0 Flash (Recommended, Fast & Smart)", provider: "gemini" },
-  { id: "gemini-1.5-flash", label: "Google Gemini 1.5 Flash (Fast, Production Stable)", provider: "gemini" },
-  { id: "gemini-1.5-pro", label: "Google Gemini 1.5 Pro (Deep Reasoning)", provider: "gemini" },
+  { id: "gemini-2.0-flash", label: "Google Gemini 2.0 Flash (Recommended - fast, multimodal, 1M context)", provider: "gemini" },
+  { id: "gemini-2.0-flash-lite", label: "Google Gemini 2.0 Flash-Lite (High speed, cost efficient)", provider: "gemini" },
+  { id: "gemini-1.5-pro", label: "Google Gemini 1.5 Pro (Deep reasoning & 2M context)", provider: "gemini" },
+  { id: "gemini-1.5-flash", label: "Google Gemini 1.5 Flash (Balanced general assistant)", provider: "gemini" },
+  { id: "gemini-1.5-flash-8b", label: "Google Gemini 1.5 Flash-8B (High throughput, ultra cheap)", provider: "gemini" },
+  { id: "gemini-2.5-pro", label: "Google Gemini 2.5 Pro (Advanced reasoning preview)", provider: "gemini" },
   { id: "gemini-2.5-flash", label: "Google Gemini 2.5 Flash", provider: "gemini" },
-  { id: "gemini-2.5-pro", label: "Google Gemini 2.5 Pro", provider: "gemini" },
   { id: "gemini-3.8-flash", label: "Google Gemini 3.8 Flash (Latest Preview)", provider: "gemini" },
   // OpenAI
-  { id: "gpt-4o", label: "OpenAI GPT-4o (Omni Flagship)", provider: "openai" },
-  { id: "gpt-4o-mini", label: "OpenAI GPT-4o Mini (Cost-efficient)", provider: "openai" },
-  { id: "o1", label: "OpenAI o1 (Full Reasoning)", provider: "openai" },
-  { id: "o3-mini", label: "OpenAI o3-mini (High reasoning)", provider: "openai" },
-  { id: "chatgpt-4o-latest", label: "OpenAI ChatGPT-4o Latest", provider: "openai" },
+  { id: "gpt-4o", label: "OpenAI GPT-4o (Omni Flagship, multimodal)", provider: "openai" },
+  { id: "gpt-4o-mini", label: "OpenAI GPT-4o Mini (Cost-efficient, fast & smart)", provider: "openai" },
+  { id: "o3-mini", label: "OpenAI o3-mini (High-speed STEM, coding & math reasoning)", provider: "openai" },
+  { id: "o1", label: "OpenAI o1 (Full deep reasoning & problem solving)", provider: "openai" },
+  { id: "o1-mini", label: "OpenAI o1-mini (Fast reasoning model)", provider: "openai" },
+  { id: "gpt-4-turbo", label: "OpenAI GPT-4 Turbo (128k context, broad knowledge)", provider: "openai" },
+  { id: "gpt-4", label: "OpenAI GPT-4 (Standard reliable)", provider: "openai" },
+  { id: "chatgpt-4o-latest", label: "OpenAI ChatGPT-4o Latest (Dynamic checkpoint)", provider: "openai" },
   // Anthropic
-  { id: "claude-3-5-sonnet-latest", label: "Claude 3.5 Sonnet (Best Answers)", provider: "anthropic" },
-  { id: "claude-3-5-haiku-latest", label: "Claude 3.5 Haiku (Fastest, Cheapest)", provider: "anthropic" },
-  { id: "claude-3-opus-latest", label: "Claude 3 Opus (Complex Analysis)", provider: "anthropic" },
+  { id: "claude-3-7-sonnet", label: "Claude 3.7 Sonnet (Hybrid instant + extended reasoning)", provider: "anthropic" },
+  { id: "claude-3-5-sonnet-latest", label: "Claude 3.5 Sonnet (Industry-leading coding & analysis)", provider: "anthropic" },
+  { id: "claude-3-5-haiku-latest", label: "Claude 3.5 Haiku (Ultra-fast, responsive)", provider: "anthropic" },
+  { id: "claude-3-opus-latest", label: "Claude 3 Opus (Comprehensive reasoning & writing)", provider: "anthropic" },
   { id: "claude-opus-5-5", label: "Claude Opus 5.5", provider: "anthropic" },
   { id: "claude-sonnet-5-5", label: "Claude Sonnet 5.5", provider: "anthropic" },
   { id: "claude-haiku-5-5", label: "Claude Haiku 5.5", provider: "anthropic" },
-  // Custom / OpenAI-Compatible (DeepSeek, Groq, Ollama, etc.)
-  { id: "deepseek-chat", label: "DeepSeek V3 (deepseek-chat)", provider: "custom" },
-  { id: "deepseek-reasoner", label: "DeepSeek R1 (deepseek-reasoner)", provider: "custom" },
-  { id: "llama-3.3-70b-versatile", label: "Groq Llama 3.3 70B", provider: "custom" },
+  // DeepSeek (via API or compatible proxy)
+  { id: "deepseek-chat", label: "DeepSeek V3 (deepseek-chat - high performance general)", provider: "custom" },
+  { id: "deepseek-reasoner", label: "DeepSeek R1 (deepseek-reasoner - chain-of-thought reasoning)", provider: "custom" },
+  // Groq (Ultra-Fast Inference)
+  { id: "llama-3.3-70b-versatile", label: "Groq Llama 3.3 70B (300+ tokens/sec)", provider: "custom" },
+  { id: "llama-3.1-8b-instant", label: "Groq Llama 3.1 8B (Instant latency)", provider: "custom" },
+  { id: "mixtral-8x7b-32768", label: "Groq Mixtral 8x7B (32k context)", provider: "custom" },
+  // Mistral AI
+  { id: "mistral-large-latest", label: "Mistral Large (Top-tier reasoning)", provider: "custom" },
+  { id: "mistral-small-latest", label: "Mistral Small (Fast cost-effective)", provider: "custom" },
+  { id: "codestral-latest", label: "Mistral Codestral (Specialized code model)", provider: "custom" },
+  // OpenRouter / Meta
+  { id: "meta-llama/llama-3.3-70b-instruct", label: "Llama 3.3 70B Instruct (OpenRouter)", provider: "custom" },
+  { id: "qwen/qwen-2.5-72b-instruct", label: "Qwen 2.5 72B Instruct (OpenRouter)", provider: "custom" },
+  // Ollama / Local
+  { id: "llama3.2:latest", label: "Llama 3.2 (Ollama local)", provider: "custom" },
+  { id: "deepseek-r1:latest", label: "DeepSeek R1 (Ollama local)", provider: "custom" },
+  { id: "qwen2.5-coder:latest", label: "Qwen 2.5 Coder (Ollama local)", provider: "custom" },
+  { id: "mistral:latest", label: "Mistral (Ollama local)", provider: "custom" },
   { id: "custom-model", label: "Custom Model (configured via base URL)", provider: "custom" },
 ] as const;
 export const AI_EFFORTS = ["low", "medium", "high"] as const;
@@ -559,6 +580,22 @@ const T = {
     description: "HR: the year's people numbers: headcount, joiners and leavers, turnover, leave taken, training and reviews.",
     input: z.object({ year: z.number().optional() }),
   },
+  hr_hiring_pipeline: {
+    description: "HR Hiring: Current job openings and applicants in each hiring stage (applied, screening, interview, offer, hired, rejected) with ids, names, and ratings.",
+    input: z.object({ opening_id: z.string().optional() }),
+  },
+  hr_growth_details: {
+    description: "HR Growth: An employee's goals, performance reviews, training courses, one-on-one meetings, and HR cases. Give employee name or code.",
+    input: z.object({ employee: z.string() }),
+  },
+  hr_equipment_list: {
+    description: "HR Equipment: Company hardware and assets (laptops, phones, cameras), their status (available, issued, repair), and who holds them.",
+    input: z.object({}),
+  },
+  hr_checklists: {
+    description: "HR Checklists: View active onboarding and offboarding checklists across employees with completion progress and tasks.",
+    input: z.object({}),
+  },
   propose: {
     description: `Prepare an action for the person to confirm (nothing happens until they press Confirm). kind and its args: ${OPS.map((o) => `${o.key} {${o.args}}`).join("; ")}. Dates as YYYY-MM-DD, times as HH:MM. Look up ids first with the other tools.`,
     input: z.object({ kind: z.enum(OP_KEYS as [string, ...string[]]), args: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])).optional() }),
@@ -637,6 +674,10 @@ const TOOL_NEEDS: Partial<Record<string, (a: Abilities) => boolean>> = {
   hr_leave_queue: (a) => a.hr,
   hr_due: (a) => a.hr,
   hr_report: (a) => a.hr,
+  hr_hiring_pipeline: (a) => a.hr,
+  hr_growth_details: (a) => a.hr,
+  hr_equipment_list: (a) => a.hr,
+  hr_checklists: (a) => a.hr,
 };
 
 // A proposal, sealed with what to run and for whom; Confirm runs it with the page's own function and checks.
@@ -842,6 +883,76 @@ async function runTool(user: Viewer, name: string, input: unknown, out: Out, all
       const { hrReport } = await import("./hr-growth");
       return await hrReport(user, typeof a.year === "number" ? a.year : undefined);
     }
+    case "hr_hiring_pipeline": {
+      const { listOpenings, listApplicants } = await import("./hr-hiring");
+      const openings = await listOpenings(user);
+      const results: unknown[] = [];
+      for (const op of openings.slice(0, 10)) {
+        const apps = await listApplicants(user, op.id).catch(() => []);
+        results.push({
+          id: op.id,
+          title: op.title,
+          department: op.department,
+          status: op.status,
+          positions: op.positions,
+          applicants_count: apps.length,
+          applicants: apps.slice(0, 15).map((ap) => ({
+            id: ap.id,
+            name: ap.fullName,
+            email: ap.email,
+            stage: ap.stage,
+            rating: ap.avgRating,
+          })),
+        });
+      }
+      out.links.push({ href: "/hr?tab=hiring", label: "HR Hiring" });
+      return { openings: results };
+    }
+    case "hr_growth_details": {
+      const { findEmployee } = await import("./assistant-ops");
+      const emp = await findEmployee(user, a.employee);
+      const { growthFor } = await import("./hr-growth");
+      const g = await growthFor(user, emp.id);
+      if (!g) return { error: "No growth records or permission denied." };
+      out.links.push({ href: `/hr/${emp.id}`, label: `${emp.name}'s Profile` });
+      return {
+        employee: { id: emp.id, name: emp.name, code: emp.code },
+        goals: g.goals.map((x) => ({ title: x.title, due: x.dueDate, progress: x.progress, status: x.status })),
+        reviews: g.reviews.map((x) => ({ cycle: x.cycle, rating: x.leadRating ?? x.selfRating, status: x.status })),
+        trainings: g.trainings.map((x) => ({ course: x.title, due: x.dueDate, completed: x.completedOn })),
+        one_on_ones: g.meetings.map((x) => ({ date: x.heldOn, notes: x.notes })),
+      };
+    }
+    case "hr_equipment_list": {
+      const { listEquipment } = await import("./hr");
+      const eq = await listEquipment(user);
+      out.links.push({ href: "/hr?tab=equipment", label: "Equipment Inventory" });
+      return eq.slice(0, 50).map((item) => ({
+        id: item.id,
+        tag: item.tag,
+        name: item.name,
+        category: item.category,
+        status: item.status,
+        assigned_to: item.holderName,
+      }));
+    }
+    case "hr_checklists": {
+      const { openChecklists } = await import("./hr-hiring");
+      const ch = await openChecklists(user);
+      out.links.push({ href: "/hr?tab=checklists", label: "HR Checklists" });
+      return ch.slice(0, 30).map((c) => {
+        const done = c.items.filter((i) => !!i.doneAt).length;
+        const total = c.items.length;
+        return {
+          id: c.id,
+          kind: c.kind,
+          employee: c.employeeName,
+          completed: done,
+          total,
+          progress: total ? Math.round((done / total) * 100) : 0,
+        };
+      });
+    }
     case "search_everything": {
       const term = String(a.text).trim();
       if (term.length < 2) return { error: "Give at least two letters." };
@@ -981,12 +1092,20 @@ For users with HR rights (HR Manager, HR Officer, People Operations), you are eq
    - Adjust balance: Use hr_adjust_leave (args: employee, leave_type [annual, sick, etc.], days [positive to credit, negative to deduct], note, year).
 3. Employee Lifecycle & Compliance:
    - Dossier lookup: Use hr_people and hr_employee to review complete profiles, manager, department, and documents.
+   - Growth & Performance: Use hr_growth_details to inspect goals, reviews, trainings, 1-on-1s, and open cases.
+   - Goals & OKRs: Use hr_save_goal (args: employee, title, detail, due YYYY-MM-DD, progress 0-100).
    - Due dates: Use hr_due to monitor probation cutoffs, contract expirations, and document renewals.
    - One-on-one meetings: Use hr_one_on_one (args: employee, date YYYY-MM-DD, notes, actions).
-   - Disciplinary & Grievances: Use hr_open_case (args: employee, kind [disciplinary, grievance, investigation], title, note).
+   - Disciplinary & Grievances: Use hr_open_case to create a case, and hr_update_case (args: case_id, status [open, investigating, action_taken, closed], note, outcome) to resolve or update.
    - Training & Development: Use hr_assign_course (args: course title, employees comma-separated, due YYYY-MM-DD).
-   - Recruitment: Use hr_open_job (args: title, department, positions count, description, closes YYYY-MM-DD).
-4. Broadcasts & Approvals:
+   - Onboarding & Offboarding: Use hr_checklists to view active checklists, and hr_start_onboarding (args: employee, kind [onboarding|offboarding]) to initiate.
+   - Equipment & Assets: Use hr_equipment_list to check hardware inventory, hr_issue_equipment (args: equipment_id, employee, due_back, note) to allocate, and hr_return_equipment (args: equipment_id, condition, note) to check in.
+4. Recruitment & Hiring:
+   - Pipeline review: Use hr_hiring_pipeline to see active job openings and applicants in each stage.
+   - Job Openings: Use hr_open_job (args: title, department, positions count, description, closes YYYY-MM-DD).
+   - Move candidate: Use hr_move_applicant (args: applicant_id, stage [applied, screening, interview, offer, hired, rejected], reason).
+   - Schedule interview: Use hr_schedule_interview (args: applicant_id, scheduled_at YYYY-MM-DD HH:MM, duration_min, location).
+5. Broadcasts & Approvals:
    - Announcements: Use hr_announce (args: title, body, kind [news, policy], department [empty for everyone]).
    - Corrections & Claims: Use decide_correction and decide_claim to review and approve staff submissions.
 Always name the person, the day, and the exact action clearly back to the user.
@@ -1191,12 +1310,47 @@ async function realModel(cfg: Stored): Promise<ModelCall> {
 
   if (cfg.provider === "gemini") {
     const cleanModel = (cfg.model || "gemini-2.0-flash").trim().replace(/^models\//, "");
-    return async ({ system, messages }) => {
+    return async ({ system, tools, messages }) => {
       try {
-        const contents = messages.map((m) => ({
-          role: m.role === "assistant" ? "model" : "user",
-          parts: [{ text: typeof m.content === "string" ? m.content : JSON.stringify(m.content) }],
-        }));
+        const contents: any[] = [];
+        for (const m of messages) {
+          if (Array.isArray(m.content)) {
+            const toolResults = (m.content as any[]).filter((b: any) => b.type === "tool_result");
+            if (toolResults.length) {
+              for (const tr of toolResults) {
+                contents.push({
+                  role: "user",
+                  parts: [{
+                    text: `Tool Result for ${tr.tool_use_id}: ${typeof tr.content === "string" ? tr.content : JSON.stringify(tr.content)}`,
+                  }],
+                });
+              }
+            } else {
+              const parts: any[] = [];
+              for (const b of (m.content as any[])) {
+                if (b.type === "text" && b.text) parts.push({ text: b.text });
+                if (b.type === "tool_use") parts.push({ functionCall: { name: b.name, args: b.input } });
+              }
+              contents.push({ role: m.role === "assistant" ? "model" : "user", parts: parts.length ? parts : [{ text: "" }] });
+            }
+          } else {
+            contents.push({
+              role: m.role === "assistant" ? "model" : "user",
+              parts: [{ text: typeof m.content === "string" ? m.content : JSON.stringify(m.content) }],
+            });
+          }
+        }
+
+        const geminiTools = tools?.length
+          ? [{
+              functionDeclarations: tools.map((t) => ({
+                name: t.name,
+                description: t.description,
+                parameters: t.input_schema,
+              })),
+            }]
+          : undefined;
+
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${cleanModel}:generateContent?key=${key}`;
         const res = await fetch(url, {
           method: "POST",
@@ -1204,6 +1358,7 @@ async function realModel(cfg: Stored): Promise<ModelCall> {
           body: JSON.stringify({
             systemInstruction: { parts: [{ text: system }] },
             contents,
+            ...(geminiTools ? { tools: geminiTools } : {}),
           }),
         });
         if (!res.ok) {
@@ -1211,7 +1366,28 @@ async function realModel(cfg: Stored): Promise<ModelCall> {
           throw new WorkflowError("INVALID_STATE", `Gemini API returned status ${res.status}: ${errBody.slice(0, 300) || res.statusText}`);
         }
         const data = await res.json();
-        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || "No response received";
+        const candidate = data?.candidates?.[0]?.content;
+        const parts = candidate?.parts || [];
+        const content: Anthropic.Beta.BetaContentBlock[] = [];
+        let hasToolUse = false;
+        for (const p of parts) {
+          if (p.text) {
+            content.push({ type: "text", text: p.text } as Anthropic.Beta.BetaTextBlock);
+          }
+          if (p.functionCall) {
+            hasToolUse = true;
+            content.push({
+              type: "tool_use",
+              id: `call_${p.functionCall.name}_${Math.random().toString(36).slice(2, 8)}`,
+              name: p.functionCall.name,
+              input: p.functionCall.args || {},
+            } as Anthropic.Beta.BetaToolUseBlock);
+          }
+        }
+        if (hasToolUse) {
+          return { stop_reason: "tool_use", content };
+        }
+        const text = content.map((c: any) => c.text).filter(Boolean).join("") || "No response received";
         return {
           stop_reason: "end_turn",
           content: [{ type: "text", text } as Anthropic.Beta.BetaTextBlock],
@@ -1225,15 +1401,53 @@ async function realModel(cfg: Stored): Promise<ModelCall> {
   if (cfg.provider === "openai" || cfg.provider === "custom") {
     const baseUrl = (cfg.customBaseUrl || "https://api.openai.com/v1").replace(/\/+$/, "");
     const model = cfg.model || (cfg.provider === "custom" ? "custom-model" : "gpt-4o");
-    return async ({ system, messages }) => {
+    return async ({ system, tools, messages }) => {
       try {
-        const formattedMessages = [
-          { role: "system", content: system },
-          ...messages.map((m) => ({
-            role: m.role,
-            content: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
-          })),
-        ];
+        const formattedMessages: any[] = [{ role: "system", content: system }];
+        for (const m of messages) {
+          if (Array.isArray(m.content)) {
+            const toolResults = (m.content as any[]).filter((b: any) => b.type === "tool_result");
+            if (toolResults.length) {
+              for (const tr of toolResults) {
+                formattedMessages.push({
+                  role: "tool",
+                  tool_call_id: tr.tool_use_id,
+                  content: typeof tr.content === "string" ? tr.content : JSON.stringify(tr.content),
+                });
+              }
+            } else {
+              const textBlocks = (m.content as any[]).filter((b: any) => b.type === "text").map((b: any) => b.text).join("");
+              const toolUses = (m.content as any[]).filter((b: any) => b.type === "tool_use");
+              const toolCalls = toolUses.map((u: any) => ({
+                id: u.id,
+                type: "function",
+                function: { name: u.name, arguments: JSON.stringify(u.input) },
+              }));
+              formattedMessages.push({
+                role: m.role === "assistant" ? "assistant" : "user",
+                content: textBlocks || (toolCalls.length ? null : ""),
+                ...(toolCalls.length ? { tool_calls: toolCalls } : {}),
+              });
+            }
+          } else {
+            formattedMessages.push({
+              role: m.role,
+              content: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
+            });
+          }
+        }
+
+        const openAiTools = tools?.length
+          ? tools.map((t) => ({
+              type: "function" as const,
+              function: {
+                name: t.name,
+                description: t.description,
+                parameters: t.input_schema,
+              },
+            }))
+          : undefined;
+
         const res = await fetch(`${baseUrl}/chat/completions`, {
           method: "POST",
           headers: {
@@ -1243,6 +1457,7 @@ async function realModel(cfg: Stored): Promise<ModelCall> {
           body: JSON.stringify({
             model,
             messages: formattedMessages,
+            ...(openAiTools ? { tools: openAiTools } : {}),
           }),
         });
         if (!res.ok) {
@@ -1250,7 +1465,28 @@ async function realModel(cfg: Stored): Promise<ModelCall> {
           throw new WorkflowError("INVALID_STATE", `OpenAI API returned status ${res.status}: ${errBody.slice(0, 300) || res.statusText}`);
         }
         const data = await res.json();
-        const text = data?.choices?.[0]?.message?.content || "No response received";
+        const choice = data?.choices?.[0]?.message;
+        const toolCalls = choice?.tool_calls;
+        if (toolCalls && toolCalls.length) {
+          const content: Anthropic.Beta.BetaContentBlock[] = [];
+          if (choice.content) {
+            content.push({ type: "text", text: choice.content } as Anthropic.Beta.BetaTextBlock);
+          }
+          for (const tc of toolCalls) {
+            let parsedArgs = {};
+            try {
+              parsedArgs = JSON.parse(tc.function.arguments || "{}");
+            } catch {}
+            content.push({
+              type: "tool_use",
+              id: tc.id,
+              name: tc.function.name,
+              input: parsedArgs,
+            } as Anthropic.Beta.BetaToolUseBlock);
+          }
+          return { stop_reason: "tool_use", content };
+        }
+        const text = choice?.content || "No response received";
         return {
           stop_reason: "end_turn",
           content: [{ type: "text", text } as Anthropic.Beta.BetaTextBlock],
