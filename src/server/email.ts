@@ -118,7 +118,7 @@ export async function saveSmtp(
     replyTo: input.replyTo?.trim().toLowerCase() ?? "",
     relay,
     // An empty key field keeps the saved one.
-    relayKeyEnc: input.relayKey?.trim() ? await seal(input.relayKey.trim()) : (old?.relayKeyEnc ?? null),
+    relayKeyEnc: input.relayKey?.trim() ? await seal(input.relayKey.trim()) : (old?.relay === relay ? old?.relayKeyEnc ?? null : null),
   };
   if (relay && !next.relayKeyEnc) throw new WorkflowError("VALIDATION", "Paste the API key from the email service.");
   await run(

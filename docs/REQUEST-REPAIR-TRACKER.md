@@ -77,6 +77,6 @@ Updated 2026-11-08. Implementation and verification are tracked separately. Setu
 - [x] Resolve stable office IDs and legacy office names when validating kiosk QR codes; report missing offices clearly.
 - [x] Server verification: 86 checks across attendance, QR rules and kiosk connection regressions; production build passed.
 - [x] Browser attendance verification: 29 checks passed, including office assignment controls and connection diagnostics.
-- [ ] Deploy the QR/office connection follow-up.
+- [x] Deployed 8e3f9b2 as release 20261109-123557-8e3f9b2-gh; health, login and kiosk return HTTP 200. Backup: myseed-20261109-1235.json.gz (29,775 rows).
 
 Remaining work resumes with provider setup and imports, then approval/permission enforcement, resource templates, backup restore verification, and Google/profile controls. No partial implementation of those changes is included in this attendance release.

@@ -895,7 +895,7 @@ function EmailSettings({ smtp, senders, people, presets, secretSource, viewerEma
     <div className="grid gap-4 xl:grid-cols-2">
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Email account (SMTP)</CardTitle>
+          <CardTitle className="text-base">Email delivery: SMTP, Brevo or Resend</CardTitle>
           <CardDescription>
             {fromEnv
               ? "Set in the hosting environment variables (SMTP_HOST, SMTP_USER, SMTP_PASS, SMTP_FROM). Change it there."
@@ -906,14 +906,14 @@ function EmailSettings({ smtp, senders, people, presets, secretSource, viewerEma
           {!fromEnv && (
             <div className="space-y-1.5">
               <Label>Send through</Label>
-              <Select value={via} onValueChange={(v) => setVia(v as typeof via)}>
-                <SelectTrigger className="w-full">
+              <Select value={via} onValueChange={(v) => { setVia(v as typeof via); setRelayKey(""); }}>
+                <SelectTrigger className="w-full" aria-label="Email delivery provider">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="smtp">SMTP (your mail server)</SelectItem>
-                  <SelectItem value="brevo">Brevo web API (free: 300 emails a day)</SelectItem>
-                  <SelectItem value="resend">Resend web API (free: 3,000 emails a month)</SelectItem>
+                  <SelectItem value="brevo">Brevo web API</SelectItem>
+                  <SelectItem value="resend">Resend web API</SelectItem>
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
@@ -942,8 +942,8 @@ function EmailSettings({ smtp, senders, people, presets, secretSource, viewerEma
                 <li>Save, run Check login, then send a test email to yourself.</li>
               </ol>
               <div className="space-y-1.5">
-                <Label>API key</Label>
-                <Input type="password" value={relayKey} onChange={(e) => setRelayKey(e.target.value)} placeholder={smtp.hasRelayKey && smtp.relay === via ? "Saved; paste to replace" : "Paste the API key"} autoComplete="new-password" />
+                <Label htmlFor="email-provider-api-key">{via === "brevo" ? "Brevo" : "Resend"} API key</Label>
+                <Input id="email-provider-api-key" type="password" value={relayKey} onChange={(e) => setRelayKey(e.target.value)} placeholder={smtp.hasRelayKey && smtp.relay === via ? "Saved; paste to replace" : "Paste the API key"} autoComplete="new-password" />
               </div>
             </>
           )}
