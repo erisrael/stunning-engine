@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
     const eventType = event.type || "payment.accepted";
 
     // Deduplicate event processing
-    const existing = await get<{ id: string }>("SELECT id FROM idempotency_keys WHERE key = ?", `verify_evt_${eventId}`);
+    const existing = await get<{ key: string }>("SELECT key FROM idempotency_keys WHERE key = ?", `verify_evt_${eventId}`);
     if (existing) {
       return NextResponse.json({ ok: true, status: "duplicate", eventId });
     }
