@@ -8,6 +8,7 @@ async function _GET(request: Request) {
   const counts = await runScheduledChecks(undefined, { trigger: "cron" });
   const { scheduledCmsSync } = await import("@/server/cms-schedule");
   await scheduledCmsSync(undefined, true);
+  await (await import("@/server/cms-reports")).scheduledCmsReports();
   return Response.json({ ok: true, at: new Date().toISOString(), counts });
 }
 

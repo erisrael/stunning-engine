@@ -54,10 +54,10 @@ export async function AdminHome({
     myApprovals(viewer as any).catch(() => ({ leave: [], claims: [], corrections: [] })),
     isSuper
       ? all<{ id: string; name: string; email: string; created_at: string; role: string }>(
-          "SELECT id, name, email, created_at, role FROM users WHERE active = 0 AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 8"
+          "SELECT u.id, u.name, u.email, u.created_at, COALESCE((SELECT r.role FROM role_assignments r WHERE r.user_id = u.id ORDER BY r.role LIMIT 1), '') AS role FROM users u WHERE u.active = 0 AND u.deleted_at IS NULL ORDER BY u.created_at DESC LIMIT 8"
         ).catch(() => [])
       : Promise.resolve([]),
-    get<{ c: number }>("SELECT COUNT(DISTINCT user_id) AS c FROM user_sessions WHERE expires_at > ?", nowIso()).catch(
+    get<{ c: number }>("SELECT COUNT(DISTINCT user_id) AS c FROM sessions WHERE expires_at > ?", nowIso()).catch(
       () => ({ c: 0 })
     ),
     get<{ c: number }>("SELECT COUNT(*) AS c FROM users WHERE deleted_at IS NULL").catch(() => ({ c: 0 })),

@@ -4,11 +4,12 @@ import type { CmsTaskInput } from "@/server/cms-tasks";
 
 // Only short start/status requests cross the browser connection. Scraping continues
 // on the server after that connection ends, with explicit progress/error states.
-export async function waitForCmsTask<T>(input:CmsTaskInput,onProgress?:(message:string)=>void,isCancelled?:()=>boolean):Promise<T> {
+export async function waitForCmsTask<T>(input:CmsTaskInput,onProgress?:(message:string)=>void,isCancelled?:()=>boolean,onStart?:(id:string)=>void):Promise<T> {
   const started=await startCmsTaskAction(input);
   if(!started.ok || !started.data) throw new Error(!started.ok?started.error:"Could not start CMS request.");
   const id=started.data.id;
-  let unavailable=0;
+  onStart?.(id);
+  let unavailable=0, polls=0;
   while(true) {
     if(isCancelled?.()) { await cancelCmsTaskAction(id); throw new Error("CMS request cancelled."); }
     let response;
@@ -23,6 +24,6 @@ export async function waitForCmsTask<T>(input:CmsTaskInput,onProgress?:(message:
     onProgress?.(task.progress);
     if(task.status==="completed") return task.result as T;
     if(task.status==="failed" || task.status==="cancelled") throw new Error(task.progress);
-    await new Promise(resolve=>setTimeout(resolve,1000));
+    await new Promise(resolve=>setTimeout(resolve,polls++<10?300:800));
   }
 }

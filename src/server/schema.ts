@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 57;
+export const SCHEMA_VERSION = 58;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -3159,6 +3159,65 @@ CREATE TABLE IF NOT EXISTS legacy_cms_records (
 CREATE INDEX IF NOT EXISTS idx_legacy_cms_cat ON legacy_cms_records(category);
 CREATE INDEX IF NOT EXISTS idx_legacy_cms_ext ON legacy_cms_records(external_id);
 
+-- Update 1.0 Phase 2: Noor rows fetched by date, one row per table, closed day and filter set.
+CREATE TABLE IF NOT EXISTS cms_range_cache (
+  category TEXT NOT NULL,
+  day TEXT NOT NULL,
+  filter_key TEXT NOT NULL,
+  headers_json TEXT NOT NULL,
+  rows_json TEXT NOT NULL,
+  row_count INTEGER NOT NULL DEFAULT 0,
+  method TEXT NOT NULL,
+  fetched_at TEXT NOT NULL,
+  PRIMARY KEY (category, day, filter_key)
+);
+
+-- Finance verification of Noor invoices, kept here and never written into the mirrored record.
+CREATE TABLE IF NOT EXISTS cms_invoice_reviews (
+  invoice_id TEXT PRIMARY KEY,
+  state TEXT NOT NULL DEFAULT 'unverified',
+  reason TEXT,
+  note TEXT,
+  student TEXT,
+  contact_name TEXT,
+  phone TEXT,
+  grade TEXT,
+  plan TEXT,
+  amount REAL,
+  method TEXT,
+  invoice_date TEXT,
+  invoice_json TEXT,
+  assignee_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+  ticket_id TEXT,
+  outcome TEXT,
+  updated_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_cms_invoice_reviews_state ON cms_invoice_reviews(state, updated_at);
+CREATE TABLE IF NOT EXISTS cms_invoice_review_log (
+  id TEXT PRIMARY KEY,
+  invoice_id TEXT NOT NULL,
+  from_state TEXT NOT NULL,
+  to_state TEXT NOT NULL,
+  reason TEXT,
+  note TEXT,
+  actor_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+  at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_cms_invoice_review_log ON cms_invoice_review_log(invoice_id, at);
+CREATE INDEX IF NOT EXISTS idx_cms_invoice_review_actor ON cms_invoice_review_log(actor_id, at);
+-- Each scheduled CMS report run keeps its rows so the emailed links open the same report.
+CREATE TABLE IF NOT EXISTS cms_report_runs (
+  id TEXT PRIMARY KEY,
+  schedule_id TEXT,
+  name TEXT NOT NULL,
+  spec_json TEXT NOT NULL,
+  result_json TEXT NOT NULL,
+  created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_cms_report_runs ON cms_report_runs(schedule_id, created_at);
+
 CREATE TABLE IF NOT EXISTS legacy_cms_snapshots (
   id TEXT PRIMARY KEY,
   version_name TEXT NOT NULL,
@@ -3419,6 +3478,10 @@ export const TABLES = [
   "dev_collaboration",
   "cms_tasks",
   "legacy_cms_records",
+  "cms_range_cache",
+  "cms_invoice_reviews",
+  "cms_invoice_review_log",
+  "cms_report_runs",
   "legacy_cms_snapshots",
   "chapa_accounts",
   "ai_models",

@@ -4,7 +4,8 @@ import { LEGACY_CMS_CATEGORIES } from "@/lib/legacy-cms";
 import { waitForCmsTask } from "@/lib/cms-task-client";
 import type { LiveCmsPageResult } from "@/server/legacy-cms";
 import type { CmsRemoteFilter } from "@/lib/cms-livewire";
-import { cmsDateMatches, cmsChoiceMatches, cmsField } from "@/lib/cms-filters";
+import { cmsDateMatches, cmsChoiceMatches, cmsField, cmsPresetRange } from "@/lib/cms-filters";
+import type { CmsRangeResult } from "@/server/cms-range";
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -163,6 +164,7 @@ export function LegacyCmsClient({
   initialStorage,
   cmsRoles = [],
   staffUsers = [],
+  view,
 }: {
   config: LegacyCmsConfig;
   initialCategory: LegacyCmsCategory;
@@ -187,11 +189,16 @@ export function LegacyCmsClient({
   initialStorage?: CmsStorageCategoryStatus[];
   cmsRoles?: {key:string;label:string}[];
   staffUsers?: { id: string; name: string; handle: string; role: string }[];
+  // Set by the page's tab bar (Update 1.0): this client then shows only that view, without its own tabs.
+  view?: "subpages" | "relations" | "revenue" | "growth" | "storage";
 }) {
   const router = useRouter();
 
   // Top-level Navigation Mode: "subpages" | "relations" | "revenue" | "growth" | "storage"
-  const [activeMainView, setActiveMainView] = React.useState<"subpages" | "relations" | "revenue" | "growth" | "storage">("subpages");
+  const [activeMainView, setActiveMainView] = React.useState<"subpages" | "relations" | "revenue" | "growth" | "storage">(view ?? "subpages");
+  React.useEffect(() => { if (view) setActiveMainView(view); }, [view]);
+  // The connection header belongs with Tables & sync when the page's tab bar drives the view.
+  const showChrome = !view || view === "subpages";
 
   // Subpages Data Source Mode: "scraped" (fast local cache) vs "live" (real-time query against cms.noorethiopia.com)
   const [dataSourceMode, setDataSourceMode] = React.useState<"scraped" | "live">("scraped");
@@ -549,8 +556,36 @@ export function LegacyCmsClient({
     try {
       const needsAll = dateFilter !== "all" || paymentMethodFilter !== "all" || !!columnQuery.trim();
       const key = JSON.stringify([cat, searchQ, remoteValues]);
+      // A date range goes to Noor first (Update 1.0): only rows in range are fetched, with Noor's own total.
+      const dateRange = dateFilter !== "all" ? cmsPresetRange(dateFilter, customStartDate, customEndDate) : null;
+      if (dateRange) {
+        const rangeKey = JSON.stringify([cat, searchQ, remoteValues, dateRange]);
+        let dataset = liveDataset.current?.key === rangeKey ? liveDataset.current : null;
+        if (!dataset) {
+          const res = await waitForCmsTask<CmsRangeResult>({ kind: "range", category: cat, ...dateRange, search: searchQ, filters: remoteValues }, (m) => { if (requestId === liveRequestId.current) setLiveScanProgress(m); }, () => requestId !== liveRequestId.current);
+          if (requestId !== liveRequestId.current) return;
+          dataset = { key: rangeKey, records: res.records, headers: res.headers, filters: res.filters };
+          liveDataset.current = dataset;
+        }
+        setLiveRecords(dataset.records);
+        setLiveHeaders(dataset.headers);
+        setRemoteFilters(dataset.filters);
+        setLivePage(pageNum);
+        setLivePageSize(s);
+        setLiveCompleteDataset(true);
+        setLiveLoading(false);
+        setLiveScanProgress("");
+        return;
+      }
       if (needsAll) {
         let dataset = liveDataset.current?.key === key ? liveDataset.current : null;
+        if (!dataset) {
+          // One job reads every page in parallel on the server (Update 1.0), instead of one job per page.
+          const all = await waitForCmsTask<{ records: Record<string, string>[]; headers: string[]; filters: CmsRemoteFilter[]; total: number }>({ kind: "all", category: cat, search: searchQ, filters: remoteValues }, (m) => { if (requestId === liveRequestId.current) setLiveScanProgress(m); }, () => requestId !== liveRequestId.current);
+          if (requestId !== liveRequestId.current) return;
+          dataset = { key, records: all.records, headers: all.headers, filters: all.filters };
+          liveDataset.current = dataset;
+        }
         if (!dataset) {
           const partial = livePartial.current?.key===key ? livePartial.current : {key,records:[],headers:[],filters:[],next:1,pages:1,total:undefined};
           livePartial.current=partial;
@@ -1022,6 +1057,7 @@ export function LegacyCmsClient({
       {cmsProgress && <div role="status" className="flex items-center justify-between gap-3 rounded-lg border bg-muted/40 p-3 text-sm"><span><RefreshCwIcon className="mr-2 inline size-4 animate-spin"/>{cmsProgress}</span><Button variant="outline" size="sm" onClick={()=>{syncCancelled.current=true;setCmsProgress("Cancelling after the current page…");}}>Cancel refresh</Button></div>}
       {dataSourceMode==="live" && liveError && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm"><span>{liveError} Completed scan pages are kept for retry.</span><Button variant="outline" size="sm" onClick={()=>handleFetchLivePage(category,1,search)}>Retry query</Button></div>}
       {/* CMS connection status */}
+      {showChrome && <>
       <div className="bg-emerald-500/[0.08] border border-emerald-500/20 rounded-xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs">
         <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-300 font-medium">
           <ShieldCheckIcon className="size-4 shrink-0 text-emerald-600" />
@@ -1129,6 +1165,7 @@ export function LegacyCmsClient({
           </div>
         </CardHeader>
       </Card>
+      </>}
 
       {/* Main Top Navigation Tabs */}
       <Tabs
@@ -1136,8 +1173,8 @@ export function LegacyCmsClient({
         onValueChange={(v) => setActiveMainView(v as any)}
         className="space-y-4"
       >
-        <div className="flex items-center justify-between border-b pb-2">
-          <TabsList className="bg-muted/50 p-1">
+        <div className={cn("flex items-center justify-between border-b pb-2", view && "hidden")}>
+          <TabsList className={cn("bg-muted/50 p-1", view && "hidden")}>
             <TabsTrigger value="subpages" className="text-xs gap-1.5">
               <LayersIcon className="size-3.5 text-blue-600" /> CMS Tables &amp; Pages
             </TabsTrigger>
@@ -1296,7 +1333,7 @@ export function LegacyCmsClient({
                   {paymentMethods.map(method => <option key={method} value={method}>{method}</option>)}
                 </select>
               </label>
-              {dataSourceMode === "live" && remoteFilters.map(filter => <label key={filter.key} className="flex items-center gap-2 text-xs capitalize">
+              {dataSourceMode === "live" && remoteFilters.filter(f => f.kind !== "date").map(filter => <label key={filter.key} className="flex items-center gap-2 text-xs capitalize">
                 {filter.label}
                 <select className="h-8 rounded-md border bg-background px-2" value={remoteValues[filter.key] ?? ""} onChange={e => setRemoteValues(v => ({ ...v, [filter.key]: e.target.value }))}>
                   {filter.options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}

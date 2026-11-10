@@ -227,7 +227,7 @@ function jarToHeader(jar: Map<string, string>): string {
   return Array.from(jar.entries()).map(([k, v]) => `${k}=${v}`).join("; ");
 }
 
-function parseFilamentTable(html: string): Record<string, string>[] {
+export function parseFilamentTable(html: string): Record<string, string>[] {
   const tableMatch = html.match(/<table\b[\s\S]*?<\/table>/i);
   if (!tableMatch) return [];
   const tableHtml = tableMatch[0];
@@ -494,12 +494,16 @@ export async function logoutLegacyCms(user: AppUser): Promise<{ ok: boolean; mes
 }
 
 let activeCmsSyncAbortRequested = false;
+// Range fetches started before the last Stop end at their next page (they never reset this).
+let cmsStoppedAt = 0;
+export const cmsStoppedSince = (startedAt: number) => cmsStoppedAt >= startedAt;
 
 export async function stopLegacyCmsSync(user: AppUser): Promise<{ ok: boolean; message: string }> {
   if (!can(user, "data.manage") && !can(user, "users.manage")) {
     throw new WorkflowError("FORBIDDEN", "Only Admin or Data Managers can stop Noor CMS sync.");
   }
   activeCmsSyncAbortRequested = true;
+  cmsStoppedAt = Date.now();
   await patchCmsState({ lastSyncStatus: "idle" });
   await audit({ actor: user }, { action: "stop.legacy_cms_sync", summary: `${user.name} stopped Noor Ethiopia CMS synchronization` });
   return { ok: true, message: "Noor CMS sync stopped. Running tasks will terminate." };
@@ -584,61 +588,39 @@ export async function syncLegacyCms(
     for (const cat of targetCategories) {
       await requireCmsCategories(user, [cat.key]);
       await progress?.(`Opening ${cat.label}…`);
-      const targetUrl = `${baseUrl}${cat.path}`;
-      const response = await fetch(targetUrl, { headers, signal: AbortSignal.timeout(60_000), redirect: "manual", cache: "no-store" });
-      if (!response.ok) throw new Error(`CMS ${cat.label} could not be loaded (HTTP ${response.status}). Existing records were preserved.`);
-      const html = await response.text();
-      const records: Record<string, string>[] = [];
-      let pagesToScrape = 1;
-      let totalPages = 1;
-      let expectedTotal = 0;
-      for (let page = 1; page <= pagesToScrape; page++) {
-        if (activeCmsSyncAbortRequested) {
-          activeCmsSyncAbortRequested = false;
-          await patchCmsState({ lastSyncStatus: "idle" });
-          throw new Error("Noor CMS sync stopped by user.");
-        }
-        await progress?.(`Loading ${cat.label}: page ${page}${page > 1 ? ` of ${pagesToScrape}` : ""}, ${records.length.toLocaleString()} records`);
-        let result;
-        try { result = await queryCmsTable(html, baseUrl, cookieHeader, { page, pageSize: 50, search: "" }); }
-        catch (error) {
-          if (!/timeout|abort|fetch failed|HTTP (429|502|503|504)/i.test(String(error))) throw error;
-          await progress?.(`Retrying ${cat.label}, page ${page} after a slow response…`);
-          result = await queryCmsTable(html, baseUrl, cookieHeader, { page, pageSize: 50, search: "" });
-        }
-        const rows = parseFilamentTable(result.html);
-        const pagination = cmsPagination(result.html, rows.length, page, result.pageSize);
-        if (page === 1) {
-          expectedTotal = pagination.totalResults;
-          totalPages = Math.max(1, Math.ceil(expectedTotal / result.pageSize));
-          pagesToScrape = opts.maxPages && opts.maxPages > 0 ? Math.min(totalPages, opts.maxPages) : totalPages;
-        } else if (pagination.totalResults !== expectedTotal) {
-          throw new Error(`CMS ${cat.label} changed during sync. Retry; existing data was preserved.`);
-        }
-        if (page < totalPages && rows.length !== result.pageSize) throw new Error("Incomplete CMS page. Existing cache was preserved.");
-        records.push(...rows);
-      }
-      const complete = pagesToScrape === totalPages;
-      if (complete && records.length !== expectedTotal) throw new Error("CMS row count mismatch. Existing cache was preserved.");
+      // All pages in parallel at the biggest page size Noor honours (cms-range.ts), then one batched save.
+      const { fetchCmsAll } = await import("./cms-range");
+      const fetched = await fetchCmsAll(
+        user,
+        { category: cat.key, maxPages: opts.maxPages, conn: { base: baseUrl, cookie: cookieHeader } },
+        async (m) => { await progress?.(m); },
+        async () => {
+          if (activeCmsSyncAbortRequested) {
+            activeCmsSyncAbortRequested = false;
+            await patchCmsState({ lastSyncStatus: "idle" });
+            throw new Error("Noor CMS sync stopped by user.");
+          }
+        },
+      );
+      const records = fetched.records;
+      const complete = fetched.complete;
+      if (complete && records.length !== fetched.total) throw new Error(`CMS ${cat.label} changed during sync (${records.length} of ${fetched.total} rows). Retry; existing data was preserved.`);
 
       await progress?.(`Saving ${records.length.toLocaleString()} ${cat.label} records…`);
-      // Persist real scraped records into database transaction
+      const at = nowIso();
+      const rows = records.map((r) => {
+        const extId = String(r._recordId || r.id || r.ID || r.student_id || r.code || r.invoice_number || uid());
+        return [uid(), cat.key, extId, String(r.name || r.Name || r.title || r.Title || r.student_name || r.Student || r.Parent || extId), JSON.stringify(r), at] as Param[];
+      });
       await tx(async () => {
         if (complete) await run("DELETE FROM legacy_cms_records WHERE category = ?", cat.key);
-        for (const r of records) {
-          const recordId = uid();
-          const extId = String(r._recordId || r.id || r.ID || r.student_id || r.code || r.invoice_number || uid());
-          if (!complete) await run("DELETE FROM legacy_cms_records WHERE category = ? AND external_id = ?", cat.key, extId);
-          const title = String(r.name || r.Name || r.title || r.Title || r.student_name || r.Student || r.Parent || extId);
-          await run(
-            "INSERT INTO legacy_cms_records (id, category, external_id, title, data_json, synced_at) VALUES (?, ?, ?, ?, ?, ?)",
-            recordId,
-            cat.key,
-            extId,
-            title,
-            JSON.stringify(r),
-            nowIso()
-          );
+        else for (let i = 0; i < rows.length; i += 500) {
+          const ids = rows.slice(i, i + 500).map((r) => r[2]);
+          await run(`DELETE FROM legacy_cms_records WHERE category = ? AND external_id IN (${ids.map(() => "?").join(",")})`, cat.key, ...ids);
+        }
+        for (let i = 0; i < rows.length; i += 200) {
+          const chunk = rows.slice(i, i + 200);
+          await run(`INSERT INTO legacy_cms_records (id, category, external_id, title, data_json, synced_at) VALUES ${chunk.map(() => "(?, ?, ?, ?, ?, ?)").join(", ")}`, ...chunk.flat());
         }
       });
 
@@ -799,7 +781,7 @@ export type StudentParentRelation = {
   hasPhone: boolean;
 };
 
-function cleanPhone(raw?: string): string {
+export function cleanPhone(raw?: string): string {
   if (!raw) return "";
   return raw
     .replace(/&#43;/gi, "+")
@@ -810,7 +792,7 @@ function cleanPhone(raw?: string): string {
     .trim();
 }
 
-function cleanAmount(raw?: string): number {
+export function cleanAmount(raw?: string): number {
   if (!raw) return 0;
   const numStr = String(raw).replace(/[^0-9.]/g, "");
   return parseFloat(numStr) || 0;
@@ -1001,6 +983,9 @@ export async function getLegacyCmsRevenueAnalytics(opts?: {
   const rows = await all<{ id: string; external_id: string; title: string; data_json: string }>(
     "SELECT id, external_id, title, data_json FROM legacy_cms_records WHERE category = 'invoices' ORDER BY synced_at DESC"
   );
+  const verified = new Map(
+    (await all<{ invoice_id: string; updated_at: string; name: string | null }>("SELECT r.invoice_id, r.updated_at, u.name FROM cms_invoice_reviews r LEFT JOIN users u ON u.id = r.updated_by WHERE r.state = 'verified'")).map((v) => [v.invoice_id, v]),
+  );
 
   let totalRevenue = 0;
   let totalPaidCount = 0;
@@ -1024,8 +1009,9 @@ export async function getLegacyCmsRevenueAnalytics(opts?: {
     const paymentMethodRaw = String(cmsField(d,["payment method","payment_method","method"]) || "unspecified").toLowerCase();
     const date = cmsField(d,["date","created at","created_at","created","issued at","issued on"]).trim();
     const reason = String(d.Reason || `Subscription · ${student}`).trim();
-    const approvedAt = d.approved_at ? String(d.approved_at) : undefined;
-    const approvedBy = d.approved_by ? String(d.approved_by) : undefined;
+    const review = verified.get(r.external_id) ?? verified.get(r.id);
+    const approvedAt = review?.updated_at ?? (d.approved_at ? String(d.approved_at) : undefined);
+    const approvedBy = review ? review.name ?? undefined : d.approved_by ? String(d.approved_by) : undefined;
 
     // Normalizing payment method names for clean display
     let paymentMethod = /bank|transfer/.test(paymentMethodRaw) ? "Bank Transfer" : paymentMethodRaw || "Unspecified";
@@ -1173,17 +1159,9 @@ export async function approveLegacyCmsInvoice(
   );
   if (!row) throw new WorkflowError("NOT_FOUND", "Invoice record not found.");
 
-  const data = parseJson<Record<string, unknown>>(row.data_json, {});
-  const updatedData = {
-    ...data,
-    local_verification: "verified",
-    approved_at: nowIso(),
-    approved_by: user.name,
-    approval_notes: notes || "Manually verified by Finance officer",
-  };
-
-  await run("UPDATE legacy_cms_records SET data_json = ? WHERE id = ?", JSON.stringify(updatedData), row.id);
-  await audit({ actor: user }, { action: "finance.invoice_approve", summary: `${user.name} approved invoice #${row.external_id} (${row.title})` });
+  // The state is kept in cms_invoice_reviews (with its log), not in the mirrored record.
+  const { reviewInvoices } = await import("./cms-invoices");
+  await reviewInvoices(user, { ids: [row.external_id || row.id], state: "verified", note: notes || "Verified from the receipt viewer" });
 
   return { ok: true, message: `Invoice #${row.external_id} verified in this workspace. Its payment status in Noor is unchanged; complete payment approval in Noor.` };
 }

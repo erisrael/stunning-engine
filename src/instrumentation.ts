@@ -20,6 +20,7 @@ export async function register() {
       await (await import("./server/cms-tasks")).runQueuedCmsTasks();
       const { scheduledCmsSync } = await import("./server/cms-schedule");
       await scheduledCmsSync(undefined, true);
+      await (await import("./server/cms-reports")).scheduledCmsReports();
     } catch (e) {
       console.error("CMS automatic refresh failed", e);
     }

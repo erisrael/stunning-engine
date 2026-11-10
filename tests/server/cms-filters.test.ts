@@ -16,5 +16,5 @@ assert.equal(cmsDateMatches({ Date: "2024-11-06T21:00:00Z" }, "custom", "2024-11
 assert.equal(cmsDateMatches({ Date: "2024-11-06" }, "custom", "2024-11-07", "2024-11-05"), false);
 assert.equal(cmsDateMatches({}, "custom", "", ""), true);
 assert.deepEqual(cmsPagination("Showing <span>26</span> to <span>50</span> of <strong>5,139</strong> results", 25, 2, 25), { from: 26, to: 50, totalResults: 5139 });
-assert.deepEqual(remoteFilters('<select wire:model="tableDeferredFilters.status.value"><option value="active"><!-- comment -->Active</option></select>'), [{ key: "status.value", label: "status", options: [{ value: "active", label: "Active" }] }]);
+assert.deepEqual(remoteFilters('<select wire:model="tableDeferredFilters.status.value"><option value="active"><!-- comment -->Active</option></select>'), [{ key: "status.value", label: "status", kind: "select", options: [{ value: "active", label: "Active" }] }]);
 console.log("PASS CMS date boundaries, exact filters, remote controls and pagination");

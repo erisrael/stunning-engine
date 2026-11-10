@@ -394,6 +394,14 @@ PREPS["update-1"] = async () => {
   return {};
 };
 
+// Update 1.0 Phase 2: Legacy CMS points at the fake Noor that the browser test starts on this port.
+PREPS["update-1-p2"] = async () => {
+  await passwordOnly();
+  const { saveLegacyCmsConfig } = await import("../../src/server/legacy-cms");
+  await saveLegacyCmsConfig(await admin(), { baseUrl: "http://127.0.0.1:47391", username: "fixture", password: "fixture", sessionCookie: "session=fixture", autoSync: false });
+  return { port: 47391 };
+};
+
 async function main() {
   const name = process.argv[2]!;
   const prep = PREPS[name];

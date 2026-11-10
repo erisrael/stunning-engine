@@ -70,3 +70,32 @@ export function cmsDateMatches(record: Record<string, unknown>, period: string, 
   }
   return +date >= from && +date < until;
 }
+
+// A date preset as an inclusive Addis Ababa day range (YYYY-MM-DD), for date-first loading from Noor.
+export const CMS_DATE_PRESETS = [
+  ["today", "Today"],
+  ["yesterday", "Yesterday"],
+  ["week", "This week"],
+  ["month", "This month"],
+  ["30days", "Last 30 days"],
+  ["custom", "Custom"],
+] as const;
+export function cmsPresetRange(period: string, start = "", end = "", now = new Date()): { from: string; until: string } | null {
+  const day = (t: number) => new Date(t + 10800000).toISOString().slice(0, 10);
+  const local = new Date(+now + 10800000);
+  const today = day(+now);
+  const back = (n: number) => day(+now - n * 86400000);
+  if (period === "today") return { from: today, until: today };
+  if (period === "yesterday") return { from: back(1), until: back(1) };
+  if (period === "week") return { from: back((local.getUTCDay() + 6) % 7), until: today };
+  if (period === "month") return { from: `${today.slice(0, 7)}-01`, until: today };
+  if (period === "30days") return { from: back(29), until: today };
+  if (period === "custom") {
+    const ok = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s);
+    if (!ok(start) && !ok(end)) return null;
+    const from = ok(start) ? start : end;
+    const until = ok(end) ? end : today;
+    return from <= until ? { from, until } : { from: until, until: from };
+  }
+  return null;
+}
