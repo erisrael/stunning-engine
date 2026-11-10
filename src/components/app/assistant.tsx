@@ -12,7 +12,7 @@ import { translate } from "@/lib/amharic";
 import * as React from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { BotIcon, CheckIcon, CircleDotIcon, ExternalLinkIcon, GripVerticalIcon, HistoryIcon, Loader2Icon, MessageSquareIcon, MicIcon, MicOffIcon, PanelRightCloseIcon, PanelRightOpenIcon, PlayIcon, RotateCcwIcon, SendIcon, SparklesIcon, Trash2Icon, TriangleAlertIcon, Volume2Icon, VolumeXIcon, XIcon } from "lucide-react";
+import { BotIcon, CheckIcon, EyeOffIcon, CircleDotIcon, ExternalLinkIcon, GripVerticalIcon, HistoryIcon, Loader2Icon, MessageSquareIcon, MicIcon, MicOffIcon, PanelRightCloseIcon, PanelRightOpenIcon, PlayIcon, RotateCcwIcon, SendIcon, SparklesIcon, Trash2Icon, TriangleAlertIcon, Volume2Icon, VolumeXIcon, XIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -20,6 +20,7 @@ import { equipmentReportAction, askAiAction, assistantDataAction, confirmProposa
 import { askedSteps, beginRun, RecordBar, RoutineRunner, SaveRoutineDialog, useRecorder } from "@/components/app/routines-client";
 import type { Routine, RoutineStep } from "@/server/routines";
 import { punchAction } from "@/app/actions/attendance";
+import { savePrefsAction } from "@/app/actions/admin";
 import { saveTaskAction } from "@/app/actions/departments";
 import { requestLeaveAction } from "@/app/actions/leave";
 import { flowAssignAction, flowStartAction } from "@/app/actions/departments";
@@ -1024,6 +1025,23 @@ export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantCo
                   </option>
                 ))}
               </select>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="size-7"
+                aria-label="Hide the assistant"
+                title="Hide the assistant (bring it back in Settings)"
+                onClick={async () => {
+                  if (doing) endDo(false, 0);
+                  setOpen(false);
+                  const r = await savePrefsAction({ assistantShown: false });
+                  if (!r.ok) return void toast.error(r.error);
+                  toast.success("Assistant hidden. Turn it back on in Settings.");
+                  router.refresh();
+                }}
+              >
+                <EyeOffIcon />
+              </Button>
               <Button size="icon" variant="ghost" className="size-7" aria-label="Close the assistant" onClick={() => (doing && endDo(false, 0), setOpen(false))}>
                 <XIcon />
               </Button>

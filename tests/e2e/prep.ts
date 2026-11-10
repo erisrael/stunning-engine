@@ -388,6 +388,12 @@ PREPS["repair-ui"]=async()=>{
 
 PREPS["cms-background"] = PREPS["repair-ui"];
 
+// Update 1.0 Phase 1: sticky context, Kiosk visibility, assistant show and hide. Password sign-in only.
+PREPS["update-1"] = async () => {
+  await passwordOnly();
+  return {};
+};
+
 async function main() {
   const name = process.argv[2]!;
   const prep = PREPS[name];

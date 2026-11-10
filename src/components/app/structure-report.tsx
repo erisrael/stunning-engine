@@ -290,10 +290,22 @@ function MergedTable({ rows, mode }: { rows: StructureRow[]; mode: ReportMode })
   const k1 = (r: StructureRow) => r[l1[0]];
   const k2 = (r: StructureRow) => `${r[l1[0]]}|${r[l2[0]]}`;
   const k3 = (r: StructureRow) => `${k2(r)}|${r.unitId}`;
+  // Merged labels stay pinned just under the header until their block ends, so a long Grade 9 block
+  // still says Grade 9 while you scroll through it. The header height is measured, not guessed.
+  const head = React.useRef<HTMLTableSectionElement>(null);
+  const [headH, setHeadH] = React.useState(34);
+  React.useLayoutEffect(() => {
+    const el = head.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setHeadH(el.getBoundingClientRect().height));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const pin = "sticky z-[5] bg-card py-0.5";
   return (
     <div className="overflow-auto rounded-lg border bg-card" style={{ maxHeight: "calc(100dvh - 18rem)" }}>
       <table className="w-full min-w-[900px] border-separate border-spacing-0 text-sm">
-        <thead className="sticky top-0 z-10 bg-muted text-left text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+        <thead ref={head} className="sticky top-0 z-10 bg-muted text-left text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
           <tr>
             <th className="w-28 border-b px-3 py-2">{l1[2]}</th>
             <th className="w-40 border-b px-3 py-2">{l2[2]}</th>
@@ -320,18 +332,24 @@ function MergedTable({ rows, mode }: { rows: StructureRow[]; mode: ReportMode })
               >
                 {s1 > 0 && (
                   <td rowSpan={s1} className={cn("border-r border-b bg-card px-3 py-2 align-top font-semibold", groupStart && i > 0 && "border-t-2 border-t-border")}>
-                    {r[l1[1]]}
+                    <div className={pin} style={{ top: headH + 8 }}>
+                      {r[l1[1]]}
+                    </div>
                   </td>
                 )}
                 {s2 > 0 && (
                   <td rowSpan={s2} className="border-r border-b bg-card px-3 py-2 align-top font-medium">
-                    {r[l2[1]]}
+                    <div className={pin} style={{ top: headH + 8 }}>
+                      {r[l2[1]]}
+                    </div>
                   </td>
                 )}
                 {s3 > 0 && (
                   <td rowSpan={s3} className="border-r border-b bg-card px-3 py-2 align-top">
-                    <span className="text-xs text-muted-foreground">Unit {r.unitNumber}</span>
-                    {!/^unit \d+$/i.test(r.unitTitle) && <span className="block">{r.unitTitle}</span>}
+                    <div className={pin} style={{ top: headH + 8 }}>
+                      <span className="text-xs text-muted-foreground">Unit {r.unitNumber}</span>
+                      {!/^unit \d+$/i.test(r.unitTitle) && <span className="block">{r.unitTitle}</span>}
+                    </div>
                   </td>
                 )}
                 <td className="cell border-b px-3 py-1.5">
@@ -397,8 +415,15 @@ function Hierarchy({ rows, mode }: { rows: StructureRow[]; mode: ReportMode }) {
     }
     return ks;
   };
+  // Open group headings stick under the 56px top bar, each level under the one above it, and leave
+  // when their group ends, so the current grade, subject and unit stay in view while scrolling.
+  const ROW_H = 37;
   const row = ({ k, depth, label, sub, rs }: { k: string; depth: number; label: React.ReactNode; sub?: string; rs: StructureRow[] }) => (
-    <button onClick={() => toggle(k)} className="flex w-full items-center gap-2 border-b px-3 py-2 text-left hover:bg-muted/40" style={{ paddingLeft: 12 + depth * 20 }}>
+    <button
+      onClick={() => toggle(k)}
+      className={cn("flex w-full items-center gap-2 border-b bg-card px-3 py-2 text-left hover:bg-muted", open.has(k) && "sticky")}
+      style={{ paddingLeft: 12 + depth * 20, height: ROW_H, top: open.has(k) ? 56 + depth * ROW_H : undefined, zIndex: open.has(k) ? 6 - depth : undefined }}
+    >
       <ChevronRightIcon className={cn("size-4 shrink-0 text-muted-foreground transition-transform", open.has(k) && "rotate-90")} />
       <span className={cn("truncate", depth === 0 ? "font-semibold" : depth === 1 ? "font-medium" : "")}>{label}</span>
       {sub && <span className="shrink-0 text-xs text-muted-foreground">{sub}</span>}

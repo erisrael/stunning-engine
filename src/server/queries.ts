@@ -270,6 +270,16 @@ export async function countItems(user: AppUser, f: Filters, nowIso: string) {
   return (await get<{ c: number }>(`SELECT COUNT(DISTINCT i.id) AS c ${BASE_FROM} WHERE ${where}`, ...params))?.c ?? 0;
 }
 
+// Items per grade under the same filters, minus the grade filter itself, in curriculum order. Lets a
+// capped list (the Sheet shows 500 rows) still offer every grade one click away.
+export async function countItemsByGrade(user: AppUser, f: Filters, nowIso: string) {
+  const { where, params } = await buildWhere(user, { ...f, g: [] }, nowIso);
+  return all<{ id: string; name: string; c: number }>(
+    `SELECT g.id, g.name, COUNT(DISTINCT i.id) AS c ${BASE_FROM} WHERE ${where} AND g.id IS NOT NULL GROUP BY g.id, g.name, g.sort ORDER BY g.sort, g.name`,
+    ...params,
+  );
+}
+
 export async function listItems(user: AppUser, f: Filters, nowIso: string, opts: { all?: boolean; ids?: string[] } = {}): Promise<{ rows: ItemListRow[]; total: number }> {
   const { where, params } = await buildWhere(user, f, nowIso);
   let w = where;

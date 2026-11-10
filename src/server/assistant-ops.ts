@@ -5,7 +5,7 @@
 import { all, get, nowIso, placeholders, run } from "./db";
 import { can, type AppUser } from "./users";
 import { WorkflowError } from "./workflow";
-import { myDepartments } from "./departments";
+import { deptPeople, myDepartments } from "./departments";
 import { getDeptConfig } from "./dept-config";
 import { getTask, listTasks, saveTask, moveTask, addTaskComment, bulkTasks } from "./work";
 import { createRequest } from "./work-extras";
@@ -83,6 +83,13 @@ async function findTask(user: Viewer, d: string, id: unknown) {
   const t = (await listTasks(user, d, { q: key, open: false })).tasks.find((x) => x.code.toLowerCase() === key.toLowerCase());
   if (!t) throw new WorkflowError("NOT_FOUND", "Task not found; look it up first (use its id).");
   return t;
+}
+// Batch assignment is for the lead of that stage (or a manager with the override right), and only to
+// people who work in that stage.
+async function needStageLead(user: Viewer, stage: string, assigneeId: unknown) {
+  if (!can(user, "work.override") && !user.leads.includes(stage as never)) throw new WorkflowError("FORBIDDEN", `Only the ${stage} team lead can assign ${stage} work.`);
+  const ok = typeof assigneeId === "string" && (await get<{ x: number }>("SELECT 1 AS x FROM role_assignments WHERE user_id = ? AND role = ?", assigneeId, stage));
+  if (!ok) throw new WorkflowError("FORBIDDEN", `You can assign ${stage} work only to members of the ${stage} team.`);
 }
 const nameOf = async (id: unknown) => (typeof id === "string" ? ((await get<{ name: string }>("SELECT name FROM users WHERE id = ?", id))?.name ?? null) : null);
 
@@ -375,6 +382,7 @@ export async function prepareOp(user: Viewer, kind: string, a: Args): Promise<Pr
       const stage = String(a.stage || user.activeRole || "").toLowerCase();
       const validStages = ["recording", "editing", "uploading"];
       const targetStage = validStages.includes(stage) ? stage : user.leads.find((s) => validStages.includes(s)) || "recording";
+      await needStageLead(user, targetStage, a.assignee_id);
       const who = await nameOf(a.assignee_id);
       if (!who) throw new WorkflowError("NOT_FOUND", "Assignee not found.");
       const grade = a.grade ? String(a.grade).trim() : null;
@@ -426,6 +434,17 @@ export async function prepareOp(user: Viewer, kind: string, a: Args): Promise<Pr
       const d = await needDept(user, a.department);
       p.dept = d.dept;
       const cfg = await getDeptConfig(d.dept);
+      if (kind === "create_task" || kind === "assign_task") {
+        // Members create tasks only for themselves; heads and leads only for people in their department.
+        if (d.readOnly) throw new WorkflowError("FORBIDDEN", `${d.title} is read only for you, so the assistant cannot create or assign tasks there.`);
+        const target = typeof a.assignee_id === "string" && a.assignee_id ? a.assignee_id : kind === "create_task" ? user.id : null;
+        if (!d.manage) {
+          if (kind === "assign_task" || target !== user.id) throw new WorkflowError("FORBIDDEN", `You can create tasks only for yourself in ${d.title}. Ask your team lead to assign work to someone else.`);
+          a.assignee_id = user.id;
+        } else if (target && target !== user.id && !(await deptPeople(d.dept)).some((x) => x.id === target)) {
+          throw new WorkflowError("FORBIDDEN", `You can assign tasks only to members of ${d.title}.`);
+        }
+      }
       if (kind === "create_task") {
         const t = str(a.title, 200);
         if (!t) throw new WorkflowError("VALIDATION", "A title is needed.");
@@ -603,6 +622,7 @@ export async function executeOp(user: Viewer, p: Record<string, unknown>): Promi
     case "lead_assign_batch": {
       const attemptIds = (p.attemptIds as string[]) || [];
       const assigneeId = p.assigneeId as string;
+      await needStageLead(user, String(p.stage ?? ""), assigneeId);
       for (const attId of attemptIds) {
         await run("UPDATE stage_attempts SET owner_id = ?, updated_at = ? WHERE id = ?", assigneeId, nowIso(), attId);
       }

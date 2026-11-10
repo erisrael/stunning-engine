@@ -187,5 +187,6 @@ async function attendanceTab(viewer: Awaited<ReturnType<typeof requireViewer>>, 
   const tz = (await getSettings()).workspace.timezone;
   const today = localParts(new Date().toISOString(), tz).date;
   const month = /^\d{4}-\d{2}$/.test(monthParam ?? "") ? monthParam! : today.slice(0, 7);
-  return <MyAttendance data={await myAttendance(viewer, month)} month={month} today={today} monthLink="/profile?tab=attendance&month=" />;
+  const showPin = (await (await import("@/server/attendance-capture")).captureConfig()).methods.profilePin !== false;
+  return <MyAttendance data={await myAttendance(viewer, month)} month={month} today={today} monthLink="/profile?tab=attendance&month=" showPin={showPin} />;
 }

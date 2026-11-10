@@ -92,7 +92,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <ChatKeyBootstrap viewerId={viewer.id} />
         <Localizer defaultCalendar={settings.workspace.calendarDisplay} />
         <EthiopianDatePicker defaultCalendar={settings.workspace.calendarDisplay} />
-        {!viewer.mustChangePassword && !viewer.previewBy && <Assistant ctx={await assistantContext(viewer)} ai={await aiAvailable(viewer)} agent={await agentAvailable(viewer)} />}
+        {!viewer.mustChangePassword && !viewer.previewBy && (viewer.prefs.assistantShown ?? (await (await import("@/server/assistant")).roleOptions(viewer.activeRole)).shown) && <Assistant ctx={await assistantContext(viewer)} ai={await aiAvailable(viewer)} agent={await agentAvailable(viewer)} />}
         {!viewer.previewBy && await privacyToAccept(viewer).then((p) => (p ? <PrivacyGate notice={p.notice} version={p.version} updatedAt={p.updatedAt} /> : null))}
         {!viewer.mustChangePassword && <GetStarted audience={audienceFor(viewer.activeRole, viewer.leads)} tour={viewer.prefs.tour ?? {}} />}
       </SidebarInset>

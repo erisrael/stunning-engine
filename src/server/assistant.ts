@@ -45,8 +45,9 @@ export async function saveAssistantConfig(user: AppUser, input: AssistantConfig)
 // Per role (Admin, Assistant, Roles): AI answers, voice, routines, which actions the AI may prepare (null: all),
 // the suggestion chips shown first, and a daily limit for AI questions (null: Admin's general limit).
 // agent: whether the role may switch the assistant to Agent mode (it then does the allowed actions itself).
-export type RoleOptions = { ai: boolean; voice: boolean; routines: boolean; agent: boolean; actions: string[] | null; suggestions: string[]; dailyLimit: number | null };
-export const DEFAULT_ROLE_OPTIONS: RoleOptions = { ai: true, voice: true, routines: true, agent: true, actions: null, suggestions: [], dailyLimit: null };
+// shown: whether the assistant button shows for this role by default; each person can still show or hide it in Settings.
+export type RoleOptions = { ai: boolean; voice: boolean; routines: boolean; agent: boolean; shown: boolean; actions: string[] | null; suggestions: string[]; dailyLimit: number | null };
+export const DEFAULT_ROLE_OPTIONS: RoleOptions = { ai: true, voice: true, routines: true, agent: true, shown: true, actions: null, suggestions: [], dailyLimit: null };
 
 export async function allRoleOptions(): Promise<Record<string, RoleOptions>> {
   return parseJson<Record<string, RoleOptions>>((await get<{ value: string }>("SELECT value FROM settings WHERE key = 'cfg.assistant.roles'"))?.value, {});
@@ -65,6 +66,7 @@ export async function saveRoleOptions(user: AppUser, input: Record<string, Parti
       voice: o.voice !== false,
       routines: o.routines !== false,
       agent: o.agent !== false,
+      shown: o.shown !== false,
       actions: Array.isArray(o.actions) ? o.actions.map(String).filter((x) => /^[a-z_]{2,40}$/.test(x)).slice(0, 60) : null,
       suggestions: (Array.isArray(o.suggestions) ? o.suggestions : []).map((x) => String(x).trim().slice(0, 120)).filter(Boolean).slice(0, 8),
       dailyLimit: o.dailyLimit === null || o.dailyLimit === undefined || String(o.dailyLimit) === "" ? null : Math.max(0, Math.min(1000, Math.round(Number(o.dailyLimit)))),

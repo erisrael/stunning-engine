@@ -138,7 +138,9 @@ function Tile({ label, value, hint }: { label: string; value: React.ReactNode; h
   );
 }
 
-export function MyAttendance({ data, month, today, monthLink = "/attendance?month=" }: { data: MyData; month: string; today: string; monthLink?: string }) {
+export function MyAttendance({ data, month, today, monthLink = "/attendance?month=", showPin = true }: { data: MyData; month: string; today: string; monthLink?: string; showPin?: boolean }) {
+  // Admin can hide the PIN block on profile pages (Attendance > Capture); the profile passes showPin.
+  const kioskPin = !!data.kioskPin && showPin;
   const { act, busy } = useAct();
   const [pin, setPin] = React.useState("");
   const [correcting, setCorrecting] = React.useState<{ day: string; inTime: string; outTime: string; reason: string } | null>(null);
@@ -228,14 +230,14 @@ export function MyAttendance({ data, month, today, monthLink = "/attendance?mont
             )}
           </CardContent>
         </Card>
-        {(data.kioskPin || data.cfg.methods.face) && (
+        {(kioskPin || data.cfg.methods.face) && (
         <Card data-kiosk-signin>
           <CardHeader>
-            <CardTitle>{data.kioskPin ? "Kiosk sign-in" : "Face check-in"}</CardTitle>
-            {data.kioskPin && <CardDescription>At the kiosk, scan your badge, or type your number and PIN.</CardDescription>}
+            <CardTitle>{kioskPin ? "Kiosk sign-in" : "Face check-in"}</CardTitle>
+            {kioskPin && <CardDescription>At the kiosk, scan your badge, or type your number and PIN.</CardDescription>}
           </CardHeader>
           <CardContent className="space-y-3">
-            {data.kioskPin && (<>
+            {kioskPin && (<>
             <p className="text-sm">
               Your number: <span className="font-mono text-base font-semibold">{data.code}</span>
             </p>

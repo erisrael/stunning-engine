@@ -23,7 +23,8 @@ export type Site = { id: string; name: string; networks: string[]; lat: number |
 export type CaptureConfig = {
   // The printed QR, the same buttons in the app on the office network, a shared office computer, a lead recording.
   // scanner: a Scan button on the Attendance page reads the printed QR with the phone's camera inside the app.
-  methods: { qr: boolean; network: boolean; shared: boolean; leadScan: boolean; scanner?: boolean };
+  // profilePin: the "Set a PIN" block shows on people's profile pages (on unless Admin switched it off).
+  methods: { qr: boolean; network: boolean; shared: boolean; leadScan: boolean; scanner?: boolean; profilePin?: boolean };
   sites: Site[];
   // A phone becomes a person's own at its first check-in ("auto") or once HR approves it ("hr"). A phone used for
   // two people within shareMinutes is flagged.
@@ -48,7 +49,7 @@ export async function captureConfig(): Promise<CaptureConfig> {
   const s = parseJson<Partial<CaptureConfig>>((await get<{ value: string }>("SELECT value FROM settings WHERE key = 'cfg.attendance.capture'"))?.value, {});
   return {
     // The in-app scanner shows whenever the QR is on, unless Admin switched it off.
-    methods: { ...DEFAULT_CAPTURE.methods, ...(s.methods ?? {}), scanner: s.methods?.scanner !== false },
+    methods: { ...DEFAULT_CAPTURE.methods, ...(s.methods ?? {}), scanner: s.methods?.scanner !== false, profilePin: s.methods?.profilePin !== false },
     sites: s.sites ?? [],
     devices: { ...DEFAULT_CAPTURE.devices, ...(s.devices ?? {}) },
     window: { ...DEFAULT_CAPTURE.window, ...(s.window ?? {}) },
@@ -86,7 +87,7 @@ export async function saveCaptureConfig(user: AppUser, input: CaptureConfig) {
       posterAt: prev?.posterAt ?? nowIso(),
     };
   });
-  const methods = { qr: !!input.methods.qr, network: !!input.methods.network, shared: !!input.methods.shared, leadScan: !!input.methods.leadScan, scanner: input.methods.scanner !== false };
+  const methods = { qr: !!input.methods.qr, network: !!input.methods.network, shared: !!input.methods.shared, leadScan: !!input.methods.leadScan, scanner: input.methods.scanner !== false, profilePin: input.methods.profilePin !== false };
   if ((methods.qr || methods.network || methods.shared) && !sites.length) throw new WorkflowError("VALIDATION", "Add a site first: QR, network and shared-computer check-in need to know the office.");
   if ((methods.network || methods.shared) && !sites.some((s) => s.networks.length)) throw new WorkflowError("VALIDATION", "Network and shared-computer check-in need the office's internet address on a site.");
   const next: CaptureConfig = {

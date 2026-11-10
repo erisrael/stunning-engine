@@ -91,6 +91,9 @@ export function CaptureSetup({ att, cap, status, origin }: { att: AttendanceConf
           <Row label="Team leads record check-ins" hint="A lead picks the person or scans their badge with the lead's phone. Labelled and reviewed by HR.">
             <Switch checked={c.methods.leadScan} onCheckedChange={(v) => setC({ ...c, methods: { ...c.methods, leadScan: v } })} aria-label="Team lead check-in" />
           </Row>
+          <Row label="PIN on profile pages" hint="Shows the Set a PIN block in the Attendance tab of each person's profile. Off hides it there; HR can still set and reset PINs.">
+            <Switch checked={c.methods.profilePin !== false} onCheckedChange={(v) => setC({ ...c, methods: { ...c.methods, profilePin: v } })} aria-label="PIN on profile pages" />
+          </Row>
           <Row label="From the app anywhere" hint="No place check at all. Good only for people who work away from the office.">
             <Switch checked={a.methods.anywhere} onCheckedChange={(v) => setA({ ...a, methods: { ...a.methods, anywhere: v } })} aria-label="Check in from the app anywhere" />
           </Row>

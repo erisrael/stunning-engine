@@ -199,6 +199,27 @@ export function SheetGrid({
     return [...m.entries()].map(([key, list]) => ({ key, label: key, rows: list }));
   }, [rows, groupBy, names]);
 
+  // The context bar names the grade, subject and unit of the first row under the header, so a long
+  // block never loses its label while scrolling. Rows carry their context in data attributes.
+  const gridRef = React.useRef<HTMLDivElement>(null);
+  const [ctx, setCtx] = React.useState<{ g: string; s: string; u: string } | null>(null);
+  const frame = React.useRef(0);
+  const readCtx = React.useCallback(() => {
+    cancelAnimationFrame(frame.current);
+    frame.current = requestAnimationFrame(() => {
+      const box = gridRef.current;
+      if (!box) return;
+      const line = box.getBoundingClientRect().top + (box.querySelector("thead")?.getBoundingClientRect().height ?? 0);
+      const hit = [...box.querySelectorAll<HTMLTableRowElement>("tr[data-g]")].find((tr) => tr.getBoundingClientRect().bottom > line + 2);
+      const next = hit ? { g: hit.dataset.g!, s: hit.dataset.s!, u: hit.dataset.u! } : null;
+      setCtx((c) => (c?.g === next?.g && c?.s === next?.s && c?.u === next?.u ? c : next));
+    });
+  }, []);
+  React.useEffect(() => {
+    readCtx();
+    return () => cancelAnimationFrame(frame.current);
+  }, [rows, groupBy, collapsed, readCtx]);
+
   const widths = allCols.map((c) => SHEET_COLUMNS[c]?.width ?? 120);
   const left = (i: number) => widths.slice(0, i).reduce((a, b) => a + b, 0);
 
@@ -521,7 +542,16 @@ export function SheetGrid({
 
       {/* Desktop grid */}
       <div className="hidden overflow-hidden rounded-xl border bg-card md:block">
-        <div className="max-h-[72vh] overflow-auto scrollbar-thin" role="grid" aria-rowcount={rows.length} onKeyDown={onGridKey}>
+        {ctx && (
+          <div className="flex items-center gap-1.5 border-b bg-secondary/60 px-3 py-1.5 text-xs" aria-live="polite" aria-label="Current position in the sheet">
+            <span className="font-semibold">{ctx.g}</span>
+            <ChevronRightIcon className="size-3 text-muted-foreground" />
+            <span className="font-medium">{ctx.s}</span>
+            <ChevronRightIcon className="size-3 text-muted-foreground" />
+            <span className="truncate text-muted-foreground">{ctx.u}</span>
+          </div>
+        )}
+        <div ref={gridRef} onScroll={readCtx} className="max-h-[72vh] overflow-auto scrollbar-thin" role="grid" aria-rowcount={rows.length} onKeyDown={onGridKey}>
           <table className="border-separate border-spacing-0 text-left" style={{ minWidth: widths.reduce((a, b) => a + b, 0) }}>
             <thead className="sticky top-0 z-20">
               <tr>
@@ -574,7 +604,7 @@ export function SheetGrid({
                     {!isCollapsed &&
                       g.rows.map((r, idx) => {
                         const ri = rowIndex++;
-                        // Grade, subject and unit read as merged cells: repeated values are left blank.
+                        // Grade, subject and unit read as merged cells: repeated values are shown faded, not blank.
                         const prev = g.rows[idx - 1];
                         const repeat = (c: string) =>
                           !!prev &&
@@ -584,7 +614,7 @@ export function SheetGrid({
                           (c !== "unit" || prev.unit_id === r.unit_id);
                         return (
                           <ItemContextMenu key={r.id} item={actionItemOf(r)} viewer={viewer}>
-                          <tr className="group">
+                          <tr className="group" data-g={r.grade_name} data-s={r.subject_name} data-u={r.unit_number ? `Unit ${r.unit_number}: ${r.unit_title}` : "No unit"}>
                             {allCols.map((c, i) => {
                               const key = `${r.id}:${c}`;
                               const state = save[key];
@@ -604,7 +634,7 @@ export function SheetGrid({
                                 >
                                   <div className="flex min-w-0 items-center gap-1">
                                     {i === 0 && <Checkbox aria-label={`Select ${r.code}`} checked={selected.includes(r.id)} onCheckedChange={(v) => toggleRow(r.id, v === true)} className="mr-1 shrink-0" />}
-                                    <div className="min-w-0 flex-1">{repeat(c) ? null : renderCell(r, c)}</div>
+                                    <div className={cn("min-w-0 flex-1", repeat(c) && "opacity-35")}>{renderCell(r, c)}</div>
                                     {state === "saving" && <LoaderIcon className="size-3 shrink-0 animate-spin text-muted-foreground" aria-label="Saving" />}
                                     {state === "saved" && <span className="shrink-0 text-[10px] text-[var(--st-done-fg)]">Saved</span>}
                                     {state === "failed" && <span className="shrink-0 text-[10px] font-medium text-[var(--st-failed-fg)]">Not saved</span>}

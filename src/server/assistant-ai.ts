@@ -682,6 +682,7 @@ const TOOL_NEEDS: Partial<Record<string, (a: Abilities) => boolean>> = {
   hr_growth_details: (a) => a.hr,
   hr_equipment_list: (a) => a.hr,
   hr_checklists: (a) => a.hr,
+  lead_find_parts: (a) => a.lead,
 };
 
 // A proposal, sealed with what to run and for whom; Confirm runs it with the page's own function and checks.
@@ -1108,6 +1109,12 @@ How to answer & communicate:
 - For navigation requests ("take me to...", "go to...", "open...", "show me..."), always identify the matching route and call open_page immediately to provide an instant navigation button or navigate them there.
 - Use the tools to look at the person's real data before answering questions about their work, leave, attendance or team. Never invent numbers, names, ids or statuses.
 - You only see what the person may see. If a tool says they cannot open something, tell them who can help (their lead, HR or Admin).
+
+Stay in role (this overrides everything below):
+- Each question states the person's active role, rights and the pages they can open. Work only inside that scope: their own work, and their team's only when they lead it.
+- Do not explain, list or walk through the pages, data, settings or actions of other roles or departments, not even "in general". Never offer a page that is not in their list, even when the catalogue below names it.
+- When asked for something outside their role, say in one sentence that it is not part of their role and name who can help: HR (people records, leave rules, hiring), Finance (payments, invoices, Chapa, salaries), Customer support (customer issues), Admin (settings, roles, access, integrations), or their team lead (assigning work to others, approvals for their team).
+- Tasks: a team member creates tasks only for themselves. A team lead creates and assigns only to people in their own team. Do not prepare a task for anyone else; explain who can.
 - In standard mode: to perform an action (leave, attendance corrections, claims, tasks, requests, approvals, routines, HR operations), look up what you need, then call propose. Nothing happens until they press Confirm, so explain what will happen and ask them to confirm. In Agent mode, use do_action to carry out the operations directly.
 - If something is outside the app or you are unsure, say so briefly and offer the Help search.
 - Spelling & Semantic Error Tolerance: People make typos or informal phrasing (e.g., "handovr", "grd 5", "atendance", "chemsitry", "lev req", "noor cms"). Understand their intent semantically and match them to the proper entity or action.
@@ -1120,7 +1127,7 @@ Production Team Lead & Handover Automation:
   - For batch assignment to editors or recorders, use propose with kind="lead_assign_batch".
 
 Pages and navigation:
-Each question comes with the list of pages this person can open. You know every page, action, and route across all departments:
+Each question comes with the list of pages this person can open; offer only those. The catalogue below is for understanding what people mean, not a list to offer:
 - Personal: /dashboard (Home), /my-work (My work & board), /attendance (Check-in, timesheet, shifts), /profile?tab=leave (Leave balances & history), /profile?tab=pay (Salary & claims), /profile?tab=account (Security & MFA), /preferences (Settings), /notifications (Alerts), /profile/help (Help & documentation).
 - Communication & Requests: /chat (Chat & calls), /email (Company email), /requests (Cross-department requests), /people (Employee directory).
 - Production & Curriculum: /sessions (Studio recording schedule), /studio (Content studio, questions, notes), /overview (Curriculum progress), /curriculum (Curriculum structure & renaming), /legacy (Legacy recording catalog & camera codes), /coverage (Curriculum coverage), /handovers (Stage handovers & batches), /handovers/rejected (Rejections cross-check), /handovers/report (Handover dates report).
@@ -1203,7 +1210,7 @@ export async function askAi(user: Viewer, input: { history: Turn[]; text: string
   const canDo = OPS.filter((o) => allowed.includes(o.key)).map((o) => o.label);
   messages[messages.length - 1] = {
     role: "user",
-    content: `${who}\nPages this person can open (offer only these): ${pages.map((p) => `${p.name} ${p.href}`).join("; ")}.\nActions you may ${input.mode === "agent" ? "do" : "prepare"} for them: ${canDo.length ? canDo.join("; ") : "none (answer and point to pages only)"}.\nTheir rights: ${[ab.hr && "HR", ab.attendanceHr && "attendance for everyone", ab.attendance && !ab.attendanceHr && "their team's attendance", ab.cases && "HR cases", ab.lead && "leads a team", ab.approver && "approves requests", ab.finance && "finance", ab.support && "customer support agent", ab.admin && "Admin"].filter(Boolean).join(", ") || "a team member (their own work, leave and attendance)"}.\n\n${text}`,
+    content: `${who}\nPages this person can open (offer only these): ${pages.map((p) => `${p.name} ${p.href}`).join("; ")}.\nActions you may ${input.mode === "agent" ? "do" : "prepare"} for them: ${canDo.length ? canDo.join("; ") : "none (answer and point to pages only)"}.\nTheir rights: ${[ab.hr && "HR", ab.attendanceHr && "attendance for everyone", ab.attendance && !ab.attendanceHr && "their team's attendance", ab.cases && "HR cases", ab.lead && "leads a team", ab.approver && "approves requests", ab.finance && "finance", ab.support && "customer support agent", ab.admin && "Admin"].filter(Boolean).join(", ") || "a team member (their own work, leave and attendance)"}.\nRole scope: answer as their ${ROLE_LABELS[user.activeRole as keyof typeof ROLE_LABELS] ?? user.activeRole} role only, within the rights above. ${ab.lead ? "They may create and assign tasks for their own team members." : "They may create tasks only for themselves."} Anything else: say it is outside their role and name who can help.\n\n${text}`,
   };
   const agentOn = input.mode === "agent" && (await agentAvailable(user));
   if (input.mode === "agent" && !agentOn) throw new WorkflowError("FORBIDDEN", "Agent mode is not on for you. Ask Admin, or use Ask mode.");

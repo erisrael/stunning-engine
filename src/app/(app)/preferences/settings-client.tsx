@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
-import { BellIcon, ChevronRightIcon, HelpCircleIcon, LanguagesIcon, MapPinIcon, PaletteIcon, PhoneIcon, ShieldIcon } from "lucide-react";
+import { BellIcon, BotIcon, ChevronRightIcon, HelpCircleIcon, LanguagesIcon, MapPinIcon, PaletteIcon, PhoneIcon, ShieldIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -13,6 +13,8 @@ import { ACCENTS, FONTS, useAppearance } from "@/components/app/appearance";
 import { PushToggle } from "@/components/app/push-toggle";
 import { Preferences } from "@/app/(app)/notifications/notifications-client";
 import { readConsent, writeConsent } from "@/components/app/attendance/geofence-watch";
+import { savePrefsAction } from "@/app/actions/admin";
+import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 
 // One choice as a row of buttons that wraps: it never runs off a phone's screen the way nested menus did.
@@ -61,7 +63,21 @@ function Section({ id, icon, title, description, children }: { id: string; icon:
   );
 }
 
-export function PersonalSettings({ muted, emailed, geofence }: { muted: string[]; emailed: string[]; geofence: string }) {
+// assistant: the person's own choice (null follows the role's default that Admin set).
+export function PersonalSettings({ muted, emailed, geofence, assistant }: { muted: string[]; emailed: string[]; geofence: string; assistant: { shown: boolean | null; roleDefault: boolean } }) {
+  const router = useRouter();
+  const [asst, setAsst] = React.useState<string>(assistant.shown === null ? "role" : assistant.shown ? "on" : "off");
+  const saveAsst = async (v: string) => {
+    const prev = asst;
+    setAsst(v);
+    const r = await savePrefsAction({ assistantShown: v === "role" ? undefined : v === "on" });
+    if (!r.ok) {
+      setAsst(prev);
+      return void toast.error(r.error);
+    }
+    toast.success("Saved");
+    router.refresh();
+  };
   const { theme, setTheme } = useTheme();
   const [look, setLook] = useAppearance();
   const [routes, setRoutes] = React.useState<Record<string, string>>({});
@@ -83,6 +99,7 @@ export function PersonalSettings({ muted, emailed, geofence }: { muted: string[]
     ["look", "Appearance"],
     ["language", "Language"],
     ["notifications", "Notifications"],
+    ["assistant", "Assistant"],
     ["help", "Help"],
     ["calls", "Calls"],
     ["location", "Location"],
@@ -136,6 +153,20 @@ export function PersonalSettings({ muted, emailed, geofence }: { muted: string[]
       <Section id="notifications" icon={<BellIcon className="size-4" />} title="Notifications" description="On your account. Essential workflow notices are always delivered.">
         <PushToggle />
         <Preferences muted={muted} emailed={emailed} />
+      </Section>
+
+      <Section id="assistant" icon={<BotIcon className="size-4" />} title="Assistant" description="On your account. The Hide button in the assistant's panel sets this to Hidden.">
+        <Choice
+          id="assistant-shown"
+          label="Assistant button"
+          value={asst}
+          onChange={(v) => void saveAsst(v)}
+          options={[
+            { value: "role", label: `As set for your role (${assistant.roleDefault ? "shown" : "hidden"})` },
+            { value: "on", label: "Shown" },
+            { value: "off", label: "Hidden" },
+          ]}
+        />
       </Section>
 
       <Section id="help" icon={<HelpCircleIcon className="size-4" />} title="Help and how-to" description="Tips and help links on this device; which chapters and guides you see is set in Help.">

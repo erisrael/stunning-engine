@@ -346,7 +346,8 @@ export function AppSidebar({
           { label: "Timesheets", href: "/attendance?tab=timesheets" },
           ...(has("attendance.manage") ? [{ label: "Review", href: "/attendance?tab=review" }, { label: "Edit records", href: "/attendance?tab=records" }, { label: "Employee rules", href: "/attendance?tab=rules" }, { label: "Shifts and settings", href: "/attendance?tab=setup" }] : []),
           ...(has("attendance.capture") ? [{ label: "Capture", href: "/attendance?tab=capture" }] : []),
-          { label: "Kiosk station", href: "/kiosk" },
+          // Kiosks are set up by Admin and HR only; leads and members never see the link.
+          ...(has("attendance.manage") || has("attendance.capture") ? [{ label: "Kiosk station", href: "/kiosk" }] : []),
         ]
       : undefined;
   // Email's parts, for people who send to many or set it up (an inbox alone needs no links).
@@ -540,7 +541,7 @@ export function AppSidebar({
       {
         label: "Other Tools",
         items: [
-          { href: "/kiosk", label: "Kiosk station", icon: TabletIcon },
+          { href: "/kiosk", label: "Kiosk station", icon: TabletIcon, cap: ["attendance.manage", "attendance.capture"] },
           { href: "/admin/data", label: "Data manager", icon: DatabaseIcon, cap: "data.manage" },
           { href: "/import-export", label: "Import and export", icon: ArrowLeftRightIcon, cap: ["import.run", "import.stage", "import.tracker", "export.run", "export.report", "export.tracker", "export.audit"] },
           { href: "/audit", label: "Audit log", icon: ShieldCheckIcon, cap: ["users.manage", "items.plan"] },
