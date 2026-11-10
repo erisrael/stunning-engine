@@ -493,6 +493,43 @@ export async function logoutLegacyCms(user: AppUser): Promise<{ ok: boolean; mes
   return { ok: true, message: "Logged out from Noor Ethiopia CMS. Active session cookie cleared." };
 }
 
+let activeCmsSyncAbortRequested = false;
+
+export async function stopLegacyCmsSync(user: AppUser): Promise<{ ok: boolean; message: string }> {
+  if (!can(user, "data.manage") && !can(user, "users.manage")) {
+    throw new WorkflowError("FORBIDDEN", "Only Admin or Data Managers can stop Noor CMS sync.");
+  }
+  activeCmsSyncAbortRequested = true;
+  await patchCmsState({ lastSyncStatus: "idle" });
+  await audit({ actor: user }, { action: "stop.legacy_cms_sync", summary: `${user.name} stopped Noor Ethiopia CMS synchronization` });
+  return { ok: true, message: "Noor CMS sync stopped. Running tasks will terminate." };
+}
+
+export async function disconnectLegacyCms(user: AppUser): Promise<{ ok: boolean; message: string }> {
+  if (!can(user, "data.manage") && !can(user, "users.manage")) {
+    throw new WorkflowError("FORBIDDEN", "Only Admin or Data Managers can disconnect Noor Ethiopia CMS.");
+  }
+  activeCmsSyncAbortRequested = true;
+  const rawRow = await get<{ value: string }>("SELECT value FROM settings WHERE key = 'cfg.legacy_cms'");
+  const stored = rawRow?.value ? parseJson<StoredCmsConfig>(rawRow.value, {}) : {};
+
+  const updated: StoredCmsConfig = {
+    ...stored,
+    sessionCookieEnc: undefined,
+    lastSyncStatus: "idle",
+  };
+
+  await run(
+    "INSERT INTO settings (key, value, updated_at, updated_by) VALUES ('cfg.legacy_cms', ?, ?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by",
+    JSON.stringify(updated),
+    nowIso(),
+    user.id
+  );
+
+  await audit({ actor: user }, { action: "disconnect.legacy_cms", summary: `${user.name} disconnected Noor Ethiopia CMS session and cleared credentials` });
+  return { ok: true, message: "Noor Ethiopia CMS disconnected. Session credentials invalidated." };
+}
+
 export async function syncLegacyCms(
   user: AppUser,
   opts: { force?: boolean; category?: LegacyCmsCategory | "all"; deep?: boolean; maxPages?: number } = {},
@@ -506,6 +543,7 @@ export async function syncLegacyCms(
   const stored = rawRow?.value ? parseJson<StoredCmsConfig>(rawRow.value, {}) : {};
 
   // Mark status syncing
+  activeCmsSyncAbortRequested = false;
   await patchCmsState({lastSyncStatus:"syncing"});
 
   const counts: Record<LegacyCmsCategory, number> = {
@@ -555,6 +593,11 @@ export async function syncLegacyCms(
       let totalPages = 1;
       let expectedTotal = 0;
       for (let page = 1; page <= pagesToScrape; page++) {
+        if (activeCmsSyncAbortRequested) {
+          activeCmsSyncAbortRequested = false;
+          await patchCmsState({ lastSyncStatus: "idle" });
+          throw new Error("Noor CMS sync stopped by user.");
+        }
         await progress?.(`Loading ${cat.label}: page ${page}${page > 1 ? ` of ${pagesToScrape}` : ""}, ${records.length.toLocaleString()} records`);
         let result;
         try { result = await queryCmsTable(html, baseUrl, cookieHeader, { page, pageSize: 50, search: "" }); }

@@ -64,6 +64,26 @@ export async function logoutLegacyCmsAction() {
   }
 }
 
+export async function stopLegacyCmsSyncAction() {
+  try {
+    const viewer = await requireViewer();
+    const result = await cms.stopLegacyCmsSync(viewer);
+    return result;
+  } catch (err: any) {
+    return { ok: false, message: String(err?.message || err) };
+  }
+}
+
+export async function disconnectLegacyCmsAction() {
+  try {
+    const viewer = await requireViewer();
+    const result = await cms.disconnectLegacyCms(viewer);
+    return result;
+  } catch (err: any) {
+    return { ok: false, message: String(err?.message || err) };
+  }
+}
+
 export async function clearLegacyCmsDataAction(category?: LegacyCmsCategory) {
   try {
     const viewer = await requireViewer();

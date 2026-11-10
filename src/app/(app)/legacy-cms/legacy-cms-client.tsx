@@ -63,6 +63,8 @@ import {
   Maximize2Icon,
   SendIcon,
   ShieldIcon,
+  SquareIcon,
+  Unlink2Icon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -102,6 +104,8 @@ import {
   loginLegacyCmsAction,
   checkLegacyCmsAuthAction,
   logoutLegacyCmsAction,
+  stopLegacyCmsSyncAction,
+  disconnectLegacyCmsAction,
   getStudentParentRelationsAction,
   getLegacyCmsRevenueAnalyticsAction,
   approveLegacyCmsInvoiceAction,
@@ -1072,16 +1076,55 @@ export function LegacyCmsClient({
               Check Session
             </Button>
 
-            {isAdmin && (
+            {cmsProgress ? (
               <Button
-                variant="outline"
+                variant="destructive"
                 size="sm"
-                onClick={() => setSettingsOpen(true)}
+                onClick={async () => {
+                  syncCancelled.current = true;
+                  const res = await stopLegacyCmsSyncAction();
+                  if (res.ok) toast.success(res.message);
+                  else toast.error(res.message);
+                }}
                 className="h-8 text-xs gap-1.5"
               >
-                <Settings2Icon className="size-3.5" />
-                Settings
+                <SquareIcon className="size-3.5" />
+                Stop Sync
               </Button>
+            ) : null}
+
+            {isAdmin && (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={async () => {
+                    if (confirm("Disconnect Noor CMS? This will clear the active session cookie.")) {
+                      const res = await disconnectLegacyCmsAction();
+                      if (res.ok) {
+                        toast.success(res.message);
+                        await handleCheckAuthStatus(false);
+                      } else {
+                        toast.error(res.message);
+                      }
+                    }
+                  }}
+                  className="h-8 text-xs gap-1.5 text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/20"
+                >
+                  <Unlink2Icon className="size-3.5" />
+                  Disconnect
+                </Button>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSettingsOpen(true)}
+                  className="h-8 text-xs gap-1.5"
+                >
+                  <Settings2Icon className="size-3.5" />
+                  Settings
+                </Button>
+              </>
             )}
           </div>
         </CardHeader>
@@ -2320,7 +2363,7 @@ export function LegacyCmsClient({
           ========================================================================= */}
       {isAdmin && <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}><DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-auto"><DialogHeader><DialogTitle>Noor CMS settings</DialogTitle><DialogDescription>Configure the shared connection, synchronization and role access. User-specific credentials are configured in Admin.</DialogDescription></DialogHeader>
         <div className="grid gap-3 sm:grid-cols-2"><label className="text-sm">CMS address<Input type="url" value={cfg.baseUrl} onChange={e=>setCfg({...cfg,baseUrl:e.target.value})}/></label><label className="text-sm">Shared username<Input value={cfg.username} onChange={e=>setCfg({...cfg,username:e.target.value})}/></label><label className="text-sm">New password<Input type="password" autoComplete="new-password" placeholder={config.hasPassword?"Saved password — leave blank to keep":"Enter password"} value={cfg.password} onChange={e=>setCfg({...cfg,password:e.target.value})}/></label><label className="text-sm">Sync interval (minutes)<Input type="number" min="5" value={cfg.syncIntervalMinutes} onChange={e=>setCfg({...cfg,syncIntervalMinutes:Number(e.target.value)})}/></label><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={cfg.autoSync} onChange={e=>setCfg({...cfg,autoSync:e.target.checked})}/>Automatic synchronization</label></div>
-        <div className="flex flex-wrap gap-2"><Button disabled={loading} onClick={async()=>{setLoading(true);try{const r=await saveLegacyCmsConfigAction({...cfg,password:cfg.password||undefined,sessionCookie:undefined});if(r.ok){setCfg(c=>({...c,password:""}));toast.success("CMS settings saved");}else toast.error(r.error);}finally{setLoading(false);}}}>Save connection settings</Button><Button variant="outline" disabled={loggingIn} onClick={async()=>{setLoggingIn(true);try{const r=await loginLegacyCmsAction();if(r.ok){toast.success(r.message);await handleCheckAuthStatus(false);}else toast.error(r.message);}finally{setLoggingIn(false);}}}>Reconnect saved account</Button><Button variant="outline" asChild><a href="/admin?tab=legacy-cms">Per-user credentials & tab access</a></Button></div>
+        <div className="flex flex-wrap gap-2"><Button disabled={loading} onClick={async()=>{setLoading(true);try{const r=await saveLegacyCmsConfigAction({...cfg,password:cfg.password||undefined,sessionCookie:undefined});if(r.ok){setCfg(c=>({...c,password:""}));toast.success("CMS settings saved");}else toast.error(r.error);}finally{setLoading(false);}}}>Save connection settings</Button><Button variant="outline" disabled={loggingIn} onClick={async()=>{setLoggingIn(true);try{const r=await loginLegacyCmsAction();if(r.ok){toast.success(r.message);await handleCheckAuthStatus(false);}else toast.error(r.message);}finally{setLoggingIn(false);}}}>Reconnect saved account</Button><Button variant="outline" className="text-rose-600 hover:text-rose-700 hover:bg-rose-50" onClick={async()=>{if(confirm("Disconnect Noor CMS? This will clear active session tokens.")){const r=await disconnectLegacyCmsAction();if(r.ok){toast.success(r.message);await handleCheckAuthStatus(false);}else toast.error(r.message);}}}>Disconnect session</Button><Button variant="outline" asChild><a href="/admin?tab=legacy-cms">Per-user credentials & tab access</a></Button></div>
         <fieldset className="space-y-3 border-t pt-3"><legend className="font-medium">CMS tables by role</legend>{(cmsRoles.length?cmsRoles:Object.keys(roleVisibility).map(key=>({key,label:key}))).map(role=><div key={role.key} className="rounded-lg border p-3"><h3 className="mb-2 text-sm font-medium">{role.label}</h3><div className="flex flex-wrap gap-3">{LEGACY_CMS_CATEGORIES.map(c=><label key={c.key} className="flex items-center gap-1 text-xs"><input type="checkbox" checked={(roleVisibility[role.key]||[]).includes(c.key)} onChange={e=>setRoleVisibility(v=>({...v,[role.key]:e.target.checked?[...(v[role.key]||[]),c.key]:(v[role.key]||[]).filter(k=>k!==c.key)}))}/>{c.label}</label>)}</div></div>)}</fieldset><Button disabled={loading} onClick={async()=>{setLoading(true);try{const r=await saveCmsRoleVisibilityAction(roleVisibility);if(r.ok)toast.success("Role table access saved");else toast.error(r.error);}finally{setLoading(false);}}}>Save role table access</Button>
         <DialogFooter><Button variant="outline" onClick={()=>setSettingsOpen(false)}>Close</Button></DialogFooter>
       </DialogContent></Dialog>}

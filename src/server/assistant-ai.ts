@@ -596,6 +596,10 @@ const T = {
     description: "HR Checklists: View active onboarding and offboarding checklists across employees with completion progress and tasks.",
     input: z.object({}),
   },
+  lead_find_parts: {
+    description: "For team leads and managers: find lesson parts in a stage (recording, editing, uploading) filtered by grade, subject, or status. Use when a lead asks to check or hand over work, e.g. 'Grade 5 Maths', 'Grade 7 Chemistry'.",
+    input: z.object({ stage: z.string().optional(), grade: z.string().optional(), subject: z.string().optional(), text: z.string().optional() }),
+  },
   propose: {
     description: `Prepare an action for the person to confirm (nothing happens until they press Confirm). kind and its args: ${OPS.map((o) => `${o.key} {${o.args}}`).join("; ")}. Dates as YYYY-MM-DD, times as HH:MM. Look up ids first with the other tools.`,
     input: z.object({ kind: z.enum(OP_KEYS as [string, ...string[]]), args: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])).optional() }),
@@ -794,6 +798,42 @@ async function runTool(user: Viewer, name: string, input: unknown, out: Out, all
       const sc = scopeSql(user, "i");
       const like = `%${term}%`;
       return await all(`SELECT i.code, i.title, i.lifecycle, i.stage, i.stage_status FROM items i WHERE ${sc.sql} AND (i.code ILIKE ? OR i.title ILIKE ? OR i.teacher ILIKE ?) ORDER BY i.updated_at DESC LIMIT 12`, ...sc.params, like, like, like);
+    }
+    case "lead_find_parts": {
+      const stage = String((a as any).stage || user.activeRole || "").toLowerCase();
+      const validStages = ["recording", "editing", "uploading"];
+      const targetStage = validStages.includes(stage) ? stage : user.leads.find((s) => validStages.includes(s)) || "recording";
+      const grade = (a as any).grade ? String((a as any).grade).trim() : null;
+      const subject = (a as any).subject ? String((a as any).subject).trim() : null;
+      const text = (a as any).text ? String((a as any).text).trim() : null;
+
+      let sql = `
+        SELECT i.id, i.code, i.title, i.grade, i.subject, i.stage_status, u.name as owner_name
+        FROM items i
+        JOIN stage_attempts a ON a.id = i.current_attempt_id
+        LEFT JOIN users u ON u.id = a.owner_id
+        WHERE i.lifecycle = 'in_production' AND a.stage = ?
+      `;
+      const params: any[] = [targetStage];
+      if (grade) { sql += " AND i.grade = ?"; params.push(grade); }
+      if (subject) { sql += " AND (i.subject ILIKE ? OR i.title ILIKE ?)"; params.push(`%${subject}%`, `%${subject}%`); }
+      if (text) { sql += " AND (i.code ILIKE ? OR i.title ILIKE ?)"; params.push(`%${text}%`, `%${text}%`); }
+      sql += " ORDER BY i.grade, i.subject, i.code LIMIT 40";
+
+      const rows = await all<{ id: string; code: string; title: string; grade: string; subject: string; stage_status: string; owner_name: string | null }>(sql, ...params);
+      return {
+        stage: targetStage,
+        count: rows.length,
+        items: rows.map((r) => ({
+          code: r.code,
+          title: r.title,
+          grade: r.grade,
+          subject: r.subject,
+          status: r.stage_status,
+          owner: r.owner_name || "Unassigned",
+        })),
+        handover_hint: `To hand over these parts, call propose with kind='lead_handover' and args={ stage: '${targetStage}', grade: '${grade || ""}', subject: '${subject || ""}' }`,
+      };
     }
     case "search_help": {
       const words = String(a.text).toLowerCase().split(/\W+/).filter((w) => w.length > 2);
@@ -1070,6 +1110,14 @@ How to answer & communicate:
 - You only see what the person may see. If a tool says they cannot open something, tell them who can help (their lead, HR or Admin).
 - In standard mode: to perform an action (leave, attendance corrections, claims, tasks, requests, approvals, routines, HR operations), look up what you need, then call propose. Nothing happens until they press Confirm, so explain what will happen and ask them to confirm. In Agent mode, use do_action to carry out the operations directly.
 - If something is outside the app or you are unsure, say so briefly and offer the Help search.
+- Spelling & Semantic Error Tolerance: People make typos or informal phrasing (e.g., "handovr", "grd 5", "atendance", "chemsitry", "lev req", "noor cms"). Understand their intent semantically and match them to the proper entity or action.
+
+Production Team Lead & Handover Automation:
+- For stage team leads (Recording, Editing, Uploading):
+  - When asked to hand over work (e.g. "hand over grade 5 maths", "handover chemistry to editing", "handover parts"), use lead_find_parts to find the matching parts.
+  - Summarize the matched items (codes, titles, count) and call propose with kind="lead_handover" and args={ stage, grade, subject, note }.
+  - The proposal will show the parts and stage destination with Confirm. Once confirmed by the user, the batch handover is created and submitted.
+  - For batch assignment to editors or recorders, use propose with kind="lead_assign_batch".
 
 Pages and navigation:
 Each question comes with the list of pages this person can open. You know every page, action, and route across all departments:

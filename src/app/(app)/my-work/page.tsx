@@ -2,13 +2,15 @@ import Link from "next/link";
 import { requireViewer } from "@/server/auth";
 import { get } from "@/server/db";
 import { leadDesk, myWork } from "@/server/team-flow";
-import { userDirectory } from "@/server/users";
+import { userDirectory, can } from "@/server/users";
 import { appOrigin } from "@/server/password-reset";
 import * as sd from "@/server/support-desk";
 import * as ch from "@/server/support-channels";
+import { adminWorkspaceData } from "@/server/admin-workspace";
 import { EmptyState, PageHeader } from "@/components/app/primitives";
 import { MyBoard } from "@/components/app/team-flow";
 import { Desk, Inbox, TicketView } from "@/components/app/support/desk";
+import { AdminWorkDesk } from "@/components/app/admin-work-desk";
 import { STAGE_LABELS, STAGES } from "@/lib/domain";
 import { cn } from "@/lib/utils";
 import { TakeWork } from "./take-work";
@@ -16,16 +18,22 @@ import { TakeWork } from "./take-work";
 export const metadata = { title: "My work" };
 
 // The person's own work, apart from managing a team: their production parts as a board, parts waiting in the stages
-// they lead that they can take themselves, and, for support agents, their open tickets with the conversation.
+// they lead that they can take themselves, for support agents their open tickets, and for Admin their workspace.
 export default async function MyWorkPage({ searchParams }: { searchParams: Promise<{ tab?: string; ticket?: string; view?: string }> }) {
   const viewer = await requireViewer();
   const sp = await searchParams;
   const cfg = await sd.supportConfig();
   const agent = cfg.enabled && (await sd.isAgent(viewer));
+  const isAdmin = viewer.activeRole === "admin" || can(viewer, "users.manage");
   const [mine, desks] = await Promise.all([myWork(viewer), Promise.all(STAGES.filter((s) => viewer.leads.includes(s)).map((s) => leadDesk(viewer, s)))]);
   const unassigned = desks.flatMap((d) => d?.unassigned ?? []);
-  const tabs = [...(mine.stages.length || unassigned.length ? ["production"] : []), ...(agent ? ["support"] : [])];
-  const tab = tabs.includes(sp.tab ?? "") ? sp.tab! : sp.ticket ? "support" : (tabs[0] ?? "production");
+  const tabs = [
+    ...(isAdmin ? ["admin"] : []),
+    ...(mine.stages.length || unassigned.length ? ["production"] : []),
+    ...(agent ? ["support"] : []),
+  ];
+  const defaultTab = isAdmin ? "admin" : tabs.includes("production") ? "production" : (tabs[0] ?? "admin");
+  const tab = tabs.includes(sp.tab ?? "") ? sp.tab! : sp.ticket ? "support" : defaultTab;
 
   let support: React.ReactNode = null;
   if (tab === "support" && agent) {
@@ -75,12 +83,15 @@ export default async function MyWorkPage({ searchParams }: { searchParams: Promi
         <nav className="flex gap-1 border-b" aria-label="My work">
           {tabs.map((t) => (
             <Link key={t} href={`/my-work?tab=${t}`} className={cn("-mb-px border-b-2 px-3 py-2 text-sm", tab === t ? "border-primary font-medium" : "border-transparent text-muted-foreground")}>
-              {t === "production" ? `Production (${mine.items.length})` : "Customer support"}
+              {t === "production" ? `Production (${mine.items.length})` : t === "admin" ? "Admin workspace" : "Customer support"}
             </Link>
           ))}
         </nav>
       )}
       {!tabs.length && <EmptyState title="Nothing assigned to you" description="Work given to you shows here." />}
+      {tab === "admin" && isAdmin && (
+        <AdminWorkDesk data={await adminWorkspaceData(viewer)} />
+      )}
       {tab === "production" && tabs.includes("production") && (
         <div className="space-y-6" data-my-work>
           <MyBoard items={mine.items} title="My work" />

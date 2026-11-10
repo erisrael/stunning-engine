@@ -19,6 +19,7 @@ import { BarsChart, ChartFrame } from "@/components/app/charts";
 import { CAT, SEQ } from "@/lib/chart-colors";
 import { AttentionList, CustomizeDashboard, SessionBanner } from "./widgets";
 import { ManagerHome } from "./manager-home";
+import { AdminHome } from "./admin-home";
 import { PageImport } from "@/components/app/page-import";
 import { DASHBOARD_PANELS as PANELS } from "@/lib/panels";
 import { redirect } from "next/navigation";
@@ -52,14 +53,19 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const now = nowIso();
   const s = await getSettings();
   const tz = s.workspace.timezone;
-  // Admins see the organization overview.
-  const role = viewer.activeRole === "admin" ? "manager" : viewer.activeRole;
+  const hour = Number(new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", hourCycle: "h23" }).format(new Date()));
+  const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+
+  // Admins see their dedicated workspace dashboard with operational stats & quick actions
+  if (viewer.activeRole === "admin") {
+    return <AdminHome viewer={viewer} timezone={tz} greeting={greeting} />;
+  }
+  const role = viewer.activeRole;
   // Someone viewing as a department role (or as an owner) starts in that section; Home is the production dashboard.
   const SECTION: Partial<Record<string, string>> = { owner: "/company", developer: "/dev", content: "/studio", marketing: "/marketing", hr_manager: "/hr", hr_officer: "/hr", finance_manager: "/finance", accountant: "/finance" };
   if (!ROLE_COPY[role] && SECTION[role]) redirect(SECTION[role]!);
   if (managerView(role)) {
-    const hour = Number(new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", hourCycle: "h23" }).format(new Date()));
-    return <ManagerHome viewer={viewer} timezone={tz} greeting={hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening"} />;
+    return <ManagerHome viewer={viewer} timezone={tz} greeting={greeting} />;
   }
   // Recording, Editing and Uploading: team members get their own board; team leads their desk, then their own work.
   const team = (["recording", "editing", "uploading"] as string[]).includes(role) ? (role as "recording" | "editing" | "uploading") : null;
@@ -134,8 +140,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
   const stage = role === "manager" ? null : (role as Stage);
   const firstName = viewer.name.split(" ")[0];
-  const hour = Number(new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", hourCycle: "h23" }).format(new Date()));
-  const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
 
   return (
     <div className="space-y-4">

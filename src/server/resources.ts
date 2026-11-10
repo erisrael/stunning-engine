@@ -18,7 +18,37 @@ export async function resourceView(user:AppUser) {
  const equipment=[];
  for(const e of rows) { e.status=e.status==="issued"?"assigned":e.status==="repair"?"under_repair":e.status; }
  for(const e of rows) if(finance(user) || e.assigned_to===user.id || departments.some(d=>d.key===e.department)) equipment.push(e);
- const requests=await listPurchases(user,!finance(user));
+
+ // Financial Requests Scoping:
+ // Finance and Super Admin see all requests across departments.
+ // Team leads only see requests for the departments they lead.
+ // Regular members only see their own submitted requests.
+ let requests: Awaited<ReturnType<typeof listPurchases>> = [];
+ if (finance(user) || can(user, "users.manage") || can(user, "finance.approve")) {
+   requests = await listPurchases(user, false);
+ } else {
+   const allPurchases = await all<{ id: string; number: string; requester: string | null; requester_id: string | null; department: string | null; project: string | null; title: string; lines: string; estimate: number; vendor: string | null; vendor_id: string | null; status: string; note: string | null; received_note: string | null; created_at: string }>(
+     `SELECT pr.*, u.name AS requester, v.name AS vendor 
+      FROM fin_purchases pr 
+      LEFT JOIN users u ON u.id = pr.requester_id 
+      LEFT JOIN fin_parties v ON v.id = pr.vendor_id
+      ORDER BY CASE pr.status WHEN 'submitted' THEN 0 WHEN 'approved' THEN 1 WHEN 'ordered' THEN 2 WHEN 'received' THEN 3 ELSE 4 END, pr.created_at DESC LIMIT 500`
+   );
+
+   const leadDepts = new Set<string>();
+   for (const d of candidates) {
+     const access = await deptAccess(user, d.key).catch(() => ({ manage: false, position: null }));
+     if (access.manage || access.position === "head" || access.position === "lead" || user.leads.includes(d.key as any)) {
+       leadDepts.add(d.key);
+     }
+   }
+
+   requests = allPurchases.filter((pr) => {
+     if (pr.requester_id === user.id) return true;
+     if (pr.department && leadDepts.has(pr.department)) return true;
+     return false;
+   });
+ }
  const requestIds=requests.map(r=>r.id);
  const comments=requestIds.length ? await all<{id:string;purchase_id:string;author:string;body:string;created_at:string}>(`SELECT c.*,u.name AS author FROM resource_comments c JOIN users u ON u.id=c.author_id WHERE c.purchase_id IN (${requestIds.map(()=>"?").join(",")}) ORDER BY c.created_at`,...requestIds) : [];
  const events=equipment.length ? await all<{id:string;equipment_id:string;actor:string;kind:string;note:string;quantity_delta:number;cost:number;created_at:string}>(`SELECT e.*,e.action AS kind,e.at AS created_at,u.name AS actor FROM equipment_events e JOIN users u ON u.id=e.actor_id WHERE e.equipment_id IN (${equipment.map(()=>"?").join(",")}) ORDER BY e.at DESC`,...equipment.map(e=>e.id)) : [];

@@ -2,7 +2,7 @@
 // a plain summary of what will happen) and runs only when the person confirms it, through the pages' own functions
 // with their usual permission checks. The AI proposes them; routines and Admin's per-role switches use the same list.
 
-import { all, get, nowIso, run } from "./db";
+import { all, get, nowIso, placeholders, run } from "./db";
 import { can, type AppUser } from "./users";
 import { WorkflowError } from "./workflow";
 import { myDepartments } from "./departments";
@@ -38,6 +38,8 @@ export const OPS: { key: string; label: string; group: string; args: string; who
   { key: "assign_task", label: "Assign a task", group: "Leads", args: "department, task_id, assignee_id", who: "leads" },
   { key: "approve_task", label: "Approve work sent to me", group: "Leads", args: "department, task_id", who: "leads" },
   { key: "return_task", label: "Return work with a note", group: "Leads", args: "department, task_id, note", who: "leads" },
+  { key: "lead_handover", label: "Hand over parts to next stage (by grade, subject or codes)", group: "Leads", args: "stage, grade, subject, item_codes, note, receiver_id", who: "leads" },
+  { key: "lead_assign_batch", label: "Assign batch of parts to team member", group: "Leads", args: "stage, assignee_id, item_codes, grade, subject", who: "leads" },
   { key: "decide_leave", label: "Approve or reject leave", group: "Approvals", args: "request_id, decision (approve|reject), note", who: "managers" },
   { key: "decide_claim", label: "Approve or reject a claim", group: "Approvals", args: "claim_id, decision (approve|reject), note", who: "managers" },
   { key: "decide_correction", label: "Approve or reject an attendance correction", group: "Approvals", args: "correction_id, decision (approve|reject), note", who: "managers" },
@@ -317,6 +319,108 @@ export async function prepareOp(user: Viewer, kind: string, a: Args): Promise<Pr
       Object.assign(p, { title: t, positions: n, department: str(a.department, 60), description: str(a.description, 4000), closes: day(a.closes) });
       break;
     }
+    case "lead_handover": {
+      const stage = String(a.stage || user.activeRole || "").toLowerCase();
+      const validStages = ["recording", "editing", "uploading"];
+      const targetStage = validStages.includes(stage) ? stage : user.leads.find((s) => validStages.includes(s)) || "recording";
+      const grade = a.grade ? String(a.grade).trim() : null;
+      const subject = a.subject ? String(a.subject).trim() : null;
+      const rawCodes = a.item_codes ? (Array.isArray(a.item_codes) ? a.item_codes : String(a.item_codes).split(/[\s,]+/)).filter(Boolean) : [];
+
+      let sql = `
+        SELECT i.id, i.code, i.title, i.grade, i.subject, i.stage_status
+        FROM items i
+        JOIN stage_attempts a ON a.id = i.current_attempt_id
+        WHERE i.lifecycle = 'in_production' AND a.stage = ?
+      `;
+      const params: any[] = [targetStage];
+      if (grade) {
+        sql += " AND i.grade = ?";
+        params.push(grade);
+      }
+      if (subject) {
+        sql += " AND (i.subject ILIKE ? OR i.title ILIKE ?)";
+        params.push(`%${subject}%`, `%${subject}%`);
+      }
+      if (rawCodes.length > 0) {
+        sql += ` AND i.code IN (${placeholders(rawCodes.length)})`;
+        params.push(...rawCodes);
+      }
+      sql += " ORDER BY i.grade, i.subject, i.code LIMIT 50";
+
+      const items = await all<{ id: string; code: string; title: string; grade: string; subject: string; stage_status: string }>(sql, ...params);
+      if (!items.length) {
+        throw new WorkflowError("NOT_FOUND", `No items found in stage "${targetStage}" matching ${grade ? `Grade ${grade} ` : ""}${subject ? `Subject "${subject}"` : ""}`);
+      }
+
+      const nextStageName = targetStage === "recording" ? "Editing" : targetStage === "editing" ? "Uploading" : "Publication";
+      title = `Hand over ${items.length} parts (${targetStage} → ${nextStageName})`;
+      lines.push(
+        `Stage: ${targetStage} → ${nextStageName}`,
+        `Batch: ${items.length} parts`,
+        ...(grade ? [`Grade: ${grade}`] : []),
+        ...(subject ? [`Subject: ${subject}`] : []),
+        `Parts: ${items.slice(0, 8).map((x) => x.code).join(", ")}${items.length > 8 ? ` and ${items.length - 8} more` : ""}`,
+        `Note: ${a.note || "Handover prepared by Assistant"}`
+      );
+      Object.assign(p, {
+        stage: targetStage,
+        itemIds: items.map((x) => x.id),
+        note: a.note || `Handover prepared by Assistant (${items.length} parts)`,
+        toUserId: a.receiver_id || null,
+      });
+      break;
+    }
+    case "lead_assign_batch": {
+      const stage = String(a.stage || user.activeRole || "").toLowerCase();
+      const validStages = ["recording", "editing", "uploading"];
+      const targetStage = validStages.includes(stage) ? stage : user.leads.find((s) => validStages.includes(s)) || "recording";
+      const who = await nameOf(a.assignee_id);
+      if (!who) throw new WorkflowError("NOT_FOUND", "Assignee not found.");
+      const grade = a.grade ? String(a.grade).trim() : null;
+      const subject = a.subject ? String(a.subject).trim() : null;
+      const rawCodes = a.item_codes ? (Array.isArray(a.item_codes) ? a.item_codes : String(a.item_codes).split(/[\s,]+/)).filter(Boolean) : [];
+
+      let sql = `
+        SELECT i.id, i.code, i.title, i.grade, i.subject, a.id as attempt_id
+        FROM items i
+        JOIN stage_attempts a ON a.id = i.current_attempt_id
+        WHERE i.lifecycle = 'in_production' AND a.stage = ?
+      `;
+      const params: any[] = [targetStage];
+      if (grade) {
+        sql += " AND i.grade = ?";
+        params.push(grade);
+      }
+      if (subject) {
+        sql += " AND (i.subject ILIKE ? OR i.title ILIKE ?)";
+        params.push(`%${subject}%`, `%${subject}%`);
+      }
+      if (rawCodes.length > 0) {
+        sql += ` AND i.code IN (${placeholders(rawCodes.length)})`;
+        params.push(...rawCodes);
+      }
+      sql += " LIMIT 50";
+
+      const items = await all<{ id: string; code: string; title: string; attempt_id: string }>(sql, ...params);
+      if (!items.length) {
+        throw new WorkflowError("NOT_FOUND", `No parts found in stage "${targetStage}" matching criteria.`);
+      }
+
+      title = `Assign ${items.length} parts to ${who}`;
+      lines.push(
+        `Stage: ${targetStage}`,
+        `Assignee: ${who}`,
+        `Count: ${items.length} parts`,
+        `Parts: ${items.slice(0, 8).map((x) => x.code).join(", ")}${items.length > 8 ? ` and ${items.length - 8} more` : ""}`
+      );
+      Object.assign(p, {
+        stage: targetStage,
+        assigneeId: a.assignee_id,
+        attemptIds: items.map((x) => x.attempt_id),
+      });
+      break;
+    }
     default: {
       // Department work.
       const d = await needDept(user, a.department);
@@ -485,6 +589,24 @@ export async function executeOp(user: Viewer, p: Record<string, unknown>): Promi
       const { returnEquipment } = await import("./hr");
       await returnEquipment(user, s("equipmentId")!, { condition: s("condition") ?? "good", note: s("note") });
       return { done: "Equipment return recorded", href: "/hr?tab=equipment" };
+    }
+    case "lead_handover": {
+      const { createHandover } = await import("./editorial");
+      const r = await createHandover(user, {
+        itemIds: (p.itemIds as string[]) || [],
+        toUserId: (p.toUserId as string) || null,
+        note: (p.note as string) || "Prepared by assistant",
+      });
+      const okCount = r.results.filter((x) => x.ok).length;
+      return { done: `Handover created: ${okCount} items handed over`, href: "/handovers" };
+    }
+    case "lead_assign_batch": {
+      const attemptIds = (p.attemptIds as string[]) || [];
+      const assigneeId = p.assigneeId as string;
+      for (const attId of attemptIds) {
+        await run("UPDATE stage_attempts SET owner_id = ?, updated_at = ? WHERE id = ?", assigneeId, nowIso(), attId);
+      }
+      return { done: `Assigned ${attemptIds.length} parts`, href: "/pipeline" };
     }
   }
   const d = s("dept")!;

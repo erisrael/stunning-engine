@@ -26,7 +26,14 @@ import {
   SparklesIcon,
   CheckIcon,
   PencilIcon,
+  ShieldCheckIcon,
 } from "lucide-react";
+import {
+  getMyseedVerifyConfigAction,
+  saveMyseedVerifyConfigAction,
+  testMyseedVerifyConnectionAction,
+  createVerifyPaymentRequestAction,
+} from "@/app/actions/myseed-verify";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -73,6 +80,32 @@ export function ExternalApiConsole({ config }: { config: ExternalApiConfig }) {
     currency: "ETB",
     active: true,
   });
+
+  // Myseed Verify platform state
+  const [verifyConfig, setVerifyConfig] = React.useState({
+    enabled: false,
+    baseUrl: "https://verify.myseedops.tech",
+    apiKey: "",
+    hasApiKey: false,
+    webhookSecret: "",
+    hasWebhookSecret: false,
+    environment: "sandbox" as "sandbox" | "production" | "custom",
+    autoFulfill: true,
+    status: "unconfigured" as "connected" | "unconfigured" | "error",
+    lastTestedAt: null as string | null,
+    lastError: null as string | null,
+  });
+  const [verifyBusy, setVerifyBusy] = React.useState(false);
+  const [verifyTesting, setVerifyTesting] = React.useState(false);
+  const [verifyTestResult, setVerifyTestResult] = React.useState<{ ok: boolean; message: string; ms?: number } | null>(null);
+
+  React.useEffect(() => {
+    getMyseedVerifyConfigAction().then((res) => {
+      if (res.ok && res.data) {
+        setVerifyConfig(res.data as any);
+      }
+    });
+  }, []);
 
   // Iconic SMS state
   const [iconicBalance, setIconicBalance] = React.useState<{ balance: number; currency: string } | null>(null);
@@ -232,8 +265,11 @@ export function ExternalApiConsole({ config }: { config: ExternalApiConfig }) {
         </Button>
       </div>
 
-      <Tabs defaultValue="chapa" className="space-y-4">
-        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-5 h-auto p-1">
+      <Tabs defaultValue="verify" className="space-y-4">
+        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 h-auto p-1">
+          <TabsTrigger value="verify" className="flex items-center gap-1.5 text-xs py-2">
+            <ShieldCheckIcon className="size-3.5 text-teal-600" /> Myseed Verify
+          </TabsTrigger>
           <TabsTrigger value="chapa" className="flex items-center gap-1.5 text-xs py-2">
             <CreditCardIcon className="size-3.5 text-emerald-600" /> Chapa Payments
           </TabsTrigger>
@@ -250,6 +286,244 @@ export function ExternalApiConsole({ config }: { config: ExternalApiConfig }) {
             <GlobeIcon className="size-3.5 text-indigo-600" /> Noor CMS (Legacy)
           </TabsTrigger>
         </TabsList>
+
+        {/* 0. Myseed Verify Platform Integration */}
+        <TabsContent value="verify" className="space-y-4">
+          <Card>
+            <CardHeader className="pb-3 flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <ShieldCheckIcon className="size-4 text-teal-600" />
+                  Myseed Verify Platform Integration
+                </CardTitle>
+                <CardDescription className="text-xs">
+                  Automated transaction verification engine for Ethiopian banks (CBE, Awash, Dashen, BoA), wallets (Telebirr, CBE Birr) and payment gateways with HMAC-signed webhooks.
+                </CardDescription>
+              </div>
+              <div className="flex items-center gap-2">
+                {verifyConfig.status === "connected" && (
+                  <Badge variant="outline" className="text-xs text-emerald-600 border-emerald-300 bg-emerald-50/50">
+                    Connected
+                  </Badge>
+                )}
+                {verifyConfig.status === "error" && (
+                  <Badge variant="destructive" className="text-xs">
+                    Connection Error
+                  </Badge>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4 text-xs">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="verify-url" className="text-xs">Platform API Base URL</Label>
+                  <Input
+                    id="verify-url"
+                    value={verifyConfig.baseUrl}
+                    onChange={(e) => setVerifyConfig({ ...verifyConfig, baseUrl: e.target.value })}
+                    placeholder="https://verify.myseedops.tech"
+                    className="h-8 text-xs font-mono"
+                  />
+                  <p className="text-[11px] text-muted-foreground">Address of the deployed Transaction Verify cluster or sandbox endpoint.</p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="verify-env" className="text-xs">Environment</Label>
+                  <select
+                    id="verify-env"
+                    value={verifyConfig.environment}
+                    onChange={(e) => setVerifyConfig({ ...verifyConfig, environment: e.target.value as any })}
+                    className="h-8 w-full rounded-md border border-input bg-background px-3 py-1 text-xs"
+                  >
+                    <option value="sandbox">Sandbox (Test Mode)</option>
+                    <option value="production">Production (Live Payments)</option>
+                    <option value="custom">Custom / Internal Cluster</option>
+                  </select>
+                  <p className="text-[11px] text-muted-foreground">Sandbox allows simulated bank transfers and test OCR slips.</p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="verify-key" className="text-xs">Server API Key (Bearer Token)</Label>
+                  <Input
+                    id="verify-key"
+                    type="password"
+                    value={verifyConfig.apiKey}
+                    onChange={(e) => setVerifyConfig({ ...verifyConfig, apiKey: e.target.value })}
+                    placeholder={verifyConfig.hasApiKey ? "•••••••••••• (Leave blank to keep saved key)" : "vfy_sec_live_..."}
+                    className="h-8 text-xs font-mono"
+                  />
+                  <p className="text-[11px] text-muted-foreground">Server API key used to create payment requests and fetch statuses.</p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="verify-secret" className="text-xs">Webhook Signing Secret (HMAC SHA-256)</Label>
+                  <Input
+                    id="verify-secret"
+                    type="password"
+                    value={verifyConfig.webhookSecret}
+                    onChange={(e) => setVerifyConfig({ ...verifyConfig, webhookSecret: e.target.value })}
+                    placeholder={verifyConfig.hasWebhookSecret ? "•••••••••••• (Leave blank to keep saved secret)" : "whsec_..."}
+                    className="h-8 text-xs font-mono"
+                  />
+                  <p className="text-[11px] text-muted-foreground">Used to verify X-Verify-Signature on incoming callback events.</p>
+                </div>
+              </div>
+
+              {/* Webhook Callback Information Box */}
+              <div className="rounded-lg border bg-muted/40 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-xs flex items-center gap-1.5">
+                    <GlobeIcon className="size-3.5 text-primary" /> Webhook Ingestion URL
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 text-[10px] gap-1"
+                    onClick={() => {
+                      navigator.clipboard.writeText("https://myseedops.tech/api/verify/webhook");
+                      toast.success("Webhook URL copied to clipboard");
+                    }}
+                  >
+                    <CopyIcon className="size-3" /> Copy
+                  </Button>
+                </div>
+                <code className="block font-mono text-[11px] text-foreground bg-background p-1.5 rounded border">
+                  https://myseedops.tech/api/verify/webhook
+                </code>
+                <p className="text-[11px] text-muted-foreground">
+                  Register this URL in your Myseed Verify dashboard under Webhook Endpoints. Subscribed event: <code className="text-foreground">payment.accepted</code>.
+                </p>
+              </div>
+
+              {/* Switches */}
+              <div className="grid gap-3 sm:grid-cols-2 pt-1 border-t">
+                <div className="flex items-center justify-between border rounded-lg p-2.5">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="verify-enable" className="text-xs font-medium cursor-pointer">Enable Verification Service</Label>
+                    <p className="text-[10px] text-muted-foreground">Route payment approvals through Myseed Verify</p>
+                  </div>
+                  <Switch
+                    id="verify-enable"
+                    checked={verifyConfig.enabled}
+                    onCheckedChange={(val) => setVerifyConfig({ ...verifyConfig, enabled: val })}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between border rounded-lg p-2.5">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="verify-fulfill" className="text-xs font-medium cursor-pointer">Automatic Fulfillment</Label>
+                    <p className="text-[10px] text-muted-foreground">Acknowledge allocation when webhook arrives</p>
+                  </div>
+                  <Switch
+                    id="verify-fulfill"
+                    checked={verifyConfig.autoFulfill}
+                    onCheckedChange={(val) => setVerifyConfig({ ...verifyConfig, autoFulfill: val })}
+                  />
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex flex-wrap items-center gap-2 pt-2">
+                <Button
+                  size="sm"
+                  onClick={async () => {
+                    setVerifyBusy(true);
+                    try {
+                      const res = await saveMyseedVerifyConfigAction(verifyConfig);
+                      if (res.ok) {
+                        toast.success("Myseed Verify configuration saved");
+                        router.refresh();
+                      } else {
+                        toast.error(res.error || "Failed to save configuration");
+                      }
+                    } finally {
+                      setVerifyBusy(false);
+                    }
+                  }}
+                  disabled={verifyBusy}
+                  className="gap-1.5 text-xs"
+                >
+                  {verifyBusy ? <Loader2Icon className="size-3.5 animate-spin" /> : <SaveIcon className="size-3.5" />}
+                  Save Settings
+                </Button>
+
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={async () => {
+                    setVerifyTesting(true);
+                    setVerifyTestResult(null);
+                    try {
+                      const res = await testMyseedVerifyConnectionAction();
+                      setVerifyTestResult(res);
+                      if (res.ok) toast.success(res.message);
+                      else toast.error(res.message);
+                    } finally {
+                      setVerifyTesting(false);
+                    }
+                  }}
+                  disabled={verifyTesting}
+                  className="gap-1.5 text-xs"
+                >
+                  <RefreshCwIcon className={cn("size-3.5", verifyTesting && "animate-spin")} />
+                  Test Connection
+                </Button>
+
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={async () => {
+                    const testRef = `test_${Date.now()}`;
+                    const res = await createVerifyPaymentRequestAction({
+                      externalReference: testRef,
+                      currency: "ETB",
+                      items: [
+                        {
+                          title: "Test Subscription Enrollment",
+                          minorAmount: "50000", // 500.00 ETB
+                          quantity: 1,
+                          category: "subscription",
+                        },
+                      ],
+                    });
+                    if (res.ok && res.data) {
+                      toast.success(`Created Request #${res.data.id} (${res.data.status})`);
+                    } else {
+                      toast.error(res.error || "Failed to create test request");
+                    }
+                  }}
+                  className="gap-1.5 text-xs"
+                >
+                  <SparklesIcon className="size-3.5 text-amber-500" />
+                  Create Test Payment Request
+                </Button>
+              </div>
+
+              {verifyTestResult && (
+                <div
+                  className={cn(
+                    "p-3 rounded-lg text-xs border flex items-center justify-between",
+                    verifyTestResult.ok
+                      ? "bg-emerald-500/10 border-emerald-300 text-emerald-800 dark:text-emerald-300"
+                      : "bg-destructive/10 border-destructive/30 text-destructive"
+                  )}
+                >
+                  <div className="flex items-center gap-2">
+                    {verifyTestResult.ok ? (
+                      <CheckCircle2Icon className="size-4 shrink-0 text-emerald-600" />
+                    ) : (
+                      <ShieldAlertIcon className="size-4 shrink-0" />
+                    )}
+                    <span>{verifyTestResult.message}</span>
+                  </div>
+                  {verifyTestResult.ms !== undefined && (
+                    <span className="font-mono text-[10px]">{verifyTestResult.ms}ms</span>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         {/* 1. Chapa Multi-Business Accounts */}
         <TabsContent value="chapa" className="space-y-4">

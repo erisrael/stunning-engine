@@ -12,6 +12,8 @@ import {
   Trash2Icon,
   UserCheckIcon,
   UserCogIcon,
+  Unlink2Icon,
+  SquareIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,6 +26,8 @@ import {
   deleteUserCmsOverrideAction,
   listUserCmsOverridesAction,
   saveUserCmsOverrideAction,
+  disconnectLegacyCmsAction,
+  stopLegacyCmsSyncAction,
 } from "@/app/actions/legacy-cms";
 import { LEGACY_CMS_CATEGORIES, type LegacyCmsCategory, type UserCmsOverride } from "@/lib/legacy-cms";
 
@@ -117,9 +121,41 @@ export function LegacyCmsAdmin({ users }: { users: AdminUser[] }) {
             Grant specific staff members access to Noor Ethiopia CMS with customized login credentials and tab restrictions.
           </CardDescription>
         </div>
-        <Button size="sm" onClick={() => setDialogOpen(true)} className="gap-1.5">
-          <PlusIcon className="size-4" /> Grant User Access
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={async () => {
+              const res = await stopLegacyCmsSyncAction();
+              if (res.ok) toast.success(res.message);
+              else toast.error(res.message);
+            }}
+            className="gap-1.5 text-xs"
+          >
+            <SquareIcon className="size-3.5" /> Stop Sync
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={async () => {
+              if (confirm("Disconnect Noor CMS? This will clear session credentials.")) {
+                const res = await disconnectLegacyCmsAction();
+                if (res.ok) {
+                  toast.success(res.message);
+                  router.refresh();
+                } else {
+                  toast.error(res.message);
+                }
+              }
+            }}
+            className="gap-1.5 text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50"
+          >
+            <Unlink2Icon className="size-3.5" /> Disconnect
+          </Button>
+          <Button size="sm" onClick={() => setDialogOpen(true)} className="gap-1.5">
+            <PlusIcon className="size-4" /> Grant User Access
+          </Button>
+        </div>
       </CardHeader>
       <CardContent className="space-y-4">
         {loading ? (

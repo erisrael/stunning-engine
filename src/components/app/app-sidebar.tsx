@@ -67,6 +67,9 @@ import { CompassIcon,
   HeadsetIcon,
   TabletIcon,
   ChevronDownIcon,
+  CalendarDaysIcon,
+  LaptopIcon,
+  AlertTriangleIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { HomeDept } from "@/server/nav";
@@ -492,6 +495,7 @@ export function AppSidebar({
         label: "My space",
         items: [
           { href: "/dashboard", label: "Home", icon: HomeIcon, locked: true },
+          { href: "/my-work?tab=admin", label: "My work", icon: BriefcaseIcon, badge: counts.approvals > 0 ? counts.approvals : undefined },
           { href: "/attendance", label: "Attendance", icon: ClockIcon, sub: attSub },
           { href: "/announcements", label: "Announcements", icon: MegaphoneIcon },
           ...(recognition ? [{ href: "/recognition", label: "Recognition", icon: TrophyIcon }] : []),
@@ -571,6 +575,61 @@ export function AppSidebar({
         ],
       },
       { ...dept, items: dept.items.filter((i) => !["/people", "/requests"].includes(i.href)) },
+    );
+  }
+  if ((activeRole === "hr_manager" || activeRole === "hr_officer") && !home) {
+    const dept = groups.find((g) => g.label === "Departments");
+    groups.splice(
+      0,
+      groups.length,
+      {
+        label: "My space",
+        items: [
+          { href: "/hr", label: "HR Home", icon: HomeIcon, locked: true },
+          { href: "/my-work", label: "My work", icon: BriefcaseIcon, badge: counts.myWork },
+          { href: "/approvals", label: "Approvals", icon: CheckCheckIcon, badge: counts.approvals > 0 ? counts.approvals : undefined },
+          { href: "/attendance", label: "My attendance", icon: ClockIcon, sub: attSub },
+          { href: "/announcements", label: "Announcements", icon: MegaphoneIcon },
+          { href: "/performance", label: "Performance", icon: TargetIcon },
+          ...((counts.mailbox || has("email.manage") || has("email.send")) ? [{ href: "/email", label: "Email", icon: MailIcon, badge: counts.mail ?? 0, sub: emailSub }] : []),
+        ],
+      },
+      {
+        label: "People & Records",
+        items: [
+          { href: "/hr", label: "Employees", icon: UsersRoundIcon, exact: true },
+          { href: "/hr?tab=org", label: "Org chart", icon: UsersIcon, exact: true },
+          { href: "/hr?tab=due", label: "Due milestones", icon: CalendarIcon, exact: true },
+          { href: "/people", label: "Company directory", icon: ContactIcon },
+        ],
+      },
+      {
+        label: "Time & Leave",
+        items: [
+          { href: "/hr?tab=leave", label: "Leave management", icon: CalendarDaysIcon, exact: true },
+          { href: "/attendance?tab=team", label: "Staff attendance", icon: ClockIcon, exact: true },
+        ],
+      },
+      {
+        label: "Talent & Growth",
+        items: [
+          { href: "/hr?tab=hiring", label: "Hiring & jobs", icon: UserPlusIcon, exact: true },
+          { href: "/hr?tab=lifecycle", label: "Checklists & lifecycle", icon: ListChecksIcon, exact: true },
+          { href: "/hr?tab=performance", label: "Appraisals & reviews", icon: TargetIcon, exact: true },
+          { href: "/hr?tab=training", label: "Training courses", icon: BookOpenIcon, exact: true },
+          ...(has("hr.cases") ? [{ href: "/hr?tab=cases", label: "HR cases", icon: AlertTriangleIcon, exact: true }] : []),
+        ],
+      },
+      {
+        label: "Assets & Compliance",
+        items: [
+          { href: "/hr?tab=equipment", label: "Staff equipment", icon: LaptopIcon, exact: true },
+          { href: "/resources", label: "Finance & equipment", icon: InboxIcon },
+          { href: "/presenters", label: "Presenters & fees", icon: MicIcon },
+          { href: "/hr?tab=reports", label: "HR reports", icon: ChartColumnIcon, exact: true },
+        ],
+      },
+      ...(dept ? [{ ...dept, items: dept.items.filter((i) => !["/people", "/requests"].includes(i.href)) }] : []),
     );
   }
   const resourceGroup = groups.find(g => g.label === "Other Tools") ?? groups.find(g => g.label === "Tools");
