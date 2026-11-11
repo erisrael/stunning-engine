@@ -128,7 +128,9 @@ export async function testCmsLogin(user: AppUser, accountId: string | "shared") 
   const start = Date.now();
   let result: { ok: boolean; message: string };
   try {
-    const cookie = await authenticateFilament(base, username, password);
+    // A fresh sign-in that also becomes the account's shared session, so testing does not log anyone out.
+    const { cmsSession } = await import("./cms-session");
+    const cookie = await cmsSession({ baseUrl: base, username, password }, authenticateFilament, true);
     const res = await fetch(`${base}/admin/invoices`, { headers: { Cookie: cookie }, redirect: "manual", cache: "no-store", signal: AbortSignal.timeout(30_000) });
     const loc = res.headers.get("location") ?? "";
     result = res.ok ? { ok: true, message: `Signed in as ${username} (${Date.now() - start} ms).` } : { ok: false, message: loc.includes("login") ? `Noor did not accept ${username}: wrong email or password.` : `Noor answered HTTP ${res.status}.` };

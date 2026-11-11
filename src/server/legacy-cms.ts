@@ -1,4 +1,4 @@
-import { cmsSession, cmsTableSeed, forgetCmsSessions } from "./cms-session";
+import { cmsSession, cmsTableSeed, forgetCmsSessions, rememberCmsSession } from "./cms-session";
 import { cmsReceiptAttachments } from "@/lib/cms-receipts";
 import { cmsField, cmsDateMatches, parseCmsDate } from "@/lib/cms-filters";
 import { queryCmsTable, cmsPagination, type CmsRemoteFilter } from "@/lib/cms-livewire";
@@ -421,6 +421,7 @@ export async function loginLegacyCms(
       throw new Error(`Authentication rejected by server (HTTP ${testRes.status})`);
     }
 
+    rememberCmsSession({ baseUrl, username, password }, cookieHeader);
     // Seal and persist the cookie in settings automatically
     const cookieEnc = await seal(cookieHeader);
     const passwordEnc = await seal(password);
@@ -573,12 +574,9 @@ export async function syncLegacyCms(
     const baseUrl = config.baseUrl.replace(/\/+$/, "");
     let cookieHeader = config.sessionCookie || "";
 
-    // Scheduled refreshes must not keep reusing an expired saved session.
-    if (config.username && config.password) {
-      cookieHeader = await authenticateFilament(baseUrl, config.username, config.password);
-      const cookieEnc = await seal(cookieHeader);
-      await patchCmsState({sessionCookieEnc:cookieEnc});
-    }
+    // The account's shared session (a new sign-in here would end the one live loads are using); an expired
+    // one is renewed by the loader when a table answers HTTP 302.
+    if (config.username && config.password) cookieHeader = await cmsSession(config, authenticateFilament);
 
     const headers: Record<string, string> = {
       "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
@@ -1382,10 +1380,7 @@ export async function fetchLegacyCmsInvoiceReceipt(
   await requireCmsCategories(user, ["invoices"]);
   const config = await getLegacyCmsConfigForUser(user);
   const baseUrl = config.baseUrl.replace(/\/+$/, "");
-  let cookieHeader = config.sessionCookie || "";
-  if (!cookieHeader && config.username && config.password) {
-    cookieHeader = await authenticateFilament(baseUrl, config.username, config.password);
-  }
+  let cookieHeader = config.username ? await cmsSession(config, authenticateFilament) : config.sessionCookie || "";
 
   const targetUrl = `${baseUrl}/admin/invoices/${encodeURIComponent(invoiceId)}`;
   const headers: Record<string, string> = {
@@ -1401,7 +1396,7 @@ export async function fetchLegacyCmsInvoiceReceipt(
 
     if (res.status === 302 || res.status === 401 || res.status === 419) {
       if (config.username && config.password) {
-        cookieHeader = await authenticateFilament(baseUrl, config.username, config.password);
+        cookieHeader = await cmsSession(config, authenticateFilament, true);
         headers["Cookie"] = cookieHeader;
         const retryCtrl = new AbortController();
         const retryTimeout = setTimeout(() => retryCtrl.abort(), 12000);
@@ -1666,7 +1661,7 @@ export async function resolveLegacyCmsFeedback(
     if(!can(user,"users.manage") && !access?.canResolveFeedback) throw new WorkflowError("FORBIDDEN","Admin has not enabled feedback actions for your account.");
     if(!["pending","reviewed","resolved"].includes(resolution.status) || !resolution.notes.trim()) throw new WorkflowError("VALIDATION","Choose a supported status and describe the action taken.");
     const config=await getLegacyCmsConfigForUser(user);
-    const cookie=await authenticateFilament(config.baseUrl,config.username,config.password || "");
+    const cookie=await cmsSession(config,authenticateFilament);
     const { updateCmsFeedback } = await import("@/lib/cms-livewire");
     await updateCmsFeedback(config.baseUrl,cookie,feedbackId,resolution.status,resolution.notes);
     // Record resolution in audit log and update any cached record

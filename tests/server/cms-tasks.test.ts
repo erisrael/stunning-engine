@@ -43,6 +43,10 @@ async function main() {
   const cookies=await Promise.all([cmsSession(connection,auth),cmsSession(connection,auth)]);
   assert.equal(cookies[0],cookies[1]);assert.equal(authCalls,1);
   assert.notEqual(await cmsSession({...connection,username:"second"},auth),cookies[0]);
+  // Noor keeps one session per login: a renewal just after a sign-in shares it instead of ending it.
+  assert.equal(await cmsSession(connection,auth,true),cookies[0]);
+  const { forgetCmsSessions } = await import("../../src/server/cms-session");
+  forgetCmsSessions();
   assert.notEqual(await cmsSession(connection,auth,true),cookies[0]);
   console.log("PASS Concurrent sign-ins are shared only within the same credentials and expired sessions can be replaced");
   await run("INSERT INTO legacy_cms_records (id,category,external_id,title,data_json,synced_at) VALUES ('original','students','original','Original cache','{}',?)",new Date().toISOString());

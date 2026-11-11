@@ -1,23 +1,33 @@
 import { createHash } from "node:crypto";
 
 type Connection = { baseUrl: string; username: string; password?: string; sessionCookie?: string };
-const sessions = new Map<string, { expires: number; value: Promise<string> }>();
+// One Noor session per account: Noor allows a single session per login and ends the older one whenever the
+// same login signs in again, so every part of the app (live loads, sync, slips, feedback) shares this one.
+const sessions = new Map<string, { expires: number; at: number; kind: "stored" | "login"; value: Promise<string> }>();
 const tables = new Map<string, { expires: number; value: Promise<string> }>();
 const digest = (value: string) => createHash("sha256").update(value).digest("hex");
 function trim<T>(map: Map<string, T>) {
   if (map.size >= 128) map.delete(map.keys().next().value!);
 }
+const accountKey = (config: Connection) => digest(JSON.stringify([config.baseUrl.replace(/\/+$/, ""), config.username.trim().toLowerCase()]));
 
-// Connection-specific keys prevent users with separate Noor accounts sharing a session.
-// Concurrent page requests share the same sign-in; secrets never enter the browser/job rows.
+// fresh: the session was refused (HTTP 302). Requests that find it refused at the same moment share one new
+// sign-in (a second sign-in would end the first) instead of each signing in.
 export async function cmsSession(config: Connection, authenticate: (base: string, username: string, password: string) => Promise<string>, fresh = false) {
-  const key = digest(JSON.stringify([config.baseUrl, config.username, config.password, config.sessionCookie]));
+  const key = accountKey(config);
   const cached = sessions.get(key);
-  if (!fresh && cached && cached.expires > Date.now()) return cached.value;
+  const now = Date.now();
+  if (cached && cached.expires > now && (!fresh || (cached.kind === "login" && now - cached.at < 20_000))) return cached.value;
   trim(sessions);
-  const value = !fresh && config.sessionCookie ? Promise.resolve(config.sessionCookie) : authenticate(config.baseUrl, config.username, config.password || "");
-  sessions.set(key, { expires: Date.now() + 10 * 60_000, value });
+  const stored = !fresh && !cached && !!config.sessionCookie;
+  const value = stored ? Promise.resolve(config.sessionCookie!) : authenticate(config.baseUrl, config.username, config.password || "");
+  sessions.set(key, { expires: now + 60 * 60_000, at: now, kind: stored ? "stored" : "login", value });
   try { return await value; } catch (error) { if (sessions.get(key)?.value === value) sessions.delete(key); throw error; }
+}
+
+// A sign-in made elsewhere (Admin's Sign in) becomes the account's shared session.
+export function rememberCmsSession(config: Connection, cookie: string) {
+  sessions.set(accountKey(config), { expires: Date.now() + 60 * 60_000, at: Date.now(), kind: "login", value: Promise.resolve(cookie) });
 }
 
 // Sign out and disconnect: the next request signs in again instead of reusing a cached session.
