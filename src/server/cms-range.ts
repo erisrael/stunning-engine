@@ -551,7 +551,7 @@ export async function fetchCmsRange(user: AppUser, input: CmsRangeInput, progres
   const headers = [...new Set([...[...cached.values()].flatMap((c) => c.headers), ...(fetched[0] ? Object.keys(fetched[0]).filter((k) => !k.startsWith("_")) : [])])];
   if (!filters.length && cached.size) filters = parseJsonSafe(await getMeta(`cmsFilters.${input.category}`));
   if (filters.length) await setMeta(`cmsFilters.${input.category}`, JSON.stringify(filters));
-  if (Math.random() < 0.05) await pruneCmsRangeCache();
+  // Closed days are kept (they are the stored daily data the dashboard and reports read); nothing is pruned.
   return {
     ok: true,
     category: input.category,

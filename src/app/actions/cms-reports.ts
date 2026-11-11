@@ -40,3 +40,6 @@ export async function cmsCapabilitiesAction() {
     return cmsCapabilities();
   }, { revalidate: false });
 }
+export async function cmsMetricsAction(from?: string, until?: string) {
+  return wrap(async () => (await import("@/server/cms-metrics")).cmsMetrics(await requireViewer(), from, until), { revalidate: false });
+}

@@ -238,3 +238,29 @@ export function NoorFilters({ filters, values, onChange }: { filters: { key: str
     </>
   );
 }
+
+// One tab per Noor table (instead of a dropdown): what is shown is always one click away.
+const TABLE_SHORT: Record<string, string> = { students: "Students", parents: "Parents", invoices: "Invoices", subscriptions: "Subscriptions", "subscription-histories": "Subscription history", "subscription-plans": "Plans", feedback: "Feedback" };
+const TABLE_ORDER = ["invoices", "students", "parents", "subscriptions", "subscription-histories", "feedback", "subscription-plans"];
+export function TableTabs<T extends string>({ categories, value, onChange }: { categories: T[]; value: T; onChange: (c: T) => void }) {
+  const list = [...categories].sort((a, b) => TABLE_ORDER.indexOf(a) - TABLE_ORDER.indexOf(b));
+  return (
+    <div role="tablist" aria-label="Noor tables" className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-0.5 [scrollbar-width:none]">
+      {list.map((c) => {
+        const on = c === value;
+        return (
+          <button
+            key={c}
+            type="button"
+            role="tab"
+            aria-selected={on}
+            onClick={() => onChange(c)}
+            className={cn("shrink-0 rounded-full border px-3 py-1 text-xs font-medium whitespace-nowrap transition-colors", on ? "border-primary bg-primary text-primary-foreground" : "bg-card text-muted-foreground hover:text-foreground")}
+          >
+            {TABLE_SHORT[c] ?? c}
+          </button>
+        );
+      })}
+    </div>
+  );
+}

@@ -43,7 +43,9 @@ export async function GET(request: NextRequest) {
     if (!response?.ok) return new NextResponse(`Noor could not provide this receipt (HTTP ${response?.status ?? "unavailable"}). Open the invoice in Noor or ask its administrator to check receipt access.`, { status: 502 });
     const contentType = response.headers.get("content-type")?.split(";")[0] || "";
     if (!/^image\/(jpeg|png|webp|gif|avif)$/.test(contentType) && contentType !== "application/pdf") return new NextResponse("The CMS returned a page instead of a receipt", { status: 502 });
-    return new NextResponse(response.body, { headers: { "Content-Type": contentType, "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "sandbox" } });
+    // Images stay sandboxed; a sandboxed PDF cannot open in the browser's viewer, so PDFs get no sandbox
+    // (they come only from the configured CMS and are served with nosniff).
+    return new NextResponse(response.body, { headers: { "Content-Type": contentType, "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff", ...(contentType === "application/pdf" ? { "Content-Disposition": "inline" } : { "Content-Security-Policy": "sandbox" }) } });
   } catch {
     return new NextResponse("Unable to load receipt from CMS", { status: 502 });
   }

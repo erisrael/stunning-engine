@@ -3217,6 +3217,13 @@ CREATE TABLE IF NOT EXISTS cms_report_runs (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_cms_report_runs ON cms_report_runs(schedule_id, created_at);
+-- One row per Addis day: the day's Noor figures (invoices, revenue, new students and parents, subscriptions,
+-- feedback), made every night and kept, for the trend dashboard.
+CREATE TABLE IF NOT EXISTS cms_daily_metrics (
+  day TEXT PRIMARY KEY,
+  metrics_json TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS legacy_cms_snapshots (
   id TEXT PRIMARY KEY,
@@ -3557,6 +3564,7 @@ export const TABLES = [
   "cms_invoice_reviews",
   "cms_invoice_review_log",
   "cms_report_runs",
+  "cms_daily_metrics",
   "legacy_cms_snapshots",
   "chapa_accounts",
   "chapa_transactions",

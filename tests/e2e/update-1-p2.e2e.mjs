@@ -148,12 +148,26 @@ try {
   await admin.getByText("Marked by").first().waitFor();
   check("the verification log can be filtered by verifier", (await admin.getByRole("combobox", { name: "Verifier" }).locator("option").allInnerTexts()).some((t) => /Admin/i.test(t)));
 
-  // The older views still open as tabs.
+  // Tables & sync now lives in Live: tabs per table, and the saved copy.
   await admin.goto(`${base}/legacy-cms?view=tables`);
-  await admin.getByText("Noor Ethiopia CMS Integration Hub").waitFor();
-  check("Tables & sync keeps the connection header", true);
+  await admin.getByRole("tablist", { name: "Noor tables" }).waitFor();
+  check("old Tables & sync links open Live, with a tab per table", (await admin.getByRole("tablist", { name: "Noor tables" }).getByRole("tab").count()) >= 5);
+  await admin.getByRole("radiogroup", { name: "Source" }).getByRole("radio", { name: "Saved copy" }).click();
+  await admin.getByRole("button", { name: "Sync this table from Noor" }).waitFor();
+  check("the saved copy can be synced from Live", true);
+
+  // Revenue: live from Noor with its own pending approvals tab and slips.
   await admin.goto(`${base}/legacy-cms?view=revenue`);
-  check("Revenue opens without the old inner tab list", (await admin.getByRole("tab", { name: /Growth/ }).isVisible().catch(() => false)) === false);
+  await admin.getByText("Paid revenue").waitFor({ timeout: 30000 });
+  check("Revenue loads live with a Pending approvals tab", (await admin.getByRole("radiogroup", { name: "Revenue views" }).getByRole("radio", { name: /Pending approvals/ }).count()) === 1);
+  await admin.screenshot({ path: path.join(shots, "revenue.png"), fullPage: true });
+  await admin.getByRole("radiogroup", { name: "Revenue views" }).getByRole("radio", { name: /Pending approvals/ }).click();
+  check("pending invoices have a slip button", (await admin.getByRole("button", { name: /Payment slip of invoice/ }).count()) > 0);
+
+  // Reports open on the trend dashboard.
+  await admin.goto(`${base}/legacy-cms?view=reports`);
+  await admin.getByRole("radiogroup", { name: "Reports views" }).waitFor();
+  check("Reports open on the Dashboard", (await admin.getByRole("radiogroup", { name: "Reports views" }).getByRole("radio", { name: "Dashboard", checked: true }).count()) === 1);
 
   check("no browser errors", admin.errors.length === 0, admin.errors.slice(0, 5));
 } catch (e) {

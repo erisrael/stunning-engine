@@ -182,6 +182,15 @@ async function main() {
   const afterExpiry = await err(() => fetchCmsRange(admin, { category: "invoices", from: "2026-11-11", until: "2026-11-11", refresh: true }, undefined, NOW));
   check("an expired Noor session (HTTP 302) signs in again instead of failing", afterExpiry === null && !expireOnce, afterExpiry);
 
+  // Daily figures: counted per Addis day from the tables and stored for the dashboard.
+  const { buildCmsMetrics, cmsMetrics } = await import("../../src/server/cms-metrics");
+  check("only Admin (or allowed people) build the daily figures", !!(await err(() => buildCmsMetrics(dawit, "2026-10-20", "2026-10-21"))));
+  const built = await buildCmsMetrics(admin, "2026-10-20", "2026-10-21", undefined, NOW);
+  const storedDays = await cmsMetrics(admin, "2026-10-20", "2026-10-21");
+  const d9 = data.filter((r) => r.day === "2026-10-20");
+  const m9 = storedDays.find((r) => r.day === "2026-10-20");
+  check("the daily figures count invoices, paid revenue and pending per day", built.days === 2 && storedDays.length === 2 && m9?.invoices === d9.length && m9.paid === d9.filter((r) => r.status === "paid").length && m9.paidAmount === d9.filter((r) => r.status === "paid").reduce((a, r) => a + r.amount, 0) && m9.pending === d9.filter((r) => r.status === "pending").length, { built, m9 });
+
   // Cache: closed days are reused, today is fetched again.
   posts = 0;
   const again = await fetchCmsRange(admin, { category: "invoices", ...week }, undefined, NOW);

@@ -13,14 +13,22 @@ export type CmsTaskInput =
   | { kind: "range"; category: cms.LegacyCmsCategory; from: string; until: string; search?: string; filters?: Record<string,string>; refresh?: boolean; dateField?: string }
   | { kind: "probe" }
   // Every page of a table (search and Noor filters applied), fetched in parallel in one job.
-  | { kind: "all"; category: cms.LegacyCmsCategory; search?: string; filters?: Record<string,string> };
+  | { kind: "all"; category: cms.LegacyCmsCategory; search?: string; filters?: Record<string,string> }
+  // Daily figures for a range of days (Reports, Dashboard: Build earlier days).
+  | { kind: "metrics"; from: string; until: string };
 type Task = { id:string; actor_id:string; kind:string; options_json:string; status:string; progress:string; result_json:string|null; updated_at:string };
 
 async function authorize(user:AppUser, input:CmsTaskInput) {
-  if (!input || !["live","sync","contacts","auth","range","probe","all"].includes(input.kind)) throw new WorkflowError("VALIDATION","Choose a CMS operation.");
+  if (!input || !["live","sync","contacts","auth","range","probe","all","metrics"].includes(input.kind)) throw new WorkflowError("VALIDATION","Choose a CMS operation.");
   if (input.kind === "auth") {
     const allowed=(await Promise.all(user.roles.map(role=>cms.allowedCategoriesForUser(role,user.id)))).flat();
     if(!allowed.length) throw new WorkflowError("FORBIDDEN","No CMS tables are available to this account.");
+    return;
+  }
+  if (input.kind === "metrics") {
+    if(!(await cms.canManageCmsData(user))) throw new WorkflowError("FORBIDDEN","Building the daily figures is for Admin, or the people Admin allows.");
+    const DAY=/^\d{4}-\d{2}-\d{2}$/;
+    if(!DAY.test(input.from) || !DAY.test(input.until) || input.from>input.until) throw new WorkflowError("VALIDATION","Choose a valid date range.");
     return;
   }
   if (input.kind === "probe") {
@@ -114,6 +122,9 @@ export async function runCmsTask(id:string) {
     } else if(input.kind==="range") {
       const { fetchCmsRange } = await import("./cms-range");
       result=await fetchCmsRange(user,input,progress);
+    } else if(input.kind==="metrics") {
+      const { buildCmsMetrics } = await import("./cms-metrics");
+      result=await buildCmsMetrics(user,input.from,input.until,progress);
     } else if(input.kind==="all") {
       const { fetchCmsAll } = await import("./cms-range");
       const r=await fetchCmsAll(user,{category:input.category,search:input.search,filters:input.filters},progress);

@@ -17,6 +17,7 @@ import type { CmsSchedule } from "@/server/cms-reports";
 import type { CmsTableCapability } from "@/server/cms-range";
 import { ExportButtons, NoorFilters, RangePicker, useShowEc, type Period } from "./range-controls";
 import { exportHref, METHOD_LABEL, useCmsRange } from "./use-cms-range";
+import { CmsDashboardView } from "./dashboard-view";
 
 const tableName = (c: string) => LEGACY_CMS_CATEGORIES.find((x) => x.key === c)?.label ?? c;
 const fmt = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 2 });
@@ -500,5 +501,17 @@ function Capabilities() {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+// Reports: the trend dashboard (stored daily figures) and the report builder.
+export function CmsReportsHome(props: React.ComponentProps<typeof CmsReportsView> & { canBuild: boolean }) {
+  const params = useSearchParams();
+  const [sub, setSub] = React.useState<"dashboard" | "builder">(params.get("task") || params.get("expired") ? "builder" : "dashboard");
+  return (
+    <div className="space-y-3">
+      <ViewSwitcher label="Reports views" value={sub} onChange={setSub} options={[["dashboard", "Dashboard"], ["builder", "Build a report"]]} />
+      {sub === "dashboard" ? <CmsDashboardView canBuild={props.canBuild} /> : <CmsReportsView {...props} />}
+    </div>
   );
 }

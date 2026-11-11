@@ -1835,3 +1835,10 @@ export async function canManageCmsData(user: AppUser) {
   const stored = row?.value ? parseJson<StoredCmsConfig>(row.value, {}) : {};
   return stored.dataPolicy === "granted" && !!stored.userOverrides?.[user.id]?.canManageData;
 }
+
+// What this person may do with Noor data beyond viewing (for the pages).
+export async function cmsViewerFlags(user: AppUser) {
+  const row = await get<{ value: string }>("SELECT value FROM settings WHERE key = 'cfg.legacy_cms'");
+  const stored = row?.value ? parseJson<StoredCmsConfig>(row.value, {}) : {};
+  return { canManageData: await canManageCmsData(user), canResolveFeedback: can(user, "users.manage") || !!stored.userOverrides?.[user.id]?.canResolveFeedback };
+}

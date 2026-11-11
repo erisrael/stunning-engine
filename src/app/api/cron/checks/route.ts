@@ -10,6 +10,7 @@ async function _GET(request: Request) {
   await scheduledCmsSync(undefined, true);
   await (await import("@/server/cms-reports")).scheduledCmsReports();
   await (await import("@/server/chapa-hub")).scheduledChapa();
+  await (await import("@/server/cms-metrics")).scheduledCmsMetrics();
   return Response.json({ ok: true, at: new Date().toISOString(), counts });
 }
 
