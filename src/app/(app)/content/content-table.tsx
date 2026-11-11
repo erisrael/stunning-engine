@@ -82,6 +82,17 @@ export function ContentTable({
   const [columns, setColumns] = React.useState(initialColumns);
   const [density, setDensity] = React.useState(initialDensity);
   const [selected, setSelected] = React.useState<string[]>([]);
+  // Grade, subject and unit stay pinned under the header while their parts scroll past (merged cells hold a
+  // sticky label placed just below the measured header).
+  const headRef = React.useRef<HTMLTableSectionElement>(null);
+  const [headH, setHeadH] = React.useState(36);
+  React.useEffect(() => {
+    const el = headRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setHeadH(el.getBoundingClientRect().height));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   const [mode, setMode] = React.useState<"table" | "cards" | "tree">("table");
   React.useEffect(() => setSelected([]), [rows]);
   const cctx: CellContext = { ...ctx, now };
@@ -197,7 +208,7 @@ export function ContentTable({
           <div className="hidden overflow-hidden rounded-xl border bg-card md:block">
             <div className="max-h-[72vh] overflow-auto scrollbar-thin">
               <table className={cn("w-full border-separate border-spacing-0 text-left", density === "compact" ? "density-compact" : "density-comfortable")}>
-                <thead className="sticky top-0 z-10 bg-muted/95 backdrop-blur">
+                <thead ref={headRef} className="sticky top-0 z-10 bg-muted/95 backdrop-blur">
                   <tr className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
                     <th className="w-9 border-b px-2">
                       <Checkbox aria-label="Select page" checked={allOnPage} onCheckedChange={() => setSelected(allOnPage ? [] : rows.map((r) => r.id))} />
@@ -247,17 +258,17 @@ export function ContentTable({
                           </td>
                           {s1 > 0 && (
                             <td rowSpan={s1} className="border-r border-b bg-card px-3 py-2 align-top font-semibold">
-                              {name1(r)}
+                              <div className="sticky z-[5] bg-card py-0.5" style={{ top: headH + 6 }}>{name1(r)}</div>
                             </td>
                           )}
                           {s2 > 0 && (
                             <td rowSpan={s2} className="border-r border-b bg-card px-3 py-2 align-top font-medium">
-                              {name2(r)}
+                              <div className="sticky z-[5] bg-card py-0.5" style={{ top: headH + 6 }}>{name2(r)}</div>
                             </td>
                           )}
                           {s3 > 0 && (
                             <td rowSpan={s3} className="border-r border-b bg-card px-3 py-2 align-top text-sm">
-                              {unitLabel(r)}
+                              <div className="sticky z-[5] bg-card py-0.5" style={{ top: headH + 6 }}>{unitLabel(r)}</div>
                             </td>
                           )}
                           {grouped && (

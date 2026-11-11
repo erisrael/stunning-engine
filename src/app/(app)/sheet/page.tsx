@@ -26,7 +26,9 @@ export default async function SheetPage({ searchParams }: { searchParams: Promis
   const s = await getSettings();
   const presetParam = typeof sp.preset === "string" ? sp.preset : null;
   const preset = SHEET_PRESETS.find((p) => p.key === presetParam)?.key ?? (viewer.activeRole === "admin" || viewer.activeRole === "manager" ? "overview" : viewer.activeRole);
-  const { rows, total } = await listItems(viewer, { ...filters, size: 500, page: 1 }, nowIso(), { all: false });
+  // Every row (not the first 500): in curriculum order Grade 12 comes last and was cut off. The grid draws them
+  // progressively as it scrolls.
+  const { rows, total } = await listItems(viewer, { ...filters, size: 500, page: 1 }, nowIso(), { all: true });
   // Presets saved before the base columns became optional did not store them; they stay visible.
   const saved = Object.fromEntries(
     Object.entries(viewer.prefs.sheetPresets ?? {}).map(([k, v]) => [k, v.includesBase ? v.columns : [...SHEET_BASE_COLUMNS, ...v.columns]]),
@@ -38,7 +40,7 @@ export default async function SheetPage({ searchParams }: { searchParams: Promis
         description="The familiar handoff and upload table, editing the same live records. Colored cells are dropdowns; locked cells explain who is responsible."
         actions={<PageImport viewer={viewer} page="work" />}
       />
-      <FilterBar options={await filterOptions(viewer, "/sheet")} total={total} note={total > 500 ? "Showing the first 500 rows. Pick a grade below or narrow the filters to see the rest." : undefined} />
+      <FilterBar options={await filterOptions(viewer, "/sheet")} total={total} />
       <GradeJump grades={await countItemsByGrade(viewer, filters, nowIso())} />
       <SheetGrid
         rows={rows}

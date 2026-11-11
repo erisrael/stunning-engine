@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireViewer } from "@/server/auth";
 import { get } from "@/server/db";
 import { leadDesk, myWork } from "@/server/team-flow";
+import { takeLimit, myDeptTasks } from "@/server/my-work";
 import { userDirectory, can } from "@/server/users";
 import { appOrigin } from "@/server/password-reset";
 import * as sd from "@/server/support-desk";
@@ -14,6 +15,7 @@ import { AdminWorkDesk } from "@/components/app/admin-work-desk";
 import { STAGE_LABELS, STAGES } from "@/lib/domain";
 import { cn } from "@/lib/utils";
 import { TakeWork } from "./take-work";
+import { MyPartsTable, MyTasksTable } from "./my-tables";
 
 export const metadata = { title: "My work" };
 
@@ -27,12 +29,16 @@ export default async function MyWorkPage({ searchParams }: { searchParams: Promi
   const isAdmin = viewer.activeRole === "admin" || can(viewer, "users.manage");
   const [mine, desks] = await Promise.all([myWork(viewer), Promise.all(STAGES.filter((s) => viewer.leads.includes(s)).map((s) => leadDesk(viewer, s)))]);
   const unassigned = desks.flatMap((d) => d?.unassigned ?? []);
+  // Tasks assigned to this person in every department (Marketing, Finance, HR …), in one table.
+  const tasks = await myDeptTasks(viewer).catch(() => []);
   const tabs = [
     ...(isAdmin ? ["admin"] : []),
     ...(mine.stages.length || unassigned.length ? ["production"] : []),
+    ...(tasks.length ? ["tasks"] : []),
     ...(agent ? ["support"] : []),
   ];
-  const defaultTab = isAdmin ? "admin" : tabs.includes("production") ? "production" : (tabs[0] ?? "admin");
+  const board = sp.view !== "table";
+  const defaultTab = isAdmin ? "admin" : tabs.includes("production") ? "production" : tabs.includes("tasks") ? "tasks" : (tabs[0] ?? "admin");
   const tab = tabs.includes(sp.tab ?? "") ? sp.tab! : sp.ticket ? "support" : defaultTab;
 
   let support: React.ReactNode = null;
@@ -83,7 +89,7 @@ export default async function MyWorkPage({ searchParams }: { searchParams: Promi
         <nav className="flex gap-1 border-b" aria-label="My work">
           {tabs.map((t) => (
             <Link key={t} href={`/my-work?tab=${t}`} className={cn("-mb-px border-b-2 px-3 py-2 text-sm", tab === t ? "border-primary font-medium" : "border-transparent text-muted-foreground")}>
-              {t === "production" ? `Production (${mine.items.length})` : t === "admin" ? "Admin workspace" : "Customer support"}
+              {t === "production" ? `Production (${mine.items.length})` : t === "tasks" ? `Tasks (${tasks.length})` : t === "admin" ? "Admin workspace" : "Customer support"}
             </Link>
           ))}
         </nav>
@@ -94,10 +100,42 @@ export default async function MyWorkPage({ searchParams }: { searchParams: Promi
       )}
       {tab === "production" && tabs.includes("production") && (
         <div className="space-y-6" data-my-work>
-          <MyBoard items={mine.items} title="My work" />
-          {unassigned.length > 0 && <TakeWork items={unassigned.map((i) => ({ id: i.id, code: i.code, title: i.title, place: i.place, stage: i.stage, stageLabel: STAGE_LABELS[i.stage] }))} me={viewer.id} />}
+          <div className="flex items-center justify-end gap-1" role="radiogroup" aria-label="My parts as">
+            {(["board", "table"] as const).map((v) => (
+              <Link key={v} role="radio" aria-checked={(v === "board") === board} href={`/my-work?tab=production&view=${v}`} className={cn("rounded-md border px-2.5 py-1 text-xs capitalize", (v === "board") === board ? "border-primary bg-primary/10 font-medium" : "text-muted-foreground hover:bg-muted")}>
+                {v}
+              </Link>
+            ))}
+          </div>
+          {board ? (
+            <MyBoard items={mine.items} title="My work" />
+          ) : (
+            <MyPartsTable items={mine.items.map((i) => ({ id: i.id, code: i.code, title: i.title, grade: i.grade, subject: i.subject, unitNumber: i.unitNumber, partNumber: i.partNumber, stage: i.stage, status: i.status, priority: i.priority, dueAt: i.dueAt, draft: i.draft }))} />
+          )}
+          {unassigned.length > 0 && (
+            <TakeWork
+              items={unassigned.map((i) => ({
+                id: i.id,
+                code: i.code,
+                title: i.title,
+                place: i.place,
+                stage: i.stage,
+                stageLabel: STAGE_LABELS[i.stage],
+                grade: i.grade ?? null,
+                subject: i.subject ?? null,
+                unitNumber: i.unitNumber ?? null,
+                partNumber: i.partNumber ?? null,
+                priority: i.priority,
+                dueAt: i.dueAt ?? null,
+              }))}
+              me={viewer.id}
+              limit={await takeLimit()}
+              canSetLimit={can(viewer, "users.manage")}
+            />
+          )}
         </div>
       )}
+      {tab === "tasks" && tabs.includes("tasks") && <MyTasksTable tasks={tasks} />}
       {support}
     </div>
   );

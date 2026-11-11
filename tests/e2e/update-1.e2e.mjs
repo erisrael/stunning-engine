@@ -41,11 +41,13 @@ try {
   await admin.waitForTimeout(200);
   const pos = await admin.evaluate(() => {
     const head = document.querySelector("table thead").getBoundingClientRect();
-    const first = document.querySelector("tbody td[rowspan] > div.sticky").getBoundingClientRect();
     const wrap = document.querySelector("table").parentElement.getBoundingClientRect();
-    return { headBottom: head.bottom, labelTop: first.top, wrapBottom: wrap.bottom };
+    // The label of the grade at the bottom of the table (the last first-column label).
+    const labels = [...document.querySelectorAll("tbody td[rowspan] > div.sticky")].filter((d) => d.parentElement.cellIndex === 0 || d.parentElement.parentElement.firstElementChild === d.parentElement);
+    const last = labels[labels.length - 1].getBoundingClientRect();
+    return { headBottom: head.bottom, labelTop: last.top, wrapBottom: wrap.bottom };
   });
-  check(`"${label}" stays in view below the header after scrolling`, pos.labelTop >= pos.headBottom - 1 && pos.labelTop < pos.wrapBottom, pos);
+  check(`the last grade label stays in view below the header after scrolling (first was "${label}")`, pos.labelTop >= pos.headBottom - 1 && pos.labelTop < pos.wrapBottom, pos);
   await admin.screenshot({ path: path.join(shots, "overview-scrolled.png") });
 
   await admin.goto(`${base}/overview?view=tree`);
@@ -80,7 +82,38 @@ try {
   await dawit.reload();
   check("Settings brings the assistant back", (await dawit.locator("[data-assistant]").count()) > 0);
 
-  check("no browser errors", admin.errors.length === 0 && dawit.errors.length === 0, [...admin.errors, ...dawit.errors].slice(0, 5));
+  // Grade 12 shows in the Sheet with every grade, not only when filtered to it.
+  await admin.goto(`${base}/sheet`);
+  await admin.getByLabel("Current position in the sheet").waitFor({ timeout: 12000 });
+  check("the Sheet lists Grade 12 with the other grades", (await admin.locator("table tbody").getByText("G12", { exact: true }).count()) > 0);
+
+  // The List view keeps grade, subject and unit in view.
+  await admin.goto(`${base}/content`);
+  await admin.locator("table").first().waitFor();
+  check("List view labels sit in a sticky wrapper", (await admin.locator("tbody td[rowspan] > div.sticky").count()) > 0);
+
+  // A lead takes several waiting parts at once, then sees them as a table.
+  const hana = await login("hana@demo.local", { width: 1440, height: 900 });
+  await hana.goto(`${base}/my-work?tab=production`);
+  const take = hana.locator("[data-take-work]");
+  await take.waitFor({ timeout: 12000 });
+  await take.getByLabel("Grade").selectOption("Grade 12");
+  const shownRows = await take.locator("tbody tr").count();
+  check("the waiting parts filter by grade", shownRows === 6, shownRows);
+  await take.getByLabel(/^Select .*G12/).first().check();
+  await take.getByLabel(/^Select .*G12/).nth(1).check();
+  await take.getByRole("button", { name: /Take 2 selected/ }).click();
+  await hana.getByText("2 parts are on your work now").waitFor({ timeout: 12000 });
+  check("two parts are taken at once", true);
+  await hana.goto(`${base}/my-work?tab=production&view=table`);
+  const mine = hana.getByRole("toolbar", { name: "Filter my parts" });
+  await mine.waitFor();
+  await mine.getByLabel("Grade").selectOption("Grade 12");
+  const mineRows = await hana.locator("table").first().locator("tbody tr").count();
+  check("My work as a table shows the two taken parts", mineRows === 2, mineRows);
+  await hana.screenshot({ path: path.join(shots, "my-work-table.png") });
+
+  check("no browser errors", admin.errors.length === 0 && dawit.errors.length === 0 && hana.errors.length === 0, [...admin.errors, ...dawit.errors, ...hana.errors].slice(0, 5));
 } catch (e) {
   console.error(e);
   check("Update 1.0 Phase 1 flow completed", false);

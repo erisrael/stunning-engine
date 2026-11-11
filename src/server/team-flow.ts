@@ -17,6 +17,11 @@ export type FlowItem = {
   code: string;
   title: string;
   place: string;
+  // The parts of place, for filtering and the table view (My work).
+  grade: string | null;
+  subject: string | null;
+  unitNumber: number | null;
+  partNumber: number | null;
   stage: Stage;
   status: AttemptStatus;
   priority: string;
@@ -129,6 +134,10 @@ async function hydrate(rows: Row[], user: AppUser): Promise<FlowItem[]> {
       code: r.code,
       title: r.title,
       place,
+      grade: r.grade ?? null,
+      subject: r.subject ?? null,
+      unitNumber: r.unit_number ?? null,
+      partNumber: r.part_number ?? null,
       stage: r.stage,
       status: r.status,
       priority: r.priority ?? "normal",

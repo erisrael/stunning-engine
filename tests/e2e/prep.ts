@@ -1,7 +1,7 @@
 // Prepares a fresh copy of the demo database for one browser test: `tsx tests/e2e/prep.ts <name>`, with
 // PGLITE_DIR set to the copy and PREP_FILE where the test reads what it needs (codes, ids).
 import fs from "node:fs";
-import { closeDb, get, nowIso, run, uid } from "../../src/server/db";
+import { all, closeDb, get, nowIso, run, uid } from "../../src/server/db";
 import { loadUser } from "../../src/server/users";
 import { syncFromUsers } from "../../src/server/hr";
 import { upsertAccount } from "../../src/server/workspace-data";
@@ -391,6 +391,15 @@ PREPS["cms-background"] = PREPS["repair-ui"];
 // Update 1.0 Phase 1: sticky context, Kiosk visibility, assistant show and hide. Password sign-in only.
 PREPS["update-1"] = async () => {
   await passwordOnly();
+  // Grade 12 next to Grade 9, for the Sheet with every grade and for taking several parts at once in My work.
+  const { importCurriculumBackup } = await import("../../src/server/workspace-data");
+  const hana = await get<{ id: string }>("SELECT id FROM users WHERE email = 'hana@demo.local'");
+  const parts = Array.from({ length: 6 }, (_, i) => ({ id: `p-chem-${i + 1}`, title: `Part ${i + 1}: Chemistry topic ${i + 1}`, videos: [] }));
+  await importCurriculumBackup({ "grade-12": { name: "Grade 12", type: "Secondary School", subjects: [{ id: "g12-chem", name: "Chemistry", units: [{ id: "u-chem-1", title: "Unit 1: Reactions", parts }] }] } } as never, { createItems: true, actorId: hana!.id, fileName: "grade-12.json" });
+  // In production, waiting in Recording with nobody on them.
+  const { releaseToProduction } = await import("../../src/server/workflow");
+  const a = await admin();
+  for (const it of await all<{ id: string }>("SELECT id FROM items WHERE code LIKE '%G12-CHEM%'")) await releaseToProduction({ actor: a, now: nowIso() } as never, it.id, "recording");
   return {};
 };
 

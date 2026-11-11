@@ -452,6 +452,18 @@ export function SheetGrid({
     await savePrefsAction({ sheetPresets: { [preset.key]: { columns: cols, includesBase: true } } } as never);
   };
   let rowIndex = 0;
+  // Every row is loaded (Grade 12 included); they are drawn 300 at a time as the grid scrolls, so a long sheet
+  // stays quick to open.
+  const [limit, setLimit] = React.useState(300);
+  const moreRef = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => setLimit(300), [rows]);
+  React.useEffect(() => {
+    const el = moreRef.current;
+    if (!el || limit >= rows.length) return;
+    const io = new IntersectionObserver((e) => e.some((x) => x.isIntersecting) && setLimit((n) => n + 300), { root: gridRef.current, rootMargin: "600px" });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [limit, rows.length]);
 
   return (
     <div className="space-y-3">
@@ -603,6 +615,7 @@ export function SheetGrid({
                     )}
                     {!isCollapsed &&
                       g.rows.map((r, idx) => {
+                        if (rowIndex >= limit) return null;
                         const ri = rowIndex++;
                         // Grade, subject and unit read as merged cells: repeated values are shown faded, not blank.
                         const prev = g.rows[idx - 1];
@@ -664,6 +677,14 @@ export function SheetGrid({
               })}
             </tbody>
           </table>
+          {limit < rows.length && (
+            <div ref={moreRef} className="flex items-center justify-center gap-2 p-3 text-xs text-muted-foreground">
+              Showing {limit.toLocaleString()} of {rows.length.toLocaleString()} rows ·{" "}
+              <button type="button" className="text-primary hover:underline" onClick={() => setLimit(rows.length)}>
+                show all
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
