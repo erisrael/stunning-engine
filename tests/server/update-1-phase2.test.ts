@@ -62,6 +62,8 @@ function seed(mode: Mode) {
 }
 let posts = 0;
 let capNext = false;
+// The next table page answers 302 (Noor sent an expired session to its login page).
+let expireOnce = false;
 let fail429 = 0;
 const original = globalThis.fetch;
 globalThis.fetch = (async (url: string | URL, init?: RequestInit) => {
@@ -69,6 +71,10 @@ globalThis.fetch = (async (url: string | URL, init?: RequestInit) => {
   if (!init?.method) {
     const cat = u.pathname.split("/").pop()!;
     if (cat === "login") return new Response("<html>signed in</html>", { headers: { "Set-Cookie": "session=fixture" } });
+    if (expireOnce) {
+      expireOnce = false;
+      return new Response(null, { status: 302, headers: { Location: "/admin/login" } });
+    }
     return new Response(seed(MODES[cat] ?? "none"));
   }
   posts++;
@@ -168,6 +174,13 @@ async function main() {
   // Filament 4: a hidden created date is switched on and the table is walked newest first by id.
   const v4 = await fetchCmsRange(admin, { category: "subscription-plans", from: "2026-11-09", until: "2026-11-11" }, undefined, NOW);
   check("a hidden Created at column is switched on and sorted newest first by id", v4.method === "sorted-search" && v4.dateField === "created_at" && v4.total === data.filter((r) => r.day >= "2026-11-09").length && v4.records.every((r) => r["Created at"]), { method: v4.method, field: v4.dateField, total: v4.total });
+
+  // An expired Noor session: the table answers 302 once, the loader signs in again and carries on.
+  const { forgetCmsSessions } = await import("../../src/server/cms-session");
+  forgetCmsSessions();
+  expireOnce = true;
+  const afterExpiry = await err(() => fetchCmsRange(admin, { category: "invoices", from: "2026-11-11", until: "2026-11-11", refresh: true }, undefined, NOW));
+  check("an expired Noor session (HTTP 302) signs in again instead of failing", afterExpiry === null && !expireOnce, afterExpiry);
 
   // Cache: closed days are reused, today is fetched again.
   posts = 0;

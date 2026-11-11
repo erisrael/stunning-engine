@@ -117,18 +117,29 @@ export class CmsTable {
     private check: () => Promise<void>,
     private conn?: CmsConnection,
   ) {}
-  async open(fresh = false) {
+  async open(fresh = false): Promise<this> {
+    let username = "";
     if (this.conn && !fresh) {
       this.base = this.conn.base;
       this.cookie = this.conn.cookie;
     } else {
       const config = await getLegacyCmsConfigForUser(this.user);
-      if (!config.username && !config.sessionCookie) throw new WorkflowError("VALIDATION", "Connect Noor CMS first (Legacy CMS, Tables & sync, Settings).");
+      if (!config.username && !config.sessionCookie) throw new WorkflowError("VALIDATION", "Connect Noor CMS first (Admin, Noor access).");
+      username = config.username;
       this.base = config.baseUrl.replace(/\/+$/, "");
       this.cookie = await cmsSession(config, authenticateFilament, fresh);
     }
     this.url = `${this.base}${LEGACY_CMS_CATEGORIES.find((c) => c.key === this.category)!.path}`;
-    this.seed = await cmsTableSeed(this.url, this.cookie, fresh);
+    try {
+      this.seed = await cmsTableSeed(this.url, this.cookie, fresh);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!/HTTP (302|401|403|419)/.test(msg)) throw e;
+      // An expired or replaced Noor session (Noor ends older sessions when the same login signs in again):
+      // sign in once more. If Noor still sends us to its login page, the saved email or password is wrong.
+      if (!fresh) return this.open(true);
+      throw new WorkflowError("INVALID_STATE", `Noor did not accept the sign-in${username ? ` for ${username}` : ""}. Check the Noor email and password in Admin, Noor access, then press Check.`);
+    }
     return this;
   }
   get html() {
