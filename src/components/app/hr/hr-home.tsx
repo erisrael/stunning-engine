@@ -4,17 +4,19 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { ChevronDownIcon, ChevronRightIcon, HistoryIcon, PencilIcon, PlusIcon, SearchIcon, UndoIcon, UserPlusIcon, UsersIcon } from "lucide-react";
+import { CheckIcon, ChevronDownIcon, ChevronRightIcon, CopyIcon, HistoryIcon, KeyRoundIcon, PencilIcon, PlusIcon, SearchIcon, Trash2Icon, UndoIcon, UserPlusIcon, UsersIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { EmptyState } from "@/components/app/primitives";
-import { equipmentHistoryAction, issueEquipmentAction, returnEquipmentAction, saveEmployeeAction, saveEquipmentAction, syncEmployeesAction } from "@/app/actions/hr";
+import { createAppAccountAction, deleteEmployeeAction, equipmentHistoryAction, issueEquipmentAction, returnEquipmentAction, saveEmployeeAction, saveEquipmentAction, syncEmployeesAction } from "@/app/actions/hr";
+import { ROLE_LABELS, type Role } from "@/lib/domain";
 import type { EmployeeListRow, EquipmentRow, HrDue, OrgNode } from "@/server/hr";
 import {
   CONDITIONS,
@@ -62,6 +64,7 @@ export function HrHome(props: {
   panel?: React.ReactNode;
   badges: Partial<Record<HrTab, number>>;
   showCases: boolean;
+  canManage?: boolean;
 }) {
   const go = useTab();
   const deptLabel = (k: string | null) => (k ? (props.departments.find((d) => d.key === k)?.label ?? k) : "-");
@@ -91,7 +94,7 @@ export function HrHome(props: {
           <TabsTrigger value="equipment">Equipment</TabsTrigger>
         </TabsList>
       </Tabs>
-      {props.tab === "people" && <People people={props.people} departments={props.departments} deptLabel={deptLabel} includeLeft={props.includeLeft} />}
+      {props.tab === "people" && <People people={props.people} departments={props.departments} deptLabel={deptLabel} includeLeft={props.includeLeft} canManage={props.canManage} />}
       {props.panel}
       {props.tab === "due" && <DueList due={props.due ?? []} />}
       {props.tab === "org" && <OrgChart nodes={props.org ?? []} deptLabel={deptLabel} />}
@@ -104,7 +107,19 @@ export function HrHome(props: {
 // People
 // ---------------------------------------------------------------------------
 
-function People({ people, departments, deptLabel, includeLeft }: { people: EmployeeListRow[]; departments: Dept[]; deptLabel: (k: string | null) => string; includeLeft: boolean }) {
+function People({
+  people,
+  departments,
+  deptLabel,
+  includeLeft,
+  canManage,
+}: {
+  people: EmployeeListRow[];
+  departments: Dept[];
+  deptLabel: (k: string | null) => string;
+  includeLeft: boolean;
+  canManage?: boolean;
+}) {
   const router = useRouter();
   const go = useTab();
   const [q, setQ] = React.useState("");
@@ -112,6 +127,9 @@ function People({ people, departments, deptLabel, includeLeft }: { people: Emplo
   const [status, setStatus] = React.useState(ALL);
   const [adding, setAdding] = React.useState(false);
   const [syncing, setSyncing] = React.useState(false);
+  const [toDelete, setToDelete] = React.useState<EmployeeListRow | null>(null);
+  const [deleteBusy, setDeleteBusy] = React.useState(false);
+  const [deleteUserAcc, setDeleteUserAcc] = React.useState(false);
   const needle = q.trim().toLowerCase();
   const rows = people.filter(
     (p) =>
@@ -188,6 +206,7 @@ function People({ people, departments, deptLabel, includeLeft }: { people: Emplo
                 <TableHead>Started</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Needs attention</TableHead>
+                {canManage && <TableHead className="w-12 text-right">Actions</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -215,12 +234,28 @@ function People({ people, departments, deptLabel, includeLeft }: { people: Emplo
                       <EmployeeStatusPill status={p.status} />
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">{flags.join(" · ") || "-"}</TableCell>
+                    {canManage && (
+                      <TableCell className="text-right">
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          className="text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                          title="Delete employee record"
+                          onClick={() => {
+                            setDeleteUserAcc(false);
+                            setToDelete(p);
+                          }}
+                        >
+                          <Trash2Icon className="size-3.5" />
+                        </Button>
+                      </TableCell>
+                    )}
                   </TableRow>
                 );
               })}
               {!rows.length && (
                 <TableRow>
-                  <TableCell colSpan={8} className="py-6 text-center text-sm text-muted-foreground">
+                  <TableCell colSpan={canManage ? 9 : 8} className="py-6 text-center text-sm text-muted-foreground">
                     Nobody matches these filters.
                   </TableCell>
                 </TableRow>
@@ -230,24 +265,205 @@ function People({ people, departments, deptLabel, includeLeft }: { people: Emplo
         </div>
       )}
       <AddEmployee open={adding} onOpenChange={setAdding} departments={departments} people={people.filter((p) => p.status !== "left")} />
+
+      <Dialog open={!!toDelete} onOpenChange={(open) => !open && setToDelete(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <Trash2Icon className="size-5" /> Delete Employee Record
+            </DialogTitle>
+            <DialogDescription>
+              Are you sure you want to permanently delete <strong>{toDelete?.name}</strong> ({toDelete?.code})?
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2 text-sm text-muted-foreground">
+            <p>
+              This permanently removes this employee&apos;s HR record, documents, leave records, and attendance data.
+            </p>
+            {toDelete?.userId && (
+              <label className="flex items-center gap-2 rounded-lg border p-3 text-xs text-foreground cursor-pointer hover:bg-muted/50">
+                <Checkbox checked={deleteUserAcc} onCheckedChange={(v) => setDeleteUserAcc(!!v)} />
+                <span>Also delete or anonymize their linked app user account</span>
+              </label>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setToDelete(null)} disabled={deleteBusy}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={deleteBusy}
+              onClick={async () => {
+                if (!toDelete) return;
+                setDeleteBusy(true);
+                const r = await deleteEmployeeAction(toDelete.id, { deleteUserAccount: deleteUserAcc });
+                setDeleteBusy(false);
+                if (!r.ok) return toast.error(r.error);
+                toast.success(`Employee ${toDelete.name} deleted`);
+                setToDelete(null);
+                router.refresh();
+              }}
+            >
+              {deleteBusy ? "Deleting..." : "Delete Employee"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
+const AVAILABLE_ROLES: Role[] = [
+  "content",
+  "recording",
+  "editing",
+  "uploading",
+  "publication",
+  "operations",
+  "support",
+  "marketing",
+  "sales",
+  "accountant",
+  "developer",
+  "hr_officer",
+];
+
 function AddEmployee({ open, onOpenChange, departments, people }: { open: boolean; onOpenChange: (o: boolean) => void; departments: Dept[]; people: EmployeeListRow[] }) {
   const router = useRouter();
   const [f, setF] = React.useState({ fullName: "", email: "", jobTitle: "", department: "", managerId: "", employmentType: "full_time", status: "probation", startDate: "", probationEnd: "" });
+  const [createAccount, setCreateAccount] = React.useState(false);
+  const [roles, setRoles] = React.useState<Role[]>(["content"]);
+  const [password, setPassword] = React.useState(() => `Myseed-${Math.random().toString(36).slice(2, 8)}`);
+  const [createdAccount, setCreatedAccount] = React.useState<{ email: string; tempPassword: string; roles: Role[]; name: string; empId: string } | null>(null);
   const [busy, setBusy] = React.useState(false);
+  const [copied, setCopied] = React.useState(false);
+
+  React.useEffect(() => {
+    if (f.department) {
+      if (f.department === "recording") setRoles(["recording"]);
+      else if (f.department === "editing") setRoles(["editing"]);
+      else if (f.department === "uploading") setRoles(["uploading"]);
+      else if (f.department === "publication") setRoles(["publication"]);
+      else if (f.department === "marketing") setRoles(["marketing"]);
+      else if (f.department === "dev") setRoles(["developer"]);
+      else if (f.department === "studio") setRoles(["content"]);
+      else if (f.department === "hr") setRoles(["hr_officer"]);
+      else if (f.department === "finance") setRoles(["accountant"]);
+      else if (f.department === "support") setRoles(["support"]);
+      else if (f.department === "sales") setRoles(["sales"]);
+      else if (f.department === "operations") setRoles(["operations"]);
+    }
+  }, [f.department]);
+
   const set = (k: keyof typeof f) => (v: string) => setF((x) => ({ ...x, [k]: v }));
+
   const save = async () => {
+    if (createAccount && !f.email.trim()) {
+      return toast.error("An email address is required to create a login account.");
+    }
     setBusy(true);
     const r = await saveEmployeeAction({ ...f, department: f.department || null, managerId: f.managerId || null });
+    if (!r.ok) {
+      setBusy(false);
+      return toast.error(r.error);
+    }
+    const empId = r.data;
+    if (!empId) {
+      setBusy(false);
+      return toast.error("Failed to add employee");
+    }
+    if (createAccount) {
+      const accRes = await createAppAccountAction({
+        employeeId: empId,
+        email: f.email.trim(),
+        name: f.fullName.trim(),
+        roles,
+        password: password.trim() || undefined,
+      });
+      setBusy(false);
+      if (!accRes.ok) {
+        toast.warning(`Employee added, but account creation failed: ${accRes.error}`);
+        onOpenChange(false);
+        router.push(`/hr/people/${empId}`);
+        return;
+      }
+      if (!accRes.data) {
+        toast.warning("Employee added, but account creation returned no data");
+        onOpenChange(false);
+        router.push(`/hr/people/${empId}`);
+        return;
+      }
+      setCreatedAccount({ ...accRes.data, empId });
+      return;
+    }
     setBusy(false);
-    if (!r.ok) return toast.error(r.error);
     onOpenChange(false);
     toast.success(`${f.fullName} added`);
-    router.push(`/hr/people/${r.data}`);
+    router.push(`/hr/people/${empId}`);
   };
+
+  const copyCreds = () => {
+    if (!createdAccount) return;
+    const txt = `Sign in credentials for Myseed:\nEmail: ${createdAccount.email}\nTemporary password: ${createdAccount.tempPassword}\nRoles: ${createdAccount.roles.map((r) => ROLE_LABELS[r] ?? r).join(", ")}`;
+    navigator.clipboard.writeText(txt).then(() => {
+      setCopied(true);
+      toast.success("Credentials copied");
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  if (createdAccount) {
+    return (
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
+              <KeyRoundIcon className="size-5" /> Account Ready
+            </DialogTitle>
+            <DialogDescription>
+              Account for <strong>{createdAccount.name}</strong> was created. Share these credentials with the employee:
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2 rounded-lg border bg-muted/40 p-4 font-mono text-xs">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Email:</span>
+              <span className="font-semibold text-foreground select-all">{createdAccount.email}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Password:</span>
+              <span className="font-semibold text-foreground select-all">{createdAccount.tempPassword}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Roles:</span>
+              <span className="text-foreground">{createdAccount.roles.map((r) => ROLE_LABELS[r] ?? r).join(", ")}</span>
+            </div>
+          </div>
+
+          <DialogFooter className="flex gap-2 sm:justify-between">
+            <Button variant="outline" className="gap-1.5" onClick={copyCreds}>
+              {copied ? <CheckIcon className="size-4 text-emerald-600" /> : <CopyIcon className="size-4" />}
+              {copied ? "Copied" : "Copy Credentials"}
+            </Button>
+            <Button
+              onClick={() => {
+                const id = createdAccount.empId;
+                setCreatedAccount(null);
+                onOpenChange(false);
+                router.push(`/hr/people/${id}`);
+              }}
+            >
+              Done &amp; Open Record
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
@@ -283,6 +499,48 @@ function AddEmployee({ open, onOpenChange, departments, people }: { open: boolea
           <Field label="Probation ends">
             <Input type="date" value={f.probationEnd} onChange={(e) => set("probationEnd")(e.target.value)} />
           </Field>
+          <div className="sm:col-span-2 pt-2 border-t space-y-2">
+            <label className="flex items-center gap-2 text-sm font-medium cursor-pointer">
+              <Checkbox checked={createAccount} onCheckedChange={(v) => setCreateAccount(!!v)} />
+              <span>Create an app login account for this employee</span>
+            </label>
+            {createAccount && (
+              <div className="space-y-3 rounded-md bg-muted/40 p-3">
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs">Temporary initial password</Label>
+                    <button
+                      type="button"
+                      className="text-[11px] text-primary hover:underline cursor-pointer"
+                      onClick={() => setPassword(`Myseed-${Math.random().toString(36).slice(2, 8)}`)}
+                    >
+                      Regenerate
+                    </button>
+                  </div>
+                  <Input value={password} onChange={(e) => setPassword(e.target.value)} className="h-8 text-xs font-mono" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Assigned role(s)</Label>
+                  <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 max-h-36 overflow-y-auto rounded border bg-background p-1.5">
+                    {AVAILABLE_ROLES.map((r) => {
+                      const checked = roles.includes(r);
+                      return (
+                        <label key={r} className="flex items-center gap-1.5 text-[11px] cursor-pointer hover:bg-muted p-1 rounded">
+                          <Checkbox
+                            checked={checked}
+                            onCheckedChange={() =>
+                              setRoles((curr) => (curr.includes(r) ? (curr.length > 1 ? curr.filter((x) => x !== r) : curr) : [...curr, r]))
+                            }
+                          />
+                          <span className="truncate">{ROLE_LABELS[r]}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>

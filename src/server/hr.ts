@@ -2,13 +2,16 @@
 // HR (hr.access) sees and edits everyone; salary, ID, tax and bank details need hr.sensitive. Each person sees their
 // own record and can update their contact details; line managers see their team's job and contact details only.
 
+import crypto from "node:crypto";
 import { logRecordAccess } from "./privacy";
-import { all, get, nowIso, parseJson, run, uid } from "./db";
+import { all, get, nowIso, parseJson, run, tx, uid } from "./db";
 import { audit, WorkflowError } from "./workflow";
 import { notify } from "./notifications";
 import { customDepartments } from "./departments";
 import { can, listUsers, type AppUser } from "./users";
-import { DEPARTMENT_LABELS, DEPARTMENT_ROLES, ROLE_LABELS, type Department } from "@/lib/domain";
+import { DEPARTMENT_LABELS, DEPARTMENT_ROLES, ROLE_LABELS, ROLES, type Department, type Role } from "@/lib/domain";
+import { hashPassword } from "./passwords";
+import { uniqueHandle } from "./importer";
 import {
   CONDITIONS,
   DOC_KINDS,
@@ -424,6 +427,172 @@ export async function saveEmployee(user: AppUser, input: EmployeeInput): Promise
     },
   );
   return id!;
+}
+
+export async function createAppAccountForEmployee(
+  user: AppUser,
+  input: {
+    employeeId: string;
+    email?: string | null;
+    name?: string | null;
+    roles?: Role[];
+    password?: string | null;
+  },
+): Promise<{ userId: string; email: string; tempPassword: string; roles: Role[]; name: string }> {
+  needHr(user);
+  const emp = await get<EmployeeRow>("SELECT * FROM employees WHERE id = ?", input.employeeId);
+  if (!emp) throw new WorkflowError("NOT_FOUND", "Employee not found.");
+
+  if (emp.user_id) {
+    const existingUser = await get<{ id: string; active: number }>("SELECT id, active FROM users WHERE id = ?", emp.user_id);
+    if (existingUser) {
+      throw new WorkflowError("VALIDATION", "This employee is already linked to an active app account.");
+    }
+  }
+
+  const email = (input.email ?? emp.email ?? "").trim().toLowerCase();
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new WorkflowError("VALIDATION", "A valid email address is required to create a login account.");
+  }
+
+  const existingByEmail = await get<{ id: string; name: string }>("SELECT id, name FROM users WHERE lower(email) = ?", email);
+  if (existingByEmail) {
+    throw new WorkflowError("VALIDATION", `An account with ${email} already exists for ${existingByEmail.name}. Link it via the App account selector.`);
+  }
+
+  const name = clean(input.name, 160) ?? emp.preferred_name ?? emp.full_name;
+
+  let roles: Role[] = input.roles && input.roles.length > 0 ? input.roles : [];
+  if (!roles.length) {
+    const d = emp.department as Department;
+    if (d && DEPARTMENT_ROLES[d]?.length) {
+      roles = [DEPARTMENT_ROLES[d][0]];
+    } else if (emp.department === "hr") {
+      roles = ["hr_officer"];
+    } else if (emp.department === "management") {
+      roles = ["manager"];
+    } else {
+      roles = ["content"];
+    }
+  }
+
+  const PRIVILEGED: Role[] = ["admin", "manager", "owner", "hr_manager"];
+  if (roles.some((r) => PRIVILEGED.includes(r)) && !can(user, "users.manage")) {
+    throw new WorkflowError("FORBIDDEN", "Admin, Manager, Owner and HR Manager accounts can only be assigned by an Administrator.");
+  }
+
+  const tempPassword = input.password?.trim() || `Myseed-${crypto.randomBytes(4).toString("hex")}`;
+  const userId = uid("usr_");
+  const handle = await uniqueHandle(email.split("@")[0]);
+  const now = nowIso();
+
+  await tx(async () => {
+    await run(
+      "INSERT INTO users (id, name, email, handle, title, phone, password_hash, must_change_password, active, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1, ?)",
+      userId,
+      name,
+      email,
+      handle,
+      emp.job_title ?? null,
+      emp.phone ?? null,
+      hashPassword(tempPassword),
+      now,
+    );
+
+    for (const r of roles) {
+      await run("INSERT INTO role_assignments (user_id, role) VALUES (?, ?)", userId, r);
+    }
+
+    await run(
+      "UPDATE employees SET user_id = ?, email = COALESCE(email, ?), updated_at = ?, updated_by = ? WHERE id = ?",
+      userId,
+      email,
+      now,
+      user.id,
+      emp.id,
+    );
+  });
+
+  await audit(
+    { actor: user },
+    {
+      itemId: emp.id,
+      action: "hr.account_created",
+      summary: `${user.name} created an app account (${email}) for ${emp.full_name} with role(s): ${roles.join(", ")}`,
+    },
+  );
+
+  return { userId, email, tempPassword, roles, name };
+}
+
+export async function deleteEmployee(
+  user: AppUser,
+  id: string,
+  options?: { deleteUserAccount?: boolean },
+): Promise<{ id: string; name: string }> {
+  needHr(user);
+  if (!can(user, "hr.manage") && !can(user, "users.manage")) {
+    throw new WorkflowError("FORBIDDEN", "Only the HR Manager or Admin can delete employee records.");
+  }
+  const existing = await get<EmployeeRow>("SELECT * FROM employees WHERE id = ?", id);
+  if (!existing) throw new WorkflowError("NOT_FOUND", "Employee not found.");
+
+  await tx(async () => {
+    // 1. Relieve line managers who report to this employee
+    await run("UPDATE employees SET manager_id = NULL WHERE manager_id = ?", id);
+
+    // 2. Clear hiring manager in job openings
+    await run("UPDATE job_openings SET hiring_manager_id = NULL WHERE hiring_manager_id = ?", id);
+
+    // 3. Clear applicant links
+    await run("UPDATE applicants SET employee_id = NULL WHERE employee_id = ?", id);
+
+    // 4. Return equipment to inventory
+    await run("UPDATE equipment SET holder_id = NULL, status = 'available', issued_at = NULL, due_back = NULL WHERE holder_id = ?", id);
+
+    // 5. Equipment events unbind
+    await run("UPDATE equipment_events SET employee_id = NULL WHERE employee_id = ?", id).catch(() => null);
+
+    // 6. Delete cascading HR relations explicitly
+    await run("DELETE FROM employee_private WHERE employee_id = ?", id).catch(() => null);
+    await run("DELETE FROM employee_documents WHERE employee_id = ?", id).catch(() => null);
+    await run("DELETE FROM employee_checklists WHERE employee_id = ?", id).catch(() => null);
+    await run("DELETE FROM leave_requests WHERE employee_id = ?", id).catch(() => null);
+    await run("DELETE FROM leave_adjustments WHERE employee_id = ?", id).catch(() => null);
+    await run("DELETE FROM hr_goals WHERE employee_id = ?", id).catch(() => null);
+    await run("DELETE FROM hr_reviews WHERE employee_id = ?", id).catch(() => null);
+    await run("DELETE FROM one_on_ones WHERE employee_id = ?", id).catch(() => null);
+    await run("DELETE FROM trainings WHERE employee_id = ?", id).catch(() => null);
+    await run("DELETE FROM hr_cases WHERE employee_id = ?", id).catch(() => null);
+    await run("DELETE FROM att_marks WHERE employee_id = ?", id).catch(() => null);
+    await run("DELETE FROM att_shift_assign WHERE employee_id = ?", id).catch(() => null);
+    await run("DELETE FROM att_corrections WHERE employee_id = ?", id).catch(() => null);
+    await run("DELETE FROM att_badges WHERE employee_id = ?", id).catch(() => null);
+    await run("DELETE FROM record_access_log WHERE employee_id = ?", id).catch(() => null);
+
+    // 7. Delete employee record
+    await run("DELETE FROM employees WHERE id = ?", id);
+
+    // 8. If requested and has linked user, handle user account deletion
+    if (options?.deleteUserAccount && existing.user_id && can(user, "users.manage")) {
+      const u = await get<{ id: string; email: string }>("SELECT id, email FROM users WHERE id = ?", existing.user_id);
+      if (u) {
+        const { deleteAccount } = await import("./account-delete");
+        await deleteAccount(user, u.id, u.email).catch(() => null);
+      }
+    }
+  });
+
+  await audit(
+    { actor: user },
+    {
+      itemId: id,
+      action: "hr.employee_deleted",
+      summary: `${user.name} deleted employee ${existing.full_name} (${existing.code})`,
+    },
+  );
+
+  return { id, name: existing.full_name };
 }
 
 // Self-service: a person keeps their own contact details current.

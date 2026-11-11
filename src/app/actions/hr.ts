@@ -31,6 +31,12 @@ export async function issueEquipmentAction(id: string, input: { employeeId: stri
 export async function returnEquipmentAction(id: string, input: { condition?: string; note?: string | null }) {
   return wrap(async () => hr.returnEquipment(await requireViewer(), id, input));
 }
+export async function createAppAccountAction(input: Parameters<typeof hr.createAppAccountForEmployee>[1]) {
+  return wrap(async () => hr.createAppAccountForEmployee(await requireViewer(), input));
+}
+export async function deleteEmployeeAction(employeeId: string, options?: { deleteUserAccount?: boolean }) {
+  return wrap(async () => hr.deleteEmployee(await requireViewer(), employeeId, options));
+}
 export async function equipmentHistoryAction(id: string) {
   return wrap(async () => hr.equipmentHistory(await requireViewer(), id), { revalidate: false });
 }

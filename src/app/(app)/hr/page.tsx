@@ -86,6 +86,7 @@ export default async function HrPage({ searchParams }: { searchParams: Promise<R
         badges={{ leave: leaveWaiting, hiring: applicantsActive, lifecycle: lifecycleOpen }}
         showCases={showCases}
         panel={panel}
+        canManage={manage}
       />
     </div>
   );

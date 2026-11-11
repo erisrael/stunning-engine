@@ -4,13 +4,17 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { DownloadIcon, LockIcon, PlusIcon, SaveIcon, Trash2Icon, UploadIcon } from "lucide-react";
+import { CheckIcon, CopyIcon, DownloadIcon, KeyRoundIcon, LockIcon, PlusIcon, SaveIcon, Trash2Icon, UploadIcon, UserPlusIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { KeyValue } from "@/components/app/primitives";
-import { addEmployeeDocumentAction, deleteEmployeeDocumentAction, saveEmployeeAction, updateOwnContactAction } from "@/app/actions/hr";
+import { addEmployeeDocumentAction, createAppAccountAction, deleteEmployeeAction, deleteEmployeeDocumentAction, saveEmployeeAction, updateOwnContactAction } from "@/app/actions/hr";
+import { ROLE_LABELS, type Role } from "@/lib/domain";
 import type { EmployeeDetail, PrivateDetails } from "@/server/hr";
 import {
   DOC_KIND_LABELS,
@@ -242,8 +246,16 @@ function HrForm({ detail, departments, managers, accounts }: { detail: EmployeeD
   const [contacts, setContacts] = React.useState<EmergencyContact[]>(e.emergencyContacts ?? []);
   const [priv, setPriv] = React.useState<Record<keyof PrivateDetails, string>>(() => Object.fromEntries(PRIVATE_FIELDS.map((p) => [p.key, s(detail.private?.[p.key])])) as Record<keyof PrivateDetails, string>);
   const [busy, setBusy] = React.useState(false);
+  const [createAccountOpen, setCreateAccountOpen] = React.useState(false);
+  const [createdAccount, setCreatedAccount] = React.useState<{ email: string; tempPassword: string; roles: Role[]; name: string } | null>(null);
+  const [deleteOpen, setDeleteOpen] = React.useState(false);
   const set = (k: keyof typeof f) => (v: string) => setF((x) => ({ ...x, [k]: v }));
   const text = (k: keyof typeof f, type = "text") => <Input type={type} value={f[k]} onChange={(x) => set(k)(x.target.value)} />;
+  const onAccountCreated = (acc: { userId: string; email: string; tempPassword: string; roles: Role[]; name: string }) => {
+    setF((curr) => ({ ...curr, userId: acc.userId, email: curr.email || acc.email }));
+    setCreateAccountOpen(false);
+    setCreatedAccount(acc);
+  };
   const save = async () => {
     setBusy(true);
     const r = await saveEmployeeAction({
@@ -304,7 +316,20 @@ function HrForm({ detail, departments, managers, accounts }: { detail: EmployeeD
             <Field label="Full name">{text("fullName")}</Field>
             <Field label="Preferred name">{text("preferredName")}</Field>
             <Field label="App account" hint="Links this record to the person's sign-in, for self-service.">
-              <SimpleSelect value={f.userId} onChange={set("userId")} options={accounts} placeholder="Not linked" />
+              <div className="space-y-1.5">
+                <SimpleSelect value={f.userId} onChange={set("userId")} options={accounts} placeholder="Not linked" />
+                {!f.userId && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="w-full gap-1.5 text-xs text-primary border-primary/30 hover:bg-primary/5"
+                    onClick={() => setCreateAccountOpen(true)}
+                  >
+                    <UserPlusIcon className="size-3.5" /> Create app account
+                  </Button>
+                )}
+              </div>
             </Field>
             <Field label="Email">{text("email", "email")}</Field>
             <Field label="Phone">{text("phone")}</Field>
@@ -346,12 +371,45 @@ function HrForm({ detail, departments, managers, accounts }: { detail: EmployeeD
           <Textarea value={f.notes} onChange={(x) => set("notes")(x.target.value)} rows={3} aria-label="HR notes" />
         </CardContent>
       </Card>
-      <div className="flex items-center gap-2">
-        <Button onClick={save} disabled={busy || !f.fullName.trim()}>
-          <SaveIcon /> Save record
-        </Button>
-        <span className="text-xs text-muted-foreground">Last changed {new Date(e.updatedAt).toLocaleString()}</span>
+      <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+        <div className="flex items-center gap-2">
+          <Button onClick={save} disabled={busy || !f.fullName.trim()}>
+            <SaveIcon /> Save record
+          </Button>
+          <span className="text-xs text-muted-foreground">Last changed {new Date(e.updatedAt).toLocaleString()}</span>
+        </div>
+        {detail.rights.manage && (
+          <Button
+            type="button"
+            variant="ghost"
+            className="gap-1.5 text-destructive hover:bg-destructive/10 hover:text-destructive"
+            onClick={() => setDeleteOpen(true)}
+            disabled={busy}
+          >
+            <Trash2Icon className="size-4" /> Delete employee
+          </Button>
+        )}
       </div>
+
+      <CreateAccountDialog
+        open={createAccountOpen}
+        onOpenChange={setCreateAccountOpen}
+        employee={{ id: e.id, fullName: f.fullName, email: f.email || null, jobTitle: f.jobTitle || null, phone: f.phone || null }}
+        department={f.department}
+        onCreated={onAccountCreated}
+      />
+      <CredentialsDialog
+        account={createdAccount}
+        onClose={() => {
+          setCreatedAccount(null);
+          router.refresh();
+        }}
+      />
+      <DeleteEmployeeDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        employee={{ id: e.id, fullName: e.fullName, code: e.code, userId: f.userId || null }}
+      />
     </div>
   );
 }
@@ -430,5 +488,275 @@ function Documents({ detail }: { detail: EmployeeDetail }) {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+const AVAILABLE_ROLES: Role[] = [
+  "content",
+  "recording",
+  "editing",
+  "uploading",
+  "publication",
+  "operations",
+  "support",
+  "marketing",
+  "sales",
+  "accountant",
+  "developer",
+  "hr_officer",
+];
+
+function CreateAccountDialog({
+  open,
+  onOpenChange,
+  employee,
+  department,
+  onCreated,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  employee: { id: string; fullName: string; email: string | null; jobTitle: string | null; phone: string | null };
+  department?: string | null;
+  onCreated: (acc: { userId: string; email: string; tempPassword: string; roles: Role[]; name: string }) => void;
+}) {
+  const [email, setEmail] = React.useState(employee.email || "");
+  const [name, setName] = React.useState(employee.fullName || "");
+  const [roles, setRoles] = React.useState<Role[]>(() => {
+    if (department === "recording") return ["recording"];
+    if (department === "editing") return ["editing"];
+    if (department === "uploading") return ["uploading"];
+    if (department === "publication") return ["publication"];
+    if (department === "marketing") return ["marketing"];
+    if (department === "dev") return ["developer"];
+    if (department === "studio") return ["content"];
+    if (department === "hr") return ["hr_officer"];
+    if (department === "finance") return ["accountant"];
+    if (department === "support") return ["support"];
+    if (department === "sales") return ["sales"];
+    if (department === "operations") return ["operations"];
+    return ["content"];
+  });
+  const [password, setPassword] = React.useState(() => `Myseed-${Math.random().toString(36).slice(2, 8)}`);
+  const [busy, setBusy] = React.useState(false);
+
+  React.useEffect(() => {
+    if (open) {
+      setEmail(employee.email || "");
+      setName(employee.fullName || "");
+      setPassword(`Myseed-${Math.random().toString(36).slice(2, 8)}`);
+    }
+  }, [open, employee.email, employee.fullName]);
+
+  const toggleRole = (r: Role) => {
+    setRoles((curr) => (curr.includes(r) ? (curr.length > 1 ? curr.filter((x) => x !== r) : curr) : [...curr, r]));
+  };
+
+  const handleCreate = async () => {
+    if (!email.trim()) return toast.error("Please enter an email address.");
+    setBusy(true);
+    const r = await createAppAccountAction({
+      employeeId: employee.id,
+      email: email.trim(),
+      name: name.trim(),
+      roles,
+      password: password.trim() || undefined,
+    });
+    setBusy(false);
+    if (!r.ok) return toast.error(r.error);
+    if (!r.data) return toast.error("Account creation failed");
+    toast.success("Account created successfully!");
+    onCreated(r.data);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <UserPlusIcon className="size-5 text-primary" /> Create App Account
+          </DialogTitle>
+          <DialogDescription>
+            Create a login account for <strong>{employee.fullName}</strong>. They can sign in immediately using these credentials.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 py-2">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="acc-name">Full name</Label>
+              <Input id="acc-name" value={name} onChange={(e) => setName(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="acc-email">Sign-in email</Label>
+              <Input id="acc-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="person@myseed.com.et" />
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="acc-pass">Initial temporary password</Label>
+              <button
+                type="button"
+                className="text-xs text-primary hover:underline cursor-pointer"
+                onClick={() => setPassword(`Myseed-${Math.random().toString(36).slice(2, 8)}`)}
+              >
+                Regenerate
+              </button>
+            </div>
+            <Input id="acc-pass" value={password} onChange={(e) => setPassword(e.target.value)} />
+            <p className="text-[11px] text-muted-foreground">The employee will be asked to choose a new password upon first login.</p>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Assigned roles ({roles.length})</Label>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 max-h-48 overflow-y-auto rounded-md border p-2">
+              {AVAILABLE_ROLES.map((r) => {
+                const checked = roles.includes(r);
+                return (
+                  <label
+                    key={r}
+                    className={`flex items-center gap-2 rounded px-2 py-1.5 text-xs cursor-pointer transition-colors ${
+                      checked ? "bg-primary/10 text-primary font-medium" : "hover:bg-muted text-muted-foreground"
+                    }`}
+                  >
+                    <Checkbox checked={checked} onCheckedChange={() => toggleRole(r)} />
+                    <span className="truncate">{ROLE_LABELS[r]}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
+            Cancel
+          </Button>
+          <Button onClick={handleCreate} disabled={busy || !email.trim() || !roles.length}>
+            {busy ? "Creating..." : "Create Account"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function CredentialsDialog({
+  account,
+  onClose,
+}: {
+  account: { email: string; tempPassword: string; roles: Role[]; name: string } | null;
+  onClose: () => void;
+}) {
+  const [copied, setCopied] = React.useState(false);
+  if (!account) return null;
+
+  const textToCopy = `Sign in credentials for Myseed:\nEmail: ${account.email}\nTemporary password: ${account.tempPassword}\nRoles: ${account.roles.map((r) => ROLE_LABELS[r] ?? r).join(", ")}`;
+
+  const copy = () => {
+    navigator.clipboard.writeText(textToCopy).then(() => {
+      setCopied(true);
+      toast.success("Credentials copied to clipboard");
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  return (
+    <Dialog open={!!account} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
+            <KeyRoundIcon className="size-5" /> Account Ready
+          </DialogTitle>
+          <DialogDescription>
+            Account for <strong>{account.name}</strong> was created and linked. Share these credentials with the employee:
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-2 rounded-lg border bg-muted/40 p-4 font-mono text-xs">
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Email:</span>
+            <span className="font-semibold text-foreground select-all">{account.email}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Password:</span>
+            <span className="font-semibold text-foreground select-all">{account.tempPassword}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Roles:</span>
+            <span className="text-foreground">{account.roles.map((r) => ROLE_LABELS[r] ?? r).join(", ")}</span>
+          </div>
+        </div>
+
+        <DialogFooter className="flex gap-2 sm:justify-between">
+          <Button variant="outline" className="gap-1.5" onClick={copy}>
+            {copied ? <CheckIcon className="size-4 text-emerald-600" /> : <CopyIcon className="size-4" />}
+            {copied ? "Copied" : "Copy Credentials"}
+          </Button>
+          <Button onClick={onClose}>Done</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function DeleteEmployeeDialog({
+  open,
+  onOpenChange,
+  employee,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  employee: { id: string; fullName: string; code: string; userId: string | null };
+}) {
+  const router = useRouter();
+  const [deleteUserAccount, setDeleteUserAccount] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
+
+  const handleDelete = async () => {
+    setBusy(true);
+    const r = await deleteEmployeeAction(employee.id, { deleteUserAccount });
+    setBusy(false);
+    if (!r.ok) return toast.error(r.error);
+    toast.success(`Employee ${employee.fullName} deleted`);
+    onOpenChange(false);
+    router.push("/hr");
+    router.refresh();
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-destructive">
+            <Trash2Icon className="size-5" /> Delete Employee Record
+          </DialogTitle>
+          <DialogDescription>
+            Are you sure you want to permanently delete <strong>{employee.fullName}</strong> ({employee.code})?
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3 py-2 text-sm text-muted-foreground">
+          <p>
+            This action permanently removes the employee&apos;s record, documents, attendance marks, and leave history. Any equipment held will be returned to inventory.
+          </p>
+          {employee.userId && (
+            <label className="flex items-center gap-2 rounded-lg border p-3 text-xs text-foreground cursor-pointer hover:bg-muted/50">
+              <Checkbox checked={deleteUserAccount} onCheckedChange={(v) => setDeleteUserAccount(!!v)} />
+              <span>Also delete or anonymize their linked app user account</span>
+            </label>
+          )}
+        </div>
+
+        <DialogFooter className="gap-2 sm:gap-0">
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
+            Cancel
+          </Button>
+          <Button variant="destructive" onClick={handleDelete} disabled={busy}>
+            {busy ? "Deleting..." : "Delete Employee"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
