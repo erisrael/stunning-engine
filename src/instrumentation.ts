@@ -21,6 +21,7 @@ export async function register() {
       const { scheduledCmsSync } = await import("./server/cms-schedule");
       await scheduledCmsSync(undefined, true);
       await (await import("./server/cms-reports")).scheduledCmsReports();
+      await (await import("./server/chapa-hub")).scheduledChapa();
     } catch (e) {
       console.error("CMS automatic refresh failed", e);
     }

@@ -445,6 +445,7 @@ export function AppSidebar({
                   { label: "Bills", href: "/finance?tab=bills" },
                   { label: "Invoices", href: "/finance?tab=invoices" },
                   { label: "External receipts", href: "/finance?tab=receipts" },
+                  { label: "Chapa", href: "/finance/chapa" },
                   { label: "Expense claims", href: "/finance?tab=claims" },
                   { label: "Purchasing", href: "/finance?tab=purchasing" },
                   { label: "Budgets", href: "/finance?tab=budgets" },

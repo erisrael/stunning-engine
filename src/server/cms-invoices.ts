@@ -174,3 +174,84 @@ export async function invoiceReviewCounts(user: AppUser) {
   const by = Object.fromEntries(rows.map((r) => [r.state, Number(r.c)]));
   return { verified: by.verified ?? 0, unable: by.unable ?? 0, unverified: by.unverified ?? 0, unableNoPhone: Number(rows.find((r) => r.state === "unable")?.nophone ?? 0) };
 }
+
+// ---------------------------------------------------------------------------
+// c16: Finance sends an unverifiable invoice to Support, or keeps it and gives it to a Finance member.
+// The outcome (Reached, Paid, No answer, Closed) shows on the invoice.
+// ---------------------------------------------------------------------------
+
+export const INVOICE_OUTCOMES = ["reached", "paid", "no_answer", "closed"] as const;
+
+export async function sendInvoicesToSupport(user: AppUser, ids: string[]) {
+  await requireReviewer(user);
+  const list = (await listInvoiceReviews(user, { ids, state: "unable" })).filter((r) => ids.includes(r.invoiceId));
+  if (!list.length) throw new WorkflowError("VALIDATION", "Choose invoices marked Unable to verify.");
+  const { createFollowupTicket } = await import("./support-desk");
+  const { UNABLE_REASON_LABEL } = await import("@/lib/cms-invoices");
+  let created = 0;
+  for (const r of list) {
+    const body = [
+      `Finance could not verify Noor invoice #${r.invoiceId}: ${UNABLE_REASON_LABEL[r.reason ?? ""] ?? r.reason ?? ""}.`,
+      r.note ? `Finance note: ${r.note}` : "",
+      `Student: ${r.student || "unknown"}${r.grade ? ` (${r.grade})` : ""} · Contact: ${r.contactName || "unknown"} · Phone: ${r.phone || "none"}`,
+      `Amount: ${r.amount ? r.amount.toLocaleString() : "?"} · Plan: ${r.plan || "?"} · Method: ${r.method || "?"} · Invoice date: ${r.invoiceDate || "?"}`,
+      "Reach the customer, help them send the slip or pay again, then set the outcome on the invoice (Legacy CMS, Invoices).",
+    ].filter(Boolean).join("\n");
+    const t = await createFollowupTicket(user, { source: "cms_invoice", sourceRef: r.invoiceId, customerName: r.contactName || r.student || "Customer", phone: r.phone || null, subject: `Invoice #${r.invoiceId} could not be verified: ${r.contactName || r.student}`, body });
+    if (t.created) created++;
+    await run("UPDATE cms_invoice_reviews SET ticket_id = ?, assignee_id = NULL, updated_at = ? WHERE invoice_id = ?", t.id, nowIso(), r.invoiceId);
+    await run("INSERT INTO cms_invoice_review_log (id, invoice_id, from_state, to_state, reason, note, actor_id, at) VALUES (?, ?, 'unable', 'unable', ?, ?, ?, ?)", uid("civ_"), r.invoiceId, r.reason, `Sent to Support (ticket #${t.number})`, user.id, nowIso());
+  }
+  await audit({ actor: user }, { action: "finance.invoice_followup", summary: `${user.name} sent ${list.length} unverifiable invoice${list.length === 1 ? "" : "s"} to Support` });
+  return { sent: list.length, created };
+}
+
+export async function handleInvoicesInFinance(user: AppUser, ids: string[], assigneeId: string) {
+  await requireReviewer(user);
+  const who = await get<{ name: string }>("SELECT name FROM users WHERE id = ? AND active = 1", assigneeId);
+  if (!who) throw new WorkflowError("NOT_FOUND", "Choose a Finance member.");
+  const { loadUser } = await import("./users");
+  const target = await loadUser(assigneeId);
+  if (!target || !canReviewInvoices(target)) throw new WorkflowError("VALIDATION", `${who.name} is not in Finance.`);
+  for (const id of ids) {
+    await run("UPDATE cms_invoice_reviews SET assignee_id = ?, updated_at = ? WHERE invoice_id = ? AND state = 'unable'", assigneeId, nowIso(), id);
+    await run("INSERT INTO cms_invoice_review_log (id, invoice_id, from_state, to_state, reason, note, actor_id, at) VALUES (?, ?, 'unable', 'unable', NULL, ?, ?, ?)", uid("civ_"), id, `Kept in Finance: ${who.name}`, user.id, nowIso());
+  }
+  const { notify } = await import("./notifications");
+  if (assigneeId !== user.id) await notify([assigneeId], { type: "assignment", title: `${ids.length} invoice follow-up${ids.length === 1 ? "" : "s"} for you`, body: `${user.name} asked you to reach these customers`, link: "/legacy-cms?view=invoices" }, nowIso(), user.id);
+  await audit({ actor: user }, { action: "finance.invoice_followup", summary: `${user.name} gave ${ids.length} unverifiable invoice${ids.length === 1 ? "" : "s"} to ${who.name}` });
+}
+
+export async function setInvoiceOutcome(user: AppUser, id: string, outcome: string) {
+  const r = await get<{ ticket_id: string | null; assignee_id: string | null }>("SELECT ticket_id, assignee_id FROM cms_invoice_reviews WHERE invoice_id = ?", id);
+  if (!r) throw new WorkflowError("NOT_FOUND", "Invoice not found.");
+  // Finance, or the support agent working the case.
+  if (!canReviewInvoices(user)) {
+    const t = r.ticket_id ? await get<{ assignee_id: string | null }>("SELECT assignee_id FROM sup_tickets WHERE id = ?", r.ticket_id) : null;
+    if (!t || t.assignee_id !== user.id) throw new WorkflowError("FORBIDDEN", "Only Finance or the agent on the case sets the outcome.");
+  }
+  if (!(INVOICE_OUTCOMES as readonly string[]).includes(outcome)) throw new WorkflowError("VALIDATION", "Choose Reached, Paid, No answer or Closed.");
+  await run("UPDATE cms_invoice_reviews SET outcome = ?, updated_at = ? WHERE invoice_id = ?", outcome, nowIso(), id);
+  await run("INSERT INTO cms_invoice_review_log (id, invoice_id, from_state, to_state, reason, note, actor_id, at) VALUES (?, ?, 'unable', 'unable', NULL, ?, ?, ?)", uid("civ_"), id, `Outcome: ${outcome.replace("_", " ")}`, user.id, nowIso());
+  if (r.ticket_id && (outcome === "paid" || outcome === "closed")) {
+    await run("UPDATE sup_tickets SET status = 'solved', solved_at = COALESCE(solved_at, ?), updated_at = ? WHERE id = ? AND status NOT IN ('solved','closed')", nowIso(), nowIso(), r.ticket_id);
+  }
+}
+
+// Who handles each unverifiable invoice and how it ended, for the list.
+export async function invoiceFollowups(user: AppUser, ids: string[]) {
+  await requireReviewer(user);
+  if (!ids.length) return {};
+  const rows = await all<{ invoice_id: string; ticket_id: string | null; number: number | null; tstatus: string | null; agent: string | null; assignee: string | null; outcome: string | null }>(
+    `SELECT r.invoice_id, r.ticket_id, t.number, t.status AS tstatus, ua.name AS agent, uf.name AS assignee, r.outcome FROM cms_invoice_reviews r
+     LEFT JOIN sup_tickets t ON t.id = r.ticket_id LEFT JOIN users ua ON ua.id = t.assignee_id LEFT JOIN users uf ON uf.id = r.assignee_id WHERE r.invoice_id IN (${ids.map(() => "?").join(",")})`,
+    ...ids,
+  );
+  return Object.fromEntries(rows.map((r) => [r.invoice_id, { ticketId: r.ticket_id, ticketNumber: r.number, ticketStatus: r.tstatus, agent: r.agent, financeAssignee: r.assignee, outcome: r.outcome }]));
+}
+
+export async function financeMembers(user: AppUser) {
+  await requireReviewer(user);
+  const { listUsers } = await import("./users");
+  return (await listUsers()).filter((u) => canReviewInvoices(u)).map((u) => ({ id: u.id, name: u.name }));
+}

@@ -8,6 +8,9 @@ import { MetricCard } from "@/components/app/primitives";
 import { cmsPresetRange } from "@/lib/cms-filters";
 import { INVOICE_STATES, UNABLE_REASON_LABEL, type InvoiceReview, type InvoiceState } from "@/lib/cms-invoices";
 import { invoiceReviewCountsAction, invoiceVerifiersAction, listInvoiceReviewsAction } from "@/app/actions/cms-reports";
+import { financeMembersAction, invoiceFollowupsAction, invoiceOutcomeAction, invoicesToFinanceAction, invoicesToSupportAction } from "@/app/actions/chapa-hub";
+import { toast } from "sonner";
+import { LifeBuoyIcon, UserCheckIcon } from "lucide-react";
 import { ExportButtons, NoorFilters, RangePicker, RowsTable, useShowEc, type Period } from "./range-controls";
 import { METHOD_LABEL, useCmsRange } from "./use-cms-range";
 import { HistoryDialog, invoiceKey, ReviewBar, StateBadge, useReviewStates } from "./invoice-review";
@@ -157,8 +160,29 @@ function UnableList({ onChanged }: { onChanged: () => void }) {
     const t = setTimeout(load, 250);
     return () => clearTimeout(t);
   }, [load]);
-  const rows = (list ?? []).filter((r) => !noPhone || !r.phone).map(asRow);
+  // c16: who handles each case (Support ticket or a Finance member) and how it ended.
+  const [cases, setCases] = React.useState<Record<string, { ticketId: string | null; ticketNumber: number | null; ticketStatus: string | null; agent: string | null; financeAssignee: string | null; outcome: string | null }>>({});
+  const [members, setMembers] = React.useState<{ id: string; name: string }[]>([]);
+  const [member, setMember] = React.useState("");
+  const listIds = (list ?? []).map((r) => r.invoiceId).join(",");
+  const loadCases = React.useCallback(() => void (listIds ? invoiceFollowupsAction(listIds.split(",")).then((r) => r.ok && r.data && setCases(r.data)) : setCases({})), [listIds]);
+  React.useEffect(loadCases, [loadCases]);
+  React.useEffect(() => void financeMembersAction().then((r) => r.ok && r.data && setMembers(r.data)), []);
+  const caseText = (id: string) => {
+    const c = cases[id];
+    if (c?.ticketId) return `Support #${c.ticketNumber} ${c.ticketStatus ?? ""}${c.agent ? `, ${c.agent}` : ""}`;
+    if (c?.financeAssignee) return `Finance: ${c.financeAssignee}`;
+    return "Not handed over";
+  };
+  const rows = (list ?? []).filter((r) => !noPhone || !r.phone).map((r) => ({ ...asRow(r), Case: caseText(r.invoiceId) }));
   const ids = [...selected];
+  const handover = async (fn: () => Promise<{ ok: boolean; error?: string }>, done: string) => {
+    const r = await fn();
+    if (!r.ok) return toast.error(r.error);
+    toast.success(done);
+    setSelected(new Set());
+    loadCases();
+  };
   const qs = new URLSearchParams({ list: "unable", ...(q ? { q } : {}), ...(verifier !== "all" ? { verifier } : {}), ...(ids.length ? { ids: ids.join(",") } : {}) }).toString();
   const hrefs = { xlsx: `/api/legacy-cms/report?${qs}&format=xlsx`, csv: `/api/legacy-cms/report?${qs}&format=csv`, pdf: `/export/cms-report?${qs}` };
   const missing = (list ?? []).filter((r) => !r.phone).length;
@@ -191,11 +215,39 @@ function UnableList({ onChanged }: { onChanged: () => void }) {
           onChanged();
         }}
       />
+      {ids.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 text-xs" role="region" aria-label="Hand over selected invoices">
+          <span className="font-medium">Who reaches the customer?</span>
+          <Button size="sm" className="h-7 text-xs" onClick={() => handover(() => invoicesToSupportAction(ids), `${ids.length} sent to the Payment follow-up queue`)}>
+            <LifeBuoyIcon /> Send to Support
+          </Button>
+          <span className="text-muted-foreground">or keep in Finance:</span>
+          <select aria-label="Finance member" value={member} onChange={(e) => setMember(e.target.value)} className="h-7 rounded-md border bg-background px-1">
+            <option value="">Choose…</option>
+            {members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+          </select>
+          <Button size="sm" variant="outline" className="h-7 text-xs" disabled={!member} onClick={() => handover(() => invoicesToFinanceAction(ids, member), "Given to a Finance member")}>
+            <UserCheckIcon /> Keep in Finance
+          </Button>
+        </div>
+      )}
       {list === null ? (
         <StatusStrip>Loading…</StatusStrip>
       ) : (
         <RowsTable
-          headers={["Invoice", "Student", "Contact", "Phone", "Grade", "Plan", "Amount", "Invoice date", "Reason", "Note", "Marked by"]}
+          headers={["Invoice", "Student", "Contact", "Phone", "Grade", "Plan", "Amount", "Invoice date", "Reason", "Case", "Marked by"]}
+          lead={{
+            label: "Outcome",
+            cell: (r) => (
+              <select aria-label={`Outcome of invoice ${r._recordId}`} value={cases[r._recordId]?.outcome ?? ""} onClick={(e) => e.stopPropagation()} onChange={async (e) => { const res = await invoiceOutcomeAction(r._recordId, e.target.value); if (!res.ok) toast.error(res.error); else loadCases(); }} className="h-7 rounded-md border bg-background px-1 text-xs">
+                <option value="" disabled>Not yet</option>
+                <option value="reached">Reached</option>
+                <option value="paid">Paid</option>
+                <option value="no_answer">No answer</option>
+                <option value="closed">Closed</option>
+              </select>
+            ),
+          }}
           rows={rows}
           rowKey={(r) => r._recordId}
           selected={selected}

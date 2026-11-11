@@ -9,6 +9,7 @@ async function _GET(request: Request) {
   const { scheduledCmsSync } = await import("@/server/cms-schedule");
   await scheduledCmsSync(undefined, true);
   await (await import("@/server/cms-reports")).scheduledCmsReports();
+  await (await import("@/server/chapa-hub")).scheduledChapa();
   return Response.json({ ok: true, at: new Date().toISOString(), counts });
 }
 

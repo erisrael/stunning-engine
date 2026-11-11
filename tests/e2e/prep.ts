@@ -402,6 +402,16 @@ PREPS["update-1-p2"] = async () => {
   return { port: 47391 };
 };
 
+// Update 1.0 Phase 3: two Chapa businesses whose API is the fake the browser test starts (CHAPA_API_BASE).
+PREPS["update-1-p3"] = async () => {
+  await passwordOnly();
+  const { saveChapaAccount } = await import("../../src/server/chapa");
+  const a = await admin();
+  const sub = await saveChapaAccount(a, { name: "Subscriptions", secretKey: "CHASECK-AAA", webhookSecret: "whsec-A", currency: "ETB" });
+  const don = await saveChapaAccount(a, { name: "Donations", secretKey: "CHASECK-BBB", currency: "ETB" });
+  return { sub, don };
+};
+
 async function main() {
   const name = process.argv[2]!;
   const prep = PREPS[name];

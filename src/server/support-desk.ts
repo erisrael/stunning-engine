@@ -1109,3 +1109,87 @@ export async function supportChecks(now = nowIso()) {
   }
   return { breached: late.length, closed: closed.length, assigned };
 }
+
+// ---------------------------------------------------------------------------
+// Payment follow-up (Update 1.0): cases from Chapa payments and Noor invoices
+// ---------------------------------------------------------------------------
+
+export const FOLLOWUP_QUEUE = "Payment follow-up";
+
+// The Payment follow-up queue, made on first use. Support leads add its agents in Support setup.
+export async function paymentFollowupQueue() {
+  const found = await get<{ id: string }>("SELECT id FROM sup_queues WHERE name = ? ORDER BY created_at LIMIT 1", FOLLOWUP_QUEUE);
+  if (found) return found.id;
+  const id = uid("sq_");
+  const sort = Number((await get<{ m: number | null }>("SELECT MAX(sort) AS m FROM sup_queues"))?.m ?? 0) + 1;
+  await run(
+    "INSERT INTO sup_queues (id, name, description, keywords, members, strategy, sla_first_min, sla_resolve_min, sort, active, created_at) VALUES (?, ?, ?, '[]', '[]', 'least_busy', 240, 2880, ?, 1, ?)",
+    id,
+    FOLLOWUP_QUEUE,
+    "Failed or pending Chapa payments and Noor invoices Finance could not verify: call the customer and help them pay.",
+    sort,
+    nowIso(),
+  );
+  return id;
+}
+
+// One case per source record. A second send for the same record (or the same customer and source within the
+// de-duplicate window) adds a note to the open case instead of opening another.
+export async function createFollowupTicket(
+  actor: AppUser | null,
+  input: { source: "chapa" | "cms_invoice"; sourceRef: string; customerName: string; phone?: string | null; email?: string | null; subject: string; body: string; category?: string; dedupeHours?: number; priority?: Priority; assigneeId?: string | null },
+): Promise<{ id: string; number: number; created: boolean }> {
+  const phone = clean(input.phone, 40) || null;
+  const email = clean(input.email, 200) || null;
+  const open = `t.status NOT IN ('solved','closed')`;
+  let existing = await get<{ id: string; number: number }>(`SELECT t.id, t.number FROM sup_tickets t WHERE t.source = ? AND t.source_ref = ? AND ${open} LIMIT 1`, input.source, input.sourceRef);
+  if (!existing && (phone || email) && input.dedupeHours) {
+    const since = new Date(Date.now() - input.dedupeHours * 3600e3).toISOString();
+    existing = await get<{ id: string; number: number }>(
+      `SELECT t.id, t.number FROM sup_tickets t JOIN sup_customers c ON c.id = t.customer_id WHERE t.source = ? AND ${open} AND t.created_at >= ? AND ((CAST(? AS TEXT) IS NOT NULL AND c.phone = ?) OR (CAST(? AS TEXT) IS NOT NULL AND LOWER(c.email) = LOWER(?))) ORDER BY t.created_at DESC LIMIT 1`,
+      input.source, since, phone, phone, email, email,
+    );
+  }
+  if (existing) {
+    await run("INSERT INTO sup_messages (id, ticket_id, author_kind, author_id, body, internal, created_at) VALUES (?, ?, 'system', NULL, ?, 1, ?)", uid("smg_"), existing.id, clean(input.body, 8000), nowIso());
+    await run("UPDATE sup_tickets SET updated_at = ? WHERE id = ?", nowIso(), existing.id);
+    return { ...existing, created: false };
+  }
+  const found = phone ? await get<{ id: string }>("SELECT id FROM sup_customers WHERE phone = ? LIMIT 1", phone) : email ? await get<{ id: string }>("SELECT id FROM sup_customers WHERE LOWER(email) = LOWER(?) LIMIT 1", email) : null;
+  const customerId = found?.id ?? uid("cus_");
+  if (!found) await run("INSERT INTO sup_customers (id, app_id, external_id, name, email, phone, created_at, last_seen_at) VALUES (?, NULL, ?, ?, ?, ?, ?, ?)", customerId, `pay_${customerId}`, clean(input.customerName, 120) || "Customer", email, phone, nowIso(), nowIso());
+  const queueId = await paymentFollowupQueue();
+  const id = await createTicketRow({ subject: input.subject, body: input.body, customerId, appId: null, appQueue: null, channel: "agent", priority: input.priority ?? "normal", authorKind: "agent", authorId: actor?.id ?? null, queueId, internal: true });
+  await run("UPDATE sup_tickets SET source = ?, source_ref = ?, category = ?, tags = ? WHERE id = ?", input.source, input.sourceRef, input.category ?? "payments", JSON.stringify(["payment-follow-up", input.source]), id);
+  if (input.assigneeId) {
+    const now = nowIso();
+    await run("UPDATE sup_tickets SET assignee_id = ?, assigned_at = ?, status = 'open', updated_at = ? WHERE id = ?", input.assigneeId, now, now, id);
+    await notify([input.assigneeId], { type: "assignment", title: "A payment follow-up is yours", body: input.subject, link: `/support?ticket=${id}` }, now, actor?.id);
+  } else if (!(await autoAssign(id))) {
+    await notify((await supportConfig()).leads, { type: "assignment", title: "Payment follow-up waits: no agent is free", body: input.subject, link: `/support?ticket=${id}`, dedupeKey: `sup-wait-${id}` }, nowIso());
+  }
+  const number = (await get<{ number: number }>("SELECT number FROM sup_tickets WHERE id = ?", id))!.number;
+  return { id, number, created: true };
+}
+
+// The customer paid after all: their open follow-up cases close with a note.
+export async function closeFollowupsFor(source: "chapa" | "cms_invoice", match: { sourceRef?: string | null; phone?: string | null; email?: string | null }, note: string) {
+  const rows = await all<{ id: string }>(
+    `SELECT t.id FROM sup_tickets t LEFT JOIN sup_customers c ON c.id = t.customer_id WHERE t.source = ? AND t.status NOT IN ('solved','closed')
+       AND ((CAST(? AS TEXT) IS NOT NULL AND t.source_ref = ?) OR (CAST(? AS TEXT) IS NOT NULL AND c.phone = ?) OR (CAST(? AS TEXT) IS NOT NULL AND LOWER(c.email) = LOWER(?)))`,
+    source, match.sourceRef ?? null, match.sourceRef ?? null, match.phone ?? null, match.phone ?? null, match.email ?? null, match.email ?? null,
+  );
+  const now = nowIso();
+  for (const r of rows) {
+    await run("UPDATE sup_tickets SET status = 'solved', solved_at = ?, updated_at = ? WHERE id = ?", now, now, r.id);
+    await run("INSERT INTO sup_messages (id, ticket_id, author_kind, author_id, body, internal, created_at) VALUES (?, ?, 'system', NULL, ?, 1, ?)", uid("smg_"), r.id, note, now);
+    await activity(null, r.id, "status", "Closed by the system: the customer paid");
+  }
+  return rows.length;
+}
+
+export async function ticketStatusOf(ids: string[]) {
+  if (!ids.length) return {} as Record<string, { number: number; status: string; assignee: string | null }>;
+  const rows = await all<{ id: string; number: number; status: string; assignee: string | null }>(`SELECT t.id, t.number, t.status, u.name AS assignee FROM sup_tickets t LEFT JOIN users u ON u.id = t.assignee_id WHERE t.id IN (${ids.map(() => "?").join(",")})`, ...ids);
+  return Object.fromEntries(rows.map((r) => [r.id, { number: r.number, status: r.status, assignee: r.assignee }]));
+}

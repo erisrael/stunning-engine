@@ -122,6 +122,7 @@ export async function saveChapaAccount(user: AppUser, input: ChapaAccountInput):
       input.id
     );
 
+    if (input.secretKey) await run("UPDATE chapa_accounts SET mode = ? WHERE id = ?", input.secretKey.trim().startsWith("CHASECK_TEST-") ? "test" : "live", input.id);
     await audit({ actor: user }, { action: "finance.chapa_account_update", summary: `${user.name} updated Chapa account "${name}"` });
     return input.id;
   } else {
@@ -145,6 +146,8 @@ export async function saveChapaAccount(user: AppUser, input: ChapaAccountInput):
       now
     );
 
+    // Test keys make a test business, left out of totals (Update 1.0).
+    await run("UPDATE chapa_accounts SET mode = ?, currencies = ? WHERE id = ?", input.secretKey.trim().startsWith("CHASECK_TEST-") ? "test" : "live", JSON.stringify([currency]), id);
     await audit({ actor: user }, { action: "finance.chapa_account_create", summary: `${user.name} created Chapa account "${name}"` });
     return id;
   }

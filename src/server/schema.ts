@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 58;
+export const SCHEMA_VERSION = 59;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -3241,6 +3241,81 @@ CREATE TABLE IF NOT EXISTS chapa_accounts (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
+-- Update 1.0 Phase 3: each Chapa account is a business with its own mode, sync and health.
+ALTER TABLE chapa_accounts ADD COLUMN IF NOT EXISTS mode TEXT NOT NULL DEFAULT 'live';
+ALTER TABLE chapa_accounts ADD COLUMN IF NOT EXISTS currencies TEXT NOT NULL DEFAULT '["ETB"]';
+ALTER TABLE chapa_accounts ADD COLUMN IF NOT EXISTS owner_id TEXT REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE chapa_accounts ADD COLUMN IF NOT EXISTS sync_minutes INTEGER NOT NULL DEFAULT 15;
+ALTER TABLE chapa_accounts ADD COLUMN IF NOT EXISTS health TEXT NOT NULL DEFAULT 'unknown';
+ALTER TABLE chapa_accounts ADD COLUMN IF NOT EXISTS last_sync_at TEXT;
+ALTER TABLE chapa_accounts ADD COLUMN IF NOT EXISTS last_sync_rows INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE chapa_accounts ADD COLUMN IF NOT EXISTS last_error TEXT;
+ALTER TABLE chapa_accounts ADD COLUMN IF NOT EXISTS backfilled_at TEXT;
+ALTER TABLE chapa_accounts ADD COLUMN IF NOT EXISTS probe_json TEXT;
+ALTER TABLE chapa_accounts ADD COLUMN IF NOT EXISTS webhook_at TEXT;
+
+-- Every Chapa transaction we have seen, one row per business and tx_ref, with its status history.
+CREATE TABLE IF NOT EXISTS chapa_transactions (
+  account_id TEXT NOT NULL REFERENCES chapa_accounts(id) ON DELETE CASCADE,
+  tx_ref TEXT NOT NULL,
+  ref_id TEXT,
+  amount REAL NOT NULL DEFAULT 0,
+  charge REAL NOT NULL DEFAULT 0,
+  currency TEXT NOT NULL DEFAULT 'ETB',
+  method TEXT,
+  type TEXT,
+  status TEXT NOT NULL,
+  first_name TEXT,
+  last_name TEXT,
+  email TEXT,
+  phone TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  verified_at TEXT,
+  status_history TEXT NOT NULL DEFAULT '[]',
+  raw_json TEXT,
+  followup_ticket_id TEXT,
+  followup_at TEXT,
+  PRIMARY KEY (account_id, tx_ref)
+);
+CREATE INDEX IF NOT EXISTS idx_chapa_tx_time ON chapa_transactions(account_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_chapa_tx_status ON chapa_transactions(status, created_at);
+CREATE INDEX IF NOT EXISTS idx_chapa_tx_phone ON chapa_transactions(phone);
+-- Money moved from Myseed: withdrawals, refunds and swaps, each with maker, checker and Chapa's answer.
+CREATE TABLE IF NOT EXISTS chapa_operations (
+  id TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL REFERENCES chapa_accounts(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'awaiting_approval',
+  amount REAL NOT NULL,
+  currency TEXT NOT NULL DEFAULT 'ETB',
+  reference TEXT NOT NULL,
+  detail_json TEXT NOT NULL DEFAULT '{}',
+  reason TEXT,
+  requested_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+  approved_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+  result_json TEXT,
+  error TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_chapa_ops ON chapa_operations(account_id, kind, created_at);
+CREATE TABLE IF NOT EXISTS chapa_beneficiaries (
+  id TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL REFERENCES chapa_accounts(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  bank_code TEXT NOT NULL,
+  bank_name TEXT,
+  account_number TEXT NOT NULL,
+  created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL
+);
+
+-- Tickets that come from a payment: where from (chapa, cms_invoice), which record, and its category.
+ALTER TABLE sup_tickets ADD COLUMN IF NOT EXISTS source TEXT;
+ALTER TABLE sup_tickets ADD COLUMN IF NOT EXISTS source_ref TEXT;
+ALTER TABLE sup_tickets ADD COLUMN IF NOT EXISTS category TEXT;
+CREATE INDEX IF NOT EXISTS idx_sup_tickets_source ON sup_tickets(source, source_ref);
 
 -- v31: Multi-AI Model API keys & providers
 CREATE TABLE IF NOT EXISTS ai_models (
@@ -3484,5 +3559,8 @@ export const TABLES = [
   "cms_report_runs",
   "legacy_cms_snapshots",
   "chapa_accounts",
+  "chapa_transactions",
+  "chapa_operations",
+  "chapa_beneficiaries",
   "ai_models",
 ] as const;
