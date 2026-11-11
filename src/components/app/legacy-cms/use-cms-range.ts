@@ -5,7 +5,7 @@ import { cmsTaskStatusAction } from "@/app/actions/cms-tasks";
 import type { CmsRangeResult } from "@/server/cms-range";
 import type { LegacyCmsCategory } from "@/lib/legacy-cms";
 
-export type RangeQuery = { category: LegacyCmsCategory; from: string; until: string; search?: string; filters?: Record<string, string>; refresh?: boolean };
+export type RangeQuery = { category: LegacyCmsCategory; from: string; until: string; search?: string; filters?: Record<string, string>; refresh?: boolean; dateField?: string };
 export const METHOD_LABEL: Record<string, string> = { "noor-filter": "Noor date filter", "sorted-search": "Sorted range search", "full-scan": "All pages (no date filter in Noor)", mirror: "Saved copy (this table has no dates in Noor; Refresh reads it again)" };
 
 // One date-first load at a time, run as a background CMS job. Keeps the job id so exports use exactly these rows.

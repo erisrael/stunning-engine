@@ -43,7 +43,7 @@ const addisDay = (d: Date) => new Date(+d + 3 * 3600_000).toISOString().slice(0,
 export function cmsGroupValue(row: Record<string, string>, by: CmsGroupBy): string {
   if (by === "none") return "All rows";
   if (by === "day") {
-    const d = cmsDate(row);
+    const d = row._date ? new Date(row._date) : cmsDate(row);
     return d ? addisDay(d) : "No date";
   }
   return cmsField(row, FIELDS[by]) || "Not set";

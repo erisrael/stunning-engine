@@ -13,8 +13,8 @@ import {
   LEGACY_CMS_CATEGORIES,
   type LegacyCmsCategory,
 } from "./legacy-cms";
-import { cmsPagination, dateSortColumn, queryCmsTable, remoteFilters, type CmsRemoteFilter, type CmsTableQuery } from "@/lib/cms-livewire";
-import { cmsDate } from "@/lib/cms-filters";
+import { cmsPagination, dateSortColumn, dateFieldsOf, queryCmsTable, remoteFilters, type CmsDateField, type CmsRemoteFilter, type CmsTableQuery } from "@/lib/cms-livewire";
+import { cmsDate, parseCmsDate } from "@/lib/cms-filters";
 
 // Date-first loading from Noor (Update 1.0, Phase 2). A date range is answered with as few Noor requests as possible:
 //   1. Noor's own date filter, when the table has one: only rows in range come back, with Noor's true total.
@@ -25,7 +25,8 @@ import { cmsDate } from "@/lib/cms-filters";
 // Closed past days are cached per table, day and filters; today is always fetched again.
 
 export type CmsRangeMethod = "noor-filter" | "sorted-search" | "full-scan" | "mirror";
-export type CmsRangeInput = { category: LegacyCmsCategory; from: string; until: string; search?: string; filters?: Record<string, string>; refresh?: boolean };
+// dateField: which date the range means (a Noor column such as created_at or start_date); empty = the best one.
+export type CmsRangeInput = { category: LegacyCmsCategory; from: string; until: string; search?: string; filters?: Record<string, string>; refresh?: boolean; dateField?: string };
 export type CmsRangeResult = {
   ok: true;
   category: LegacyCmsCategory;
@@ -40,6 +41,8 @@ export type CmsRangeResult = {
   fetchedDays: number;
   undated: number;
   filters: CmsRemoteFilter[];
+  dateField?: string | null;
+  dateFields?: CmsDateField[];
   fetchedAt: string;
 };
 export type CmsTableCapability = {
@@ -101,6 +104,8 @@ export type CmsConnection = { base: string; cookie: string };
 // One Noor table, reused by every page request of a run (same signed snapshot, same session).
 export class CmsTable {
   requests = 0;
+  // The label of the date column a range uses (set by fetchSpan); null = the first date the row has.
+  dateLabel: string | null = null;
   size = 50;
   private seed = "";
   private cookie = "";
@@ -138,7 +143,12 @@ export class CmsTable {
         const res = await queryCmsTable(this.seed, this.base, this.cookie, q);
         const records = parseFilamentTable(res.html);
         const { totalResults } = cmsPagination(res.html, records.length, q.page, res.pageSize);
-        const dates = records.map((r) => cmsDate(r)).filter((d): d is Date => !!d).map(Number);
+        // Each row carries the time of the chosen date column in _date (cache, sorting and day placement read it).
+        for (const r of records) {
+          const d = this.dateLabel ? parseCmsDate(r[this.dateLabel]) : cmsDate(r);
+          if (d) r._date = d.toISOString();
+        }
+        const dates = records.map((r) => (r._date ? Date.parse(r._date) : NaN)).filter((d) => !Number.isNaN(d));
         return { records, total: totalResults, pageSize: res.pageSize, pages: Math.max(1, Math.ceil(totalResults / res.pageSize)), dates };
       } catch (error) {
         const msg = String(error instanceof Error ? error.message : error);
@@ -183,6 +193,7 @@ export class CmsTable {
 }
 
 const rowTime = (r: Record<string, string>) => {
+  if (r._date) return Date.parse(r._date);
   const d = cmsDate(r);
   return d ? +d : null;
 };
@@ -215,13 +226,13 @@ async function viaNoorFilter(t: CmsTable, filter: CmsRemoteFilter, base: Base, f
   return { records: pages.flatMap((p) => p.records), total: first.total, exact: false };
 }
 
-async function viaSortedSearch(t: CmsTable, column: string, base: Base, from: string, until: string, progress: (m: string) => Promise<void>, now: number) {
+async function viaSortedSearch(t: CmsTable, column: string, base: Base, from: string, until: string, progress: (m: string) => Promise<void>, now: number, newestFirst = true) {
   const q = { ...base, sort: { column, direction: "desc" as const } };
   const start0 = dayStart(from);
   const end0 = dayStart(until) + DAY;
   // Recent ranges (ending today or later): newest first in small pages, the first alone, then a few at a time,
   // stopping at the first page older than the range.
-  if (end0 > now - DAY) {
+  if (newestFirst && end0 > now - DAY) {
     const small = (p: number) => t.page({ ...q, page: p, pageSize: 50 });
     const p1 = await small(1);
     if (!p1.records.length) return { records: [], total: 0, exact: true };
@@ -321,9 +332,28 @@ async function viaFullScan(t: CmsTable, base: Base, from: string, until: string,
   return { records, total: records.length, exact: true };
 }
 
-async function fetchSpan(t: CmsTable, base: Base, from: string, until: string, progress: (m: string) => Promise<void>, now: number) {
+// The date a range uses: the one asked for, else a created date Noor can sort (directly or by id), else any
+// sortable date, else the first date column.
+// Tables whose snapshot lists no columns (Filament 3): the sortable date column, read from the row itself.
+export function tableDateFields(html: string): CmsDateField[] {
+  const fields = dateFieldsOf(html);
+  if (fields.length) return fields;
+  const col = dateSortColumn(html);
+  return col ? [{ key: col, label: "", sortBy: col, hidden: false }] : [];
+}
+
+export function chooseDateField(fields: CmsDateField[], wanted?: string | null) {
+  return fields.find((f) => f.key === wanted) ?? fields.find((f) => f.sortBy && /created_at$/.test(f.key)) ?? fields.find((f) => f.sortBy) ?? fields[0] ?? null;
+}
+
+async function fetchSpan(t: CmsTable, baseIn: Base, from: string, until: string, progress: (m: string) => Promise<void>, now: number, wanted?: string | null) {
   const filters = remoteFilters(t.html);
-  const dateFilter = filters.find((f) => f.kind === "date");
+  const field = chooseDateField(tableDateFields(t.html), wanted);
+  t.dateLabel = field?.label || null;
+  // A hidden date column (Noor's "Created at" on Students and Parents) is switched on for these requests.
+  const base: Base = { ...baseIn, show: field?.hidden ? [field.key] : [] };
+  // Noor's own date filter only stands for the created date.
+  const dateFilter = !field || /created_at$/.test(field.key) ? filters.find((f) => f.kind === "date") : undefined;
   // Each faster path falls back to the next if Noor refuses it (its table version, a renamed column).
   const soft = (e: unknown) => !/stopped|cancelled|Narrow the range|too many/i.test(String(e instanceof Error ? e.message : e));
   if (dateFilter) {
@@ -334,10 +364,11 @@ async function fetchSpan(t: CmsTable, base: Base, from: string, until: string, p
       if (!soft(e)) throw e;
     }
   }
-  const column = dateSortColumn(t.html);
+  const column = field?.sortBy ?? null;
   if (column) {
     try {
-      const r = await viaSortedSearch(t, column, base, from, until, progress, now);
+      // Newest-first walking suits creation order (created_at or id); other dates (an end date) use the search.
+      const r = await viaSortedSearch(t, column, base, from, until, progress, now, column === "id" || /created/.test(column));
       if (r) return { ...r, method: "sorted-search" as const };
     } catch (e) {
       if (!soft(e)) throw e;
@@ -385,7 +416,7 @@ function validate(input: CmsRangeInput) {
 
 const filterKey = (username: string, input: CmsRangeInput) =>
   createHash("sha256")
-    .update(JSON.stringify([username, (input.search || "").trim().toLowerCase(), Object.entries(input.filters || {}).filter(([, v]) => v).sort()]))
+    .update(JSON.stringify([username, (input.search || "").trim().toLowerCase(), Object.entries(input.filters || {}).filter(([, v]) => v).sort(), input.dateField || ""]))
     .digest("hex")
     .slice(0, 24);
 
@@ -398,7 +429,7 @@ export async function fetchCmsRange(user: AppUser, input: CmsRangeInput, progres
   };
   // Tables with no dates in Noor (Students, Parents): the saved copy answers at once; Refresh reads Noor
   // again (several minutes for thousands of rows) and replaces the copy.
-  const undatedTables = parseJsonList(await getMeta("cmsUndated"));
+  const undatedTables = parseJsonList(await getMeta("cmsUndated2"));
   const plainQuery = !Object.values(input.filters || {}).some(Boolean);
   if (!input.refresh && plainQuery && undatedTables.includes(input.category)) {
     const saved = await all<{ data_json: string; synced_at: string }>("SELECT data_json, synced_at FROM legacy_cms_records WHERE category = ?", input.category);
@@ -440,16 +471,19 @@ export async function fetchCmsRange(user: AppUser, input: CmsRangeInput, progres
   let requests = 0;
   let methodUsed: CmsRangeMethod | null = null;
   let filters: CmsRemoteFilter[] = [];
+  let dateFields: CmsDateField[] = [];
   const fetched: Record<string, string>[] = [];
   const base = { search: (input.search || "").trim().slice(0, 500), filters: input.filters || {} };
   if (spans.length) {
     const t = await new CmsTable(user, input.category, check).open();
     filters = remoteFilters(t.html);
+    dateFields = dateFieldsOf(t.html);
+    await setMeta(`cmsDateFields.${input.category}`, JSON.stringify(dateFields));
     for (const [i, span] of spans.entries()) {
       await progress(spans.length > 1 ? `Loading ${span.from} to ${span.until} (${i + 1} of ${spans.length} gaps)…` : `Loading ${span.from} to ${span.until} from Noor…`);
-      const res = await fetchSpan(t, base, span.from, span.until, progress, now);
+      const res = await fetchSpan(t, base, span.from, span.until, progress, now, input.dateField);
       if ("undated" in res && res.undated) {
-        if (!undatedTables.includes(input.category)) await setMeta("cmsUndated", JSON.stringify([...undatedTables, input.category]));
+        if (!undatedTables.includes(input.category)) await setMeta("cmsUndated2", JSON.stringify([...undatedTables, input.category]));
         // A whole undated table (no search or filters) refreshes the saved copy.
         if (plainQuery && !base.search) {
           const at = nowIso();
@@ -521,8 +555,18 @@ export async function fetchCmsRange(user: AppUser, input: CmsRangeInput, progres
     fetchedDays: days.length - cached.size,
     undated: records.filter((r) => rowTime(r) === null).length,
     filters,
+    dateFields: dateFields.length ? dateFields : parseJsonAny<CmsDateField[]>(await getMeta(`cmsDateFields.${input.category}`), []),
+    dateField: chooseDateField(dateFields.length ? dateFields : parseJsonAny<CmsDateField[]>(await getMeta(`cmsDateFields.${input.category}`), []), input.dateField)?.key ?? null,
     fetchedAt: nowIso(),
   };
+}
+
+function parseJsonAny<T>(v: string | null, fallback: T): T {
+  try {
+    return v ? (JSON.parse(v) as T) : fallback;
+  } catch {
+    return fallback;
+  }
 }
 
 function parseJsonList(v: string | null): string[] {
@@ -559,7 +603,7 @@ export async function probeCmsTables(user: AppUser, progress: (m: string) => Pro
       }).open();
       const filters = remoteFilters(t.html);
       const dateFilter = filters.find((f) => f.kind === "date") ?? null;
-      const sortColumn = dateSortColumn(t.html);
+      const sortColumn = chooseDateField(tableDateFields(t.html))?.sortBy ?? null;
       const first = await t.first({ search: "" });
       let works: boolean | null = null;
       if (dateFilter) {

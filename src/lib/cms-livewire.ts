@@ -71,6 +71,33 @@ export function dateSortColumn(html: string): string | null {
   return cols.find((c) => /^created(_at)?$/i.test(c)) ?? cols.find((c) => /created/i.test(c)) ?? cols.find((c) => /(date|_at)$/i.test(c)) ?? null;
 }
 
+// The table's columns from its snapshot (Filament 4 keeps them, with hidden/toggle state, in tableColumns).
+export type CmsColumn = { index: number; name: string; label: string; toggled: boolean; toggleable: boolean };
+export function tableColumnsOf(html: string): CmsColumn[] {
+  const snap = tableSnapshot(html);
+  if (!snap) return [];
+  const list = unwrap(JSON.parse(snap).data?.tableColumns);
+  if (!Array.isArray(list)) return [];
+  return list
+    .map((c, index) => ({ c: unwrap(c) as Record<string, unknown>, index }))
+    .filter(({ c }) => c && typeof c === "object" && typeof c.name === "string")
+    .map(({ c, index }) => ({ index, name: String(c.name), label: String(c.label ?? c.name), toggled: c.isToggled !== false, toggleable: !!c.isToggleable }));
+}
+
+// Dates a range can use, per table: each date column, whether Noor sorts by it, whether it is hidden by default,
+// and what to sort by (the column itself, or the record id for a created date Noor cannot sort: ids grow with time).
+export type CmsDateField = { key: string; label: string; sortBy: string | null; hidden: boolean };
+const DATE_COLUMN = /(?:^|[._])(?:created_at|updated_at|start_date|end_date|grace_end_date|paid_at|submitted_at|new_end_date|previous_end_date|date)$/i;
+const NOT_A_RANGE = /verified_at|date_of_birth|birth|deleted_at|updated_at/i;
+export function dateFieldsOf(html: string): CmsDateField[] {
+  const sortable = sortableColumns(html);
+  const fields = tableColumnsOf(html)
+    .filter((c) => DATE_COLUMN.test(c.name) && !NOT_A_RANGE.test(c.name))
+    .map((c) => ({ key: c.name, label: c.label, hidden: !c.toggled, sortBy: sortable.includes(c.name) ? c.name : /(^|.)created_at$/.test(c.name) && sortable.includes("id") ? "id" : null }));
+  // Created first: it is what "the day an account or record was made" means.
+  return fields.sort((a, b) => Number(/created_at$/.test(b.key)) - Number(/created_at$/.test(a.key)));
+}
+
 export type CmsTableQuery = {
   page: number;
   pageSize: number;
@@ -79,6 +106,8 @@ export type CmsTableQuery = {
   // Date filter key → inclusive YYYY-MM-DD bounds, sent to Noor before paging.
   dates?: Record<string, { from?: string; until?: string }>;
   sort?: { column: string; direction: "asc" | "desc" };
+  // Hidden columns to switch on for this request (a date the range needs).
+  show?: string[];
 };
 
 // Use the table's signed snapshot and supported Livewire controls, just as its UI does.
@@ -114,6 +143,15 @@ export async function queryCmsTable(html: string, baseUrl: string, cookie: strin
       updates.tableSortColumn = input.sort.column;
       updates.tableSortDirection = input.sort.direction;
     } else throw new Error("This CMS table cannot be sorted by that column.");
+  }
+  if (input.show?.length) {
+    const cols = tableColumnsOf(html);
+    for (const name of input.show) {
+      const col = cols.find((c) => c.name === name);
+      if (!col || col.toggled) continue;
+      if (Object.hasOwn(data, "tableColumns")) updates[`tableColumns.${col.index}.isToggled`] = true;
+      else updates[`toggledTableColumns.${name}`] = true;
+    }
   }
   const calls = [...(filters.length ? [{ path: "", method: "applyTableFilters", params: [] }] : []), { path: "", method: "gotoPage", params: [input.page, "page"] }];
   const response = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json", "X-Livewire": "true", "X-CSRF-TOKEN": decode(csrf), Cookie: cookie }, body: JSON.stringify({ _token: decode(csrf), components: [{ snapshot, updates, calls }] }), signal: AbortSignal.timeout(60_000), redirect: "error", cache: "no-store" });

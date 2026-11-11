@@ -10,7 +10,7 @@ export type CmsTaskInput =
   | { kind: "contacts" }
   | { kind: "auth" }
   // Update 1.0: rows in a date range, fetched date-first (see cms-range.ts), and the per-table measurement.
-  | { kind: "range"; category: cms.LegacyCmsCategory; from: string; until: string; search?: string; filters?: Record<string,string>; refresh?: boolean }
+  | { kind: "range"; category: cms.LegacyCmsCategory; from: string; until: string; search?: string; filters?: Record<string,string>; refresh?: boolean; dateField?: string }
   | { kind: "probe" }
   // Every page of a table (search and Noor filters applied), fetched in parallel in one job.
   | { kind: "all"; category: cms.LegacyCmsCategory; search?: string; filters?: Record<string,string> };
@@ -42,7 +42,7 @@ export async function startCmsTask(user:AppUser, input:CmsTaskInput) {
   if (input.kind === "range") {
     const DAY=/^\d{4}-\d{2}-\d{2}$/;
     if(!DAY.test(input.from) || !DAY.test(input.until) || input.from>input.until) throw new WorkflowError("VALIDATION","Choose a valid date range.");
-    input = { kind:"range", category:input.category, from:input.from, until:input.until, search:(input.search || "").slice(0,500), filters:input.filters || {}, refresh:!!input.refresh };
+    input = { kind:"range", category:input.category, from:input.from, until:input.until, search:(input.search || "").slice(0,500), filters:input.filters || {}, refresh:!!input.refresh, dateField:/^[\w.]{1,80}$/.test(input.dateField || "")?input.dateField:undefined };
   }
   if (input.kind === "sync" && input.maxPages !== undefined && (!Number.isInteger(input.maxPages) || input.maxPages<1 || input.maxPages>100000)) throw new WorkflowError("VALIDATION","Choose a valid page limit.");
   await sweepCmsTasks();

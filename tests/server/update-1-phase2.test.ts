@@ -43,12 +43,18 @@ for (let d = 0; d < 120; d++)
 // Noor's unsorted order is not by date.
 const unsorted = [...data].sort((a, b) => ((a.id * 7919) % 3607) - ((b.id * 7919) % 3607));
 
-type Mode = "filter" | "sort" | "none" | "ignores";
-const MODES: Record<string, Mode> = { invoices: "filter", "subscription-histories": "sort", feedback: "none", subscriptions: "ignores", parents: "filter", students: "sort" };
+type Mode = "filter" | "sort" | "none" | "ignores" | "v4";
+const MODES: Record<string, Mode> = { invoices: "filter", "subscription-histories": "sort", feedback: "none", subscriptions: "ignores", parents: "filter", students: "sort", "subscription-plans": "v4" };
 // Tables whose Noor ignores page sizes above 50 (it echoes the size but returns 50 rows).
 const CAP50 = new Set(["filter-cap"]);
 const enc = (s: string) => s.replaceAll('"', "&quot;");
+// Filament 4 (Noor today): tableSort "column:direction", tableColumns with "Created at" hidden, sortable by id only.
+function seedV4() {
+  const snap = JSON.stringify({ memo: { name: "v4" }, data: { tableRecordsPerPage: 10, tableSort: null, tableDeferredFilters: [{ status: [{ value: null }, { s: "arr" }] }, { s: "arr" }], tableColumns: [[[{ type: "column", name: "id", label: "ID", isToggled: true, isToggleable: false }, { s: "arr" }], [{ type: "column", name: "created_at", label: "Created at", isToggled: false, isToggleable: true }, { s: "arr" }]], { s: "arr" }] } });
+  return `<meta name="csrf-token" content="test"><div wire:snapshot="${enc(snap)}" data-update-uri="/livewire/update"><button wire:click="sortTable(&#039;id&#039;)">ID</button></div>`;
+}
 function seed(mode: Mode) {
+  if (mode === "v4") return seedV4();
   const filters = mode === "filter" || mode === "ignores" ? [{ created_at: [{ created_from: null, created_until: null }, { s: "arr" }], status: [{ value: null }, { s: "arr" }] }, { s: "arr" }] : [{ status: [{ value: null }, { s: "arr" }] }, { s: "arr" }];
   const snap = JSON.stringify({ memo: { name: mode, cap: mode === "filter" && capNext ? 50 : 0 }, data: { tableRecordsPerPage: 10, tableSortColumn: null, tableSortDirection: null, tableDeferredFilters: filters } });
   const sortBtn = mode === "none" ? "" : `<button wire:click="sortTable(&#039;created_at&#039;)">Created at</button>`;
@@ -76,7 +82,14 @@ globalThis.fetch = (async (url: string | URL, init?: RequestInit) => {
   const up = c.updates as Record<string, string | number | null>;
   const per = Math.min(Number(up.tableRecordsPerPage) || 10, memo.cap || Infinity);
   const page = c.calls.find((x: { method: string }) => x.method === "gotoPage").params[0];
-  let rows = up.tableSortColumn === "created_at" ? [...data].sort((a, b) => b.t - a.t) : unsorted;
+  let rows = up.tableSortColumn === "created_at" || up.tableSort === "id:desc" ? [...data].sort((a, b) => b.t - a.t) : unsorted;
+  if (mode === "v4") {
+    // Ids grow with time; "Created at" comes back only when the hidden column is switched on.
+    const shown = (up["tableColumns.1.isToggled"] as unknown) === true;
+    const slice = rows.slice((page - 1) * per, page * per);
+    const html = `<table><thead><tr><th>ID</th>${shown ? "<th>Created at</th>" : ""}</tr></thead><tbody>${slice.map((r) => `<tr wire:key="r${r.id}"><td><a href="/admin/subscription-plans/${10000 - r.id}">${10000 - r.id}</a></td>${shown ? `<td>${r.created}</td>` : ""}</tr>`).join("")}</tbody></table>Showing ${slice.length ? (page - 1) * per + 1 : 0} to ${(page - 1) * per + slice.length} of ${rows.length} results`;
+    return Response.json({ components: [{ snapshot: JSON.stringify({ data: { tableRecordsPerPage: per } }), effects: { html } }] });
+  }
   if (mode === "filter") {
     const from = up["tableDeferredFilters.created_at.created_from"] as string | null;
     const until = up["tableDeferredFilters.created_at.created_until"] as string | null;
@@ -151,6 +164,10 @@ async function main() {
   // Admin's My work page (it failed on tables and columns that do not exist).
   const desk = await adminWorkspaceData(admin);
   check("Admin's My work data loads", desk.systemHealth.totalUsersCount > 0 && Array.isArray(desk.pendingUsers), desk.systemHealth);
+
+  // Filament 4: a hidden created date is switched on and the table is walked newest first by id.
+  const v4 = await fetchCmsRange(admin, { category: "subscription-plans", from: "2026-11-09", until: "2026-11-11" }, undefined, NOW);
+  check("a hidden Created at column is switched on and sorted newest first by id", v4.method === "sorted-search" && v4.dateField === "created_at" && v4.total === data.filter((r) => r.day >= "2026-11-09").length && v4.records.every((r) => r["Created at"]), { method: v4.method, field: v4.dateField, total: v4.total });
 
   // Cache: closed days are reused, today is fetched again.
   posts = 0;

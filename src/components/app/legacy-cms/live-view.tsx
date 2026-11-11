@@ -23,20 +23,23 @@ export function CmsLiveView({ categories, canReview, initialCategory }: { catego
   const [sent, setSent] = React.useState("");
   const [filters, setFilters] = React.useState<Record<string, string>>({});
   const [local, setLocal] = React.useState("");
+  // Which Noor date the range means (account created, subscription start or end…); empty = the best one.
+  const [dateField, setDateField] = React.useState("");
   const [showEc, setShowEc] = useShowEc();
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
   const [history, setHistory] = React.useState<string | null>(null);
   const cms = useCmsRange();
   const range = period ? cmsPresetRange(period, start, end) : null;
-  const key = range ? JSON.stringify([category, range, sent, filters]) : "";
+  const key = range ? JSON.stringify([category, range, sent, filters, dateField]) : "";
 
   React.useEffect(() => {
     if (!range) return;
-    const t = setTimeout(() => void cms.load({ category, ...range, search: sent, filters }), 250);
+    const t = setTimeout(() => void cms.load({ category, ...range, search: sent, filters, dateField: dateField || undefined }), 250);
     return () => clearTimeout(t);
   }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
   React.useEffect(() => {
     setFilters({});
+    setDateField("");
     setSelected(new Set());
   }, [category]);
 
@@ -64,7 +67,7 @@ export function CmsLiveView({ categories, canReview, initialCategory }: { catego
     if (!liveOn || !liveRange || !range) return;
     const t = setInterval(() => {
       if (document.visibilityState !== "visible" || cms.loading) return;
-      void cms.load({ category, ...range, search: sent, filters }, { quiet: true });
+      void cms.load({ category, ...range, search: sent, filters, dateField: dateField || undefined }, { quiet: true });
     }, every * 1000);
     return () => clearInterval(t);
   }, [liveOn, liveRange, every, key, cms.loading]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -113,7 +116,7 @@ export function CmsLiveView({ categories, canReview, initialCategory }: { catego
                   <SquareIcon /> Stop
                 </Button>
               ) : (
-                <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => void cms.load({ category, ...range, search: sent, filters, refresh: true })} title="Fetch again from Noor, ignoring cached days">
+                <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => void cms.load({ category, ...range, search: sent, filters, dateField: dateField || undefined, refresh: true })} title="Fetch again from Noor, ignoring cached days">
                   <RefreshCwIcon /> Refresh
                 </Button>
               )}
@@ -140,6 +143,19 @@ export function CmsLiveView({ categories, canReview, initialCategory }: { catego
               <SearchIcon />
             </Button>
           </form>
+          {!!r?.dateFields?.length && (
+            <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              Date
+              <select aria-label="Date field" value={dateField || r.dateField || ""} onChange={(e) => setDateField(e.target.value)} className="h-8 rounded-md border bg-background px-2 text-xs text-foreground">
+                {r.dateFields.map((f) => (
+                  <option key={f.key} value={f.key}>
+                    {f.label}
+                    {f.sortBy === "id" ? " (newest first by id)" : !f.sortBy ? " (reads every page)" : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <NoorFilters filters={r?.filters ?? []} values={filters} onChange={setFilters} />
           <Input value={local} onChange={(e) => setLocal(e.target.value)} placeholder="Filter loaded rows" className="h-8 w-44 text-xs" aria-label="Filter loaded rows" />
         </Toolbar>
@@ -183,7 +199,7 @@ export function CmsLiveView({ categories, canReview, initialCategory }: { catego
                 {r.total.toLocaleString()} {label.toLowerCase()}
               </strong>
               <span>{r.from === r.until ? r.from : `${r.from} → ${r.until}`}</span>
-              <span>· {METHOD_LABEL[r.method] ?? r.method}</span>
+              <span>· {METHOD_LABEL[r.method] ?? r.method}{r.dateField ? ` by ${r.dateFields?.find((f) => f.key === r.dateField)?.label ?? r.dateField}` : ""}</span>
               <span>· {r.requests ? `${r.requests} request${r.requests === 1 ? "" : "s"} to Noor` : "no requests to Noor"}</span>
               {r.cachedDays > 0 && <span>· {r.cachedDays} day{r.cachedDays === 1 ? "" : "s"} from the cache</span>}
               {r.undated > 0 && r.undated === r.total ? <span>· this table has no dates in Noor, so every row is shown</span> : r.undated > 0 && <span>· {r.undated} rows have no readable date</span>}

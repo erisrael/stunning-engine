@@ -55,7 +55,7 @@ try {
   await page.getByText(/Access saved for 2 people/).waitFor({ timeout: 15000 });
   await bar.getByRole("combobox", { name: "Login for the selected people" }).selectOption({ label: "Saved: Finance team" });
   await page.getByText(/Login changed for 2 people/).waitFor({ timeout: 15000 });
-  await page.getByText("Set for this person").first().waitFor();
+  await page.waitForFunction(() => [...document.querySelectorAll("select")].filter((e) => e.getAttribute("aria-label")?.endsWith(": Noor login") && e.selectedOptions[0]?.text === "Saved: Finance team").length >= 2, null, { timeout: 15000 }).catch(() => {});
   check("bulk grants give tables and a shared login to several people", (await page.getByRole("combobox", { name: /: Noor login$/ }).evaluateAll((els) => els.filter((e) => e.selectedOptions[0]?.text === "Saved: Finance team").length)) >= 2);
   await page.screenshot({ path: path.join(shots, "people.png"), fullPage: true });
 

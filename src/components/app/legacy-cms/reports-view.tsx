@@ -35,6 +35,7 @@ export function CmsReportsView({ categories, canSchedule, isAdmin, chatGroups }:
   const [groupBy, setGroupBy] = React.useState<CmsGroupBy>("day");
   const [sumColumn, setSumColumn] = React.useState<string | undefined>(undefined);
   const [title, setTitle] = React.useState("");
+  const [dateField, setDateField] = React.useState("");
   const [showEc, setShowEc] = useShowEc();
   const cms = useCmsRange();
   const range = period ? cmsPresetRange(period, start, end) : null;
@@ -88,13 +89,21 @@ export function CmsReportsView({ categories, canSchedule, isAdmin, chatGroups }:
                   <SquareIcon /> Stop
                 </Button>
               ) : (
-                <Button size="sm" className="h-8 text-xs" disabled={!range} onClick={() => range && void cms.load({ category, ...range, search: search.trim(), filters })}>
+                <Button size="sm" className="h-8 text-xs" disabled={!range} onClick={() => range && void cms.load({ category, ...range, search: search.trim(), filters, dateField: dateField || undefined })}>
                   <PlayIcon /> {r ? "Load again" : "Load preview"}
                 </Button>
               )
             }
           >
             <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search in Noor (optional)" className="h-8 w-56 text-xs" aria-label="Report search" />
+            {r?.category === category && !!r.dateFields?.length && (
+              <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                Date
+                <select aria-label="Report date field" value={dateField || r.dateField || ""} onChange={(e) => setDateField(e.target.value)} className="h-8 rounded-md border bg-background px-2 text-xs text-foreground">
+                  {r.dateFields.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
+                </select>
+              </label>
+            )}
             <NoorFilters filters={r?.category === category ? r.filters : []} values={filters} onChange={setFilters} />
           </Toolbar>
           {cms.loading && <StatusStrip><RefreshCwIcon className="size-3.5 animate-spin" /> {cms.progress || "Loading from Noor…"}</StatusStrip>}
