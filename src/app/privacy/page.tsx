@@ -53,6 +53,7 @@ export default async function PrivacyPolicyPage() {
               <h2 className="text-lg font-semibold text-foreground">1. Overview and Scope</h2>
               <p className="text-sm leading-relaxed text-muted-foreground">
                 This Privacy Policy explains how <strong>{id.name}</strong> (&quot;we&quot;, &quot;our&quot;, or &quot;the Service&quot;), accessible at{" "}
+                <code className="rounded bg-muted px-1.5 py-0.5 text-xs">https://ops.myseed.com.et</code> and{" "}
                 <code className="rounded bg-muted px-1.5 py-0.5 text-xs">https://myseedops.tech</code>, collects, uses, protects, and discloses personal
                 information when you access our platform, use our operational tools, or sign in through identity providers including Google OAuth.
               </p>
@@ -152,7 +153,7 @@ export default async function PrivacyPolicyPage() {
               </p>
               <div className="rounded-lg border bg-muted/30 p-3 text-xs leading-relaxed text-muted-foreground">
                 <div><strong>Application:</strong> {id.name}</div>
-                <div><strong>Homepage:</strong> https://myseedops.tech</div>
+                <div><strong>Homepage:</strong> https://ops.myseed.com.et &bull; https://myseedops.tech</div>
                 <div><strong>Support &amp; Developer Email:</strong> iwfm@myseed.com.et</div>
               </div>
             </section>

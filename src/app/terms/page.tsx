@@ -53,6 +53,7 @@ export default async function TermsOfServicePage() {
               <h2 className="text-lg font-semibold text-foreground">1. Acceptance of Terms</h2>
               <p className="text-sm leading-relaxed text-muted-foreground">
                 By accessing or using <strong>{id.name}</strong> (&quot;the Service&quot;), hosted at{" "}
+                <code className="rounded bg-muted px-1.5 py-0.5 text-xs">https://ops.myseed.com.et</code> and{" "}
                 <code className="rounded bg-muted px-1.5 py-0.5 text-xs">https://myseedops.tech</code>, you agree to be bound by these Terms of Service.
                 If you do not agree, you may not access or use the Service.
               </p>
@@ -96,7 +97,7 @@ export default async function TermsOfServicePage() {
               </p>
               <div className="rounded-lg border bg-muted/30 p-3 text-xs leading-relaxed text-muted-foreground">
                 <div><strong>Support:</strong> iwfm@myseed.com.et</div>
-                <div><strong>Platform:</strong> https://myseedops.tech</div>
+                <div><strong>Platform:</strong> https://ops.myseed.com.et &bull; https://myseedops.tech</div>
               </div>
             </section>
           </div>

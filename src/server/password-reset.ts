@@ -15,13 +15,20 @@ const LINK_MINUTES = 30;
 const hash = (t: string) => crypto.createHash("sha256").update(t).digest("hex");
 
 export async function appOrigin() {
-  if (process.env.APP_URL) return process.env.APP_URL.replace(/\/+$/, "");
   try {
     const h = await headers();
-    return `${h.get("x-forwarded-proto") ?? (process.env.NODE_ENV === "production" ? "https" : "http")}://${h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000"}`;
+    const rawHost = h.get("x-forwarded-host") ?? h.get("host");
+    if (rawHost) {
+      const host = rawHost.split(",")[0].trim();
+      const rawProto = h.get("x-forwarded-proto") ?? (process.env.NODE_ENV === "production" ? "https" : "http");
+      const proto = rawProto.split(",")[0].trim();
+      return `${proto}://${host}`.replace(/\/+$/, "");
+    }
   } catch {
-    return process.env.NODE_ENV === "production" ? "https://localhost:3000" : "http://localhost:3000";
+    // Outside request context (cron, background tasks, scripts)
   }
+  if (process.env.APP_URL) return process.env.APP_URL.replace(/\/+$/, "");
+  return process.env.NODE_ENV === "production" ? "https://localhost:3000" : "http://localhost:3000";
 }
 
 export async function createResetToken(userId: string, via: "email" | "google") {
@@ -120,11 +127,26 @@ export async function googleConfig(): Promise<{ clientId: string; secret: string
 
 export async function googleSettings() {
   const s = parseJson<GoogleStored | null>((await get<{ value: string }>("SELECT value FROM settings WHERE key = 'cfg.google'"))?.value, null);
+  const origin = await appOrigin();
+  const knownOrigins = Array.from(
+    new Set([
+      origin,
+      "https://ops.myseed.com.et",
+      "https://myseedops.tech",
+    ])
+  );
+  const redirectUris = knownOrigins.flatMap((o) => [
+    `${o}/api/auth/oauth/google/callback`,
+    `${o}/api/auth/google/callback`,
+    `${o}/api/google/callback`,
+  ]);
   return {
     fromEnv: !!process.env.GOOGLE_CLIENT_ID,
     clientId: process.env.GOOGLE_CLIENT_ID ?? s?.clientId ?? "",
     hasSecret: !!process.env.GOOGLE_CLIENT_SECRET || !!s?.secretEnc,
-    redirectUri: `${await appOrigin()}/api/auth/google/callback`,
+    origin,
+    redirectUri: `${origin}/api/auth/oauth/google/callback`,
+    redirectUris,
     googleSignIn: s?.googleSignIn ?? true,
     googleReset: s?.googleReset ?? true,
   };

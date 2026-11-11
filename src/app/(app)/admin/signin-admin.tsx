@@ -20,7 +20,16 @@ export function SignInAdmin({
   emailReady,
   profileFields,
 }: {
-  google: { fromEnv: boolean; clientId: string; hasSecret: boolean; redirectUri: string; googleSignIn?: boolean; googleReset?: boolean };
+  google: {
+    fromEnv: boolean;
+    clientId: string;
+    hasSecret: boolean;
+    redirectUri: string;
+    redirectUris?: string[];
+    origin?: string;
+    googleSignIn?: boolean;
+    googleReset?: boolean;
+  };
   emailReady: boolean;
   profileFields?: { editable: ProfileFieldKey[] };
 }) {
@@ -93,16 +102,45 @@ export function SignInAdmin({
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
           <ol className="list-decimal space-y-1 pl-5 text-muted-foreground text-xs">
-            <li>Open console.cloud.google.com, create a project, then APIs and Services, OAuth consent screen.</li>
-            <li>Credentials, Create credentials, OAuth client ID, Web application.</li>
-            <li>Under Authorized redirect URIs add the address below, then Create.</li>
-            <li>Paste the client ID and secret here and save. Users can also attach their personal/work Gmail on their profile to sign in with Google.</li>
+            <li>Open console.cloud.google.com, select your project, go to <strong>APIs &amp; Services &rarr; Credentials</strong>.</li>
+            <li>Create or edit your <strong>OAuth 2.0 Client ID</strong> (Application type: <em>Web application</em>).</li>
+            <li>Add to <strong>Authorized JavaScript origins</strong>:
+              <div className="mt-1 flex flex-wrap gap-1 font-mono text-[11px] text-foreground">
+                <span className="rounded bg-muted px-1.5 py-0.5">https://ops.myseed.com.et</span>
+                <span className="rounded bg-muted px-1.5 py-0.5">https://myseedops.tech</span>
+              </div>
+            </li>
+            <li>Add all required callback paths to <strong>Authorized redirect URIs</strong> below:</li>
           </ol>
-          <div className="flex gap-2">
-            <Input readOnly value={google.redirectUri} className="font-mono text-xs" aria-label="Redirect URI" />
-            <Button size="icon" variant="outline" aria-label="Copy" onClick={() => navigator.clipboard.writeText(google.redirectUri).then(() => toast.success("Copied"))}>
-              <CopyIcon />
-            </Button>
+          <div className="space-y-1.5 rounded-lg border bg-muted/40 p-2.5">
+            <div className="flex items-center justify-between text-xs font-semibold text-foreground">
+              <span>Authorized Redirect URIs ({google.redirectUris?.length ?? 1})</span>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 gap-1 px-2 text-xs"
+                onClick={() => {
+                  const list = (google.redirectUris ?? [google.redirectUri]).join("\n");
+                  navigator.clipboard.writeText(list).then(() => toast.success("Copied all redirect URIs"));
+                }}
+              >
+                <CopyIcon className="size-3" /> Copy All
+              </Button>
+            </div>
+            {(google.redirectUris ?? [google.redirectUri]).map((uri) => (
+              <div key={uri} className="flex items-center gap-1.5">
+                <Input readOnly value={uri} className="h-7 font-mono text-[11px]" aria-label="Redirect URI" />
+                <Button
+                  size="icon"
+                  variant="outline"
+                  className="size-7 shrink-0"
+                  aria-label="Copy URI"
+                  onClick={() => navigator.clipboard.writeText(uri).then(() => toast.success("Copied"))}
+                >
+                  <CopyIcon className="size-3" />
+                </Button>
+              </div>
+            ))}
           </div>
           {google.fromEnv ? (
             <p className="text-muted-foreground">Set in the hosting environment variables (GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET).</p>

@@ -1,6 +1,12 @@
 # HTTPS for the Content Manager. Caddy gets and renews the certificates by itself; point the domain at the
-# VPS first. SITE_ADDRESSES is the domain, plus www.<domain> when that is on (set by deploy.sh).
+# VPS first. SITE_ADDRESSES is the domain(s), space- or comma-separated (e.g. "myseedops.tech, ops.myseed.com.et").
 {$SITE_ADDRESSES} {
 	encode zstd gzip
-	reverse_proxy app:3000
+	reverse_proxy app:3000 {
+		header_up Host {host}
+		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-Host {host}
+	}
 }
