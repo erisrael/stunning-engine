@@ -1,4 +1,4 @@
-import { cmsSession, cmsTableSeed } from "./cms-session";
+import { cmsSession, cmsTableSeed, forgetCmsSessions } from "./cms-session";
 import { cmsReceiptAttachments } from "@/lib/cms-receipts";
 import { cmsField, cmsDateMatches, parseCmsDate } from "@/lib/cms-filters";
 import { queryCmsTable, cmsPagination, type CmsRemoteFilter } from "@/lib/cms-livewire";
@@ -65,7 +65,12 @@ export const DEFAULT_ROLE_VISIBILITY: CmsRoleVisibility = {
 };
 
 type StoredCmsConfig = {
-  userCredentials?: Record<string, { username: string; passwordEnc: string }>;
+  // A person's own Noor login, or a pointer to a saved login shared by several people.
+  userCredentials?: Record<string, { username?: string; passwordEnc?: string; accountId?: string }>;
+  // Saved Noor logins (Admin, Noor access): stored once, sealed, used by many people at the same time.
+  accounts?: Record<string, { label: string; username: string; passwordEnc: string; createdAt: string; lastCheck?: { ok: boolean; at: string; message: string } }>;
+  // Who may sync, clear and snapshot the stored Noor data: Admin only, or also the people Admin allows.
+  dataPolicy?: "admin" | "granted";
   userOverrides?: Record<string, UserCmsOverride>;
   baseUrl?: string;
   username?: string;
@@ -191,7 +196,7 @@ export async function saveCmsRoleVisibility(user: AppUser, visibility: CmsRoleVi
 }
 
 export async function clearLegacyCmsData(user: AppUser, category?: LegacyCmsCategory): Promise<{ count: number }> {
-  if (!can(user, "data.manage") && !can(user, "users.manage")) {
+  if (!(await canManageCmsData(user))) {
     throw new WorkflowError("FORBIDDEN", "Only Admin or Data Managers can clear Legacy CMS records.");
   }
   let query = "DELETE FROM legacy_cms_records";
@@ -472,6 +477,7 @@ export async function checkLegacyCmsAuth(user:AppUser):Promise<{ok:boolean;statu
 
 export async function logoutLegacyCms(user: AppUser): Promise<{ ok: boolean; message: string }> {
   if (!can(user, "data.manage") && !can(user, "users.manage")) {
+  forgetCmsSessions();
     throw new WorkflowError("FORBIDDEN", "Only Admin or Data Managers can log out from Noor Ethiopia CMS.");
   }
   const rawRow = await get<{ value: string }>("SELECT value FROM settings WHERE key = 'cfg.legacy_cms'");
@@ -511,6 +517,7 @@ export async function stopLegacyCmsSync(user: AppUser): Promise<{ ok: boolean; m
 
 export async function disconnectLegacyCms(user: AppUser): Promise<{ ok: boolean; message: string }> {
   if (!can(user, "data.manage") && !can(user, "users.manage")) {
+  forgetCmsSessions();
     throw new WorkflowError("FORBIDDEN", "Only Admin or Data Managers can disconnect Noor Ethiopia CMS.");
   }
   activeCmsSyncAbortRequested = true;
@@ -539,7 +546,7 @@ export async function syncLegacyCms(
   opts: { force?: boolean; category?: LegacyCmsCategory | "all"; deep?: boolean; maxPages?: number } = {},
   progress?: (message: string) => Promise<void>
 ): Promise<{ ok: boolean; message: string; counts: Record<LegacyCmsCategory, number>; targetCategory: string }> {
-  if (!can(user, "data.manage") && !can(user, "users.manage") && (!opts.category || opts.category === "all")) throw new WorkflowError("FORBIDDEN", "Choose an authorized CMS table to refresh.");
+  if (!(await canManageCmsData(user))) throw new WorkflowError("FORBIDDEN", "Refreshing the stored Noor data is for Admin, or the people Admin allows (Admin, Noor access, Data policy).");
   await requireCmsCategories(user, opts.category && opts.category!=="all" ? [opts.category] : LEGACY_CMS_CATEGORIES.map(c=>c.key));
 
   const config = await getLegacyCmsConfig();
@@ -1495,7 +1502,7 @@ export async function deleteLegacyCmsCategoryData(
   user: AppUser,
   category: LegacyCmsCategory | "all"
 ): Promise<{ ok: boolean; count: number; message: string }> {
-  if (!can(user, "data.manage") && !can(user, "users.manage")) {
+  if (!(await canManageCmsData(user))) {
     throw new WorkflowError("FORBIDDEN", "Only Admin or Data Managers can delete scraped records.");
   }
 
@@ -1629,7 +1636,7 @@ export async function deleteLegacyCmsSnapshot(
   snapshotId: string
 ): Promise<{ ok: boolean; message: string }> {
   try {
-    if (!can(user, "data.manage") && !can(user, "users.manage")) {
+    if (!(await canManageCmsData(user))) {
       throw new WorkflowError("FORBIDDEN", "Only Admin or Data Managers can delete snapshots.");
     }
     await run("DELETE FROM legacy_cms_snapshots WHERE id = ?", snapshotId);
@@ -1809,7 +1816,11 @@ export async function getLegacyCmsConfigForUser(user: AppUser): Promise<LegacyCm
   const stored = row ? parseJson<StoredCmsConfig>(row.value, {}) : {};
   const credentials = stored.userCredentials?.[user.id];
   if (!credentials) return config;
-  return { ...config, username: credentials.username, password: (await unseal(credentials.passwordEnc)) ?? "", sessionCookie: "", hasPassword: true, hasSessionCookie: false };
+  const account = credentials.accountId ? stored.accounts?.[credentials.accountId] : null;
+  const username = account?.username ?? credentials.username;
+  const passwordEnc = account?.passwordEnc ?? credentials.passwordEnc;
+  if (!username || !passwordEnc) return config;
+  return { ...config, username, password: (await unseal(passwordEnc)) ?? "", sessionCookie: "", hasPassword: true, hasSessionCookie: false };
 }
 
 export function publicCmsConfig(config: LegacyCmsConfig): LegacyCmsConfig {
@@ -1819,4 +1830,13 @@ export function publicCmsConfig(config: LegacyCmsConfig): LegacyCmsConfig {
 
 async function patchCmsState(patch:Partial<StoredCmsConfig>){
  await tx(async()=>{const row=await get<{value:string}>("SELECT value FROM settings WHERE key='cfg.legacy_cms' FOR UPDATE");const stored=row?parseJson<StoredCmsConfig>(row.value,{}):{};await run("INSERT INTO settings (key,value,updated_at) VALUES ('cfg.legacy_cms',?,?) ON CONFLICT (key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at",JSON.stringify({...stored,...patch}),nowIso());});
+}
+
+// Admin and Data Managers always manage the stored Noor data; others only when the policy is "granted" and
+// Admin has allowed them (Admin, Noor access).
+export async function canManageCmsData(user: AppUser) {
+  if (can(user, "users.manage") || can(user, "data.manage")) return true;
+  const row = await get<{ value: string }>("SELECT value FROM settings WHERE key = 'cfg.legacy_cms'");
+  const stored = row?.value ? parseJson<StoredCmsConfig>(row.value, {}) : {};
+  return stored.dataPolicy === "granted" && !!stored.userOverrides?.[user.id]?.canManageData;
 }

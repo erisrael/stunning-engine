@@ -1,6 +1,7 @@
 // CMS dates without a zone are interpreted in the workspace's Addis Ababa zone.
 export function parseCmsDate(value: unknown, now = new Date()): Date | null {
-  const text = String(value ?? "").trim();
+  // Noor adds a relative hint after the date ("Nov 2, 2026 14:50:35 1 week ago"); the absolute part decides.
+  const text = String(value ?? "").trim().replace(/^(.*\d{4}(?:[ T]\d{1,2}:\d{2}(?::\d{2})?)?)\s+(?:\d+\s+\w+|an? \w+)\s+ago$/i, "$1");
   if (!text) return null;
   const relative = text.toLowerCase();
   if (relative === "just now" || relative === "today") return now;
@@ -37,7 +38,7 @@ export function cmsField(record: Record<string, unknown>, names: string[]): stri
 }
 
 export function cmsDate(record: Record<string, unknown>): Date | null {
-  for (const name of ["created at", "created", "date", "invoice date", "payment date", "joined at", "registered at", "starts at", "expires at"]) {
+  for (const name of ["created at", "created", "date", "submitted", "submitted at", "invoice date", "payment date", "joined at", "joined", "registered at", "start date", "starts at", "end date", "expires at"]) {
     const parsed = parseCmsDate(cmsField(record, [name]));
     if (parsed) return parsed;
   }

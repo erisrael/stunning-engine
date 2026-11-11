@@ -25,7 +25,8 @@ export async function resourceView(user:AppUser) {
  // Regular members only see their own submitted requests.
  let requests: Awaited<ReturnType<typeof listPurchases>> = [];
  if (finance(user) || can(user, "users.manage") || can(user, "finance.approve")) {
-   requests = await listPurchases(user, false);
+   // Admin and approvers read every request here; listPurchases itself asks for Finance access.
+   requests = await listPurchases(finance(user) ? user : { ...user, perms: [...user.perms, "finance.access"] }, false);
  } else {
    const allPurchases = await all<{ id: string; number: string; requester: string | null; requester_id: string | null; department: string | null; project: string | null; title: string; lines: string; estimate: number; vendor: string | null; vendor_id: string | null; status: string; note: string | null; received_note: string | null; created_at: string }>(
      `SELECT pr.*, u.name AS requester, v.name AS vendor 

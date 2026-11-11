@@ -412,6 +412,12 @@ PREPS["update-1-p3"] = async () => {
   return { sub, don };
 };
 
+// Admin, Noor access, the new sidebar entries and Finance requests for Admin.
+PREPS["noor-access"] = async () => {
+  await passwordOnly();
+  return {};
+};
+
 async function main() {
   const name = process.argv[2]!;
   const prep = PREPS[name];

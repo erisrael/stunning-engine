@@ -48,7 +48,8 @@ export function CmsLiveView({ categories, canReview, initialCategory }: { catego
   const [every, setEvery] = React.useState(20);
   const [fresh, setFresh] = React.useState<{ ids: Set<string>; at: number } | null>(null);
   const today = new Date(Date.now() + 3 * 3600_000).toISOString().slice(0, 10);
-  const liveRange = !!range && range.until >= today;
+  // Tables with no dates (Students, Parents) cannot update by day; they show the saved copy until Refresh.
+  const liveRange = !!range && range.until >= today && !(r && r.total > 0 && r.undated === r.total);
   const prev = React.useRef<{ key: string; ids: Set<string> } | null>(null);
   React.useEffect(() => {
     if (!r) return;
@@ -185,7 +186,7 @@ export function CmsLiveView({ categories, canReview, initialCategory }: { catego
               <span>· {METHOD_LABEL[r.method] ?? r.method}</span>
               <span>· {r.requests ? `${r.requests} request${r.requests === 1 ? "" : "s"} to Noor` : "no requests to Noor"}</span>
               {r.cachedDays > 0 && <span>· {r.cachedDays} day{r.cachedDays === 1 ? "" : "s"} from the cache</span>}
-              {r.undated > 0 && <span>· {r.undated} rows have no readable date</span>}
+              {r.undated > 0 && r.undated === r.total ? <span>· this table has no dates in Noor, so every row is shown</span> : r.undated > 0 && <span>· {r.undated} rows have no readable date</span>}
               {fresh && <span className="rounded-full bg-emerald-600 px-2 py-0.5 font-medium text-white" data-testid="live-new">+{fresh.ids.size} new</span>}
               <span className="ml-auto">{liveOn && liveRange ? "Updated" : "Loaded"} {new Date(r.fetchedAt).toLocaleTimeString()}</span>
             </StatusStrip>

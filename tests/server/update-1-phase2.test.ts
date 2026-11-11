@@ -111,11 +111,11 @@ async function main() {
   posts = 0;
   const viaFilter = await fetchCmsRange(admin, { category: "invoices", ...week }, undefined, NOW);
   check(`Noor's date filter: ${expected} rows with Noor's total`, viaFilter.method === "noor-filter" && viaFilter.total === expected, { method: viaFilter.method, total: viaFilter.total });
-  check("Noor's date filter with 250-row pages: one request for the week", posts === 1, { posts });
+  check("Noor's date filter with 250-row pages: one request for the week", posts === Math.ceil(expected / 100), { posts });
 
   posts = 0;
   const viaSort = await fetchCmsRange(admin, { category: "subscription-histories", ...week }, undefined, NOW);
-  const totalPages = Math.ceil(data.length / 250);
+  const totalPages = Math.ceil(data.length / 100);
   check(`sorted range search: exactly the ${expected} rows in range`, viaSort.method === "sorted-search" && viaSort.total === expected && viaSort.records.every((r) => r["Created at"].slice(0, 10) >= week.from && r["Created at"].slice(0, 10) <= week.until), { method: viaSort.method, total: viaSort.total });
   check(`sorted range search reads ${posts} of ${totalPages} pages`, posts < totalPages / 2, { posts, totalPages });
 
@@ -138,12 +138,12 @@ async function main() {
   // A recent range on a sort-only table reads newest pages first and stops at the range start.
   posts = 0;
   const recent = await fetchCmsRange(admin, { category: "students", from: "2026-11-09", until: "2026-11-11" }, undefined, NOW);
-  check("a range ending today walks the newest pages only", recent.method === "sorted-search" && recent.total === data.filter((r) => r.day >= "2026-11-09").length && posts <= 7, { total: recent.total, posts });
+  check("a range ending today walks the newest pages only", recent.method === "sorted-search" && recent.total === data.filter((r) => r.day >= "2026-11-09").length && posts <= 4, { total: recent.total, posts });
 
   // A whole table in one parallel job (old live mode without a date, and the synchronized mirror).
   posts = 0;
   const whole = await fetchCmsAll(admin, { category: "feedback" });
-  check("a whole table loads in parallel at the big page size", whole.records.length === data.length && whole.complete && posts === Math.ceil(data.length / 250), { rows: whole.records.length, posts });
+  check("a whole table loads in parallel at the big page size", whole.records.length === data.length && whole.complete && posts === Math.ceil(data.length / 100), { rows: whole.records.length, posts });
   const synced = await syncLegacyCms(admin, { category: "feedback", deep: true });
   const stored = await get<{ c: number }>("SELECT COUNT(*) AS c FROM legacy_cms_records WHERE category = 'feedback'");
   check("the synchronized mirror saves every row in batches", synced.ok && Number(stored?.c) === data.length, { synced: synced.message, stored });

@@ -107,9 +107,13 @@ export async function queryCmsTable(html: string, baseUrl: string, cookie: strin
     updates[`tableDeferredFilters.${filter.key}`] = value || null;
   }
   if (input.sort) {
-    if (!sortableColumns(html).includes(input.sort.column) || !Object.hasOwn(data, "tableSortColumn")) throw new Error("This CMS table cannot be sorted by that column.");
-    updates.tableSortColumn = input.sort.column;
-    updates.tableSortDirection = input.sort.direction;
+    if (!sortableColumns(html).includes(input.sort.column)) throw new Error("This CMS table cannot be sorted by that column.");
+    // Filament 4 keeps one "column:direction" string (tableSort); Filament 3 keeps two properties.
+    if (Object.hasOwn(data, "tableSort")) updates.tableSort = `${input.sort.column}:${input.sort.direction}`;
+    else if (Object.hasOwn(data, "tableSortColumn")) {
+      updates.tableSortColumn = input.sort.column;
+      updates.tableSortDirection = input.sort.direction;
+    } else throw new Error("This CMS table cannot be sorted by that column.");
   }
   const calls = [...(filters.length ? [{ path: "", method: "applyTableFilters", params: [] }] : []), { path: "", method: "gotoPage", params: [input.page, "page"] }];
   const response = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json", "X-Livewire": "true", "X-CSRF-TOKEN": decode(csrf), Cookie: cookie }, body: JSON.stringify({ _token: decode(csrf), components: [{ snapshot, updates, calls }] }), signal: AbortSignal.timeout(60_000), redirect: "error", cache: "no-store" });

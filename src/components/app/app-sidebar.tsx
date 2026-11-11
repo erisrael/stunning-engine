@@ -638,7 +638,31 @@ export function AppSidebar({
   const resourceItem: NavItem = { href: "/resources", label: "Finance requests & equipment", icon: InboxIcon };
   if (resourceGroup) resourceGroup.items.push(resourceItem);
   else groups.push({ label: "Resources", items: [resourceItem] });
-  if(cmsAccess){const cmsItem:NavItem={href:"/legacy-cms",label:"Legacy CMS (Noor)",icon:ArrowLeftRightIcon};const target=groups.find(g=>g.label==="Other Tools")??groups.find(g=>g.label==="Tools");if(target)target.items.push(cmsItem);else groups.push({label:"Tools",items:[cmsItem]});}
+  // Payments and Noor data (Update 1.0): every page listed, so they are found without opening Finance.
+  if (has("finance.access") || has("finance.view") || has("users.manage")) {
+    const chapaItem: NavItem = {
+      href: "/finance/chapa",
+      label: "Chapa payments",
+      icon: LandmarkIcon,
+      sub: [
+        { label: "Overview", href: "/finance/chapa" },
+        { label: "Transactions", href: "/finance/chapa?tab=transactions" },
+        { label: "Daily board", href: "/finance/chapa?tab=daily" },
+        { label: "Customers", href: "/finance/chapa?tab=customers" },
+        { label: "Follow-up", href: "/finance/chapa?tab=followup" },
+        { label: "Balance & swap", href: "/finance/chapa?tab=balance" },
+        { label: "Withdrawals", href: "/finance/chapa?tab=withdrawals" },
+        { label: "Refunds", href: "/finance/chapa?tab=refunds" },
+        { label: "Account funds", href: "/finance/chapa?tab=funds" },
+        { label: "Match to Noor", href: "/finance/chapa?tab=match" },
+        ...(has("users.manage") || has("settings.manage") ? [{ label: "Chapa settings", href: "/finance/chapa?tab=settings" }] : []),
+      ],
+    };
+    const target = groups.find((g) => g.label === "Other Tools") ?? groups.find((g) => g.label === "Tools");
+    if (target) target.items.push(chapaItem);
+    else groups.push({ label: "Tools", items: [chapaItem] });
+  }
+  if(cmsAccess){const cmsItem:NavItem={href:"/legacy-cms",label:"Legacy CMS (Noor)",icon:ArrowLeftRightIcon,sub:[{label:"Live",href:"/legacy-cms?view=live"},{label:"Invoices",href:"/legacy-cms?view=invoices"},{label:"Reports",href:"/legacy-cms?view=reports"},{label:"Tables & sync",href:"/legacy-cms?view=tables"},{label:"Contacts",href:"/legacy-cms?view=contacts"},{label:"Revenue",href:"/legacy-cms?view=revenue"},{label:"Growth",href:"/legacy-cms?view=growth"},{label:"Storage & snapshots",href:"/legacy-cms?view=storage"},...(has("users.manage")?[{label:"User access & credentials",href:"/admin?tab=legacy-cms"}]:[])]};const target=groups.find(g=>g.label==="Other Tools")??groups.find(g=>g.label==="Tools");if(target)target.items.push(cmsItem);else groups.push({label:"Tools",items:[cmsItem]});}
 
   const keyOf = (i: NavItem) => i.id ?? i.href;
   const hidden = [...roleHidden, ...userHidden];

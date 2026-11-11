@@ -20,6 +20,12 @@ export async function cmsSession(config: Connection, authenticate: (base: string
   try { return await value; } catch (error) { if (sessions.get(key)?.value === value) sessions.delete(key); throw error; }
 }
 
+// Sign out and disconnect: the next request signs in again instead of reusing a cached session.
+export function forgetCmsSessions() {
+  sessions.clear();
+  tables.clear();
+}
+
 export async function cmsTableSeed(url: string, cookie: string, fresh = false) {
   const key = digest(`${url}\n${cookie}`);
   const cached = tables.get(key);

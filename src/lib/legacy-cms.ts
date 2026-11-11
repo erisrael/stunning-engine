@@ -23,6 +23,11 @@ export type UserCmsOverride = {
   username?: string;
   allowedTabs: LegacyCmsCategory[];
   canResolveFeedback?: boolean;
+  // Sync, clear and snapshot the stored Noor data (when Admin allows it; see the data policy).
+  canManageData?: boolean;
+  // Which Noor login the person uses: the shared one, a saved login (several people at once), or their own.
+  credential?: "shared" | "account" | "own";
+  accountId?: string;
   updatedAt: string;
 };
 

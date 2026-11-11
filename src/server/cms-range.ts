@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { all, nowIso, run } from "./db";
+import { all, nowIso, run, tx, uid } from "./db";
 import { cmsSession, cmsTableSeed } from "./cms-session";
 import { getMeta, setMeta } from "./settings";
 import { type AppUser } from "./users";
@@ -24,7 +24,7 @@ import { cmsDate } from "@/lib/cms-filters";
 // Pages are fetched 4 at a time from the same signed snapshot, with backoff on 429/5xx, and Stop ends the run.
 // Closed past days are cached per table, day and filters; today is always fetched again.
 
-export type CmsRangeMethod = "noor-filter" | "sorted-search" | "full-scan";
+export type CmsRangeMethod = "noor-filter" | "sorted-search" | "full-scan" | "mirror";
 export type CmsRangeInput = { category: LegacyCmsCategory; from: string; until: string; search?: string; filters?: Record<string, string>; refresh?: boolean };
 export type CmsRangeResult = {
   ok: true;
@@ -57,9 +57,11 @@ export type CmsTableCapability = {
 };
 
 // Noor is asked for big pages first (fewer round trips); the first size it really honours is kept per table.
-const SIZE_TRIES = [250, 100, 50];
+// Measured on Noor: it renders about 20-27 rows a second whatever the page size, and a 50-row page answers in
+// about 4 s against 20 s for 250. Bulk loads use 100-row pages 8 at a time; recent ranges start with 50.
+const SIZE_TRIES = [100, 50];
 const sizeKnown = new Map<string, number>();
-const CONCURRENCY = 6;
+const CONCURRENCY = 8;
 const MAX_DAYS = 366;
 const MAX_ROWS = 50_000;
 const MAX_PAGES = 2_000;
@@ -215,6 +217,32 @@ async function viaNoorFilter(t: CmsTable, filter: CmsRemoteFilter, base: Base, f
 
 async function viaSortedSearch(t: CmsTable, column: string, base: Base, from: string, until: string, progress: (m: string) => Promise<void>, now: number) {
   const q = { ...base, sort: { column, direction: "desc" as const } };
+  const start0 = dayStart(from);
+  const end0 = dayStart(until) + DAY;
+  // Recent ranges (ending today or later): newest first in small pages, the first alone, then a few at a time,
+  // stopping at the first page older than the range.
+  if (end0 > now - DAY) {
+    const small = (p: number) => t.page({ ...q, page: p, pageSize: 50 });
+    const p1 = await small(1);
+    if (!p1.records.length) return { records: [], total: 0, exact: true };
+    if (!p1.dates.length) return null;
+    const keep = (r: Record<string, string>) => {
+      const time = rowTime(r);
+      return time !== null && time >= start0 && time < end0;
+    };
+    const out = p1.records.filter(keep);
+    if (Math.min(...p1.dates) < start0 || p1.pages === 1) return { records: out, total: out.length, exact: true };
+    // How many pages the range needs, judged from the time the first page covers (plus one for safety).
+    const span1 = Math.max(1, Math.max(...p1.dates) - Math.min(...p1.dates));
+    let step = Math.min(CONCURRENCY, Math.max(1, Math.ceil((Math.min(...p1.dates) - start0) / span1) + 1));
+    for (let p = 2; p <= p1.pages; p += step, step = CONCURRENCY) {
+      const batch = await Promise.all(Array.from({ length: Math.min(step, p1.pages - p + 1) }, (_, i) => small(p + i)));
+      await progress(`Newest first: ${Math.min(p1.pages, p + CONCURRENCY - 1)} pages read`);
+      out.push(...batch.flatMap((b) => b.records).filter(keep));
+      if (batch.some((b) => b.dates.length && Math.min(...b.dates) < start0)) break;
+    }
+    return { records: out, total: out.length, exact: true };
+  }
   const first = await t.first(q);
   if (!first.records.length) return { records: [], total: 0, exact: true };
   if (!first.dates.length) return null;
@@ -283,7 +311,10 @@ async function viaFullScan(t: CmsTable, base: Base, from: string, until: string,
   const pages = await rest(t, base, first, "No date filter in Noor", progress);
   const start = dayStart(from);
   const end = dayStart(until) + DAY;
-  const records = pages.flatMap((p) => p.records).filter((r) => {
+  const all = pages.flatMap((p) => p.records);
+  // A table with no dates at all (Students, Parents in Noor): every row, since a range cannot apply.
+  if (all.length && all.every((r) => rowTime(r) === null)) return { records: all, total: all.length, exact: true, undated: true };
+  const records = all.filter((r) => {
     const time = rowTime(r);
     return time !== null && time >= start && time < end;
   });
@@ -293,14 +324,24 @@ async function viaFullScan(t: CmsTable, base: Base, from: string, until: string,
 async function fetchSpan(t: CmsTable, base: Base, from: string, until: string, progress: (m: string) => Promise<void>, now: number) {
   const filters = remoteFilters(t.html);
   const dateFilter = filters.find((f) => f.kind === "date");
+  // Each faster path falls back to the next if Noor refuses it (its table version, a renamed column).
+  const soft = (e: unknown) => !/stopped|cancelled|Narrow the range|too many/i.test(String(e instanceof Error ? e.message : e));
   if (dateFilter) {
-    const r = await viaNoorFilter(t, dateFilter, base, from, until, progress);
-    if (r) return { ...r, method: "noor-filter" as const };
+    try {
+      const r = await viaNoorFilter(t, dateFilter, base, from, until, progress);
+      if (r) return { ...r, method: "noor-filter" as const };
+    } catch (e) {
+      if (!soft(e)) throw e;
+    }
   }
   const column = dateSortColumn(t.html);
   if (column) {
-    const r = await viaSortedSearch(t, column, base, from, until, progress, now);
-    if (r) return { ...r, method: "sorted-search" as const };
+    try {
+      const r = await viaSortedSearch(t, column, base, from, until, progress, now);
+      if (r) return { ...r, method: "sorted-search" as const };
+    } catch (e) {
+      if (!soft(e)) throw e;
+    }
   }
   return { ...(await viaFullScan(t, base, from, until, progress)), method: "full-scan" as const };
 }
@@ -355,6 +396,22 @@ export async function fetchCmsRange(user: AppUser, input: CmsRangeInput, progres
   const check = async () => {
     if (cmsStoppedSince(startedAt)) throw new Error("Noor CMS loading stopped by user.");
   };
+  // Tables with no dates in Noor (Students, Parents): the saved copy answers at once; Refresh reads Noor
+  // again (several minutes for thousands of rows) and replaces the copy.
+  const undatedTables = parseJsonList(await getMeta("cmsUndated"));
+  const plainQuery = !Object.values(input.filters || {}).some(Boolean);
+  if (!input.refresh && plainQuery && undatedTables.includes(input.category)) {
+    const saved = await all<{ data_json: string; synced_at: string }>("SELECT data_json, synced_at FROM legacy_cms_records WHERE category = ?", input.category);
+    if (saved.length) {
+      const q = (input.search || "").trim().toLowerCase();
+      const records = saved.map((r) => JSON.parse(r.data_json) as Record<string, string>).filter((r) => !q || JSON.stringify(r).toLowerCase().includes(q));
+      return {
+        ok: true, category: input.category, from: input.from, until: input.until, method: "mirror",
+        headers: records[0] ? Object.keys(records[0]).filter((k) => !k.startsWith("_")) : [], records, total: records.length, requests: 0, cachedDays: 0, fetchedDays: 0,
+        undated: records.length, filters: parseJsonSafe(await getMeta(`cmsFilters.${input.category}`)), fetchedAt: saved.map((r) => r.synced_at).sort().at(-1) ?? nowIso(),
+      };
+    }
+  }
   const config = await getLegacyCmsConfigForUser(user);
   const key = filterKey(config.username || "session", input);
   const today = addisDay(now);
@@ -391,6 +448,21 @@ export async function fetchCmsRange(user: AppUser, input: CmsRangeInput, progres
     for (const [i, span] of spans.entries()) {
       await progress(spans.length > 1 ? `Loading ${span.from} to ${span.until} (${i + 1} of ${spans.length} gaps)…` : `Loading ${span.from} to ${span.until} from Noor…`);
       const res = await fetchSpan(t, base, span.from, span.until, progress, now);
+      if ("undated" in res && res.undated) {
+        if (!undatedTables.includes(input.category)) await setMeta("cmsUndated", JSON.stringify([...undatedTables, input.category]));
+        // A whole undated table (no search or filters) refreshes the saved copy.
+        if (plainQuery && !base.search) {
+          const at = nowIso();
+          await tx(async () => {
+            await run("DELETE FROM legacy_cms_records WHERE category = ?", input.category);
+            for (let i = 0; i < res.records.length; i += 200) {
+              const chunk = res.records.slice(i, i + 200);
+              const args = chunk.flatMap((r) => { const ext = String(r._recordId || r.ID || r.id || uid()); return [uid(), input.category, ext, String(r.Name || r.name || r.Student || r.Parent || ext), JSON.stringify(r), at]; });
+              await run(`INSERT INTO legacy_cms_records (id, category, external_id, title, data_json, synced_at) VALUES ${chunk.map(() => "(?, ?, ?, ?, ?, ?)").join(", ")}`, ...args);
+            }
+          });
+        }
+      }
       methodUsed ??= res.method;
       fetched.push(...res.records);
       if (fetched.length > MAX_ROWS) throw new WorkflowError("VALIDATION", `More than ${MAX_ROWS.toLocaleString()} rows. Narrow the range or the filters.`);
@@ -451,6 +523,14 @@ export async function fetchCmsRange(user: AppUser, input: CmsRangeInput, progres
     filters,
     fetchedAt: nowIso(),
   };
+}
+
+function parseJsonList(v: string | null): string[] {
+  try {
+    return v ? JSON.parse(v) : [];
+  } catch {
+    return [];
+  }
 }
 
 function parseJsonSafe(v: string | null): CmsRemoteFilter[] {
