@@ -438,12 +438,14 @@ async function nextNumber() {
 }
 const SLA_FACTOR: Record<Priority, number> = { urgent: 0.25, high: 0.5, normal: 1, low: 2 };
 
-async function createTicketRow(input: { subject: string; body: string; customerId: string | null; appId: string | null; appQueue: string | null; channel: string; priority?: Priority; authorKind: "customer" | "agent"; authorId: string | null; queueId?: string | null; internal?: boolean; emailId?: string | null }) {
+async function createTicketRow(input: { subject: string; body: string; customerId: string | null; appId: string | null; appQueue: string | null; channel: string; priority?: Priority; authorKind: "customer" | "agent"; authorId: string | null; queueId?: string | null; internal?: boolean; emailId?: string | null; category?: string | null }) {
   const subject = clean(input.subject, 160) || clean(input.body, 80) || "Help";
   const body = clean(input.body, 8000);
   if (!body) throw new WorkflowError("VALIDATION", "Write the question or problem.");
-  const priority: Priority = PRIORITIES.includes(input.priority as Priority) ? input.priority! : "normal";
-  const queueId = input.queueId ?? (await routeQueue(`${subject} ${body}`, input.appQueue));
+  // The help menu's routing rules first (category, words, channel), then the queues' own keywords.
+  const routed = input.queueId ? null : await (await import("./support-help")).routeFor({ category: input.category ?? null, text: `${subject} ${body}`, channel: input.channel });
+  const priority: Priority = PRIORITIES.includes(input.priority as Priority) ? input.priority! : (routed?.priority ?? "normal");
+  const queueId = input.queueId ?? routed?.queueId ?? (await routeQueue(`${subject} ${body}`, input.appQueue));
   const q = queueId ? (await listQueues()).find((x) => x.id === queueId) : null;
   const now = nowIso();
   const id = uid("tkt_");
@@ -467,6 +469,7 @@ async function createTicketRow(input: { subject: string; body: string; customerI
       input.authorKind === "customer" ? now : null,
     );
     await run("INSERT INTO sup_messages (id, ticket_id, author_kind, author_id, body, internal, created_at, email_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", uid("smg_"), id, input.authorKind, input.authorId, body, input.internal ? 1 : 0, now, input.emailId ?? null);
+    if (input.category) await run("UPDATE sup_tickets SET category = ? WHERE id = ?", clean(input.category, 40), id);
   });
   await activity(input.authorKind === "agent" ? input.authorId : null, id, "created", `${input.channel}${q ? `, queue ${q.name}` : ""}`);
   return id;
@@ -485,8 +488,8 @@ export async function customerCreateTicket(app: AppFull, token: string, input: {
 }
 
 // A ticket from email or Telegram (src/server/support-channels.ts), given out as any other.
-export async function createTicketFromChannel(input: { subject: string; body: string; customerId: string; channel: "email" | "telegram"; emailId?: string | null; appQueue: string | null }) {
-  const id = await createTicketRow({ subject: input.subject, body: input.body, customerId: input.customerId, appId: null, appQueue: input.appQueue, channel: input.channel, authorKind: "customer", authorId: input.customerId, emailId: input.emailId ?? null });
+export async function createTicketFromChannel(input: { subject: string; body: string; customerId: string; channel: "email" | "telegram" | "web"; emailId?: string | null; appQueue: string | null; category?: string | null }) {
+  const id = await createTicketRow({ subject: input.subject, body: input.body, customerId: input.customerId, appId: null, appQueue: input.appQueue, channel: input.channel, authorKind: "customer", authorId: input.customerId, emailId: input.emailId ?? null, category: input.category ?? null });
   if (!(await autoAssign(id))) {
     const t = await get<{ number: number; subject: string }>("SELECT number, subject FROM sup_tickets WHERE id = ?", id);
     await notify((await supportConfig()).leads, { type: "assignment", title: `Ticket #${t?.number} waits: no agent is free`, body: t?.subject ?? "", link: `/support?ticket=${id}`, dedupeKey: `sup-wait-${id}` }, nowIso());
@@ -610,7 +613,8 @@ export async function ticketDetail(user: AppUser, ticketId: string) {
   );
   const log = await all<{ kind: string; detail: string | null; at: string; who: string | null }>("SELECT a.kind, a.detail, a.at, u.name AS who FROM sup_activity a LEFT JOIN users u ON u.id = a.user_id WHERE a.ticket_id = ? AND a.kind <> 'viewed' ORDER BY a.at DESC LIMIT 100", t.id);
   const history = t.customer_id ? await all<{ id: string; number: number; subject: string; status: string; created_at: string }>("SELECT id, number, subject, status, created_at FROM sup_tickets WHERE customer_id = ? AND id <> ? ORDER BY created_at DESC LIMIT 10", t.customer_id, t.id) : [];
-  return { ticket: full, customer: customer ? { ...customer, meta: parseJson<Record<string, string>>(customer.meta, {}), verified: !!Number(customer.verified) } : null, messages: messages.map((m) => ({ ...m, internal: !!Number(m.internal) })), calls, log, history };
+  const files = await (await import("./support-help")).ticketFiles([t.id]);
+  return { ticket: full, customer: customer ? { ...customer, meta: parseJson<Record<string, string>>(customer.meta, {}), verified: !!Number(customer.verified) } : null, messages: messages.map((m) => ({ ...m, internal: !!Number(m.internal) })), calls, log, history, files };
 }
 
 export async function agentReply(user: AppUser, ticketId: string, input: { body: string; internal?: boolean; status?: TicketStatus | null }) {

@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 60;
+export const SCHEMA_VERSION = 61;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -3370,6 +3370,46 @@ CREATE TABLE IF NOT EXISTS feedback_files (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_feedback_files ON feedback_files(feedback_id);
+
+-- v61: customer help, one menu everywhere: the categories (English and Amharic), routing rules to queues, and files
+-- customers send (Telegram photos and documents) kept on the ticket.
+CREATE TABLE IF NOT EXISTS sup_categories (
+  key TEXT PRIMARY KEY,
+  label_en TEXT NOT NULL,
+  label_am TEXT NOT NULL,
+  hint_en TEXT,
+  hint_am TEXT,
+  icon TEXT,
+  kb_category TEXT,
+  queue_id TEXT,
+  self_help INTEGER NOT NULL DEFAULT 1,
+  sort INTEGER NOT NULL DEFAULT 0,
+  active INTEGER NOT NULL DEFAULT 1,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS sup_routes (
+  id TEXT PRIMARY KEY,
+  category TEXT,
+  keywords TEXT NOT NULL DEFAULT '[]',
+  channel TEXT NOT NULL DEFAULT 'any',
+  queue_id TEXT NOT NULL,
+  priority TEXT,
+  sort INTEGER NOT NULL DEFAULT 0,
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS sup_files (
+  id TEXT PRIMARY KEY,
+  ticket_id TEXT NOT NULL REFERENCES sup_tickets(id) ON DELETE CASCADE,
+  message_id TEXT,
+  name TEXT NOT NULL,
+  mime TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  data TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sup_files ON sup_files(ticket_id);
+CREATE INDEX IF NOT EXISTS idx_sup_tickets_category ON sup_tickets(category, created_at);
 `;
 
 // Tables in dependency order; used to empty the workspace and to export or restore backups.
@@ -3605,4 +3645,7 @@ export const TABLES = [
   "ai_models",
   "asset_files",
   "feedback_files",
+  "sup_categories",
+  "sup_routes",
+  "sup_files",
 ] as const;

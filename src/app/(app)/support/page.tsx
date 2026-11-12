@@ -8,6 +8,8 @@ import { EmptyState, PageHeader } from "@/components/app/primitives";
 import { Desk, Inbox, NewTicket, TicketView } from "@/components/app/support/desk";
 import { Apps, Canned, DeveloperApi, KnowledgeBase, Monitor, Queues, SupportSettings } from "@/components/app/support/setup";
 import { StudentLookupDialog } from "@/components/app/support/student-lookup-dialog";
+import { CategoryReport, HelpMenuSetup, TelegramSetup } from "@/components/app/support/help-setup";
+import * as hp from "@/server/support-help";
 import { StudentsTable } from "@/components/app/support/students-table";
 import * as ch from "@/server/support-channels";
 import { all } from "@/server/db";
@@ -30,8 +32,8 @@ export default async function SupportPage({ searchParams }: { searchParams: Prom
         <EmptyState title={cfg.enabled ? "You are not a support agent" : "Customer support is switched off"} description={cfg.enabled ? "A support lead adds agents to the queues." : "Admin switches it on in Support setup."} />
       </div>
     );
-  const tabs = [...(cfg.enabled && agent ? ["desk", "students", "kb"] : []), ...(lead && cfg.enabled ? ["monitor"] : []), ...(lead ? ["queues", "apps"] : []), ...(admin || lead ? ["settings"] : [])];
-  const LABELS: Record<string, string> = { desk: "Desk", students: "Students & Parents", kb: "Knowledge base", monitor: "Monitor", queues: "Queues and replies", apps: "Apps and SDK", settings: "Settings" };
+  const tabs = [...(cfg.enabled && agent ? ["desk", "students", "kb"] : []), ...(lead && cfg.enabled ? ["monitor"] : []), ...(lead ? ["queues", "help", "telegram", "apps"] : []), ...(admin || lead ? ["settings"] : [])];
+  const LABELS: Record<string, string> = { desk: "Desk", students: "Students & Parents", kb: "Knowledge base", monitor: "Monitor", queues: "Queues and replies", help: "Help menu and routing", telegram: "Telegram", apps: "Apps and SDK", settings: "Settings" };
   const tab = tabs.includes(sp.tab ?? "") ? sp.tab! : tabs[0]!;
   const people = (await userDirectory()).map((u) => ({ id: u.id, name: u.name }));
   const queues = await sd.listQueues();
@@ -80,7 +82,12 @@ export default async function SupportPage({ searchParams }: { searchParams: Prom
     const today = new Date().toISOString().slice(0, 10);
     const from = /^\d{4}-\d{2}-\d{2}$/.test(sp.from ?? "") ? sp.from! : new Date(Date.now() - 6 * 864e5).toISOString().slice(0, 10);
     const to = /^\d{4}-\d{2}-\d{2}$/.test(sp.to ?? "") ? sp.to! : today;
-    panel = <Monitor m={await sd.monitor(viewer, { from, to })} from={from} to={to} />;
+    panel = (
+      <div className="space-y-4">
+        <Monitor m={await sd.monitor(viewer, { from, to })} from={from} to={to} />
+        <CategoryReport r={await hp.categoryReport(viewer, { from, to })} />
+      </div>
+    );
   } else if (tab === "queues")
     panel = (
       <div className="grid gap-4 xl:grid-cols-2">
@@ -88,6 +95,16 @@ export default async function SupportPage({ searchParams }: { searchParams: Prom
         <Canned list={await sd.cannedReplies()} />
       </div>
     );
+  else if (tab === "help")
+    panel = (
+      <HelpMenuSetup
+        categories={await hp.helpCategories()}
+        routes={await hp.listRoutes()}
+        queues={queues.filter((q) => q.active).map((q) => ({ id: q.id, name: q.name }))}
+        kbCategories={(await all<{ category: string }>("SELECT DISTINCT category FROM sup_articles WHERE category IS NOT NULL ORDER BY category")).map((r) => r.category)}
+      />
+    );
+  else if (tab === "telegram") panel = <TelegramSetup texts={await ch.telegramTexts()} categories={await hp.helpCategories()} health={await ch.telegramHealth()} admin={admin} />;
   else if (tab === "apps") {
     const apps = await sd.listApps(viewer);
     panel = (

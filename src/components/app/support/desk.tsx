@@ -13,6 +13,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import * as A from "@/app/actions/support-desk";
+import { transferTicketAction } from "@/app/actions/support-help";
 import { CHANNEL_LABELS, PRIORITIES, PRIORITY_LABELS, TICKET_STATUSES, TICKET_STATUS_LABELS, type Priority, type TicketStatus } from "@/lib/support";
 import { cn } from "@/lib/utils";
 
@@ -25,6 +26,7 @@ type Detail = {
   calls: { id: string; status: string; direction: string; kind: string; agent: string | null; started_at: string; duration_s: number | null; recording_id: string | null; recording_size: number | null; notes: string | null }[];
   log: { kind: string; detail: string | null; at: string; who: string | null }[];
   history: { id: string; number: number; subject: string; status: string; created_at: string }[];
+  files?: { id: string; message_id: string | null; name: string; mime: string; size: number }[];
 };
 type Ring = { id: string; ticket_id: string; customer: string | null; number: number; started_at: string; offer: string; consent: number };
 
@@ -303,6 +305,8 @@ export function TicketView({ d, agents, queues, canned, me, lead, articles = [],
   const [internal, setInternal] = React.useState(false);
   const [after, setAfter] = React.useState<TicketStatus | "">("");
   const [phone, setPhone] = React.useState<{ direction: "inbound" | "outbound"; minutes: number; notes: string } | null>(null);
+  // Moving to another queue (Support to Finance and back) asks for a note for the next team.
+  const [move, setMove] = React.useState<{ queueId: string; note: string } | null>(null);
   const end = React.useRef<HTMLDivElement>(null);
   React.useEffect(() => {
     end.current?.scrollIntoView({ block: "nearest" });
@@ -334,8 +338,10 @@ export function TicketView({ d, agents, queues, canned, me, lead, articles = [],
               </option>
             ))}
           </select>
-          <select aria-label="Queue" className={select} value={t.queue_id ?? ""} disabled={busy} onChange={(e) => act(() => A.updateTicketAction(t.id, { queueId: e.target.value || null }), "Moved")}>
-            <option value="">No queue</option>
+          <select aria-label="Queue" className={select} value={move?.queueId ?? t.queue_id ?? ""} disabled={busy} onChange={(e) => (e.target.value && e.target.value !== t.queue_id ? setMove({ queueId: e.target.value, note: move?.note ?? "" }) : setMove(null))}>
+            <option value="" disabled={!!t.queue_id}>
+              No queue
+            </option>
             {queues.map((q) => (
               <option key={q.id} value={q.id}>
                 {q.name}
@@ -365,6 +371,18 @@ export function TicketView({ d, agents, queues, canned, me, lead, articles = [],
             <PhoneIcon /> Log a phone call
           </Button>
         </CardContent>
+        {move && (
+          <CardContent className="flex flex-wrap items-end gap-2 border-t pt-3 text-sm" data-transfer>
+            <span className="text-xs text-muted-foreground">Move to {queues.find((q) => q.id === move.queueId)?.name}. The customer keeps the same conversation.</span>
+            <Input aria-label="Note for the next team" placeholder="Note for the next team, e.g. paid by telebirr on 3 Nov, not showing" className="h-8 min-w-72 flex-1" value={move.note} onChange={(e) => setMove({ ...move, note: e.target.value })} />
+            <Button size="sm" disabled={busy || !move.note.trim()} onClick={async () => (await act(() => transferTicketAction(t.id, move.queueId, move.note), "Moved with your note")) && setMove(null)}>
+              Move
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setMove(null)}>
+              Cancel
+            </Button>
+          </CardContent>
+        )}
         {phone && (
           <CardContent className="flex flex-wrap items-end gap-2 border-t pt-3 text-sm" data-log-call>
             <select aria-label="Direction" className={select} value={phone.direction} onChange={(e) => setPhone({ ...phone, direction: e.target.value as "inbound" })}>
@@ -390,6 +408,18 @@ export function TicketView({ d, agents, queues, canned, me, lead, articles = [],
                     {m.internal && <LockIcon className="size-3" />} {m.author ?? ""} · {when(m.created_at)}
                   </p>
                   <p className="whitespace-pre-wrap">{m.body}</p>
+                  {(d.files ?? [])
+                    .filter((f) => f.message_id === m.id)
+                    .map((f) => (
+                      <a key={f.id} href={`/api/support/files/${f.id}`} target="_blank" rel="noreferrer" className="mt-1 block text-xs text-primary hover:underline" data-ticket-file>
+                        {f.mime.startsWith("image/") ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={`/api/support/files/${f.id}`} alt={f.name} className="mt-1 max-h-48 rounded border" />
+                        ) : (
+                          <>📎 {f.name} ({Math.max(1, Math.round(f.size / 1024))} KB)</>
+                        )}
+                      </a>
+                    ))}
                 </div>
               ))}
               <div ref={end} />

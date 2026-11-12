@@ -10,7 +10,7 @@ export const PRIORITIES = ["low", "normal", "high", "urgent"] as const;
 export type Priority = (typeof PRIORITIES)[number];
 export const PRIORITY_LABELS: Record<Priority, string> = { low: "Low", normal: "Normal", high: "High", urgent: "Urgent" };
 
-export const CHANNEL_LABELS: Record<string, string> = { telegram: "Telegram", widget: "App chat", call: "App call", phone: "Phone", email: "Email", walk_in: "In person", agent: "Opened by an agent", social: "Social media", api: "API" };
+export const CHANNEL_LABELS: Record<string, string> = { telegram: "Telegram", web: "Help page", widget: "App chat", call: "App call", phone: "Phone", email: "Email", walk_in: "In person", agent: "Opened by an agent", social: "Social media", api: "API" };
 
 // What a caller hears while waiting for an agent: a spoken message (in the caller's browser, in the language set) or a
 // recording Admin uploaded, then quiet hold music; their place in line is said when there is a line.

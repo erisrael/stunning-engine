@@ -109,6 +109,41 @@ try {
   check("and the activity", await visible(liya.locator("[data-activity]").getByText(/call answered/)));
   await liya.screenshot({ path: path.join(shots, "4-monitor.png"), fullPage: true });
 
+  check("the monitor reports requests by topic, channel and queue", await visible(liya.locator("[data-category-report]")));
+
+  // The public help center: no account, the same menu as the bot, ask and follow the request.
+  const visitorCtx = await browser.newContext({ viewport: { width: 420, height: 860 } });
+  const visitor = await visitorCtx.newPage();
+  visitor.on("pageerror", (e) => check("help center: no page error", false, e.message));
+  await visitor.goto(`${base}/help`);
+  check("the help center shows the menu", await visible(visitor.locator('[data-help-category="payments"]')));
+  await visitor.getByRole("button", { name: "Language" }).click();
+  check("in Amharic too", await visible(visitor.locator('[data-help-category="payments"]').getByText("ክፍያዎች")));
+  await visitor.getByRole("button", { name: "Language" }).click();
+  await visitor.locator('[data-help-category="person"]').click();
+  const ask = visitor.locator("[data-help-ask]");
+  await ask.getByLabel("Your name").fill("Meskerem");
+  await ask.getByLabel("Phone").fill("0911 445566");
+  await ask.getByLabel("Your question").fill("My son's account shows grade 7 but he is in grade 8 now.");
+  await ask.getByRole("button", { name: "Send" }).click();
+  check("the request opens and shows its thread", await visible(visitor.locator("[data-help-thread]"), 15000));
+  await visitor.screenshot({ path: path.join(shots, "6-help-center.png"), fullPage: true });
+  await visitor.reload();
+  check("the request is remembered on this device", await visible(visitor.locator("[data-help-mine]")));
+  await visitor.locator("[data-help-mine]").click();
+  check("and listed under My requests", await visible(visitor.locator("[data-help-request]")));
+  await visitorCtx.close();
+
+  // The lead sets up the menu, routing and the bot.
+  await liya.goto(`${base}/support?tab=help`);
+  check("the lead edits the help menu and routing", (await visible(liya.locator('[data-help-cat-row="payments"]'))) && (await visible(liya.getByRole("button", { name: "Save the rules" }))));
+  await liya.getByLabel("Amharic label of plans").fill("የደንበኝነት ዕቅዶች");
+  await liya.getByRole("button", { name: "Save the menu" }).click();
+  check("the menu saves", await toast(liya, /Help menu saved/));
+  await liya.goto(`${base}/support?tab=telegram`);
+  check("the Telegram page has a live preview", await visible(liya.locator("[data-telegram-preview]").getByText("የደንበኝነት ዕቅዶች")));
+  await liya.screenshot({ path: path.join(shots, "7-telegram.png"), fullPage: true });
+
   // Admin's setup shows the app's snippet.
   const admin = await as("admin@demo.local");
   await admin.goto(`${base}/support?tab=apps`);
