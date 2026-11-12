@@ -41,7 +41,7 @@ try {
   await d.waitForURL(/\/dev\/board$/);
   check("Board has its own address", true);
   check("the Board entry is the active one", (await sideLink(d, "Board").getAttribute("data-active")) === "true" && (await sideLink(d, "My board").getAttribute("data-active")) !== "true");
-  check("Board and List page navigation is restored", await d.getByRole("group", { name: "View" }).isVisible());
+  check("Board and List page navigation is restored", await visible(d.getByRole("group", { name: "View" })));
   await sideLink(d, "List").click();
   await d.waitForURL(/\/dev\/list/);
   check("the sidebar opens /dev/list", true);
@@ -69,9 +69,9 @@ try {
   check("including Configure for Admin", await visible(side(a).getByRole("link", { name: "Configure", exact: true })));
   await a.screenshot({ path: path.join(shots, "3-admin.png") });
 
-  check("a user granted Noor CMS access gets a direct sidebar link", await sideLink(d,"Legacy CMS (Noor)").isVisible());
+  check("a user granted Noor CMS access gets a direct sidebar link", await visible(sideLink(d,"Legacy CMS (Noor)")));
   await a.goto(`${base}/admin?tab=sidebar`);
-  check("Admin page navigation is restored", await a.locator('main a[href="/admin?tab=people"]').isVisible());
+  check("Admin page navigation is restored", await visible(a.locator('main a[href="/admin?tab=people"]').first()));
   await a.getByRole("combobox",{name:"Role",exact:true}).click();
   await a.getByRole("option",{name:"Developer",exact:true}).click();
   await a.getByRole("checkbox",{name:"Dev team",exact:true}).uncheck();
@@ -87,14 +87,14 @@ try {
   await a.getByRole("button",{name:"Save for Developer",exact:true}).click();
   await d.evaluate(()=>window.dispatchEvent(new Event("focus")));
   await sideLink(d,"Board").waitFor({timeout:15000});
-  check("Restoring sidebar choices restores access links",await sideLink(d,"Legacy CMS (Noor)").isVisible());
+  check("Restoring sidebar choices restores access links",await visible(sideLink(d,"Legacy CMS (Noor)")));
   const y=await as("meron@demo.local");
   const row=sideLink(y,"Handovers").locator('xpath=..');
   const badge=row.locator('[data-nav-count]'), arrow=row.getByRole("button");
   const badgeBox=await badge.boundingBox(), arrowBox=await arrow.boundingBox(), linkBox=await sideLink(y,"Handovers").boundingBox();
   check("Counters, labels and dropdown buttons have separate space", !!badgeBox && !!arrowBox && linkBox.x+linkBox.width<=badgeBox.x && badgeBox.x+badgeBox.width<=arrowBox.x);
   await arrow.click();
-  check("Dropdown opens independently of its counter",await side(y).getByRole("link",{name:"Rejected",exact:true}).isVisible());
+  check("Dropdown opens independently of its counter",await visible(side(y).getByRole("link",{name:"Rejected",exact:true})));
   await arrow.click();
   check("Dropdown closes independently of its counter",await side(y).getByRole("link",{name:"Rejected",exact:true}).count()===0);
   await y.screenshot({path:path.join(shots,"5-counter-dropdown.png")});

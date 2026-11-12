@@ -117,8 +117,8 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     }));
   const roleCounts = Object.fromEntries(ROLES.map((r) => [r, users.filter((u) => u.active && u.roles.includes(r)).length])) as Record<Role, number>;
   const leadCounts = Object.fromEntries(STAGES.map((st) => [st, team.filter((u) => u.leads.includes(st)).length])) as Record<Stage, number>;
-  const openFeedback = Number((await get<{ c: number }>("SELECT COUNT(*) AS c FROM feedback WHERE status = 'open'").catch(() => null))?.c ?? 0);
-  const openReports = Number((await get<{ c: number }>("SELECT COUNT(*) AS c FROM safety_reports WHERE status = 'open'").catch(() => null))?.c ?? 0);
+  const openFeedback = Number((await get<{ c: number }>("SELECT COUNT(*) AS c FROM feedback WHERE status IN ('new','reviewing')").catch(() => null))?.c ?? 0);
+  const openReports = Number((await get<{ c: number }>("SELECT COUNT(*) AS c FROM reports WHERE status IN ('open','reviewing')").catch(() => null))?.c ?? 0);
 
   const ADMIN_TAB_GROUPS: {
     key: string;
