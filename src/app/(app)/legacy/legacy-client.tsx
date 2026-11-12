@@ -8,7 +8,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowRightIcon, BookOpenIcon, BoxesIcon, CheckCheckIcon, ChevronRightIcon, DownloadIcon, FileTextIcon, FilmIcon, HomeIcon, LayersIcon, ListPlusIcon, Loader2Icon, PencilIcon, PlusIcon, SettingsIcon, SparklesIcon, Trash2Icon, UploadIcon, VideoIcon } from "lucide-react";
+import { ArrowRightIcon, BookOpenIcon, BoxesIcon, CheckCheckIcon, ChevronRightIcon, DownloadIcon, FileTextIcon, FilmIcon, HomeIcon, LayersIcon, Loader2Icon, LockIcon, PencilIcon, PlusIcon, SettingsIcon, SparklesIcon, Trash2Icon, UploadIcon, VideoIcon, XIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -34,19 +34,22 @@ import {
   markRecordedAction,
   saveLegacyConfigAction,
   reopenPartAction,
-  saveDetailsAction,
   handOffAction,
+  migratePartNamesAction,
 } from "@/app/actions/legacy";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { AttachPicker, FileLinks, useAttachments } from "@/components/app/attach-picker";
+import { cn } from "cn";
 import type { LegacyConfig, LegacyPart, LegacyVideo, ReadyRow } from "@/server/legacy";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ClipboardCheckIcon, SendIcon, Undo2Icon } from "lucide-react";
-import { isPlaceholderTitle } from "@/lib/curriculum-names";
 import { fmtMS, parseMS } from "@/lib/duration";
 
 type Result = { ok: boolean; error?: string };
 type GradeCard = { id: string; name: string; level: string | null; subjects: number; videos: number };
 type SubjectCard = { id: string; name: string; units: number; videos: number };
 type UnitCard = { id: string; number: number; title: string; parts: number; videos: number };
+type Choices = { studios: string[]; presenters: string[] };
 type Props = {
   stats: { videos: number; units: number };
   grade: { id: string; name: string; level: string | null } | null;
@@ -62,7 +65,9 @@ type Props = {
   canImport: boolean;
   canRemove: boolean;
   admin: boolean;
+  planner: boolean;
   config: LegacyConfig;
+  choices: Choices;
 };
 
 const many = (n: number, one: string, more = `${one}s`) => `${n} ${n === 1 ? one : more}`;
@@ -276,12 +281,14 @@ function SubjectsView({ grade, subjects, canRemove }: Props & { grade: NonNullab
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-lg font-semibold">{grade.name} subjects</h2>
-        <Button size="sm" onClick={() => setAdding(true)}>
-          <PlusIcon /> Add new subject
-        </Button>
+        {canRemove && (
+          <Button size="sm" onClick={() => setAdding(true)}>
+            <PlusIcon /> Add new subject
+          </Button>
+        )}
       </div>
       {!subjects.length ? (
-        <EmptyState icon={<BookOpenIcon className="size-5" />} title={`No subjects in ${grade.name} yet`} description="Add the first one." />
+        <EmptyState icon={<BookOpenIcon className="size-5" />} title={`No subjects in ${grade.name} yet`} description={canRemove ? "Add the first one." : "The Recording lead adds the subjects."} />
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {subjects.map((s) => (
@@ -349,16 +356,16 @@ function UnitsView({ grade, subject, units, canRemove }: Props & { grade: NonNul
             <Card key={u.id} className="gap-0 p-4" data-legacy-unit={u.number}>
               <div className="flex items-center justify-between gap-2">
                 <Badge variant="secondary">Chapter {u.number}</Badge>
-                <span className="flex">
-                  <Button size="icon-xs" variant="ghost" aria-label={`Edit unit ${u.number}`} onClick={() => setEdit(u)}>
-                    <PencilIcon />
-                  </Button>
-                  {canRemove && (
+                {canRemove && (
+                  <span className="flex">
+                    <Button size="icon-xs" variant="ghost" aria-label={`Edit unit ${u.number}`} onClick={() => setEdit(u)}>
+                      <PencilIcon />
+                    </Button>
                     <Button size="icon-xs" variant="ghost" aria-label={`Delete unit ${u.number}`} onClick={() => setDel(u)}>
                       <Trash2Icon />
                     </Button>
-                  )}
-                </span>
+                  </span>
+                )}
               </div>
               <Link href={href(grade.id, subject.id, u.id)} className="mt-2 font-semibold hover:underline">
                 Unit {u.number}: {u.title}
@@ -380,96 +387,234 @@ function UnitsView({ grade, subject, units, canRemove }: Props & { grade: NonNul
           ))}
         </div>
       )}
-      {adding && <NameDialog title={`Add unit to ${subject.name}`} label="Unit title" value={`Unit ${(units.at(-1)?.number ?? 0) + 1}: `} onClose={() => setAdding(false)} onSave={(v) => act(addUnitAction(grade.id, subject.id, v), "Unit added")} />}
+      {adding && <NameDialog title={`Add Unit ${Math.max(0, ...units.map((u) => u.number)) + 1} to ${subject.name}`} label="Unit title (required)" value="" onClose={() => setAdding(false)} onSave={(v) => act(addUnitAction(grade.id, subject.id, v), "Unit added")} />}
       {edit && <NameDialog title={`Edit unit ${edit.number}`} label="Unit title" value={edit.title} onClose={() => setEdit(null)} onSave={(v) => act(editUnitAction(edit.id, v), "Unit updated")} />}
       {del && <ConfirmDelete text={`Delete unit ${del.number}, "${del.title}"?`} detail="Its parts go too. If any part has gone past Recording, nothing is deleted." onClose={() => setDel(null)} onYes={() => act(deleteUnitAction(del.id), "Unit deleted")} />}
     </div>
   );
 }
 
-function VideoDialog({ part, video, onClose }: { part: LegacyPart; video?: LegacyVideo; onClose: () => void }) {
-  const act = useAct();
+const CODE_HELP = "The code the camera gives the file, as C0172. Several files for one video: C0172 & C0173.";
+const OTHER = "Other";
+const RES_ACCEPT = ".pdf,.ppt,.pptx,.key,.odp,.doc,.docx,.odt,.xls,.xlsx,.csv,.txt,image/*,.zip";
+const todayLocal = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+type Place = { grade: string; subject: string; unit: string };
+
+// One video entry, entered in one place. Grade, subject, unit and part come from where it is opened and cannot be
+// changed. A Draft needs the camera code, title and studio; Submit for Review needs everything.
+function VideoDialog({ part, video, place, choices, onClose }: { part: LegacyPart; video?: LegacyVideo; place: Place; choices: Choices; onClose: () => void }) {
   const router = useRouter();
-  const [f, setF] = React.useState({ cameraCode: video?.cameraCode ?? "", title: video?.title ?? "", description: video?.description ?? "", minutes: fmtMS(video?.minutes), link: video?.link ?? "", disk: video?.disk ?? "", path: video?.path ?? "" });
+  const prev = [...part.videos].reverse().find((v) => v.id !== video?.id && v.presenter) ?? null;
+  const last = [...part.videos].reverse().find((v) => v.id !== video?.id) ?? null;
+  const [f, setF] = React.useState({
+    cameraCode: video?.cameraCode ?? "",
+    title: video?.title ?? "",
+    description: video?.description ?? "",
+    minutes: fmtMS(video?.minutes),
+    link: video?.link ?? "",
+    disk: video?.disk ?? "",
+    path: video?.path ?? "",
+    // The presenter is carried over from the previous clip in the part; it can still be changed.
+    presenter: video?.presenter ?? prev?.presenter ?? part.teacher ?? "",
+    studio: video?.studio ?? last?.studio ?? "",
+    studioReason: video?.studioReason ?? "",
+    recordedOn: video?.recordedOn ?? last?.recordedOn ?? todayLocal(),
+    noResources: video?.noResources ?? false,
+  });
   const [onDisk, setOnDisk] = React.useState(!!video?.disk);
-  const [busy, setBusy] = React.useState(false);
-  const save = async () => {
-    setBusy(true);
-    let ok: boolean;
-    const len = parseMS(f.minutes);
-    if (Number.isNaN(len)) {
-      setBusy(false);
-      return void toast.error("Length as minutes:seconds, e.g. 12:30");
-    }
-    const input = { ...f, minutes: len, link: onDisk ? null : f.link || null, disk: onDisk ? f.disk || null : null, path: onDisk ? f.path || null : null };
-    if (video) ok = await act(editVideoAction(video.id, input), "Video details updated");
-    else {
-      const r = await addVideoAction(part.id, input);
-      ok = r.ok;
-      if (!r.ok) toast.error(r.error);
-      else {
-        // The code as it was tidied; one that does not look like a code is pointed out, not changed.
-        if (r.data?.doubtful) toast.warning(`Added ${r.data.code}. Check it: it does not look like a camera code.`);
-        else toast.success(`Added video shot ${r.data?.code}`);
-        router.refresh();
-      }
-    }
-    setBusy(false);
-    if (ok) onClose();
+  const [removing, setRemoving] = React.useState<Set<string>>(new Set());
+  const att = useAttachments({ max: 6, maxBytes: 9 * 1024 * 1024 });
+  const [busy, setBusy] = React.useState<"" | "draft" | "submitted">("");
+  const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setF({ ...f, [k]: e.target.value });
+  const kept = (video?.files ?? []).filter((x) => !removing.has(x.id));
+  const fileCount = kept.length + att.files.length;
+  const len = parseMS(f.minutes);
+  const studios = choices.studios.length ? choices.studios : [];
+  const presenters = [...new Set([...choices.presenters, ...(f.presenter && !choices.presenters.includes(f.presenter) ? [f.presenter] : [])])];
+  // What Submit for Review still needs, shown as you go.
+  const missing = [
+    !f.cameraCode.trim() && "camera code",
+    !f.title.trim() && "title",
+    !f.presenter.trim() && "presenter",
+    !f.studio && "studio",
+    f.studio === OTHER && !f.studioReason.trim() && "reason for Other",
+    !f.recordedOn && "recording date",
+    (!f.minutes.trim() || Number.isNaN(len) || !((len ?? 0) > 0)) && "length",
+    (onDisk ? !(f.disk.trim() && f.path.trim()) : !f.link.trim()) && "storage location",
+    !fileCount && !f.noResources && "supporting resources",
+  ].filter(Boolean) as string[];
+  const draftOk = !!f.cameraCode.trim() && !!f.title.trim() && !!f.studio && (f.studio !== OTHER || !!f.studioReason.trim());
+  const save = async (status: "draft" | "submitted") => {
+    if (f.minutes.trim() && Number.isNaN(len)) return void toast.error("Length as minutes:seconds, e.g. 12:30");
+    setBusy(status);
+    const input = {
+      cameraCode: f.cameraCode,
+      title: f.title,
+      description: f.description,
+      minutes: Number.isNaN(len) ? null : len,
+      presenter: f.presenter || null,
+      studio: f.studio || null,
+      studioReason: f.studio === OTHER ? f.studioReason : null,
+      recordedOn: f.recordedOn || null,
+      link: onDisk ? null : f.link || null,
+      disk: onDisk ? f.disk || null : null,
+      path: onDisk ? f.path || null : null,
+      noResources: !fileCount && f.noResources,
+      files: att.payload(),
+      removeFiles: [...removing],
+      status,
+    };
+    const r = video ? await editVideoAction(video.id, input) : await addVideoAction(part.id, input);
+    setBusy("");
+    if (!r.ok) return void toast.error(r.error);
+    const code = r.data?.code ?? f.cameraCode;
+    if (r.data && "doubtful" in r.data && r.data.doubtful) toast.warning(`Saved ${code} as a draft. Check it: it does not look like a camera code.`);
+    else toast.success(status === "draft" ? `${code} saved as a draft` : video ? `${code} saved and submitted for review` : `${code} submitted for review`);
+    router.refresh();
+    onClose();
   };
+  const req = <span className="text-destructive"> *</span>;
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent data-legacy-video>
+      <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl" data-legacy-video>
         <DialogHeader>
-          <DialogTitle>{video ? "Edit video details" : `Add video shot to part ${part.number}`}</DialogTitle>
-          <DialogDescription>Several files for one video go together, as C0172 &amp; C0173. Capitals and spacing are tidied for you.</DialogDescription>
+          <DialogTitle>{video ? `Edit video entry ${video.cameraCode}` : `Add video to Part ${part.number}`}</DialogTitle>
+          <DialogDescription>Everything about this recording is entered here only. Fields with * are needed to submit for review; a draft needs the camera code, title and studio.</DialogDescription>
         </DialogHeader>
         <div className="space-y-3 text-sm">
-          <div className="space-y-1">
-            <Label htmlFor="lg-code">Camera code</Label>
-            <Input id="lg-code" autoFocus className="font-mono uppercase" placeholder="C0001" value={f.cameraCode} onChange={(e) => setF({ ...f, cameraCode: e.target.value })} />
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="lg-title">Video title</Label>
-            <Input id="lg-title" placeholder="Introduction and key definitions" value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
+          <p className="flex flex-wrap items-center gap-1.5 rounded-lg bg-muted/50 px-3 py-2 text-xs" data-legacy-place>
+            <LockIcon className="size-3.5 text-muted-foreground" />
+            {[place.grade, place.subject, place.unit, `Part ${part.number}`].map((x, i) => (
+              <span key={i} className="flex items-center gap-1.5">
+                {i > 0 && <ChevronRightIcon className="size-3 text-muted-foreground" />}
+                <span className="font-medium">{x}</span>
+              </span>
+            ))}
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1">
-              <Label htmlFor="lg-min">Length (M:S)</Label>
-              <Input id="lg-min" inputMode="numeric" placeholder="12:30" title="Minutes and seconds, e.g. 12:30" value={f.minutes} onChange={(e) => setF({ ...f, minutes: e.target.value })} />
+              <Label htmlFor="lg-code">Camera code{req}</Label>
+              <Input id="lg-code" autoFocus={!video} className="font-mono uppercase" placeholder="C0172" value={f.cameraCode} onChange={set("cameraCode")} />
+              <p className="text-[11px] text-muted-foreground">{CODE_HELP}</p>
             </div>
-            <label className="flex items-end gap-2 pb-2 text-sm">
+            <div className="space-y-1">
+              <Label htmlFor="lg-title">Video title{req}</Label>
+              <Input id="lg-title" placeholder="The topic only, e.g. Photosynthesis" value={f.title} onChange={set("title")} />
+              <p className="text-[11px] text-muted-foreground">Just the topic: no grade, unit or part number.</p>
+            </div>
+            <div className="space-y-1">
+              <Label>Presenter{req}</Label>
+              {presenters.length ? (
+                <Select value={f.presenter} onValueChange={(v) => setF({ ...f, presenter: v })}>
+                  <SelectTrigger aria-label="Presenter" className="w-full">
+                    <SelectValue placeholder="Choose the presenter" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {presenters.map((n) => (
+                      <SelectItem key={n} value={n}>
+                        {n}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input aria-label="Presenter" value={f.presenter} onChange={set("presenter")} placeholder="Add presenters on the Presenters page" />
+              )}
+              {!video && prev?.presenter && f.presenter === prev.presenter && <p className="text-[11px] text-muted-foreground">Carried over from the previous clip.</p>}
+            </div>
+            <div className="space-y-1">
+              <Label>Studio{req}</Label>
+              {studios.length ? (
+                <Select value={f.studio} onValueChange={(v) => setF({ ...f, studio: v })}>
+                  <SelectTrigger aria-label="Studio" className="w-full">
+                    <SelectValue placeholder="Choose the studio" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[...new Set([...studios, ...(f.studio && f.studio !== OTHER && !studios.includes(f.studio) ? [f.studio] : [])])].map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {s}
+                      </SelectItem>
+                    ))}
+                    <SelectItem value={OTHER}>Other (say why)</SelectItem>
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input aria-label="Studio" value={f.studio} onChange={set("studio")} placeholder="Studio 1" />
+              )}
+              {f.studio === OTHER && <Input aria-label="Why Other" value={f.studioReason} onChange={set("studioReason")} placeholder="Short reason, e.g. recorded on location at school" />}
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="lg-date">Recording date{req}</Label>
+              <Input id="lg-date" type="date" max={todayLocal()} value={f.recordedOn} onChange={set("recordedOn")} />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="lg-min">Length (M:S){req}</Label>
+              <Input id="lg-min" inputMode="numeric" placeholder="12:30" title="Minutes and seconds, e.g. 12:30" value={f.minutes} onChange={set("minutes")} />
+            </div>
+          </div>
+          <fieldset className="space-y-2 rounded-lg border p-3">
+            <legend className="px-1 text-xs font-medium">Storage location / raw footage{req}</legend>
+            <label className="flex items-center gap-2 text-sm">
               <Checkbox checked={onDisk} onCheckedChange={(v) => setOnDisk(v === true)} /> On an external disk
             </label>
-          </div>
-          {onDisk ? (
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label htmlFor="lg-disk">Disk</Label>
-                <Input id="lg-disk" value={f.disk} onChange={(e) => setF({ ...f, disk: e.target.value })} placeholder="Disk A" />
+            {onDisk ? (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1">
+                  <Label htmlFor="lg-disk">Disk name or label</Label>
+                  <Input id="lg-disk" value={f.disk} onChange={set("disk")} placeholder="Disk A (2TB blue)" />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="lg-path">Folder on the disk</Label>
+                  <Input id="lg-path" value={f.path} onChange={set("path")} placeholder="G9/Biology/U1" />
+                </div>
               </div>
+            ) : (
               <div className="space-y-1">
-                <Label htmlFor="lg-path">Folder</Label>
-                <Input id="lg-path" value={f.path} onChange={(e) => setF({ ...f, path: e.target.value })} placeholder="G9/Biology/U1" />
+                <Label htmlFor="lg-link">Raw footage link or path</Label>
+                <Input id="lg-link" value={f.link} onChange={set("link")} placeholder="https://drive.example.com/... or D:\Raw\G9\Biology" />
               </div>
-            </div>
-          ) : (
-            <div className="space-y-1">
-              <Label htmlFor="lg-link">Raw footage link (optional)</Label>
-              <Input id="lg-link" type="url" inputMode="url" value={f.link} onChange={(e) => setF({ ...f, link: e.target.value })} placeholder="https://drive.example.com/..." />
-            </div>
-          )}
+            )}
+            <p className="text-[11px] text-muted-foreground">The Recording lead can change this later, for example when the files move from a PC to an external disk.</p>
+          </fieldset>
+          <fieldset className="space-y-2 rounded-lg border p-3" data-legacy-resources>
+            <legend className="px-1 text-xs font-medium">Supporting resources{req}</legend>
+            {(video?.files ?? []).length > 0 && (
+              <ul className="flex flex-wrap gap-1.5">
+                {video!.files.map((x) => (
+                  <li key={x.id} className={cn("flex items-center gap-1 rounded-md border px-2 py-1 text-xs", removing.has(x.id) && "line-through opacity-50")}>
+                    <a href={`/api/legacy-files/${x.id}`} target="_blank" rel="noreferrer" className="max-w-48 truncate hover:underline">
+                      {x.name}
+                    </a>
+                    <button type="button" className="text-muted-foreground hover:text-destructive" aria-label={removing.has(x.id) ? `Keep ${x.name}` : `Remove ${x.name}`} onClick={() => setRemoving((s) => { const n = new Set(s); if (n.has(x.id)) n.delete(x.id); else n.add(x.id); return n; })}>
+                      {removing.has(x.id) ? <Undo2Icon className="size-3" /> : <XIcon className="size-3" />}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <AttachPicker files={att.files} add={(x) => void att.add(x)} remove={att.remove} label="Attach PDFs, slides or handouts" hint="Up to 9 MB." accept={RES_ACCEPT} disabled={f.noResources} />
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox disabled={fileCount > 0} checked={!fileCount && f.noResources} onCheckedChange={(v) => setF({ ...f, noResources: v === true })} /> None: this video has no supporting resources
+            </label>
+          </fieldset>
           <div className="space-y-1">
-            <Label htmlFor="lg-desc">Description or notes</Label>
-            <Textarea id="lg-desc" rows={3} value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} />
+            <Label htmlFor="lg-desc">Notes</Label>
+            <Textarea id="lg-desc" rows={3} className="max-h-48 overflow-y-auto [field-sizing:fixed]" placeholder="Takes, problems, anything Editing should know" value={f.description} onChange={set("description")} />
           </div>
+          {missing.length > 0 && <p className="text-xs text-muted-foreground" data-legacy-missing>To submit for review, still needed: {missing.join(", ")}.</p>}
         </div>
-        <DialogFooter>
+        <DialogFooter className="gap-2">
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button disabled={busy || !f.cameraCode.trim()} onClick={save}>
-            {busy && <Loader2Icon className="animate-spin" />} {video ? "Save changes" : "Save video shot"}
+          <Button variant="secondary" disabled={!!busy || !draftOk} title={draftOk ? undefined : "A draft needs the camera code, title and studio"} onClick={() => void save("draft")}>
+            {busy === "draft" && <Loader2Icon className="animate-spin" />} Save as draft
+          </Button>
+          <Button disabled={!!busy || missing.length > 0} onClick={() => void save("submitted")}>
+            {busy === "submitted" && <Loader2Icon className="animate-spin" />} Submit for review
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -477,68 +622,47 @@ function VideoDialog({ part, video, onClose }: { part: LegacyPart; video?: Legac
   );
 }
 
-// The rest of what the Recording team enters on a part, as on their work card.
-function PartDetails({ part }: { part: LegacyPart }) {
+// Marking a part done is where its recording checklist is ticked (it is entered nowhere else).
+function DoneDialog({ part, onClose }: { part: LegacyPart; onClose: () => void }) {
   const act = useAct();
-  const [open, setOpen] = React.useState(false);
-  const [f, setF] = React.useState({ teacher: part.teacher ?? "", rawMin: fmtMS(part.rawMin), notes: part.notes ?? "", checks: Object.fromEntries(part.checks.map((c) => [c.key, c.checked])) as Record<string, boolean> });
-  React.useEffect(() => setF({ teacher: part.teacher ?? "", rawMin: fmtMS(part.rawMin), notes: part.notes ?? "", checks: Object.fromEntries(part.checks.map((c) => [c.key, c.checked])) }), [part]);
-  const editable = part.canLog;
-  const filled = [part.teacher, part.rawMin, part.notes].filter((x) => x !== null && x !== "").length + part.checks.filter((c) => c.checked).length;
+  const [checks, setChecks] = React.useState<Record<string, boolean>>(Object.fromEntries(part.checks.map((c) => [c.key, c.checked])));
+  const [busy, setBusy] = React.useState(false);
+  const open = part.checks.filter((c) => c.required && !checks[c.key]);
   return (
-    <div className="rounded-lg border bg-muted/20" data-legacy-details>
-      <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm" onClick={() => setOpen(!open)} aria-expanded={open}>
-        <ChevronRightIcon className={open ? "size-4 rotate-90 transition-transform" : "size-4 transition-transform"} />
-        <span className="font-medium">Recording details</span>
-        <span className="text-xs text-muted-foreground">
-          {part.teacher ? `${part.teacher} · ` : ""}
-          {part.rawMin ? `${fmtMS(part.rawMin)} · ` : ""}
-          {part.checks.filter((c) => c.checked).length}/{part.checks.length} checked
-        </span>
-        {part.missing.length > 0 && <span className="ml-auto text-xs text-[var(--st-paused-fg)]">Still needed: {part.missing.length}</span>}
-        {!filled && !part.missing.length && <span className="ml-auto text-xs text-muted-foreground">Not filled in</span>}
-      </button>
-      {open && (
-        <div className="space-y-3 border-t p-3 text-sm">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-1">
-              <Label htmlFor={`lt-${part.id}`}>Presenter (teacher)</Label>
-              <Input id={`lt-${part.id}`} value={f.teacher} onChange={(e) => setF({ ...f, teacher: e.target.value })} placeholder="Ato Kebede" />
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor={`lm-${part.id}`}>Raw footage in total (M:S)</Label>
-              <Input id={`lm-${part.id}`} inputMode="numeric" placeholder="45:00" title={part.videos.some((v) => v.minutes) ? "The sum of the shots; correct a shot to change it" : "Minutes and seconds, e.g. 45:00"} disabled={!editable} value={f.rawMin} onChange={(e) => setF({ ...f, rawMin: e.target.value })} />
-            </div>
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor={`ln-${part.id}`}>Notes for the team (studio, takes, problems)</Label>
-            <Textarea id={`ln-${part.id}`} rows={2} value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} />
-          </div>
-          {part.checks.length > 0 && (
-            <fieldset className="space-y-1">
-              <legend className="font-medium">Checklist</legend>
-              {part.checks.map((c) => (
-                <label key={c.key} className="flex items-center gap-2">
-                  <Checkbox disabled={!editable} checked={!!f.checks[c.key]} onCheckedChange={(v) => setF({ ...f, checks: { ...f.checks, [c.key]: v === true } })} /> {c.label}
-                  {c.required && <span className="text-xs text-muted-foreground">required</span>}
-                </label>
-              ))}
-            </fieldset>
-          )}
-          {part.missing.length > 0 && <p className="text-xs text-[var(--st-paused-fg)]">Before it is done: {part.missing.join("; ")}</p>}
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent data-legacy-done>
+        <DialogHeader>
+          <DialogTitle>Mark Part {part.number} done</DialogTitle>
+          <DialogDescription>Check the recording, then it waits on Ready to hand off.</DialogDescription>
+        </DialogHeader>
+        {part.drafts > 0 && <p className="rounded-lg border border-[var(--st-paused-fg)] px-3 py-2 text-sm text-[var(--st-paused-fg)]">Submit or remove the {many(part.drafts, "draft entry", "draft entries")} first.</p>}
+        <fieldset className="space-y-2 text-sm">
+          {part.checks.map((c) => (
+            <label key={c.key} className="flex items-center gap-2">
+              <Checkbox checked={!!checks[c.key]} onCheckedChange={(v) => setChecks({ ...checks, [c.key]: v === true })} /> {c.label}
+              {c.required && <span className="text-xs text-muted-foreground">required</span>}
+            </label>
+          ))}
+        </fieldset>
+        {part.missing.length > 0 && <p className="text-xs text-[var(--st-paused-fg)]">Also needed: {part.missing.join("; ")}</p>}
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
           <Button
-            size="sm"
-            onClick={() => {
-              const raw = parseMS(f.rawMin);
-              if (Number.isNaN(raw)) return void toast.error("Raw footage as minutes:seconds, e.g. 45:00");
-              void act(saveDetailsAction(part.id, { teacher: f.teacher, notes: f.notes, ...(editable ? { rawMin: raw, checks: f.checks } : {}) }), "Details saved");
+            disabled={busy || open.length > 0 || part.drafts > 0}
+            onClick={async () => {
+              setBusy(true);
+              const ok = await act(markRecordedAction(part.id, checks), "Done. It waits on Ready to hand off.");
+              setBusy(false);
+              if (ok) onClose();
             }}
           >
-            Save details
+            {busy && <Loader2Icon className="animate-spin" />} <CheckCheckIcon /> Mark done
           </Button>
-        </div>
-      )}
-    </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -689,174 +813,66 @@ function ReadyView({ rows, lead }: { rows: ReadyRow[]; lead: boolean }) {
   );
 }
 
-type AddPartState = {
-  insertAt?: number | null;
-  kind?: "standard" | "review" | "custom";
-};
-
-const isReviewPart = (title: string) => /^(?:review|summary|ክለሳ|ፈተና|exam)/i.test(String(title ?? "").trim());
-
-function AddPartDialog({
-  unitNumber,
-  existingParts,
-  initial,
-  onClose,
-  onSave,
-}: {
-  unitNumber: number;
-  existingParts: LegacyPart[];
-  initial: AddPartState;
-  onClose: () => void;
-  onSave: (title: string, opts: { insertAt?: number | null; kind: "standard" | "review" | "custom" }) => Promise<boolean>;
-}) {
-  const [kind, setKind] = React.useState<"standard" | "review" | "custom">(initial.kind ?? "standard");
-  const nextNum = (existingParts.at(-1)?.number ?? 0) + 1;
-  const [insertAt, setInsertAt] = React.useState<number | "end">(
-    initial.insertAt && initial.insertAt <= nextNum ? initial.insertAt : "end"
-  );
-
-  const defaultTitle = (k: "standard" | "review" | "custom", pos: number | "end") => {
-    const num = pos === "end" ? nextNum : pos;
-    if (k === "standard") return `Part ${num}: `;
-    if (k === "review") return `Review: Unit ${unitNumber}`;
-    return "";
-  };
-
-  const [title, setTitle] = React.useState(() => defaultTitle(initial.kind ?? "standard", initial.insertAt ?? "end"));
+// Adding (or, for the lead, changing) a part: only its number, unique in the unit, and whether it is a review. Parts are
+// named "Part X"; the topic is typed once, as the video title. Parts are always listed by number.
+function PartDialog({ unitNumber, parts, part, initialKind = "standard", onClose, onSave }: { unitNumber: number; parts: LegacyPart[]; part?: LegacyPart; initialKind?: "standard" | "review"; onClose: () => void; onSave: (number: number, kind: "standard" | "review") => Promise<boolean> }) {
+  const next = Math.max(0, ...parts.map((p) => p.number)) + 1;
+  const [num, setNum] = React.useState(String(part?.number ?? next));
+  const [kind, setKind] = React.useState<"standard" | "review">(part?.kind ?? initialKind);
   const [busy, setBusy] = React.useState(false);
-
-  const handleKindChange = (nextK: "standard" | "review" | "custom") => {
-    setKind(nextK);
-    setTitle(defaultTitle(nextK, insertAt));
-  };
-
-  const handleInsertAtChange = (val: string) => {
-    const nextPos = val === "end" ? "end" : Number(val);
-    setInsertAt(nextPos);
-    if (kind === "standard" && title.startsWith("Part ")) {
-      const num = nextPos === "end" ? nextNum : nextPos;
-      const rest = title.replace(/^Part\s*\d+\s*[:.\-–]?\s*/i, "");
-      setTitle(`Part ${num}: ${rest}`);
-    }
-  };
-
+  const n = Number(num);
+  const valid = Number.isInteger(n) && n >= 1 && n <= 999;
+  const taken = valid && parts.some((p) => p.number === n && p.id !== part?.id);
   const save = async () => {
-    if (!title.trim()) return;
+    if (!valid || taken) return;
     setBusy(true);
-    const chosenInsertAt = insertAt === "end" ? null : insertAt;
-    const ok = await onSave(title.trim(), { insertAt: chosenInsertAt, kind });
+    const ok = await onSave(n, kind);
     setBusy(false);
     if (ok) onClose();
   };
-
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-md" data-legacy-dialog>
+      <DialogContent className="sm:max-w-sm" data-legacy-dialog>
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            {kind === "review" ? <SparklesIcon className="size-5 text-amber-500" /> : <LayersIcon className="size-5 text-primary" />}
-            {kind === "review" ? "Add Review Part" : kind === "custom" ? "Add Custom Part" : "Add Part"}
-          </DialogTitle>
-          <DialogDescription>
-            Add a lesson, review session, or custom part to Unit {unitNumber}.
-          </DialogDescription>
+          <DialogTitle>{part ? `Change Part ${part.number}` : `Add a part to Unit ${unitNumber}`}</DialogTitle>
+          <DialogDescription>Parts are named by number only. The topic goes in each video&apos;s title.</DialogDescription>
         </DialogHeader>
-
-        <div className="space-y-4 py-2">
-          {/* Part Type Selection */}
-          <div className="space-y-1.5">
-            <Label className="text-xs font-semibold uppercase text-muted-foreground">Part Type</Label>
-            <div className="grid grid-cols-3 gap-2">
-              <button
-                type="button"
-                onClick={() => handleKindChange("standard")}
-                className={`flex flex-col items-center justify-center rounded-lg border p-2.5 text-center text-xs transition-colors ${
-                  kind === "standard"
-                    ? "border-primary bg-primary/10 font-semibold text-primary shadow-sm"
-                    : "border-border hover:bg-muted/50 text-muted-foreground"
-                }`}
-              >
-                <LayersIcon className="mb-1 size-4" />
-                <span>Standard Part</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleKindChange("review")}
-                className={`flex flex-col items-center justify-center rounded-lg border p-2.5 text-center text-xs transition-colors ${
-                  kind === "review"
-                    ? "border-amber-500 bg-amber-500/10 font-semibold text-amber-600 dark:text-amber-400 shadow-sm"
-                    : "border-border hover:bg-muted/50 text-muted-foreground"
-                }`}
-              >
-                <SparklesIcon className="mb-1 size-4" />
-                <span>Review Part</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleKindChange("custom")}
-                className={`flex flex-col items-center justify-center rounded-lg border p-2.5 text-center text-xs transition-colors ${
-                  kind === "custom"
-                    ? "border-primary bg-primary/10 font-semibold text-primary shadow-sm"
-                    : "border-border hover:bg-muted/50 text-muted-foreground"
-                }`}
-              >
-                <FileTextIcon className="mb-1 size-4" />
-                <span>Custom Part</span>
-              </button>
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <Label htmlFor="lg-part-num">Part number</Label>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">Part</span>
+              <Input id="lg-part-num" autoFocus type="number" min={1} max={999} className="w-24" value={num} onChange={(e) => setNum(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void save()} aria-invalid={taken || !valid} />
+            </div>
+            {taken && <p className="text-xs text-destructive">Part {n} already exists in this unit.</p>}
+            {!valid && num !== "" && <p className="text-xs text-destructive">A whole number from 1.</p>}
+          </div>
+          <div className="space-y-1">
+            <Label>Kind</Label>
+            <div className="grid grid-cols-2 gap-2">
+              {(["standard", "review"] as const).map((k) => (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => setKind(k)}
+                  aria-pressed={kind === k}
+                  className={cn(
+                    "flex items-center justify-center gap-1.5 rounded-lg border p-2 text-xs transition-colors",
+                    kind === k ? (k === "review" ? "border-amber-500 bg-amber-500/10 font-semibold text-amber-700 dark:text-amber-300" : "border-primary bg-primary/10 font-semibold text-primary") : "text-muted-foreground hover:bg-muted/50",
+                  )}
+                >
+                  {k === "review" ? <SparklesIcon className="size-4" /> : <LayersIcon className="size-4" />} {k === "review" ? "Review part" : "Standard part"}
+                </button>
+              ))}
             </div>
           </div>
-
-          {/* Placement / Position Selection */}
-          <div className="space-y-1.5">
-            <Label htmlFor="lg-part-pos" className="text-xs font-semibold uppercase text-muted-foreground">Placement</Label>
-            <select
-              id="lg-part-pos"
-              className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              value={String(insertAt)}
-              onChange={(e) => handleInsertAtChange(e.target.value)}
-            >
-              <option value="end">At end (Position {nextNum})</option>
-              {existingParts.map((p) => (
-                <option key={p.id} value={p.number}>
-                  Insert at position {p.number} (before: {p.title || `Part ${p.number}`})
-                </option>
-              ))}
-            </select>
-            {insertAt !== "end" && (
-              <p className="text-xs text-muted-foreground">
-                Existing parts from #{insertAt} onward will automatically shift down by 1.
-              </p>
-            )}
-          </div>
-
-          {/* Part Title Input */}
-          <div className="space-y-1.5">
-            <Label htmlFor="lg-part-title" className="text-xs font-semibold uppercase text-muted-foreground">
-              {kind === "review" ? "Review Title" : kind === "custom" ? "Custom Part Title" : "Part Title"}
-            </Label>
-            <Input
-              id="lg-part-title"
-              autoFocus
-              placeholder={
-                kind === "review"
-                  ? "e.g. Unit Review, Review Part 1, ክለሳ"
-                  : kind === "custom"
-                  ? "e.g. Lab Exercise, Special Topic, Exam Prep"
-                  : `Part ${insertAt === "end" ? nextNum : insertAt}: Topic name`
-              }
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && title.trim() && void save()}
-            />
-          </div>
         </div>
-
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button disabled={busy || !title.trim()} onClick={save}>
-            {busy && <Loader2Icon className="animate-spin" />} Save
+          <Button disabled={busy || !valid || taken} onClick={save}>
+            {busy && <Loader2Icon className="animate-spin" />} {part ? "Save" : `Add Part ${valid ? n : ""}`}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -864,14 +880,92 @@ function AddPartDialog({
   );
 }
 
-function PartsView({ unit, parts, canRemove, config }: Props & { unit: NonNullable<Props["unit"]> }) {
+function VideoCard({ v, onEdit, onDelete }: { v: LegacyVideo; onEdit: () => void; onDelete: () => void }) {
+  // The heading is always the video title; a draft without one yet shows its camera code.
+  const heading = v.title || v.cameraCode;
+  return (
+    <div className={cn("rounded-lg border bg-background p-3", v.status === "draft" && "border-dashed")} data-legacy-shot={v.cameraCode}>
+      <div className="flex items-start justify-between gap-2">
+        <span className="min-w-0">
+          <span className="block text-sm font-semibold" data-legacy-shot-title>
+            {heading}
+          </span>
+          <span className="mt-1 flex flex-wrap items-center gap-1.5">
+            <span className="rounded bg-[var(--st-paused-bg)] px-1.5 py-0.5 font-mono text-[11px] font-semibold text-[var(--st-paused-fg)]">{v.cameraCode}</span>
+            {v.status === "draft" ? (
+              <Badge variant="outline" className="border-[var(--st-paused-fg)] text-[var(--st-paused-fg)]">
+                Draft
+              </Badge>
+            ) : (
+              <Badge variant="secondary">Submitted</Badge>
+            )}
+          </span>
+        </span>
+        <span className="flex shrink-0">
+          {v.canEdit && (
+            <Button size="icon-xs" variant="ghost" aria-label={`Edit ${v.cameraCode}`} onClick={onEdit}>
+              <PencilIcon />
+            </Button>
+          )}
+          {v.canDelete && (
+            <Button size="icon-xs" variant="ghost" aria-label={`Delete ${v.cameraCode}`} onClick={onDelete}>
+              <Trash2Icon />
+            </Button>
+          )}
+        </span>
+      </div>
+      <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 text-xs">
+        <dt className="text-muted-foreground">Presenter</dt>
+        <dd className="truncate">{v.presenter ?? "-"}</dd>
+        <dt className="text-muted-foreground">Studio</dt>
+        <dd className="truncate">
+          {v.studio ?? "-"}
+          {v.studioReason ? ` (${v.studioReason})` : ""}
+        </dd>
+        <dt className="text-muted-foreground">Recorded</dt>
+        <dd className="tabular">
+          {v.recordedOn ?? "-"}
+          {v.minutes ? ` · ${fmtMS(v.minutes)}` : ""}
+        </dd>
+        <dt className="text-muted-foreground">Stored</dt>
+        <dd className="truncate">
+          {v.disk ? `${v.disk}${v.path ? `, ${v.path}` : ""}` : v.link ? (
+            /^https?:\/\//.test(v.link) ? (
+              <a href={v.link} target="_blank" rel="noreferrer" className="text-primary hover:underline">
+                {v.link}
+              </a>
+            ) : (
+              v.link
+            )
+          ) : (
+            "-"
+          )}
+        </dd>
+      </dl>
+      {v.description && <p className="mt-1.5 max-h-24 overflow-y-auto text-xs whitespace-pre-line text-muted-foreground">{v.description}</p>}
+      {v.files.length > 0 ? (
+        <div className="mt-2">
+          <FileLinks files={v.files} base="/api/legacy-files" />
+        </div>
+      ) : v.noResources ? (
+        <p className="mt-1.5 text-[11px] text-muted-foreground">No supporting resources</p>
+      ) : null}
+      {v.by && <p className="mt-1.5 text-[11px] text-muted-foreground">Logged by {v.by}</p>}
+    </div>
+  );
+}
+
+function PartsView({ grade, subject, unit, parts, canRemove, choices }: Props & { unit: NonNullable<Props["unit"]> }) {
   const act = useAct();
-  const [adding, setAdding] = React.useState<AddPartState | null>(null);
+  const [adding, setAdding] = React.useState<"standard" | "review" | null>(null);
   const [edit, setEdit] = React.useState<LegacyPart | null>(null);
   const [del, setDel] = React.useState<LegacyPart | null>(null);
+  const [done, setDone] = React.useState<LegacyPart | null>(null);
   const [addVideo, setAddVideo] = React.useState<LegacyPart | null>(null);
   const [editVideo, setEditVideo] = React.useState<{ part: LegacyPart; video: LegacyVideo } | null>(null);
   const [delVideo, setDelVideo] = React.useState<LegacyVideo | null>(null);
+  const place: Place = { grade: grade?.name ?? "", subject: subject?.name ?? "", unit: `Unit ${unit.number}: ${unit.title}` };
+  const sorted = [...parts].sort((a, b) => a.number - b.number);
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -879,47 +973,47 @@ function PartsView({ unit, parts, canRemove, config }: Props & { unit: NonNullab
           Unit {unit.number}: {unit.title}
         </h2>
         <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline" onClick={() => setAdding({ insertAt: null, kind: "review" })}>
+          <Button size="sm" variant="outline" onClick={() => setAdding("review")}>
             <SparklesIcon className="mr-1 size-3.5 text-amber-500" /> Add review part
           </Button>
-          <Button size="sm" onClick={() => setAdding({ insertAt: null, kind: "standard" })}>
-            <PlusIcon /> Add new part
+          <Button size="sm" onClick={() => setAdding("standard")}>
+            <PlusIcon /> Add part
           </Button>
         </div>
       </div>
-      {!parts.length ? (
-        <EmptyState icon={<LayersIcon className="size-5" />} title="No parts in this unit yet" description="Add part 1." />
+      {!sorted.length ? (
+        <EmptyState icon={<LayersIcon className="size-5" />} title="No parts in this unit yet" description="Add Part 1." />
       ) : (
-        parts.map((p) => (
+        sorted.map((p) => (
           <Card key={p.id} data-legacy-part={p.number}>
             <CardContent className="space-y-3">
               <div className="flex flex-wrap items-center gap-2 border-b pb-3">
-                {isReviewPart(p.title) ? (
-                  <SparklesIcon className="size-4 text-amber-500" />
-                ) : (
-                  <LayersIcon className="size-4 text-primary" />
-                )}
-                <h3 className="font-semibold">
-                  {isReviewPart(p.title)
-                    ? p.title
-                    : p.title.toLowerCase().startsWith("part ")
-                    ? p.title
-                    : `Part ${p.number}: ${p.title}`}
+                {p.kind === "review" ? <SparklesIcon className="size-4 text-amber-500" /> : <LayersIcon className="size-4 text-primary" />}
+                <h3 className="font-semibold" data-legacy-part-name>
+                  Part {p.number}
                 </h3>
-                {isReviewPart(p.title) && (
-                  <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300 font-medium">
+                {p.kind === "review" && (
+                  <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 font-medium text-amber-700 dark:text-amber-300">
                     Review
                   </Badge>
                 )}
-                <span className="text-xs text-muted-foreground font-mono">#{p.number}</span>
                 <Badge variant="secondary">{many(p.videos.length, "video")}</Badge>
+                {p.drafts > 0 && (
+                  <Badge variant="outline" className="border-[var(--st-paused-fg)] text-[var(--st-paused-fg)]">
+                    {many(p.drafts, "draft")}
+                  </Badge>
+                )}
                 <Badge variant="outline" data-legacy-where>
                   {p.where}
                 </Badge>
-                {!isReviewPart(p.title) && isPlaceholderTitle(p.title) && <Badge variant="outline" className="border-[var(--st-paused-fg)] text-[var(--st-paused-fg)]">Needs a real name</Badge>}
+                {(p.teacher || p.rawMin) && (
+                  <span className="text-xs text-muted-foreground" title="From the video entries">
+                    {[p.teacher, p.rawMin ? `${fmtMS(p.rawMin)} raw` : null].filter(Boolean).join(" · ")}
+                  </span>
+                )}
                 <span className="ml-auto flex flex-wrap items-center gap-1">
                   {p.canMark && (
-                    <Button size="sm" variant="outline" onClick={() => void act(markRecordedAction(p.id), "Done. It waits on Ready to hand off.")}>
+                    <Button size="sm" variant="outline" onClick={() => setDone(p)}>
                       <CheckCheckIcon /> Done
                     </Button>
                   )}
@@ -931,56 +1025,24 @@ function PartsView({ unit, parts, canRemove, config }: Props & { unit: NonNullab
                   <Button size="sm" disabled={!p.canLog} title={p.canLog ? undefined : "This part has left Recording"} onClick={() => setAddVideo(p)}>
                     <VideoIcon /> Add video
                   </Button>
-                  <Button size="icon-sm" variant="ghost" title="Insert part before this one" aria-label={`Insert part before ${p.number}`} onClick={() => setAdding({ insertAt: p.number, kind: "standard" })}>
-                    <ListPlusIcon className="size-4" />
-                  </Button>
-                  <Button size="icon-sm" variant="ghost" aria-label={`Edit part ${p.number}`} onClick={() => setEdit(p)}>
-                    <PencilIcon />
-                  </Button>
                   {canRemove && (
-                    <Button size="icon-sm" variant="ghost" aria-label={`Delete part ${p.number}`} onClick={() => setDel(p)}>
-                      <Trash2Icon />
-                    </Button>
+                    <>
+                      <Button size="icon-sm" variant="ghost" aria-label={`Edit part ${p.number}`} onClick={() => setEdit(p)}>
+                        <PencilIcon />
+                      </Button>
+                      <Button size="icon-sm" variant="ghost" aria-label={`Delete part ${p.number}`} onClick={() => setDel(p)}>
+                        <Trash2Icon />
+                      </Button>
+                    </>
                   )}
                 </span>
               </div>
-              <PartDetails part={p} />
               {!p.videos.length ? (
-                <p className="rounded-lg border border-dashed p-3 text-center text-xs text-muted-foreground">No video shots added to this part yet.</p>
+                <p className="rounded-lg border border-dashed p-3 text-center text-xs text-muted-foreground">No video entries in this part yet.</p>
               ) : (
                 <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
                   {p.videos.map((v) => (
-                    <div key={v.id} className="rounded-lg border bg-background p-3" data-legacy-shot={v.cameraCode}>
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="flex min-w-0 items-center gap-1.5">
-                          <FilmIcon className="size-4 shrink-0 text-primary" />
-                          <span className="truncate rounded bg-[var(--st-paused-bg)] px-1.5 py-0.5 font-mono text-xs font-semibold text-[var(--st-paused-fg)]">{v.cameraCode}</span>
-                        </span>
-                        <span className="flex shrink-0">
-                          <Button size="icon-xs" variant="ghost" aria-label={`Edit ${v.cameraCode}`} onClick={() => setEditVideo({ part: p, video: v })}>
-                            <PencilIcon />
-                          </Button>
-                          {p.canLog && (
-                            <Button size="icon-xs" variant="ghost" aria-label={`Delete ${v.cameraCode}`} onClick={() => setDelVideo(v)}>
-                              <Trash2Icon />
-                            </Button>
-                          )}
-                        </span>
-                      </div>
-                      <p className="mt-1.5 text-sm font-medium">{v.title || "To be determined"}</p>
-                      <p className="mt-0.5 text-xs whitespace-pre-line text-muted-foreground">{v.description || "No description provided."}</p>
-                      {(v.minutes || v.link || v.disk) && (
-                        <p className="mt-1 truncate text-[11px] text-muted-foreground">
-                          {v.minutes ? fmtMS(v.minutes) : ""}
-                          {v.disk ? `${v.minutes ? " · " : ""}${v.disk}${v.path ? `, ${v.path}` : ""}` : ""}
-                          {v.link ? (
-                            <a href={v.link} target="_blank" rel="noreferrer" className="ml-1 text-primary hover:underline">
-                              link
-                            </a>
-                          ) : null}
-                        </p>
-                      )}
-                    </div>
+                    <VideoCard key={v.id} v={v} onEdit={() => setEditVideo({ part: p, video: v })} onDelete={() => setDelVideo(v)} />
                   ))}
                 </div>
               )}
@@ -988,20 +1050,13 @@ function PartsView({ unit, parts, canRemove, config }: Props & { unit: NonNullab
           </Card>
         ))
       )}
-      {adding && (
-        <AddPartDialog
-          unitNumber={unit.number}
-          existingParts={parts}
-          initial={adding}
-          onClose={() => setAdding(null)}
-          onSave={async (title, opts) => act(addPartAction(unit.id, title, opts), opts.kind === "review" ? "Review part added" : "Part added")}
-        />
-      )}
-      {edit && <NameDialog title={`Edit part ${edit.number}`} label="Part title" value={edit.title} onClose={() => setEdit(null)} onSave={(v) => act(editPartAction(edit.id, v), "Part name updated")} />}
-      {del && <ConfirmDelete text={`Delete part ${del.number}, "${del.title}"?`} detail={del.videos.length ? `Its ${many(del.videos.length, "video shot")} go too. If it has gone past Recording, it stays.` : "If it has gone past Recording, it stays."} onClose={() => setDel(null)} onYes={() => act(deletePartAction(del.id), "Part deleted")} />}
-      {addVideo && <VideoDialog part={addVideo} onClose={() => setAddVideo(null)} />}
-      {editVideo && <VideoDialog part={editVideo.part} video={editVideo.video} onClose={() => setEditVideo(null)} />}
-      {delVideo && <ConfirmDelete text={`Delete the shot ${delVideo.cameraCode}?`} detail="The recording is taken off this part." onClose={() => setDelVideo(null)} onYes={() => act(deleteVideoAction(delVideo.id), "Video deleted")} />}
+      {adding && <PartDialog unitNumber={unit.number} parts={parts} initialKind={adding} onClose={() => setAdding(null)} onSave={(n, kind) => act(addPartAction(unit.id, n, { kind }), `Part ${n} added`)} />}
+      {edit && <PartDialog unitNumber={unit.number} parts={parts} part={edit} onClose={() => setEdit(null)} onSave={(n, kind) => act(editPartAction(edit.id, { number: n, kind }), `Saved as Part ${n}`)} />}
+      {del && <ConfirmDelete text={`Delete Part ${del.number}?`} detail={del.videos.length ? `Its ${many(del.videos.length, "video entry", "video entries")} go too. If it has gone past Recording, it stays.` : "If it has gone past Recording, it stays."} onClose={() => setDel(null)} onYes={() => act(deletePartAction(del.id), "Part deleted")} />}
+      {done && <DoneDialog part={done} onClose={() => setDone(null)} />}
+      {addVideo && <VideoDialog part={addVideo} place={place} choices={choices} onClose={() => setAddVideo(null)} />}
+      {editVideo && <VideoDialog part={editVideo.part} video={editVideo.video} place={place} choices={choices} onClose={() => setEditVideo(null)} />}
+      {delVideo && <ConfirmDelete text={`Delete the entry ${delVideo.title || delVideo.cameraCode}?`} detail="The recording is taken off this part." onClose={() => setDelVideo(null)} onYes={() => act(deleteVideoAction(delVideo.id), "Video entry deleted")} />}
     </div>
   );
 }
@@ -1093,12 +1148,13 @@ function SettingsDialog({ config, onClose }: { config: LegacyConfig; onClose: ()
           </div>
           <div className="flex items-center gap-2">
             <Switch id="lc-name" checked={c.nameFromVideo} onCheckedChange={(v) => setC({ ...c, nameFromVideo: v })} />
-            <Label htmlFor="lc-name">A part with no real name takes its video&apos;s title</Label>
+            <Label htmlFor="lc-name">A part&apos;s work item takes its first video&apos;s title (so other teams see the topic)</Label>
           </div>
           <div className="flex items-center gap-2">
             <Switch id="lc-import" checked={c.importAsRecorded} onCheckedChange={(v) => setC({ ...c, importAsRecorded: v })} />
             <Label htmlFor="lc-import">Importing a backup: parts with videos count as recorded and move on to Editing</Label>
           </div>
+          <PartNamesFix />
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
@@ -1108,5 +1164,51 @@ function SettingsDialog({ config, onClose }: { config: LegacyConfig; onClose: ()
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// One-time clean-up: parts that still carry their own titles become "Part X" (shown first, then done on confirm).
+function PartNamesFix() {
+  const router = useRouter();
+  const [check, setCheck] = React.useState<{ count: number; sample: { from: string; to: string }[] } | null>(null);
+  const [busy, setBusy] = React.useState(false);
+  const go = async (commit: boolean) => {
+    setBusy(true);
+    const r = await migratePartNamesAction(commit);
+    setBusy(false);
+    if (!r.ok) return void toast.error(r.error);
+    if (commit) {
+      toast.success(`${many(r.data!.count, "part")} renamed`);
+      setCheck(null);
+      router.refresh();
+    } else setCheck(r.data!);
+  };
+  return (
+    <div className="space-y-2 rounded-lg border p-3" data-legacy-part-names>
+      <p className="font-medium">Number-only part names</p>
+      <p className="text-xs text-muted-foreground">Renames parts like &quot;Part 3: text&quot; to &quot;Part 3&quot;. The work items keep their topic, and the old names stay in the history.</p>
+      {check && (
+        <div className="space-y-1 text-xs">
+          <p>{check.count ? `${many(check.count, "part")} will be renamed:` : "Every part already has a number-only name."}</p>
+          <ul className="max-h-32 overflow-y-auto text-muted-foreground">
+            {check.sample.map((x, i) => (
+              <li key={i}>
+                {x.from} → {x.to}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <div className="flex gap-2">
+        <Button size="sm" variant="outline" disabled={busy} onClick={() => void go(false)}>
+          Check
+        </Button>
+        {check && check.count > 0 && (
+          <Button size="sm" disabled={busy} onClick={() => void go(true)}>
+            {busy && <Loader2Icon className="animate-spin" />} Rename {many(check.count, "part")}
+          </Button>
+        )}
+      </div>
+    </div>
   );
 }

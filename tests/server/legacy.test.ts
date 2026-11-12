@@ -39,9 +39,10 @@ async function main() {
   check("grades, with their school level", grades.length > 0 && grades.every((g) => g.name), grades.slice(0, 2));
   const grade = grades[0]!.id;
 
-  const sub = await lg.addSubject(dawit, grade, "Astronomy");
+  check("a camera operator cannot add a subject", await rejects(() => lg.addSubject(dawit, grade, "Astronomy"), /lead or a planner adds subjects/));
+  const sub = await lg.addSubject(hana, grade, "Astronomy");
   check("a new subject is added", (await lg.legacySubjects(dawit, grade)).some((s) => s.id === sub.id && s.name === "Astronomy"));
-  const again = await lg.addSubject(dawit, grade, "astronmy");
+  const again = await lg.addSubject(hana, grade, "astronmy");
   check("the same subject typed a little differently is not a second one", again.id === sub.id && again.sameAs === "Astronomy", again);
 
   const u1 = await lg.addUnit(dawit, grade, sub.id, "Unit 3: The Sky");
@@ -51,7 +52,7 @@ async function main() {
 
   const p1 = await lg.addPart(dawit, u1.id, "Part 1: Stars");
   const it = await get<{ id: string; title: string; lifecycle: string; code: string }>("SELECT id, title, lifecycle, code FROM items WHERE lesson_id = ?", p1.id);
-  check("a part is real work: a draft with its code", it?.title === "Stars" && it.lifecycle === "draft" && !!it.code, it);
+  check("a part is real work named by number: a draft with its code", it?.title === "Part 1" && it.lifecycle === "draft" && !!it.code && (await get<{ title: string }>("SELECT title FROM lessons WHERE id = ?", p1.id))?.title === "Part 1", it);
   check("placed in the grade and subject", !!(await get("SELECT 1 AS x FROM item_memberships WHERE item_id = ? AND grade_id = ? AND subject_id = ? AND unit_id = ? AND is_primary = 1", it!.id, grade, sub.id, u1.id)));
   check("the part shows in the unit", (await lg.legacyParts(u1.id))[0]?.where === "Not started");
 
@@ -68,10 +69,10 @@ async function main() {
 
   const named = await lg.addPart(dawit, u1.id, "Part 2:");
   await lg.addVideo(dawit, named.id, { cameraCode: "C0200", title: "Simple Present ......" });
-  check("a part with no name takes the video's title", (await get<{ title: string }>("SELECT title FROM lessons WHERE id = ?", named.id))?.title === "Simple Present");
+  check("the part keeps its number name; its work takes the video's title", (await get<{ title: string }>("SELECT title FROM lessons WHERE id = ?", named.id))?.title === "Part 2" && (await get<{ title: string }>("SELECT title FROM items WHERE lesson_id = ?", named.id))?.title === "Simple Present");
   const tbd = await lg.addPart(dawit, u1.id, "Part 3: Topic Name");
   await lg.addVideo(dawit, tbd.id, { cameraCode: "C0201", title: "To be determined" });
-  check("but not from a placeholder", /Part 3|Topic/.test((await get<{ title: string }>("SELECT title FROM lessons WHERE id = ?", tbd.id))!.title));
+  check("but not from a placeholder", (await get<{ title: string }>("SELECT title FROM items WHERE lesson_id = ?", tbd.id))!.title === "Part 3");
 
   // Correcting and removing.
   await lg.editVideo(dawit, asset!.id, { cameraCode: "C0172", title: "Introduction to stars", description: "" });
@@ -85,7 +86,7 @@ async function main() {
 
   // Everything else the team enters on a part.
   let part1 = (await lg.legacyParts(u1.id)).find((x) => x.id === p1.id)!;
-  check("the part lists the checklist and what is still missing", part1.checks.length > 0 && part1.missing.length > 0, part1);
+  check("the part lists the checklist, ticked when it is marked done (not as missing details)", part1.checks.length > 0 && !part1.missing.some((m) => part1.checks.some((c) => c.label === m)), part1);
   await lg.saveDetails(dawit, p1.id, { teacher: "Ato Kebede", rawMin: 42, notes: "Studio 2, second take is better", checks: Object.fromEntries(part1.checks.map((c) => [c.key, true])) });
   part1 = (await lg.legacyParts(u1.id)).find((x) => x.id === p1.id)!;
   check("presenter, minutes, notes and checklist are saved on the real work", part1.teacher === "Ato Kebede" && part1.rawMin === 42 && /Studio 2/.test(part1.notes ?? "") && part1.checks.every((c) => c.checked), part1);
@@ -119,8 +120,9 @@ async function main() {
   const after = (await lg.legacyParts(u1.id)).find((x) => x.id === p1.id)!;
   check("then it waits for Editing, and logging stops", /waiting for Editing/.test(after.where) && !after.canLog && !after.canMark, after);
   check("a video cannot be added now", await rejects(() => lg.addVideo(dawit, p1.id, { cameraCode: "C1" }), /left Recording/));
-  await lg.editVideo(dawit, asset!.id, { cameraCode: "C0172", title: "Stars", description: "" });
-  check("but details can still be corrected", (await get<{ label: string }>("SELECT label FROM assets WHERE id = ?", asset!.id))?.label === "Stars");
+  check("a camera operator cannot change it once it has left Recording", await rejects(() => lg.editVideo(dawit, asset!.id, { cameraCode: "C0172", title: "Stars" }), /no longer open/));
+  await lg.editVideo(hana, asset!.id, { cameraCode: "C0172", title: "Stars", description: "" });
+  check("but the Recording lead can still correct the details", (await get<{ label: string }>("SELECT label FROM assets WHERE id = ?", asset!.id))?.label === "Stars");
   await wf.acceptHandoff({ actor: null, source: "bulk", silent: true }, it!.id, {});
   check("work past Recording cannot be deleted", await rejects(() => lg.deletePart(hana, p1.id), /past Recording/));
   check("nor its unit", await rejects(() => lg.deleteUnit(hana, u1.id), /past Recording/));

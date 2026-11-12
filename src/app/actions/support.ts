@@ -6,7 +6,7 @@ import * as sup from "@/server/support";
 import { chatUsage } from "@/server/chat-extras";
 
 // Anyone sends feedback and reports; only Admin reads and answers them (checked in support.ts).
-export async function sendFeedbackAction(input: { category: string; message: string; page?: string | null }) {
+export async function sendFeedbackAction(input: { category: string; message: string; page?: string | null; files?: sup.FeedbackUpload[] }) {
   return wrap(async () => sup.sendFeedback(await requireViewer(), input));
 }
 export async function answerFeedbackAction(id: string, input: { status: string; reply?: string | null }) {

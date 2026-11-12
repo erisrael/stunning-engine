@@ -46,7 +46,7 @@ async function main() {
 
   // A part in the old catalog with one shot.
   const grade = (await lg.legacyGrades(dawit))[0]!.id;
-  const sub = await lg.addSubject(dawit, grade, "Geology");
+  const sub = await lg.addSubject(hana, grade, "Geology");
   const unit = await lg.addUnit(dawit, grade, sub.id, "Unit 1: Rocks");
   const p1 = await lg.addPart(dawit, unit.id, "Part 1: Minerals");
   const item = (await get<{ id: string; code: string }>("SELECT id, code FROM items WHERE lesson_id = ?", p1.id))!;

@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { requireViewer } from "@/server/auth";
 import { get } from "@/server/db";
-import { canImportLegacy, canUseLegacy, legacyConfig, legacyGrades, legacyParts, legacyStats, legacySubjects, legacyUnits, readyToHandOff } from "@/server/legacy";
+import { canImportLegacy, canManageLegacy, canUseLegacy, legacyChoices, legacyConfig, legacyGrades, legacyParts, legacyStats, legacySubjects, legacyUnits, readyToHandOff } from "@/server/legacy";
 import { can, isLeadOf, isManager } from "@/server/users";
 import { PageHeader } from "@/components/app/primitives";
 import { LegacyClient } from "./legacy-client";
@@ -19,12 +19,13 @@ export default async function LegacyPage({ searchParams }: { searchParams: Promi
   const unit = subject && sp.u ? await get<{ id: string; number: number; title: string }>("SELECT id, number, title FROM units WHERE id = ? AND grade_id = ? AND subject_id = ?", sp.u, grade!.id, subject.id) : null;
   const readyAll = await readyToHandOff(viewer, {});
   const showReady = sp.view === "ready";
-  const [stats, grades, subjects, units, parts] = await Promise.all([
+  const [stats, grades, subjects, units, parts, choices] = await Promise.all([
     legacyStats(),
     grade ? Promise.resolve([]) : legacyGrades(viewer),
     grade && !subject ? legacySubjects(viewer, grade.id) : Promise.resolve([]),
     grade && subject && !unit ? legacyUnits(grade.id, subject.id) : Promise.resolve([]),
     unit ? legacyParts(unit.id, viewer) : Promise.resolve([]),
+    unit ? legacyChoices() : Promise.resolve({ studios: [], presenters: [] }),
   ]);
   return (
     <div className="space-y-4">
@@ -42,7 +43,9 @@ export default async function LegacyPage({ searchParams }: { searchParams: Promi
         readyCount={readyAll.filter((r) => (isLeadOf(viewer, "recording") || isManager(viewer) ? true : r.status === "finished")).length}
         lead={isLeadOf(viewer, "recording") || isManager(viewer) || can(viewer, "items.plan")}
         canImport={canImportLegacy(viewer)}
-        canRemove={isManager(viewer) || isLeadOf(viewer, "recording") || can(viewer, "items.plan") || can(viewer, "import.run") || can(viewer, "data.manage")}
+        canRemove={canManageLegacy(viewer)}
+        choices={choices}
+        planner={can(viewer, "settings.manage") || can(viewer, "users.manage") || can(viewer, "items.plan") || can(viewer, "import.run") || can(viewer, "data.manage")}
         admin={can(viewer, "settings.manage") || can(viewer, "users.manage")}
         config={cfg}
       />

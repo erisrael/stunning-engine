@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 59;
+export const SCHEMA_VERSION = 60;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -3338,6 +3338,38 @@ CREATE TABLE IF NOT EXISTS ai_models (
   updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_ai_models_provider ON ai_models(provider);
+
+-- v60: a video entry in the Legacy catalog carries its own title, presenter, studio, recording date, draft or submitted
+-- state and supporting files; parts keep their kind (standard or review); feedback can carry screenshots and documents.
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS title TEXT;
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS presenter TEXT;
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS studio TEXT;
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS studio_reason TEXT;
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS recorded_on TEXT;
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS entry_status TEXT;
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS no_resources INTEGER;
+ALTER TABLE lessons ADD COLUMN IF NOT EXISTS part_kind TEXT;
+CREATE TABLE IF NOT EXISTS asset_files (
+  id TEXT PRIMARY KEY,
+  asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  mime TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  data TEXT NOT NULL,
+  created_by TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_asset_files ON asset_files(asset_id);
+CREATE TABLE IF NOT EXISTS feedback_files (
+  id TEXT PRIMARY KEY,
+  feedback_id TEXT NOT NULL REFERENCES feedback(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  mime TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  data TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_feedback_files ON feedback_files(feedback_id);
 `;
 
 // Tables in dependency order; used to empty the workspace and to export or restore backups.
@@ -3571,4 +3603,6 @@ export const TABLES = [
   "chapa_operations",
   "chapa_beneficiaries",
   "ai_models",
+  "asset_files",
+  "feedback_files",
 ] as const;

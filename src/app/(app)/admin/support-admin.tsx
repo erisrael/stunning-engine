@@ -16,6 +16,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { StatusPill } from "@/components/app/status-pill";
 import { saveChatConfigAction, deleteConversationAction } from "@/app/actions/chat-plus";
 import { answerFeedbackAction, handleReportAction } from "@/app/actions/support";
+import { FileLinks } from "@/components/app/attach-picker";
 import type { ChatConfig } from "@/server/chat-extras";
 
 const mb = (b: number) => (b >= 1073741824 ? `${(b / 1073741824).toFixed(1)} GB` : `${(b / 1048576).toFixed(1)} MB`);
@@ -168,7 +169,7 @@ export function ChatAdmin({ config, usage, hardMaxMb }: { config: ChatConfig; us
 // Feedback
 // ---------------------------------------------------------------------------
 
-type FeedbackRow = { id: string; category: string; message: string; page: string | null; status: string; reply: string | null; created_at: string; name: string | null; replier: string | null };
+type FeedbackRow = { id: string; category: string; message: string; page: string | null; status: string; reply: string | null; created_at: string; name: string | null; replier: string | null; files?: { id: string; name: string; mime: string; size: number }[] };
 
 export function FeedbackAdmin({ rows, categories, statuses }: { rows: FeedbackRow[]; categories: Record<string, string>; statuses: Record<string, string> }) {
   const router = useRouter();
@@ -206,7 +207,20 @@ export function FeedbackAdmin({ rows, categories, statuses }: { rows: FeedbackRo
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-2 text-sm">
-              <p className="whitespace-pre-wrap">{f.message}</p>
+              <p className="max-h-64 overflow-y-auto whitespace-pre-wrap">{f.message}</p>
+              {!!f.files?.length && (
+                <div className="flex flex-wrap gap-2">
+                  {f.files
+                    .filter((x) => x.mime.startsWith("image/"))
+                    .map((x) => (
+                      <a key={x.id} href={`/api/feedback-files/${x.id}`} target="_blank" rel="noreferrer" title={x.name}>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={`/api/feedback-files/${x.id}`} alt={x.name} className="h-24 max-w-40 rounded border object-cover" />
+                      </a>
+                    ))}
+                </div>
+              )}
+              <FileLinks files={f.files ?? []} base="/api/feedback-files" />
               {f.reply && (
                 <p className="rounded bg-muted px-3 py-2 text-xs">
                   Reply{f.replier ? ` by ${f.replier}` : ""}: {f.reply}

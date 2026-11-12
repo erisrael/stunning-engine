@@ -3,7 +3,7 @@
 import { requireViewer } from "@/server/auth";
 import { wrap } from "@/server/action-result";
 import * as lg from "@/server/legacy";
-import { renamePart, renameUnit } from "@/server/curriculum-fix";
+import { renameUnit } from "@/server/curriculum-fix";
 import { WorkflowError } from "@/server/workflow";
 
 // Every action checks the person's rights (see legacy.ts).
@@ -13,26 +13,36 @@ export async function addSubjectAction(gradeId: string, name: string) {
 export async function addUnitAction(gradeId: string, subjectId: string, title: string) {
   return wrap(async () => lg.addUnit(await requireViewer(), gradeId, subjectId, title));
 }
-export async function addPartAction(unitId: string, title: string, opts?: lg.AddPartOptions) {
-  return wrap(async () => lg.addPart(await requireViewer(), unitId, title, opts));
+export async function addPartAction(unitId: string, number: number, opts?: lg.AddPartOptions) {
+  return wrap(async () => lg.addPart(await requireViewer(), unitId, Number(number), opts));
 }
-export async function editPartAction(id: string, title: string) {
-  return wrap(async () => renamePart(await requireViewer(), id, title));
+// Names and numbers already saved are read-only for media contributors (legacy.ts, canManageLegacy).
+export async function editPartAction(id: string, input: { number: number; kind?: "standard" | "review" }) {
+  return wrap(async () => lg.editPart(await requireViewer(), id, input));
 }
 export async function editUnitAction(id: string, title: string) {
-  return wrap(async () => renameUnit(await requireViewer(), id, title));
+  return wrap(async () => {
+    const u = await requireViewer();
+    if (!lg.canManageLegacy(u)) throw new WorkflowError("FORBIDDEN", "Only the Recording lead or a planner renames units.");
+    return renameUnit(u, id, title);
+  });
 }
+// The form always says Draft or Submitted for Review, so its rules always apply.
+const formStatus = (input: lg.VideoInput): lg.VideoInput => ({ ...input, status: input.status === "submitted" ? "submitted" : "draft" });
 export async function addVideoAction(lessonId: string, input: lg.VideoInput) {
-  return wrap(async () => lg.addVideo(await requireViewer(), lessonId, input));
+  return wrap(async () => lg.addVideo(await requireViewer(), lessonId, formStatus(input)));
 }
 export async function editVideoAction(id: string, input: lg.VideoInput) {
-  return wrap(async () => lg.editVideo(await requireViewer(), id, input));
+  return wrap(async () => lg.editVideo(await requireViewer(), id, formStatus(input)));
+}
+export async function migratePartNamesAction(commit: boolean) {
+  return wrap(async () => lg.migratePartNames(await requireViewer(), commit), { revalidate: commit });
 }
 export async function deleteVideoAction(id: string) {
   return wrap(async () => lg.deleteVideo(await requireViewer(), id));
 }
-export async function markRecordedAction(lessonId: string) {
-  return wrap(async () => lg.markDone(await requireViewer(), lessonId));
+export async function markRecordedAction(lessonId: string, checks?: Record<string, boolean>) {
+  return wrap(async () => lg.markDone(await requireViewer(), lessonId, checks));
 }
 export async function reopenPartAction(lessonId: string) {
   return wrap(async () => lg.reopenPart(await requireViewer(), lessonId));
