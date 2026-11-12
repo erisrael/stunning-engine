@@ -24,12 +24,18 @@ import { savePrefsAction } from "@/app/actions/admin";
 import { saveTaskAction } from "@/app/actions/departments";
 import { requestLeaveAction } from "@/app/actions/leave";
 import { flowAssignAction, flowStartAction } from "@/app/actions/departments";
-import { matchText, PLACES, score, type Flow, type Match, type ShowStep } from "@/lib/assistant";
+import { matchText, PLACES, score, taskHandoff, type Flow, type Match, type ShowStep } from "@/lib/assistant";
+import { amharicToKeywords, detectAmharic } from "@/lib/amharic-intent";
+import { deptPath } from "@/lib/work";
+import type { MenuGroup, MenuItem } from "@/server/assistant-menu";
 import type { AssistantContext } from "@/server/assistant";
 import type { AgentStep, Proposal } from "@/server/assistant-ai";
 import { cn } from "@/lib/utils";
 
-type Msg = { from: "me" | "bot"; text: string; actions?: { label: string; run: () => void }[]; proposal?: Proposal; busy?: boolean; settled?: string; done?: AgentStep[] };
+type Msg = { from: "me" | "bot"; text: string; actions?: { label: string; run: () => void }[]; proposal?: Proposal; busy?: boolean; settled?: string; done?: AgentStep[]; groups?: MenuGroup[]; am?: boolean };
+type ShowFlow = Extract<Flow, { kind: "show" }>;
+// A guided session built on the fly (from the menu or a hand-off), shaped as a "show me" flow.
+const guideFlow = (key: string, title: string, steps: ShowStep[]): ShowFlow => ({ key, kind: "show", title, hint: "", audience: ["everyone"], keywords: [], steps });
 type Convo = { id: string; title: string; mode: string; updatedAt: string; count: number };
 const DOCK_KEY = "myseed.assistant.dock";
 const MODE_KEY = "myseed.assistant.mode";
@@ -104,11 +110,17 @@ function ShowMe({ flow, base, onEnd }: { flow: Extract<Flow, { kind: "show" }>; 
   const step = flow.steps[i];
   React.useEffect(() => {
     try {
-      sessionStorage.setItem(KEY, JSON.stringify({ flow: flow.key, step: i }));
+      sessionStorage.setItem(KEY, JSON.stringify({ flow: flow.key, step: i, guide: flow.key.startsWith("guide.") || flow.key.startsWith("handoff.") ? flow : undefined }));
     } catch {}
     if (!step) return;
     const href = step.href ? fill(step.href, base) : null;
-    if (href && pathname !== href.split("?")[0]) router.push(href);
+    // A link with a query (a form to open, a tab) is opened even on the same page, once per step.
+    if (href && (pathname !== href.split("?")[0] || (href.includes("?") && !sessionStorage.getItem(`${KEY}.opened.${flow.key}.${i}`)))) {
+      try {
+        sessionStorage.setItem(`${KEY}.opened.${flow.key}.${i}`, "1");
+      } catch {}
+      router.push(href);
+    }
     let el: HTMLElement | null = null;
     let tries = 0;
     const next = () => setI((n: number) => n + 1);
@@ -120,6 +132,9 @@ function ShowMe({ flow, base, onEnd }: { flow: Extract<Flow, { kind: "show" }>; 
         el.scrollIntoView({ block: "center", behavior: "smooth" });
         setTimeout(() => setBox(el!.getBoundingClientRect()), 350);
         el.addEventListener("click", next, { once: true });
+        // Navigation-only controls are pressed for the person, after they have seen where it is.
+        if (step.act === "click") setTimeout(() => el?.click(), 1100);
+        else if (step.act === "hover") for (const t of ["pointerover", "mouseover", "mouseenter", "focus"]) el.dispatchEvent(new Event(t, { bubbles: t !== "mouseenter" && t !== "focus" }));
       } else if (tries > 40) {
         window.clearInterval(timer);
         setBox(null);
@@ -139,6 +154,7 @@ function ShowMe({ flow, base, onEnd }: { flow: Extract<Flow, { kind: "show" }>; 
     if (!step) {
       try {
         sessionStorage.removeItem(KEY);
+        for (const k of Object.keys(sessionStorage)) if (k.startsWith(`${KEY}.opened.`)) sessionStorage.removeItem(k);
       } catch {}
       onEnd(true, i);
     }
@@ -166,7 +182,7 @@ function ShowMe({ flow, base, onEnd }: { flow: Extract<Flow, { kind: "show" }>; 
         </p>
         <p className="mt-1">{box ? step.note : "Looking for it on this page…"}</p>
         <div className="mt-2 flex justify-end gap-2">
-          <Button size="sm" variant="ghost" onClick={() => (sessionStorage.removeItem(KEY), onEnd(false, i))}>
+          <Button size="sm" variant="ghost" onClick={() => { try { sessionStorage.removeItem(KEY); for (const k of Object.keys(sessionStorage)) if (k.startsWith(`${KEY}.opened.`)) sessionStorage.removeItem(k); } catch {} onEnd(false, i); }}>
             Stop
           </Button>
           <Button size="sm" onClick={() => setI(i + 1)}>
@@ -179,7 +195,7 @@ function ShowMe({ flow, base, onEnd }: { flow: Extract<Flow, { kind: "show" }>; 
 }
 
 // A task done here, one question at a time, then a summary and Confirm.
-function DoFlow({ flow, ctx, onEnd }: { flow: Extract<Flow, { kind: "do" }>; ctx: AssistantContext; onEnd: (finished: boolean, step: number, text?: string) => void }) {
+function DoFlow({ flow, ctx, onEnd, onGuide }: { flow: Extract<Flow, { kind: "do" }>; ctx: AssistantContext; onEnd: (finished: boolean, step: number, text?: string) => void; onGuide: (f: ShowFlow) => void }) {
   const router = useRouter();
   const [data, setData] = React.useState<{ types?: Opt[]; tasks?: Opt[]; people?: Opt[]; dept?: string; depts?: (Opt & { people: Opt[] })[]; state?: string; since?: string | null } | null>(null);
   const [error, setError] = React.useState<string | null>(null);
@@ -294,8 +310,25 @@ function DoFlow({ flow, ctx, onEnd }: { flow: Extract<Flow, { kind: "do" }>; ctx
         </div>
       );
     }
-    return summary([`${v.title}`, `In ${v.deptLabel}`, `For ${v.personLabel}`, ...(v.due ? [`Due ${v.due}`] : [])], () =>
-      confirm(() => saveTaskAction(v.dept!, { title: v.title!.trim(), assigneeId: v.person || null, dueDate: v.due || null }), "Task created"),
+    // The form on the department page opens filled in; the person checks it and presses Create.
+    return (
+      <div className="space-y-2 text-sm" data-assistant-handoff>
+        <p className="font-medium">Ready to open the form:</p>
+        <ul className="list-disc pl-5">
+          {[`${v.title}`, `In ${v.deptLabel}`, `For ${v.personLabel}`, ...(v.due ? [`Due ${v.due}`] : [])].map((l) => (
+            <li key={l}>{l}</li>
+          ))}
+        </ul>
+        <p className="text-xs text-muted-foreground">It opens on the page, filled in. You check it and press Create.</p>
+        <div className="flex gap-2">
+          <Button size="sm" variant="ghost" onClick={() => setStep(0)}>
+            Start again
+          </Button>
+          <Button size="sm" onClick={() => (onGuide(guideFlow(`handoff.task.${Date.now()}`, "Create a task", taskHandoff(deptPath(v.dept!), { title: v.title!.trim(), assigneeId: v.person || null, due: v.due || null }))), onEnd(true, step, "The form is open on the page"))}>
+            Open the form
+          </Button>
+        </div>
+      </div>
     );
   }
   if (flow.key === "do.checkin") {
@@ -594,8 +627,8 @@ export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantCo
   React.useEffect(() => {
     try {
       const s = JSON.parse(sessionStorage.getItem(KEY) ?? "null");
-      const f = s && ctx.flows.find((x) => x.key === s.flow && x.kind === "show");
-      if (f) setShowing(f as Extract<Flow, { kind: "show" }>);
+      const f = s && (s.guide ?? ctx.flows.find((x) => x.key === s.flow && x.kind === "show"));
+      if (f) setShowing(f as ShowFlow);
     } catch {}
   }, [ctx.flows]);
   const say = (m: Msg) => {
@@ -619,6 +652,21 @@ export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantCo
       setShowing(f);
     }
   };
+  const startGuide = (f: ShowFlow) => {
+    log({ flow: f.key.slice(0, 40), event: "show" });
+    try {
+      sessionStorage.setItem(KEY, JSON.stringify({ flow: f.key, step: 0, guide: f }));
+    } catch {}
+    setOpen(false);
+    setShowing(f);
+  };
+  const runItem = (it: MenuItem) => {
+    if (it.kind === "flow") {
+      const f = ctx.flows.find((x) => x.key === it.flow);
+      if (f) startFlow(f);
+    } else if (it.kind === "go" && it.href) router.push(fill(it.href, base));
+    else if (it.kind === "guide" && it.steps) startGuide(guideFlow(it.id, it.label, it.steps));
+  };
   const reply = (m: Match): Msg => {
     if (m.type === "flow") return { from: "bot", text: `${m.flow.title}: ${m.flow.hint}.`, actions: [{ label: m.flow.kind === "do" ? "Do it with me" : m.flow.kind === "guide" ? "Show the steps" : "Show me", run: () => startFlow(m.flow) }] };
     if (m.type === "place") return { from: "bot", text: `${m.place.name} is here.`, actions: [{ label: `Open ${m.place.name}`, run: () => router.push(fill(m.place.href, base)) }] };
@@ -626,8 +674,8 @@ export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantCo
     return { from: "bot", text: m.answer.a };
   };
   const keywordAnswer = (t: string) => {
-    const lower = t.toLowerCase().trim();
-    const isAm = voice.lang === "am-ET" || /[\u1200-\u137F]/.test(t);
+    const lower = amharicToKeywords(t).toLowerCase().trim();
+    const isAm = voice.lang === "am-ET" || !!detectAmharic(t);
 
     // Basic Greetings & Welcome Communication
     const isGreeting = /^(hi|hello|hey|hola|greetings|selam|ሰላም|ጤና\s*ይስጥልኝ|good\s*(morning|afternoon|evening))\b/i.test(lower);
@@ -667,6 +715,12 @@ export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantCo
         (p.name.toLowerCase() === targetQuery ||
          p.words.some((w) => w.toLowerCase() === targetQuery || targetQuery.includes(w) || w.includes(targetQuery)))
       );
+      const outside = !placeMatch && targetQuery.length > 2 ? PLACES.find((p) => !ctx.places.includes(p.name) && (p.name.toLowerCase() === targetQuery || p.words.some((w) => w.toLowerCase() === targetQuery))) : null;
+      if (outside) {
+        log({ event: "refused", text: t });
+        say({ from: "bot", text: isAm ? `${outside.name} ለእርስዎ ሚና ክፍት አይደለም። የቡድን መሪዎን ወይም አስተዳዳሪን ይጠይቁ።` : `${outside.name} is not open to your role. Ask your team lead, or Admin if you need it for your work.` });
+        return;
+      }
       if (placeMatch) {
         const href = fill(placeMatch.href, ctx.home?.base ?? null);
         say({
@@ -688,8 +742,8 @@ export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantCo
       lower.includes("capabilities")
     ) {
       const roleName = (ctx as any).userRole || ctx.who.role || "member";
-      const capabilities = ctx.flows.map(f => isAm ? translate(f.title) : f.title);
-      say({from:"bot",text: `${isAm ? "በእርስዎ ሚና መሠረት በሚከተሉት ሥራዎች ልረዳዎት እችላለሁ፦" : `For your ${roleName} role, I can guide you through:`}\n${capabilities.map(t=>`• ${t}`).join("\n")}\n\n${isAm ? "የሚፈልጉትን ገጽ ስም በመጻፍ እንድከፍት ይጠይቁኝ።" : "Ask me to open a page available to your role, or tell me what you need help with."}`});
+      void translate;
+      say({ from: "bot", am: isAm, text: isAm ? "በእርስዎ ሚና ልረዳዎት የምችለው፦ አንዱን ይምረጡ።" : `What I can do for you as ${roleName}. Pick one:`, groups: ctx.menu });
       return;
     }
 
@@ -790,7 +844,7 @@ export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantCo
       return;
     }
 
-    const found = matchText(t, ctx.flows, ctx.cfg, ctx.places);
+    const found = matchText(amharicToKeywords(t), ctx.flows, ctx.cfg, ctx.places);
     if (!found.length) {
       log({ event: "nomatch", text: t });
       say({
@@ -857,7 +911,7 @@ export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantCo
     if (!t) return;
     viaVoice.current = spoken;
     setText("");
-    if (/what can you do|\bcapabilities\b|^help$|ምን ማድረግ ትችላለህ|\broutines?\b|ሩቲን/i.test(t)) {
+    if (/what can you do|\bcapabilities\b|^help$|ምን ማድረግ ትችላለህ|\broutines?\b|ሩቲን/i.test(amharicToKeywords(t))) {
       setMsgs(m=>[...m,{from:"me",text:t}]); keywordAnswer(t); return;
     }
     if(/repair|replacement|maintenance|inventory report|ጥገና|መሳሪያ/.test(t.toLowerCase())) {
@@ -1183,7 +1237,16 @@ export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantCo
                         <li key={l}>{l}</li>
                       ))}
                     </ul>
-                    {m.settled ? (
+                    {m.proposal.handoff && !m.settled ? (
+                      <div className="mt-2 flex gap-2">
+                        <Button size="xs" onClick={() => (startGuide(guideFlow(`handoff.ai.${i}`, m.proposal!.title, m.proposal!.handoff!)), setMsgs((x) => x.map((y, j) => (j === i ? { ...y, settled: "The form is open on the page" } : y))))}>
+                          Open the form
+                        </Button>
+                        <Button size="xs" variant="ghost" onClick={() => setMsgs((x) => x.map((y, j) => (j === i ? { ...y, settled: "" } : y)))}>
+                          Cancel
+                        </Button>
+                      </div>
+                    ) : m.settled ? (
                       <p className="mt-2 flex items-center gap-1 text-xs text-[#1E8E3E] dark:text-[#81C995]">
                         <CheckIcon className="size-3.5" /> {m.settled}
                       </p>
@@ -1203,6 +1266,23 @@ export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantCo
                 ) : (
                   <div key={i} className={cn("max-w-[90%] rounded-2xl px-3 py-1.5", m.from === "me" ? "ml-auto rounded-br-sm bg-primary text-primary-foreground" : "rounded-bl-sm bg-muted")} data-assistant-msg={m.from}>
                     <p className="whitespace-pre-wrap">{m.text}</p>
+                    {m.groups && (
+                      <div className="mt-2 space-y-2" data-assistant-menu>
+                        {m.groups.map((g) => (
+                          <div key={g.key} data-assistant-group={g.key}>
+                            <p className="mb-1 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">{m.am ? g.labelAm : g.label}</p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {g.items.map((it) => (
+                                <Button key={it.id} size="xs" variant="outline" className="h-auto min-h-6 bg-background py-1 whitespace-normal" onClick={() => runItem(it)} data-assistant-item={it.id}>
+                                  {m.am ? it.labelAm : it.label}
+                                </Button>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                        {!m.groups.length && <p className="text-xs text-muted-foreground">Nothing is set up for your role yet. Ask Admin.</p>}
+                      </div>
+                    )}
                     {m.actions && m.actions.length > 0 && (
                       <div className="mt-1.5 flex flex-wrap gap-1.5">
                         {m.actions.map((a) => (
@@ -1222,7 +1302,7 @@ export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantCo
               )}
               {doing && (
                 <div className="rounded-lg border p-2.5" data-assistant-do={doing.key}>
-                  <DoFlow flow={doing} ctx={ctx} onEnd={endDo} />
+                  <DoFlow flow={doing} ctx={ctx} onEnd={endDo} onGuide={startGuide} />
                   <Button size="xs" variant="ghost" className="mt-2" onClick={() => endDo(false, 0)}>
                     Stop
                   </Button>

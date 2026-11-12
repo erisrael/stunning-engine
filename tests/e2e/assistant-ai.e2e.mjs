@@ -58,9 +58,18 @@ try {
   check("the AI proposes the task", await prop.waitFor({ timeout: 15000 }).then(() => true, () => false));
   check("the proposal says what will happen", /Write the API guide/.test(await prop.innerText()));
   await dev.screenshot({ path: path.join(shots, "2-proposal.png") });
-  await prop.getByRole("button", { name: "Confirm" }).click();
-  check("Confirm creates it", await toast(dev, /Created/));
-  check("the card shows it is done", await prop.getByText("Created").waitFor({ timeout: 5000 }).then(() => true, () => false));
+  // Update 1.0 phase 5: the task is made on the page. The form opens filled in; the person presses Create.
+  check("no Confirm for tasks: it opens the form", (await prop.getByRole("button", { name: "Confirm" }).count()) === 0);
+  await prop.getByRole("button", { name: "Open the form" }).click();
+  const form = dev.getByRole("dialog").filter({ has: dev.locator("[data-assist='task-title']") });
+  check("the task form opens on the page, filled in", await form.waitFor({ timeout: 15000 }).then(async () => (await form.locator("[data-assist='task-title']").inputValue()) === "Write the API guide", () => false));
+  check("the assistant points at it", await dev.locator("[data-assistant-show]").waitFor({ timeout: 8000 }).then(() => true, () => false));
+  await dev.screenshot({ path: path.join(shots, "2b-handoff.png") });
+  await form.locator("[data-assist='task-save']").click();
+  check("the person's Create makes it", await toast(dev, /created|saved/i));
+  const stop = dev.getByRole("dialog", { name: "Show me" }).getByRole("button", { name: /Stop|Done/ });
+  if (await stop.count()) await stop.first().click().catch(() => {});
+  await dev.keyboard.press("Alt+KeyA");
 
   // A typed voice command runs at once.
   await dev.getByLabel("Ask the assistant").fill("open leave");
@@ -72,7 +81,8 @@ try {
   // Capabilities are requested in chat, and routines live on their own page.
   await dev.goto(`${base}/dev`);await dev.keyboard.press("Alt+KeyA");
   await dev.getByLabel("Ask the assistant").fill("What can you do?");await dev.getByRole("button",{name:"Ask",exact:true}).click();
-  check("Capability help uses the person's role",await dev.getByText(/For your .* role, I can guide you through:/).waitFor({timeout:5000}).then(()=>true,()=>false));
+  check("Capability help is grouped buttons for the role",await dev.locator("[data-assistant-menu] [data-assistant-group='me']").last().waitFor({timeout:5000}).then(()=>true,()=>false) && (await dev.locator("[data-assistant-menu]").last().getByRole("button").count()) >= 4);
+  await dev.screenshot({ path: path.join(shots, "3b-what-can-you-do.png") });
   await dev.getByLabel("Ask the assistant").fill("routines");await dev.getByRole("button",{name:"Ask",exact:true}).click();
   await dev.getByRole("button",{name:"Open Routines",exact:true}).click();await dev.waitForURL(/routines/);
   check("Assistant routes to the Routines page",dev.url().endsWith("/routines"));

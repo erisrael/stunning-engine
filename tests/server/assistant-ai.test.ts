@@ -73,10 +73,9 @@ async function main() {
   const r3 = await ai.askAi(D, { history: [], text: "create task Fix the login page in dev" });
   const p = r3.proposals[0];
   check("a task is proposed, not created", !!p && /Fix the login page/.test(p.lines.join(" ")) && Number((await get<{ c: number }>("SELECT COUNT(*) AS c FROM dept_tasks WHERE dept = 'dev' AND title = 'Fix the login page'"))?.c ?? 0) === before, r3);
-  check("someone else cannot confirm it", /not yours/.test((await throws(() => ai.confirmProposal(A, p!.token))) ?? ""));
-  check("a changed proposal is refused", !!(await throws(() => ai.confirmProposal(D, p!.token.slice(0, -4) + "AAAA"))));
-  const done = await ai.confirmProposal(D, p!.token);
-  check("Confirm creates it with the page's own action", done.done === "Created" && Number((await get<{ c: number }>("SELECT COUNT(*) AS c FROM dept_tasks WHERE dept = 'dev' AND title = 'Fix the login page'"))?.c ?? 0) === before + 1, done);
+  // Update 1.0 phase 5: tasks are created on the page. The proposal opens the form, filled in; nothing to confirm.
+  check("it opens the task form on the page, filled in", !p!.token && p!.handoff?.[0]?.href?.startsWith("/dev/list?new=1&title=Fix+the+login+page") === true && p!.handoff.some((st) => st.selector === "[data-assist='task-save']"), p);
+  check("it cannot be confirmed in the chat", !!(await throws(() => ai.confirmProposal(D, p!.token))));
   const r4 = await ai.askAi(D, { history: [], text: "create task Spy on finance in finance" });
   check("no proposal in a department the person cannot open", r4.proposals.length === 0 && /cannot open/.test(r4.text), r4);
 
@@ -87,7 +86,7 @@ async function main() {
   await ai.saveAiConfig(admin, { on: true, offRoles: [], dailyLimit: 1, actions: true });
   check("the daily limit stops more questions", /today's 1 questions/.test((await throws(() => ai.askAi(M, { history: [], text: "hello" })).then(() => throws(() => ai.askAi(M, { history: [], text: "hello again" })))) ?? ""));
   const usage = await ai.aiUsage(admin);
-  check("Admin sees the usage", usage.questions >= 5 && usage.confirmed >= 1 && usage.byRole.some((x) => x.role === "developer"), usage);
+  check("Admin sees the usage", usage.questions >= 5 && typeof usage.confirmed === "number" && usage.byRole.some((x) => x.role === "developer"), usage);
   await ai.saveAiConfig(admin, { on: false, clearKey: true });
   check("the key can be removed", !(await ai.aiConfig()).hasKey);
 

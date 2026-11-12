@@ -80,6 +80,23 @@ export function AssistantAdmin({ config, stats, flows, roles }: { config: Assist
             </tbody>
           </table>
           {stats.weeks.length > 0 && <p className="text-xs text-muted-foreground">Per week: {stats.weeks.map((w) => `${w.week}: ${w.started}`).join(" · ")}</p>}
+          <div data-assistant-refused>
+            <p className="text-sm font-medium">Asked for outside the role</p>
+            <p className="text-xs text-muted-foreground">Pages or actions people asked for that their role does not have. Many of the same ask may mean the role is missing an action.</p>
+            {!stats.refused?.length ? (
+              <p className="text-xs text-muted-foreground">Nothing yet.</p>
+            ) : (
+              <ul className="mt-1 space-y-1.5 text-sm">
+                {stats.refused.map((r) => (
+                  <li key={r.role}>
+                    <span className="font-medium">{roles.find((x) => x.key === r.role)?.label ?? r.role}</span> <span className="text-muted-foreground">×{r.n}</span>
+                    {r.top.length > 0 && <span className="block text-xs text-muted-foreground">{r.top.map((t) => `${t.text} (${t.n})`).join(" · ")}</span>}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {!!stats.usageByRole?.length && <p className="mt-1 text-xs text-muted-foreground">Use by role: {stats.usageByRole.map((u) => `${roles.find((x) => x.key === u.role)?.label ?? u.role} ${u.n}`).join(" · ")}</p>}
+          </div>
           <div>
             <p className="text-sm font-medium">Typed, matched nothing</p>
             {!stats.unmatched.length ? (

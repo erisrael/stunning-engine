@@ -450,7 +450,8 @@ export async function agentAvailable(user: AppUser & { activeRole: string }) {
 type Viewer = AppUser & { activeRole: string };
 export type AgentStep = { kind: string; title: string; lines: string[]; ok: boolean; result: string; href: string | null };
 type Out = { text: string; proposals: Proposal[]; links: { label: string; href: string }[]; show: string | null; done: AgentStep[]; conversationId: string | null };
-export type Proposal = { token: string; title: string; lines: string[] };
+// handoff: instead of Confirm, the person is taken to the page's form, filled in (creating tasks).
+export type Proposal = { token: string; title: string; lines: string[]; handoff?: import("@/lib/assistant").ShowStep[] };
 
 const short = (s: string | null | undefined, n = 300) => (s ? (s.length > n ? `${s.slice(0, n)}…` : s) : null);
 
@@ -688,6 +689,13 @@ const TOOL_NEEDS: Partial<Record<string, (a: Abilities) => boolean>> = {
 // A proposal, sealed with what to run and for whom; Confirm runs it with the page's own function and checks.
 export async function proposeOp(user: Viewer, kind: string, args: Record<string, unknown>): Promise<Proposal> {
   const pr = await prepareOp(user, kind, (args ?? {}) as Record<string, string>);
+  // Tasks are created on the page: the form opens filled in and the person presses Save.
+  if (kind === "create_task") {
+    const { deptPath } = await import("@/lib/work");
+    const { taskHandoff } = await import("@/lib/assistant");
+    const p = pr.params as Record<string, string | null>;
+    return { token: "", title: pr.title, lines: [...pr.lines.filter((l) => !/^It is created/i.test(l)), "Opens the form on the page; you check it and press Save"], handoff: taskHandoff(deptPath(String(p.dept)), { title: p.title, assigneeId: p.assigneeId, due: p.due, description: p.description }) };
+  }
   const token = await seal(JSON.stringify({ u: user.id, exp: Date.now() + 30 * 60e3, p: pr.params }));
   return { token, title: pr.title, lines: pr.lines };
 }
@@ -697,6 +705,7 @@ export async function confirmProposal(user: Viewer, token: string) {
   const v = raw ? parseJson<{ u: string; exp: number; p: Record<string, unknown> }>(raw, null as never) : null;
   if (!v || v.u !== user.id) throw new WorkflowError("FORBIDDEN", "This proposal is not yours.");
   if (v.exp < Date.now()) throw new WorkflowError("VALIDATION", "This proposal is too old; ask again.");
+  if (v.p.kind === "create_task") throw new WorkflowError("VALIDATION", "Tasks are created on the page: open the form and press Save.");
   const r = await executeOp(user, v.p);
   await logAi(user, `confirm:${String(v.p.kind)}`);
   return r;
@@ -1105,7 +1114,7 @@ const SYSTEM = `You are the AI assistant inside Myseed's work app (an Ethiopian 
 
 How to answer & communicate:
 - Polite, helpful and conversational. Respond naturally to basic greetings ("hi", "hello", "selam", "ሰላም", "good morning") with a warm, friendly welcome and offer the top relevant actions for the user's role.
-- Short, plain and friendly; the person may be listening (voice), so avoid markdown tables or code blocks unless requested. Use "- " bullets only for lists. Answer in the language the person writes in (English or Amharic).
+- Short, plain and friendly; the person may be listening (voice), so avoid markdown tables or code blocks unless requested. Use "- " bullets only for lists. Answer in the language the person writes in: English, or Amharic in Ge'ez script when they write Amharic in Ge'ez or in Latin letters ("selam, fikad efelgalehu"). Keep the app's page and button names in English in brackets after the Amharic, e.g. "ፈቃድ (Leave)".
 - For navigation requests ("take me to...", "go to...", "open...", "show me..."), always identify the matching route and call open_page immediately to provide an instant navigation button or navigate them there.
 - Use the tools to look at the person's real data before answering questions about their work, leave, attendance or team. Never invent numbers, names, ids or statuses.
 - You only see what the person may see. If a tool says they cannot open something, tell them who can help (their lead, HR or Admin).
@@ -1171,6 +1180,11 @@ Step-by-step tutorials for show_me: ${FLOWS.filter((f) => f.kind === "guide").ma
 Words of the app: ${GLOSSARY.map((g) => `${g.term}: ${g.meaning}`).join(" ")}`;
 
 type Turn = { role: "user" | "assistant"; text: string };
+
+// Out-of-role requests, for Admin's report (Admin, Assistant): which role asked for what it may not do.
+async function logRefused(user: Viewer, tool: string, text: string) {
+  await run("INSERT INTO assistant_events (id, user_id, role, flow, event, step, text, at) VALUES (?, ?, ?, ?, 'refused', NULL, ?, ?)", uid("ase_"), user.id, user.activeRole, tool.slice(0, 40), text.slice(0, 200), nowIso()).catch(() => null);
+}
 
 async function logAi(user: Viewer, text: string) {
   await run("INSERT INTO assistant_events (id, user_id, role, flow, event, step, text, at) VALUES (?, ?, ?, 'ai', 'ai', NULL, ?, ?)", uid("ase_"), user.id, user.activeRole, text.slice(0, 200), nowIso());
@@ -1256,10 +1270,15 @@ export async function askAi(user: Viewer, input: { history: Turn[]; text: string
       let isError = false;
       try {
         // Only the tools given to this person run, whatever the model asks for.
-        content = tools.some((t) => t.name === u.name) ? JSON.stringify(await runTool(user, u.name, u.input, out, allowed, { on: agentOn, max: cfg.agentMax })).slice(0, 20000) : JSON.stringify({ error: "That is not available to this person's role. Tell them who can help." });
+        if (tools.some((t) => t.name === u.name)) content = JSON.stringify(await runTool(user, u.name, u.input, out, allowed, { on: agentOn, max: cfg.agentMax })).slice(0, 20000);
+        else {
+          content = JSON.stringify({ error: "That is not available to this person's role. Tell them who can help." });
+          await logRefused(user, u.name, text);
+        }
       } catch (e) {
         content = e instanceof Error ? e.message : String(e);
         isError = true;
+        if (e instanceof WorkflowError && e.code === "FORBIDDEN") await logRefused(user, u.name, text);
       }
       results.push({ type: "tool_result", tool_use_id: u.id, content, ...(isError ? { is_error: true } : {}) });
     }

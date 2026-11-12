@@ -92,12 +92,16 @@ export async function assistantContext(user: AppUser & { activeRole: string }) {
   const routines = options.routines && (await routinesOpen(user));
   // The pages this person can open (by name), so typed and spoken "open ..." only go there.
   const places = (await (await import("./page-access")).placesFor(user, home?.base ?? null)).map((p) => p.name);
+  // "What can you do?": the person's own actions as grouped buttons (src/server/assistant-menu.ts).
+  const flows = flowsFor(who, cfg);
+  const menu = await (await import("./assistant-menu")).assistantMenu(user, { flows, home: home ? { base: home.base } : null }).catch(() => []);
   return {
+    menu,
     who,
     userName: user.name,
     userRole: user.activeRole,
     home: home ? { key: home.key, base: home.base, title: home.title, kind: home.kind } : null,
-    flows: flowsFor(who, cfg),
+    flows,
     cfg,
     options,
     routines,
@@ -140,8 +144,8 @@ export async function assistantData(user: AppUser & { activeRole: string }, flow
 }
 
 // Monitoring: started, finished, given up (with the step), and typed text that matched nothing.
-export async function logAssistant(user: AppUser & { activeRole: string }, e: { flow?: string | null; event: "start" | "finish" | "abandon" | "nomatch" | "show" | "voice"; step?: number | null; text?: string | null }) {
-  if (!["start", "finish", "abandon", "nomatch", "show", "voice"].includes(e.event)) return;
+export async function logAssistant(user: AppUser & { activeRole: string }, e: { flow?: string | null; event: "start" | "finish" | "abandon" | "nomatch" | "show" | "voice" | "refused"; step?: number | null; text?: string | null }) {
+  if (!["start", "finish", "abandon", "nomatch", "show", "voice", "refused"].includes(e.event)) return;
   await run(
     "INSERT INTO assistant_events (id, user_id, role, flow, event, step, text, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
     uid("ase_"),
@@ -177,7 +181,21 @@ export async function assistantStats(user: AppUser, weeks = 8) {
   for (const r of rows) if (r.event === "start" || r.event === "show") byWeek.set(week(r.at), (byWeek.get(week(r.at)) ?? 0) + 1);
   const unmatched = new Map<string, number>();
   for (const r of rows) if (r.event === "nomatch" && r.text) unmatched.set(r.text.toLowerCase(), (unmatched.get(r.text.toLowerCase()) ?? 0) + 1);
+  // Asked for something outside the role (a page they cannot open, an action they may not run): by role, so Admin
+  // sees which actions a role is missing.
+  const refusedBy = new Map<string, { n: number; texts: Map<string, number> }>();
+  for (const r of rows.filter((x) => x.event === "refused")) {
+    const g = refusedBy.get(r.role) ?? { n: 0, texts: new Map<string, number>() };
+    g.n++;
+    const k = (r.text ?? r.flow ?? "").toLowerCase().slice(0, 120);
+    if (k) g.texts.set(k, (g.texts.get(k) ?? 0) + 1);
+    refusedBy.set(r.role, g);
+  }
+  const used = new Map<string, number>();
+  for (const r of rows) if (r.event !== "refused") used.set(r.role, (used.get(r.role) ?? 0) + 1);
   return {
+    refused: [...refusedBy.entries()].sort((a, b) => b[1].n - a[1].n).map(([role, g]) => ({ role, n: g.n, top: [...g.texts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([text, n]) => ({ text, n })) })),
+    usageByRole: [...used.entries()].sort((a, b) => b[1] - a[1]).map(([role, n]) => ({ role, n })),
     flows,
     weeks: [...byWeek.entries()].sort().map(([w, n]) => ({ week: w, started: n })),
     unmatched: [...unmatched.entries()].sort((x, y) => y[1] - x[1]).slice(0, 50).map(([text, n]) => ({ text, n })),

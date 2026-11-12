@@ -151,7 +151,16 @@ export function WorkClient({
     router.replace(`${pathname}?${p.toString()}`, { scroll: false });
   };
   const [q, setQ] = React.useState(filter.q ?? "");
-  const [editing, setEditing] = React.useState<Task | { status?: string; dueDate?: string; parentId?: string } | null>(null);
+  const [editing, setEditing] = React.useState<Task | { status?: string; dueDate?: string; parentId?: string; title?: string; description?: string; assigneeId?: string } | null>(null);
+  // ?new=1 (from the assistant): the new-task form opens filled in; the person checks it and presses Create.
+  React.useEffect(() => {
+    if (params.get("new") !== "1" || access.readOnly) return;
+    setEditing({ title: params.get("title") ?? undefined, description: params.get("desc") ?? undefined, assigneeId: params.get("assignee") ?? undefined, dueDate: params.get("due") ?? undefined });
+    const p = new URLSearchParams(params.toString());
+    for (const k of ["new", "title", "desc", "assignee", "due"]) p.delete(k);
+    router.replace(`${pathname}${p.toString() ? `?${p.toString()}` : ""}`, { scroll: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params]);
   // Opens a task by id, fetching it when this tab did not load it (Team, Report, notifications).
   const openById = async (id: string) => {
     const t = tasks.find((x) => x.id === id);

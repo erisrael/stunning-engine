@@ -81,7 +81,7 @@ export function TaskDialog({
   dept: WorkDept;
   config: DeptConfig;
   task: Task | null;
-  preset: { status?: string; dueDate?: string; parentId?: string };
+  preset: { status?: string; dueDate?: string; parentId?: string; title?: string; description?: string; assigneeId?: string };
   people: Person[];
   projects: Project[];
   tasks: Task[];
@@ -95,14 +95,15 @@ export function TaskDialog({
   const canEdit = !access.readOnly && (!task || access.rights.editAll || [task.assignee_id, task.reporter_id, task.reviewer_id].includes(viewerId));
   const firstStatus = (cfg.statuses.find((s) => s.active && s.category === "open") ?? cfg.statuses.find((s) => s.active))!.key;
   const [f, setF] = React.useState({
-    title: task?.title ?? "",
-    description: task?.description ?? "",
+    title: task?.title ?? preset.title ?? "",
+    description: task?.description ?? preset.description ?? "",
     type: task?.type ?? cfg.types.find((t) => t.active)!.key,
     status: task?.status ?? preset.status ?? firstStatus,
     priority: task?.priority ?? (cfg.priorities.find((p) => p.key === "normal" && p.active) ?? cfg.priorities.find((p) => p.active))!.key,
     projectId: task?.project_id ?? "",
     milestoneId: task?.milestone_id ?? "",
-    assigneeId: task?.assignee_id ?? (access.rights.assign ? "" : viewerId),
+    // A member's own tasks are theirs; a lead may pick from the team (the assistant's prefill follows the same rule).
+    assigneeId: task?.assignee_id ?? (access.rights.assign ? (preset.assigneeId ?? "") : viewerId),
     reviewerId: task?.reviewer_id ?? "",
     parentId: task?.parent_id ?? preset.parentId ?? "",
     sprintId: task?.sprint_id ?? "",
@@ -311,7 +312,7 @@ export function TaskDialog({
                 {sel(f.template, applyTemplate, cfg.templates.map((t) => ({ value: t.key, label: t.label })), "No template", "Template")}
               </div>
             )}
-            <Input value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} placeholder="What needs doing" disabled={!canEdit} aria-label="Title" />
+            <Input value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} placeholder="What needs doing" disabled={!canEdit} aria-label="Title" data-assist="task-title" />
             <Textarea rows={4} value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} placeholder="Details, links, acceptance criteria" disabled={!canEdit} aria-label="Description" />
             <div className="grid gap-3 sm:grid-cols-3">
               <Field label="Type">{sel(f.type, (v) => setF({ ...f, type: v }), usable(cfg.types, task?.type).map((t) => ({ value: t.key, label: t.label })), undefined, "Type")}</Field>
@@ -322,9 +323,11 @@ export function TaskDialog({
               <Field label={cfg.names.project}>{sel(f.projectId, (v) => setF({ ...f, projectId: v, milestoneId: "" }), projects.map((p) => ({ value: p.id, label: `${p.key} ${p.name}` })), "None", cfg.names.project)}</Field>
               {f$.milestones && <Field label={cfg.names.milestone}>{sel(f.milestoneId, (v) => setF({ ...f, milestoneId: v }), (project?.milestones ?? []).map((m) => ({ value: m.id, label: m.name })), "None", cfg.names.milestone)}</Field>}
               <Field label="Assignee">
+                <div data-assist="task-assignee">
                 {access.rights.assign
                   ? sel(f.assigneeId, (v) => setF({ ...f, assigneeId: v }), personOpts, "Unassigned", "Assignee")
                   : sel(f.assigneeId, (v) => setF({ ...f, assigneeId: v }), [{ value: viewerId, label: "Me" }, ...(task?.assignee_id && task.assignee_id !== viewerId ? [{ value: task.assignee_id, label: task.assignee_name ?? "Someone" }] : [])], "Unassigned", "Assignee")}
+                </div>
               </Field>
               {f$.review && <Field label="Reviewer">{sel(f.reviewerId, (v) => setF({ ...f, reviewerId: v }), personOpts.filter((p) => p.value !== f.assigneeId), "No reviewer", "Reviewer")}</Field>}
               {f$.subtasks && !(task && task.subtasks_total > 0) && (
@@ -631,7 +634,7 @@ export function TaskDialog({
               {canEdit ? "Cancel" : "Close"}
             </Button>
             {canEdit && (
-              <Button disabled={busy || !f.title.trim()} onClick={save}>
+              <Button disabled={busy || !f.title.trim()} onClick={save} data-assist="task-save">
                 {busy && <Loader2Icon className="animate-spin" />} {task ? "Save" : "Create"}
               </Button>
             )}

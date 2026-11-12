@@ -7,7 +7,24 @@ import { TUTORIALS } from "./tutorials";
 
 export type Audience = "everyone" | "member" | "lead" | "department" | "production" | "hr" | "finance" | "admin";
 
-export type ShowStep = { href?: string; selector?: string; text?: string; note: string };
+// act: "click" presses a navigation-only control itself (a tab, "go online"); "hover" points at it as if hovered.
+// Forms, imports and Save are always left to the person.
+export type ShowStep = { href?: string; selector?: string; text?: string; note: string; act?: "click" | "hover" };
+
+// Creating a task is done on the page: the department's task form opens filled in (from the assistant's questions or
+// what the person told the AI), and the steps point at each field and Save. Nothing is saved until they press it.
+export function taskHandoff(base: string, input: { title?: string | null; assigneeId?: string | null; due?: string | null; description?: string | null }): ShowStep[] {
+  const q = new URLSearchParams({ new: "1" });
+  if (input.title) q.set("title", input.title.slice(0, 200));
+  if (input.assigneeId) q.set("assignee", input.assigneeId);
+  if (input.due) q.set("due", input.due);
+  if (input.description) q.set("desc", input.description.slice(0, 1000));
+  return [
+    { href: `${base}/list?${q.toString()}`, selector: "[data-assist='task-title']", note: "The form is filled in from what you said. Check the title." },
+    { selector: "[data-assist='task-assignee']", note: "Check who it is for: yourself, or someone in your team if you lead it." },
+    { selector: "[data-assist='task-save']", note: "Press Create to make it. Nothing is saved until you do." },
+  ];
+}
 
 export type Flow =
   | { key: string; kind: "do"; title: string; hint: string; audience: Audience[]; keywords: string[] }
@@ -173,6 +190,8 @@ export const PLACES: { name: string; href: string; words: string[] }[] = [
   { name: "Leave", href: "/profile?tab=leave", words: ["leave", "leav", "holiday", "balance", "vacation", "day off", "sick leave", "annual leave", "time off", "timeoff", "ፈቃድ", "ዕረፍት"] },
   { name: "Pay and claims", href: "/profile?tab=pay", words: ["pay", "payslip", "salary", "salaray", "claims", "expense", "reimbursement", "claim money", "ደመወዝ", "ክፍያ", "ወጪ"] },
   { name: "Approvals", href: "/approvals", words: ["approvals", "approve", "pending", "pending approval", "ማጽደቂያ", "ውሳኔ"] },
+  { name: "Announcements", href: "/announcements", words: ["announcements", "announcement", "news", "notice board", "ማስታወቂያ"] },
+  { name: "Team", href: "/team", words: ["my team", "team", "team effort", "how is my team", "ቡድን", "ቡድኔ"] },
   { name: "My record", href: "/profile?tab=record", words: ["my record", "documents", "contract", "hr record", "personal file", "የግል ማህደር"] },
   { name: "Account and password", href: "/profile?tab=account", words: ["password", "two-step", "account", "sessions", "devices", "security", "የይለፍ ቃል", "መለያ"] },
   { name: "Settings", href: "/preferences", words: ["my settings", "preferences", "font", "contrast", "language", "theme", "dark mode", "notification settings", "ማስተካከያ"] },
