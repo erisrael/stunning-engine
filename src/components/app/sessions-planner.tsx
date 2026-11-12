@@ -12,20 +12,20 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { bookSessionAction, moveSessionAction, setSessionStatusAction } from "@/app/actions/sessions";
+import { bookSessionAction, editSessionAction, moveSessionAction, setSessionStatusAction } from "@/app/actions/sessions";
 import type { Booking } from "@/server/sessions";
 import { cn } from "@/lib/utils";
 
-type Candidate = { id: string; code: string; title: string; grade: string | null; subject: string | null; unit_number: number | null; part_number: number | null; booked: string | null };
-type Result = { ok: boolean; error?: string; data?: unknown };
+export type Candidate = { id: string; code: string; title: string; grade: string | null; subject: string | null; unit_number: number | null; part_number: number | null; booked: string | null };
+export type Result = { ok: boolean; error?: string; data?: unknown };
 const MIME = "application/x-myseed-session";
 
-const local = (iso: string, tz: string) => {
+export const local = (iso: string, tz: string) => {
   const p = new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(iso));
   const v = (t: string) => p.find((x) => x.type === t)?.value ?? "00";
   return { date: `${v("year")}-${v("month")}-${v("day")}`, time: `${v("hour")}:${v("minute")}` };
 };
-const addMin = (hhmm: string, min: number) => {
+export const addMin = (hhmm: string, min: number) => {
   const [h, m] = hhmm.split(":").map(Number);
   const t = (h! * 60 + m! + min) % (24 * 60);
   return `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`;
@@ -49,6 +49,7 @@ export function SessionPlanner(props: {
   const [busy, setBusy] = React.useState(false);
   const [booking, setBooking] = React.useState(false);
   const [moving, setMoving] = React.useState<{ b: Booking; date: string; time: string; room: string } | null>(null);
+  const [editing, setEditing] = React.useState<{ batchId: string; date: string; time: string; booking: Booking } | null>(null);
   const [over, setOver] = React.useState<string | null>(null);
   const days = Array.from({ length: 7 }, (_, i) => shiftDays(week, i));
   const run = async (p: Promise<Result>, done: string) => {
@@ -82,7 +83,7 @@ export function SessionPlanner(props: {
         </h2>
         {canPlan && (
           <Button className="ml-auto" onClick={() => setBooking(true)}>
-            <CalendarPlusIcon /> Book a session (optional)
+            <CalendarPlusIcon /> Book a session
           </Button>
         )}
       </div>
@@ -151,6 +152,9 @@ export function SessionPlanner(props: {
                               <Button size="xs" variant="ghost" onClick={() => setMoving({ b, date: t.date, time: t.time, room: b.room ?? "" })}>
                                 Move
                               </Button>
+                              <Button size="xs" variant="ghost" onClick={() => setEditing({ batchId: b.batchId, date: t.date, time: t.time, booking: b })}>
+                                Change
+                              </Button>
                               <Button size="icon-xs" variant="ghost" aria-label="Cancel the session" disabled={busy} onClick={() => run(setSessionStatusAction(b.batchId, "cancelled"), "Cancelled")}>
                                 <XIcon />
                               </Button>
@@ -168,7 +172,19 @@ export function SessionPlanner(props: {
         })}
       </div>
 
-      {booking && <BookDialog onClose={() => setBooking(false)} today={today} studios={studios} staff={staff} candidates={candidates} run={run} busy={busy} />}
+      {(booking || editing) && (
+        <BookDialog
+          onClose={() => (setBooking(false), setEditing(null))}
+          today={today}
+          studios={studios}
+          staff={staff}
+          candidates={candidates}
+          run={run}
+          busy={busy}
+          edit={editing}
+          presenters={[...new Set(bookings.map((x) => x.presenter).filter((x): x is string => !!x))]}
+        />
+      )}
 
       <Dialog open={!!moving} onOpenChange={(o) => !o && setMoving(null)}>
         <DialogContent>
@@ -217,7 +233,9 @@ export function SessionPlanner(props: {
   );
 }
 
-function BookDialog({
+// Booking a session, or changing one (with `edit`): day, start, length, studio, operator, presenter and the parts,
+// which can be filtered by grade and subject and ticked together. The end time is shown as you go.
+export function BookDialog({
   onClose,
   today,
   studios,
@@ -225,6 +243,8 @@ function BookDialog({
   candidates,
   run,
   busy,
+  edit,
+  presenters = [],
 }: {
   onClose: () => void;
   today: string;
@@ -233,19 +253,52 @@ function BookDialog({
   candidates: Candidate[];
   run: (p: Promise<Result>, done: string) => Promise<boolean>;
   busy: boolean;
+  edit?: { batchId: string; date: string; time: string; booking: Booking } | null;
+  presenters?: string[];
 }) {
-  const [f, setF] = React.useState({ date: today, time: "09:00", durationMin: 120, room: studios[0] ?? "", presenter: "", operatorId: "", note: "", assign: true });
-  const [picked, setPicked] = React.useState<Set<string>>(new Set());
+  const b = edit?.booking;
+  const [f, setF] = React.useState({
+    date: edit?.date ?? today,
+    time: edit?.time ?? "09:00",
+    durationMin: b?.durationMin ?? 120,
+    room: b?.room ?? studios[0] ?? "",
+    presenter: b?.presenter ?? "",
+    operatorId: b?.operatorId ?? "",
+    note: b?.note ?? "",
+    assign: true,
+  });
+  const [picked, setPicked] = React.useState<Set<string>>(new Set(b?.items.map((i) => i.id) ?? []));
   const [q, setQ] = React.useState("");
+  const [grade, setGrade] = React.useState("");
+  const [subject, setSubject] = React.useState("");
+  const [onlyFree, setOnlyFree] = React.useState(false);
+  // Parts already in the session stay listed even when they are no longer waiting to be recorded.
+  const all: Candidate[] = [
+    ...(b?.items ?? [])
+      .filter((it) => !candidates.some((c) => c.id === it.id))
+      .map((it) => ({ id: it.id, code: it.code, title: it.title, grade: it.place.split(" · ")[0] ?? null, subject: it.place.split(" · ")[1] ?? null, unit_number: null, part_number: null, booked: null })),
+    ...candidates,
+  ];
+  const uniq = (xs: (string | null)[]) => [...new Set(xs.filter((x): x is string => !!x))].sort((x, y) => x.localeCompare(y, undefined, { numeric: true }));
   const needle = q.trim().toLowerCase();
-  const shown = candidates.filter((c) => !needle || `${c.code} ${c.title} ${c.grade ?? ""} ${c.subject ?? ""}`.toLowerCase().includes(needle)).slice(0, 200);
+  const shown = all
+    .filter(
+      (c) =>
+        (!grade || c.grade === grade) &&
+        (!subject || c.subject === subject) &&
+        (!onlyFree || !c.booked || picked.has(c.id)) &&
+        (!needle || `${c.code} ${c.title} ${c.grade ?? ""} ${c.subject ?? ""}`.toLowerCase().includes(needle)),
+    )
+    .slice(0, 300);
   const place = (c: Candidate) => [c.grade, c.subject, c.unit_number != null ? `U${c.unit_number}` : null, c.part_number != null ? `P${c.part_number}` : null].filter(Boolean).join(" · ");
+  const sel = "h-8 rounded-md border bg-background px-2 text-xs";
+  const input = () => ({ date: f.date, time: f.time, durationMin: f.durationMin, room: f.room, presenter: f.presenter || null, operatorId: f.operatorId || null, itemIds: [...picked], assignToOperator: f.assign, note: f.note || null });
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="sm:max-w-3xl" data-book-dialog>
         <DialogHeader>
-          <DialogTitle>Book a studio session</DialogTitle>
-          <DialogDescription>Choose the studio and time, who records, and the parts. A studio or operator already booked then is refused.</DialogDescription>
+          <DialogTitle>{edit ? "Change the studio session" : "Book a studio session"}</DialogTitle>
+          <DialogDescription>Choose the studio and time, who records and presents, and the parts. A studio or operator already booked then is refused.</DialogDescription>
         </DialogHeader>
         <div className="grid gap-3 sm:grid-cols-4">
           <div className="space-y-1.5">
@@ -259,6 +312,13 @@ function BookDialog({
           <div className="space-y-1.5">
             <Label htmlFor="b-dur">Minutes</Label>
             <Input id="b-dur" type="number" min={15} step={15} value={f.durationMin} onChange={(e) => setF({ ...f, durationMin: Number(e.target.value) })} />
+            <div className="flex gap-1">
+              {[60, 120, 180, 240].map((m) => (
+                <button key={m} type="button" className={cn("rounded border px-1.5 text-[10px]", f.durationMin === m ? "border-primary bg-primary/10" : "text-muted-foreground")} onClick={() => setF({ ...f, durationMin: m })}>
+                  {m / 60}h
+                </button>
+              ))}
+            </div>
           </div>
           <div className="space-y-1.5">
             <Label>Studio</Label>
@@ -267,13 +327,14 @@ function BookDialog({
                 <SelectValue placeholder="Choose" />
               </SelectTrigger>
               <SelectContent>
-                {studios.map((s) => (
+                {[...new Set([...studios, f.room].filter(Boolean))].map((s) => (
                   <SelectItem key={s} value={s}>
                     {s}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            <p className="text-[11px] text-muted-foreground tabular-nums">Ends {/^\d{2}:\d{2}$/.test(f.time) ? addMin(f.time, f.durationMin || 0) : "—"}</p>
           </div>
           <div className="space-y-1.5 sm:col-span-2">
             <Label>Camera operator</Label>
@@ -292,48 +353,92 @@ function BookDialog({
           </div>
           <div className="space-y-1.5 sm:col-span-2">
             <Label htmlFor="b-pres">Presenter (teacher)</Label>
-            <Input id="b-pres" value={f.presenter} onChange={(e) => setF({ ...f, presenter: e.target.value })} placeholder="Name" />
+            <Input id="b-pres" list="b-pres-list" value={f.presenter} onChange={(e) => setF({ ...f, presenter: e.target.value })} placeholder="Name" />
+            <datalist id="b-pres-list">
+              {presenters.map((p) => (
+                <option key={p} value={p} />
+              ))}
+            </datalist>
           </div>
         </div>
         <div className="space-y-2">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Label>Parts</Label>
             <span className="text-xs text-muted-foreground">{picked.size} chosen</span>
-            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search code, title, grade, subject" className="ml-auto h-8 w-64" aria-label="Search parts" />
+            <select aria-label="Grade of parts" className={sel} value={grade} onChange={(e) => (setGrade(e.target.value), setSubject(""))}>
+              <option value="">Every grade</option>
+              {uniq(all.map((c) => c.grade)).map((g) => (
+                <option key={g} value={g}>
+                  {g}
+                </option>
+              ))}
+            </select>
+            <select aria-label="Subject of parts" className={sel} value={subject} onChange={(e) => setSubject(e.target.value)}>
+              <option value="">Every subject</option>
+              {uniq(all.filter((c) => !grade || c.grade === grade).map((c) => c.subject)).map((x) => (
+                <option key={x} value={x}>
+                  {x}
+                </option>
+              ))}
+            </select>
+            <label className="flex items-center gap-1 text-xs">
+              <Checkbox checked={onlyFree} onCheckedChange={(v) => setOnlyFree(v === true)} /> Not booked yet
+            </label>
+            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search code, title" className="ml-auto h-8 w-48" aria-label="Search parts" />
+            <Button size="xs" variant="ghost" type="button" onClick={() => setPicked(new Set([...picked, ...shown.filter((c) => !picked.has(c.id)).slice(0, Math.max(0, 30 - picked.size)).map((c) => c.id)]))}>
+              Tick shown
+            </Button>
+            {picked.size > 0 && (
+              <Button size="xs" variant="ghost" type="button" onClick={() => setPicked(new Set())}>
+                Clear
+              </Button>
+            )}
           </div>
           <ul className="max-h-60 divide-y overflow-y-auto rounded-lg border text-sm">
             {shown.map((c) => (
               <li key={c.id}>
                 <label className="flex cursor-pointer items-center gap-2 px-2 py-1.5 hover:bg-muted/50">
-                  <Checkbox checked={picked.has(c.id)} onCheckedChange={(v) => setPicked((p) => (v ? new Set(p.add(c.id)) : (p.delete(c.id), new Set(p))))} aria-label={c.title} />
+                  <Checkbox
+                    checked={picked.has(c.id)}
+                    onCheckedChange={(v) =>
+                      setPicked((p) => {
+                        const n = new Set(p);
+                        if (v) n.add(c.id);
+                        else n.delete(c.id);
+                        return n;
+                      })
+                    }
+                    aria-label={c.title}
+                  />
                   <span className="min-w-0 flex-1 truncate">{c.title}</span>
+                  <span className="font-mono text-[10px] text-muted-foreground">{c.code}</span>
                   <span className="text-xs text-muted-foreground">{place(c)}</span>
                   {c.booked && <Badge variant="outline">Booked</Badge>}
                 </label>
               </li>
             ))}
-            {!shown.length && <li className="px-2 py-3 text-xs text-muted-foreground">No parts waiting to be recorded.</li>}
+            {!shown.length && <li className="px-2 py-3 text-xs text-muted-foreground">No parts waiting to be recorded match.</li>}
           </ul>
+          <p className="text-[11px] text-muted-foreground">Up to 30 parts in one session.</p>
         </div>
-        <label className="flex items-center gap-2 text-sm">
-          <Checkbox checked={f.assign} onCheckedChange={(v) => setF({ ...f, assign: v === true })} /> Give unassigned parts to the camera operator
-        </label>
+        {!edit && (
+          <label className="flex items-center gap-2 text-sm">
+            <Checkbox checked={f.assign} onCheckedChange={(v) => setF({ ...f, assign: v === true })} /> Give unassigned parts to the camera operator
+          </label>
+        )}
         <Input value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} placeholder="Note (optional): props, board, slides" aria-label="Note" />
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
           <Button
-            disabled={busy || !picked.size || !f.room}
+            disabled={busy || !picked.size || !f.room || picked.size > 30}
             onClick={async () => {
-              const ok = await run(
-                bookSessionAction({ date: f.date, time: f.time, durationMin: f.durationMin, room: f.room, presenter: f.presenter || null, operatorId: f.operatorId || null, itemIds: [...picked], assignToOperator: f.assign, note: f.note || null }),
-                "Session booked",
-              );
+              const ok = await run(edit ? editSessionAction(edit.batchId, input()) : bookSessionAction(input()), edit ? "Session changed" : "Session booked");
               if (ok) onClose();
             }}
           >
-            {busy && <Loader2Icon className="animate-spin" />} Book
+            {busy && <Loader2Icon className="animate-spin" />} {edit ? "Save changes" : "Book"}
           </Button>
         </DialogFooter>
       </DialogContent>

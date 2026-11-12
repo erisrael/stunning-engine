@@ -39,7 +39,7 @@ export type FlowItem = {
   rawDurationMin: number | null;
   finalDurationMin: number | null;
   // disk: the external disk it was handed over on (with path, the folder or file), instead of a link.
-  assets: { kind: string; url: string | null; cameraCode: string | null; version: number; disk: string | null; path: string | null }[];
+  assets: { id: string; kind: string; url: string | null; cameraCode: string | null; version: number; disk: string | null; path: string | null; durationMin: number | null }[];
   // How files travel at this stage (Settings, Workflow).
   transfer: "link" | "disk" | "either";
   checks: FlowCheck[];
@@ -106,8 +106,8 @@ async function hydrate(rows: Row[], user: AppUser): Promise<FlowItem[]> {
       ...settings.checklists[r.stage].map((c) => ({ key: c.key, label: c.label, required: c.required, verify: !!c.verify, checked: !!res(c.key)?.checked, verified: !!res(c.key)?.verified_at })),
       ...(await workChecklistItems(r.id, r.stage)).map((c) => ({ key: `wc:${c.key}`, label: c.label, required: c.required, verify: c.verify, checked: !!res(`wc:${c.key}`)?.checked, verified: !!res(`wc:${c.key}`)?.verified_at })),
     ];
-    const assets = await all<{ kind: string; url: string | null; camera_code: string | null; version_no: number; label: string | null; source_ref: string | null }>(
-      "SELECT kind, url, camera_code, version_no, label, source_ref FROM assets WHERE item_id = ? AND status = 'current' ORDER BY created_at",
+    const assets = await all<{ id: string; kind: string; url: string | null; camera_code: string | null; version_no: number; label: string | null; source_ref: string | null; duration_min: number | null }>(
+      "SELECT id, kind, url, camera_code, version_no, label, source_ref, duration_min FROM assets WHERE item_id = ? AND status = 'current' ORDER BY created_at",
       r.id,
     );
     const targets =
@@ -154,7 +154,7 @@ async function hydrate(rows: Row[], user: AppUser): Promise<FlowItem[]> {
       finalDurationMin: r.actual_duration_min == null ? null : Number(r.actual_duration_min),
       assets: assets.map((a) => {
         const disk = a.label?.startsWith("disk:") ? a.label.slice(5) : null;
-        return { kind: a.kind, url: a.url, cameraCode: a.camera_code, version: Number(a.version_no), disk, path: disk ? a.source_ref : null };
+        return { id: a.id, kind: a.kind, url: a.url, cameraCode: a.camera_code, version: Number(a.version_no), disk, path: disk ? a.source_ref : null, durationMin: a.duration_min == null ? null : Number(a.duration_min) };
       }),
       transfer: r.stage === "recording" ? settings.policies.recordingTransfer : settings.policies.editingTransfer,
       checks,
@@ -211,6 +211,94 @@ export async function myWork(user: AppUser) {
       )
     : [];
   return { items: [...(await hydrate(rows, user)), ...(await hydrate(drafts, user))], stages };
+}
+
+// The number on My work (sidebar and tab): the person's own parts still to do, by the same rule as the board (their
+// stages, assigned or shared with them, plus Recording drafts given to them), without the board's display cap.
+// Done and sent-to-lead parts wait on someone else, so they are not counted.
+export async function myWorkCount(user: AppUser): Promise<number> {
+  const stages = workStages(user);
+  if (!stages.length) return 0;
+  const sc = scopeSql(user, "i");
+  const open = await get<{ c: number }>(
+    `SELECT COUNT(*) AS c FROM items i JOIN stage_attempts a ON a.id = i.current_attempt_id
+     WHERE i.lifecycle = 'in_production' AND a.stage IN (${stages.map(() => "?").join(",")}) AND a.status IN ('queued','in_progress','paused','blocked')
+       AND (a.owner_id = ? OR EXISTS (SELECT 1 FROM item_collaborators c WHERE c.item_id = i.id AND c.user_id = ? AND c.stage = a.stage)) AND ${sc.sql}`,
+    ...stages,
+    user.id,
+    user.id,
+    ...sc.params,
+  );
+  const drafts = stages.includes("recording")
+    ? await get<{ c: number }>(
+        `SELECT COUNT(*) AS c FROM items i JOIN stage_assignments sa ON sa.item_id = i.id AND sa.stage = 'recording' WHERE i.lifecycle = 'draft' AND sa.user_id = ? AND ${sc.sql}`,
+        user.id,
+        ...sc.params,
+      )
+    : null;
+  return Number(open?.c ?? 0) + Number(drafts?.c ?? 0);
+}
+
+// Approvals: parts the team marked done or sent to this lead, in every stage they lead, for one table with filters
+// and decisions on many at once.
+export type ToApprove = {
+  id: string;
+  code: string;
+  title: string;
+  stage: Stage;
+  status: "finished" | "lead_review";
+  ownerId: string | null;
+  ownerName: string | null;
+  grade: string | null;
+  subject: string | null;
+  unitNumber: number | null;
+  partNumber: number | null;
+  priority: string;
+  dueAt: string | null;
+  doneAt: string | null;
+  rawMin: number | null;
+  teacher: string | null;
+  shots: number;
+};
+
+export async function partsToApprove(user: AppUser): Promise<ToApprove[]> {
+  const stages = STAGES.filter((s) => s !== "publication" && isLeadOf(user, s));
+  if (!stages.length) return [];
+  const sc = scopeSql(user, "i");
+  const rows = await all<Row & { status_changed_at: string | null; teacher: string | null; shots: number }>(
+    `SELECT i.id, i.code, i.title, i.priority, i.current_due_at, a.stage, a.status, a.owner_id, u.name AS owner_name, a.raw_duration_min,
+        COALESCE(a.handoff_submitted_at, a.completed_at, a.entered_at) AS status_changed_at, i.teacher,
+        g.name AS grade, s.name AS subject, un.number AS unit_number, l.number AS part_number,
+        (SELECT COUNT(*) FROM assets x WHERE x.item_id = i.id AND x.kind = 'raw' AND x.status = 'current') AS shots
+     FROM items i JOIN stage_attempts a ON a.id = i.current_attempt_id
+     LEFT JOIN users u ON u.id = a.owner_id
+     LEFT JOIN item_memberships m ON m.item_id = i.id AND m.is_primary = 1
+     LEFT JOIN grades g ON g.id = m.grade_id LEFT JOIN subjects s ON s.id = m.subject_id
+     LEFT JOIN units un ON un.id = m.unit_id LEFT JOIN lessons l ON l.id = i.lesson_id
+     WHERE i.lifecycle = 'in_production' AND a.stage IN (${stages.map(() => "?").join(",")}) AND a.status IN ('finished','lead_review') AND ${sc.sql}
+     ORDER BY CASE a.status WHEN 'lead_review' THEN 0 ELSE 1 END, g.sort, s.sort, un.number, l.number, i.code LIMIT 2000`,
+    ...stages,
+    ...sc.params,
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    code: r.code,
+    title: r.title,
+    stage: r.stage,
+    status: r.status as ToApprove["status"],
+    ownerId: r.owner_id,
+    ownerName: r.owner_name,
+    grade: r.grade,
+    subject: r.subject,
+    unitNumber: r.unit_number == null ? null : Number(r.unit_number),
+    partNumber: r.part_number == null ? null : Number(r.part_number),
+    priority: r.priority,
+    dueAt: r.current_due_at,
+    doneAt: r.status_changed_at,
+    rawMin: r.raw_duration_min == null ? null : Number(r.raw_duration_min),
+    teacher: r.teacher,
+    shots: Number(r.shots ?? 0),
+  }));
 }
 
 // Stages this person leads (managers: every stage).

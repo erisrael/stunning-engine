@@ -24,7 +24,7 @@ export default async function LegacyPage({ searchParams }: { searchParams: Promi
     grade ? Promise.resolve([]) : legacyGrades(viewer),
     grade && !subject ? legacySubjects(viewer, grade.id) : Promise.resolve([]),
     grade && subject && !unit ? legacyUnits(grade.id, subject.id) : Promise.resolve([]),
-    unit ? legacyParts(unit.id) : Promise.resolve([]),
+    unit ? legacyParts(unit.id, viewer) : Promise.resolve([]),
   ]);
   return (
     <div className="space-y-4">

@@ -30,6 +30,8 @@ export type ItemActionInput =
   | { action: "redo"; target: Stage; reasonCategory: string; note: string }
   | { action: "stageDate"; stage: Stage; date: string | null }
   | { action: "asset"; kind: AssetKind; url?: string | null; cameraCode?: string | null; label?: string; durationMin?: number | null; notes?: string; disk?: string | null; path?: string | null }
+  | { action: "rawEdit"; assetId: string; cameraCode?: string | null; url?: string | null; disk?: string | null; path?: string | null; durationMin?: number | null }
+  | { action: "rawRemove"; assetId: string }
   | { action: "stageNotes"; notes: string | null }
   | { action: "checklist"; key: string; checked: boolean }
   | { action: "durations"; rawDurationMin?: number | null; actualDurationMin?: number | null }
@@ -99,6 +101,12 @@ export async function itemAction(itemId: string, input: ItemActionInput, opts: {
               return await wf.reopenStage(ctx, itemId, { target: input.target, reasonCategory: input.reasonCategory, note: input.note, expectedVersion: v });
             case "asset":
               return await wf.addAsset(ctx, itemId, input);
+            case "rawEdit": {
+              const { assetId, action: _a, ...rest } = input;
+              return await wf.editRawAsset(ctx, itemId, assetId, rest);
+            }
+            case "rawRemove":
+              return await wf.removeRawAsset(ctx, itemId, input.assetId);
             case "stageNotes":
               return await wf.setStageNotes(ctx, itemId, input.notes);
             case "redo": {
@@ -264,6 +272,7 @@ export type BulkInput =
   | { action: "submit" }
   | { action: "submitLead" }
   | { action: "leadApprove" }
+  | { action: "leadReturn"; note: string }
   | { action: "tags"; tags: string[] };
 
 // Bulk changes run row by row through the same engine rules; ineligible rows are reported, never forced.
@@ -319,6 +328,9 @@ export async function bulkAction(ids: string[], input: BulkInput, dryRun = false
             break;
           case "leadApprove":
             await wf.leadDecide(ctx, id, { decision: "approve" });
+            break;
+          case "leadReturn":
+            await wf.leadDecide(ctx, id, { decision: "return", note: input.note });
             break;
           case "tags":
             await wf.updateItemFields(ctx, id, { tags: input.tags });

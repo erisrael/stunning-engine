@@ -8,11 +8,12 @@ import { attendanceInbox, corrections } from "@/server/attendance";
 import { shellCounts } from "@/server/shell";
 import { all } from "@/server/db";
 import { rejectedList } from "@/server/editorial";
-import { leadDesk, ledStages } from "@/server/team-flow";
+import { partsToApprove } from "@/server/team-flow";
 import { STAGE_LABELS, type Stage } from "@/lib/domain";
 import { fmtDateTime } from "@/lib/format";
 import { getSettings } from "@/server/settings";
 import { ApprovalRow } from "./approval-row";
+import { WorkApprovals } from "./work-approvals";
 import { EmptyState, PageHeader } from "@/components/app/primitives";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -59,12 +60,7 @@ export default async function ApprovalsPage() {
     can(viewer, "hr.manage") ? get<{ c: number }>("SELECT COUNT(*) AS c FROM leave_requests WHERE status = 'pending_hr'") : Promise.resolve(null),
   ]);
   const tz = (await getSettings()).workspace.timezone;
-  const [handovers, rejections, desks] = await Promise.all([
-    handoversToCheck(viewer, tz),
-    rejectedList(viewer, "to_check"),
-    Promise.all(ledStages(viewer).filter((s) => viewer.leads.includes(s)).map((s) => leadDesk(viewer, s))),
-  ]);
-  const toApprove = desks.flatMap((d) => d?.review ?? []);
+  const [handovers, rejections, toApprove] = await Promise.all([handoversToCheck(viewer, tz), rejectedList(viewer, "to_check"), partsToApprove(viewer)]);
   const sections: Section[] = [
     {
       key: "handovers",
@@ -83,15 +79,6 @@ export default async function ApprovalsPage() {
       href: "/handovers/rejected",
       action: "Cross-check",
       rows: [],
-    },
-    {
-      key: "lead-review",
-      title: "Work to approve",
-      description: "Parts your team finished and sent to you. Open one to return it with a note.",
-      count: toApprove.length,
-      href: "/dashboard",
-      action: "Open Home",
-      rows: toApprove.map((i) => ({ id: i.id, text: i.title, meta: `${STAGE_LABELS[i.stage]}${i.ownerName ? ` · ${i.ownerName}` : ""} · ${i.place}`, href: `/items/${i.id}`, item: i.id })),
     },
     {
       key: "leave",
@@ -144,9 +131,10 @@ export default async function ApprovalsPage() {
   return (
     <div className="space-y-4">
       <PageHeader title="Approvals" description="Everything waiting for your decision, in one place." />
-      {!sections.length ? (
+      {toApprove.length > 0 && <WorkApprovals rows={toApprove} />}
+      {!sections.length && !toApprove.length ? (
         <EmptyState title="Nothing waiting for you" description="Handovers, rejections, work to approve, leave, claims and corrections that need your decision show up here." />
-      ) : (
+      ) : sections.length ? (
         <div className="grid gap-4 lg:grid-cols-2">
           {sections.map((s) => (
             <Card key={s.key} data-testid={`approvals-${s.key}`}>
@@ -181,7 +169,7 @@ export default async function ApprovalsPage() {
             </Card>
           ))}
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

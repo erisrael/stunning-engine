@@ -41,6 +41,7 @@ import type { LegacyConfig, LegacyPart, LegacyVideo, ReadyRow } from "@/server/l
 import { Checkbox } from "@/components/ui/checkbox";
 import { ClipboardCheckIcon, SendIcon, Undo2Icon } from "lucide-react";
 import { isPlaceholderTitle } from "@/lib/curriculum-names";
+import { fmtMS, parseMS } from "@/lib/duration";
 
 type Result = { ok: boolean; error?: string };
 type GradeCard = { id: string; name: string; level: string | null; subjects: number; videos: number };
@@ -389,13 +390,18 @@ function UnitsView({ grade, subject, units, canRemove }: Props & { grade: NonNul
 function VideoDialog({ part, video, onClose }: { part: LegacyPart; video?: LegacyVideo; onClose: () => void }) {
   const act = useAct();
   const router = useRouter();
-  const [f, setF] = React.useState({ cameraCode: video?.cameraCode ?? "", title: video?.title ?? "", description: video?.description ?? "", minutes: video?.minutes ? String(video.minutes) : "", link: video?.link ?? "", disk: video?.disk ?? "", path: video?.path ?? "" });
+  const [f, setF] = React.useState({ cameraCode: video?.cameraCode ?? "", title: video?.title ?? "", description: video?.description ?? "", minutes: fmtMS(video?.minutes), link: video?.link ?? "", disk: video?.disk ?? "", path: video?.path ?? "" });
   const [onDisk, setOnDisk] = React.useState(!!video?.disk);
   const [busy, setBusy] = React.useState(false);
   const save = async () => {
     setBusy(true);
     let ok: boolean;
-    const input = { ...f, minutes: f.minutes ? Number(f.minutes) : null, link: onDisk ? null : f.link || null, disk: onDisk ? f.disk || null : null, path: onDisk ? f.path || null : null };
+    const len = parseMS(f.minutes);
+    if (Number.isNaN(len)) {
+      setBusy(false);
+      return void toast.error("Length as minutes:seconds, e.g. 12:30");
+    }
+    const input = { ...f, minutes: len, link: onDisk ? null : f.link || null, disk: onDisk ? f.disk || null : null, path: onDisk ? f.path || null : null };
     if (video) ok = await act(editVideoAction(video.id, input), "Video details updated");
     else {
       const r = await addVideoAction(part.id, input);
@@ -429,22 +435,22 @@ function VideoDialog({ part, video, onClose }: { part: LegacyPart; video?: Legac
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <Label htmlFor="lg-min">Minutes</Label>
-              <Input id="lg-min" type="number" min={0} step="0.5" inputMode="decimal" value={f.minutes} onChange={(e) => setF({ ...f, minutes: e.target.value })} />
+              <Label htmlFor="lg-min">Length (M:S)</Label>
+              <Input id="lg-min" inputMode="numeric" placeholder="12:30" title="Minutes and seconds, e.g. 12:30" value={f.minutes} onChange={(e) => setF({ ...f, minutes: e.target.value })} />
             </div>
             <label className="flex items-end gap-2 pb-2 text-sm">
-              <Checkbox checked={onDisk} disabled={!!video} onCheckedChange={(v) => setOnDisk(v === true)} /> On an external disk
+              <Checkbox checked={onDisk} onCheckedChange={(v) => setOnDisk(v === true)} /> On an external disk
             </label>
           </div>
           {onDisk ? (
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label htmlFor="lg-disk">Disk</Label>
-                <Input id="lg-disk" disabled={!!video} value={f.disk} onChange={(e) => setF({ ...f, disk: e.target.value })} placeholder="Disk A" />
+                <Input id="lg-disk" value={f.disk} onChange={(e) => setF({ ...f, disk: e.target.value })} placeholder="Disk A" />
               </div>
               <div className="space-y-1">
                 <Label htmlFor="lg-path">Folder</Label>
-                <Input id="lg-path" disabled={!!video} value={f.path} onChange={(e) => setF({ ...f, path: e.target.value })} placeholder="G9/Biology/U1" />
+                <Input id="lg-path" value={f.path} onChange={(e) => setF({ ...f, path: e.target.value })} placeholder="G9/Biology/U1" />
               </div>
             </div>
           ) : (
@@ -475,8 +481,8 @@ function VideoDialog({ part, video, onClose }: { part: LegacyPart; video?: Legac
 function PartDetails({ part }: { part: LegacyPart }) {
   const act = useAct();
   const [open, setOpen] = React.useState(false);
-  const [f, setF] = React.useState({ teacher: part.teacher ?? "", rawMin: part.rawMin == null ? "" : String(part.rawMin), notes: part.notes ?? "", checks: Object.fromEntries(part.checks.map((c) => [c.key, c.checked])) as Record<string, boolean> });
-  React.useEffect(() => setF({ teacher: part.teacher ?? "", rawMin: part.rawMin == null ? "" : String(part.rawMin), notes: part.notes ?? "", checks: Object.fromEntries(part.checks.map((c) => [c.key, c.checked])) }), [part]);
+  const [f, setF] = React.useState({ teacher: part.teacher ?? "", rawMin: fmtMS(part.rawMin), notes: part.notes ?? "", checks: Object.fromEntries(part.checks.map((c) => [c.key, c.checked])) as Record<string, boolean> });
+  React.useEffect(() => setF({ teacher: part.teacher ?? "", rawMin: fmtMS(part.rawMin), notes: part.notes ?? "", checks: Object.fromEntries(part.checks.map((c) => [c.key, c.checked])) }), [part]);
   const editable = part.canLog;
   const filled = [part.teacher, part.rawMin, part.notes].filter((x) => x !== null && x !== "").length + part.checks.filter((c) => c.checked).length;
   return (
@@ -486,7 +492,7 @@ function PartDetails({ part }: { part: LegacyPart }) {
         <span className="font-medium">Recording details</span>
         <span className="text-xs text-muted-foreground">
           {part.teacher ? `${part.teacher} · ` : ""}
-          {part.rawMin ? `${part.rawMin} min · ` : ""}
+          {part.rawMin ? `${fmtMS(part.rawMin)} · ` : ""}
           {part.checks.filter((c) => c.checked).length}/{part.checks.length} checked
         </span>
         {part.missing.length > 0 && <span className="ml-auto text-xs text-[var(--st-paused-fg)]">Still needed: {part.missing.length}</span>}
@@ -500,8 +506,8 @@ function PartDetails({ part }: { part: LegacyPart }) {
               <Input id={`lt-${part.id}`} value={f.teacher} onChange={(e) => setF({ ...f, teacher: e.target.value })} placeholder="Ato Kebede" />
             </div>
             <div className="space-y-1">
-              <Label htmlFor={`lm-${part.id}`}>Raw minutes in total</Label>
-              <Input id={`lm-${part.id}`} type="number" min={0} step="0.5" inputMode="decimal" disabled={!editable} value={f.rawMin} onChange={(e) => setF({ ...f, rawMin: e.target.value })} />
+              <Label htmlFor={`lm-${part.id}`}>Raw footage in total (M:S)</Label>
+              <Input id={`lm-${part.id}`} inputMode="numeric" placeholder="45:00" title={part.videos.some((v) => v.minutes) ? "The sum of the shots; correct a shot to change it" : "Minutes and seconds, e.g. 45:00"} disabled={!editable} value={f.rawMin} onChange={(e) => setF({ ...f, rawMin: e.target.value })} />
             </div>
           </div>
           <div className="space-y-1">
@@ -522,7 +528,11 @@ function PartDetails({ part }: { part: LegacyPart }) {
           {part.missing.length > 0 && <p className="text-xs text-[var(--st-paused-fg)]">Before it is done: {part.missing.join("; ")}</p>}
           <Button
             size="sm"
-            onClick={() => void act(saveDetailsAction(part.id, { teacher: f.teacher, notes: f.notes, ...(editable ? { rawMin: f.rawMin === "" ? null : Number(f.rawMin), checks: f.checks } : {}) }), "Details saved")}
+            onClick={() => {
+              const raw = parseMS(f.rawMin);
+              if (Number.isNaN(raw)) return void toast.error("Raw footage as minutes:seconds, e.g. 45:00");
+              void act(saveDetailsAction(part.id, { teacher: f.teacher, notes: f.notes, ...(editable ? { rawMin: raw, checks: f.checks } : {}) }), "Details saved");
+            }}
           >
             Save details
           </Button>
@@ -961,7 +971,7 @@ function PartsView({ unit, parts, canRemove, config }: Props & { unit: NonNullab
                       <p className="mt-0.5 text-xs whitespace-pre-line text-muted-foreground">{v.description || "No description provided."}</p>
                       {(v.minutes || v.link || v.disk) && (
                         <p className="mt-1 truncate text-[11px] text-muted-foreground">
-                          {v.minutes ? `${v.minutes} min` : ""}
+                          {v.minutes ? fmtMS(v.minutes) : ""}
                           {v.disk ? `${v.minutes ? " · " : ""}${v.disk}${v.path ? `, ${v.path}` : ""}` : ""}
                           {v.link ? (
                             <a href={v.link} target="_blank" rel="noreferrer" className="ml-1 text-primary hover:underline">

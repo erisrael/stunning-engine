@@ -19,3 +19,17 @@ export async function setSessionStatusAction(batchId: string, status: "completed
 export async function saveSessionsConfigAction(input: Partial<ss.SessionsConfig>) {
   return wrap(async () => ss.saveSessionsConfig(await requireViewer(), input));
 }
+
+export async function editSessionAction(batchId: string, input: ss.BookingInput) {
+  return wrap(async () => ss.editSession(await requireViewer(), batchId, input));
+}
+export async function deleteSessionsAction(batchIds: string[]) {
+  return wrap(async () => ss.deleteSessions(await requireViewer(), batchIds));
+}
+export async function setSessionsStatusAction(batchIds: string[], status: "completed" | "cancelled" | "scheduled") {
+  return wrap(async () => ss.setSessionsStatus(await requireViewer(), batchIds, status));
+}
+// Preview (commit false) shows what each row would do; commit books or changes them.
+export async function importSessionsAction(rows: ss.SessionImportRow[], commit: boolean) {
+  return wrap(async () => ss.importSessions(await requireViewer(), rows, commit), { revalidate: commit });
+}

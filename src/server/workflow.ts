@@ -1088,8 +1088,8 @@ export async function addAsset(
       }
       if (input.kind === "master" && input.durationMin)
         await run("UPDATE items SET actual_duration_min = ? WHERE id = ?", input.durationMin, itemId);
-      if (input.kind === "raw" && input.durationMin && attempt)
-        await run("UPDATE stage_attempts SET raw_duration_min = COALESCE(raw_duration_min, 0) + ? WHERE id = ?", input.durationMin, attempt.id);
+      // The raw total is the sum of the current shots (not added onto, so re-entering a shot never counts it twice).
+      if (input.kind === "raw" && input.durationMin && attempt) await recomputeRaw(itemId, attempt.id);
       await audit(ctx, {
               itemId,
               attemptId: attempt?.id,
@@ -1429,6 +1429,94 @@ export async function leadDecide(ctx: Ctx, itemId: string, input: { decision: "a
       if (!ctx.silent && a.owner_id && a.owner_id !== actorId(ctx))
         await notify([a.owner_id], { type: "handoff", title: `Changes needed: ${item.code}`, body: input.note.trim(), link: `/dashboard?item=${itemId}`, itemId, dedupeKey: `lead-return:${a.id}:${now}` }, now, actorId(ctx) ?? undefined);
     }
+    await syncItem(itemId, now);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Recordings corrected in place
+// ---------------------------------------------------------------------------
+
+const rawSum = async (itemId: string) => {
+  const m = (await get<{ m: number | null }>("SELECT SUM(duration_min) AS m FROM assets WHERE item_id = ? AND kind = 'raw' AND status = 'current'", itemId))?.m;
+  return m != null && Number(m) > 0 ? Math.round(Number(m) * 10000) / 10000 : null;
+};
+
+// The part's raw minutes in total follow its current shots. When no shot has a length, a typed total stays.
+export async function recomputeRaw(itemId: string, attemptId: string) {
+  const sum = await rawSum(itemId);
+  if (sum != null) await run("UPDATE stage_attempts SET raw_duration_min = ? WHERE id = ?", sum, attemptId);
+}
+
+// Members change their recordings while the part is open; the team lead (or a manager) also once it is done, sent
+// to them or approved, until it is handed over.
+const RAW_OPEN = ["queued", "in_progress", "paused", "blocked"];
+const RAW_LEAD = [...RAW_OPEN, "finished", "lead_review", "ready"];
+
+export function canCorrectRecording(u: AppUser | null, status: string) {
+  return (!u || leadsStage(u, "recording") ? RAW_LEAD : RAW_OPEN).includes(status);
+}
+
+async function rawAssetFor(ctx: Ctx, itemId: string, assetId: string) {
+  await requireView(ctx, itemId);
+  const asset = await get<{ id: string; label: string | null; url: string | null; camera_code: string | null; duration_min: number | null; source_ref: string | null }>(
+    "SELECT id, label, url, camera_code, duration_min, source_ref FROM assets WHERE id = ? AND item_id = ? AND kind = 'raw' AND status = 'current'",
+    assetId,
+    itemId,
+  );
+  if (!asset) throw new WorkflowError("NOT_FOUND", "Recording not found.");
+  const attempt = await requireAttempt(itemId);
+  if (attempt.stage !== "recording") throw new WorkflowError("INVALID_STATE", "This part has left Recording. Reopen it to change its recordings.");
+  await requireWork(ctx, attempt);
+  if (!canCorrectRecording(ctx.actor, attempt.status))
+    throw new WorkflowError(
+      "INVALID_STATE",
+      RAW_LEAD.includes(attempt.status) ? `This is ${STATUS_LABELS[attempt.status].toLowerCase()}; the team lead can still correct it before handing it over.` : "This part has been handed over; its recordings stay.",
+    );
+  return { asset, attempt };
+}
+
+export type RawEdit = { cameraCode?: string | null; url?: string | null; disk?: string | null; path?: string | null; durationMin?: number | null; label?: string | null; notes?: string | null };
+
+// Corrects a recording where it is: its camera code, where it is stored (link, or disk and folder) and its length.
+// Nothing is added, so the total never grows from a correction.
+export async function editRawAsset(ctx: Ctx, itemId: string, assetId: string, input: RawEdit) {
+  return await tx(async () => {
+    const now = at(ctx);
+    const { asset, attempt } = await rawAssetFor(ctx, itemId, assetId);
+    const wasDisk = asset.label?.startsWith("disk:") ? asset.label.slice(5) : null;
+    const disk = input.disk === undefined ? wasDisk : input.disk?.replace(/\s+/g, " ").trim().slice(0, 80) || null;
+    const url = disk ? null : input.url === undefined ? asset.url : input.url?.trim() || null;
+    const cameraCode = input.cameraCode === undefined ? asset.camera_code : input.cameraCode?.trim().slice(0, 120) || null;
+    if (url && !isValidFileLocationOrUrl(url)) throw new WorkflowError("VALIDATION", "Use a full link (https://...), local path (D:\\...), or network path (\\\\Server\\...).");
+    if (!url && !cameraCode && !disk) throw new WorkflowError("VALIDATION", "Enter the camera code(s), a storage link or the disk for the recording.");
+    const minutes = input.durationMin === undefined ? asset.duration_min : input.durationMin != null && Number(input.durationMin) > 0 ? Number(input.durationMin) : null;
+    const path = disk ? (input.path === undefined ? (wasDisk ? asset.source_ref : null) : input.path?.trim().slice(0, 400) || null) : wasDisk ? null : asset.source_ref;
+    const label = disk ? `disk:${disk}` : input.label !== undefined ? input.label?.trim().slice(0, 200) || null : wasDisk ? null : asset.label;
+    await run("UPDATE assets SET camera_code = ?, url = ?, label = ?, source_ref = ?, duration_min = ? WHERE id = ?", cameraCode, url, label, path, minutes, assetId);
+    if (input.notes !== undefined) await run("UPDATE assets SET notes = ? WHERE id = ?", input.notes?.trim().slice(0, 2000) || null, assetId);
+    await recomputeRaw(itemId, attempt.id);
+    await audit(ctx, {
+      itemId,
+      attemptId: attempt.id,
+      stage: "recording",
+      action: "asset.edited",
+      summary: `${actorName(ctx)} corrected recording ${cameraCode ?? disk ?? url ?? ""}`.trim(),
+      oldValue: { cameraCode: asset.camera_code, url: asset.url, label: asset.label, path: asset.source_ref, durationMin: asset.duration_min },
+      newValue: { cameraCode, url, label, path, durationMin: minutes },
+    });
+    await syncItem(itemId, now);
+  });
+}
+
+export async function removeRawAsset(ctx: Ctx, itemId: string, assetId: string) {
+  return await tx(async () => {
+    const now = at(ctx);
+    const { asset, attempt } = await rawAssetFor(ctx, itemId, assetId);
+    await run("UPDATE assets SET status = 'superseded' WHERE id = ?", assetId);
+    // Taking a shot off takes its minutes off the total.
+    if (asset.duration_min) await run("UPDATE stage_attempts SET raw_duration_min = ? WHERE id = ?", await rawSum(itemId), attempt.id);
+    await audit(ctx, { itemId, attemptId: attempt.id, stage: "recording", action: "asset.removed", summary: `${actorName(ctx)} removed recording ${asset.camera_code ?? asset.url ?? ""}`.trim() });
     await syncItem(itemId, now);
   });
 }

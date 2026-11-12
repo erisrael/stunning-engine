@@ -230,7 +230,7 @@ try {
   await part.locator("[data-legacy-details] > button").click();
   const det = part.locator("[data-legacy-details]");
   await det.getByLabel("Presenter (teacher)").fill("Ato Kebede");
-  await det.getByLabel("Raw minutes in total").fill("30");
+  await det.getByLabel("Raw footage in total (M:S)").fill("30:00");
   for (const c of await det.getByRole("checkbox").all()) await c.check();
   await det.getByRole("button", { name: "Save details" }).click();
   check("the part's recording details are saved", await toast(dawit, /Details saved/));

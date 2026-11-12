@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { requireViewer } from "@/server/auth";
 import { get } from "@/server/db";
-import { leadDesk, myWork } from "@/server/team-flow";
+import { leadDesk, myWork, myWorkCount } from "@/server/team-flow";
 import { takeLimit, myDeptTasks } from "@/server/my-work";
 import { userDirectory, can } from "@/server/users";
 import { appOrigin } from "@/server/password-reset";
@@ -27,7 +27,7 @@ export default async function MyWorkPage({ searchParams }: { searchParams: Promi
   const cfg = await sd.supportConfig();
   const agent = cfg.enabled && (await sd.isAgent(viewer));
   const isAdmin = viewer.activeRole === "admin" || can(viewer, "users.manage");
-  const [mine, desks] = await Promise.all([myWork(viewer), Promise.all(STAGES.filter((s) => viewer.leads.includes(s)).map((s) => leadDesk(viewer, s)))]);
+  const [mine, toDo, desks] = await Promise.all([myWork(viewer), myWorkCount(viewer), Promise.all(STAGES.filter((s) => viewer.leads.includes(s)).map((s) => leadDesk(viewer, s)))]);
   const unassigned = desks.flatMap((d) => d?.unassigned ?? []);
   // Tasks assigned to this person in every department (Marketing, Finance, HR …), in one table.
   const tasks = await myDeptTasks(viewer).catch(() => []);
@@ -89,7 +89,7 @@ export default async function MyWorkPage({ searchParams }: { searchParams: Promi
         <nav className="flex gap-1 border-b" aria-label="My work">
           {tabs.map((t) => (
             <Link key={t} href={`/my-work?tab=${t}`} className={cn("-mb-px border-b-2 px-3 py-2 text-sm", tab === t ? "border-primary font-medium" : "border-transparent text-muted-foreground")}>
-              {t === "production" ? `Production (${mine.items.length})` : t === "tasks" ? `Tasks (${tasks.length})` : t === "admin" ? "Admin workspace" : "Customer support"}
+              {t === "production" ? `Production (${toDo} to do)` : t === "tasks" ? `Tasks (${tasks.length})` : t === "admin" ? "Admin workspace" : "Customer support"}
             </Link>
           ))}
         </nav>

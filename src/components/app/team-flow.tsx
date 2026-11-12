@@ -23,12 +23,14 @@ import {
   RotateCcwIcon,
   SendIcon,
   ShieldCheckIcon,
+  Trash2Icon,
   UserPlusIcon,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { isValidFileLocationOrUrl } from "@/lib/import-fix";
+import { fmtMS, parseMS } from "@/lib/duration";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
@@ -226,16 +228,14 @@ function WorkPanel({ item, canEdit, lead }: { item: FlowItem; canEdit: boolean; 
       {item.stage === "recording" && (
         <div className="space-y-1.5">
           <p className="text-xs font-medium">Recordings</p>
-          {item.assets.filter((a) => a.kind === "raw").map((a, i) => (
-            <p key={i} className="text-xs text-muted-foreground">
-              {a.disk ? `Disk ${a.disk}${a.path ? `: ${a.path}` : ""}` : (a.cameraCode ?? a.url)} (v{a.version})
-            </p>
+          {item.assets.filter((a) => a.kind === "raw").map((a) => (
+            <RecordingRow key={a.id} itemId={item.id} asset={a} canEdit={canEdit} transfer={item.transfer} />
           ))}
-          {canEdit && item.transfer !== "link" && <DiskField label="Raw footage on an external disk" current={null} onSave={(d, p) => addDisk("raw", d, p, rawMin ? Number(rawMin) : null)} />}
+          {canEdit && item.transfer !== "link" && <DiskField label="Raw footage on an external disk" current={null} onSave={(d, p) => { const m = parseMS(rawMin); if (Number.isNaN(m)) return void toast.error("Length as M:S, e.g. 12:30"); void addDisk("raw", d, p, m); }} />}
           {canEdit && (
-            <form className="flex flex-wrap gap-2" onSubmit={(e) => (e.preventDefault(), void addAsset("raw", link, rawMin ? Number(rawMin) : null))}>
+            <form className="flex flex-wrap gap-2" onSubmit={(e) => { e.preventDefault(); const m = parseMS(rawMin); if (Number.isNaN(m)) return void toast.error("Length as M:S, e.g. 12:30"); void addAsset("raw", link, m).then(() => setRawMin("")); }}>
               <Input value={link} onChange={(e) => setLink(e.target.value)} placeholder="Camera code or link" aria-label="Camera code or link" className="h-8 flex-1" />
-              <Input value={rawMin} onChange={(e) => setRawMin(e.target.value)} type="number" min={0} placeholder="Minutes" aria-label="Minutes recorded" className="h-8 w-24" />
+              <Input value={rawMin} onChange={(e) => setRawMin(e.target.value)} inputMode="numeric" placeholder="M:S" title="Length as minutes:seconds, e.g. 12:30" aria-label="Length recorded (M:S)" className="h-8 w-24" />
               <Button size="sm" variant="outline" type="submit" disabled={!link.trim()}>
                 Add
               </Button>
@@ -382,6 +382,67 @@ function FileField({
       ) : (
         !disabled && <DiskField label={`${label} on an external disk`} current={asset?.disk ?? null} onSave={onDisk} />
       )}
+    </div>
+  );
+}
+
+// One recording on the work card: where it is and how long, corrected in place (never added again, so the raw
+// total is not counted twice), or taken off.
+function RecordingRow({ itemId, asset, canEdit, transfer }: { itemId: string; asset: FlowItem["assets"][number]; canEdit: boolean; transfer: FlowItem["transfer"] }) {
+  const { act } = useAct();
+  const [edit, setEdit] = React.useState(false);
+  const [f, setF] = React.useState({ code: asset.cameraCode ?? asset.url ?? "", disk: asset.disk ?? "", path: asset.path ?? "", len: fmtMS(asset.durationMin) });
+  const [onDisk, setOnDisk] = React.useState(!!asset.disk);
+  const where = asset.disk ? `Disk ${asset.disk}${asset.path ? `: ${asset.path}` : ""}` : null;
+  const save = async () => {
+    const m = parseMS(f.len);
+    if (Number.isNaN(m)) return void toast.error("Length as M:S, e.g. 12:30");
+    const v = f.code.trim();
+    const isLink = !!v && isValidFileLocationOrUrl(v);
+    const ok = await act(itemId, { action: "rawEdit", assetId: asset.id, cameraCode: isLink ? (asset.cameraCode ?? null) : v || null, url: onDisk ? null : isLink ? v : null, disk: onDisk ? f.disk.trim() || null : null, path: onDisk ? f.path.trim() || null : null, durationMin: m }, "Recording corrected");
+    if (ok) setEdit(false);
+  };
+  if (!edit)
+    return (
+      <div className="flex items-center gap-2 text-xs text-muted-foreground" data-recording={asset.cameraCode ?? asset.disk ?? ""}>
+        <span className="min-w-0 flex-1 truncate">
+          <span className="font-mono text-foreground">{asset.cameraCode ?? (asset.disk ? "" : asset.url)}</span>
+          {where ? `${asset.cameraCode ? " · " : ""}${where}` : ""}
+          {asset.durationMin ? ` · ${fmtMS(asset.durationMin)}` : ""} (v{asset.version})
+        </span>
+        {canEdit && (
+          <>
+            <Button size="icon-xs" variant="ghost" aria-label={`Correct ${asset.cameraCode ?? "recording"}`} onClick={() => setEdit(true)}>
+              <PencilIcon />
+            </Button>
+            <Button size="icon-xs" variant="ghost" aria-label={`Remove ${asset.cameraCode ?? "recording"}`} onClick={() => void act(itemId, { action: "rawRemove", assetId: asset.id }, "Recording removed")}>
+              <Trash2Icon />
+            </Button>
+          </>
+        )}
+      </div>
+    );
+  return (
+    <div className="space-y-2 rounded-md border bg-muted/30 p-2" data-recording-edit>
+      <div className="flex flex-wrap gap-2">
+        <Input value={f.code} onChange={(e) => setF({ ...f, code: e.target.value })} placeholder="Camera code or link" aria-label="Camera code or link" className="h-8 min-w-32 flex-1 font-mono" />
+        <Input value={f.len} onChange={(e) => setF({ ...f, len: e.target.value })} placeholder="M:S" aria-label="Length (M:S)" className="h-8 w-24" />
+      </div>
+      {transfer !== "link" && (
+        <label className="flex items-center gap-2 text-xs">
+          <Checkbox checked={onDisk} onCheckedChange={(v) => setOnDisk(v === true)} /> On an external disk
+        </label>
+      )}
+      {onDisk && (
+        <div className="flex flex-wrap gap-2">
+          <Input value={f.disk} onChange={(e) => setF({ ...f, disk: e.target.value })} placeholder="Disk name" aria-label="Disk name" className="h-8 w-36" />
+          <Input value={f.path} onChange={(e) => setF({ ...f, path: e.target.value })} placeholder="Folder or file" aria-label="Folder or file" className="h-8 min-w-40 flex-1" />
+        </div>
+      )}
+      <div className="flex gap-2">
+        <Button size="sm" onClick={save}>Save</Button>
+        <Button size="sm" variant="ghost" onClick={() => setEdit(false)}>Cancel</Button>
+      </div>
     </div>
   );
 }

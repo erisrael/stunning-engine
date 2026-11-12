@@ -13,13 +13,8 @@ export async function shellCounts(user: AppUser) {
   const isManager = can(user, "questions.ask");
   const leads = user.leads;
   const [myWork, handoffs, questions, corrections, notifications, chat, incoming, attendance, leave, claims, mail] = await Promise.all([
-    count(
-      `SELECT COUNT(*) AS c FROM items i JOIN stage_attempts a ON a.id = i.current_attempt_id
-       WHERE i.lifecycle = 'in_production' AND (a.owner_id = ? OR i.next_action_owner_id = ?) AND ${sc.sql}`,
-      user.id,
-      user.id,
-      ...sc.params,
-    ),
+    // The same number as My work shows: the person's own parts still to do.
+    import("./team-flow").then((m) => m.myWorkCount(user)),
     count(`SELECT COUNT(*) AS c FROM items i WHERE i.lifecycle = 'in_production' AND i.stage_status = 'awaiting_handoff' AND ${sc.sql}`, ...sc.params),
     count(
       isManager
@@ -51,7 +46,7 @@ export async function shellCounts(user: AppUser) {
   const { crossCheckCount } = await import("./editorial");
   const [rejections, leadReview] = await Promise.all([
     crossCheckCount(user),
-    leads.length ? count(`SELECT COUNT(*) AS c FROM items i JOIN stage_attempts a ON a.id = i.current_attempt_id WHERE i.lifecycle = 'in_production' AND a.status = 'lead_review' AND a.stage IN (${leads.map(() => "?").join(",")}) AND ${sc.sql}`, ...leads, ...sc.params) : Promise.resolve(0),
+    leads.length ? count(`SELECT COUNT(*) AS c FROM items i JOIN stage_attempts a ON a.id = i.current_attempt_id WHERE i.lifecycle = 'in_production' AND a.status IN ('finished','lead_review') AND a.stage <> 'publication' AND a.stage IN (${leads.map(() => "?").join(",")}) AND ${sc.sql}`, ...leads, ...sc.params) : Promise.resolve(0),
   ]);
   const approvals = Number(leave) + Number(claims) + Number(attendance) + Number(incoming) + Number(corrections) + rejections + Number(leadReview);
   // Routine runs waiting for this person's approval.
