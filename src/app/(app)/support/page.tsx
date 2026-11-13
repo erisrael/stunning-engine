@@ -11,6 +11,7 @@ import { StudentLookupDialog } from "@/components/app/support/student-lookup-dia
 import { CategoryReport, HelpMenuSetup, TelegramSetup } from "@/components/app/support/help-setup";
 import * as hp from "@/server/support-help";
 import { Systems } from "@/components/app/support/systems";
+import { BotManager } from "@/components/app/support/bot-manager";
 import { StudentsTable } from "@/components/app/support/students-table";
 import * as ch from "@/server/support-channels";
 import { all } from "@/server/db";
@@ -33,8 +34,8 @@ export default async function SupportPage({ searchParams }: { searchParams: Prom
         <EmptyState title={cfg.enabled ? "You are not a support agent" : "Customer support is switched off"} description={cfg.enabled ? "A support lead adds agents to the queues." : "Admin switches it on in Support setup."} />
       </div>
     );
-  const tabs = [...(cfg.enabled && agent ? ["desk", "students", "kb"] : []), ...(lead && cfg.enabled ? ["monitor"] : []), ...(lead ? ["queues", "help", "telegram", "apps", "systems"] : []), ...(admin || lead ? ["settings"] : [])];
-  const LABELS: Record<string, string> = { desk: "Desk", students: "Students & Parents", kb: "Knowledge base", monitor: "Monitor", queues: "Queues and replies", help: "Help menu and routing", telegram: "Telegram", apps: "Apps and SDK", systems: "Connected systems", settings: "Settings" };
+  const tabs = [...(cfg.enabled && agent ? ["desk", "students", "kb"] : []), ...(lead && cfg.enabled ? ["monitor"] : []), ...(lead ? ["queues", "help", "telegram", "bots", "apps", "systems"] : []), ...(admin || lead ? ["settings"] : [])];
+  const LABELS: Record<string, string> = { desk: "Desk", students: "Students & Parents", kb: "Knowledge base", monitor: "Monitor", queues: "Queues and replies", help: "Help menu and routing", telegram: "Telegram", bots: "Bot manager", apps: "Apps and SDK", systems: "Connected systems", settings: "Settings" };
   const tab = tabs.includes(sp.tab ?? "") ? sp.tab! : tabs[0]!;
   const people = (await userDirectory()).map((u) => ({ id: u.id, name: u.name }));
   const queues = await sd.listQueues();
@@ -113,6 +114,30 @@ export default async function SupportPage({ searchParams }: { searchParams: Prom
         <Apps apps={apps} queues={queues} origin={await appOrigin()} admin={admin} />
         <DeveloperApi origin={await appOrigin()} appKey={apps[0]?.publicKey ?? null} />
       </div>
+    );
+  }
+  else if (tab === "bots") {
+    const bm = await import("@/server/bot-manager");
+    const bots = await bm.listBots(viewer);
+    const bot = bots.find((b) => b.key === sp.bot)?.key ?? bots[0]?.key ?? "default";
+    const section = ["content", "forms", "feedback", "settings"].includes(sp.section ?? "") ? sp.section! : "content";
+    const fstatus = ["new", "reviewed", "escalated", "all"].includes(sp.fstatus ?? "") ? sp.fstatus! : "new";
+    const has = bots.length > 0;
+    const resultsId = section === "forms" && sp.form ? sp.form : null;
+    panel = (
+      <BotManager
+        bots={bots}
+        bot={bot}
+        section={section}
+        content={has && section === "content" ? await bm.listContent(viewer, bot) : []}
+        pushes={has && section === "content" ? await bm.listPushes(viewer, bot) : []}
+        forms={has && section === "forms" ? await bm.listForms(viewer, bot) : []}
+        feedback={has && section === "feedback" ? await bm.listFeedback(viewer, bot, fstatus === "all" ? null : fstatus) : []}
+        fstatus={fstatus}
+        texts={has && section === "settings" ? await ch.telegramTexts(bot) : null}
+        results={resultsId ? await bm.formResults(viewer, resultsId).catch(() => null) : null}
+        resultsId={resultsId}
+      />
     );
   }
   else if (tab === "systems") {

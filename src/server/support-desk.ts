@@ -1128,6 +1128,8 @@ export async function supportChecks(now = nowIso()) {
   await expireRinging();
   // New mail in the support mailbox becomes tickets or replies.
   if (cfg.mailbox) await (await import("./support-channels")).pollSupportMailbox().catch((e) => console.error("support mailbox", e));
+  // Scheduled bot sends that are due.
+  await (await import("./bot-manager")).runPushes(now).catch((e) => console.error("bot sends", e instanceof Error ? e.message : "failed"));
   const late = await all<{ id: string; number: number; subject: string; assignee_id: string | null; first_response_at: string | null }>(
     `SELECT id, number, subject, assignee_id, first_response_at FROM sup_tickets WHERE breached = 0 AND status NOT IN ('solved','closed','pending','on_hold')
      AND ((first_response_at IS NULL AND sla_first_due < ?) OR sla_resolve_due < ?)`,

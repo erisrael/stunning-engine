@@ -133,7 +133,7 @@ export async function deliverReply(ticketId: string, body: string, agentName: st
 // Telegram
 // ---------------------------------------------------------------------------
 
-type Poster = (url: string, body: unknown) => Promise<{ ok: boolean; result?: unknown; description?: string }>;
+type Poster = (url: string, body: unknown) => Promise<{ ok: boolean; result?: unknown; description?: string; error_code?: number }>;
 let poster: Poster = async (url, body) => (await trackedFetch("telegram", url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })).json() as Promise<{ ok: boolean }>;
 export function setTelegramPoster(p: Poster) {
   poster = p;
@@ -169,9 +169,42 @@ const api = async (method: string, body: unknown) => {
   if (!token) return { ok: false } as Awaited<ReturnType<Poster>>;
   return poster(`https://api.telegram.org/bot${token}/${method}`, body);
 };
+// For the bot manager (src/server/bot-manager.ts): which bot is answering, calls to it, and its public address.
+export const botApi = api;
+export function currentBot() {
+  return botCtx.getStore()?.appId ?? "default";
+}
+export async function withBot<T>(bot: string, fn: () => Promise<T>) {
+  if (bot === "default") return fn();
+  const b = await systemBot(bot);
+  if (!b) throw new WorkflowError("NOT_FOUND", "That system has no Telegram bot.");
+  return botCtx.run(b, fn);
+}
+export async function botOrigin() {
+  const ctx = botCtx.getStore();
+  if (ctx) return (await get<{ tg_origin: string | null }>("SELECT tg_origin FROM sup_apps WHERE id = ?", ctx.appId))?.tg_origin ?? (await telegramState()).origin ?? null;
+  return (await telegramState()).origin ?? null;
+}
 
 // What the bot says, set on the Telegram page (Customer support, Telegram). Labels come from the help menu.
-export type TelegramTexts = { lang: "both" | "en" | "am"; welcome: string; welcomeAm: string; ask: string; askAm: string; thanks: string; thanksAm: string; miniApp: boolean; askPhone: boolean };
+export type TelegramTexts = {
+  lang: "both" | "en" | "am";
+  welcome: string;
+  welcomeAm: string;
+  ask: string;
+  askAm: string;
+  thanks: string;
+  thanksAm: string;
+  miniApp: boolean;
+  askPhone: boolean;
+  resources: boolean;
+  surveys: boolean;
+  feedback: boolean;
+  feedbackAsk: string;
+  feedbackAskAm: string;
+  feedbackThanks: string;
+  feedbackThanksAm: string;
+};
 export const DEFAULT_TG_TEXTS: TelegramTexts = {
   lang: "both",
   welcome: "Selam! What do you need help with?",
@@ -182,14 +215,25 @@ export const DEFAULT_TG_TEXTS: TelegramTexts = {
   thanksAm: "እናመሰግናለን። የጥያቄዎ ቁጥር #{number} ነው። እዚሁ እንመልስልዎታለን።",
   miniApp: true,
   askPhone: true,
+  resources: true,
+  surveys: true,
+  feedback: true,
+  feedbackAsk: "Write your feedback in one message. It goes to our team.",
+  feedbackAskAm: "አስተያየትዎን በአንድ መልዕክት ይጻፉ። ለቡድናችን ይደርሳል።",
+  feedbackThanks: "Thank you for your feedback.",
+  feedbackThanksAm: "ስለ አስተያየትዎ እናመሰግናለን።",
 };
-export async function telegramTexts(): Promise<TelegramTexts> {
-  return { ...DEFAULT_TG_TEXTS, ...parseJson<Partial<TelegramTexts>>((await get<{ value: string }>("SELECT value FROM settings WHERE key = 'sup.telegram.texts'"))?.value, {}) };
+// Each system's bot has its own texts; until set they are the default bot's.
+const textsKey = (bot: string) => (bot === "default" ? "sup.telegram.texts" : `sup.telegram.texts.${bot}`);
+const readTexts = async (key: string) => parseJson<Partial<TelegramTexts>>((await get<{ value: string }>("SELECT value FROM settings WHERE key = ?", key))?.value, {});
+export async function telegramTexts(bot = currentBot()): Promise<TelegramTexts> {
+  return { ...DEFAULT_TG_TEXTS, ...(await readTexts(textsKey("default"))), ...(bot === "default" ? {} : await readTexts(textsKey(bot))) };
 }
-export async function saveTelegramTexts(user: AppUser, input: Partial<TelegramTexts>) {
+export async function saveTelegramTexts(user: AppUser, input: Partial<TelegramTexts>, bot = "default") {
   const sd = await import("./support-desk");
   if (!(await sd.isLead(user))) throw new WorkflowError("FORBIDDEN", "Only support leads and Admin change the bot's texts.");
-  const cur = await telegramTexts();
+  if (bot !== "default" && !(await get("SELECT id FROM sup_apps WHERE id = ? AND tg_token IS NOT NULL", bot))) throw new WorkflowError("NOT_FOUND", "That system has no Telegram bot.");
+  const cur = await telegramTexts(bot);
   const t = (k: keyof TelegramTexts, max = 600) => clean(input[k] ?? cur[k], max) || String(DEFAULT_TG_TEXTS[k]);
   const next: TelegramTexts = {
     lang: input.lang === "en" || input.lang === "am" || input.lang === "both" ? input.lang : cur.lang,
@@ -201,10 +245,17 @@ export async function saveTelegramTexts(user: AppUser, input: Partial<TelegramTe
     thanksAm: t("thanksAm"),
     miniApp: input.miniApp ?? cur.miniApp,
     askPhone: input.askPhone ?? cur.askPhone,
+    resources: input.resources ?? cur.resources,
+    surveys: input.surveys ?? cur.surveys,
+    feedback: input.feedback ?? cur.feedback,
+    feedbackAsk: t("feedbackAsk"),
+    feedbackAskAm: t("feedbackAskAm"),
+    feedbackThanks: t("feedbackThanks"),
+    feedbackThanksAm: t("feedbackThanksAm"),
   };
-  await run("INSERT INTO settings (key, value, updated_at, updated_by) VALUES ('sup.telegram.texts', ?, ?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by", JSON.stringify(next), nowIso(), user.id);
-  await audit({ actor: user }, { action: "support.telegram", summary: `${user.name} changed the Telegram bot's texts` });
-  if ((await telegramState()).tokenEnc) await setMenuButton(next).catch(() => null);
+  await run("INSERT INTO settings (key, value, updated_at, updated_by) VALUES (?, ?, ?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by", textsKey(bot), JSON.stringify(next), nowIso(), user.id);
+  await audit({ actor: user }, { action: "support.telegram", summary: `${user.name} changed the ${bot === "default" ? "default" : "system"} Telegram bot's texts` });
+  if (bot === "default" && (await telegramState()).tokenEnc) await setMenuButton(next).catch(() => null);
   return next;
 }
 const say = (x: TelegramTexts, en: string, am: string) => (x.lang === "en" ? en : x.lang === "am" ? am : `${en}\n${am}`);
@@ -280,8 +331,8 @@ export async function connectSystemBot(user: AppUser, appId: string, token: stri
   const hook = await hookUp(t, secret, origin);
   if (!hook.ok) throw new WorkflowError("VALIDATION", "Telegram could not reach this site. It needs a public https address.");
   const bot = (me.result as { username?: string } | undefined)?.username ?? null;
-  await run("UPDATE sup_apps SET tg_token = ?, tg_secret = ?, tg_bot = ? WHERE id = ?", await seal(t), secret, bot, appId);
-  await poster(`https://api.telegram.org/bot${t}/setMyCommands`, { commands: [{ command: "start", description: "Help menu" }, { command: "menu", description: "Help menu" }] }).catch(() => null);
+  await run("UPDATE sup_apps SET tg_token = ?, tg_secret = ?, tg_bot = ?, tg_origin = ? WHERE id = ?", await seal(t), secret, bot, origin, appId);
+  await poster(`https://api.telegram.org/bot${t}/setMyCommands`, { commands: [{ command: "start", description: "Help menu" }, { command: "menu", description: "Help menu" }, { command: "feedback", description: "Send feedback" }] }).catch(() => null);
   await audit({ actor: user }, { action: "support.telegram", summary: `${user.name} connected the bot @${bot} to ${a.name}` });
   return { bot };
 }
@@ -329,8 +380,9 @@ async function sendMenu(chat: string, x: TelegramTexts) {
   const cats = await helpCategories({ activeOnly: true });
   const rows: { text: string; callback_data?: string; web_app?: { url: string } }[][] = [];
   for (let i = 0; i < cats.length; i += 2) rows.push(cats.slice(i, i + 2).map((c) => ({ text: label(x, c), callback_data: `c:${c.key}` })));
+  rows.push(...(await (await import("./bot-manager")).menuRows(currentBot(), x)));
   const url = helpUrl((await telegramState()).origin);
-  if (url && x.miniApp) rows.push([{ text: x.lang === "am" ? "የእርዳታ ማዕከል" : "Open the help center", web_app: { url } }]);
+  if (url && x.miniApp && currentBot() === "default") rows.push([{ text: x.lang === "am" ? "የእርዳታ ማዕከል" : "Open the help center", web_app: { url } }]);
   await telegramSend(chat, say(x, x.welcome, x.welcomeAm), { reply_markup: { inline_keyboard: rows } });
 }
 
@@ -369,6 +421,10 @@ async function telegramButton(q: NonNullable<TgUpdate["callback_query"]>, x: Tel
   const data = String(q.data ?? "");
   const h = await import("./support-help");
   if (data === "m") return sendMenu(chat, x);
+  if (/^(r|s|f)$|^(r|s|q|x):/.test(data)) {
+    const who = await customerFor({ channel: "telegram", key: chat, name: nameOf(q.from) });
+    if (await (await import("./bot-manager")).button(currentBot(), chat, who, data, x)) return;
+  }
   const [kind, key] = [data.slice(0, 1), data.slice(2)];
   const c = await h.helpCategory(key);
   if (!c || !c.active) return sendMenu(chat, x);
@@ -425,12 +481,14 @@ async function handleUpdate(update: TgUpdate) {
   if (!m || m.chat.type !== "private") return { ok: true };
   const text = (m.text ?? m.caption ?? "").trim();
   const chat = String(m.chat.id);
+  const name = nameOf(m.from);
+  // Kept from /start on, so everyone who opened the bot gets its sends.
+  const customerId = await customerFor({ channel: "telegram", key: chat, name });
   if (/^\/(start|menu|help)\b/.test(text)) {
+    await (await import("./bot-manager")).message(currentBot(), chat, customerId, "", x);
     await sendMenu(chat, x);
     return { ok: true };
   }
-  const name = nameOf(m.from);
-  const customerId = await customerFor({ channel: "telegram", key: chat, name });
   // Their own number, shared with the button: kept on the customer so agents can find their records by phone.
   if (m.contact) {
     if (!m.contact.user_id || m.contact.user_id === m.from?.id) {
@@ -440,6 +498,8 @@ async function handleUpdate(update: TgUpdate) {
     }
     return { ok: true };
   }
+  // Answers to a form, feedback, and the content and form commands.
+  if (await (await import("./bot-manager")).message(currentBot(), chat, customerId, text, x)) return { ok: true };
   const file = m.document ? { id: m.document.file_id, name: m.document.file_name ?? "file", mime: m.document.mime_type ?? "application/octet-stream", size: m.document.file_size ?? 0 } : m.photo?.length ? { id: m.photo.at(-1)!.file_id, name: `photo-${m.message_id}.jpg`, mime: "image/jpeg", size: m.photo.at(-1)!.file_size ?? 0 } : null;
   // The open conversation continues; otherwise a new ticket, in the category chosen from the menu (for a day).
   const open = await get<{ id: string }>("SELECT id FROM sup_tickets WHERE customer_id = ? AND channel = 'telegram' AND status NOT IN ('closed') ORDER BY updated_at DESC LIMIT 1", customerId);

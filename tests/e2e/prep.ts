@@ -449,6 +449,20 @@ PREPS["update-1-1-systems"] = async () => {
   return { key: (await sd.listApps(a))[0]!.publicKey };
 };
 
+// Update 1.1 phase 13: a system with its own bot (token sealed directly, no call to Telegram), two subscribers and
+// one piece of feedback waiting.
+PREPS["update-1-1-bots"] = async () => {
+  const { key } = (await PREPS["update-1-1-systems"]!()) as { key: string };
+  const app = (await get<{ id: string }>("SELECT id FROM sup_apps LIMIT 1"))!;
+  await run("UPDATE sup_apps SET tg_token = ?, tg_secret = ?, tg_bot = ?, tg_origin = ? WHERE id = ?", await seal("999000:AAe2eBotTokenNotRealAtAll_abc"), "e2esecret", "academy_help_bot", "https://cm.example", app.id);
+  const now = nowIso();
+  const c1 = uid("cus_");
+  await run("INSERT INTO sup_customers (id, app_id, external_id, name, created_at, last_seen_at) VALUES (?, ?, 'tg:501', 'Hana Girma', ?, ?)", c1, app.id, now, now);
+  await run("INSERT INTO sup_customers (id, app_id, external_id, name, created_at, last_seen_at) VALUES (?, ?, 'tg:502', 'Abel Tesfaye', ?, ?)", uid("cus_"), app.id, now, now);
+  await run("INSERT INTO sup_bot_feedback (id, bot, customer_id, body, status, created_at, updated_at) VALUES (?, ?, ?, 'The payment page crashes on my phone', 'new', ?, ?)", uid("bfb_"), app.id, c1, now, now);
+  return { key, bot: app.id };
+};
+
 // Update 1.0 Phase 2: Legacy CMS points at the fake Noor that the browser test starts on this port.
 PREPS["update-1-p2"] = async () => {
   await passwordOnly();

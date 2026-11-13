@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 65;
+export const SCHEMA_VERSION = 66;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -3555,6 +3555,79 @@ ALTER TABLE sup_tickets ADD COLUMN IF NOT EXISTS agent_read_at TEXT;
 ALTER TABLE sup_tickets ADD COLUMN IF NOT EXISTS closed_at TEXT;
 ALTER TABLE sup_tickets ADD COLUMN IF NOT EXISTS close_reason TEXT;
 
+-- v66: the Telegram bot manager (Update 1.1): per bot (bot = 'default' or a connected system's id) a content library
+-- (files kept here, or links such as YouTube) sent now or on a schedule, forms and surveys answered in the chat,
+-- and the feedback inbox (new, reviewed, escalated to a ticket).
+ALTER TABLE sup_apps ADD COLUMN IF NOT EXISTS tg_origin TEXT;
+CREATE TABLE IF NOT EXISTS sup_bot_content (
+  id TEXT PRIMARY KEY,
+  bot TEXT NOT NULL,
+  title TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  caption TEXT,
+  url TEXT,
+  file_name TEXT,
+  mime TEXT,
+  size INTEGER NOT NULL DEFAULT 0,
+  data TEXT,
+  pub TEXT NOT NULL,
+  active INTEGER NOT NULL DEFAULT 1,
+  sends INTEGER NOT NULL DEFAULT 0,
+  created_by TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sup_bot_content ON sup_bot_content(bot, created_at);
+CREATE TABLE IF NOT EXISTS sup_bot_pushes (
+  id TEXT PRIMARY KEY,
+  bot TEXT NOT NULL,
+  content_id TEXT,
+  form_id TEXT,
+  message TEXT,
+  send_at TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'scheduled',
+  sent INTEGER NOT NULL DEFAULT 0,
+  failed INTEGER NOT NULL DEFAULT 0,
+  origin TEXT,
+  created_by TEXT,
+  created_at TEXT NOT NULL,
+  sent_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_sup_bot_pushes ON sup_bot_pushes(status, send_at);
+CREATE TABLE IF NOT EXISTS sup_bot_forms (
+  id TEXT PRIMARY KEY,
+  bot TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'survey',
+  title TEXT NOT NULL,
+  intro TEXT,
+  questions TEXT NOT NULL DEFAULT '[]',
+  active INTEGER NOT NULL DEFAULT 1,
+  created_by TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS sup_bot_responses (
+  id TEXT PRIMARY KEY,
+  form_id TEXT NOT NULL REFERENCES sup_bot_forms(id) ON DELETE CASCADE,
+  customer_id TEXT,
+  answers TEXT NOT NULL DEFAULT '[]',
+  step INTEGER NOT NULL DEFAULT 0,
+  done INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sup_bot_responses ON sup_bot_responses(form_id, done);
+CREATE TABLE IF NOT EXISTS sup_bot_feedback (
+  id TEXT PRIMARY KEY,
+  bot TEXT NOT NULL,
+  customer_id TEXT,
+  body TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'new',
+  ticket_id TEXT,
+  reviewed_by TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sup_bot_feedback ON sup_bot_feedback(bot, status, created_at);
+
 `;
 
 // Tables in dependency order; used to empty the workspace and to export or restore backups.
@@ -3795,4 +3868,9 @@ export const TABLES = [
   "sup_files",
   "take_requests",
   "job_undo_requests",
+  "sup_bot_content",
+  "sup_bot_pushes",
+  "sup_bot_forms",
+  "sup_bot_responses",
+  "sup_bot_feedback",
 ] as const;
