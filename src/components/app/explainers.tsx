@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { CheckIcon, MousePointer2Icon, PauseIcon, PlayCircleIcon, PlayIcon, RotateCcwIcon, Volume2Icon } from "lucide-react";
+import { CheckIcon, MousePointer2Icon, PauseIcon, PlayCircleIcon, PlayIcon, RotateCcwIcon, SettingsIcon, Volume2Icon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
@@ -196,7 +196,7 @@ const SCRIPTS: Record<ExplainerKey, { title: string; frames: () => Frame[] }> = 
               {l}
             </Label>
           ))}
-          <Label x={24} y={84}>⚙</Label>
+          <Label x={24} y={84}><SettingsIcon className="inline size-[1em]" aria-hidden /></Label>
           {open && (
             <Box x={36} y={14} w={56} h={64} className="border bg-popover p-[2%] text-[clamp(7px,1.3cqw,10px)] shadow-lg">
               <div className="font-semibold">Customize your sidebar</div>

@@ -57,6 +57,18 @@ try {
   await card.locator("[data-iconic-test]").click();
   check("testing without an address says what to fill in", await seen(card.locator("[data-iconic-result]").getByText(/API address/)));
   await ad.screenshot({ path: path.join(shots, "3-iconic.png"), fullPage: true });
+
+  // No emojis: the help menu uses icons, picked from a list.
+  const emoji = /\p{Extended_Pictographic}/u;
+  await ad.goto(`${base}/support?tab=help`);
+  const pick = ad.getByLabel("Icon of Payments");
+  check("menu icons are picked from a list", await seen(pick) && (await pick.inputValue()) === "card");
+  check("the help setup page has no emojis", !emoji.test(await ad.locator("main").last().innerText()));
+  const pub = await (await browser.newContext({ viewport: { width: 420, height: 860 } })).newPage();
+  await pub.goto(`${base}/help`);
+  await pub.getByText("Payments").first().waitFor({ timeout: 12000 }).catch(() => null);
+  check("the help center shows icons, not emojis", !emoji.test(await pub.locator("body").innerText()) && (await pub.locator("svg").count()) >= 8);
+  await pub.screenshot({ path: path.join(shots, "4-help-center.png"), fullPage: true });
 } catch (e) {
   console.error(e);
   check("support home flow completed", false);

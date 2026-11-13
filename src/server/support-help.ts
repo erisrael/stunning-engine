@@ -10,6 +10,7 @@
 //   Telegram they are known by Telegram's signed initData, so the chat and the page are the same conversation.
 // - Files customers send (Telegram photos and documents) are kept on the ticket.
 
+import { supportIconKey } from "@/lib/support-icon-keys";
 import crypto from "node:crypto";
 import { all, get, nowIso, parseJson, run, tx, uid } from "./db";
 import { audit, WorkflowError } from "./workflow";
@@ -39,14 +40,14 @@ export type HelpCategory = {
 };
 
 const DEFAULTS: Omit<HelpCategory, "queueId" | "sort" | "active">[] = [
-  { key: "quick", labelEn: "Quick help", labelAm: "ፈጣን እርዳታ", hintEn: "The answers people need most", hintAm: "በብዛት የሚፈለጉ መልሶች", icon: "⚡", kbCategory: null, selfHelp: true },
-  { key: "faq", labelEn: "FAQ", labelAm: "ተደጋግመው የሚጠየቁ", hintEn: "Common questions", hintAm: "የተለመዱ ጥያቄዎች", icon: "❓", kbCategory: "FAQ", selfHelp: true },
-  { key: "howto", labelEn: "How to", labelAm: "እንዴት እንደሚሰራ", hintEn: "Step by step guides", hintAm: "ደረጃ በደረጃ መመሪያዎች", icon: "📘", kbCategory: "How to", selfHelp: true },
-  { key: "plans", labelEn: "Plans", labelAm: "ዕቅዶች", hintEn: "Subscriptions and prices", hintAm: "የደንበኝነት ዕቅዶች እና ዋጋዎች", icon: "📦", kbCategory: "Plans", selfHelp: true },
-  { key: "payments", labelEn: "Payments", labelAm: "ክፍያዎች", hintEn: "Paying, failed or pending payments", hintAm: "ክፍያ፣ ያልተሳኩ ወይም በመጠባበቅ ላይ ያሉ ክፍያዎች", icon: "💳", kbCategory: "Payments", selfHelp: true },
-  { key: "account", labelEn: "Account", labelAm: "መለያ", hintEn: "Signing in, profile, password", hintAm: "መግባት፣ መገለጫ፣ የይለፍ ቃል", icon: "👤", kbCategory: "Account", selfHelp: true },
-  { key: "app", labelEn: "App help", labelAm: "የመተግበሪያ እርዳታ", hintEn: "Videos, lessons, the app not working", hintAm: "ቪዲዮዎች፣ ትምህርቶች፣ መተግበሪያው ካልሰራ", icon: "📱", kbCategory: "App help", selfHelp: true },
-  { key: "person", labelEn: "Talk to a person", labelAm: "ሰው ያናግሩ", hintEn: "Write to our team", hintAm: "ለቡድናችን ይጻፉ", icon: "🙋", kbCategory: null, selfHelp: false },
+  { key: "quick", labelEn: "Quick help", labelAm: "ፈጣን እርዳታ", hintEn: "The answers people need most", hintAm: "በብዛት የሚፈለጉ መልሶች", icon: "zap", kbCategory: null, selfHelp: true },
+  { key: "faq", labelEn: "FAQ", labelAm: "ተደጋግመው የሚጠየቁ", hintEn: "Common questions", hintAm: "የተለመዱ ጥያቄዎች", icon: "help", kbCategory: "FAQ", selfHelp: true },
+  { key: "howto", labelEn: "How to", labelAm: "እንዴት እንደሚሰራ", hintEn: "Step by step guides", hintAm: "ደረጃ በደረጃ መመሪያዎች", icon: "book", kbCategory: "How to", selfHelp: true },
+  { key: "plans", labelEn: "Plans", labelAm: "ዕቅዶች", hintEn: "Subscriptions and prices", hintAm: "የደንበኝነት ዕቅዶች እና ዋጋዎች", icon: "package", kbCategory: "Plans", selfHelp: true },
+  { key: "payments", labelEn: "Payments", labelAm: "ክፍያዎች", hintEn: "Paying, failed or pending payments", hintAm: "ክፍያ፣ ያልተሳኩ ወይም በመጠባበቅ ላይ ያሉ ክፍያዎች", icon: "card", kbCategory: "Payments", selfHelp: true },
+  { key: "account", labelEn: "Account", labelAm: "መለያ", hintEn: "Signing in, profile, password", hintAm: "መግባት፣ መገለጫ፣ የይለፍ ቃል", icon: "user", kbCategory: "Account", selfHelp: true },
+  { key: "app", labelEn: "App help", labelAm: "የመተግበሪያ እርዳታ", hintEn: "Videos, lessons, the app not working", hintAm: "ቪዲዮዎች፣ ትምህርቶች፣ መተግበሪያው ካልሰራ", icon: "phone", kbCategory: "App help", selfHelp: true },
+  { key: "person", labelEn: "Talk to a person", labelAm: "ሰው ያናግሩ", hintEn: "Write to our team", hintAm: "ለቡድናችን ይጻፉ", icon: "person", kbCategory: null, selfHelp: false },
 ];
 
 type CatRow = { key: string; label_en: string; label_am: string; hint_en: string | null; hint_am: string | null; icon: string | null; kb_category: string | null; queue_id: string | null; self_help: number; sort: number; active: number };
@@ -56,7 +57,7 @@ const catOf = (r: CatRow): HelpCategory => ({
   labelAm: r.label_am,
   hintEn: r.hint_en ?? "",
   hintAm: r.hint_am ?? "",
-  icon: r.icon ?? "",
+  icon: supportIconKey(r.icon),
   kbCategory: r.kb_category,
   queueId: r.queue_id,
   selfHelp: !!Number(r.self_help),
@@ -118,7 +119,7 @@ export async function saveCategories(user: AppUser, input: (Partial<HelpCategory
         clean(c.labelAm ?? was?.labelAm, 60) || labelEn,
         clean(c.hintEn ?? was?.hintEn, 120),
         clean(c.hintAm ?? was?.hintAm, 120),
-        clean(c.icon ?? was?.icon, 8),
+        supportIconKey(c.icon ?? was?.icon),
         clean(c.kbCategory === undefined ? was?.kbCategory : c.kbCategory, 60) || null,
         queueId,
         (c.selfHelp ?? was?.selfHelp ?? true) ? 1 : 0,

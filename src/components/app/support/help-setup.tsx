@@ -1,5 +1,6 @@
 "use client";
 
+import { SUPPORT_ICONS, SupportIcon, supportIconKey } from "@/lib/support-icons";
 // Customer support settings for the help menu: the categories (English and Amharic, order, help-article category,
 // queue), the routing rules, the Telegram bot (texts, live preview, webhook health), and the reports by category.
 
@@ -95,7 +96,16 @@ export function HelpMenuSetup({ categories, routes, queues, kbCategories }: { ca
                       <Switch checked={c.active} onCheckedChange={(v) => setCat(i, { active: v })} aria-label={`Show ${c.labelEn}`} />
                     </td>
                     <td className="p-2">
-                      <Input className="h-8 w-14 text-center" value={c.icon} onChange={(e) => setCat(i, { icon: e.target.value })} aria-label={`Icon of ${c.labelEn}`} />
+                      <span className="flex items-center gap-1">
+                        <SupportIcon name={c.icon} className="size-4 text-muted-foreground" />
+                        <select className="h-8 rounded-md border bg-background px-1 text-xs" value={supportIconKey(c.icon)} onChange={(e) => setCat(i, { icon: e.target.value })} aria-label={`Icon of ${c.labelEn}`}>
+                          {Object.entries(SUPPORT_ICONS).map(([k, v]) => (
+                            <option key={k} value={k}>
+                              {v.label}
+                            </option>
+                          ))}
+                        </select>
+                      </span>
                     </td>
                     <td className="space-y-1 p-2">
                       <Input className="h-8 min-w-36" value={c.labelEn} onChange={(e) => setCat(i, { labelEn: e.target.value })} aria-label={`English label of ${c.key}`} />
@@ -127,7 +137,7 @@ export function HelpMenuSetup({ categories, routes, queues, kbCategories }: { ca
             </table>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button size="sm" variant="outline" onClick={() => setCats([...cats, { key: `custom_${cats.length + 1}`, labelEn: "", labelAm: "", hintEn: "", hintAm: "", icon: "💬", kbCategory: null, queueId: null, selfHelp: true, sort: cats.length + 1, active: true }])}>
+            <Button size="sm" variant="outline" onClick={() => setCats([...cats, { key: `custom_${cats.length + 1}`, labelEn: "", labelAm: "", hintEn: "", hintAm: "", icon: "chat", kbCategory: null, queueId: null, selfHelp: true, sort: cats.length + 1, active: true }])}>
               <PlusIcon /> Add a menu item
             </Button>
             <Button size="sm" disabled={busy} onClick={() => save(saveCategoriesAction(cats), "Help menu saved")}>
@@ -151,7 +161,7 @@ export function HelpMenuSetup({ categories, routes, queues, kbCategories }: { ca
                 <option value="">Any topic</option>
                 {cats.map((c) => (
                   <option key={c.key} value={c.key}>
-                    {c.icon} {c.labelEn}
+                    <SupportIcon name={c.icon} className="inline size-3.5" /> {c.labelEn}
                   </option>
                 ))}
               </select>
@@ -309,12 +319,12 @@ export function TelegramSetup({ texts, categories, health: first, admin }: { tex
           <div className="grid grid-cols-2 gap-1">
             {cats.map((c) => (
               <span key={c.key} className="truncate rounded-md bg-background/70 px-2 py-1.5 text-center text-xs">
-                {c.icon} {x.lang === "am" ? c.labelAm : x.lang === "en" ? c.labelEn : `${c.labelEn} · ${c.labelAm}`}
+                {x.lang === "am" ? c.labelAm : x.lang === "en" ? c.labelEn : `${c.labelEn} · ${c.labelAm}`}
               </span>
             ))}
-            {x.miniApp && <span className="col-span-2 rounded-md bg-background/70 px-2 py-1.5 text-center text-xs">🌐 {x.lang === "am" ? "የእርዳታ ማዕከል" : "Open the help center"}</span>}
+            {x.miniApp && <span className="col-span-2 rounded-md bg-background/70 px-2 py-1.5 text-center text-xs">{x.lang === "am" ? "የእርዳታ ማዕከል" : "Open the help center"}</span>}
           </div>
-          <div className="ml-auto w-fit rounded-xl rounded-br-sm bg-[#effdde] px-3 py-1.5 dark:bg-[#2b5278]">{cats[4] ? `${cats[4].icon} ${x.lang === "am" ? cats[4].labelAm : cats[4].labelEn}` : "Payments"}</div>
+          <div className="ml-auto w-fit rounded-xl rounded-br-sm bg-[#effdde] px-3 py-1.5 dark:bg-[#2b5278]">{cats[4] ? (x.lang === "am" ? cats[4].labelAm : cats[4].labelEn) : "Payments"}</div>
           <div className="w-fit max-w-[90%] rounded-xl rounded-bl-sm bg-background px-3 py-1.5 whitespace-pre-line">{say(x.ask, x.askAm)}</div>
           <div className="w-fit max-w-[90%] rounded-xl rounded-bl-sm bg-background px-3 py-1.5 whitespace-pre-line">{say(x.thanks, x.thanksAm).replaceAll("{number}", "1042")}</div>
         </div>

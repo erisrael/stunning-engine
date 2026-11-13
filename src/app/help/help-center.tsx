@@ -1,5 +1,6 @@
 "use client";
 
+import { SupportIcon } from "@/lib/support-icons";
 // The help center customers see: pick what the problem is about, read the answers, and if that does not help, ask.
 // A request is followed here with a private link kept in this browser; inside Telegram the customer is known by
 // Telegram, so the bot chat and this page are one conversation.
@@ -118,7 +119,7 @@ export function HelpCenter({ home, brand, startCategory }: { home: Home; brand: 
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" data-help-categories>
               {home.categories.map((c) => (
                 <button key={c.key} type="button" onClick={() => setView(c.selfHelp ? { kind: "cat", key: c.key } : { kind: "ask", key: c.key })} className="flex flex-col items-start gap-1 rounded-xl border bg-background p-3 text-left transition hover:border-primary/50 hover:shadow-sm" data-help-category={c.key}>
-                  <span className="text-2xl leading-none">{c.icon}</span>
+                  <span className="flex size-9 items-center justify-center rounded-lg bg-muted text-foreground"><SupportIcon name={c.icon} className="size-5" /></span>
                   <span className="font-medium">{am ? c.labelAm : c.labelEn}</span>
                   <span className="text-xs text-muted-foreground">{am ? c.hintAm : c.hintEn}</span>
                 </button>
@@ -144,7 +145,7 @@ export function HelpCenter({ home, brand, startCategory }: { home: Home; brand: 
             return (
               <section className="space-y-3" data-help-cat={c.key}>
                 <h1 className="text-xl font-semibold">
-                  {c.icon} {am ? c.labelAm : c.labelEn}
+                  <SupportIcon name={c.icon} className="inline size-4" /> {am ? c.labelAm : c.labelEn}
                 </h1>
                 <ArticleList list={list} empty={T("No answers here yet.", "እስካሁን እዚህ መልስ የለም።")} />
                 <div className="rounded-xl border bg-background p-4 text-center">
@@ -228,7 +229,7 @@ function AskForm({ am, category, categories, token, inTelegram, onSent }: { am: 
         <option value="">{T("Choose a topic", "ርዕስ ይምረጡ")}</option>
         {categories.map((c) => (
           <option key={c.key} value={c.key}>
-            {c.icon} {am ? c.labelAm : c.labelEn}
+            <SupportIcon name={c.icon} className="inline size-4" /> {am ? c.labelAm : c.labelEn}
           </option>
         ))}
       </select>
@@ -271,7 +272,7 @@ function MyRequests({ am, token, cats, onOpen, onNew }: { am: boolean; token: st
               <button type="button" onClick={() => onOpen(t.id)} className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-muted/50" data-help-request={t.number}>
                 <span className="font-mono text-xs text-muted-foreground">#{t.number}</span>
                 <span className="min-w-0 flex-1 truncate">
-                  {c ? `${c.icon} ` : ""}
+                  {c ? <SupportIcon name={c.icon} className="mr-1 inline size-3.5" /> : null}
                   {t.subject}
                 </span>
                 <span className={cn("rounded-full px-2 py-0.5 text-xs", ["solved", "closed"].includes(t.status) ? "bg-muted text-muted-foreground" : t.status === "pending" ? "bg-amber-500/15 text-amber-700 dark:text-amber-300" : "bg-primary/10 text-primary")}>{STATUS[t.status]?.[am ? 1 : 0] ?? t.status}</span>

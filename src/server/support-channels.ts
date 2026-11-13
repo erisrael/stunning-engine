@@ -181,7 +181,7 @@ export async function saveTelegramTexts(user: AppUser, input: Partial<TelegramTe
   return next;
 }
 const say = (x: TelegramTexts, en: string, am: string) => (x.lang === "en" ? en : x.lang === "am" ? am : `${en}\n${am}`);
-const label = (x: TelegramTexts, c: { icon: string; labelEn: string; labelAm: string }) => `${c.icon ? `${c.icon} ` : ""}${x.lang === "am" ? c.labelAm : x.lang === "en" || c.labelAm === c.labelEn ? c.labelEn : `${c.labelEn} · ${c.labelAm}`}`;
+const label = (x: TelegramTexts, c: { icon: string; labelEn: string; labelAm: string }) => `${x.lang === "am" ? c.labelAm : x.lang === "en" || c.labelAm === c.labelEn ? c.labelEn : `${c.labelEn} · ${c.labelAm}`}`;
 const helpUrl = (origin: string | undefined) => (origin && /^https:\/\//.test(origin) ? `${origin}/help?from=telegram` : null);
 
 // The menu button next to the chat's text box opens the help center as a Mini App (needs a public https address).
@@ -270,7 +270,7 @@ async function sendMenu(chat: string, x: TelegramTexts) {
   const rows: { text: string; callback_data?: string; web_app?: { url: string } }[][] = [];
   for (let i = 0; i < cats.length; i += 2) rows.push(cats.slice(i, i + 2).map((c) => ({ text: label(x, c), callback_data: `c:${c.key}` })));
   const url = helpUrl((await telegramState()).origin);
-  if (url && x.miniApp) rows.push([{ text: x.lang === "am" ? "🌐 የእርዳታ ማዕከል" : "🌐 Open the help center", web_app: { url } }]);
+  if (url && x.miniApp) rows.push([{ text: x.lang === "am" ? "የእርዳታ ማዕከል" : "Open the help center", web_app: { url } }]);
   await telegramSend(chat, say(x, x.welcome, x.welcomeAm), { reply_markup: { inline_keyboard: rows } });
 }
 
@@ -329,7 +329,7 @@ async function telegramButton(q: NonNullable<TgUpdate["callback_query"]>, x: Tel
   await setCustomerMeta(customerId, { tgCategory: c.key, tgCategoryAt: nowIso() });
   const extra: Record<string, unknown> = {};
   const phone = (await get<{ phone: string | null }>("SELECT phone FROM sup_customers WHERE id = ?", customerId))?.phone;
-  if (x.askPhone && !phone) extra.reply_markup = { keyboard: [[{ text: x.lang === "am" ? "📞 ስልክ ቁጥሬን አጋራ" : "📞 Share my phone number", request_contact: true }]], resize_keyboard: true, one_time_keyboard: true };
+  if (x.askPhone && !phone) extra.reply_markup = { keyboard: [[{ text: x.lang === "am" ? "ስልክ ቁጥሬን አጋራ" : "Share my phone number", request_contact: true }]], resize_keyboard: true, one_time_keyboard: true };
   await telegramSend(chat, `${label(x, c)}\n${say(x, x.ask, x.askAm)}`, extra);
 }
 

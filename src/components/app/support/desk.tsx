@@ -7,7 +7,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { CircleIcon, HeadphonesIcon, Loader2Icon, LockIcon, MicIcon, PhoneCallIcon, PhoneIcon, PhoneOffIcon, PlusIcon, SendIcon } from "lucide-react";
+import { CircleIcon, HeadphonesIcon, Loader2Icon, LockIcon, MicIcon, PaperclipIcon, PhoneCallIcon, PhoneIcon, PhoneOffIcon, PlusIcon, SendIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -416,7 +416,7 @@ export function TicketView({ d, agents, queues, canned, me, lead, articles = [],
                           // eslint-disable-next-line @next/next/no-img-element
                           <img src={`/api/support/files/${f.id}`} alt={f.name} className="mt-1 max-h-48 rounded border" />
                         ) : (
-                          <>📎 {f.name} ({Math.max(1, Math.round(f.size / 1024))} KB)</>
+                          <><PaperclipIcon className="inline size-3.5" /> {f.name} ({Math.max(1, Math.round(f.size / 1024))} KB)</>
                         )}
                       </a>
                     ))}
