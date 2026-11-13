@@ -77,3 +77,25 @@ export async function saveArticleAction(input: Parameters<typeof import("@/serve
 export async function connectTelegramAction(token: string) {
   return wrap(async () => (await import("@/server/support-channels")).connectTelegram(await requireViewer(), token, await (await import("@/server/password-reset")).appOrigin()));
 }
+
+// A quick look at a ticket (the slide-over preview): the last messages, the customer and the calls.
+export async function ticketPreviewAction(ticketId: string) {
+  return wrap(async () => {
+    const d = await sd.ticketDetail(await requireViewer(), ticketId);
+    const t = d.ticket as Record<string, unknown>;
+    return {
+      id: String(t.id),
+      number: Number(t.number),
+      subject: String(t.subject),
+      status: String(t.status) as sd.TicketStatus,
+      priority: String(t.priority),
+      channel: String(t.channel),
+      queue: (t.queue as string | null) ?? null,
+      assignee: (t.assignee as string | null) ?? null,
+      createdAt: String(t.created_at),
+      customer: d.customer ? { name: d.customer.name, email: d.customer.email, phone: d.customer.phone, app: d.customer.app } : null,
+      messages: d.messages.filter((m) => !m.internal).slice(-6).map((m) => ({ id: m.id, author: m.author, kind: m.author_kind, body: m.body.slice(0, 600), at: m.created_at })),
+      calls: d.calls.slice(0, 5).map((c) => ({ id: c.id, direction: c.direction, status: c.status, startedAt: c.started_at, durationS: c.duration_s, recorded: !!c.recording_id })),
+    };
+  });
+}

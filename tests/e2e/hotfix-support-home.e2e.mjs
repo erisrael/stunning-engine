@@ -32,6 +32,13 @@ try {
   check("the waiting ticket is listed", await seen(home.locator("[data-home-waiting]").getByText("Video does not load")));
   check("quick actions are there", await seen(home.getByRole("link", { name: /Find a student or parent/ })) && (await home.getByRole("link", { name: /Knowledge base/ }).count()) === 1);
   await page.screenshot({ path: path.join(shots, "1-home.png"), fullPage: true });
+  // The slide-over preview: read the ticket without leaving the page.
+  await home.locator("[data-home-waiting] [data-preview-ticket]").first().click();
+  const pv = page.locator("[data-ticket-preview]");
+  check("the preview slides over with the message and customer", await seen(pv.getByText("The grade 6 video stops")) && await seen(pv.locator("[data-preview-customer]").getByText("Almaz Bekele")));
+  await page.screenshot({ path: path.join(shots, "1b-preview.png") });
+  await page.keyboard.press("Escape");
+  check("closing it keeps the page", await pv.waitFor({ state: "hidden", timeout: 5000 }).then(() => true, () => false) && page.url().includes("/dashboard"));
   // Going online (the desk's status switch) gives her the waiting ticket.
   await page.locator("button[data-status=online]").click();
   await page.locator("[data-sonner-toast]").filter({ hasText: /You are online/ }).first().waitFor({ timeout: 15000 }).catch(() => null);

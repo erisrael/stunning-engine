@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState, MetricCard, PageHeader } from "@/components/app/primitives";
 import { Desk, NewTicket } from "@/components/app/support/desk";
 import { cn } from "@/lib/utils";
+import { PreviewButton, TicketPreviewProvider } from "@/components/app/support/ticket-preview";
 
 // The home of the Customer Support role: the agent's own tickets, the tickets waiting for someone, their recent
 // calls and their numbers, with the status switch and incoming-call popup of the desk.
@@ -23,8 +24,8 @@ function TicketRows({ rows, empty, compact }: { rows: sd.TicketListRow[]; empty:
         const due = !t.first_response_at ? t.sla_first_due : t.sla_resolve_due;
         const late = !!t.breached || (due ? Date.parse(due) < Date.now() : false);
         return (
-          <li key={t.id}>
-            <Link href={`/support?tab=desk&ticket=${t.id}`} className="flex items-center gap-3 px-3 py-2 text-sm hover:bg-muted/50" data-home-ticket={t.number}>
+          <li key={t.id} className="flex items-center pr-1 hover:bg-muted/50">
+            <Link href={`/support?tab=desk&ticket=${t.id}`} className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2 text-sm" data-home-ticket={t.number}>
               <span className="shrink-0 font-mono text-xs text-muted-foreground">#{t.number}</span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate font-medium">{t.subject}</span>
@@ -37,6 +38,7 @@ function TicketRows({ rows, empty, compact }: { rows: sd.TicketListRow[]; empty:
               {!compact && <span className="hidden w-28 shrink-0 text-right text-xs text-muted-foreground md:inline">{TICKET_STATUS_LABELS[t.status] ?? t.status}</span>}
               <span className={cn("shrink-0 text-right text-xs tabular-nums", late ? "font-medium text-destructive" : "text-muted-foreground")}>{late ? "Late" : due ? fmtRelative(due) : fmtRelative(t.updated_at)}</span>
             </Link>
+            <PreviewButton id={t.id} label={`Preview ticket ${t.number}`} />
           </li>
         );
       })}
@@ -69,6 +71,7 @@ export async function SupportHome({ viewer, timezone, greeting }: { viewer: AppU
   return (
     <div className="space-y-6" data-support-home>
       {header}
+      <TicketPreviewProvider>
       <Desk status={h.status} record={cfg.recordCalls}>
         <div className="flex flex-wrap items-center gap-2" data-support-actions>
           <NewTicket queues={queues} />
@@ -169,6 +172,7 @@ export async function SupportHome({ viewer, timezone, greeting }: { viewer: AppU
           </div>
         </div>
       </Desk>
+      </TicketPreviewProvider>
     </div>
   );
 }
