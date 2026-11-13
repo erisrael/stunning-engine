@@ -39,6 +39,8 @@ export type SupportConfig = {
   recordingDays: number;
   // Solved tickets close by themselves after this many days without a reply.
   autoCloseDays: number;
+  // A conversation waiting on the customer is solved after this many hours without their reply (0: never).
+  inactiveHours: number;
   // A call rings this long before it is missed.
   ringSeconds: number;
   // Shown in the widget, for example "Monday to Friday, 8:30 to 17:30".
@@ -60,6 +62,7 @@ export const DEFAULT_SUPPORT: SupportConfig = {
   recordingNotice: "Calls are recorded so we can help you better and train our team. By calling you agree to this.",
   recordingDays: 90,
   autoCloseDays: 7,
+  inactiveHours: 72,
   ringSeconds: 45,
   hours: "Monday to Friday, 8:30 to 17:30",
   awayMessage: "No one can take your call right now. Leave a message and we will answer as soon as we can.",

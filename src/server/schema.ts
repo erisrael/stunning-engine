@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 64;
+export const SCHEMA_VERSION = 65;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -3545,6 +3545,15 @@ ALTER TABLE sup_apps ADD COLUMN IF NOT EXISTS webhook_secret TEXT;
 ALTER TABLE sup_apps ADD COLUMN IF NOT EXISTS webhook_events TEXT;
 ALTER TABLE sup_apps ADD COLUMN IF NOT EXISTS webhook_last TEXT;
 CREATE INDEX IF NOT EXISTS idx_sup_apps_tg ON sup_apps(tg_secret);
+
+-- v65: live chat (Update 1.1): typing and read times on both sides, and how a conversation ended.
+ALTER TABLE sup_tickets ADD COLUMN IF NOT EXISTS customer_typing_at TEXT;
+ALTER TABLE sup_tickets ADD COLUMN IF NOT EXISTS agent_typing_at TEXT;
+ALTER TABLE sup_tickets ADD COLUMN IF NOT EXISTS agent_typing_name TEXT;
+ALTER TABLE sup_tickets ADD COLUMN IF NOT EXISTS customer_read_at TEXT;
+ALTER TABLE sup_tickets ADD COLUMN IF NOT EXISTS agent_read_at TEXT;
+ALTER TABLE sup_tickets ADD COLUMN IF NOT EXISTS closed_at TEXT;
+ALTER TABLE sup_tickets ADD COLUMN IF NOT EXISTS close_reason TEXT;
 
 `;
 

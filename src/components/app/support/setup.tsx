@@ -86,6 +86,7 @@ export function SupportSettings({ cfg, people, admin, mailboxes = [], telegram =
         <div className="grid gap-3 sm:grid-cols-3">
           {num("recordingDays", "Keep recordings (days)")}
           {num("autoCloseDays", "Close solved tickets after (days)")}
+          {num("inactiveHours", "Solve when the customer is silent (hours, 0 = never)")}
           {num("ringSeconds", "A call rings for (seconds)")}
         </div>
         <div className="grid gap-3 sm:grid-cols-2">

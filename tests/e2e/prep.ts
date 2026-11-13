@@ -438,6 +438,7 @@ PREPS["hotfix-support-home"] = async () => {
 };
 
 // Update 1.1 connected systems: support on with one connected app (MySeed Academy).
+PREPS["update-1-1-live"] = async () => PREPS["update-1-1-systems"]!();
 PREPS["update-1-1-systems"] = async () => {
   await passwordOnly();
   const sd = await import("../../src/server/support-desk");
@@ -445,6 +446,7 @@ PREPS["update-1-1-systems"] = async () => {
   await sd.saveSupportConfig(a, { enabled: true, leads: [] });
   const q = await sd.saveQueue(a, { name: "Academy", keywords: [], members: [a.id], strategy: "least_busy" });
   await sd.saveApp(a, { name: "MySeed Academy", origins: ["https://academy.example"], queueId: q });
+  return { key: (await sd.listApps(a))[0]!.publicKey };
 };
 
 // Update 1.0 Phase 2: Legacy CMS points at the fake Noor that the browser test starts on this port.

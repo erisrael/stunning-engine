@@ -239,9 +239,9 @@ export async function transferTicket(user: AppUser, ticketId: string, queueId: s
 
 export const TICKET_FILE_MAX = 10 * 1024 * 1024;
 
-export async function attachTicketFile(ticketId: string, file: { name: string; mime: string; data: Buffer }) {
+export async function attachTicketFile(ticketId: string, file: { name: string; mime: string; data: Buffer }, messageId?: string | null) {
   if (file.data.length > TICKET_FILE_MAX) throw new WorkflowError("VALIDATION", "The file is larger than 10 MB.");
-  const msg = await get<{ id: string }>("SELECT id FROM sup_messages WHERE ticket_id = ? AND author_kind = 'customer' ORDER BY created_at DESC LIMIT 1", ticketId);
+  const msg = messageId ? { id: messageId } : await get<{ id: string }>("SELECT id FROM sup_messages WHERE ticket_id = ? AND author_kind = 'customer' ORDER BY created_at DESC LIMIT 1", ticketId);
   const id = uid("sfl_");
   await run("INSERT INTO sup_files (id, ticket_id, message_id, name, mime, size, data, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", id, ticketId, msg?.id ?? null, clean(file.name, 160).replace(/[\\/]/g, "_") || "file", clean(file.mime, 100) || "application/octet-stream", file.data.length, file.data.toString("base64"), nowIso());
   return id;

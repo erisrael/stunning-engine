@@ -16,6 +16,7 @@ import * as A from "@/app/actions/support-desk";
 import { transferTicketAction } from "@/app/actions/support-help";
 import { CHANNEL_LABELS, PRIORITIES, PRIORITY_LABELS, TICKET_STATUSES, TICKET_STATUS_LABELS, type Priority, type TicketStatus } from "@/lib/support";
 import { cn } from "@/lib/utils";
+import { AgentAttach, CustomerPresence, CustomerTyping, DeskLive, TranscriptLink, seenBy, useAgentTyping, useTicketLive } from "./desk-live";
 
 type Res = { ok: boolean; error?: string; data?: unknown };
 type Row = { id: string; number: number; subject: string; status: TicketStatus; priority: Priority; channel: string; queue: string | null; customer: string | null; assignee: string | null; assignee_id: string | null; updated_at: string; sla_first_due: string | null; sla_resolve_due: string | null; first_response_at: string | null; breached: number };
@@ -309,15 +310,22 @@ export function TicketView({ d, agents, queues, canned, me, lead, articles = [],
   // Moving to another queue (Support to Finance and back) asks for a note for the next team.
   const [move, setMove] = React.useState<{ queueId: string; note: string } | null>(null);
   const end = React.useRef<HTMLDivElement>(null);
+  const { ticket: live } = useTicketLive();
+  const typing = useAgentTyping(t.id);
+  const lastPublic = [...d.messages].reverse().find((m) => m.author_kind === "agent" && !m.internal);
   React.useEffect(() => {
     end.current?.scrollIntoView({ block: "nearest" });
-  }, [d.messages.length]);
+  }, [d.messages.length, live?.typing]);
   return (
     <div className="space-y-3" data-ticket={t.number}>
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="flex flex-wrap items-center gap-2 text-base">
             <span className="font-mono text-sm text-muted-foreground">#{t.number}</span> {t.subject}
+            <span className="ml-auto flex items-center gap-3">
+              <CustomerPresence />
+              <TranscriptLink ticketId={t.id} />
+            </span>
           </CardTitle>
           <CardDescription>
             {CHANNEL_LABELS[t.channel] ?? t.channel} · opened {when(t.created_at)}
@@ -426,6 +434,9 @@ export function TicketView({ d, agents, queues, canned, me, lead, articles = [],
                   {(d.files ?? [])
                     .filter((f) => f.message_id === m.id)
                     .map((f) => (
+                      f.mime.startsWith("audio/") ? (
+                        <audio key={f.id} controls src={`/api/support/files/${f.id}`} className="mt-1 h-9 max-w-full" data-voice-note />
+                      ) : (
                       <a key={f.id} href={`/api/support/files/${f.id}`} target="_blank" rel="noreferrer" className="mt-1 block text-xs text-primary hover:underline" data-ticket-file>
                         {f.mime.startsWith("image/") ? (
                           // eslint-disable-next-line @next/next/no-img-element
@@ -434,9 +445,12 @@ export function TicketView({ d, agents, queues, canned, me, lead, articles = [],
                           <><PaperclipIcon className="inline size-3.5" /> {f.name} ({Math.max(1, Math.round(f.size / 1024))} KB)</>
                         )}
                       </a>
+                      )
                     ))}
+                  {m.id === lastPublic?.id && seenBy(live?.read, m.created_at) && <p className="mt-0.5 text-right text-[10px] text-muted-foreground" data-seen>Seen</p>}
                 </div>
               ))}
+              <CustomerTyping />
               <div ref={end} />
             </div>
             <div className="space-y-2 border-t pt-2">
@@ -476,8 +490,9 @@ export function TicketView({ d, agents, queues, canned, me, lead, articles = [],
                   </select>
                 )}
               </div>
-              <Textarea aria-label={internal ? "Internal note" : "Reply"} placeholder={internal ? "Only agents see this" : "Your answer to the customer"} className={cn("min-h-24", internal && "bg-[#F9AB00]/5")} value={body} onChange={(e) => setBody(e.target.value)} />
+              <Textarea aria-label={internal ? "Internal note" : "Reply"} placeholder={internal ? "Only agents see this" : "Your answer to the customer"} className={cn("min-h-24", internal && "bg-[#F9AB00]/5")} value={body} onChange={(e) => (setBody(e.target.value), !internal && typing())} />
               <div className="flex flex-wrap items-center gap-2">
+                {!internal && <AgentAttach ticketId={t.id} />}
                 {!internal && (
                   <select aria-label="Then" className={select} value={after} onChange={(e) => setAfter(e.target.value as TicketStatus | "")}>
                     <option value="">and keep the status</option>
@@ -625,10 +640,12 @@ export function NewTicket({ queues }: { queues: { id: string; name: string }[] }
 export function Desk({ status, record, children }: { status: string; record: boolean; children: React.ReactNode }) {
   const [call, setCall] = React.useState<Ring | null>(null);
   return (
-    <div className="space-y-3">
-      <AgentBar status={status} onCall={(r) => setCall((c) => c ?? r)} />
-      {call && <CallPanel ring={call} record={record} onDone={() => setCall(null)} />}
-      {children}
-    </div>
+    <DeskLive>
+      <div className="space-y-3">
+        <AgentBar status={status} onCall={(r) => setCall((c) => c ?? r)} />
+        {call && <CallPanel ring={call} record={record} onDone={() => setCall(null)} />}
+        {children}
+      </div>
+    </DeskLive>
   );
 }

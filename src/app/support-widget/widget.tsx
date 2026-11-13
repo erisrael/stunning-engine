@@ -3,16 +3,16 @@
 // The customer's support panel: conversations, a new question, replies (checked every few seconds), rating the help,
 // and calling an agent from the browser (after agreeing to the recording when calls are recorded).
 import * as React from "react";
-import { ArrowLeftIcon, Loader2Icon, PhoneIcon, PhoneOffIcon, PlusIcon, SendIcon, StarIcon } from "lucide-react";
+import { ArrowLeftIcon, Loader2Icon, PhoneIcon, PhoneOffIcon, PlusIcon, SendIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { LiveThread, words, type Lang } from "./live-thread";
 
 type User = { id: string | null; name: string | null; email: string | null; phone: string | null; hash: string | null; meta?: Record<string, string> };
 type Session = { token: string; customer: { id: string; name: string }; app: { name: string; greeting: string | null; color: string | null }; online: boolean; hours: string; awayMessage: string; recordCalls: boolean; recordingNotice: string; channels?: { web_chat: boolean; telegram: boolean; calls: boolean; sms: boolean } };
 type Ticket = { id: string; number: number; subject: string; status: string; updated_at: string; rating: number | null };
-type Msg = { id: string; from: string; name: string; body: string; at: string };
 
 const STATUS: Record<string, string> = { new: "Sent", open: "Being answered", pending: "Waiting for you", on_hold: "On hold", solved: "Solved", closed: "Closed" };
 
@@ -22,6 +22,21 @@ export function SupportWidget({ appKey, initialUser, waitForParent }: { appKey: 
   const [error, setError] = React.useState<string | null>(null);
   const [tickets, setTickets] = React.useState<Ticket[]>([]);
   const [open, setOpen] = React.useState<string | "new" | null>(null);
+  // English or Amharic, remembered on this browser.
+  const [lang, setLangState] = React.useState<Lang>(() => {
+    try {
+      return localStorage.getItem("myseed-support-lang") === "am" ? "am" : "en";
+    } catch {
+      return "en";
+    }
+  });
+  const setLang = (l: Lang) => {
+    setLangState(l);
+    try {
+      localStorage.setItem("myseed-support-lang", l);
+    } catch {}
+  };
+  const am = lang === "am";
   const api = React.useCallback(
     async <T,>(path: string, body?: unknown, token = s?.token): Promise<T> => {
       const r = await fetch(`/api/support/v1/${path}`, { method: body === undefined ? "GET" : "POST", headers: { "Content-Type": "application/json", "X-App-Key": appKey, ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -91,27 +106,30 @@ export function SupportWidget({ appKey, initialUser, waitForParent }: { appKey: 
               <ArrowLeftIcon className="size-5" />
             </button>
           )}
-          <p className="font-semibold">{s.app.name} support</p>
+          <p className="flex-1 font-semibold">{s.app.name} {am ? "ድጋፍ" : "support"}</p>
+          <button type="button" className="rounded border border-white/40 px-1.5 py-0.5 text-xs" onClick={() => setLang(am ? "en" : "am")} aria-label={am ? "English" : "Amharic"} data-lang-toggle>
+            {am ? "EN" : "አማ"}
+          </button>
         </div>
-        <p className="text-xs opacity-90">{s.online ? "We are online" : `Usually: ${s.hours}`}</p>
+        <p className="text-xs opacity-90">{s.online ? (am ? "መስመር ላይ ነን" : "We are online") : `${am ? "በተለምዶ" : "Usually"}: ${s.hours}`}</p>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto">
         {open === null && (
           <div className="space-y-3 p-4">
             <p className="text-sm">{s.app.greeting ?? `Hi ${s.customer.name.split(" ")[0]}! How can we help?`}</p>
             <Button className="w-full text-white" style={{ background: color }} onClick={() => setOpen("new")} data-new-question>
-              <PlusIcon /> Ask a question
+              <PlusIcon /> {am ? "ጥያቄ ይጠይቁ" : "Ask a question"}
             </Button>
             {s.online && <CallButton api={api} s={s} ticketId={null} color={color} onTicket={(id) => (setOpen(id), void reload())} />}
             <HelpSearch api={api} onOpen={(id) => setOpen(`a:${id}`)} />
-            {tickets.length > 0 && <p className="pt-2 text-xs font-medium text-muted-foreground">Your conversations</p>}
+            {tickets.length > 0 && <p className="pt-2 text-xs font-medium text-muted-foreground">{am ? "ውይይቶችዎ" : "Your conversations"}</p>}
             <ul className="space-y-1">
               {tickets.map((t) => (
                 <li key={t.id}>
                   <button type="button" className="w-full rounded-lg border p-2 text-left text-sm hover:bg-muted" onClick={() => setOpen(t.id)} data-conversation-item>
                     <span className="block truncate font-medium">{t.subject}</span>
                     <span className="text-xs text-muted-foreground">
-                      #{t.number} · {STATUS[t.status] ?? t.status}
+                      #{t.number} · {words(lang).status[t.status] ?? STATUS[t.status] ?? t.status}
                     </span>
                   </button>
                 </li>
@@ -121,7 +139,9 @@ export function SupportWidget({ appKey, initialUser, waitForParent }: { appKey: 
         )}
         {open === "new" && <NewQuestion api={api} color={color} onDone={(id) => (setOpen(id), void reload())} onArticle={(id) => setOpen(`a:${id}`)} />}
         {open?.startsWith("a:") && <ArticleView api={api} id={open.slice(2)} onAsk={() => setOpen("new")} />}
-        {open && open !== "new" && !open.startsWith("a:") && <Thread key={open} api={api} s={s} id={open} color={color} />}
+        {open && open !== "new" && !open.startsWith("a:") && (
+          <LiveThread key={open} api={api} appKey={appKey} token={s.token} id={open} color={color} lang={lang} online={s.online} callButton={(reload) => (s.online ? <CallButton api={api} s={s} ticketId={open} color={color} onTicket={reload} /> : null)} />
+        )}
       </div>
     </div>
   );
@@ -233,100 +253,6 @@ function NewQuestion({ api, color, onDone, onArticle }: { api: Api; color: strin
   );
 }
 
-function Thread({ api, s, id, color }: { api: Api; s: Session; id: string; color: string }) {
-  const [t, setT] = React.useState<{ id: string; number: number; subject: string; status: string; rating: number | null } | null>(null);
-  const [msgs, setMsgs] = React.useState<Msg[]>([]);
-  const [text, setText] = React.useState("");
-  const [busy, setBusy] = React.useState(false);
-  const end = React.useRef<HTMLDivElement>(null);
-  const load = React.useCallback(async () => {
-    const r = await api<{ ticket: NonNullable<typeof t>; messages: Msg[] }>(`tickets/${id}/messages`);
-    setT(r.ticket);
-    setMsgs(r.messages);
-  }, [api, id]);
-  React.useEffect(() => {
-    void load();
-    const i = window.setInterval(() => void load().catch(() => {}), 4000);
-    return () => window.clearInterval(i);
-  }, [load]);
-  React.useEffect(() => {
-    end.current?.scrollIntoView({ block: "nearest" });
-  }, [msgs.length]);
-  if (!t) return <Loader2Icon className="m-6 size-5 animate-spin text-muted-foreground" />;
-  const done = ["solved", "closed"].includes(t.status);
-  return (
-    <div className="flex h-full flex-col">
-      <div className="border-b px-4 py-2 text-sm">
-        <p className="font-medium">{t.subject}</p>
-        <p className="text-xs text-muted-foreground">
-          #{t.number} · {STATUS[t.status] ?? t.status}
-        </p>
-      </div>
-      <div className="flex-1 space-y-2 overflow-y-auto p-3" data-thread>
-        {msgs.map((m) => (
-          <div key={m.id} className={cn("max-w-[85%] rounded-lg px-3 py-2 text-sm", m.from === "customer" ? "ml-auto text-white" : m.from === "system" ? "mx-auto bg-muted text-xs text-muted-foreground" : "bg-muted")} style={m.from === "customer" ? { background: color } : undefined} data-from={m.from}>
-            {m.from === "agent" && <p className="text-xs font-medium">{m.name}</p>}
-            <p className="whitespace-pre-wrap">{m.body}</p>
-          </div>
-        ))}
-        <div ref={end} />
-      </div>
-      {done && t.rating === null && <Rate api={api} id={id} onDone={load} />}
-      {t.status !== "closed" && (
-        <div className="space-y-2 border-t p-2">
-          {s.online && !done && <CallButton api={api} s={s} ticketId={id} color={color} onTicket={() => void load()} />}
-          <div className="flex gap-2">
-            <Input aria-label="Message" placeholder="Write a message" value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && text.trim() && (e.preventDefault(), document.getElementById("widget-send")?.click())} />
-            <Button
-              id="widget-send"
-              size="icon"
-              className="text-white"
-              style={{ background: color }}
-              aria-label="Send"
-              disabled={busy || !text.trim()}
-              onClick={async () => {
-                setBusy(true);
-                try {
-                  await api(`tickets/${id}/messages`, { body: text });
-                  setText("");
-                  await load();
-                } catch {}
-                setBusy(false);
-              }}
-            >
-              <SendIcon />
-            </Button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function Rate({ api, id, onDone }: { api: Api; id: string; onDone: () => void }) {
-  const [r, setR] = React.useState(0);
-  const [c, setC] = React.useState("");
-  return (
-    <div className="space-y-2 border-t p-3 text-sm" data-rate>
-      <p>How was the help?</p>
-      <div className="flex gap-1">
-        {[1, 2, 3, 4, 5].map((n) => (
-          <button key={n} type="button" aria-label={`${n} of 5`} onClick={() => setR(n)}>
-            <StarIcon className={cn("size-6", n <= r ? "fill-[#F9AB00] text-[#F9AB00]" : "text-muted-foreground")} />
-          </button>
-        ))}
-      </div>
-      {r > 0 && (
-        <div className="flex gap-2">
-          <Input aria-label="Comment" placeholder="Anything to add? (optional)" value={c} onChange={(e) => setC(e.target.value)} />
-          <Button size="sm" onClick={async () => (await api(`tickets/${id}/rating`, { rating: r, comment: c }), onDone())}>
-            Rate
-          </Button>
-        </div>
-      )}
-    </div>
-  );
-}
 
 async function gathered(pc: RTCPeerConnection, ms = 3000) {
   if (pc.iceGatheringState === "complete") return;

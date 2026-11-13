@@ -90,6 +90,7 @@ export async function saveSupportConfig(user: AppUser, input: Partial<SupportCon
     recordingNotice: clean(input.recordingNotice ?? cur.recordingNotice, 400) || DEFAULT_SUPPORT.recordingNotice,
     recordingDays: n(input.recordingDays ?? cur.recordingDays, 90, 1, 3650),
     autoCloseDays: n(input.autoCloseDays ?? cur.autoCloseDays, 7, 1, 90),
+    inactiveHours: n(input.inactiveHours ?? cur.inactiveHours, 72, 0, 720),
     ringSeconds: n(input.ringSeconds ?? cur.ringSeconds, 45, 15, 180),
     hours: clean(input.hours ?? cur.hours, 200),
     awayMessage: clean(input.awayMessage ?? cur.awayMessage, 400),
@@ -549,7 +550,7 @@ export async function customerReply(app: AppFull, token: string, ticketId: strin
   const now = nowIso();
   await run("INSERT INTO sup_messages (id, ticket_id, author_kind, author_id, body, internal, created_at) VALUES (?, ?, 'customer', ?, ?, 0, ?)", uid("smg_"), t.id, c.id, text, now);
   // A reply reopens a solved ticket and takes a waiting one back to the agent.
-  await run("UPDATE sup_tickets SET status = CASE WHEN status IN ('pending','solved') THEN 'open' ELSE status END, solved_at = CASE WHEN status = 'solved' THEN NULL ELSE solved_at END, last_customer_at = ?, updated_at = ? WHERE id = ?", now, now, t.id);
+  await run("UPDATE sup_tickets SET status = CASE WHEN status IN ('pending','solved') THEN 'open' ELSE status END, solved_at = CASE WHEN status = 'solved' THEN NULL ELSE solved_at END, close_reason = CASE WHEN status = 'solved' THEN NULL ELSE close_reason END, customer_typing_at = NULL, last_customer_at = ?, updated_at = ? WHERE id = ?", now, now, t.id);
   if (t.assignee_id) await notify([t.assignee_id], { type: "assignment", title: `#${t.number}: ${c.name} replied`, body: text.slice(0, 200), link: `/support?ticket=${t.id}`, dedupeKey: `sup-reply-${t.id}-${now}` }, now);
   else await autoAssign(t.id);
 }
@@ -641,6 +642,7 @@ export async function agentReply(user: AppUser, ticketId: string, input: { body:
   const now = nowIso();
   const msgId = uid("smg_");
   await run("INSERT INTO sup_messages (id, ticket_id, author_kind, author_id, body, internal, created_at) VALUES (?, ?, 'agent', ?, ?, ?, ?)", msgId, t.id, user.id, body, input.internal ? 1 : 0, now);
+  await run("UPDATE sup_tickets SET agent_typing_at = NULL WHERE id = ?", t.id);
   // Email and Telegram tickets: the reply goes back the same way.
   if (!input.internal) {
     try {
@@ -690,10 +692,14 @@ export async function setTicketStatus(user: AppUser, ticketId: string, status: T
   if (t.status === status) return;
   const now = nowIso();
   await run(
-    "UPDATE sup_tickets SET status = ?, solved_at = CASE WHEN ? IN ('solved','closed') THEN COALESCE(solved_at, ?) ELSE NULL END, updated_at = ? WHERE id = ?",
+    "UPDATE sup_tickets SET status = ?, solved_at = CASE WHEN ? IN ('solved','closed') THEN COALESCE(solved_at, ?) ELSE NULL END, closed_at = CASE WHEN ? = 'closed' THEN ? ELSE NULL END, close_reason = CASE WHEN ? = 'closed' THEN 'agent' WHEN ? = 'solved' THEN COALESCE(close_reason, 'agent') ELSE NULL END, updated_at = ? WHERE id = ?",
     status,
     status,
     now,
+    status,
+    now,
+    status,
+    status,
     now,
     t.id,
   );
@@ -1134,9 +1140,21 @@ export async function supportChecks(now = nowIso()) {
     await notify([t.assignee_id, ...cfg.leads], { type: "deadline", title: `#${t.number} missed its target`, body: t.subject, link: `/support?ticket=${t.id}`, dedupeKey: `sup-breach-${t.id}` }, now);
   }
   const old = new Date(Date.parse(now) - cfg.autoCloseDays * 864e5).toISOString();
+  // Waiting on the customer too long: solved, with a note to them (they can still reply until it closes).
+  if (cfg.inactiveHours > 0) {
+    const quiet = new Date(Date.parse(now) - cfg.inactiveHours * 3600e3).toISOString();
+    const idle = await all<{ id: string }>("SELECT id FROM sup_tickets WHERE status = 'pending' AND COALESCE(last_agent_at, updated_at) < ? AND (last_customer_at IS NULL OR last_customer_at < COALESCE(last_agent_at, updated_at))", quiet);
+    for (const c of idle) {
+      await run("UPDATE sup_tickets SET status = 'solved', solved_at = ?, close_reason = 'no_reply', updated_at = ? WHERE id = ?", now, now, c.id);
+      await run("INSERT INTO sup_messages (id, ticket_id, author_kind, author_id, body, internal, created_at) VALUES (?, ?, 'system', NULL, ?, 0, ?)", uid("smg_"), c.id, "We have not heard back, so this conversation is marked solved. Reply if you still need help.", now);
+      await activity(null, c.id, "status", `pending to solved (no reply in ${cfg.inactiveHours} hours)`);
+      await ticketEvent(c.id, "ticket.solved");
+    }
+  }
+  // The transcript, times and reason stay; a closed conversation takes no more replies (a new one starts).
   const closed = await all<{ id: string }>("SELECT id FROM sup_tickets WHERE status = 'solved' AND solved_at < ?", old);
   for (const c of closed) {
-    await run("UPDATE sup_tickets SET status = 'closed', updated_at = ? WHERE id = ?", now, c.id);
+    await run("UPDATE sup_tickets SET status = 'closed', closed_at = ?, close_reason = COALESCE(close_reason, 'auto'), updated_at = ? WHERE id = ?", now, now, c.id);
     await activity(null, c.id, "status", "solved to closed (automatically)");
   }
   const assigned = await assignWaiting();
@@ -1300,4 +1318,133 @@ export async function agentHome(user: AppUser): Promise<AgentHome> {
     ringing,
     stats: { open, solvedToday, solved7, firstResponseMin, rating: rt?.avg != null ? Math.round(Number(rt.avg) * 10) / 10 : null, ratings: Number(rt?.n ?? 0), late, callsToday, callMinutes7: Math.round(callSec7 / 60) },
   };
+}
+
+// ---------------------------------------------------------------------------
+// Live chat (Update 1.1, phase 12): both sides get a live stream of the conversation's state (new messages, who is
+// typing, read receipts, whether the other side is online, the status). The state lives in the database, so it is
+// right whichever server process answers. Clients fetch the new messages themselves when the stamp changes.
+// ---------------------------------------------------------------------------
+
+const TYPING_MS = 6000;
+const LIVE_ONLINE_MS = 60_000;
+const recent = (iso: string | null | undefined, ms: number) => !!iso && Date.now() - Date.parse(iso) < ms;
+
+type LiveRow = { id: string; status: string; assignee_id: string | null; customer_id: string | null; customer_typing_at: string | null; agent_typing_at: string | null; agent_typing_name: string | null; customer_read_at: string | null; agent_read_at: string | null; closed_at: string | null; close_reason: string | null; last_seen_at: string | null };
+async function liveRow(ticketId: string) {
+  return get<LiveRow>(
+    `SELECT t.id, t.status, t.assignee_id, t.customer_id, t.customer_typing_at, t.agent_typing_at, t.agent_typing_name, t.customer_read_at, t.agent_read_at, t.closed_at, t.close_reason, c.last_seen_at
+     FROM sup_tickets t LEFT JOIN sup_customers c ON c.id = t.customer_id WHERE t.id = ?`,
+    ticketId,
+  );
+}
+async function msgStamp(ticketId: string, publicOnly: boolean) {
+  const r = await get<{ n: number | string; last: string | null }>(`SELECT COUNT(*) AS n, MAX(created_at) AS last FROM sup_messages WHERE ticket_id = ? ${publicOnly ? "AND internal = 0" : ""}`, ticketId);
+  const f = await get<{ n: number | string }>("SELECT COUNT(*) AS n FROM sup_files WHERE ticket_id = ?", ticketId);
+  return `${r?.n ?? 0}:${r?.last ?? ""}:${f?.n ?? 0}`;
+}
+
+export type CustomerLive = { stamp: string; status: string; closed: boolean; closeReason: string | null; typing: string | null; read: string | null; online: boolean };
+
+// What the customer's widget sees: the agent typing (first name), when the agent read the conversation, and whether
+// the agent (or, before one has it, anyone in support) is online. Seeing it marks the customer online.
+export async function customerLive(app: AppFull, token: string, ticketId: string): Promise<CustomerLive> {
+  const { c, t } = await customerTicket(app, token, ticketId);
+  const r = (await liveRow(t.id))!;
+  if (!recent(r.last_seen_at, 20_000)) await run("UPDATE sup_customers SET last_seen_at = ? WHERE id = ?", nowIso(), c.id);
+  const agent = r.assignee_id
+    ? await get<{ status: string; last_seen_at: string | null }>("SELECT status, last_seen_at FROM sup_agents WHERE user_id = ?", r.assignee_id)
+    : await get<{ status: string; last_seen_at: string | null }>("SELECT status, last_seen_at FROM sup_agents WHERE status = 'online' ORDER BY last_seen_at DESC LIMIT 1");
+  return {
+    stamp: await msgStamp(t.id, true),
+    status: r.status,
+    closed: r.status === "closed",
+    closeReason: r.close_reason,
+    typing: recent(r.agent_typing_at, TYPING_MS) ? (r.agent_typing_name ?? "Support").split(" ")[0] : null,
+    read: r.agent_read_at,
+    online: !!agent && agent.status === "online" && recent(agent.last_seen_at, LIVE_ONLINE_MS),
+  };
+}
+export async function customerTyping(app: AppFull, token: string, ticketId: string) {
+  const { t } = await customerTicket(app, token, ticketId);
+  await run("UPDATE sup_tickets SET customer_typing_at = ? WHERE id = ?", nowIso(), t.id);
+}
+export async function customerRead(app: AppFull, token: string, ticketId: string) {
+  const { t } = await customerTicket(app, token, ticketId);
+  await run("UPDATE sup_tickets SET customer_read_at = ? WHERE id = ?", nowIso(), t.id);
+}
+
+const VOICE = /^audio\//;
+// A file or voice note from the customer: a message says what it is and the file is kept with it.
+export async function customerUpload(app: AppFull, token: string, ticketId: string, input: { name?: string; mime?: string; data?: string }) {
+  const { t } = await customerTicket(app, token, ticketId);
+  const data = Buffer.from(String(input.data ?? ""), "base64");
+  if (!data.length) throw new WorkflowError("VALIDATION", "The file is empty.");
+  const name = clean(input.name, 160) || "file";
+  const mime = clean(input.mime, 100) || "application/octet-stream";
+  await customerReply(app, token, t.id, VOICE.test(mime) ? "(a voice note)" : `(a file: ${name})`);
+  const h = await import("./support-help");
+  return { id: await h.attachTicketFile(t.id, { name, mime, data }) };
+}
+// The customer's own files (and files agents sent them).
+export async function customerFile(app: AppFull, token: string, fileId: string) {
+  const c = await customerByToken(app, token);
+  const f = await get<{ name: string; mime: string; data: string; customer_id: string | null }>("SELECT f.name, f.mime, f.data, t.customer_id FROM sup_files f JOIN sup_tickets t ON t.id = f.ticket_id WHERE f.id = ?", fileId);
+  if (!f || f.customer_id !== c.id) throw new WorkflowError("NOT_FOUND", "File not found.");
+  return { name: f.name, mime: f.mime, data: Buffer.from(f.data, "base64") };
+}
+export async function customerFiles(app: AppFull, token: string, ticketId: string) {
+  const { t } = await customerTicket(app, token, ticketId);
+  return all<{ id: string; message_id: string | null; name: string; mime: string; size: number }>("SELECT id, message_id, name, mime, size FROM sup_files WHERE ticket_id = ? ORDER BY created_at", t.id);
+}
+
+export type AgentLive = { stamp: string; status: string; typing: boolean; read: string | null; online: boolean; lastSeen: string | null };
+// What the agent sees on an open ticket: the customer typing, when they read it, and whether they are online.
+export async function agentLive(user: AppUser, ticketId: string): Promise<AgentLive> {
+  const t = await canWork(user, ticketId);
+  const r = (await liveRow(t.id))!;
+  return { stamp: await msgStamp(t.id, false), status: r.status, typing: recent(r.customer_typing_at, TYPING_MS), read: r.customer_read_at, online: recent(r.last_seen_at, LIVE_ONLINE_MS), lastSeen: r.last_seen_at };
+}
+// The inbox changed (a new ticket, a reply, a status): the desk refreshes its list.
+export async function inboxStamp(user: AppUser) {
+  await needAgent(user);
+  const r = await get<{ n: number | string; last: string | null }>("SELECT COUNT(*) AS n, MAX(updated_at) AS last FROM sup_tickets WHERE status <> 'closed'");
+  return `${r?.n ?? 0}:${r?.last ?? ""}`;
+}
+export async function agentTyping(user: AppUser, ticketId: string) {
+  const t = await canWork(user, ticketId);
+  await run("UPDATE sup_tickets SET agent_typing_at = ?, agent_typing_name = ? WHERE id = ?", nowIso(), user.name, t.id);
+}
+export async function agentRead(user: AppUser, ticketId: string) {
+  const t = await canWork(user, ticketId);
+  await run("UPDATE sup_tickets SET agent_read_at = ? WHERE id = ?", nowIso(), t.id);
+  await heartbeat(user);
+}
+// A file or voice note from the agent: a public message says what it is; the customer opens it in the widget.
+export async function agentUpload(user: AppUser, ticketId: string, input: { name: string; mime: string; data: string }) {
+  const t = await canWork(user, ticketId);
+  const data = Buffer.from(input.data, "base64");
+  if (!data.length) throw new WorkflowError("VALIDATION", "The file is empty.");
+  const name = clean(input.name, 160) || "file";
+  const mime = clean(input.mime, 100) || "application/octet-stream";
+  await agentReply(user, t.id, { body: VOICE.test(mime) ? "(a voice note)" : `(a file: ${name})` });
+  const msg = await get<{ id: string }>("SELECT id FROM sup_messages WHERE ticket_id = ? AND author_kind = 'agent' AND author_id = ? ORDER BY created_at DESC LIMIT 1", t.id, user.id);
+  const h = await import("./support-help");
+  return { id: await h.attachTicketFile(t.id, { name, mime, data }, msg?.id ?? null) };
+}
+
+// The whole conversation as text (customers see none of the internal notes; agents get them marked).
+export async function transcript(user: AppUser, ticketId: string) {
+  const d = await ticketDetail(user, ticketId);
+  const t = d.ticket as Record<string, unknown>;
+  const lines = [
+    `Ticket #${t.number}: ${t.subject}`,
+    `Customer: ${d.customer?.name ?? "-"}${d.customer?.email ? ` <${d.customer.email}>` : ""}${d.customer?.phone ? ` ${d.customer.phone}` : ""}${d.customer?.app ? ` (${d.customer.app})` : ""}`,
+    `Channel: ${t.channel} · Queue: ${t.queue ?? "-"} · Agent: ${t.assignee ?? "-"}`,
+    `Opened: ${t.created_at} · First response: ${t.first_response_at ?? "-"} · Solved: ${t.solved_at ?? "-"} · Closed: ${t.closed_at ?? "-"}${t.close_reason ? ` (${t.close_reason})` : ""}`,
+    "",
+    ...d.messages.map((m) => `[${m.created_at}] ${m.internal ? "(internal) " : ""}${m.author ?? m.author_kind}: ${m.body}`),
+    ...(d.calls.length ? ["", "Calls:", ...d.calls.map((c) => `[${c.started_at}] ${c.direction} ${c.status} ${c.duration_s ?? 0}s${c.recording_id ? " (recorded)" : ""}${c.notes ? ` - ${c.notes}` : ""}`)] : []),
+  ];
+  return { name: `ticket-${t.number}.txt`, text: lines.join("\n") };
 }

@@ -116,3 +116,11 @@ export async function disconnectSystemBotAction(id: string) {
 export async function agentSmsAction(ticketId: string, text: string) {
   return wrap(async () => sd.agentSms(await requireViewer(), ticketId, text));
 }
+
+// Live chat (Update 1.1, phase 12).
+export async function agentTypingAction(ticketId: string) {
+  return wrap(async () => sd.agentTyping(await requireViewer(), ticketId));
+}
+export async function agentReadAction(ticketId: string) {
+  return wrap(async () => sd.agentRead(await requireViewer(), ticketId));
+}
