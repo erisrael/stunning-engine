@@ -21,6 +21,7 @@ import { planTaxonomyRow, TAXONOMY_KEYS, taxonomyPrefillRows, normGradeCode, typ
 import { endOfLocalDayIso, localInputToIso } from "@/lib/format";
 import { notifyStageImport } from "./editorial";
 import { isValidFileLocationOrUrl } from "@/lib/import-fix";
+import { assertIo, ioPermissions, pruneJobChanges, roleGroup } from "./io-rules";
 
 // ---------------------------------------------------------------------------
 // Template definitions
@@ -1397,6 +1398,17 @@ async function planRow(template: TemplateDef, rec: Row, rowNo: number, mode: Imp
     }
     const existing = await get<{ id: string }>("SELECT id FROM users WHERE lower(email) = lower(?)", rec.email);
     if (existing && existing.id === user.id && !roles.includes("manager")) errors.push("You cannot remove your own manager role through an import.");
+    // Admin's import switches: team and department membership stay as they are when that import is off.
+    const io = await ioPermissions();
+    if (!io.teams.import || !io.departments.import) {
+      const had = existing ? (await all<{ role: Role }>("SELECT role FROM role_assignments WHERE user_id = ?", existing.id)).map((r) => r.role) : [];
+      for (const g of ["teams", "departments"] as const) {
+        if (io[g].import) continue;
+        const want = roles.filter((r) => roleGroup(r) === g).sort().join(", ");
+        const now = had.filter((r) => roleGroup(r) === g).sort().join(", ");
+        if (want !== now) errors.push(`Admin has turned off importing ${g}: keep this person's ${g === "teams" ? "team" : "department"} roles as they are (${now || "none"}).`);
+      }
+    }
     return {
       outcome: out(existing ? "update" : "create", rec.email, existing ? `Update ${rec.name}: ${roles.join(", ")}` : `Invite ${rec.name} as ${roles.join(", ")}`),
       apply: async (ctx) => {
@@ -1687,6 +1699,7 @@ export async function runImport(
   if (!canUseTemplate(user, template)) throw new WorkflowError("FORBIDDEN", `You do not have permission to run the ${template.title} import.`);
   if (!template.modes.includes(input.mode)) throw new WorkflowError("VALIDATION", `${template.title} does not support ${input.mode} mode.`);
   if (input.sheet.rows.length > 5000) throw new WorkflowError("VALIDATION", "Split files larger than 5,000 rows into several imports.");
+  if (template.key === "users") await assertIo("members", "import");
   const required = template.fields.filter((f) => f.required === true || f.required === input.mode || (f.required === "create" && input.mode === "upsert"));
   const unmapped = required.filter((f) => !input.mapping[f.key] && !(template.key === "items" && input.mode === "update" && (f.key === "item_code") && input.mapping.item_id));
   if (unmapped.length) throw new WorkflowError("VALIDATION", `Map the required columns: ${unmapped.map((f) => f.label).join(", ")}.`);
@@ -1732,6 +1745,8 @@ export async function runImport(
     if (p.outcome.action === "error" || p.outcome.action === "skip" || !p.apply) continue;
     try {
       await tx(async () => {
+        // Names the job for the change trigger, so the import can be undone (job_changes).
+        await get("SELECT set_config('myseed.job_id', ?, true)", jobId);
         await p.apply!(ctx);
       });
     } catch (err) {
@@ -1741,6 +1756,7 @@ export async function runImport(
     }
   }
   const final = countOutcomes(outcomes);
+  await pruneJobChanges().catch(() => {});
   await run(
         `UPDATE jobs SET status = ?, created_count = ?, updated_count = ?, skipped_count = ?, error_count = ?, report = ?, finished_at = ? WHERE id = ?`,
         final.error ? "completed_with_errors" : "completed",

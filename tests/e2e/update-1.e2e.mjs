@@ -103,7 +103,7 @@ try {
   await take.getByLabel(/^Select .*G12/).first().check();
   await take.getByLabel(/^Select .*G12/).nth(1).check();
   await take.getByRole("button", { name: /Take 2 selected/ }).click();
-  await hana.getByText("2 parts are on your work now").waitFor({ timeout: 12000 });
+  await hana.getByText("2 on your work now").waitFor({ timeout: 12000 });
   check("two parts are taken at once", true);
   await hana.goto(`${base}/my-work?tab=production&view=table`);
   const mine = hana.getByRole("toolbar", { name: "Filter my parts" });

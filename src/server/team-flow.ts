@@ -382,4 +382,11 @@ export async function leadDesk(user: AppUser, stage: Stage) {
 }
 export type LeadDeskData = NonNullable<Awaited<ReturnType<typeof leadDesk>>>;
 
+// Parts waiting in a stage with nobody on them, for team members Admin lets take work (Update 1.0, phase 6).
+export async function waitingInStage(user: AppUser, stage: Stage) {
+  const sc = scopeSql(user, "i");
+  const rows = await all<Row>(`${BASE} AND a.stage = ? AND a.status = 'queued' AND a.owner_id IS NULL AND ${sc.sql} ${ORDER} LIMIT 300`, stage, ...sc.params);
+  return hydrate(rows, user);
+}
+
 

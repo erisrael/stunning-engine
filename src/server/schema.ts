@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 61;
+export const SCHEMA_VERSION = 62;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -3410,6 +3410,75 @@ CREATE TABLE IF NOT EXISTS sup_files (
 );
 CREATE INDEX IF NOT EXISTS idx_sup_files ON sup_files(ticket_id);
 CREATE INDEX IF NOT EXISTS idx_sup_tickets_category ON sup_tickets(category, created_at);
+
+-- v62: My work take rules (requests a lead approves) and import undo. Each import row runs in a transaction that sets
+-- myseed.job_id; a row trigger on every table then keeps what the row was before and after, so an approved undo
+-- can put back exactly what that import changed and skip rows people edited since.
+CREATE TABLE IF NOT EXISTS take_requests (
+  id TEXT PRIMARY KEY,
+  item_id TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+  stage TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  decided_by TEXT,
+  decided_at TEXT,
+  note TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_take_requests ON take_requests(stage, status, created_at);
+CREATE TABLE IF NOT EXISTS job_changes (
+  id BIGSERIAL PRIMARY KEY,
+  job_id TEXT NOT NULL,
+  tbl TEXT NOT NULL,
+  op TEXT NOT NULL,
+  before_row TEXT,
+  after_row TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_job_changes ON job_changes(job_id, id);
+CREATE TABLE IF NOT EXISTS job_undo_requests (
+  id TEXT PRIMARY KEY,
+  job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+  requested_by TEXT NOT NULL,
+  reason TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  decided_by TEXT,
+  decided_at TEXT,
+  result TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_job_undo ON job_undo_requests(job_id, status);
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS undone_at TEXT;
+CREATE OR REPLACE FUNCTION myseed_capture_change() RETURNS trigger LANGUAGE plpgsql AS $fn$
+BEGIN
+  INSERT INTO job_changes (job_id, tbl, op, before_row, after_row, created_at)
+  VALUES (
+    current_setting('myseed.job_id', true),
+    TG_TABLE_NAME,
+    TG_OP,
+    CASE WHEN TG_OP <> 'INSERT' THEN to_jsonb(OLD)::text END,
+    CASE WHEN TG_OP <> 'DELETE' THEN to_jsonb(NEW)::text END,
+    to_char(clock_timestamp() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+  );
+  RETURN NULL;
+END
+$fn$;
+DO $do$
+DECLARE t text;
+BEGIN
+  FOR t IN
+    SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = current_schema() AND c.relkind = 'r'
+      AND c.relname NOT IN ('job_changes', 'jobs', 'job_undo_requests', 'audit_events', 'notifications', 'settings', 'idempotency_keys', 'email_log', 'email_log_recipients', 'push_subscriptions')
+      AND NOT EXISTS (SELECT 1 FROM pg_trigger g WHERE g.tgrelid = c.oid AND g.tgname = 'myseed_capture')
+  LOOP
+    BEGIN
+      EXECUTE format('CREATE TRIGGER myseed_capture AFTER INSERT OR UPDATE OR DELETE ON %I FOR EACH ROW WHEN (COALESCE(current_setting(''myseed.job_id'', true), '''') <> '''') EXECUTE FUNCTION myseed_capture_change()', t);
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END;
+  END LOOP;
+END
+$do$;
 `;
 
 // Tables in dependency order; used to empty the workspace and to export or restore backups.
@@ -3648,4 +3717,6 @@ export const TABLES = [
   "sup_categories",
   "sup_routes",
   "sup_files",
+  "take_requests",
+  "job_undo_requests",
 ] as const;

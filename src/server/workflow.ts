@@ -2202,10 +2202,11 @@ export async function markReleaseFailed(ctx: Ctx, itemId: string, input: { platf
 // Management: assignment, deadlines, metadata, lifecycle
 // ---------------------------------------------------------------------------
 
-export async function assignStage(ctx: Ctx, itemId: string, input: { stage: Stage; userId: string | null; reason?: string | null; expectedVersion?: number }) {
+export async function assignStage(ctx: Ctx, itemId: string, input: { stage: Stage; userId: string | null; reason?: string | null; expectedVersion?: number; selfTake?: boolean }) {
   return await tx(async () => {
       const now = at(ctx);
-      if (ctx.actor && !can(ctx.actor, "items.plan") && !isLeadOf(ctx.actor, input.stage))
+      // selfTake: My work already checked Admin's take rules for a member taking a part for themselves.
+      if (ctx.actor && !(input.selfTake && input.userId === ctx.actor.id) && !can(ctx.actor, "items.plan") && !isLeadOf(ctx.actor, input.stage))
         throw new WorkflowError("FORBIDDEN", `Only managers and ${STAGE_LABELS[input.stage]} team leads can assign this stage.`);
       const item = await getItem(itemId);
       checkVersion(item, input.expectedVersion);

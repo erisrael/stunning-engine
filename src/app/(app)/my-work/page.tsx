@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { requireViewer } from "@/server/auth";
 import { get } from "@/server/db";
-import { leadDesk, myWork, myWorkCount } from "@/server/team-flow";
-import { takeLimit, myDeptTasks } from "@/server/my-work";
+import { leadDesk, myWork, myWorkCount, waitingInStage } from "@/server/team-flow";
+import { takeLimit, myDeptTasks, takeStages, takeRequestsFor, myTakeRequests, takeRules, myWorkViews } from "@/server/my-work";
 import { userDirectory, can } from "@/server/users";
 import { appOrigin } from "@/server/password-reset";
 import * as sd from "@/server/support-desk";
@@ -14,7 +14,7 @@ import { Desk, Inbox, TicketView } from "@/components/app/support/desk";
 import { AdminWorkDesk } from "@/components/app/admin-work-desk";
 import { STAGE_LABELS, STAGES } from "@/lib/domain";
 import { cn } from "@/lib/utils";
-import { TakeWork } from "./take-work";
+import { TakeRequests, TakeRulesEditor, TakeWork } from "./take-work";
 import { MyPartsTable, MyTasksTable } from "./my-tables";
 
 export const metadata = { title: "My work" };
@@ -28,12 +28,17 @@ export default async function MyWorkPage({ searchParams }: { searchParams: Promi
   const agent = cfg.enabled && (await sd.isAgent(viewer));
   const isAdmin = viewer.activeRole === "admin" || can(viewer, "users.manage");
   const [mine, toDo, desks] = await Promise.all([myWork(viewer), myWorkCount(viewer), Promise.all(STAGES.filter((s) => viewer.leads.includes(s)).map((s) => leadDesk(viewer, s)))]);
-  const unassigned = desks.flatMap((d) => d?.unassigned ?? []);
+  // Parts waiting with nobody on them: in the stages they lead, and where Admin lets team members take work.
+  const canTake = await takeStages(viewer);
+  const memberStages = canTake.filter((s) => !s.lead && !desks.some((d) => d?.stage === s.stage)).map((s) => s.stage);
+  const unassigned = [...desks.flatMap((d) => d?.unassigned ?? []), ...(await Promise.all(memberStages.map((s) => waitingInStage(viewer, s)))).flat()];
+  const [toApprove, pendingMine] = await Promise.all([takeRequestsFor(viewer), myTakeRequests(viewer)]);
+  const canShare = can(viewer, "items.plan") || viewer.roles.includes("manager");
   // Tasks assigned to this person in every department (Marketing, Finance, HR …), in one table.
   const tasks = await myDeptTasks(viewer).catch(() => []);
   const tabs = [
     ...(isAdmin ? ["admin"] : []),
-    ...(mine.stages.length || unassigned.length ? ["production"] : []),
+    ...(mine.stages.length || unassigned.length || toApprove.length ? ["production"] : []),
     ...(tasks.length ? ["tasks"] : []),
     ...(agent ? ["support"] : []),
   ];
@@ -96,7 +101,10 @@ export default async function MyWorkPage({ searchParams }: { searchParams: Promi
       )}
       {!tabs.length && <EmptyState title="Nothing assigned to you" description="Work given to you shows here." />}
       {tab === "admin" && isAdmin && (
-        <AdminWorkDesk data={await adminWorkspaceData(viewer)} />
+        <div className="space-y-4">
+          <TakeRulesEditor rules={await takeRules()} stages={STAGES.filter((s) => s !== "publication")} />
+          <AdminWorkDesk data={await adminWorkspaceData(viewer)} />
+        </div>
       )}
       {tab === "production" && tabs.includes("production") && (
         <div className="space-y-6" data-my-work>
@@ -110,10 +118,13 @@ export default async function MyWorkPage({ searchParams }: { searchParams: Promi
           {board ? (
             <MyBoard items={mine.items} title="My work" />
           ) : (
-            <MyPartsTable items={mine.items.map((i) => ({ id: i.id, code: i.code, title: i.title, grade: i.grade, subject: i.subject, unitNumber: i.unitNumber, partNumber: i.partNumber, stage: i.stage, status: i.status, priority: i.priority, dueAt: i.dueAt, draft: i.draft }))} />
+            <MyPartsTable canShare={canShare} views={await myWorkViews(viewer, "my-work:parts")} items={mine.items.map((i) => ({ id: i.id, code: i.code, title: i.title, grade: i.grade, subject: i.subject, unitNumber: i.unitNumber, partNumber: i.partNumber, stage: i.stage, status: i.status, priority: i.priority, dueAt: i.dueAt, draft: i.draft }))} />
           )}
+          <TakeRequests rows={toApprove} />
           {unassigned.length > 0 && (
             <TakeWork
+              stages={canTake}
+              pendingMine={pendingMine.length}
               items={unassigned.map((i) => ({
                 id: i.id,
                 code: i.code,
@@ -128,14 +139,12 @@ export default async function MyWorkPage({ searchParams }: { searchParams: Promi
                 priority: i.priority,
                 dueAt: i.dueAt ?? null,
               }))}
-              me={viewer.id}
               limit={await takeLimit()}
-              canSetLimit={can(viewer, "users.manage")}
             />
           )}
         </div>
       )}
-      {tab === "tasks" && tabs.includes("tasks") && <MyTasksTable tasks={tasks} />}
+      {tab === "tasks" && tabs.includes("tasks") && <MyTasksTable tasks={tasks} canShare={canShare} views={await myWorkViews(viewer, "my-work:tasks")} />}
       {support}
     </div>
   );

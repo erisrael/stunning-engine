@@ -3,7 +3,7 @@ import { DownloadIcon, FileSpreadsheetIcon } from "lucide-react";
 import { requireViewer } from "@/server/auth";
 import { all } from "@/server/db";
 import { getSettings } from "@/server/settings";
-import { templateInfo, templateList } from "@/server/importer";
+import { templateInfo, templateList, TEMPLATES, type TemplateKey } from "@/server/importer";
 import { userNames } from "@/server/rows";
 import { fmtDateTime } from "@/lib/format";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,9 @@ import { can } from "@/server/users";
 import { countItems } from "@/server/queries";
 import { emptyFilters } from "@/lib/filters";
 import { nowIso } from "@/server/db";
+import { undoRequests, undoState } from "@/server/import-undo";
+import { IO_ENTITIES, ioPermissions, undoConfig } from "@/server/io-rules";
+import { IoRules, UndoCell, UndoRequests } from "./import-undo";
 
 export const metadata = { title: "Import and export" };
 
@@ -35,11 +38,18 @@ export default async function ImportExportPage({ searchParams }: { searchParams:
   const templates = templateList(viewer).map(templateInfo);
   // Team members start on their own team's template.
   const ownTemplate = templates.find((t) => t.stage && t.stage === viewer.activeRole)?.key;
-  const jobs = await all<{ id: string; kind: string; template: string | null; mode: string | null; file_name: string | null; status: string; total_rows: number; created_count: number; updated_count: number; skipped_count: number; error_count: number; actor_id: string | null; created_at: string; finished_at: string | null }>(
+  const jobs = await all<{ id: string; kind: string; template: string | null; mode: string | null; file_name: string | null; status: string; total_rows: number; created_count: number; updated_count: number; skipped_count: number; error_count: number; actor_id: string | null; created_at: string; finished_at: string | null; undone_at: string | null }>(
       `SELECT * FROM jobs ${allJobs ? "" : "WHERE actor_id = ?"} ORDER BY created_at DESC LIMIT 40`,
       ...(allJobs ? [] : [viewer.id]),
     );
   const names = await userNames();
+  // Undo (Update 1.0, phase 6): each import's window and state, the requests to decide, and Admin's rules.
+  const isAdmin = viewer.roles.includes("admin") || can(viewer, "users.manage");
+  const title = (t: string | null) => (t && TEMPLATES[t as TemplateKey]?.title) || (t ? t.replace(/_/g, " ") : "Import");
+  const states = new Map(await Promise.all(jobs.filter((j) => j.kind === "import").map(async (j) => [j.id, await undoState(viewer, j)] as const)));
+  const requests = (await undoRequests(viewer)).map((r) => ({ ...r, title: title(r.template) }));
+  const [ioCfg, ioPerms] = isAdmin ? await Promise.all([undoConfig(), ioPermissions()]) : [null, null];
+  const peopleExport = (can(viewer, "users.manage") || can(viewer, "export.run")) ? (await ioPermissions()) : null;
   return (
     <div className="space-y-4">
       <PageHeader
@@ -66,6 +76,7 @@ export default async function ImportExportPage({ searchParams }: { searchParams:
                     <th className="text-right font-medium">Updated</th>
                     <th className="text-right font-medium">Errors</th>
                     <th className="text-right font-medium">Status</th>
+                    <th className="text-right font-medium">Undo</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -95,6 +106,9 @@ export default async function ImportExportPage({ searchParams }: { searchParams:
                       <td className="text-right">
                         <StatusPill size="xs" tone={j.status === "completed" ? "done" : j.status === "running" ? "active" : "paused"} label={j.status.replace(/_/g, " ")} />
                       </td>
+                      <td className="pl-2 text-right">
+                        {j.kind === "import" && <UndoCell jobId={j.id} state={states.get(j.id) ?? null} undone={j.undone_at} title={title(j.template)} />}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -102,8 +116,10 @@ export default async function ImportExportPage({ searchParams }: { searchParams:
               {jobs.length === 0 && <p className="py-6 text-center text-sm text-muted-foreground">No jobs yet.</p>}
             </CardContent>
           </Card>
+          <UndoRequests rows={requests} />
         </div>
         <div className="space-y-4">
+          {isAdmin && ioCfg && ioPerms && <IoRules cfg={ioCfg} perms={ioPerms} templates={Object.values(TEMPLATES).map((t) => ({ key: t.key, title: t.title }))} entities={IO_ENTITIES} />}
           {templates.length > 0 && (
           <Card>
             <CardHeader>
@@ -178,6 +194,16 @@ export default async function ImportExportPage({ searchParams }: { searchParams:
                     </Button>
                   )}
                 </div>
+                {peopleExport && IO_ENTITIES.some((e) => peopleExport[e.key].export) && (
+                  <div className="flex flex-wrap items-center gap-2" data-people-export>
+                    <span className="text-xs text-muted-foreground">People (CSV):</span>
+                    {IO_ENTITIES.filter((e) => peopleExport[e.key].export).map((e) => (
+                      <Button key={e.key} size="xs" variant="outline" asChild>
+                        <a href={`/api/export/people?entity=${e.key}`}><DownloadIcon /> {e.label}</a>
+                      </Button>
+                    ))}
+                  </div>
+                )}
                 <ul className="list-inside list-disc space-y-1 text-xs text-muted-foreground">
                   <li>Excel and CSV: rows grouped by grade and subject with each stage&apos;s status and date.</li>
                   <li>Tracker JSON: the same structure as the Recording team&apos;s tracker, with progress added. Import it back here any time.</li>

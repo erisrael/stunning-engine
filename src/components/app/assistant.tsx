@@ -794,7 +794,9 @@ export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantCo
       return;
     }
 
-    const intent = fallbackIntents.find(i => i.phrases.some(p => lower.includes(p.toLowerCase())));
+    // Page shortcuts step aside when a guided flow fits ("how do I finish and send my work" is a flow, not a page).
+    const flowFirst = matchText(amharicToKeywords(t), ctx.flows, ctx.cfg, ctx.places)[0]?.type === "flow";
+    const intent = flowFirst ? undefined : fallbackIntents.find(i => i.phrases.some(p => lower.includes(p.toLowerCase())));
     if(intent) {
       const place=PLACES.find(p=>p.name===intent.place && ctx.places.includes(p.name));
       say({from:"bot",text:place ? `Open ${place.name} to continue.` : "This page is not available to your role.",actions:place ? [{label:place.name,run:()=>router.push(place.href)}] : []});

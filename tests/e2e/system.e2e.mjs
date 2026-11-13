@@ -29,9 +29,8 @@ try {
   await a.evaluate(() => setTimeout(() => { throw new Error("e2e browser boom for kidus@myseed.et"); }, 0));
   await a.waitForTimeout(1500);
 
-  await a.goto(`${base}/admin`);
-  // Admin's tabs are links under Admin in the sidebar.
-  await a.locator("[data-sidebar=sidebar]").first().getByRole("link", { name: "System", exact: true }).click();
+  // Admin's System tab (in the sidebar under System & workspace).
+  await a.goto(`${base}/admin?tab=system`);
   await a.waitForURL(/tab=system/);
   check("opening the System tab loads it", await a.getByText("How the system is doing").waitFor({ timeout: 20000 }).then(() => true, () => false));
   check("health lists the database", await a.getByTestId("health-db").isVisible());

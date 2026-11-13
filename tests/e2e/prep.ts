@@ -403,6 +403,9 @@ PREPS["update-1"] = async () => {
   return {};
 };
 
+// Update 1.0 Phase 6: the same waiting Grade 12 parts, for a member taking a range and the lead approving it.
+PREPS["update-1-phase6"] = async () => PREPS["update-1"]();
+
 // Update 1.0 Phase 2: Legacy CMS points at the fake Noor that the browser test starts on this port.
 PREPS["update-1-p2"] = async () => {
   await passwordOnly();
