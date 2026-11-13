@@ -16,6 +16,7 @@ export const SOURCES = [
   { key: "noor", label: "Noor CMS" },
   { key: "payment", label: "Payment connectors" },
   { key: "connector", label: "Other connectors" },
+  { key: "systems", label: "Connected systems" },
 ] as const;
 export type Source = (typeof SOURCES)[number]["key"];
 export const sourceLabel = (s: string) => SOURCES.find((x) => x.key === s)?.label ?? s;

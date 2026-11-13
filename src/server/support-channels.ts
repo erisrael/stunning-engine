@@ -4,6 +4,7 @@
 // knowledge base customers search before asking (and agents link in replies).
 
 import crypto from "node:crypto";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { all, get, nowIso, parseJson, run, uid } from "./db";
 import { audit, WorkflowError } from "./workflow";
 import { seal, unseal } from "./secrets";
@@ -18,6 +19,18 @@ const clean = (v: unknown, max: number) => String(v ?? "").trim().slice(0, max);
 
 async function customerFor(input: { channel: "email" | "telegram"; key: string; name: string; email?: string | null }) {
   const ext = `${input.channel === "email" ? "mail" : "tg"}:${input.key.toLowerCase()}`;
+  // A connected system's own bot: its customers belong to that system.
+  const sys = input.channel === "telegram" ? botCtx.getStore() : undefined;
+  if (sys) {
+    const own = await get<{ id: string }>("SELECT id FROM sup_customers WHERE app_id = ? AND external_id = ?", sys.appId, ext);
+    if (own) {
+      await run("UPDATE sup_customers SET last_seen_at = ? WHERE id = ?", nowIso(), own.id);
+      return own.id;
+    }
+    const cid = uid("cus_");
+    await run("INSERT INTO sup_customers (id, app_id, external_id, name, email, created_at, last_seen_at) VALUES (?, ?, ?, ?, NULL, ?, ?)", cid, sys.appId, ext, clean(input.name, 120) || input.key, nowIso(), nowIso());
+    return cid;
+  }
   const found = await get<{ id: string }>("SELECT id FROM sup_customers WHERE app_id IS NULL AND external_id = ?", ext);
   if (found) {
     await run("UPDATE sup_customers SET last_seen_at = ? WHERE id = ?", nowIso(), found.id);
@@ -48,8 +61,8 @@ async function incoming(input: { channel: "email" | "telegram"; customerId: stri
       return t.id;
     }
   }
-  const app = { queue_id: null } as { queue_id: string | null };
-  const id = await sd.createTicketFromChannel({ subject: input.subject, body, customerId: input.customerId, channel: input.channel, emailId: input.emailId ?? null, appQueue: app.queue_id, category: input.category ?? null });
+  const sys = input.channel === "telegram" ? botCtx.getStore() : undefined;
+  const id = await sd.createTicketFromChannel({ subject: input.subject, body, customerId: input.customerId, channel: input.channel, emailId: input.emailId ?? null, appQueue: sys?.queueId ?? null, appId: sys?.appId ?? null, category: input.category ?? null });
   return id;
 }
 
@@ -96,11 +109,14 @@ export async function pollSupportMailbox() {
 export async function deliverReply(ticketId: string, body: string, agentName: string) {
   const t = await get<{ number: number; subject: string; channel: string; customer_id: string | null }>("SELECT number, subject, channel, customer_id FROM sup_tickets WHERE id = ?", ticketId);
   if (!t?.customer_id) return null;
-  const c = await get<{ email: string | null; external_id: string | null }>("SELECT email, external_id FROM sup_customers WHERE id = ?", t.customer_id);
+  const c = await get<{ email: string | null; external_id: string | null; app_id: string | null }>("SELECT email, external_id, app_id FROM sup_customers WHERE id = ?", t.customer_id);
   const sd = await import("./support-desk");
   const cfg = await sd.supportConfig();
   if (t.channel === "telegram" && c?.external_id?.startsWith("tg:")) {
-    await telegramSend(c.external_id.slice(3), `${body}\n\n- ${agentName.split(" ")[0]}, support (#${t.number})`);
+    const send = () => telegramSend(c.external_id!.slice(3), `${body}\n\n- ${agentName.split(" ")[0]}, support (#${t.number})`);
+    const sys = await systemBot(c.app_id);
+    if (sys) await botCtx.run(sys, send);
+    else await send();
     return "telegram";
   }
   if (t.channel === "email" && c?.email && cfg.mailbox) {
@@ -133,7 +149,18 @@ type TgState = { tokenEnc?: string; secret?: string; bot?: string; origin?: stri
 async function telegramState() {
   return parseJson<TgState>((await get<{ value: string }>("SELECT value FROM settings WHERE key = 'sup.telegram'"))?.value, {});
 }
+// The bot handling the current update or reply: a connected system's own bot, or (none set) the default bot.
+type BotCtx = { appId: string; token: string; queueId: string | null; name: string };
+const botCtx = new AsyncLocalStorage<BotCtx>();
+async function systemBot(appId: string | null | undefined): Promise<BotCtx | null> {
+  if (!appId) return null;
+  const a = await get<{ id: string; name: string; tg_token: string | null; queue_id: string | null }>("SELECT id, name, tg_token, queue_id FROM sup_apps WHERE id = ?", appId);
+  const token = a?.tg_token ? await unseal(a.tg_token) : null;
+  return a && token ? { appId: a.id, token, queueId: a.queue_id, name: a.name } : null;
+}
 async function botToken() {
+  const ctx = botCtx.getStore();
+  if (ctx) return ctx.token;
   const s = await telegramState();
   return s.tokenEnc ? await unseal(s.tokenEnc) : null;
 }
@@ -233,6 +260,39 @@ export async function refreshTelegram(user: AppUser, origin: string) {
   await setMenuButton(await telegramTexts()).catch(() => null);
   await audit({ actor: user }, { action: "support.telegram", summary: `${user.name} updated the Telegram bot's webhook and menu` });
   return telegramHealth();
+}
+
+// A connected system's own bot: the token from @BotFather is sealed; Telegram sends its messages to its own address.
+export async function connectSystemBot(user: AppUser, appId: string, token: string, origin: string) {
+  const sd = await import("./support-desk");
+  if (!sd.isAdmin(user)) throw new WorkflowError("FORBIDDEN", "Only Admin connects Telegram bots.");
+  const a = await get<{ id: string; name: string }>("SELECT id, name FROM sup_apps WHERE id = ?", appId);
+  if (!a) throw new WorkflowError("NOT_FOUND", "Unknown system.");
+  const t = clean(token, 100);
+  if (!/^\d+:[\w-]{20,}$/.test(t)) throw new WorkflowError("VALIDATION", "Paste the bot token from @BotFather (numbers, a colon, then letters).");
+  const def = await botToken().catch(() => null);
+  const other = await all<{ tg_token: string | null }>("SELECT tg_token FROM sup_apps WHERE id <> ? AND tg_token IS NOT NULL", appId);
+  for (const o of other) if ((await unseal(o.tg_token!)) === t) throw new WorkflowError("VALIDATION", "Another system already uses this bot. Each system needs its own bot.");
+  if (def === t) throw new WorkflowError("VALIDATION", "This is the default support bot. Make a new bot with @BotFather for this system.");
+  const me = await poster(`https://api.telegram.org/bot${t}/getMe`, {});
+  if (!me.ok) throw new WorkflowError("VALIDATION", "Telegram did not accept that token.");
+  const secret = crypto.randomBytes(16).toString("hex");
+  const hook = await hookUp(t, secret, origin);
+  if (!hook.ok) throw new WorkflowError("VALIDATION", "Telegram could not reach this site. It needs a public https address.");
+  const bot = (me.result as { username?: string } | undefined)?.username ?? null;
+  await run("UPDATE sup_apps SET tg_token = ?, tg_secret = ?, tg_bot = ? WHERE id = ?", await seal(t), secret, bot, appId);
+  await poster(`https://api.telegram.org/bot${t}/setMyCommands`, { commands: [{ command: "start", description: "Help menu" }, { command: "menu", description: "Help menu" }] }).catch(() => null);
+  await audit({ actor: user }, { action: "support.telegram", summary: `${user.name} connected the bot @${bot} to ${a.name}` });
+  return { bot };
+}
+
+export async function disconnectSystemBot(user: AppUser, appId: string) {
+  const sd = await import("./support-desk");
+  if (!sd.isAdmin(user)) throw new WorkflowError("FORBIDDEN", "Only Admin disconnects Telegram bots.");
+  const bot = await systemBot(appId);
+  if (bot) await poster(`https://api.telegram.org/bot${bot.token}/deleteWebhook`, {}).catch(() => null);
+  await run("UPDATE sup_apps SET tg_token = NULL, tg_secret = NULL, tg_bot = NULL WHERE id = ?", appId);
+  await audit({ actor: user }, { action: "support.telegram", summary: `${user.name} disconnected ${bot?.name ?? "a system"}'s Telegram bot` });
 }
 
 export async function telegramInfo() {
@@ -336,7 +396,24 @@ async function telegramButton(q: NonNullable<TgUpdate["callback_query"]>, x: Tel
 // A message to the bot (Telegram's webhook, checked by its secret).
 export async function telegramUpdate(secret: string, headerSecret: string | null, update: TgUpdate) {
   const s = await telegramState();
-  if (!s.secret || secret !== s.secret || (headerSecret && headerSecret !== s.secret)) throw new WorkflowError("FORBIDDEN", "Unknown hook.");
+  if (s.secret && secret === s.secret) {
+    if (headerSecret && headerSecret !== s.secret) throw new WorkflowError("FORBIDDEN", "Unknown hook.");
+    return handleUpdate(update);
+  }
+  const app = secret ? await get<{ id: string; active: number; channels: string | null }>("SELECT id, active, channels FROM sup_apps WHERE tg_secret = ?", secret) : null;
+  if (!app || (headerSecret && headerSecret !== secret)) throw new WorkflowError("FORBIDDEN", "Unknown hook.");
+  const bot = await systemBot(app.id);
+  if (!bot) throw new WorkflowError("FORBIDDEN", "Unknown hook.");
+  const { channelsOf } = await import("./connected-systems");
+  if (!Number(app.active) || !channelsOf(app.channels).telegram) {
+    const chat = update.message?.chat.id ?? update.callback_query?.from.id;
+    if (chat) await botCtx.run(bot, () => telegramSend(String(chat), "Support on Telegram is not available for this app right now. / በቴሌግራም ድጋፍ አሁን አይገኝም።"));
+    return { ok: true };
+  }
+  return botCtx.run(bot, () => handleUpdate(update));
+}
+
+async function handleUpdate(update: TgUpdate) {
   const sd = await import("./support-desk");
   if (!(await sd.supportConfig()).enabled) return { ok: true };
   const x = await telegramTexts();

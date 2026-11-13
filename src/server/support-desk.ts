@@ -252,7 +252,8 @@ export async function identify(app: AppFull, input: { id?: string | null; name?:
   }
   const cfg = await supportConfig();
   const online = await availableAgents(null, cfg);
-  return { token: tokenFor(app, id), customer: { id, name, email }, app: { name: app.name, greeting: app.greeting, color: app.color }, online: online.length > 0, hours: cfg.hours, awayMessage: cfg.awayMessage, recordCalls: cfg.recordCalls, recordingNotice: cfg.recordingNotice };
+  const channels = (await import("./connected-systems")).channelsOf((await get<{ channels: string | null }>("SELECT channels FROM sup_apps WHERE id = ?", app.id))?.channels);
+  return { token: tokenFor(app, id), customer: { id, name, email }, app: { name: app.name, greeting: app.greeting, color: app.color }, channels, online: online.length > 0, hours: cfg.hours, awayMessage: cfg.awayMessage, recordCalls: cfg.recordCalls, recordingNotice: cfg.recordingNotice };
 }
 
 export async function customerByToken(app: AppFull, token: string | null | undefined) {
@@ -472,10 +473,25 @@ async function createTicketRow(input: { subject: string; body: string; customerI
     if (input.category) await run("UPDATE sup_tickets SET category = ? WHERE id = ?", clean(input.category, 40), id);
   });
   await activity(input.authorKind === "agent" ? input.authorId : null, id, "created", `${input.channel}${q ? `, queue ${q.name}` : ""}`);
+  await ticketEvent(id, "ticket.created", { body: body.slice(0, 2000) });
   return id;
 }
 
+// A ticket event for its connected system's webhook (customer by the system's own id, never internal notes).
+async function ticketEvent(ticketId: string, event: "ticket.created" | "ticket.replied" | "ticket.solved", extra: Record<string, unknown> = {}) {
+  try {
+    const t = await get<{ id: string; number: number; subject: string; status: string; priority: string; channel: string; app_id: string | null; customer_ext: string | null }>(
+      "SELECT t.id, t.number, t.subject, t.status, t.priority, t.channel, t.app_id, c.external_id AS customer_ext FROM sup_tickets t LEFT JOIN sup_customers c ON c.id = t.customer_id WHERE t.id = ?",
+      ticketId,
+    );
+    if (t?.app_id) await (await import("./connected-systems")).systemEvent(t.app_id, event, { ticket: { id: t.id, number: t.number, subject: t.subject, status: t.status, priority: t.priority, channel: t.channel }, customerId: t.customer_ext, ...extra });
+  } catch (e) {
+    console.error("system webhook", e);
+  }
+}
+
 export async function customerCreateTicket(app: AppFull, token: string, input: { subject?: string; message: string; priority?: Priority }) {
+  await (await import("./connected-systems")).needChannel(app.id, "web_chat");
   const c = await customerByToken(app, token);
   const id = await createTicketRow({ subject: input.subject ?? "", body: input.message, customerId: c.id, appId: app.id, appQueue: app.queue_id, channel: "widget", priority: input.priority === "urgent" ? "high" : input.priority, authorKind: "customer", authorId: c.id });
   const who = await autoAssign(id);
@@ -488,8 +504,8 @@ export async function customerCreateTicket(app: AppFull, token: string, input: {
 }
 
 // A ticket from email or Telegram (src/server/support-channels.ts), given out as any other.
-export async function createTicketFromChannel(input: { subject: string; body: string; customerId: string; channel: "email" | "telegram" | "web"; emailId?: string | null; appQueue: string | null; category?: string | null }) {
-  const id = await createTicketRow({ subject: input.subject, body: input.body, customerId: input.customerId, appId: null, appQueue: input.appQueue, channel: input.channel, authorKind: "customer", authorId: input.customerId, emailId: input.emailId ?? null, category: input.category ?? null });
+export async function createTicketFromChannel(input: { subject: string; body: string; customerId: string; channel: "email" | "telegram" | "web"; emailId?: string | null; appQueue: string | null; appId?: string | null; category?: string | null }) {
+  const id = await createTicketRow({ subject: input.subject, body: input.body, customerId: input.customerId, appId: input.appId ?? null, appQueue: input.appQueue, channel: input.channel, authorKind: "customer", authorId: input.customerId, emailId: input.emailId ?? null, category: input.category ?? null });
   if (!(await autoAssign(id))) {
     const t = await get<{ number: number; subject: string }>("SELECT number, subject FROM sup_tickets WHERE id = ?", id);
     await notify((await supportConfig()).leads, { type: "assignment", title: `Ticket #${t?.number} waits: no agent is free`, body: t?.subject ?? "", link: `/support?ticket=${id}`, dedupeKey: `sup-wait-${id}` }, nowIso());
@@ -525,6 +541,7 @@ export async function customerMessages(app: AppFull, token: string, ticketId: st
 }
 
 export async function customerReply(app: AppFull, token: string, ticketId: string, body: string) {
+  await (await import("./connected-systems")).needChannel(app.id, "web_chat");
   const { c, t } = await customerTicket(app, token, ticketId);
   const text = clean(body, 8000);
   if (!text) throw new WorkflowError("VALIDATION", "Write a message.");
@@ -646,7 +663,25 @@ export async function agentReply(user: AppUser, ticketId: string, input: { body:
     );
   } else await run("UPDATE sup_tickets SET updated_at = ? WHERE id = ?", now, t.id);
   await activity(user.id, t.id, input.internal ? "note" : "replied", body.slice(0, 120));
+  if (!input.internal) await ticketEvent(t.id, "ticket.replied", { reply: body.slice(0, 2000), agent: user.name.split(" ")[0] });
   if (input.status) await setTicketStatus(user, t.id, input.status);
+}
+
+// The agent texts the customer (the system's SMS channel must be on); kept on the ticket as a public message.
+export async function agentSms(user: AppUser, ticketId: string, text: string) {
+  const t = await canWork(user, ticketId);
+  const body = clean(text, 600);
+  if (!body) throw new WorkflowError("VALIDATION", "Write the SMS.");
+  await (await import("./connected-systems")).needChannel(t.app_id, "sms");
+  const phone = t.customer_id ? (await get<{ phone: string | null }>("SELECT phone FROM sup_customers WHERE id = ?", t.customer_id))?.phone : null;
+  if (!phone) throw new WorkflowError("VALIDATION", "This customer has no phone number.");
+  const { sendSmsMessage } = await import("./sms");
+  const r = await sendSmsMessage({ to: phone, message: body, purpose: "alerts" });
+  const now = nowIso();
+  await run("INSERT INTO sup_messages (id, ticket_id, author_kind, author_id, body, internal, created_at) VALUES (?, ?, 'agent', ?, ?, 0, ?)", uid("smg_"), t.id, user.id, `SMS to ${phone}: ${body}`, now);
+  await run("UPDATE sup_tickets SET first_response_at = COALESCE(first_response_at, ?), last_agent_at = ?, updated_at = ? WHERE id = ?", now, now, now, t.id);
+  await activity(user.id, t.id, "sms", `${r.provider}, ${r.attempts} ${r.attempts === 1 ? "try" : "tries"}`);
+  return { provider: r.provider };
 }
 
 export async function setTicketStatus(user: AppUser, ticketId: string, status: TicketStatus) {
@@ -663,6 +698,7 @@ export async function setTicketStatus(user: AppUser, ticketId: string, status: T
     t.id,
   );
   await activity(user.id, t.id, "status", `${t.status} to ${status}`);
+  if (status === "solved") await ticketEvent(t.id, "ticket.solved");
   if (status === "solved" && t.customer_id)
     await run("INSERT INTO sup_messages (id, ticket_id, author_kind, author_id, body, internal, created_at) VALUES (?, ?, 'system', NULL, ?, 0, ?)", uid("smg_"), t.id, "This conversation is marked solved. Reply if you still need help, or rate the help you got.", now);
 }
@@ -749,6 +785,7 @@ export async function iceConfig() {
 // The customer calls from the widget: a ticket is opened (or the open one used) and the call rings for its agent,
 // or for any free agent of the queue.
 export async function customerStartCall(app: AppFull, token: string, input: { ticketId?: string | null; offer: string; consent: boolean }) {
+  await (await import("./connected-systems")).needChannel(app.id, "calls");
   const cfg = await supportConfig();
   const c = await customerByToken(app, token);
   if (cfg.recordCalls && !input.consent) throw new WorkflowError("VALIDATION", "Agree to the call being recorded, or write to us instead.");

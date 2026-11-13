@@ -437,6 +437,16 @@ PREPS["hotfix-support-home"] = async () => {
   await sd.customerCreateTicket(A, c.token, { subject: "Video does not load", message: "The grade 6 video stops" });
 };
 
+// Update 1.1 connected systems: support on with one connected app (MySeed Academy).
+PREPS["update-1-1-systems"] = async () => {
+  await passwordOnly();
+  const sd = await import("../../src/server/support-desk");
+  const a = await admin();
+  await sd.saveSupportConfig(a, { enabled: true, leads: [] });
+  const q = await sd.saveQueue(a, { name: "Academy", keywords: [], members: [a.id], strategy: "least_busy" });
+  await sd.saveApp(a, { name: "MySeed Academy", origins: ["https://academy.example"], queueId: q });
+};
+
 // Update 1.0 Phase 2: Legacy CMS points at the fake Noor that the browser test starts on this port.
 PREPS["update-1-p2"] = async () => {
   await passwordOnly();

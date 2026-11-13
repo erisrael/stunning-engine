@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 63;
+export const SCHEMA_VERSION = 64;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -3532,6 +3532,20 @@ BEGIN
   END LOOP;
 END
 $do$;
+-- v64: connected systems (Update 1.1). Each support app is a connected system with its own Telegram bot (sealed token,
+-- webhook secret), channel switches (web chat, Telegram, calls, SMS), a signed outgoing webhook for ticket events and
+-- a description. The single bot in settings stays the default one.
+ALTER TABLE sup_apps ADD COLUMN IF NOT EXISTS description TEXT;
+ALTER TABLE sup_apps ADD COLUMN IF NOT EXISTS channels TEXT;
+ALTER TABLE sup_apps ADD COLUMN IF NOT EXISTS tg_token TEXT;
+ALTER TABLE sup_apps ADD COLUMN IF NOT EXISTS tg_secret TEXT;
+ALTER TABLE sup_apps ADD COLUMN IF NOT EXISTS tg_bot TEXT;
+ALTER TABLE sup_apps ADD COLUMN IF NOT EXISTS webhook_url TEXT;
+ALTER TABLE sup_apps ADD COLUMN IF NOT EXISTS webhook_secret TEXT;
+ALTER TABLE sup_apps ADD COLUMN IF NOT EXISTS webhook_events TEXT;
+ALTER TABLE sup_apps ADD COLUMN IF NOT EXISTS webhook_last TEXT;
+CREATE INDEX IF NOT EXISTS idx_sup_apps_tg ON sup_apps(tg_secret);
+
 `;
 
 // Tables in dependency order; used to empty the workspace and to export or restore backups.

@@ -18,6 +18,7 @@ import { WorkflowError } from "@/server/workflow";
 //   GET  calls/<id>                   -> { status, answer, ice, agent }
 //   POST calls/<id>/ice               { candidate }
 //   POST calls/<id>/end
+//   POST customers/sync             server to server, X-App-Secret: <app secret>  { customers: [{ id, name, email?, phone?, meta? }] }
 //   GET  ping                         checks the key and the setup                 -> { ok, app, checks, time }
 // Browsers may call it from the app's allowed web addresses (Admin, Support setup, Apps); apps' servers and mobile
 // apps send no Origin and are not limited by it.
@@ -55,6 +56,7 @@ async function handle(request: Request, ctx: Ctx, method: "GET" | "POST") {
       // For developers: is the key right, and is support ready for this app? No customer token needed.
       out = { ok: true, app: app.name, time: new Date().toISOString(), checks: await sd.appChecks({ id: app.id, name: app.name, active: !!app.active, origins: JSON.parse(app.origins || "[]"), queueId: app.queue_id, verifyIdentity: !!app.verify_identity }) };
     } else if (method === "POST" && a === "identify") out = await sd.identify(app, body as Parameters<typeof sd.identify>[1]);
+    else if (a === "customers" && id === "sync" && method === "POST") out = await (await import("@/server/connected-systems")).syncCustomers(app.public_key, request.headers.get("x-app-secret"), body.customers);
     else if (a === "tickets" && !id && method === "GET") out = await sd.customerTickets(app, token);
     else if (a === "tickets" && !id && method === "POST") out = { id: await sd.customerCreateTicket(app, token, { subject: s(body.subject), message: s(body.message), priority: s(body.priority) as sd.Priority }) };
     else if (a === "tickets" && id && b === "messages" && method === "GET") out = await sd.customerMessages(app, token, id, new URL(request.url).searchParams.get("since"));

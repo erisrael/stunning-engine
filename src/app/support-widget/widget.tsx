@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
 type User = { id: string | null; name: string | null; email: string | null; phone: string | null; hash: string | null; meta?: Record<string, string> };
-type Session = { token: string; customer: { id: string; name: string }; app: { name: string; greeting: string | null; color: string | null }; online: boolean; hours: string; awayMessage: string; recordCalls: boolean; recordingNotice: string };
+type Session = { token: string; customer: { id: string; name: string }; app: { name: string; greeting: string | null; color: string | null }; online: boolean; hours: string; awayMessage: string; recordCalls: boolean; recordingNotice: string; channels?: { web_chat: boolean; telegram: boolean; calls: boolean; sms: boolean } };
 type Ticket = { id: string; number: number; subject: string; status: string; updated_at: string; rating: number | null };
 type Msg = { id: string; from: string; name: string; body: string; at: string };
 
@@ -479,6 +479,8 @@ function CallButton({ api, s, ticketId, color, onTicket }: { api: Api; s: Sessio
       await stop(false);
     }
   };
+  // The connected system switched calls off: no call button.
+  if (state === "idle" && s.channels?.calls === false) return null;
   if (state === "idle")
     return (
       <Button variant="outline" className="w-full" onClick={() => (s.recordCalls ? setState("consent") : void start())} data-call-us>

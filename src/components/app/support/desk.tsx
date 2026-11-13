@@ -7,7 +7,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { CircleIcon, HeadphonesIcon, Loader2Icon, LockIcon, MicIcon, PaperclipIcon, PhoneCallIcon, PhoneIcon, PhoneOffIcon, PlusIcon, SendIcon } from "lucide-react";
+import { CircleIcon, HeadphonesIcon, Loader2Icon, LockIcon, MessageSquareTextIcon, MicIcon, PaperclipIcon, PhoneCallIcon, PhoneIcon, PhoneOffIcon, PlusIcon, SendIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -305,6 +305,7 @@ export function TicketView({ d, agents, queues, canned, me, lead, articles = [],
   const [internal, setInternal] = React.useState(false);
   const [after, setAfter] = React.useState<TicketStatus | "">("");
   const [phone, setPhone] = React.useState<{ direction: "inbound" | "outbound"; minutes: number; notes: string } | null>(null);
+  const [sms, setSms] = React.useState<string | null>(null);
   // Moving to another queue (Support to Finance and back) asks for a note for the next team.
   const [move, setMove] = React.useState<{ queueId: string; note: string } | null>(null);
   const end = React.useRef<HTMLDivElement>(null);
@@ -370,6 +371,11 @@ export function TicketView({ d, agents, queues, canned, me, lead, articles = [],
           <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setPhone(phone ? null : { direction: "outbound", minutes: 5, notes: "" })}>
             <PhoneIcon /> Log a phone call
           </Button>
+          {d.customer?.phone && (
+            <Button size="sm" variant="ghost" onClick={() => setSms(sms === null ? "" : null)} data-sms-open>
+              <MessageSquareTextIcon /> Send SMS
+            </Button>
+          )}
         </CardContent>
         {move && (
           <CardContent className="flex flex-wrap items-end gap-2 border-t pt-3 text-sm" data-transfer>
@@ -380,6 +386,15 @@ export function TicketView({ d, agents, queues, canned, me, lead, articles = [],
             </Button>
             <Button size="sm" variant="ghost" onClick={() => setMove(null)}>
               Cancel
+            </Button>
+          </CardContent>
+        )}
+        {sms !== null && (
+          <CardContent className="flex flex-wrap items-end gap-2 border-t pt-3 text-sm" data-send-sms>
+            <span className="text-xs text-muted-foreground">To {d.customer?.phone}. Kept on the ticket.</span>
+            <Input aria-label="SMS text" maxLength={600} placeholder="Short message" className="h-8 min-w-72 flex-1" value={sms} onChange={(e) => setSms(e.target.value)} />
+            <Button size="sm" disabled={busy || !sms.trim()} onClick={async () => (await act(() => A.agentSmsAction(t.id, sms), "SMS sent")) && setSms(null)}>
+              Send
             </Button>
           </CardContent>
         )}

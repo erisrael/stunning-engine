@@ -99,3 +99,20 @@ export async function ticketPreviewAction(ticketId: string) {
     };
   });
 }
+
+// Connected systems (Update 1.1, phase 11).
+export async function saveSystemAction(id: string, input: Parameters<typeof import("@/server/connected-systems").saveSystem>[2]) {
+  return wrap(async () => (await import("@/server/connected-systems")).saveSystem(await requireViewer(), id, input));
+}
+export async function newWebhookSecretAction(id: string) {
+  return wrap(async () => (await import("@/server/connected-systems")).newWebhookSecret(await requireViewer(), id));
+}
+export async function connectSystemBotAction(id: string, token: string) {
+  return wrap(async () => (await import("@/server/support-channels")).connectSystemBot(await requireViewer(), id, token, await (await import("@/server/password-reset")).appOrigin()));
+}
+export async function disconnectSystemBotAction(id: string) {
+  return wrap(async () => (await import("@/server/support-channels")).disconnectSystemBot(await requireViewer(), id));
+}
+export async function agentSmsAction(ticketId: string, text: string) {
+  return wrap(async () => sd.agentSms(await requireViewer(), ticketId, text));
+}
