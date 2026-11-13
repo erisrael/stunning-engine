@@ -13,6 +13,8 @@
 // who may use it (by role), the model, and a daily limit per person.
 
 import Anthropic from "@anthropic-ai/sdk";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { recordCall } from "./call-monitor";
 import { z } from "zod";
 import { all, get, nowIso, parseJson, run, uid } from "./db";
 import { seal, unseal } from "./secrets";
@@ -106,8 +108,10 @@ export type AiConfig = {
   // Agent mode: the person may let it do the allowed actions itself (each one logged), up to agentMax per question.
   agent: boolean;
   agentMax: number;
+  // Admin's prices per model, US dollars per million tokens, for the cost on the AI page.
+  prices?: Record<string, { in: number; out: number }>;
 };
-type Stored = AiConfig & { keyEnc?: string | null };
+type Stored = AiConfig & { keyEnc?: string | null; keyOverride?: string | null };
 const DEFAULT: AiConfig = { on: false, provider: "anthropic", model: "claude-opus-5-5", effort: "low", offRoles: [], dailyLimit: 60, actions: true, agent: true, agentMax: 8 };
 
 const fake = () => process.env.AI_FAKE === "1";
@@ -151,6 +155,7 @@ export async function saveAiConfig(user: AppUser, input: Partial<AiConfig> & { k
     agent: input.agent ?? cur.agent,
     agentMax: Math.max(1, Math.min(25, Math.round(Number(input.agentMax ?? cur.agentMax) || 8))),
     keyEnc: input.clearKey ? null : input.key?.trim() ? await seal(input.key.trim()) : (cur.keyEnc ?? null),
+    prices: cur.prices ?? {},
   };
   await run(
     "INSERT INTO settings (key, value, updated_at, updated_by) VALUES ('cfg.assistant.ai', ?, ?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by",
@@ -171,6 +176,7 @@ export type StoredAiModel = {
   isDefault: boolean;
   active: boolean;
   hasKey?: boolean;
+  keyHint?: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -189,12 +195,23 @@ export async function listAiModels(user: AppUser): Promise<StoredAiModel[]> {
     updated_at: string;
   }>("SELECT id, name, provider, model, api_key_enc, custom_base_url, is_default, active, created_at, updated_at FROM ai_models ORDER BY is_default DESC, name ASC");
 
-  return rows.map((r) => ({
+  const hint = async (enc: string | null) => {
+    if (!enc) return null;
+    try {
+      const k = await unseal(enc);
+      return k ? `…${k.slice(-4)}` : null;
+    } catch {
+      return null;
+    }
+  };
+  const hints = await Promise.all(rows.map((r) => hint(r.api_key_enc)));
+  return rows.map((r, i) => ({
     id: r.id,
     name: r.name,
     provider: r.provider as AiProvider,
     model: r.model,
     hasKey: !!r.api_key_enc,
+    keyHint: hints[i],
     customBaseUrl: r.custom_base_url,
     isDefault: !!r.is_default,
     active: !!r.active,
@@ -1232,7 +1249,7 @@ export async function askAi(user: Viewer, input: { history: Turn[]; text: string
   const out: Out = { text: "", proposals: [], links: [], show: null, done: [], conversationId };
   const tools = toolDefs(allowed, agentOn, ab);
   const system = agentOn ? `${SYSTEM}\n\n${AGENT}` : SYSTEM;
-  const call = fake() ? fakeModel : await realModel(cfg);
+  const call = fake() ? withLog(cfg, async (req) => { const r = await fakeModel(req); noteUsage(200, 40); return r; }) : await realModel(cfg);
   const finish = async () => {
     await appendConversation(user, conversationId, text, out);
     return out;
@@ -1367,7 +1384,7 @@ export async function askAnalysis(user: Viewer, input: { task: string; data: unk
   const prompt = `${input.task}\n\n${input.question ? `The person asks: ${String(input.question).slice(0, 1000)}\n\n` : ""}The data (worked out by the app):\n${JSON.stringify(input.data).slice(0, 40000)}`;
   if (fake() && /JSON only/.test(input.task)) return "[]";
   if (fake()) return `Analysis: ${input.task.slice(0, 60)}. ${input.question ? `On "${input.question}": ` : ""}the data has ${Object.keys((input.data ?? {}) as object).length} parts.`;
-  const call = await realModel(cfg);
+  const call = await realModel(cfg, "analysis");
   const res = await call({ system: SYSTEM, tools: [], messages: [{ role: "user", content: prompt }] });
   return res.content
     .filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === "text")
@@ -1378,8 +1395,36 @@ export async function askAnalysis(user: Viewer, input: { task: string; data: unk
 
 type ModelCall = (r: { system: string; tools: Anthropic.Beta.BetaTool[]; messages: Anthropic.Beta.BetaMessageParam[] }) => Promise<{ stop_reason: string | null; content: Anthropic.Beta.BetaContentBlock[] }>;
 
-async function realModel(cfg: Stored): Promise<ModelCall> {
-  const key = await apiKey();
+// Each model call is recorded in the call monitor with its time, tokens and cost (Update 1.0, phase 7).
+const usageStore = new AsyncLocalStorage<{ in: number; out: number }>();
+function noteUsage(inT?: number | null, outT?: number | null) {
+  const u = usageStore.getStore();
+  if (!u) return;
+  u.in += Number(inT ?? 0) || 0;
+  u.out += Number(outT ?? 0) || 0;
+}
+function withLog(cfg: Stored, inner: ModelCall, label = "assistant"): ModelCall {
+  return async (req) => {
+    const t0 = Date.now();
+    const u = { in: 0, out: 0 };
+    const price = cfg.prices?.[cfg.model];
+    const cost = () => (price ? Math.round(((u.in * price.in + u.out * price.out) / 1e6) * 1e6) / 1e6 : null);
+    try {
+      const r = await usageStore.run(u, () => inner(req));
+      await recordCall({ source: "ai", ok: true, status: 200, ms: Date.now() - t0, summary: `${cfg.provider} ${cfg.model} · ${label}`, tokensIn: u.in || null, tokensOut: u.out || null, cost: cost() });
+      return r;
+    } catch (e) {
+      await recordCall({ source: "ai", ok: false, status: 0, ms: Date.now() - t0, summary: `${cfg.provider} ${cfg.model} · ${label}`, error: e instanceof Error ? e.message : String(e), tokensIn: u.in || null, tokensOut: u.out || null, cost: cost() });
+      throw e;
+    }
+  };
+}
+async function realModel(cfg: Stored, label = "assistant"): Promise<ModelCall> {
+  return withLog(cfg, await rawModel(cfg), label);
+}
+
+async function rawModel(cfg: Stored): Promise<ModelCall> {
+  const key = cfg.keyOverride ?? (await apiKey());
   if (!key) throw new WorkflowError("INVALID_STATE", "No API key is set (Admin, Assistant, AI).");
 
   if (cfg.provider === "gemini") {
@@ -1440,6 +1485,7 @@ async function realModel(cfg: Stored): Promise<ModelCall> {
           throw new WorkflowError("INVALID_STATE", `Gemini API returned status ${res.status}: ${errBody.slice(0, 300) || res.statusText}`);
         }
         const data = await res.json();
+        noteUsage(data?.usageMetadata?.promptTokenCount, data?.usageMetadata?.candidatesTokenCount);
         const candidate = data?.candidates?.[0]?.content;
         const parts = candidate?.parts || [];
         const content: Anthropic.Beta.BetaContentBlock[] = [];
@@ -1539,6 +1585,7 @@ async function realModel(cfg: Stored): Promise<ModelCall> {
           throw new WorkflowError("INVALID_STATE", `OpenAI API returned status ${res.status}: ${errBody.slice(0, 300) || res.statusText}`);
         }
         const data = await res.json();
+        noteUsage(data?.usage?.prompt_tokens, data?.usage?.completion_tokens);
         const choice = data?.choices?.[0]?.message;
         const toolCalls = choice?.tool_calls;
         if (toolCalls && toolCalls.length) {
@@ -1584,6 +1631,7 @@ async function realModel(cfg: Stored): Promise<ModelCall> {
         tools,
         messages,
       });
+      noteUsage(res.usage?.input_tokens, res.usage?.output_tokens);
       return { stop_reason: res.stop_reason, content: res.content };
     } catch (e) {
       if (e instanceof Anthropic.AuthenticationError) throw new WorkflowError("INVALID_STATE", "The AI key was refused. Admin checks it in Admin, Assistant, AI.");
@@ -1600,7 +1648,7 @@ export async function testAi(user: AppUser) {
   if (!can(user, "users.manage")) throw new WorkflowError("FORBIDDEN", "Only Admin tests the assistant.");
   if (fake()) return { ok: true, model: "fake" };
   const cfg = await stored();
-  const call = await realModel(cfg);
+  const call = await realModel(cfg, "test");
   const r = await call({ system: SYSTEM, tools: [], messages: [{ role: "user", content: "Say OK." }] });
   return { ok: r.stop_reason !== "refusal", model: cfg.model };
 }
@@ -1652,3 +1700,97 @@ const fakeModel: ModelCall = async ({ messages, tools }) => {
   if (/who is|find/.test(q)) return use("find_people", { text: q.replace(/.*(who is|find)\s*/, "") });
   return { stop_reason: "end_turn", content: [block({ type: "text", text: "I can look at your work, leave and attendance, find people and pages, and prepare actions for you to confirm.", citations: null })] };
 };
+
+// ---------------------------------------------------------------------------
+// The AI page (Update 1.0, phase 7): prices, usage and cost from the call monitor, and a test console.
+// ---------------------------------------------------------------------------
+
+export async function saveAiPrices(user: AppUser, prices: Record<string, { in: number; out: number }>) {
+  if (!can(user, "users.manage")) throw new WorkflowError("FORBIDDEN", "Only Admin sets AI prices.");
+  const cur = await stored();
+  const clean: Record<string, { in: number; out: number }> = {};
+  for (const [m, p] of Object.entries(prices ?? {})) {
+    const i = Number(p?.in);
+    const o = Number(p?.out);
+    if (m.trim() && Number.isFinite(i) && Number.isFinite(o) && i >= 0 && o >= 0) clean[m.trim().slice(0, 80)] = { in: i, out: o };
+  }
+  const next: Stored = { ...cur, prices: clean };
+  await run(
+    "INSERT INTO settings (key, value, updated_at, updated_by) VALUES ('cfg.assistant.ai', ?, ?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by",
+    JSON.stringify(next),
+    nowIso(),
+    user.id,
+  );
+  await audit({ actor: user }, { action: "settings.assistant.ai", summary: `${user.name} set AI prices for ${Object.keys(clean).length} models` });
+  return clean;
+}
+
+export async function aiCosts(user: AppUser, days = 30) {
+  if (!can(user, "users.manage")) throw new WorkflowError("FORBIDDEN", "Only Admin sees this.");
+  const since = new Date(Date.now() - days * 864e5).toISOString();
+  const rows = await all<{ day: string; summary: string; ok: number; ms: number; tokens_in: number | null; tokens_out: number | null; cost: number | null; test: number }>(
+    "SELECT substr(at, 1, 10) AS day, summary, ok, ms, tokens_in, tokens_out, cost, test FROM int_calls WHERE source = 'ai' AND at >= ?",
+    since,
+  );
+  const byDay = new Map<string, { calls: number; failures: number; tokensIn: number; tokensOut: number; cost: number }>();
+  const byModel = new Map<string, { calls: number; failures: number; tokensIn: number; tokensOut: number; cost: number; ms: number }>();
+  for (const r of rows) {
+    const d = byDay.get(r.day) ?? { calls: 0, failures: 0, tokensIn: 0, tokensOut: 0, cost: 0 };
+    d.calls++;
+    if (!r.ok) d.failures++;
+    d.tokensIn += Number(r.tokens_in ?? 0);
+    d.tokensOut += Number(r.tokens_out ?? 0);
+    d.cost += Number(r.cost ?? 0);
+    byDay.set(r.day, d);
+    const model = r.summary.split(" · ")[0] ?? "";
+    const m = byModel.get(model) ?? { calls: 0, failures: 0, tokensIn: 0, tokensOut: 0, cost: 0, ms: 0 };
+    m.calls++;
+    if (!r.ok) m.failures++;
+    m.tokensIn += Number(r.tokens_in ?? 0);
+    m.tokensOut += Number(r.tokens_out ?? 0);
+    m.cost += Number(r.cost ?? 0);
+    m.ms += Number(r.ms ?? 0);
+    byModel.set(model, m);
+  }
+  const total = [...byDay.values()].reduce((t, d) => ({ calls: t.calls + d.calls, failures: t.failures + d.failures, tokensIn: t.tokensIn + d.tokensIn, tokensOut: t.tokensOut + d.tokensOut, cost: t.cost + d.cost }), { calls: 0, failures: 0, tokensIn: 0, tokensOut: 0, cost: 0 });
+  return {
+    days,
+    total,
+    byDay: [...byDay.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([day, v]) => ({ day, ...v })),
+    byModel: [...byModel.entries()].sort((a, b) => b[1].calls - a[1].calls).map(([model, v]) => ({ model, ...v, avgMs: v.calls ? Math.round(v.ms / v.calls) : 0 })),
+    prices: (await stored()).prices ?? {},
+  };
+}
+
+// Admin's test console: one question to the chosen model (or the one in use), with the answer, time and tokens.
+export async function aiConsole(user: AppUser, input: { prompt: string; modelId?: string | null }) {
+  if (!can(user, "users.manage")) throw new WorkflowError("FORBIDDEN", "Only Admin uses the test console.");
+  const prompt = String(input.prompt ?? "").trim().slice(0, 4000);
+  if (!prompt) throw new WorkflowError("VALIDATION", "Type a question to send.");
+  const cfg: Stored = { ...(await stored()) };
+  if (input.modelId) {
+    const row = await get<{ provider: AiProvider; model: string; api_key_enc: string | null; custom_base_url: string | null }>("SELECT provider, model, api_key_enc, custom_base_url FROM ai_models WHERE id = ?", input.modelId);
+    if (!row) throw new WorkflowError("NOT_FOUND", "That model is gone.");
+    cfg.provider = row.provider;
+    cfg.model = row.model;
+    cfg.customBaseUrl = row.custom_base_url;
+    if (row.api_key_enc) cfg.keyOverride = await unseal(row.api_key_enc);
+  }
+  const t0 = Date.now();
+  const u = { in: 0, out: 0 };
+  const inner = fake() ? (async () => ({ stop_reason: "end_turn", content: [{ type: "text", text: `[test] ${cfg.model} received: ${prompt.slice(0, 80)}`, citations: null } as unknown as Anthropic.Beta.BetaContentBlock] })) as ModelCall : await rawModel(cfg);
+  const logged = withLog(cfg, async (req) => {
+    const r = await inner(req);
+    if (fake()) noteUsage(Math.ceil(prompt.length / 4), 20);
+    const st = usageStore.getStore();
+    if (st) Object.assign(u, st);
+    return r;
+  }, "console");
+  try {
+    const r = await logged({ system: SYSTEM, tools: [], messages: [{ role: "user", content: prompt }] });
+    const text = r.content.filter((b) => b.type === "text").map((b) => (b as Anthropic.Beta.BetaTextBlock).text).join("").trim();
+    return { ok: true, text: text || "(no text)", ms: Date.now() - t0, tokensIn: u.in, tokensOut: u.out, model: `${cfg.provider} ${cfg.model}` };
+  } catch (e) {
+    return { ok: false, text: e instanceof Error ? e.message : String(e), ms: Date.now() - t0, tokensIn: u.in, tokensOut: u.out, model: `${cfg.provider} ${cfg.model}` };
+  }
+}

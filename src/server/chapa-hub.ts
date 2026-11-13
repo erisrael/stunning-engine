@@ -19,6 +19,7 @@ import {
   type ChapaStatus,
   type ChapaTx,
 } from "@/lib/chapa";
+import { trackedFetch } from "./call-monitor";
 
 // Chapa for every business (Update 1.0, Phase 3).
 //   - Each Chapa account is a business with its own keys, mode (test/live), sync interval and health.
@@ -222,13 +223,13 @@ export async function chapaApi(r: AccRow, path: string, init: { method?: string;
   if (new URL(url).origin !== new URL(API()).origin) throw new Error("Unexpected Chapa address.");
   for (let attempt = 0; ; attempt++) {
     try {
-      const res = await fetch(url, {
+      const res = await trackedFetch("chapa", url, {
         method: init.method ?? "GET",
         headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", Accept: "application/json" },
         body: init.body === undefined ? undefined : JSON.stringify(init.body),
         signal: AbortSignal.timeout(20_000),
         cache: "no-store",
-      });
+      }, { summary: r.name });
       if ((res.status === 429 || res.status >= 500) && attempt < 3) {
         await sleep(500 * 2 ** attempt);
         continue;

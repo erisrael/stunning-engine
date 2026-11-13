@@ -894,7 +894,7 @@ export function Timesheets({ rows, month }: { rows: TimesheetRow[]; month: strin
 // ---------------------------------------------------------------------------
 
 type PersonSetup = { id: string; code: string; name: string; department: string | null; shift: string; rota: string[] | null; hasPin: boolean; badge: string | null; face: boolean };
-type KioskInfo = { id: string; name: string; site?: string; setupPin?: string | null; active: boolean; lastSeenAt: string | null; paired: boolean; setupExpires: string | null; createdAt: string };
+type KioskInfo = { modes?: string[]; testUntil?: string | null; testResult?: { ok: boolean; message: string; mode: string; at: string } | null; health?: string; id: string; name: string; site?: string; setupPin?: string | null; active: boolean; lastSeenAt: string | null; paired: boolean; setupExpires: string | null; createdAt: string };
 
 function Row({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
@@ -1337,7 +1337,7 @@ export function Kiosks({ kiosks, sites }: { kiosks: KioskInfo[]; sites: {id:stri
             <li key={k.id} className="flex flex-wrap items-center gap-2 px-3 py-2 text-sm">
               <span className="font-medium">{k.name}</span>
               <Badge variant="outline" className="text-xs font-normal text-muted-foreground">{sites.find(s => s.id === k.site || s.name === k.site)?.name || k.site || "Unassigned office"}</Badge>
-              {!k.active ? <Badge variant="secondary">Off</Badge> : k.paired ? <Badge variant="outline">Set up</Badge> : <Badge variant="secondary">Waiting for setup</Badge>}
+              {!k.active ? <Badge variant="secondary">Off</Badge> : !k.paired ? <Badge variant="secondary">Waiting for setup</Badge> : k.health === "silent" ? <Badge variant="destructive" data-kiosk-health="silent">Not reporting</Badge> : <Badge variant="outline" className="border-emerald-500/40 text-emerald-700 dark:text-emerald-300" data-kiosk-health="online">Online</Badge>}
               <span className="text-xs text-muted-foreground">Last signal {ago(k.lastSeenAt)}</span>
               <Select value={sites.find(s => s.id === k.site || s.name === k.site)?.id ?? ""} onValueChange={async (value) => { await act(() => A.setKioskSiteAction(k.id, value), "Office connected"); setConnections({}); }} disabled={busy}>
                 <SelectTrigger className="w-44" aria-label={`Office for ${k.name}`}><SelectValue placeholder="Connect office" /></SelectTrigger>
@@ -1347,6 +1347,35 @@ export function Kiosks({ kiosks, sites }: { kiosks: KioskInfo[]; sites: {id:stri
                 const result = await act<{ ok: boolean; message: string; site: string; lastSeenAt: string | null }>(() => A.checkKioskConnectionAction(k.id));
                 if (result) setConnections(prev => ({ ...prev, [k.id]: result }));
               }}>Check connection</Button>
+              <span className="flex items-center gap-1" data-kiosk-modes={k.id}>
+                {(["qr", "face", "badge", "pin"] as const).map((m) => {
+                  const on = (k.modes ?? ["qr", "face", "badge", "pin"]).includes(m);
+                  return (
+                    <button
+                      key={m}
+                      type="button"
+                      aria-pressed={on}
+                      disabled={busy}
+                      aria-label={`${m === "qr" ? "QR" : m === "pin" ? "PIN" : m[0].toUpperCase() + m.slice(1)} on ${k.name}`}
+                      onClick={() => {
+                        const cur = k.modes ?? ["qr", "face", "badge", "pin"];
+                        void act(() => A.setKioskModesAction(k.id, on ? cur.filter((x) => x !== m) : [...cur, m]), "Check-in ways saved");
+                      }}
+                      className={cn("rounded-md border px-2 py-0.5 text-xs", on ? "border-primary/40 bg-primary/10 text-primary" : "text-muted-foreground line-through")}
+                    >
+                      {m === "qr" ? "QR" : m === "pin" ? "PIN" : m[0].toUpperCase() + m.slice(1)}
+                    </button>
+                  );
+                })}
+              </span>
+              <Button size="xs" variant="outline" disabled={busy || !k.paired || !k.active} data-kiosk-test-start={k.id} onClick={() => act(() => A.startKioskTestAction(k.id), "Test capture on for 10 minutes. Check in on the device: nothing is recorded.")}>
+                {k.testUntil ? "Testing…" : "Test capture"}
+              </Button>
+              {k.testResult && (
+                <p className={cn("w-full text-xs", k.testResult.ok ? "text-emerald-700 dark:text-emerald-300" : "text-destructive")} data-kiosk-test-result>
+                  Test {ago(k.testResult.at)} ({k.testResult.mode}): {k.testResult.message}
+                </p>
+              )}
               {connections[k.id] && <p role="status" className="w-full text-xs text-muted-foreground">{connections[k.id].site}: {connections[k.id].message} Last signal {ago(connections[k.id].lastSeenAt)}.</p>}
               <span className="ml-auto flex gap-1">
                 <Button

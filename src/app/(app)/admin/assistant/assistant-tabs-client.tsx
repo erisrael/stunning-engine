@@ -8,12 +8,14 @@ import {
   ShieldCheckIcon,
   ListChecksIcon,
   KeyIcon,
+  ActivityIcon,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AiAdmin } from "./ai-admin";
 import { RolesAdmin } from "./roles-admin";
 import { AssistantAdmin } from "./assistant-admin";
 import { HrAiAdmin } from "./hr-ai-admin";
+import { AiUsage } from "./ai-usage";
 import type { HrAiConfig } from "@/server/hr-ai";
 
 export function AssistantTabsClient({
@@ -29,6 +31,7 @@ export function AssistantTabsClient({
   stats,
   flows,
   hrAiConfig,
+  costs,
 }: {
   aiConfig: any;
   usage: any;
@@ -42,6 +45,7 @@ export function AssistantTabsClient({
   stats: any;
   flows: any[];
   hrAiConfig: HrAiConfig;
+  costs: React.ComponentProps<typeof AiUsage>["costs"];
 }) {
   const router = useRouter();
   const sp = useSearchParams();
@@ -53,9 +57,12 @@ export function AssistantTabsClient({
       onValueChange={(t) => router.replace(`/admin/assistant?tab=${t}`)}
       className="space-y-4"
     >
-      <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 h-auto p-1">
+      <TabsList className="grid w-full grid-cols-2 sm:grid-cols-5 h-auto p-1">
         <TabsTrigger value="models" className="flex items-center gap-1.5 text-xs py-2">
           <KeyIcon className="size-3.5 text-purple-600" /> AI Models &amp; Providers
+        </TabsTrigger>
+        <TabsTrigger value="usage" className="flex items-center gap-1.5 text-xs py-2">
+          <ActivityIcon className="size-3.5 text-sky-600" /> Usage, Cost &amp; Console
         </TabsTrigger>
         <TabsTrigger value="hr" className="flex items-center gap-1.5 text-xs py-2">
           <BotIcon className="size-3.5 text-emerald-600" /> HR AI Agent &amp; Rules
@@ -76,6 +83,10 @@ export function AssistantTabsClient({
           roles={roles}
           savedModels={savedModels}
         />
+      </TabsContent>
+
+      <TabsContent value="usage" className="space-y-4">
+        <AiUsage costs={costs} models={savedModels} current={{ provider: aiConfig.provider, model: aiConfig.model, on: aiConfig.on }} />
       </TabsContent>
 
       <TabsContent value="hr" className="space-y-4">

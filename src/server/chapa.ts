@@ -6,6 +6,7 @@ import { all, get, nowIso, parseJson, run, uid } from "./db";
 import { seal, unseal } from "./secrets";
 import { can, type AppUser } from "./users";
 import { audit, WorkflowError } from "./workflow";
+import { trackedFetch } from "./call-monitor";
 
 export type ChapaAccount = {
   id: string;
@@ -186,7 +187,7 @@ export async function testChapaAccount(user: AppUser, id: string): Promise<{ ok:
     // 1. First test balances endpoint
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000);
-    const res = await fetch("https://api.chapa.co/v1/balances", {
+    const res = await trackedFetch("chapa", "https://api.chapa.co/v1/balances", {
       headers: { Authorization: `Bearer ${secretKey}` },
       signal: controller.signal,
     });
@@ -208,7 +209,7 @@ export async function testChapaAccount(user: AppUser, id: string): Promise<{ ok:
     // 2. If balances returned restricted HTTP (e.g. 400/403 on standard merchant tier), test banks endpoint to verify credentials
     const bCtrl = new AbortController();
     const bTimeout = setTimeout(() => bCtrl.abort(), 8000);
-    const bankRes = await fetch("https://api.chapa.co/v1/banks", {
+    const bankRes = await trackedFetch("chapa", "https://api.chapa.co/v1/banks", {
       headers: { Authorization: `Bearer ${secretKey}` },
       signal: bCtrl.signal,
     });
@@ -255,7 +256,7 @@ export async function fetchChapaBalances(user: AppUser): Promise<ChapaBalance[]>
       try {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 8000);
-        const res = await fetch("https://api.chapa.co/v1/balances", {
+        const res = await trackedFetch("chapa", "https://api.chapa.co/v1/balances", {
           headers: { Authorization: `Bearer ${secretKey}` },
           signal: controller.signal,
         });
@@ -269,7 +270,7 @@ export async function fetchChapaBalances(user: AppUser): Promise<ChapaBalance[]>
           bal.status = secretKey.startsWith("CHASECK_TEST-") ? "test_mode" : "connected";
         } else {
           // If balances is not enabled on standard merchant tier, check bank list to confirm auth
-          const bRes = await fetch("https://api.chapa.co/v1/banks", {
+          const bRes = await trackedFetch("chapa", "https://api.chapa.co/v1/banks", {
             headers: { Authorization: `Bearer ${secretKey}` },
           });
           if (bRes.ok) {
@@ -316,7 +317,7 @@ export async function listChapaTransactions(user: AppUser, accountId?: string): 
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 10000);
-      const res = await fetch("https://api.chapa.co/v1/transactions", {
+      const res = await trackedFetch("chapa", "https://api.chapa.co/v1/transactions", {
         headers: { Authorization: `Bearer ${secretKey}` },
         signal: controller.signal,
       });

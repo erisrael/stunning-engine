@@ -49,6 +49,12 @@ export async function createKioskAction(name: string, site = "Main Entrance") {
 export async function pairKioskAgainAction(id: string) {
   return wrap(async () => att.pairAgain(await requireViewer(), id));
 }
+export async function setKioskModesAction(id: string, modes: string[]) {
+  return wrap(async () => att.setKioskModes(await requireViewer(), id, modes));
+}
+export async function startKioskTestAction(id: string) {
+  return wrap(async () => att.startKioskTest(await requireViewer(), id));
+}
 export async function setKioskActiveAction(id: string, active: boolean) {
   return wrap(async () => att.setKioskActive(await requireViewer(), id, active));
 }

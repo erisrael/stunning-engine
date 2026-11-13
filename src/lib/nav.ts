@@ -2,7 +2,7 @@ export const ADMIN_SIDEBAR_GROUPS = [
  {label:"People & roles",links:[["people","People"],["teams","Teams"],["departments","Departments"],["permissions","Roles & permissions"],["sidebar","Sidebar per role"],["access","Access"]]},
  {label:"Security",links:[["signin","Sign-in policy"],["sessions","Sessions & devices"],["privacy","Privacy"]]},
  {label:"Communication & support",links:[["customer-support","Support setup"],["chat","Chat"],["feedback","Feedback"],["reports","Safety reports"]]},
- {label:"Integrations",links:[["external-apis","External APIs"],["legacy-cms","Noor CMS user access"],["integrations","Connections"]]},
+ {label:"Integrations",links:[["/admin/integrations","Integrations hub"],["/admin/integrations?tab=monitor","Call monitor"],["/admin/integrations?tab=connections","Connections"],["external-apis","External APIs"],["legacy-cms","Noor CMS user access"]]},
  {label:"System & workspace",links:[["system","System & health"],["branding","Branding"],["files","Files & storage"],["usage","Usage"],["clean-data","Clean data"],["presentations","Presentation templates"],["/admin/assistant","Assistant"],["/admin/platform?tab=status","Platform & health"]]},
 ].map(g=>({label:g.label,links:g.links.map(([key,label])=>({label,href:key.startsWith("/")?key:`/admin?tab=${key}`}))}));
 

@@ -19,6 +19,8 @@ import { EmptyState, PageHeader } from "@/components/app/primitives";
 import { AttTabs, CorrectionsPanel, Kiosks, MyAttendance, ReviewPanel, Setup, TeamBoard, Timesheets } from "@/components/app/attendance/attendance-ui";
 import { canCapture, captureConfig, captureStatus, checkinView, flaggedEvents, listDevices } from "@/server/attendance-capture";
 import { CaptureSetup } from "@/components/app/attendance/capture-ui";
+import { SetupChecklist } from "@/components/app/attendance/setup-checklist";
+import { attendanceSetupSteps } from "@/server/attendance-setup";
 import { GeofenceAdmin } from "@/components/app/attendance/geofence-admin";
 import { geofenceConfig } from "@/server/geofence";
 import { DevicesPanel, FlaggedPanel, LeadCheckin } from "@/components/app/attendance/capture-review";
@@ -110,11 +112,17 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
     panel = <EmployeeRules rules={await aa.attendanceRules()} text={await aa.rulesText()} published={!!(await get("SELECT 1 AS x FROM settings WHERE key = 'cfg.attendance.rulesAnnouncement'"))} />;
   } else if (tab === "setup") {
     const [cfg, people] = await Promise.all([attendanceConfig(), peopleSetup(viewer)]);
-    panel = <Setup cfg={cfg} people={people} />;
+    panel = (
+      <div className="space-y-4">
+        <SetupChecklist steps={await attendanceSetupSteps()} tab="setup" />
+        <Setup cfg={cfg} people={people} />
+      </div>
+    );
   } else if (tab === "capture") {
     const [cfg, status, kiosks, origin] = await Promise.all([attendanceConfig(), captureStatus(viewer), listKiosks(viewer), appOrigin()]);
     panel = (
       <div className="space-y-4">
+        <SetupChecklist steps={await attendanceSetupSteps()} tab="capture" />
         <CaptureSetup att={cfg} cap={cap} status={status} origin={origin} />
         <GeofenceAdmin config={await geofenceConfig()} sites={cap.sites.map((s) => ({ id: s.id, name: s.name, located: s.lat !== null && s.lng !== null }))} />
         <Kiosks kiosks={kiosks} sites={cap.sites} />

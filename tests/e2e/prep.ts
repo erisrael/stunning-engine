@@ -405,6 +405,19 @@ PREPS["update-1"] = async () => {
 
 // Update 1.0 Phase 6: the same waiting Grade 12 parts, for a member taking a range and the lead approving it.
 PREPS["update-1-phase6"] = async () => PREPS["update-1"]();
+// Phase 7: calls in the monitor (Noor failing, Chapa callbacks), kiosk check-in on with one paired kiosk.
+PREPS["update-1-phase7"] = async () => {
+  await passwordOnly();
+  const M = await import("../../src/server/call-monitor");
+  for (let i = 0; i < 4; i++) await M.recordCall({ source: "noor", ok: i === 0, status: i === 0 ? 200 : 503, ms: 120, summary: "GET cms.example/admin/students", error: i === 0 ? null : "HTTP 503" });
+  await M.recordIncoming("chapa", { ok: true, status: 200, summary: "Webhook charge.success", ref: "tx-e2e-1" });
+  const a = await admin();
+  await syncFromUsers(a);
+  await att.saveAttendanceConfig(a, { methods: { anywhere: true, kiosk: true, mobile: false, face: false } });
+  const sites = (await (await import("../../src/server/attendance-capture")).captureConfig()).sites;
+  const k = await att.createKiosk(a, "Front desk", sites[0]?.name ?? "Main Entrance");
+  await att.pairKiosk(k.code);
+};
 
 // Update 1.0 Phase 2: Legacy CMS points at the fake Noor that the browser test starts on this port.
 PREPS["update-1-p2"] = async () => {

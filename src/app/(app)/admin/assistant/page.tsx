@@ -6,7 +6,7 @@ import { FLOWS } from "@/lib/assistant";
 import { allRoleOptions } from "@/server/assistant";
 import { routinesConfig } from "@/server/routines";
 import { OPS } from "@/server/assistant-ops";
-import { AI_MODELS, aiConfig, aiUsage, listAiModels } from "@/server/assistant-ai";
+import { AI_MODELS, aiConfig, aiCosts, aiUsage, listAiModels } from "@/server/assistant-ai";
 import { getHrAiConfig } from "@/server/hr-ai";
 import { AssistantTabsClient } from "./assistant-tabs-client";
 
@@ -16,7 +16,7 @@ export const metadata = { title: "Assistant" };
 // assistant is used: flows started and finished, where people give up, what matched nothing.
 export default async function AssistantAdminPage() {
   const viewer = await requireCapability("users.manage");
-  const [cfg, stats, ai, usage, roleOpts, rc, savedModels, roles, hrAi] = await Promise.all([
+  const [cfg, stats, ai, usage, roleOpts, rc, savedModels, roles, hrAi, costs] = await Promise.all([
     assistantConfig(),
     assistantStats(viewer),
     aiConfig(),
@@ -26,6 +26,7 @@ export default async function AssistantAdminPage() {
     listAiModels(viewer),
     roleCatalog(),
     getHrAiConfig(),
+    aiCosts(viewer, 30),
   ]);
   return (
     <div className="space-y-4">
@@ -46,6 +47,7 @@ export default async function AssistantAdminPage() {
         stats={stats}
         flows={FLOWS.map((f) => ({ key: f.key, title: f.title, keywords: f.keywords }))}
         hrAiConfig={hrAi}
+        costs={costs}
       />
     </div>
   );

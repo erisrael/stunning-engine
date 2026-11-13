@@ -27,7 +27,7 @@ import { cn } from "@/lib/utils";
 // their real time, signed with the kiosk's key, and sent when it is back.
 
 type Queued = { clientId: string; at: string; badge?: string; code?: string; pin?: string; sig: string };
-type Outcome = { ok: true; name: string; kind: EventKind; time: string; status?: DayStatus | null; lateMin?: number; saved?: boolean } | { ok: false; error: string };
+type Outcome = { ok: true; name: string; kind: EventKind; time: string; status?: DayStatus | null; lateMin?: number; saved?: boolean; test?: boolean } | { ok: false; error: string };
 
 const QUEUE_KEY = "myseed-kiosk-queue";
 const readQueue = (): Queued[] => {
@@ -72,6 +72,15 @@ export function KioskScreen({ initialName }: { initialName: string }) {
   const [qrSecondsLeft, setQrSecondsLeft] = React.useState<number>(15);
   const [isFullscreen, setIsFullscreen] = React.useState(false);
   const [faceOn, setFaceOn] = React.useState(false);
+  // The ways Admin lets this device take check-ins, and a test capture that records nothing.
+  const [modes, setModes] = React.useState<string[]>(["qr", "face", "badge", "pin"]);
+  const [testUntil, setTestUntil] = React.useState<string | null>(null);
+  const has = (m: "qr" | "face" | "badge" | "pin") => modes.includes(m);
+  // Screens that fall back to the badge go to the next way this device allows.
+  React.useEffect(() => {
+    if (mode === "badge" && !modes.includes("badge")) setMode(modes.includes("pin") ? "code" : modes.includes("qr") ? "qr_display" : "face");
+    else if (mode === "qr_display" && !modes.includes("qr")) setMode(modes.includes("badge") ? "badge" : modes.includes("pin") ? "code" : "face");
+  }, [mode, modes]);
   const [faceMsg, setFaceMsg] = React.useState("");
   const faceVideo = React.useRef<HTMLVideoElement>(null);
   const [code, setCode] = React.useState("");
@@ -117,6 +126,12 @@ export function KioskScreen({ initialName }: { initialName: string }) {
         setName(r.data.name);
         setTz(r.data.timezone);
         setFaceOn(!!r.data.faceOn);
+        if (Array.isArray(r.data.modes)) {
+          const m: string[] = r.data.modes;
+          setModes(m);
+          if (!m.includes("qr")) setMode((cur) => (cur === "qr_display" ? (m.includes("badge") ? "badge" : m.includes("pin") ? "code" : "face") : cur));
+        }
+        setTestUntil(r.data.testUntil ?? null);
         if (r.data.id) setKioskId(r.data.id);
         if (r.data.qrRefreshIntervalSec) setQrRefreshIntervalSec(r.data.qrRefreshIntervalSec);
         signKey.current = r.data.signKey;
@@ -214,7 +229,7 @@ export function KioskScreen({ initialName }: { initialName: string }) {
       setOnline(true);
       if (r.status === 200) {
         const d = r.data;
-        setOutcome({ ok: true, name: d.name, kind: d.kind, time: clock(new Date(d.at)), status: d.line?.status, lateMin: d.line?.lateMin });
+        setOutcome({ ok: true, name: d.name, kind: d.kind, time: clock(new Date(d.at)), status: d.line?.status, lateMin: d.line?.lateMin, test: !!d.test });
       } else if (r.status === 401) window.location.reload();
       else setOutcome({ ok: false, error: r.data.error ?? "Something went wrong. Try again." });
     } catch {
@@ -357,7 +372,7 @@ export function KioskScreen({ initialName }: { initialName: string }) {
         {/* MODE SELECTOR TABS & FULLSCREEN TOGGLE */}
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex flex-wrap items-center bg-muted border border-border rounded-lg p-0.5 text-xs">
-            <button
+            {has("qr") && <button
               type="button"
               onClick={() => setMode("qr_display")}
               className={cn(
@@ -366,8 +381,8 @@ export function KioskScreen({ initialName }: { initialName: string }) {
               )}
             >
               <QrCodeIcon className="size-3.5" /> Dynamic QR
-            </button>
-            {faceOn && online && <button
+            </button>}
+            {faceOn && has("face") && online && <button
               type="button"
               onClick={() => setMode("face")}
               className={cn(
@@ -377,16 +392,16 @@ export function KioskScreen({ initialName }: { initialName: string }) {
             >
               <ScanFaceIcon className="size-3.5" /> Face Check-In
             </button>}
-            <button
+            {(has("badge") || has("pin")) && <button
               type="button"
-              onClick={() => setMode("badge")}
+              onClick={() => setMode(has("badge") ? "badge" : "code")}
               className={cn(
                 "px-3 py-1 rounded-md text-xs font-semibold transition-colors flex items-center gap-1.5",
                 mode === "badge" || mode === "code" || mode === "pin" ? "bg-primary/10 text-primary border border-primary/30" : "text-muted-foreground hover:text-foreground"
               )}
             >
-              <KeyRoundIcon className="size-3.5" /> Badge / PIN
-            </button>
+              <KeyRoundIcon className="size-3.5" /> {has("badge") && has("pin") ? "Badge / PIN" : has("badge") ? "Badge" : "PIN"}
+            </button>}
           </div>
 
           <Button
@@ -408,12 +423,22 @@ export function KioskScreen({ initialName }: { initialName: string }) {
           <p className="mt-2 text-xl text-muted-foreground">{now.toLocaleDateString([], { weekday: "long", day: "numeric", month: "long", timeZone: tz })}</p>
         </div>
 
+        {testUntil && (
+          <p className="w-full max-w-xl rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-2 text-center text-sm font-medium text-amber-800 dark:text-amber-200" data-kiosk-test>
+            Test capture: check-ins are only checked, not recorded, until {new Date(testUntil).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.
+          </p>
+        )}
         {outcome ? (
           <div className={cn("w-full max-w-xl rounded-2xl p-8", outcome.ok ? "bg-emerald-500/15" : "bg-rose-500/15")} role="status" aria-live="assertive">
             {outcome.ok ? (
               <>
                 <CheckCircle2Icon className="mx-auto size-16 text-emerald-300" />
-                {outcome.saved ? (
+                {outcome.test ? (
+                  <>
+                    <p className="mt-3 text-3xl font-semibold" data-test-outcome>Test: recognised {outcome.name}</p>
+                    <p className="mt-2 text-lg text-muted-foreground">Nothing was recorded. The result shows on the kiosk list for Admin.</p>
+                  </>
+                ) : outcome.saved ? (
                   <>
                     <p className="mt-3 text-3xl font-semibold">Saved at {outcome.time}</p>
                     <p className="mt-2 text-lg text-muted-foreground">The network is down. Your check-in keeps this time and is sent when it is back.</p>
@@ -479,12 +504,12 @@ export function KioskScreen({ initialName }: { initialName: string }) {
 
             {/* Quick action buttons */}
             <div className="flex flex-wrap justify-center gap-3 pt-2">
-              <Button size="lg" variant="secondary" className="gap-2 bg-secondary hover:bg-accent text-foreground" onClick={() => setMode("face")}>
+              {faceOn && has("face") && <Button size="lg" variant="secondary" className="gap-2 bg-secondary hover:bg-accent text-foreground" onClick={() => setMode("face")}>
                 <ScanFaceIcon className="size-4 text-primary" /> Check In With Face
-              </Button>
-              <Button size="lg" variant="secondary" className="gap-2 bg-secondary hover:bg-accent text-foreground" onClick={() => setMode("badge")}>
+              </Button>}
+              {(has("badge") || has("pin")) && <Button size="lg" variant="secondary" className="gap-2 bg-secondary hover:bg-accent text-foreground" onClick={() => setMode(has("badge") ? "badge" : "code")}>
                 <KeyRoundIcon className="size-4 text-primary" /> Use Badge or PIN
-              </Button>
+              </Button>}
             </div>
           </div>
         ) : mode === "face" ? (
@@ -494,12 +519,12 @@ export function KioskScreen({ initialName }: { initialName: string }) {
               {faceMsg}
             </p>
             <div className="flex flex-wrap justify-center gap-3">
-              <Button size="lg" variant="secondary" className="gap-1.5" onClick={() => setMode("qr_display")}>
+              {has("qr") && <Button size="lg" variant="secondary" className="gap-1.5" onClick={() => setMode("qr_display")}>
                 <QrCodeIcon className="size-4 text-emerald-400" /> Back to QR Screen
-              </Button>
-              <Button size="lg" variant="secondary" onClick={() => setMode("badge")}>
+              </Button>}
+              {(has("badge") || has("pin")) && <Button size="lg" variant="secondary" onClick={() => setMode(has("badge") ? "badge" : "code")}>
                 Use my badge or PIN instead
-              </Button>
+              </Button>}
             </div>
           </div>
         ) : mode === "badge" ? (
@@ -519,10 +544,10 @@ export function KioskScreen({ initialName }: { initialName: string }) {
             </form>
             {camera && <video ref={videoRef} muted playsInline className="aspect-video w-full max-w-md rounded-xl bg-black object-cover" />}
             <div className="flex flex-wrap justify-center gap-3">
-              <Button size="lg" variant="secondary" className="gap-1.5" onClick={() => setMode("qr_display")}>
+              {has("qr") && <Button size="lg" variant="secondary" className="gap-1.5" onClick={() => setMode("qr_display")}>
                 <QrCodeIcon className="size-4 text-emerald-400" /> Back to QR Screen
-              </Button>
-              {faceOn && online && (
+              </Button>}
+              {faceOn && has("face") && online && (
                 <Button size="lg" onClick={() => (setCamera(false), setMode("face"))}>
                   <ScanFaceIcon /> Check in with my face
                 </Button>
@@ -532,9 +557,9 @@ export function KioskScreen({ initialName }: { initialName: string }) {
                   <CameraIcon /> {camera ? "Stop the camera" : "Scan with the camera"}
                 </Button>
               )}
-              <Button size="lg" variant="secondary" onClick={() => (setCamera(false), setMode("code"))}>
+              {has("pin") && <Button size="lg" variant="secondary" onClick={() => (setCamera(false), setMode("code"))}>
                 <KeyRoundIcon /> Use my number and PIN
-              </Button>
+              </Button>}
             </div>
             {busy && <Loader2Icon className="size-8 animate-spin" />}
           </div>

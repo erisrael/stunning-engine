@@ -866,12 +866,23 @@ export async function badgesFor(user: AppUser, employeeIds: string[]) {
 // ---------------------------------------------------------------------------
 
 export const KIOSK_COOKIE = "myseed_kiosk";
-type KioskRow = { id: string; name: string; site?: string | null; setup_pin?: string | null; active: number; last_seen_at: string | null; alerted_at: string | null; sign_key: string | null; setup_expires: string | null; token_hash: string | null; created_at: string };
+export const KIOSK_MODES = ["qr", "face", "badge", "pin"] as const;
+export type KioskMode = (typeof KIOSK_MODES)[number];
+const modesOf = (v: string | null | undefined): KioskMode[] => {
+  const m = String(v ?? "").split(",").filter((x): x is KioskMode => (KIOSK_MODES as readonly string[]).includes(x));
+  return m.length ? m : [...KIOSK_MODES];
+};
+type KioskRow = { modes?: string | null; test_until?: string | null; test_result?: string | null; id: string; name: string; site?: string | null; setup_pin?: string | null; active: number; last_seen_at: string | null; alerted_at: string | null; sign_key: string | null; setup_expires: string | null; token_hash: string | null; created_at: string };
 
 export async function listKiosks(user: AppUser) {
   if (!can(user, "attendance.capture")) needManage(user);
-  const rows = await all<KioskRow>("SELECT id, name, site, setup_pin, active, last_seen_at, alerted_at, setup_expires, token_hash, created_at FROM att_kiosks ORDER BY created_at");
+  const rows = await all<KioskRow>("SELECT id, name, site, setup_pin, active, last_seen_at, alerted_at, setup_expires, token_hash, created_at, modes, test_until, test_result FROM att_kiosks ORDER BY created_at");
+  const silenceMin = (await attendanceConfig()).kioskSilenceMin;
   return rows.map((k) => ({
+    modes: modesOf(k.modes),
+    testUntil: k.test_until && k.test_until > nowIso() ? k.test_until : null,
+    testResult: k.test_result ? (JSON.parse(k.test_result) as { ok: boolean; message: string; mode: string; at: string }) : null,
+    health: !k.active ? "off" : !k.token_hash ? "unpaired" : k.last_seen_at && Date.now() - Date.parse(k.last_seen_at) < silenceMin * 60e3 ? "online" : "silent",
     id: k.id,
     name: k.name,
     site: k.site || "Main Entrance",
@@ -941,6 +952,31 @@ export async function pairAgain(user: AppUser, id: string) {
   return { id, code: setup.code, pin: setup.pin };
 }
 
+// Which ways to check in this device offers: QR on screen, face, badge, number and PIN.
+export async function setKioskModes(user: AppUser, id: string, modes: string[]) {
+  needCapture(user);
+  const m = modes.filter((x): x is KioskMode => (KIOSK_MODES as readonly string[]).includes(x));
+  if (!m.length) throw new WorkflowError("VALIDATION", "Keep at least one way to check in.");
+  const k = await get<{ name: string }>("SELECT name FROM att_kiosks WHERE id = ?", id);
+  if (!k) throw new WorkflowError("VALIDATION", "Kiosk not found.");
+  await run("UPDATE att_kiosks SET modes = ? WHERE id = ?", m.join(","), id);
+  await audit({ actor: user }, { action: "attendance.kiosk", summary: `${user.name} set ${k.name} to check in by ${m.join(", ")}` });
+  return m;
+}
+
+// Test capture: for ten minutes the device checks who someone is but records nothing; the result shows here.
+export async function startKioskTest(user: AppUser, id: string) {
+  needCapture(user);
+  const until = new Date(Date.now() + 10 * 60e3).toISOString();
+  await run("UPDATE att_kiosks SET test_until = ?, test_result = NULL WHERE id = ?", until, id);
+  await audit({ actor: user }, { action: "attendance.kiosk", summary: `${user.name} started a test capture on a kiosk` });
+  return until;
+}
+
+async function saveTest(k: KioskRow, mode: string, ok: boolean, message: string) {
+  await run("UPDATE att_kiosks SET test_result = ?, last_seen_at = ? WHERE id = ?", JSON.stringify({ ok, mode, message, at: nowIso() }), nowIso(), k.id);
+}
+
 export async function setKioskActive(user: AppUser, id: string, active: boolean) {
   needCapture(user);
   await run("UPDATE att_kiosks SET active = ?, token_hash = CASE WHEN ? = 1 THEN token_hash ELSE NULL END WHERE id = ?", active ? 1 : 0, active ? 1 : 0, id);
@@ -980,6 +1016,8 @@ export async function kioskPing(k: KioskRow) {
     timezone: s.workspace.timezone,
     workspace: s.workspace.name,
     offlineMaxHours: cfg.offlineMaxHours,
+    modes: modesOf(k.modes),
+    testUntil: k.test_until && k.test_until > nowIso() ? k.test_until : null,
     qrRefreshIntervalSec: cfg.qrRefreshIntervalSec ?? 15,
   };
 }
@@ -1014,6 +1052,28 @@ export async function kioskPunch(k: KioskRow, input: KioskPunchInput) {
     offline = Date.now() - t > 2 * 60e3;
     if (input.clientId && (await get("SELECT 1 AS x FROM att_events WHERE kiosk_id = ? AND client_id = ?", k.id, input.clientId))) return { duplicate: true, name: "", kind: "in" as const, at, line: null };
   }
+  const allowed = modesOf(k.modes);
+  const mode: KioskMode = input.face ? "face" : input.badge ? "badge" : "pin";
+  if (!allowed.includes(mode) && !(mode === "badge" && allowed.includes("qr"))) throw new WorkflowError("FORBIDDEN", "This kiosk does not take that way of checking in.");
+  const testing = !input.at && !!k.test_until && k.test_until > nowIso();
+  if (testing) {
+    try {
+      const who = await identify();
+      const name = who.emp.preferred_name || who.emp.full_name.split(" ")[0]!;
+      await saveTest(k, mode, true, `Recognised ${name} by ${mode}. Nothing was recorded.`);
+      return { duplicate: false, name, kind: "in" as const, at, line: null, test: true };
+    } catch (e) {
+      await saveTest(k, mode, false, e instanceof Error ? e.message : String(e));
+      throw e;
+    }
+  }
+  const { emp, source } = await identify();
+  const r = await punch(emp.id, { at, source, kioskId: k.id, offline, clientId: input.clientId ?? null });
+  await run("UPDATE att_kiosks SET last_seen_at = ?, alerted_at = NULL WHERE id = ?", nowIso(), k.id);
+  const line = await dayLine(emp.id, r.day);
+  return { duplicate: r.duplicate, name: emp.preferred_name || emp.full_name.split(" ")[0]!, kind: r.kind, at: r.at, line: line ? { status: line.status, lateMin: line.lateMin } : null };
+
+  async function identify(): Promise<{ emp: { id: string; full_name: string; preferred_name: string | null }; source: Source }> {
   let emp: { id: string; full_name: string; preferred_name: string | null } | undefined;
   let source: Source;
   if (input.face) {
@@ -1047,10 +1107,8 @@ export async function kioskPunch(k: KioskRow, input: KioskPunchInput) {
     emp = row;
     source = "kiosk_pin";
   }
-  const r = await punch(emp.id, { at, source, kioskId: k.id, offline, clientId: input.clientId ?? null });
-  await run("UPDATE att_kiosks SET last_seen_at = ?, alerted_at = NULL WHERE id = ?", nowIso(), k.id);
-  const line = await dayLine(emp.id, r.day);
-  return { duplicate: r.duplicate, name: emp.preferred_name || emp.full_name.split(" ")[0]!, kind: r.kind, at: r.at, line: line ? { status: line.status, lateMin: line.lateMin } : null };
+  return { emp, source };
+  }
 }
 
 // Kiosks that stopped reporting during working hours.

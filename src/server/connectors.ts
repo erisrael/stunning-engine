@@ -35,7 +35,7 @@ export type ConnectorDraft = {
   specUrl?: string | null;
   preset?: string | null;
 };
-export type Connector = ConnectorDraft & { id: string; status: "draft" | "active"; isDefault: boolean; useForSystem: boolean; hasSecrets: boolean; secretNames: string[]; operations: Operation[]; lastTest: { ok: boolean; at: string; status: number; detail: string } | null; createdAt: string };
+export type Connector = ConnectorDraft & { id: string; status: "draft" | "active"; priority?: number; isDefault: boolean; useForSystem: boolean; hasSecrets: boolean; secretNames: string[]; operations: Operation[]; lastTest: { ok: boolean; at: string; status: number; detail: string } | null; createdAt: string };
 
 const need = (u: AppUser) => {
   if (!can(u, "users.manage")) throw new WorkflowError("FORBIDDEN", "Only Admin connects platforms.");
@@ -412,16 +412,16 @@ export const PRESETS: (ConnectorDraft & { key: string; region: string; secrets: 
 // Storage
 // ---------------------------------------------------------------------------
 
-type Row = { id: string; name: string; capability: string; draft: string; operations: string; secrets: string | null; status: string; is_default: number; use_for_system: number; last_test: string | null; created_at: string };
+type Row = { id: string; name: string; capability: string; draft: string; operations: string; secrets: string | null; status: string; is_default: number; use_for_system: number; last_test: string | null; created_at: string; priority?: number };
 const toConnector = (r: Row): Connector => {
   const d = parseJson<ConnectorDraft>(r.draft, {} as ConnectorDraft);
   const names = r.secrets ? (parseJson<{ names?: string[] }>(r.secrets, {}).names ?? []) : [];
-  return { ...d, id: r.id, name: r.name, capability: r.capability as Capability, status: r.status === "active" ? "active" : "draft", isDefault: !!Number(r.is_default), useForSystem: !!Number(r.use_for_system), hasSecrets: names.length > 0, secretNames: names, operations: parseJson<Operation[]>(r.operations, []), lastTest: parseJson(r.last_test, null), createdAt: r.created_at };
+  return { ...d, id: r.id, name: r.name, capability: r.capability as Capability, status: r.status === "active" ? "active" : "draft", priority: Number(r.priority ?? 100), isDefault: !!Number(r.is_default), useForSystem: !!Number(r.use_for_system), hasSecrets: names.length > 0, secretNames: names, operations: parseJson<Operation[]>(r.operations, []), lastTest: parseJson(r.last_test, null), createdAt: r.created_at };
 };
 
 export async function listConnectors(user: AppUser) {
   need(user);
-  return (await all<Row>("SELECT * FROM int_connectors ORDER BY capability, name")).map(toConnector);
+  return (await all<Row>("SELECT * FROM int_connectors ORDER BY capability, is_default DESC, priority, name")).map(toConnector);
 }
 
 function cleanDraft(d: Partial<ConnectorDraft>): ConnectorDraft {
@@ -590,19 +590,18 @@ export async function callConnector(c: Connector, input: Record<string, string |
   if (!error && !ok) error = String(pick(parsed, c.response.errorPath) ?? `Not accepted (${c.response.okPath} is "${okField}").`).slice(0, 300);
   const result: CallResult = { ok, status, id: (pick(parsed, c.response.idPath) as string | undefined)?.toString() ?? null, url: (pick(parsed, c.response.urlPath) as string | undefined)?.toString() ?? null, error, ms: Date.now() - t0, body: parsed };
   // The log keeps the address and fields' names, never the secrets or the message itself.
-  await run(
-    "INSERT INTO int_calls (id, connector_id, capability, ok, status, ms, summary, error, test, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-    uid("icl_"),
-    c.id,
-    c.capability,
-    ok ? 1 : 0,
+  const { recordCall } = await import("./call-monitor");
+  await recordCall({
+    source: c.capability === "sms" || c.capability === "email" || c.capability === "payment" ? c.capability : "connector",
+    connectorId: c.id,
+    ok,
     status,
-    result.ms,
-    `${op.method} ${c.baseUrl}${op.path.replace(/\{\{[^}]+\}\}/g, "…")} (${Object.keys(op.map).length} fields)`.slice(0, 300),
+    ms: result.ms,
+    summary: `${c.name} · ${op.method} ${c.baseUrl}${op.path.replace(/\{\{[^}]+\}\}/g, "…")} (${Object.keys(op.map).length} fields)`,
     error,
-    opts.test ? 1 : 0,
-    nowIso(),
-  );
+    ref: result.id,
+    test: opts.test,
+  });
   return result;
 }
 
@@ -624,42 +623,65 @@ export async function callLog(user: AppUser, limit = 50) {
   );
 }
 
-async function defaultFor(capability: Capability) {
-  const r = await get<Row>("SELECT * FROM int_connectors WHERE capability = ? AND status = 'active' ORDER BY is_default DESC, created_at LIMIT 1", capability);
-  return r ? toConnector(r) : null;
+// Active connectors for a purpose, in Admin's order (the default first): the first is primary, the rest fallbacks.
+export async function connectorsFor(capability: Capability) {
+  return (await all<Row>("SELECT * FROM int_connectors WHERE capability = ? AND status = 'active' ORDER BY is_default DESC, priority, created_at", capability)).map(toConnector);
+}
+
+export async function setConnectorOrder(user: AppUser, capability: Capability, ids: string[]) {
+  need(user);
+  const list = (await connectorsFor(capability)).map((c) => c.id);
+  const order = [...ids.filter((id) => list.includes(id)), ...list.filter((id) => !ids.includes(id))];
+  for (let i = 0; i < order.length; i++) await run("UPDATE int_connectors SET priority = ?, is_default = ? WHERE id = ?", (i + 1) * 10, i === 0 ? 1 : 0, order[i]);
+  await audit({ actor: user }, { action: "integrations.connector", summary: `${user.name} set the order of ${CAPABILITIES[capability].label} connections` });
+  return order;
 }
 
 // What the rest of the app uses.
 export async function smsAvailable() {
-  return !!(await defaultFor("sms"));
+  return (await connectorsFor("sms")).length > 0;
 }
-export async function sendSms(to: string, message: string, sender?: string | null) {
-  const c = await defaultFor("sms");
-  if (!c) throw new WorkflowError("INVALID_STATE", "No SMS provider is connected (Admin, Integrations, Integrate a platform).");
-  const phone = to.replace(/[^\d+]/g, "");
-  if (phone.replace(/\D/g, "").length < 9) throw new WorkflowError("VALIDATION", "That phone number looks too short.");
-  const r = await callConnector(c, { to: phone, message: message.slice(0, 900), sender: sender ?? "" });
-  if (!r.ok) throw new WorkflowError("INVALID_STATE", `The SMS was not sent: ${r.error}`);
-  return { id: r.id, provider: c.name };
+// SMS goes through the SMS module: routing by purpose, fallback providers, retries and delivery status.
+export async function sendSms(to: string, message: string, sender?: string | null, purpose: "otp" | "alerts" | "marketing" = "alerts") {
+  const { sendSmsMessage } = await import("./sms");
+  // id stays the provider's message id, as before; messageId is the row in sms_messages.
+  const r = await sendSmsMessage({ to, message, sender, purpose });
+  return { ...r, id: r.providerId, messageId: r.id };
 }
 export async function emailConnectorForSystem() {
-  const r = await get<Row>("SELECT * FROM int_connectors WHERE capability = 'email' AND status = 'active' AND use_for_system = 1 LIMIT 1");
+  const r = await get<Row>("SELECT * FROM int_connectors WHERE capability = 'email' AND status = 'active' AND use_for_system = 1 ORDER BY is_default DESC, priority LIMIT 1");
   return r ? toConnector(r) : null;
 }
+// The chosen email connection first; if it fails, the other active email connections in Admin's order.
 export async function sendEmailViaConnector(c: Connector, input: { to: string; subject: string; text: string; html?: string; from: string; fromName: string }) {
-  const r = await callConnector(c, { ...input, html: input.html ?? input.text.replace(/\n/g, "<br>") });
-  if (!r.ok) throw new Error(`${c.name}: ${r.error}`);
+  const list = [c, ...(await connectorsFor("email")).filter((x) => x.id !== c.id)];
+  const errors: string[] = [];
+  for (const x of list) {
+    const r = await callConnector(x, { ...input, html: input.html ?? input.text.replace(/\n/g, "<br>") });
+    if (r.ok) return { provider: x.name, id: r.id };
+    errors.push(`${x.name}: ${r.error}`);
+  }
+  throw new Error(errors.join("; "));
 }
 export async function createPaymentLink(user: AppUser, input: { amount: number; currency?: string; description: string; email?: string | null; phone?: string | null; name?: string | null; reference?: string | null; returnUrl?: string | null }) {
   if (!can(user, "finance.access") && !can(user, "users.manage")) throw new WorkflowError("FORBIDDEN", "Only Finance and Admin ask for payments.");
-  const c = await defaultFor("payment");
-  if (!c) throw new WorkflowError("INVALID_STATE", "No payment provider is connected (Admin, Integrations, Integrate a platform).");
+  const list = await connectorsFor("payment");
+  if (!list.length) throw new WorkflowError("INVALID_STATE", "No payment provider is connected (Admin, Integrations, Integrate a platform).");
   const amount = Math.round(Number(input.amount) * 100) / 100;
   if (!(amount > 0)) throw new WorkflowError("VALIDATION", "Enter the amount.");
   const [first, ...rest] = String(input.name ?? "Customer").split(/\s+/);
   const reference = input.reference || `MS-${Date.now().toString(36)}-${crypto.randomBytes(3).toString("hex")}`;
-  const r = await callConnector(c, { amount: String(amount), amount_cents: String(Math.round(amount * 100)), currency: input.currency || "ETB", description: input.description.slice(0, 200), email: input.email ?? "", phone: input.phone ?? "", first_name: first ?? "", last_name: rest.join(" "), reference, callback_url: "", return_url: input.returnUrl ?? "" });
-  if (!r.ok || !r.url) throw new WorkflowError("INVALID_STATE", `No payment link came back: ${r.error ?? "the answer had no link"}`);
+  // The primary provider first, then the fallbacks.
+  let r: CallResult | null = null;
+  let c = list[0];
+  const errors: string[] = [];
+  for (const x of list) {
+    c = x;
+    r = await callConnector(x, { amount: String(amount), amount_cents: String(Math.round(amount * 100)), currency: input.currency || "ETB", description: input.description.slice(0, 200), email: input.email ?? "", phone: input.phone ?? "", first_name: first ?? "", last_name: rest.join(" "), reference, callback_url: "", return_url: input.returnUrl ?? "" });
+    if (r.ok && r.url) break;
+    errors.push(`${x.name}: ${r.error ?? "the answer had no link"}`);
+  }
+  if (!r || !r.ok || !r.url) throw new WorkflowError("INVALID_STATE", `No payment link came back: ${errors.join("; ")}`);
   await audit({ actor: user }, { action: "integrations.payment", summary: `${user.name} made a payment link for ${amount} ${input.currency || "ETB"} (${input.description.slice(0, 60)}) via ${c.name}` });
   return { url: r.url, reference, provider: c.name };
 }

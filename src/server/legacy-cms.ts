@@ -21,6 +21,7 @@ import { can, type AppUser } from "./users";
 import { audit, WorkflowError } from "./workflow";
 
 import { LEGACY_CMS_CATEGORIES, type LegacyCmsCategory, type UserCmsOverride } from "@/lib/legacy-cms";
+import { trackedFetch } from "./call-monitor";
 export { LEGACY_CMS_CATEGORIES, type LegacyCmsCategory, type UserCmsOverride };
 
 export type UserCmsAccess = {
@@ -93,7 +94,8 @@ const DEFAULT_CONFIG: LegacyCmsConfig = {
   lastSyncError: null,
 };
 
-const DEFAULT_PASSWORD = "9V7x6antUAU6eyE";
+// The fallback login comes from the server environment only; it is never written in the code.
+const DEFAULT_PASSWORD = process.env.LEGACY_CMS_PASSWORD ?? "";
 
 export async function getLegacyCmsConfig(): Promise<LegacyCmsConfig> {
   const row = await get<{ value: string }>("SELECT value FROM settings WHERE key = 'cfg.legacy_cms'");
@@ -296,7 +298,7 @@ export function parseFilamentTable(html: string): Record<string, string>[] {
 
 export async function authenticateFilament(baseUrl: string, username: string, password: string): Promise<string> {
   const loginUrl = `${baseUrl}/admin/login`;
-  const getRes = await fetch(loginUrl, {
+  const getRes = await trackedFetch("noor", loginUrl, {
     signal: AbortSignal.timeout(60_000), cache: "no-store",
     headers: {
       "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
@@ -341,7 +343,7 @@ export async function authenticateFilament(baseUrl: string, username: string, pa
     ],
   };
 
-  const lwRes = await fetch(updateUrl, {
+  const lwRes = await trackedFetch("noor", updateUrl, {
     signal: AbortSignal.timeout(60_000), redirect: "error", cache: "no-store",
     method: "POST",
     headers: {
@@ -381,7 +383,7 @@ export async function loginLegacyCms(
     try {
       cookieHeader = await authenticateFilament(baseUrl, username, password);
     } catch (authErr) {
-      if (password !== DEFAULT_PASSWORD) {
+      if (DEFAULT_PASSWORD && password !== DEFAULT_PASSWORD) {
         cookieHeader = await authenticateFilament(baseUrl, username, DEFAULT_PASSWORD);
         password = DEFAULT_PASSWORD;
       } else {
@@ -391,7 +393,7 @@ export async function loginLegacyCms(
 
     // Verify session by checking access with redirect: "manual"
     const testUrl = `${baseUrl}/admin/students`;
-    let testRes = await fetch(testUrl, {
+    let testRes = await trackedFetch("noor", testUrl, {
       headers: {
         Cookie: cookieHeader,
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
@@ -400,10 +402,10 @@ export async function loginLegacyCms(
     });
 
     let loc = testRes.headers.get("location") || "";
-    if (testRes.status === 302 && loc.includes("/login") && password !== DEFAULT_PASSWORD) {
+    if (testRes.status === 302 && loc.includes("/login") && DEFAULT_PASSWORD && password !== DEFAULT_PASSWORD) {
       // Try again with default verified credentials
       cookieHeader = await authenticateFilament(baseUrl, username, DEFAULT_PASSWORD);
-      testRes = await fetch(testUrl, {
+      testRes = await trackedFetch("noor", testUrl, {
         headers: {
           Cookie: cookieHeader,
           "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
@@ -465,7 +467,7 @@ export async function checkLegacyCmsAuth(user:AppUser):Promise<{ok:boolean;statu
   if(!allowed.length) throw new WorkflowError("FORBIDDEN","No CMS tables are enabled for your account.");
   let cookie=await cmsSession(config,authenticateFilament);
   const path=LEGACY_CMS_CATEGORIES.find(c=>c.key===allowed[0])!.path;
-  const inspect=()=>fetch(new URL(path,config.baseUrl),{headers:{Cookie:cookie},redirect:"manual",cache:"no-store",signal:AbortSignal.timeout(60_000)});
+  const inspect=()=>trackedFetch("noor",new URL(path,config.baseUrl),{headers:{Cookie:cookie},redirect:"manual",cache:"no-store",signal:AbortSignal.timeout(60_000)});
   let result=await inspect();
   if([302,401,419].includes(result.status)){cookie=await cmsSession(config,authenticateFilament,true);result=await inspect();}
   if(!result.ok) return {ok:false,status:"disconnected",username:config.username,message:`Noor access check returned HTTP ${result.status}.`,ms:Date.now()-start};
@@ -1391,7 +1393,7 @@ export async function fetchLegacyCmsInvoiceReceipt(
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 12000);
-    let res = await fetch(targetUrl, { headers, signal: controller.signal, redirect: "manual" });
+    let res = await trackedFetch("noor", targetUrl, { headers, signal: controller.signal, redirect: "manual" });
     clearTimeout(timeout);
 
     if (res.status === 302 || res.status === 401 || res.status === 419) {
@@ -1400,7 +1402,7 @@ export async function fetchLegacyCmsInvoiceReceipt(
         headers["Cookie"] = cookieHeader;
         const retryCtrl = new AbortController();
         const retryTimeout = setTimeout(() => retryCtrl.abort(), 12000);
-        res = await fetch(targetUrl, { headers, signal: retryCtrl.signal, redirect: "manual" });
+        res = await trackedFetch("noor", targetUrl, { headers, signal: retryCtrl.signal, redirect: "manual" });
         clearTimeout(retryTimeout);
       }
     }

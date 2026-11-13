@@ -71,6 +71,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   if (!manageUsers && !manageData) redirect("/dashboard?denied=permission");
   const { tab = manageUsers ? "people" : "data" } = await searchParams;
   if (tab === "email") redirect("/email?tab=settings");
+  if (tab === "integrations" && manageUsers) redirect("/admin/integrations?tab=connections");
 
   const tax = await taxonomy();
   const grades = tax.grades.map((g) => ({ id: g.id, name: g.name }));

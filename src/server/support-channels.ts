@@ -8,6 +8,7 @@ import { all, get, nowIso, parseJson, run, uid } from "./db";
 import { audit, WorkflowError } from "./workflow";
 import { seal, unseal } from "./secrets";
 import type { AppUser } from "./users";
+import { trackedFetch } from "./call-monitor";
 
 const clean = (v: unknown, max: number) => String(v ?? "").trim().slice(0, max);
 
@@ -117,13 +118,13 @@ export async function deliverReply(ticketId: string, body: string, agentName: st
 // ---------------------------------------------------------------------------
 
 type Poster = (url: string, body: unknown) => Promise<{ ok: boolean; result?: unknown; description?: string }>;
-let poster: Poster = async (url, body) => (await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })).json() as Promise<{ ok: boolean }>;
+let poster: Poster = async (url, body) => (await trackedFetch("telegram", url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })).json() as Promise<{ ok: boolean }>;
 export function setTelegramPoster(p: Poster) {
   poster = p;
 }
 // Files customers send are downloaded from Telegram's file server (replaced in tests).
 type Downloader = (url: string) => Promise<Buffer>;
-let downloader: Downloader = async (url) => Buffer.from(await (await fetch(url)).arrayBuffer());
+let downloader: Downloader = async (url) => Buffer.from(await (await trackedFetch("telegram", url)).arrayBuffer());
 export function setTelegramDownloader(d: Downloader) {
   downloader = d;
 }

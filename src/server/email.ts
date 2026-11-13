@@ -12,6 +12,7 @@ import { seal, unseal } from "./secrets";
 import { audit, WorkflowError } from "./workflow";
 import { can, type AppUser } from "./users";
 import { ROLE_LABELS, ROLES, STAGES, type Role, type Stage } from "@/lib/domain";
+import { trackedFetch } from "./call-monitor";
 
 // ---------------------------------------------------------------------------
 // SMTP settings
@@ -204,7 +205,7 @@ async function relaySend(provider: RelayProvider, key: string, mail: { data: Rec
   // Brevo and Resend both refuse a message with no "to"; Bcc-only sends go to the sender, the rest in Bcc.
   if (provider === "brevo" && !(body as { to: unknown[] }).to.length) (body as { to: unknown[] }).to = [{ email: from.address }];
   if (provider === "resend" && !(body as { to: unknown[] }).to.length) (body as { to: unknown[] }).to = [from.address];
-  const res = await fetch(provider === "brevo" ? "https://api.brevo.com/v3/smtp/email" : "https://api.resend.com/emails", {
+  const res = await trackedFetch("email", provider === "brevo" ? "https://api.brevo.com/v3/smtp/email" : "https://api.resend.com/emails", {
     method: "POST",
     headers: { "content-type": "application/json", accept: "application/json", ...(provider === "brevo" ? { "api-key": key } : { authorization: `Bearer ${key}` }) },
     body: JSON.stringify(body),
@@ -221,7 +222,7 @@ async function relaySend(provider: RelayProvider, key: string, mail: { data: Rec
 }
 
 async function relayCheckKey(provider: RelayProvider, key: string) {
-  const res = await fetch(provider === "brevo" ? "https://api.brevo.com/v3/account" : "https://api.resend.com/domains", {
+  const res = await trackedFetch("email", provider === "brevo" ? "https://api.brevo.com/v3/account" : "https://api.resend.com/domains", {
     headers: provider === "brevo" ? { "api-key": key, accept: "application/json" } : { authorization: `Bearer ${key}` },
     signal: AbortSignal.timeout(15_000),
   });
@@ -241,13 +242,13 @@ async function relayCheckKey(provider: RelayProvider, key: string) {
 async function relayDomainStatus(provider: RelayProvider, key: string, domain: string): Promise<"verified" | "pending" | "missing" | "unknown"> {
   try {
     if (provider === "brevo") {
-      const res = await fetch("https://api.brevo.com/v3/senders/domains", { headers: { "api-key": key, accept: "application/json" }, signal: AbortSignal.timeout(15_000) });
+      const res = await trackedFetch("email", "https://api.brevo.com/v3/senders/domains", { headers: { "api-key": key, accept: "application/json" }, signal: AbortSignal.timeout(15_000) });
       if (!res.ok) return "unknown";
       const j = (await res.json()) as { domains?: { domain_name: string; authenticated?: boolean; verified?: boolean }[] };
       const d = j.domains?.find((x) => x.domain_name.toLowerCase() === domain);
       return !d ? "missing" : d.authenticated ? "verified" : "pending";
     }
-    const res = await fetch("https://api.resend.com/domains", { headers: { authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(15_000) });
+    const res = await trackedFetch("email", "https://api.resend.com/domains", { headers: { authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(15_000) });
     if (!res.ok) return "unknown";
     const j = (await res.json()) as { data?: { name: string; status: string }[] };
     const d = j.data?.find((x) => x.name.toLowerCase() === domain);

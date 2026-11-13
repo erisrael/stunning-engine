@@ -55,6 +55,13 @@ export async function testAiModelByIdAction(id: string) {
   return wrap(async () => ai.testAiModelById(await requireViewer(), id), { revalidate: false });
 }
 
+export async function saveAiPricesAction(prices: Record<string, { in: number; out: number }>) {
+  return wrap(async () => ai.saveAiPrices(await requireViewer(), prices));
+}
+export async function aiConsoleAction(input: { prompt: string; modelId?: string | null }) {
+  return wrap(async () => ai.aiConsole(await requireViewer(), input));
+}
+
 // Routines (Phase 13d) and the assistant's options per role.
 import * as rt from "@/server/routines";
 import { WorkflowError } from "@/server/workflow";

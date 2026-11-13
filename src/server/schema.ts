@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 62;
+export const SCHEMA_VERSION = 63;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -3410,6 +3410,59 @@ CREATE TABLE IF NOT EXISTS sup_files (
 );
 CREATE INDEX IF NOT EXISTS idx_sup_files ON sup_files(ticket_id);
 CREATE INDEX IF NOT EXISTS idx_sup_tickets_category ON sup_tickets(category, created_at);
+
+-- v63: the configuration hub. Every outgoing call and incoming webhook goes into int_calls with its source
+-- (chapa, telegram, sms, email, ai, noor, connector), direction and, for AI, tokens and cost. SMS messages are kept
+-- with their delivery status; connectors have an order for fallback; alerts when failures pass Admin's threshold;
+-- email bounces; and each kiosk has its own capture modes and a test capture.
+ALTER TABLE int_calls ADD COLUMN IF NOT EXISTS source TEXT;
+ALTER TABLE int_calls ADD COLUMN IF NOT EXISTS direction TEXT NOT NULL DEFAULT 'out';
+ALTER TABLE int_calls ADD COLUMN IF NOT EXISTS ref TEXT;
+ALTER TABLE int_calls ADD COLUMN IF NOT EXISTS tokens_in INTEGER;
+ALTER TABLE int_calls ADD COLUMN IF NOT EXISTS tokens_out INTEGER;
+ALTER TABLE int_calls ADD COLUMN IF NOT EXISTS cost REAL;
+CREATE INDEX IF NOT EXISTS idx_int_calls_source ON int_calls(source, at);
+ALTER TABLE int_connectors ADD COLUMN IF NOT EXISTS priority INTEGER NOT NULL DEFAULT 100;
+CREATE TABLE IF NOT EXISTS int_alerts (
+  id TEXT PRIMARY KEY,
+  source TEXT NOT NULL,
+  calls INTEGER NOT NULL,
+  failures INTEGER NOT NULL,
+  window_min INTEGER NOT NULL,
+  at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_int_alerts ON int_alerts(at);
+CREATE TABLE IF NOT EXISTS sms_messages (
+  id TEXT PRIMARY KEY,
+  connector_id TEXT,
+  provider_id TEXT,
+  to_phone TEXT NOT NULL,
+  purpose TEXT NOT NULL DEFAULT 'alerts',
+  sender TEXT,
+  preview TEXT,
+  length INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'queued',
+  error TEXT,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  delivered_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_sms_messages ON sms_messages(created_at);
+CREATE INDEX IF NOT EXISTS idx_sms_provider ON sms_messages(provider_id);
+CREATE TABLE IF NOT EXISTS email_bounces (
+  id TEXT PRIMARY KEY,
+  address TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'hard',
+  reason TEXT,
+  message_id TEXT,
+  provider TEXT,
+  at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_email_bounces ON email_bounces(address, at);
+ALTER TABLE att_kiosks ADD COLUMN IF NOT EXISTS modes TEXT;
+ALTER TABLE att_kiosks ADD COLUMN IF NOT EXISTS test_until TEXT;
+ALTER TABLE att_kiosks ADD COLUMN IF NOT EXISTS test_result TEXT;
 
 -- v62: My work take rules (requests a lead approves) and import undo. Each import row runs in a transaction that sets
 -- myseed.job_id; a row trigger on every table then keeps what the row was before and after, so an approved undo
