@@ -20,6 +20,7 @@ import { CAT, SEQ } from "@/lib/chart-colors";
 import { AttentionList, CustomizeDashboard, SessionBanner } from "./widgets";
 import { ManagerHome } from "./manager-home";
 import { AdminHome } from "./admin-home";
+import { SupportHome } from "./support-home";
 import { PageImport } from "@/components/app/page-import";
 import { DASHBOARD_PANELS as PANELS } from "@/lib/panels";
 import { redirect } from "next/navigation";
@@ -64,6 +65,10 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   // Someone viewing as a department role (or as an owner) starts in that section; Home is the production dashboard.
   const SECTION: Partial<Record<string, string>> = { owner: "/company", developer: "/dev", content: "/studio", marketing: "/marketing", hr_manager: "/hr", hr_officer: "/hr", finance_manager: "/finance", accountant: "/finance" };
   if (!ROLE_COPY[role] && SECTION[role]) redirect(SECTION[role]!);
+  // Customer Support agents get their own home: tickets, waiting queue, calls and their numbers.
+  if (role === "support") return <SupportHome viewer={viewer} timezone={tz} greeting={greeting} />;
+  // Any other role without a production home (Sales, Operations, ...) starts in My work rather than a broken page.
+  if (!ROLE_COPY[role]) redirect("/my-work");
   if (managerView(role)) {
     return <ManagerHome viewer={viewer} timezone={tz} greeting={greeting} />;
   }

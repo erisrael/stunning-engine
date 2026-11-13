@@ -1197,3 +1197,70 @@ export async function ticketStatusOf(ids: string[]) {
   const rows = await all<{ id: string; number: number; status: string; assignee: string | null }>(`SELECT t.id, t.number, t.status, u.name AS assignee FROM sup_tickets t LEFT JOIN users u ON u.id = t.assignee_id WHERE t.id IN (${ids.map(() => "?").join(",")})`, ...ids);
   return Object.fromEntries(rows.map((r) => [r.id, { number: r.number, status: r.status, assignee: r.assignee }]));
 }
+
+// ---------------------------------------------------------------------------
+// The agent's home (the dashboard for the Support role): their tickets, the waiting queue, recent calls, their own
+// numbers and their status. Works before support is set up (it then says what is missing instead of failing).
+// ---------------------------------------------------------------------------
+
+export type AgentHome = {
+  enabled: boolean;
+  agent: boolean;
+  lead: boolean;
+  status: string;
+  statusSince: string | null;
+  mine: TicketListRow[];
+  waiting: TicketListRow[];
+  waitingCount: number;
+  calls: { id: string; ticket_id: string | null; number: number | null; customer: string | null; direction: string; kind: string; status: string; started_at: string; duration_s: number | null; recorded: number }[];
+  ringing: number;
+  stats: { open: number; solvedToday: number; solved7: number; firstResponseMin: number | null; rating: number | null; ratings: number; late: number; callsToday: number; callMinutes7: number };
+};
+
+export async function agentHome(user: AppUser): Promise<AgentHome> {
+  const cfg = await supportConfig();
+  const lead = await isLead(user, cfg);
+  const queues = await memberQueues(user.id);
+  const agent = lead || queues.length > 0;
+  const me = await get<{ status: string; status_since: string | null }>("SELECT status, status_since FROM sup_agents WHERE user_id = ?", user.id);
+  const empty: AgentHome["stats"] = { open: 0, solvedToday: 0, solved7: 0, firstResponseMin: null, rating: null, ratings: 0, late: 0, callsToday: 0, callMinutes7: 0 };
+  if (!cfg.enabled || !agent) return { enabled: cfg.enabled, agent, lead, status: me?.status ?? "offline", statusSince: me?.status_since ?? null, mine: [], waiting: [], waitingCount: 0, calls: [], ringing: 0, stats: empty };
+  const mine = (await inbox(user, "mine")).slice(0, 12);
+  const unassigned = await inbox(user, "unassigned");
+  const now = Date.now();
+  const dayStart = new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
+  const week = new Date(now - 7 * 864e5).toISOString();
+  const month = new Date(now - 30 * 864e5).toISOString();
+  const n = async (sql: string, ...args: Param[]) => Number((await get<{ n: number | string | null }>(sql, ...args))?.n ?? 0);
+  const [open, solvedToday, solved7, late, callsToday, callSec7] = await Promise.all([
+    n(`SELECT COUNT(*) AS n FROM sup_tickets WHERE assignee_id = ? AND status IN ${OPEN_SQL}`, user.id),
+    n("SELECT COUNT(*) AS n FROM sup_tickets WHERE assignee_id = ? AND solved_at >= ?", user.id, dayStart),
+    n("SELECT COUNT(*) AS n FROM sup_tickets WHERE assignee_id = ? AND solved_at >= ?", user.id, week),
+    n("SELECT COUNT(*) AS n FROM sup_tickets WHERE assignee_id = ? AND breached = 1 AND status NOT IN ('solved','closed')", user.id),
+    n("SELECT COUNT(*) AS n FROM sup_calls WHERE agent_id = ? AND started_at >= ?", user.id, dayStart),
+    n("SELECT COALESCE(SUM(duration_s), 0) AS n FROM sup_calls WHERE agent_id = ? AND started_at >= ?", user.id, week),
+  ]);
+  const fr = await all<{ created_at: string; first_response_at: string }>("SELECT created_at, first_response_at FROM sup_tickets WHERE assignee_id = ? AND first_response_at IS NOT NULL AND created_at >= ?", user.id, week);
+  const firstResponseMin = fr.length ? Math.round(fr.reduce((s, r) => s + Math.max(0, Date.parse(r.first_response_at) - Date.parse(r.created_at)), 0) / fr.length / 60e3) : null;
+  const rt = await get<{ avg: number | string | null; n: number | string }>("SELECT AVG(rating) AS avg, COUNT(rating) AS n FROM sup_tickets WHERE assignee_id = ? AND rating IS NOT NULL AND solved_at >= ?", user.id, month);
+  const calls = await all<AgentHome["calls"][number]>(
+    `SELECT k.id, k.ticket_id, t.number, c.name AS customer, k.direction, k.kind, k.status, k.started_at, k.duration_s, CASE WHEN k.recording_id IS NULL THEN 0 ELSE 1 END AS recorded
+     FROM sup_calls k LEFT JOIN sup_tickets t ON t.id = k.ticket_id LEFT JOIN sup_customers c ON c.id = k.customer_id
+     WHERE k.agent_id = ? ORDER BY k.started_at DESC LIMIT 8`,
+    user.id,
+  );
+  const ringing = await n(`SELECT COUNT(*) AS n FROM sup_calls k JOIN sup_tickets t ON t.id = k.ticket_id WHERE k.status = 'ringing' AND (k.agent_id = ? ${queues.length ? `OR (k.agent_id IS NULL AND t.queue_id IN (${queues.map(() => "?").join(",")}))` : ""})`, user.id, ...queues);
+  return {
+    enabled: true,
+    agent,
+    lead,
+    status: me?.status ?? "offline",
+    statusSince: me?.status_since ?? null,
+    mine,
+    waiting: unassigned.slice(0, 8),
+    waitingCount: unassigned.length,
+    calls,
+    ringing,
+    stats: { open, solvedToday, solved7, firstResponseMin, rating: rt?.avg != null ? Math.round(Number(rt.avg) * 10) / 10 : null, ratings: Number(rt?.n ?? 0), late, callsToday, callMinutes7: Math.round(callSec7 / 60) },
+  };
+}

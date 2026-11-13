@@ -419,6 +419,24 @@ PREPS["update-1-phase7"] = async () => {
   await att.pairKiosk(k.code);
 };
 
+// The Customer Support home: Sara has only the Support role and is an agent of a queue with a waiting ticket.
+PREPS["hotfix-support-home"] = async () => {
+  await passwordOnly();
+  const sd = await import("../../src/server/support-desk");
+  const crypto = await import("node:crypto");
+  const a = await admin();
+  const sara = (await get<{ id: string }>("SELECT id FROM users WHERE email = 'sara@demo.local'"))!.id;
+  await run("DELETE FROM role_assignments WHERE user_id = ?", sara);
+  await run("DELETE FROM team_leads WHERE user_id = ?", sara);
+  await run("INSERT INTO role_assignments (user_id, role) VALUES (?, 'support')", sara);
+  await sd.saveSupportConfig(a, { enabled: true, leads: [] });
+  const q = await sd.saveQueue(a, { name: "Help", keywords: [], members: [sara], strategy: "least_busy", slaFirstMin: 30, slaResolveMin: 240 });
+  const app = await sd.saveApp(a, { name: "App", origins: ["https://a.example"], queueId: q, verifyIdentity: true });
+  const A = await sd.appByKey((await sd.listApps(a))[0]!.publicKey, "https://a.example");
+  const c = await sd.identify(A, { id: "c-1", name: "Almaz Bekele", hash: crypto.createHmac("sha256", app.secret!).update("c-1").digest("hex") });
+  await sd.customerCreateTicket(A, c.token, { subject: "Video does not load", message: "The grade 6 video stops" });
+};
+
 // Update 1.0 Phase 2: Legacy CMS points at the fake Noor that the browser test starts on this port.
 PREPS["update-1-p2"] = async () => {
   await passwordOnly();

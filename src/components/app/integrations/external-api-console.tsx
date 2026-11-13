@@ -109,6 +109,8 @@ export function ExternalApiConsole({ config }: { config: ExternalApiConfig }) {
 
   // Iconic SMS state
   const [iconicBalance, setIconicBalance] = React.useState<{ balance: number; currency: string } | null>(null);
+  const [iconicPhone, setIconicPhone] = React.useState("");
+  const setI = (patch: Partial<ExternalApiConfig["iconicSms"]>) => setF((cur) => ({ ...cur, iconicSms: { ...cur.iconicSms, ...patch } }));
 
   const loadChapaData = async (targetAccountId?: string) => {
     const [accRes, balRes, txRes] = await Promise.all([
@@ -141,7 +143,7 @@ export function ExternalApiConsole({ config }: { config: ExternalApiConfig }) {
 
   const runTest = async (service: "academy" | "finance" | "sms" | "iconicSms") => {
     setTesting(service);
-    const res = await testExternalApiAction(service);
+    const res = await testExternalApiAction(service, service === "iconicSms" ? iconicPhone.trim() || null : null);
     setTesting(null);
     if (!res.ok) {
       setTestResults((prev) => ({ ...prev, [service]: { ok: false, message: res.error || "Connection test failed" } }));
@@ -150,7 +152,7 @@ export function ExternalApiConsole({ config }: { config: ExternalApiConfig }) {
     }
     const d = res.data;
     setTestResults((prev) => ({ ...prev, [service]: { ok: !!d?.ok, message: d?.message || "", ms: d?.ms } }));
-    if (d?.ok) toast.success(`${service.toUpperCase()} connection healthy (${d.ms}ms)`);
+    if (d?.ok) toast.success(service === "iconicSms" ? d.message : `${service.toUpperCase()} connection healthy (${d.ms}ms)`);
     else toast.error(d?.message || "Connection failed");
   };
 
@@ -160,7 +162,7 @@ export function ExternalApiConsole({ config }: { config: ExternalApiConfig }) {
     setTesting(null);
     if (res.ok && res.data) {
       setIconicBalance({ balance: res.data.balance, currency: res.data.currency });
-      toast.success(`Iconic SMS Balance: ${res.data.balance} credits`);
+      toast.success(`i-Conic balance: ${res.data.balance} ${res.data.currency}`);
     } else {
       toast.error(!res.ok ? res.error : "Failed to check balance");
     }
@@ -256,7 +258,7 @@ export function ExternalApiConsole({ config }: { config: ExternalApiConfig }) {
         <div>
           <h2 className="text-xl font-bold tracking-tight">External API Integration Console</h2>
           <p className="text-xs text-muted-foreground">
-            Configure external integrations: Chapa multi-business payment gateway, Iconic SMS, Customer Support student lookup, and Noor Ethiopia CMS sync.
+            Configure external integrations: Chapa multi-business payment gateway, i-Conic SMS, Customer Support student lookup, and Noor Ethiopia CMS sync.
           </p>
         </div>
         <Button onClick={save} disabled={busy} size="sm">
@@ -274,7 +276,7 @@ export function ExternalApiConsole({ config }: { config: ExternalApiConfig }) {
             <CreditCardIcon className="size-3.5 text-emerald-600" /> Chapa Payments
           </TabsTrigger>
           <TabsTrigger value="sms" className="flex items-center gap-1.5 text-xs py-2">
-            <MessageSquareIcon className="size-3.5 text-blue-600" /> SMS & Iconic SMS
+            <MessageSquareIcon className="size-3.5 text-blue-600" /> SMS & i-Conic SMS
           </TabsTrigger>
           <TabsTrigger value="academy" className="flex items-center gap-1.5 text-xs py-2">
             <PhoneCallIcon className="size-3.5 text-purple-600" /> Academy & Support
@@ -844,98 +846,121 @@ export function ExternalApiConsole({ config }: { config: ExternalApiConfig }) {
           </Card>
         </TabsContent>
 
-        {/* 2. SMS Gateways & Iconic SMS */}
+        {/* 2. SMS Gateways & i-Conic SMS */}
         <TabsContent value="sms" className="space-y-4">
-          {/* Iconic SMS Section */}
-          <Card>
+          {/* i-Conic SMS: nothing about the request is guessed; it comes from the i-Conic account's API page. */}
+          <Card data-iconic-card>
             <CardHeader className="pb-3 flex flex-row items-center justify-between">
               <div>
                 <CardTitle className="text-base flex items-center gap-2">
-                  <MessageSquareIcon className="size-4 text-emerald-600" /> Iconic SMS Gateway (sms.iconic.et)
+                  <MessageSquareIcon className="size-4 text-muted-foreground" /> i-Conic SMS
                 </CardTitle>
                 <CardDescription className="text-xs">
-                  Ethiopian bulk SMS gateway for parent notifications, course reminders, and receipts.
+                  Copy the address, send path, how the key is sent and the field names from your i-Conic account&apos;s API page. Saving makes i-Conic an SMS connection: it is used for SMS routing, retries and fallback, and every message is kept in the SMS log.
                 </CardDescription>
               </div>
               <div className="flex items-center gap-2">
-                <Label htmlFor="iconic-enable" className="text-xs">Enable Iconic SMS</Label>
-                <Switch
-                  id="iconic-enable"
-                  checked={f.iconicSms.enabled}
-                  onCheckedChange={(v) => setF({ ...f, iconicSms: { ...f.iconicSms, enabled: v } })}
-                />
+                <Label htmlFor="iconic-enable" className="text-xs">On</Label>
+                <Switch id="iconic-enable" checked={f.iconicSms.enabled} onCheckedChange={(v) => setI({ enabled: v })} />
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid gap-3 sm:grid-cols-3">
                 <div className="space-y-1 sm:col-span-2">
-                  <Label htmlFor="iconic-url" className="text-xs">Iconic Gateway API URL</Label>
-                  <Input
-                    id="iconic-url"
-                    value={f.iconicSms.baseUrl}
-                    onChange={(e) => setF({ ...f, iconicSms: { ...f.iconicSms, baseUrl: e.target.value } })}
-                    placeholder="https://sms.iconic.et/api/v1"
-                    className="h-8 text-xs font-mono"
-                  />
+                  <Label htmlFor="iconic-url" className="text-xs">API address</Label>
+                  <Input id="iconic-url" value={f.iconicSms.baseUrl} onChange={(e) => setI({ baseUrl: e.target.value })} placeholder="https://… (from your i-Conic account)" className="h-8 text-xs font-mono" />
                 </div>
                 <div className="space-y-1">
-                  <Label htmlFor="iconic-sender" className="text-xs">Sender ID (Alpha-numeric)</Label>
-                  <Input
-                    id="iconic-sender"
-                    value={f.iconicSms.senderId}
-                    onChange={(e) => setF({ ...f, iconicSms: { ...f.iconicSms, senderId: e.target.value } })}
-                    placeholder="MYSEED"
-                    className="h-8 text-xs"
-                  />
+                  <Label htmlFor="iconic-sender" className="text-xs">Sender ID</Label>
+                  <Input id="iconic-sender" value={f.iconicSms.senderId} onChange={(e) => setI({ senderId: e.target.value })} placeholder="MYSEED" className="h-8 text-xs" />
                 </div>
                 <div className="space-y-1 sm:col-span-3">
-                  <Label htmlFor="iconic-key" className="text-xs">Iconic SMS API Key / Bearer Token</Label>
-                  <Input
-                    id="iconic-key"
-                    type="password"
-                    value={f.iconicSms.apiKey}
-                    onChange={(e) => setF({ ...f, iconicSms: { ...f.iconicSms, apiKey: e.target.value } })}
-                    placeholder="iconic_live_key_..."
-                    className="h-8 text-xs font-mono"
-                  />
+                  <Label htmlFor="iconic-key" className="text-xs">API key or token</Label>
+                  <Input id="iconic-key" type="password" autoComplete="off" value={f.iconicSms.apiKey} onChange={(e) => setI({ apiKey: e.target.value })} className="h-8 text-xs font-mono" />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="iconic-path" className="text-xs">Send path</Label>
+                  <Input id="iconic-path" value={f.iconicSms.sendPath} onChange={(e) => setI({ sendPath: e.target.value })} placeholder="/send" className="h-8 text-xs font-mono" />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="iconic-method" className="text-xs">Method</Label>
+                  <select id="iconic-method" className="h-8 w-full rounded-md border bg-background px-2 text-xs" value={f.iconicSms.method} onChange={(e) => setI({ method: e.target.value as "POST" | "GET" })}>
+                    <option value="POST">POST</option>
+                    <option value="GET">GET</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="iconic-format" className="text-xs">Fields sent as</Label>
+                  <select id="iconic-format" className="h-8 w-full rounded-md border bg-background px-2 text-xs" value={f.iconicSms.format} onChange={(e) => setI({ format: e.target.value as "json" | "form" | "query" })}>
+                    <option value="json">JSON body</option>
+                    <option value="form">Form body</option>
+                    <option value="query">In the address (query)</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="iconic-auth" className="text-xs">Key sent as</Label>
+                  <select id="iconic-auth" className="h-8 w-full rounded-md border bg-background px-2 text-xs" value={f.iconicSms.authStyle} onChange={(e) => setI({ authStyle: e.target.value as "bearer" | "header" | "query" })}>
+                    <option value="bearer">Authorization: Bearer</option>
+                    <option value="header">A header</option>
+                    <option value="query">In the address</option>
+                  </select>
+                </div>
+                {f.iconicSms.authStyle !== "bearer" && (
+                  <div className="space-y-1">
+                    <Label htmlFor="iconic-auth-name" className="text-xs">{f.iconicSms.authStyle === "header" ? "Header name" : "Address field name"}</Label>
+                    <Input id="iconic-auth-name" value={f.iconicSms.authName} onChange={(e) => setI({ authName: e.target.value })} placeholder={f.iconicSms.authStyle === "header" ? "KEY" : "token"} className="h-8 text-xs font-mono" />
+                  </div>
+                )}
+                <div className="space-y-1">
+                  <Label htmlFor="iconic-to" className="text-xs">Phone field</Label>
+                  <Input id="iconic-to" value={f.iconicSms.toField} onChange={(e) => setI({ toField: e.target.value })} placeholder="to" className="h-8 text-xs font-mono" />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="iconic-msg" className="text-xs">Message field</Label>
+                  <Input id="iconic-msg" value={f.iconicSms.messageField} onChange={(e) => setI({ messageField: e.target.value })} placeholder="message" className="h-8 text-xs font-mono" />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="iconic-from" className="text-xs">Sender field (empty: not sent)</Label>
+                  <Input id="iconic-from" value={f.iconicSms.senderField} onChange={(e) => setI({ senderField: e.target.value })} placeholder="from" className="h-8 text-xs font-mono" />
+                </div>
+                <div className="space-y-1 sm:col-span-2">
+                  <Label htmlFor="iconic-bal" className="text-xs">Balance path (optional)</Label>
+                  <Input id="iconic-bal" value={f.iconicSms.balancePath} onChange={(e) => setI({ balancePath: e.target.value })} placeholder="/balance" className="h-8 text-xs font-mono" />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="iconic-bal-field" className="text-xs">Balance field in the answer</Label>
+                  <Input id="iconic-bal-field" value={f.iconicSms.balanceField} onChange={(e) => setI({ balanceField: e.target.value })} placeholder="balance or data.balance" className="h-8 text-xs font-mono" />
                 </div>
               </div>
 
-              <div className="pt-2 flex items-center justify-between border-t">
-                <div className="text-xs flex items-center gap-2">
+              <div className="flex flex-wrap items-end justify-between gap-3 border-t pt-3">
+                <div className="min-w-0 flex-1 space-y-1 text-xs">
                   {iconicBalance && (
-                    <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 font-semibold text-xs">
-                      Available Credits: {iconicBalance.balance.toLocaleString()}
+                    <Badge variant="outline" className="text-xs font-semibold" data-iconic-balance>
+                      Balance: {iconicBalance.balance.toLocaleString()} {iconicBalance.currency}
                     </Badge>
                   )}
                   {testResults.iconicSms && (
-                    <span className={cn("text-xs flex items-center gap-1 font-medium", testResults.iconicSms.ok ? "text-emerald-600" : "text-destructive")}>
-                      {testResults.iconicSms.ok ? <CheckCircle2Icon className="size-3.5" /> : <XCircleIcon className="size-3.5" />}
-                      {testResults.iconicSms.message}
-                    </span>
+                    <p className={cn("flex items-start gap-1 font-medium break-words", testResults.iconicSms.ok ? "text-emerald-600" : "text-destructive")} data-iconic-result>
+                      {testResults.iconicSms.ok ? <CheckCircle2Icon className="mt-0.5 size-3.5 shrink-0" /> : <XCircleIcon className="mt-0.5 size-3.5 shrink-0" />}
+                      <span>{testResults.iconicSms.message}</span>
+                    </p>
                   )}
                 </div>
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={testing === "iconicBalance"}
-                    onClick={checkIconicBalance}
-                    className="text-xs h-8"
-                  >
-                    Check Balance
+                <div className="flex flex-wrap items-end gap-2">
+                  <div className="space-y-1">
+                    <Label htmlFor="iconic-test-phone" className="text-xs">Test phone (sends one SMS)</Label>
+                    <Input id="iconic-test-phone" inputMode="tel" value={iconicPhone} onChange={(e) => setIconicPhone(e.target.value)} placeholder="+2519…" className="h-8 w-40 text-xs" />
+                  </div>
+                  <Button size="sm" variant="outline" disabled={testing === "iconicBalance"} onClick={checkIconicBalance} className="text-xs h-8">
+                    Check balance
                   </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={testing === "iconicSms"}
-                    onClick={() => runTest("iconicSms")}
-                    className="text-xs h-8"
-                  >
-                    Test Connection
+                  <Button size="sm" variant="outline" disabled={testing === "iconicSms"} onClick={() => runTest("iconicSms")} className="text-xs h-8" data-iconic-test>
+                    {iconicPhone.trim() ? "Send test SMS" : "Test connection"}
                   </Button>
                 </div>
               </div>
+              <p className="text-xs text-muted-foreground">Save first, then test. A test SMS goes through i-Conic only (no fallback) and appears in Integrations, SMS.</p>
             </CardContent>
           </Card>
 

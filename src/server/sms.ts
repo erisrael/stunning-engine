@@ -80,7 +80,7 @@ async function providersFor(purpose: Purpose, cfg: SmsConfig): Promise<Connector
   return chosen.length ? chosen : active;
 }
 
-export async function sendSmsMessage(input: { to: string; message?: string; sender?: string | null; purpose?: Purpose; template?: string; vars?: Record<string, string | number> }) {
+export async function sendSmsMessage(input: { to: string; message?: string; sender?: string | null; purpose?: Purpose; template?: string; vars?: Record<string, string | number>; only?: string | null }) {
   const cfg = await smsConfig();
   const purpose: Purpose = isPurpose(input.purpose) ? input.purpose : "alerts";
   let message = input.message ?? "";
@@ -93,7 +93,8 @@ export async function sendSmsMessage(input: { to: string; message?: string; send
   if (!message.trim()) throw new WorkflowError("VALIDATION", "Write the message.");
   const phone = normPhone(input.to);
   if (phone.replace(/\D/g, "").length < 9) throw new WorkflowError("VALIDATION", "That phone number looks too short.");
-  const providers = await providersFor(purpose, cfg);
+  // only: one provider and no fallback (a provider's own test).
+  const providers = input.only ? (await connectorsFor("sms")).filter((c) => c.id === input.only) : await providersFor(purpose, cfg);
   if (!providers.length) throw new WorkflowError("INVALID_STATE", "No SMS provider is connected (Admin, Integrations, Integrate a platform).");
   const sender = (input.sender ?? "") || cfg.routes[purpose].sender;
   const id = uid("sms_");

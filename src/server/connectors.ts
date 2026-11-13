@@ -519,7 +519,8 @@ function setPath(target: Record<string, unknown>, path: string, value: unknown) 
   });
 }
 
-const fill = (tpl: string, vars: Record<string, string>) => tpl.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, k) => vars[k] ?? "");
+// {{a|b}} takes the first of a, b that has a value (as {{sender|secret.sender}}: the route's sender ID, else the saved one).
+const fill = (tpl: string, vars: Record<string, string>) => tpl.replace(/\{\{\s*([\w.|]+)\s*\}\}/g, (_, k: string) => k.split("|").map((x) => vars[x.trim()]).find((v) => v !== undefined && v !== "") ?? "");
 const tokens = new Map<string, { token: string; until: number }>();
 
 async function secretsOf(id: string): Promise<Record<string, string>> {
@@ -582,6 +583,8 @@ export async function callConnector(c: Connector, input: Record<string, string |
       parsed = text.slice(0, 500);
     }
     if (!res.ok) error = String(pick(parsed, c.response.errorPath) ?? `The provider answered ${res.status}.`).slice(0, 300);
+    // A 404 is nearly always a wrong address or path: say which one was tried (never the query, which may hold a key).
+    if (res.status === 404) error = `Not found (404) at ${op.method} ${c.baseUrl}${path}. The address or path is wrong for this provider; check it in the provider's API docs.${error && !/^The provider answered/.test(error) ? ` (${error})` : ""}`.slice(0, 400);
   } catch (e) {
     error = e instanceof Error ? e.message : "No answer.";
   }
