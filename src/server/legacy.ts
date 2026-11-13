@@ -468,7 +468,7 @@ export type VideoInput = {
 };
 
 export const OTHER_STUDIO = "Other";
-export const CAMERA_CODE_HELP = "The code the camera gives the file, as C0172. Several files for one video: C0172 & C0173.";
+export const CAMERA_CODE_HELP = "The code the camera gives the file, as C0172, CLIP0250 or 0ZA4K. Several files for one video: C0172 & C0173.";
 const RES_LIMIT = { count: 6, bytes: 9 * 1024 * 1024 };
 const RES_OK = /\.(pdf|pptx?|key|odp|docx?|odt|xlsx?|csv|txt|png|jpe?g|gif|webp|zip)$/i;
 

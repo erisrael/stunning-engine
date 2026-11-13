@@ -52,6 +52,7 @@ async function main() {
   check("placeholders", isPlaceholderTitle("Topic Name") && isPlaceholderTitle("Part 3:") && isPlaceholderTitle("To be determined") && isPlaceholderTitle("<empty>") && !isPlaceholderTitle("Simple Present"));
   check("clean names", cleanName("Part 3: Forces", "part") === "Forces" && cleanName("Unit 2: Plants", "unit") === "Plants" && cleanName("Unity is Strength", "unit") === "Unity is Strength");
   check("camera codes", cleanCameraCode("c0172 & CO173 & C0174").code === "C0172 & C0173 & C0174" && cleanCameraCode("00003 AND 00004").code === "00003 & 00004");
+  check("codes with words are codes", ["CLIP0250", "0ZA4K", "MVI_1234", "clip0250 & clip0251"].every((c) => !cleanCameraCode(c).doubtful) && cleanCameraCode("clip0250 & clip0251").code === "CLIP0250 & CLIP0251" && cleanCameraCode("hello").doubtful);
   const rep = cleanCameraCode("C0106 REPEATED");
   check("a word after a code becomes a note", rep.code === "C0106" && rep.note === "Repeated", rep);
   const take = cleanCameraCode("C0359 & TAKE THIS ONE");

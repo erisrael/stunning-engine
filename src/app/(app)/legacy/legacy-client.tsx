@@ -394,7 +394,7 @@ function UnitsView({ grade, subject, units, canRemove }: Props & { grade: NonNul
   );
 }
 
-const CODE_HELP = "The code the camera gives the file, as C0172. Several files for one video: C0172 & C0173.";
+const CODE_HELP = "The code the camera gives the file, as C0172, CLIP0250 or 0ZA4K. Several files for one video: C0172 & C0173.";
 const OTHER = "Other";
 const RES_ACCEPT = ".pdf,.ppt,.pptx,.key,.odp,.doc,.docx,.odt,.xls,.xlsx,.csv,.txt,image/*,.zip";
 const todayLocal = () => {

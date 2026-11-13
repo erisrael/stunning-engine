@@ -19,7 +19,9 @@ export function cleanName(raw: string, kind: "unit" | "part") {
   return t.replace(new RegExp(`^(?:${words})\\s*\\d*\\s*[:.\\-–]\\s*`, "i"), "").trim() || t;
 }
 
-const CODE = /^(?:[A-Z]{1,3}\d{2,}|\d{3,}|\.\.\d+|0Z4A\d+)$/;
+// Cameras name files many ways: C0172, CLIP0250, 0ZA4K, MVI_1234, DSC-0012. A code is one word of letters and
+// numbers (_ - . allowed) with at least one digit, so a plain word such as "hello" or "PART" is still flagged.
+const CODE = /^(?=[A-Z0-9_.-]*\d)[A-Z0-9][A-Z0-9_.-]{1,23}$|^\.\.\d+$/;
 
 // One clean camera code string. Only sure fixes are made: spacing, capitals, "AND" to "&", the letter O typed for a
 // zero after C ("CO173"). A word after a code becomes a note. Anything else is kept and listed for a person to look at.
