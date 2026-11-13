@@ -31,7 +31,7 @@ export const channelsOf = (raw: string | null | undefined): Channels => {
 };
 const isAdmin = async (u: AppUser) => (await import("./support-desk")).isAdmin(u);
 
-type SysRow = { id: string; name: string; public_key: string; secret: string; active: number; queue_id: string | null; description: string | null; channels: string | null; tg_token: string | null; tg_bot: string | null; webhook_url: string | null; webhook_secret: string | null; webhook_events: string | null; webhook_last: string | null };
+type SysRow = { id: string; name: string; public_key: string; secret: string; active: number; queue_id: string | null; description: string | null; channels: string | null; tg_token: string | null; tg_bot: string | null; webhook_url: string | null; webhook_secret: string | null; webhook_events: string | null; webhook_last: string | null; call_engine?: string | null; call_phone?: string | null };
 
 // A system's channel switch, checked where a channel is used (widget, calls, Telegram, SMS).
 export async function channelOn(appId: string | null | undefined, ch: Channel) {
@@ -135,6 +135,8 @@ export async function listSystems(user: AppUser) {
       description: r.description ?? "",
       channels: channelsOf(r.channels),
       bot: r.tg_token ? (r.tg_bot ?? "connected") : null,
+      callEngine: (r.call_engine === "phone" ? "phone" : "browser") as "browser" | "phone",
+      callPhone: r.call_phone ?? "",
       webhookUrl: r.webhook_url ?? "",
       webhookEvents: parseJson<string[]>(r.webhook_events, [...WEBHOOK_EVENTS]),
       webhookSecretSet: !!r.webhook_secret,

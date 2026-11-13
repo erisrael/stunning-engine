@@ -43,6 +43,9 @@ export type SupportConfig = {
   inactiveHours: number;
   // A call rings this long before it is missed.
   ringSeconds: number;
+  // A call for one agent rings the whole queue after this many seconds, then the overflow queue (when set).
+  callEscalateSec: number;
+  callOverflowQueue: string | null;
   // Shown in the widget, for example "Monday to Friday, 8:30 to 17:30".
   hours: string;
   awayMessage: string;
@@ -64,6 +67,8 @@ export const DEFAULT_SUPPORT: SupportConfig = {
   autoCloseDays: 7,
   inactiveHours: 72,
   ringSeconds: 45,
+  callEscalateSec: 15,
+  callOverflowQueue: null,
   hours: "Monday to Friday, 8:30 to 17:30",
   awayMessage: "No one can take your call right now. Leave a message and we will answer as soon as we can.",
   mailbox: null,

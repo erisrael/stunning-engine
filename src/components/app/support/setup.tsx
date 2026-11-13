@@ -49,7 +49,7 @@ function People({ all, value, onChange, label }: { all: Person[]; value: string[
   );
 }
 
-export function SupportSettings({ cfg, people, admin, mailboxes = [], telegram = { connected: false, bot: null } }: { cfg: SupportConfig; people: Person[]; admin: boolean; mailboxes?: string[]; telegram?: { connected: boolean; bot: string | null } }) {
+export function SupportSettings({ cfg, people, admin, mailboxes = [], telegram = { connected: false, bot: null }, queues = [] }: { cfg: SupportConfig; people: Person[]; admin: boolean; mailboxes?: string[]; telegram?: { connected: boolean; bot: string | null }; queues?: { id: string; name: string }[] }) {
   const { act, busy } = useAct();
   const [c, setC] = React.useState(cfg);
   const [token, setToken] = React.useState("");
@@ -88,7 +88,20 @@ export function SupportSettings({ cfg, people, admin, mailboxes = [], telegram =
           {num("autoCloseDays", "Close solved tickets after (days)")}
           {num("inactiveHours", "Solve when the customer is silent (hours, 0 = never)")}
           {num("ringSeconds", "A call rings for (seconds)")}
+          {num("callEscalateSec", "Ring the whole queue after (seconds)")}
+          <div className="space-y-1">
+            <Label htmlFor="sc-overflow">Then also ring (overflow queue)</Label>
+            <select id="sc-overflow" disabled={!admin} className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={c.callOverflowQueue ?? ""} onChange={(e) => setC({ ...c, callOverflowQueue: e.target.value || null })}>
+              <option value="">Nobody else</option>
+              {queues.map((q) => (
+                <option key={q.id} value={q.id}>
+                  {q.name}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
+        <p className="text-xs text-muted-foreground">A call first rings the agent who has the customer&apos;s ticket, then everyone free in the ticket&apos;s queue, then the overflow queue, until it is missed.</p>
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-1">
             <Label htmlFor="sc-hours">Opening hours (shown in the app)</Label>

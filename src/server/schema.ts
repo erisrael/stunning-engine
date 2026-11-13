@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 66;
+export const SCHEMA_VERSION = 67;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -3627,6 +3627,26 @@ CREATE TABLE IF NOT EXISTS sup_bot_feedback (
   updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_sup_bot_feedback ON sup_bot_feedback(bot, status, created_at);
+
+-- v67: the call center (Update 1.1): hold with its time, transfers (the new call points at the one it came from),
+-- conference legs (a staff member joined through the agent's browser), how far a ringing call has widened (its own
+-- agent, the queue, the overflow queue), phone calls with the number dialled, call-back requests, and each
+-- system's call engine (calls in the browser, or a phone number).
+ALTER TABLE sup_calls ADD COLUMN IF NOT EXISTS on_hold INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE sup_calls ADD COLUMN IF NOT EXISTS hold_since TEXT;
+ALTER TABLE sup_calls ADD COLUMN IF NOT EXISTS hold_s INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE sup_calls ADD COLUMN IF NOT EXISTS transfer_to TEXT;
+ALTER TABLE sup_calls ADD COLUMN IF NOT EXISTS transfer_from TEXT;
+ALTER TABLE sup_calls ADD COLUMN IF NOT EXISTS parent_id TEXT;
+ALTER TABLE sup_calls ADD COLUMN IF NOT EXISTS host_id TEXT;
+ALTER TABLE sup_calls ADD COLUMN IF NOT EXISTS ring_stage INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE sup_calls ADD COLUMN IF NOT EXISTS ring_queue TEXT;
+ALTER TABLE sup_calls ADD COLUMN IF NOT EXISTS phone TEXT;
+ALTER TABLE sup_calls ADD COLUMN IF NOT EXISTS app_id TEXT;
+CREATE INDEX IF NOT EXISTS idx_sup_calls_customer ON sup_calls(customer_id, started_at);
+CREATE INDEX IF NOT EXISTS idx_sup_calls_agent ON sup_calls(agent_id, started_at);
+ALTER TABLE sup_apps ADD COLUMN IF NOT EXISTS call_engine TEXT NOT NULL DEFAULT 'browser';
+ALTER TABLE sup_apps ADD COLUMN IF NOT EXISTS call_phone TEXT;
 
 `;
 

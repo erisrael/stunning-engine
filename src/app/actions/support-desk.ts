@@ -124,3 +124,32 @@ export async function agentTypingAction(ticketId: string) {
 export async function agentReadAction(ticketId: string) {
   return wrap(async () => sd.agentRead(await requireViewer(), ticketId));
 }
+
+// The call center (src/server/support-calls.ts): hold, transfer, a colleague into the call, calling out, call-backs.
+export async function holdCallAction(callId: string, on: boolean) {
+  return wrap(async () => (await import("@/server/support-calls")).holdCall(await requireViewer(), callId, on), { revalidate: false });
+}
+export async function transferTargetsAction() {
+  return wrap(async () => (await import("@/server/support-calls")).transferTargets(await requireViewer()), { revalidate: false });
+}
+export async function transferCallAction(callId: string, toUserId: string, note?: string | null) {
+  return wrap(async () => (await import("@/server/support-calls")).transferCall(await requireViewer(), callId, toUserId, note));
+}
+export async function inviteToCallAction(callId: string, toUserId: string, offer: string) {
+  return wrap(async () => (await import("@/server/support-calls")).inviteToCall(await requireViewer(), callId, toUserId, offer), { revalidate: false });
+}
+export async function dialInfoAction(ticketId: string) {
+  return wrap(async () => (await import("@/server/support-calls")).dialInfo(await requireViewer(), ticketId), { revalidate: false });
+}
+export async function dialCustomerAction(ticketId: string, offer: string) {
+  return wrap(async () => (await import("@/server/support-calls")).dialCustomer(await requireViewer(), ticketId, offer), { revalidate: false });
+}
+export async function startPhoneCallAction(input: { ticketId?: string | null; phone?: string | null; callbackId?: string | null }) {
+  return wrap(async () => (await import("@/server/support-calls")).startPhoneCall(await requireViewer(), input));
+}
+export async function cancelCallbackAction(callId: string) {
+  return wrap(async () => (await import("@/server/support-calls")).cancelCallback(await requireViewer(), callId));
+}
+export async function saveCallEngineAction(appId: string, input: { engine: "browser" | "phone"; phone?: string | null }) {
+  return wrap(async () => (await import("@/server/support-calls")).saveCallEngine(await requireViewer(), appId, input));
+}

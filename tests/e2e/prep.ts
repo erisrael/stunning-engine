@@ -463,6 +463,18 @@ PREPS["update-1-1-bots"] = async () => {
   return { key, bot: app.id };
 };
 
+// Update 1.1 phase 14: Admin and Sara answer calls in the Academy queue; calls are not recorded (no consent step).
+PREPS["update-1-1-calls"] = async () => {
+  await passwordOnly();
+  const sd = await import("../../src/server/support-desk");
+  const a = await admin();
+  const sara = (await get<{ id: string }>("SELECT id FROM users WHERE email = 'sara@demo.local'"))!;
+  await sd.saveSupportConfig(a, { enabled: true, leads: [], recordCalls: false, ringSeconds: 90, callEscalateSec: 60 });
+  const q = await sd.saveQueue(a, { name: "Academy", keywords: [], members: [a.id, sara.id], strategy: "least_busy" });
+  await sd.saveApp(a, { name: "MySeed Academy", origins: [], queueId: q });
+  return { key: (await sd.listApps(a))[0]!.publicKey };
+};
+
 // Update 1.0 Phase 2: Legacy CMS points at the fake Noor that the browser test starts on this port.
 PREPS["update-1-p2"] = async () => {
   await passwordOnly();

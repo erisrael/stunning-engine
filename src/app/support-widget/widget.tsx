@@ -3,15 +3,16 @@
 // The customer's support panel: conversations, a new question, replies (checked every few seconds), rating the help,
 // and calling an agent from the browser (after agreeing to the recording when calls are recorded).
 import * as React from "react";
-import { ArrowLeftIcon, Loader2Icon, PhoneIcon, PhoneOffIcon, PlusIcon, SendIcon } from "lucide-react";
+import { ArrowLeftIcon, Loader2Icon, PlusIcon, SendIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { LiveThread, words, type Lang } from "./live-thread";
+import { CallButton, CallLayer } from "./calls";
 
 type User = { id: string | null; name: string | null; email: string | null; phone: string | null; hash: string | null; meta?: Record<string, string> };
-type Session = { token: string; customer: { id: string; name: string }; app: { name: string; greeting: string | null; color: string | null }; online: boolean; hours: string; awayMessage: string; recordCalls: boolean; recordingNotice: string; channels?: { web_chat: boolean; telegram: boolean; calls: boolean; sms: boolean } };
+export type Session = { token: string; customer: { id: string; name: string }; app: { name: string; greeting: string | null; color: string | null }; online: boolean; hours: string; awayMessage: string; recordCalls: boolean; recordingNotice: string; channels?: { web_chat: boolean; telegram: boolean; calls: boolean; sms: boolean }; callEngine?: { engine: "browser" | "phone"; phone: string | null } };
 type Ticket = { id: string; number: number; subject: string; status: string; updated_at: string; rating: number | null };
 
 const STATUS: Record<string, string> = { new: "Sent", open: "Being answered", pending: "Waiting for you", on_hold: "On hold", solved: "Solved", closed: "Closed" };
@@ -113,6 +114,7 @@ export function SupportWidget({ appKey, initialUser, waitForParent }: { appKey: 
         </div>
         <p className="text-xs opacity-90">{s.online ? (am ? "መስመር ላይ ነን" : "We are online") : `${am ? "በተለምዶ" : "Usually"}: ${s.hours}`}</p>
       </header>
+      <CallLayer api={api} s={s}>
       <div className="min-h-0 flex-1 overflow-y-auto">
         {open === null && (
           <div className="space-y-3 p-4">
@@ -120,7 +122,7 @@ export function SupportWidget({ appKey, initialUser, waitForParent }: { appKey: 
             <Button className="w-full text-white" style={{ background: color }} onClick={() => setOpen("new")} data-new-question>
               <PlusIcon /> {am ? "ጥያቄ ይጠይቁ" : "Ask a question"}
             </Button>
-            {s.online && <CallButton api={api} s={s} ticketId={null} color={color} onTicket={(id) => (setOpen(id), void reload())} />}
+            <CallButton api={api} s={s} ticketId={null} color={color} onTicket={(id) => (setOpen(id), void reload())} />
             <HelpSearch api={api} onOpen={(id) => setOpen(`a:${id}`)} />
             {tickets.length > 0 && <p className="pt-2 text-xs font-medium text-muted-foreground">{am ? "ውይይቶችዎ" : "Your conversations"}</p>}
             <ul className="space-y-1">
@@ -140,14 +142,15 @@ export function SupportWidget({ appKey, initialUser, waitForParent }: { appKey: 
         {open === "new" && <NewQuestion api={api} color={color} onDone={(id) => (setOpen(id), void reload())} onArticle={(id) => setOpen(`a:${id}`)} />}
         {open?.startsWith("a:") && <ArticleView api={api} id={open.slice(2)} onAsk={() => setOpen("new")} />}
         {open && open !== "new" && !open.startsWith("a:") && (
-          <LiveThread key={open} api={api} appKey={appKey} token={s.token} id={open} color={color} lang={lang} online={s.online} callButton={(reload) => (s.online ? <CallButton api={api} s={s} ticketId={open} color={color} onTicket={reload} /> : null)} />
+          <LiveThread key={open} api={api} appKey={appKey} token={s.token} id={open} color={color} lang={lang} online={s.online} callButton={(reload) => <CallButton api={api} s={s} ticketId={open} color={color} onTicket={reload} />} />
         )}
       </div>
+      </CallLayer>
     </div>
   );
 }
 
-type Api = <T>(path: string, body?: unknown) => Promise<T>;
+export type Api = <T>(path: string, body?: unknown) => Promise<T>;
 
 type Found = { id: string; title: string; category: string | null; snippet: string };
 
@@ -249,200 +252,6 @@ function NewQuestion({ api, color, onDone, onArticle }: { api: Api; color: strin
       >
         {busy ? <Loader2Icon className="animate-spin" /> : <SendIcon />} Send
       </Button>
-    </div>
-  );
-}
-
-
-async function gathered(pc: RTCPeerConnection, ms = 3000) {
-  if (pc.iceGatheringState === "complete") return;
-  await new Promise<void>((resolve) => {
-    const t = window.setTimeout(resolve, ms);
-    pc.addEventListener("icegatheringstatechange", () => pc.iceGatheringState === "complete" && (window.clearTimeout(t), resolve()));
-  });
-}
-
-type Ivr = { on: boolean; message: string; lang: string; audio: string | null; music: boolean; repeatSec: number; position: boolean };
-
-// What the caller hears until an agent answers: the recording Admin uploaded, or the message spoken in their browser,
-// with their place in line, then soft hold music; repeated. It stops the moment the call is answered or ends.
-function useWaitingMessage(active: boolean) {
-  const cfg = React.useRef<Ivr | null>(null);
-  const [position, setPosition] = React.useState<number | null>(null);
-  const said = React.useRef(0);
-  const ctx = React.useRef<AudioContext | null>(null);
-  const tune = React.useRef<number | null>(null);
-  const player = React.useRef<HTMLAudioElement | null>(null);
-  const stopAll = React.useCallback(() => {
-    try {
-      window.speechSynthesis?.cancel();
-    } catch {}
-    if (tune.current) window.clearInterval(tune.current);
-    tune.current = null;
-    player.current?.pause();
-    player.current = null;
-    void ctx.current?.close().catch(() => {});
-    ctx.current = null;
-    said.current = 0;
-  }, []);
-  // Soft hold music: a slow chord pattern from the browser, no file needed.
-  const music = React.useCallback(() => {
-    if (tune.current || !cfg.current?.music) return;
-    const C = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    if (!C) return;
-    const ac = (ctx.current ??= new C());
-    const notes = [261.6, 329.6, 392, 329.6, 293.7, 349.2, 440, 349.2];
-    let i = 0;
-    const play = () => {
-      const o = ac.createOscillator();
-      const g = ac.createGain();
-      o.type = "sine";
-      o.frequency.value = notes[i++ % notes.length]!;
-      g.gain.setValueAtTime(0.0001, ac.currentTime);
-      g.gain.exponentialRampToValueAtTime(0.05, ac.currentTime + 0.05);
-      g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + 0.9);
-      o.connect(g).connect(ac.destination);
-      o.start();
-      o.stop(ac.currentTime + 1);
-    };
-    play();
-    tune.current = window.setInterval(play, 1000);
-  }, []);
-  const speak = React.useCallback(
-    (pos: number | null) => {
-      const c = cfg.current;
-      if (!c?.on) return;
-      said.current = Date.now();
-      if (tune.current) window.clearInterval(tune.current);
-      tune.current = null;
-      if (c.audio) {
-        const a = (player.current ??= new Audio(c.audio));
-        a.currentTime = 0;
-        a.onended = () => music();
-        void a.play().catch(() => music());
-        return;
-      }
-      const synth = window.speechSynthesis;
-      if (!synth) return music();
-      const text = `${c.message}${c.position && pos && pos > 1 ? ` You are number ${pos} in line.` : ""}`;
-      const u = new SpeechSynthesisUtterance(text);
-      u.lang = c.lang;
-      u.rate = 0.95;
-      u.onend = () => music();
-      u.onerror = () => music();
-      synth.cancel();
-      synth.speak(u);
-    },
-    [music],
-  );
-  React.useEffect(() => {
-    if (!active) stopAll();
-    return () => stopAll();
-  }, [active, stopAll]);
-  const update = (ivr: Ivr | null, pos: number | null) => {
-    cfg.current = ivr;
-    setPosition(pos);
-    if (!ivr?.on || !active) return;
-    if (!said.current || Date.now() - said.current > ivr.repeatSec * 1000) speak(pos);
-  };
-  return { update, position };
-}
-
-// Calling an agent: the browser asks for the microphone, the call rings in the desk, and the agent answers there.
-function CallButton({ api, s, ticketId, color, onTicket }: { api: Api; s: Session; ticketId: string | null; color: string; onTicket: (id: string) => void }) {
-  const [state, setState] = React.useState<"idle" | "consent" | "ringing" | "live" | "ended">("idle");
-  const [agree, setAgree] = React.useState(false);
-  const [info, setInfo] = React.useState<string | null>(null);
-  const [secs, setSecs] = React.useState(0);
-  const ref = React.useRef<{ pc?: RTCPeerConnection; mic?: MediaStream; poll?: number; timer?: number; callId?: string }>({});
-  const audio = React.useRef<HTMLAudioElement>(null);
-  const waiting = useWaitingMessage(state === "ringing");
-  const stop = React.useCallback(
-    async (tell: boolean) => {
-      const p = ref.current;
-      if (p.poll) window.clearInterval(p.poll);
-      if (p.timer) window.clearInterval(p.timer);
-      p.mic?.getTracks().forEach((t) => t.stop());
-      p.pc?.close();
-      if (tell && p.callId) await api(`calls/${p.callId}/end`, {}).catch(() => {});
-      setState("ended");
-    },
-    [api],
-  );
-  React.useEffect(() => () => void stop(false), [stop]);
-  const start = async () => {
-    setInfo(null);
-    try {
-      const ice = await api<{ iceServers: RTCIceServer[] }>("ice");
-      const pc = new RTCPeerConnection({ iceServers: ice.iceServers });
-      const mic = await navigator.mediaDevices.getUserMedia({ audio: true });
-      Object.assign(ref.current, { pc, mic });
-      mic.getTracks().forEach((t) => pc.addTrack(t, mic));
-      pc.ontrack = (e) => audio.current && (audio.current.srcObject = e.streams[0] ?? null);
-      await pc.setLocalDescription(await pc.createOffer());
-      await gathered(pc);
-      setState("ringing");
-      const r = await api<{ callId: string; ticketId: string }>("calls", { ticketId, offer: JSON.stringify(pc.localDescription), consent: s.recordCalls ? agree : true });
-      ref.current.callId = r.callId;
-      if (!ticketId) onTicket(r.ticketId);
-      ref.current.poll = window.setInterval(async () => {
-        const k = await api<{ status: string; answer: string | null; agent: string | null; position?: number; ivr?: Ivr | null }>(`calls/${r.callId}`).catch(() => null);
-        if (!k) return;
-        if (k.status === "ringing") waiting.update(k.ivr ?? null, k.position ?? null);
-        if (k.status === "answered" && k.answer && pc.signalingState === "have-local-offer") {
-          await pc.setRemoteDescription(JSON.parse(k.answer) as RTCSessionDescriptionInit);
-          setInfo(k.agent ? `You are talking with ${k.agent}` : null);
-          setState("live");
-          ref.current.timer = window.setInterval(() => setSecs((x) => x + 1), 1000);
-        }
-        if (["ended", "missed", "declined"].includes(k.status)) {
-          setInfo(k.status === "missed" ? "Nobody could answer. We will write to you here." : "The call has ended.");
-          await stop(false);
-        }
-      }, 1500);
-    } catch (e) {
-      setInfo(e instanceof Error && /Permission|NotAllowed/.test(e.name + e.message) ? "Allow the microphone to call us." : e instanceof Error ? e.message : "The call could not start.");
-      await stop(false);
-    }
-  };
-  // The connected system switched calls off: no call button.
-  if (state === "idle" && s.channels?.calls === false) return null;
-  if (state === "idle")
-    return (
-      <Button variant="outline" className="w-full" onClick={() => (s.recordCalls ? setState("consent") : void start())} data-call-us>
-        <PhoneIcon /> Call us
-      </Button>
-    );
-  if (state === "consent")
-    return (
-      <div className="space-y-2 rounded-lg border p-2 text-xs" data-call-consent>
-        <p>{s.recordingNotice}</p>
-        <label className="flex items-center gap-2">
-          <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} /> I agree
-        </label>
-        <div className="flex gap-2">
-          <Button size="sm" className="text-white" style={{ background: color }} disabled={!agree} onClick={() => void start()}>
-            <PhoneIcon /> Call
-          </Button>
-          <Button size="sm" variant="ghost" onClick={() => setState("idle")}>
-            Cancel
-          </Button>
-        </div>
-      </div>
-    );
-  return (
-    <div className="flex items-center gap-2 rounded-lg border p-2 text-sm" data-call-state={state}>
-      <audio ref={audio} autoPlay />
-      <span className="flex-1">{state === "ringing" ? (waiting.position && waiting.position > 1 ? `Calling… you are number ${waiting.position} in line` : "Calling… please hold") : state === "live" ? `${info ?? "Connected"} · ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}` : (info ?? "Call ended")}</span>
-      {state === "ended" ? (
-        <Button size="sm" variant="ghost" onClick={() => (setState("idle"), setSecs(0))}>
-          OK
-        </Button>
-      ) : (
-        <Button size="sm" variant="destructive" onClick={() => void stop(true)}>
-          <PhoneOffIcon /> End
-        </Button>
-      )}
     </div>
   );
 }

@@ -538,10 +538,11 @@ const TEXT_FIELDS: { key: keyof TelegramTexts; label: string }[] = [
   { key: "feedbackThanks", label: "Feedback received" },
   { key: "feedbackThanksAm", label: "Feedback received (Amharic)" },
 ];
-const SWITCHES: { key: "resources" | "surveys" | "feedback" | "askPhone"; label: string }[] = [
+const SWITCHES: { key: "resources" | "surveys" | "feedback" | "callback" | "askPhone"; label: string }[] = [
   { key: "resources", label: "Resources button (the content library)" },
   { key: "surveys", label: "Forms and surveys button" },
   { key: "feedback", label: "Send feedback button" },
+  { key: "callback", label: "Call me back button (a call-back request in the call center)" },
   { key: "askPhone", label: "Ask for the phone number before a question" },
 ];
 

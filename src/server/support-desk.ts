@@ -64,7 +64,7 @@ export async function supportNav(u: AppUser) {
   return cfg.enabled && (await isAgent(u));
 }
 
-async function needAgent(u: AppUser) {
+export async function needAgent(u: AppUser) {
   const cfg = await supportConfig();
   if (!cfg.enabled) throw new WorkflowError("INVALID_STATE", "Customer support is switched off (Admin, Support setup).");
   if (!(await isAgent(u))) throw new WorkflowError("FORBIDDEN", "Only support agents and leads work tickets.");
@@ -92,6 +92,8 @@ export async function saveSupportConfig(user: AppUser, input: Partial<SupportCon
     autoCloseDays: n(input.autoCloseDays ?? cur.autoCloseDays, 7, 1, 90),
     inactiveHours: n(input.inactiveHours ?? cur.inactiveHours, 72, 0, 720),
     ringSeconds: n(input.ringSeconds ?? cur.ringSeconds, 45, 15, 180),
+    callEscalateSec: n(input.callEscalateSec ?? cur.callEscalateSec, 15, 5, 120),
+    callOverflowQueue: input.callOverflowQueue === undefined ? cur.callOverflowQueue : input.callOverflowQueue || null,
     hours: clean(input.hours ?? cur.hours, 200),
     awayMessage: clean(input.awayMessage ?? cur.awayMessage, 400),
     mailbox: input.mailbox === undefined ? cur.mailbox : input.mailbox ? clean(input.mailbox, 200).toLowerCase() : null,
@@ -197,7 +199,7 @@ export async function newAppSecret(user: AppUser, id: string) {
   return secret;
 }
 
-type AppFull = { id: string; name: string; public_key: string; secret: string; origins: string; queue_id: string | null; verify_identity: number; greeting: string | null; color: string | null; active: number };
+export type AppFull = { id: string; name: string; public_key: string; secret: string; origins: string; queue_id: string | null; verify_identity: number; greeting: string | null; color: string | null; active: number };
 
 // The app a request comes from: its public key, and the page's web address when the app limits them.
 export async function appByKey(publicKey: string | null | undefined, origin: string | null | undefined) {
@@ -254,7 +256,7 @@ export async function identify(app: AppFull, input: { id?: string | null; name?:
   const cfg = await supportConfig();
   const online = await availableAgents(null, cfg);
   const channels = (await import("./connected-systems")).channelsOf((await get<{ channels: string | null }>("SELECT channels FROM sup_apps WHERE id = ?", app.id))?.channels);
-  return { token: tokenFor(app, id), customer: { id, name, email }, app: { name: app.name, greeting: app.greeting, color: app.color }, channels, online: online.length > 0, hours: cfg.hours, awayMessage: cfg.awayMessage, recordCalls: cfg.recordCalls, recordingNotice: cfg.recordingNotice };
+  return { token: tokenFor(app, id), customer: { id, name, email }, app: { name: app.name, greeting: app.greeting, color: app.color }, channels, online: online.length > 0, hours: cfg.hours, awayMessage: cfg.awayMessage, recordCalls: cfg.recordCalls, recordingNotice: cfg.recordingNotice, callEngine: await (await import("./support-calls")).callEngineOf(app.id) };
 }
 
 export async function customerByToken(app: AppFull, token: string | null | undefined) {
@@ -601,7 +603,7 @@ export async function inbox(user: AppUser, view: string, q?: string | null) {
   );
 }
 
-async function canWork(user: AppUser, ticketId: string) {
+export async function canWork(user: AppUser, ticketId: string) {
   const cfg = await needAgent(user);
   const t = await get<{ id: string; number: number; queue_id: string | null; assignee_id: string | null; status: string; customer_id: string | null; subject: string; first_response_at: string | null; app_id: string | null }>(
     "SELECT id, number, queue_id, assignee_id, status, customer_id, subject, first_response_at, app_id FROM sup_tickets WHERE id = ?",
@@ -781,7 +783,8 @@ export async function deleteCanned(user: AppUser, id: string) {
 // Calls
 // ---------------------------------------------------------------------------
 
-type CallRow = { id: string; ticket_id: string | null; customer_id: string | null; agent_id: string | null; kind: string; status: string; offer: string | null; answer: string | null; customer_ice: string; agent_ice: string; consent: number; started_at: string; answered_at: string | null; ended_at: string | null };
+export type CallRow = { id: string; ticket_id: string | null; customer_id: string | null; agent_id: string | null; direction: string; kind: string; status: string; offer: string | null; answer: string | null; customer_ice: string; agent_ice: string; consent: number; started_at: string; answered_at: string | null; ended_at: string | null; on_hold: number; hold_since: string | null; hold_s: number; transfer_to: string | null; transfer_from: string | null; parent_id: string | null; host_id: string | null; ring_stage: number; app_id: string | null };
+const CALL_DONE = ["ended", "missed", "declined", "transferred"];
 
 export async function iceConfig() {
   const { iceServers } = await import("./calls");
@@ -790,10 +793,11 @@ export async function iceConfig() {
 
 // The customer calls from the widget: a ticket is opened (or the open one used) and the call rings for its agent,
 // or for any free agent of the queue.
-export async function customerStartCall(app: AppFull, token: string, input: { ticketId?: string | null; offer: string; consent: boolean }) {
+export async function customerStartCall(app: AppFull, token: string, input: { ticketId?: string | null; offer: string; consent: boolean; transferFrom?: string | null }) {
   await (await import("./connected-systems")).needChannel(app.id, "calls");
   const cfg = await supportConfig();
   const c = await customerByToken(app, token);
+  if (input.transferFrom) return transferredStart(app, c, input);
   if (cfg.recordCalls && !input.consent) throw new WorkflowError("VALIDATION", "Agree to the call being recorded, or write to us instead.");
   if (!input.offer || input.offer.length > 20000) throw new WorkflowError("VALIDATION", "The call could not start.");
   let ticketId = input.ticketId ?? null;
@@ -810,7 +814,7 @@ export async function customerStartCall(app: AppFull, token: string, input: { ti
   }
   const id = uid("scl_");
   await run(
-    "INSERT INTO sup_calls (id, ticket_id, customer_id, agent_id, direction, kind, status, offer, consent, started_at) VALUES (?, ?, ?, ?, 'inbound', 'web', 'ringing', ?, ?, ?)",
+    "INSERT INTO sup_calls (id, ticket_id, customer_id, agent_id, direction, kind, status, offer, consent, started_at, app_id) VALUES (?, ?, ?, ?, 'inbound', 'web', 'ringing', ?, ?, ?, ?)",
     id,
     ticketId,
     c.id,
@@ -818,6 +822,7 @@ export async function customerStartCall(app: AppFull, token: string, input: { ti
     input.offer,
     input.consent ? 1 : 0,
     nowIso(),
+    app.id,
   );
   await activity(null, ticketId, "call_ringing", `${c.name} is calling`);
   const ring = agent ? [agent] : avail.map((a) => a.userId);
@@ -825,7 +830,31 @@ export async function customerStartCall(app: AppFull, token: string, input: { ti
   return { callId: id, ticketId };
 }
 
-async function callFor(id: string) {
+// After a transfer the caller's browser calls again: it rings only for the agent it was handed to, who sees it first.
+async function transferredStart(app: AppFull, c: { id: string; name: string }, input: { offer: string; consent: boolean; transferFrom?: string | null }) {
+  const old = await get<CallRow>("SELECT * FROM sup_calls WHERE id = ?", input.transferFrom ?? "");
+  if (!old || old.customer_id !== c.id || old.status !== "transferred" || !old.transfer_to) throw new WorkflowError("INVALID_STATE", "The transfer has ended. Call again.");
+  if (Date.now() - Date.parse(old.ended_at ?? old.started_at) > 120e3) throw new WorkflowError("INVALID_STATE", "The transfer has ended. Call again.");
+  const again = await get<{ id: string }>("SELECT id FROM sup_calls WHERE transfer_from = ?", old.id);
+  if (again) return { callId: again.id, ticketId: old.ticket_id };
+  if (!input.offer || input.offer.length > 20000) throw new WorkflowError("VALIDATION", "The call could not start.");
+  const id = uid("scl_");
+  await run(
+    "INSERT INTO sup_calls (id, ticket_id, customer_id, agent_id, direction, kind, status, offer, consent, started_at, transfer_from, ring_stage, app_id) VALUES (?, ?, ?, ?, 'inbound', 'web', 'ringing', ?, ?, ?, ?, 9, ?)",
+    id,
+    old.ticket_id,
+    c.id,
+    old.transfer_to,
+    input.offer,
+    old.consent,
+    nowIso(),
+    old.id,
+    app.id,
+  );
+  return { callId: id, ticketId: old.ticket_id };
+}
+
+export async function callFor(id: string) {
   const k = await get<CallRow>("SELECT * FROM sup_calls WHERE id = ?", id);
   if (!k) throw new WorkflowError("NOT_FOUND", "Call not found.");
   return k;
@@ -834,9 +863,21 @@ async function callFor(id: string) {
 // Calls that ring too long are missed: the ticket says so and goes to an agent.
 async function expireRinging() {
   const cfg = await supportConfig();
-  const old = await all<{ id: string; ticket_id: string | null }>("SELECT id, ticket_id FROM sup_calls WHERE status = 'ringing' AND started_at < ?", new Date(Date.now() - cfg.ringSeconds * 1000).toISOString());
+  const esc = cfg.callEscalateSec * 1000;
+  // Stage 0 (its agent) to 1 (anyone free in the ticket's queue) to 2 (the overflow queue).
+  await run("UPDATE sup_calls SET agent_id = NULL, ring_stage = 1 WHERE status = 'ringing' AND ring_stage = 0 AND agent_id IS NOT NULL AND direction = 'inbound' AND kind = 'web' AND started_at < ?", new Date(Date.now() - esc).toISOString());
+  await run("UPDATE sup_calls SET ring_stage = 1 WHERE status = 'ringing' AND ring_stage = 0 AND agent_id IS NULL AND direction = 'inbound' AND kind = 'web'");
+  if (cfg.callOverflowQueue)
+    await run("UPDATE sup_calls SET ring_queue = ?, ring_stage = 2 WHERE status = 'ringing' AND ring_stage = 1 AND direction = 'inbound' AND kind = 'web' AND started_at < ?", cfg.callOverflowQueue, new Date(Date.now() - 2 * esc).toISOString());
+  const old = await all<{ id: string; ticket_id: string | null; direction: string; kind: string }>("SELECT id, ticket_id, direction, kind FROM sup_calls WHERE status = 'ringing' AND started_at < ?", new Date(Date.now() - cfg.ringSeconds * 1000).toISOString());
   for (const k of old) {
     await run("UPDATE sup_calls SET status = 'missed', ended_at = ? WHERE id = ? AND status = 'ringing'", nowIso(), k.id);
+    if (k.kind === "staff") continue;
+    if (k.direction === "outbound" && k.ticket_id) {
+      await run("INSERT INTO sup_messages (id, ticket_id, author_kind, author_id, body, internal, created_at) VALUES (?, ?, 'system', NULL, ?, 0, ?)", uid("smg_"), k.ticket_id, "We tried to call you. Reply here or call us when it suits you.", nowIso());
+      await activity(null, k.ticket_id, "call_missed", "The customer did not answer");
+      continue;
+    }
     if (k.ticket_id) {
       await run("INSERT INTO sup_messages (id, ticket_id, author_kind, author_id, body, internal, created_at) VALUES (?, ?, 'system', NULL, ?, 0, ?)", uid("smg_"), k.ticket_id, "Missed call. An agent will get back to you here.", nowIso());
       await activity(null, k.ticket_id, "call_missed");
@@ -857,7 +898,8 @@ export async function customerPollCall(app: AppFull, token: string, callId: stri
     const ahead = Number((await get<{ n: number }>("SELECT COUNT(*) AS n FROM sup_calls WHERE status = 'ringing' AND started_at < ?", k.started_at))?.n ?? 0);
     return { status: k.status, answer: k.answer, ice: parseJson<unknown[]>(k.agent_ice, []), agent, position: ahead + 1, ivr: cfg.ivr.on ? { ...cfg.ivr, audio: cfg.ivr.audio ? `/api/support/ivr-audio` : null } : null };
   }
-  return { status: k.status, answer: k.answer, ice: parseJson<unknown[]>(k.agent_ice, []), agent };
+  const to = k.status === "transferred" && k.transfer_to ? (await get<{ name: string }>("SELECT name FROM users WHERE id = ?", k.transfer_to))?.name.split(" ")[0] ?? null : null;
+  return { status: k.status, answer: k.answer, ice: parseJson<unknown[]>(k.agent_ice, []), agent, onHold: !!Number(k.on_hold), transferTo: to };
 }
 
 // The uploaded waiting message, for the widget to play.
@@ -922,12 +964,15 @@ export async function customerEndCall(app: AppFull, token: string, callId: strin
   await finishCall(k, null);
 }
 
-async function finishCall(k: CallRow, by: AppUser | null) {
-  if (["ended", "missed", "declined"].includes(k.status)) return;
+export async function finishCall(k: CallRow, by: AppUser | null) {
+  if (CALL_DONE.includes(k.status)) return;
   const now = nowIso();
   const status = k.status === "ringing" ? (by ? "declined" : "missed") : "ended";
   const dur = k.answered_at ? Math.round((Date.parse(now) - Date.parse(k.answered_at)) / 1000) : null;
-  await run("UPDATE sup_calls SET status = ?, ended_at = ?, duration_s = ? WHERE id = ?", status, now, dur, k.id);
+  const held = Number(k.on_hold) && k.hold_since ? Math.round((Date.parse(now) - Date.parse(k.hold_since)) / 1000) : 0;
+  await run("UPDATE sup_calls SET status = ?, ended_at = ?, duration_s = ?, on_hold = 0, hold_since = NULL, hold_s = hold_s + ? WHERE id = ?", status, now, dur, held, k.id);
+  for (const leg of await all<CallRow>("SELECT * FROM sup_calls WHERE parent_id = ? AND status IN ('ringing','answered')", k.id)) await finishCall(leg, by);
+  if (k.kind === "staff") return;
   if (k.ticket_id) await activity(by?.id ?? null, k.ticket_id, `call_${status}`, dur !== null ? `${Math.floor(dur / 60)} min ${dur % 60} s` : null);
 }
 
@@ -937,9 +982,10 @@ export async function ringingFor(user: AppUser) {
   await heartbeat(user);
   await expireRinging();
   const qs = await memberQueues(user.id);
-  return all<{ id: string; ticket_id: string; customer: string | null; number: number; started_at: string; offer: string; consent: number }>(
-    `SELECT k.id, k.ticket_id, c.name AS customer, t.number, k.started_at, k.offer, k.consent FROM sup_calls k JOIN sup_tickets t ON t.id = k.ticket_id LEFT JOIN sup_customers c ON c.id = k.customer_id
-     WHERE k.status = 'ringing' AND (k.agent_id = ? ${qs.length ? `OR (k.agent_id IS NULL AND t.queue_id IN (${qs.map(() => "?").join(",")}))` : ""}) ORDER BY k.started_at`,
+  return all<{ id: string; ticket_id: string; customer: string | null; number: number; started_at: string; offer: string; consent: number; kind: string; host: string | null; transferred: number }>(
+    `SELECT k.id, k.ticket_id, c.name AS customer, t.number, k.started_at, k.offer, k.consent, k.kind, h.name AS host, CASE WHEN k.transfer_from IS NULL THEN 0 ELSE 1 END AS transferred
+     FROM sup_calls k JOIN sup_tickets t ON t.id = k.ticket_id LEFT JOIN sup_customers c ON c.id = k.customer_id LEFT JOIN users h ON h.id = k.host_id
+     WHERE k.status = 'ringing' AND k.direction = 'inbound' AND (k.agent_id = ? ${qs.length ? `OR (k.agent_id IS NULL AND COALESCE(k.ring_queue, t.queue_id) IN (${qs.map(() => "?").join(",")}))` : ""}) ORDER BY k.started_at`,
     user.id,
     ...qs,
   );
@@ -949,11 +995,16 @@ export async function answerCall(user: AppUser, callId: string, answer: string) 
   await needAgent(user);
   const k = await callFor(callId);
   if (k.status !== "ringing") throw new WorkflowError("INVALID_STATE", k.status === "answered" ? "Someone else answered." : "The call has ended.");
+  if (k.direction === "outbound") throw new WorkflowError("INVALID_STATE", "This call is ringing for the customer.");
   if (k.agent_id && k.agent_id !== user.id) throw new WorkflowError("FORBIDDEN", "This call rings for another agent.");
   const now = nowIso();
   await run("UPDATE sup_calls SET status = 'answered', agent_id = ?, answer = ?, answered_at = ? WHERE id = ? AND status = 'ringing'", user.id, answer, now, callId);
   const got = await callFor(callId);
   if (got.agent_id !== user.id) throw new WorkflowError("INVALID_STATE", "Someone else answered.");
+  if (k.kind === "staff") {
+    if (k.ticket_id) await activity(user.id, k.ticket_id, "call_joined", "Joined the call");
+    return { customerIce: [] };
+  }
   if (k.ticket_id) {
     await run("UPDATE sup_tickets SET assignee_id = COALESCE(assignee_id, ?), assigned_at = COALESCE(assigned_at, ?), first_response_at = COALESCE(first_response_at, ?), last_agent_at = ?, status = CASE WHEN status = 'new' THEN 'open' ELSE status END, updated_at = ? WHERE id = ?", user.id, now, now, now, now, k.ticket_id);
     await activity(user.id, k.ticket_id, "call_answered");
@@ -963,8 +1014,10 @@ export async function answerCall(user: AppUser, callId: string, answer: string) 
 
 export async function agentPollCall(user: AppUser, callId: string) {
   const k = await callFor(callId);
-  if (k.agent_id !== user.id) throw new WorkflowError("FORBIDDEN", "Not your call.");
-  return { status: k.status, ice: parseJson<unknown[]>(k.customer_ice, []) };
+  // The agent of the call, or the agent who brought a colleague in (a conference leg) or dialled out.
+  if (k.agent_id !== user.id && k.host_id !== user.id) throw new WorkflowError("FORBIDDEN", "Not your call.");
+  const legs = k.kind === "staff" ? [] : await all<{ id: string; status: string; name: string | null }>("SELECT k.id, k.status, u.name FROM sup_calls k LEFT JOIN users u ON u.id = k.agent_id WHERE k.parent_id = ? ORDER BY k.started_at", k.id);
+  return { status: k.status, answer: k.answer, ice: parseJson<unknown[]>(k.customer_ice, []), onHold: !!Number(k.on_hold), legs };
 }
 
 export async function agentIce(user: AppUser, callId: string, candidate: unknown) {
@@ -973,7 +1026,7 @@ export async function agentIce(user: AppUser, callId: string, candidate: unknown
 
 export async function agentEndCall(user: AppUser, callId: string, notes?: string | null) {
   const k = await callFor(callId);
-  if (k.agent_id && k.agent_id !== user.id && !(await isLead(user))) throw new WorkflowError("FORBIDDEN", "Not your call.");
+  if (k.agent_id && k.agent_id !== user.id && k.host_id !== user.id && !(await isLead(user))) throw new WorkflowError("FORBIDDEN", "Not your call.");
   await finishCall(k, user);
   if (notes) await run("UPDATE sup_calls SET notes = ? WHERE id = ?", clean(notes, 2000), callId);
 }

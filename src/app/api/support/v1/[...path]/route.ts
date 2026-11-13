@@ -19,6 +19,10 @@ import { sseResponse } from "@/server/sse";
 //   GET  calls/<id>                   -> { status, answer, ice, agent }
 //   POST calls/<id>/ice               { candidate }
 //   POST calls/<id>/end
+//   GET  calls/incoming               -> { call: { id, offer, agent, ticketId, record, notice } | null }   an agent calling
+//   POST calls/<id>/accept            { answer, consent }
+//   POST calls/<id>/decline
+//   POST callback                     { phone?, ticketId? }                         -> { callId, ticketId }   ask to be called
 //   POST customers/sync             server to server, X-App-Secret: <app secret>  { customers: [{ id, name, email?, phone?, meta? }] }
 //   GET  tickets/<id>/live            server-sent events: { stamp, status, typing, read, online } (token may be ?token=)
 //   POST tickets/<id>/typing | read   the customer is typing / has read the conversation
@@ -88,7 +92,11 @@ async function handle(request: Request, ctx: Ctx, method: "GET" | "POST") {
     else if (a === "articles" && id && !b && method === "GET") out = await (await import("@/server/support-channels")).readArticle(id);
     else if (a === "articles" && id && b === "vote" && method === "POST") out = (await (await import("@/server/support-channels")).voteArticle(id, body.helpful === true), { ok: true });
     else if (a === "ice" && method === "GET") out = (await sd.customerByToken(app, token), await sd.iceConfig());
-    else if (a === "calls" && !id && method === "POST") out = await sd.customerStartCall(app, token, { ticketId: s(body.ticketId) || null, offer: s(body.offer), consent: body.consent === true });
+    else if (a === "calls" && id === "incoming" && method === "GET") out = await (await import("@/server/support-calls")).customerIncoming(app, token);
+    else if (a === "calls" && id && b === "accept" && method === "POST") out = await (await import("@/server/support-calls")).customerAnswer(app, token, id, { answer: s(body.answer), consent: body.consent === true });
+    else if (a === "calls" && id && b === "decline" && method === "POST") out = await (await import("@/server/support-calls")).customerDecline(app, token, id);
+    else if (a === "callback" && !id && method === "POST") out = await (await import("@/server/support-calls")).customerCallback(app, token, { phone: s(body.phone) || null, ticketId: s(body.ticketId) || null });
+    else if (a === "calls" && !id && method === "POST") out = await sd.customerStartCall(app, token, { ticketId: s(body.ticketId) || null, offer: s(body.offer), consent: body.consent === true, transferFrom: s(body.transferFrom) || null });
     else if (a === "calls" && id && !b && method === "GET") out = await sd.customerPollCall(app, token, id);
     else if (a === "calls" && id && b === "ice" && method === "POST") out = (await sd.customerIce(app, token, id, body.candidate), { ok: true });
     else if (a === "calls" && id && b === "end" && method === "POST") out = (await sd.customerEndCall(app, token, id), { ok: true });

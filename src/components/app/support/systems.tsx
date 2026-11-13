@@ -23,6 +23,8 @@ type System = {
   description: string;
   channels: Record<Channel, boolean>;
   bot: string | null;
+  callEngine: "browser" | "phone";
+  callPhone: string;
   webhookUrl: string;
   webhookEvents: string[];
   webhookSecretSet: boolean;
@@ -57,6 +59,43 @@ export function Systems({ systems, unattached, admin, origin }: { systems: Syste
       {systems.map((s) => (
         <SystemCard key={s.id} s={s} admin={admin} origin={origin} />
       ))}
+    </div>
+  );
+}
+
+// How this system's customers call: in the browser (to agents in the desk), or a phone number (the widget shows it
+// with "Ask us to call you").
+function CallEngine({ s, admin }: { s: System; admin: boolean }) {
+  const router = useRouter();
+  const [engine, setEngine] = React.useState(s.callEngine);
+  const [phone, setPhone] = React.useState(s.callPhone);
+  const [busy, setBusy] = React.useState(false);
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-lg border p-3 text-sm" data-call-engine>
+      <span className="font-medium">Calls</span>
+      <select aria-label={`How ${s.name}'s customers call`} disabled={!admin} className="h-8 rounded-md border bg-background px-2 text-sm" value={engine} onChange={(e) => setEngine(e.target.value as System["callEngine"])}>
+        <option value="browser">In the browser, to agents in the desk</option>
+        <option value="phone">A phone number</option>
+      </select>
+      {engine === "phone" && <Input aria-label="Phone number customers call" placeholder="+251 11 ..." className="h-8 w-48" disabled={!admin} value={phone} onChange={(e) => setPhone(e.target.value)} />}
+      {admin && (
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={busy || (engine === s.callEngine && phone === s.callPhone)}
+          onClick={async () => {
+            setBusy(true);
+            const r = await A.saveCallEngineAction(s.id, { engine, phone });
+            setBusy(false);
+            if (!r.ok) return void toast.error(r.error);
+            toast.success("Saved");
+            router.refresh();
+          }}
+        >
+          Save
+        </Button>
+      )}
+      <span className="text-xs text-muted-foreground">Customers can always ask for a call-back; it waits on the Calls tab.</span>
     </div>
   );
 }
@@ -114,6 +153,8 @@ function SystemCard({ s, admin, origin }: { s: System; admin: boolean; origin: s
             </label>
           ))}
         </div>
+
+        {channels.calls && <CallEngine s={s} admin={admin} />}
 
         <div className="grid gap-4 lg:grid-cols-2">
           <div className="space-y-2 rounded-lg border p-3" data-system-bot>

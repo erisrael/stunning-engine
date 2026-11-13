@@ -399,6 +399,7 @@ export async function menuRows(bot: string, x: Texts) {
   if (x.resources && (await get("SELECT id FROM sup_bot_content WHERE bot = ? AND active = 1 LIMIT 1", bot))) rows.push({ text: am(x) ? "መረጃዎች" : "Resources", callback_data: "r" });
   if (x.surveys && (await get("SELECT id FROM sup_bot_forms WHERE bot = ? AND active = 1 LIMIT 1", bot))) rows.push({ text: am(x) ? "ቅጾች እና ጥናቶች" : "Forms and surveys", callback_data: "s" });
   if (x.feedback) rows.push({ text: am(x) ? "አስተያየት ይስጡ" : "Send feedback", callback_data: "f" });
+  if (x.callback && (await callsOn(bot))) rows.push({ text: am(x) ? "መልሰው ይደውሉልኝ" : "Call me back", callback_data: "cb" });
   const out: (typeof rows)[] = [];
   for (let i = 0; i < rows.length; i += 2) out.push(rows.slice(i, i + 2));
   return out;
@@ -449,12 +450,41 @@ export async function button(bot: string, chat: string, customerId: string, data
     await send(am(x) ? "ቅጹ ተሰርዟል።" : "Stopped. You can start again from the menu.", { reply_markup: { inline_keyboard: [backRow(x)] } });
     return true;
   }
+  if (data === "cb") {
+    const phone = (await get<{ phone: string | null }>("SELECT phone FROM sup_customers WHERE id = ?", customerId))?.phone;
+    if (!phone) {
+      await setMeta(customerId, { tgCallback: nowIso(), tgForm: null, tgFeedback: null });
+      await send(am(x) ? "የምንደውልበትን ስልክ ቁጥር ያጋሩ።" : "Share the phone number we should call.", { reply_markup: { keyboard: [[{ text: am(x) ? "ስልክ ቁጥሬን አጋራ" : "Share my phone number", request_contact: true }]], resize_keyboard: true, one_time_keyboard: true } });
+      return true;
+    }
+    await callBack(bot, chat, customerId, phone, x);
+    return true;
+  }
   if (data === "f") {
     await setMeta(customerId, { tgFeedback: nowIso(), tgForm: null });
     await send(pick(x, x.feedbackAsk, x.feedbackAskAm));
     return true;
   }
   return false;
+}
+
+// Call-backs: only where calls are on (a system's bot follows its system's calls switch).
+async function callsOn(bot: string) {
+  if (bot === "default") return true;
+  const a = await get<{ channels: string | null }>("SELECT channels FROM sup_apps WHERE id = ?", bot);
+  return (await import("./connected-systems")).channelsOf(a?.channels ?? null).calls;
+}
+async function callBack(bot: string, chat: string, customerId: string, phone: string, x: Texts) {
+  const r = await (await import("./support-calls")).requestCallback({ customerId, phone, appId: bot === "default" ? null : bot, channel: "telegram" });
+  const t = await get<{ number: number }>("SELECT number FROM sup_tickets WHERE id = ?", r.ticketId);
+  await ch.botApi("sendMessage", { chat_id: chat, text: r.again ? (am(x) ? `ጥያቄዎ ደርሶናል። በ${phone} እንደውልልዎታለን።` : `We already have your request. We will call you on ${phone}.`) : am(x) ? `እናመሰግናለን። በ${phone} እንደውልልዎታለን (#${t?.number ?? ""})።` : `Thank you. We will call you on ${phone} (#${t?.number ?? ""}).`, reply_markup: { inline_keyboard: [backRow(x)] } });
+}
+export async function afterContact(bot: string, chat: string, customerId: string, x: Texts) {
+  const m = await meta(customerId);
+  if (!m.tgCallback || Date.now() - Date.parse(m.tgCallback) > 3600e3) return;
+  await setMeta(customerId, { tgCallback: null });
+  const phone = (await get<{ phone: string | null }>("SELECT phone FROM sup_customers WHERE id = ?", customerId))?.phone;
+  if (phone) await callBack(bot, chat, customerId, phone, x);
 }
 
 // The next question of a response, with buttons for choices and ratings.

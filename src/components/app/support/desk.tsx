@@ -29,7 +29,7 @@ type Detail = {
   history: { id: string; number: number; subject: string; status: string; created_at: string }[];
   files?: { id: string; message_id: string | null; name: string; mime: string; size: number }[];
 };
-type Ring = { id: string; ticket_id: string; customer: string | null; number: number; started_at: string; offer: string; consent: number };
+import { CallProvider, DialButtons, useCallCenter, type Ring } from "./call-center";
 
 const when = (iso: string) => new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 const ago = (iso: string) => {
@@ -73,7 +73,9 @@ function Sla({ r }: { r: Row }) {
 // Agent status, heartbeat and incoming calls
 // ---------------------------------------------------------------------------
 
-export function AgentBar({ status, onCall }: { status: string; onCall: (r: Ring) => void }) {
+export function AgentBar({ status }: { status: string }) {
+  const { start } = useCallCenter();
+  const onCall = (r: Ring) => start({ mode: "answer", ring: r });
   const { act, busy } = useAct();
   const [ring, setRing] = React.useState<Ring[]>([]);
   React.useEffect(() => {
@@ -99,152 +101,10 @@ export function AgentBar({ status, onCall }: { status: string; onCall: (r: Ring)
       ))}
       {ring.map((r) => (
         <Button key={r.id} size="sm" className="animate-pulse bg-[#188038] text-white hover:bg-[#188038]/90" onClick={() => onCall(r)} data-ringing={r.id}>
-          <PhoneCallIcon /> {r.customer ?? "Customer"} is calling (#{r.number})
+          <PhoneCallIcon /> {r.kind === "staff" ? `${r.host ?? "A colleague"} asks you to join a call (#${r.number})` : r.transferred ? `Transferred to you: ${r.customer ?? "Customer"} (#${r.number})` : `${r.customer ?? "Customer"} is calling (#${r.number})`}
         </Button>
       ))}
     </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// A call in the browser: answer, talk, record both voices, hang up
-// ---------------------------------------------------------------------------
-
-async function gathered(pc: RTCPeerConnection, ms = 3000) {
-  if (pc.iceGatheringState === "complete") return;
-  await new Promise<void>((resolve) => {
-    const t = window.setTimeout(resolve, ms);
-    pc.addEventListener("icegatheringstatechange", () => pc.iceGatheringState === "complete" && (window.clearTimeout(t), resolve()));
-  });
-}
-
-export function CallPanel({ ring, record, onDone }: { ring: Ring; record: boolean; onDone: () => void }) {
-  const router = useRouter();
-  const [state, setState] = React.useState<"connecting" | "live" | "ended">("connecting");
-  const [secs, setSecs] = React.useState(0);
-  const [notes, setNotes] = React.useState("");
-  const [recState, setRecState] = React.useState<"off" | "recording" | "saving" | "saved" | "failed">("off");
-  const parts = React.useRef<{ pc?: RTCPeerConnection; mic?: MediaStream; rec?: MediaRecorder; chunks: Blob[]; ctx?: AudioContext; poll?: number; timer?: number }>({ chunks: [] });
-  const audio = React.useRef<HTMLAudioElement>(null);
-
-  const hangUp = React.useCallback(
-    async (sendEnd: boolean) => {
-      const p = parts.current;
-      if (p.poll) window.clearInterval(p.poll);
-      if (p.timer) window.clearInterval(p.timer);
-      setState("ended");
-      if (p.rec && p.rec.state !== "inactive") {
-        setRecState("saving");
-        await new Promise<void>((resolve) => {
-          p.rec!.onstop = () => resolve();
-          p.rec!.stop();
-        });
-        try {
-          const blob = new Blob(p.chunks, { type: p.rec.mimeType || "audio/webm" });
-          const r = await fetch(`/api/support/recording/${ring.id}`, { method: "POST", headers: { "Content-Type": blob.type }, body: blob });
-          setRecState(r.ok ? "saved" : "failed");
-        } catch {
-          setRecState("failed");
-        }
-      }
-      p.mic?.getTracks().forEach((t) => t.stop());
-      p.pc?.close();
-      void p.ctx?.close();
-      if (sendEnd) await A.agentEndCallAction(ring.id, null);
-    },
-    [ring.id],
-  );
-
-  React.useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const ice = await A.iceAction();
-        const pc = new RTCPeerConnection({ iceServers: ice.ok ? ((ice.data as { iceServers: RTCIceServer[] }).iceServers ?? []) : [] });
-        parts.current.pc = pc;
-        const mic = await navigator.mediaDevices.getUserMedia({ audio: true });
-        parts.current.mic = mic;
-        mic.getTracks().forEach((t) => pc.addTrack(t, mic));
-        const remote = new MediaStream();
-        pc.ontrack = (e) => {
-          e.streams[0]?.getTracks().forEach((t) => remote.addTrack(t));
-          if (audio.current) audio.current.srcObject = remote;
-          // Both voices into one recording, after the customer agreed (they did, to start the call).
-          if (record && !parts.current.rec && typeof MediaRecorder !== "undefined") {
-            try {
-              const ctx = new AudioContext();
-              const dest = ctx.createMediaStreamDestination();
-              ctx.createMediaStreamSource(mic).connect(dest);
-              ctx.createMediaStreamSource(remote).connect(dest);
-              const rec = new MediaRecorder(dest.stream, MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? { mimeType: "audio/webm;codecs=opus", audioBitsPerSecond: 24000 } : undefined);
-              rec.ondataavailable = (ev) => ev.data.size && parts.current.chunks.push(ev.data);
-              rec.start(5000);
-              Object.assign(parts.current, { ctx, rec });
-              setRecState("recording");
-            } catch {
-              setRecState("failed");
-            }
-          }
-        };
-        await pc.setRemoteDescription(JSON.parse(ring.offer) as RTCSessionDescriptionInit);
-        await pc.setLocalDescription(await pc.createAnswer());
-        await gathered(pc);
-        if (cancelled) return;
-        const r = await A.answerCallAction(ring.id, JSON.stringify(pc.localDescription));
-        if (!r.ok) {
-          toast.error(r.error ?? "Could not answer.");
-          await hangUp(false);
-          onDone();
-          return;
-        }
-        setState("live");
-        router.push(`/support?ticket=${ring.ticket_id}`);
-        parts.current.timer = window.setInterval(() => setSecs((s) => s + 1), 1000);
-        parts.current.poll = window.setInterval(async () => {
-          const s = await A.agentPollCallAction(ring.id);
-          if (s.ok && ["ended", "missed", "declined"].includes((s.data as { status: string }).status)) {
-            toast.message("The customer hung up.");
-            await hangUp(false);
-          }
-        }, 2500);
-      } catch (e) {
-        toast.error(e instanceof Error && /Permission|NotAllowed/i.test(e.name + e.message) ? "Allow the microphone to answer calls." : "The call could not connect.");
-        await hangUp(true);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // The call is set up once per ringing call.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ring.id]);
-
-  return (
-    <Card className="border-[#188038]/40" data-call-panel={state}>
-      <CardContent className="flex flex-wrap items-center gap-3 py-3 text-sm">
-        <HeadphonesIcon className="size-5 text-[#188038]" />
-        <span className="font-medium">
-          {ring.customer ?? "Customer"} · #{ring.number}
-        </span>
-        <span className="tabular-nums text-muted-foreground">{state === "connecting" ? "Connecting…" : state === "live" ? `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}` : "Call ended"}</span>
-        {recState !== "off" && (
-          <span className={cn("inline-flex items-center gap-1 text-xs", recState === "recording" ? "text-[#D93025]" : "text-muted-foreground")} data-recording={recState}>
-            <MicIcon className="size-3" /> {recState === "recording" ? "Recording" : recState === "saving" ? "Saving the recording…" : recState === "saved" ? "Recording saved" : "Recording failed"}
-          </span>
-        )}
-        <audio ref={audio} autoPlay />
-        <Input aria-label="Call notes" placeholder="Notes" className="h-8 w-64" value={notes} onChange={(e) => setNotes(e.target.value)} />
-        {state !== "ended" ? (
-          <Button size="sm" variant="destructive" onClick={async () => (await hangUp(false), await A.agentEndCallAction(ring.id, notes || null), router.refresh())}>
-            <PhoneOffIcon /> Hang up
-          </Button>
-        ) : (
-          <Button size="sm" variant="outline" disabled={recState === "saving"} onClick={async () => (notes && (await A.agentEndCallAction(ring.id, notes)), onDone(), router.refresh())}>
-            Close
-          </Button>
-        )}
-      </CardContent>
-    </Card>
   );
 }
 
@@ -376,7 +236,9 @@ export function TicketView({ d, agents, queues, canned, me, lead, articles = [],
             </Button>
           )}
           <span className="text-xs text-muted-foreground">{t.assignee ? `With ${t.assignee}` : "Nobody has it yet"}</span>
-          <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setPhone(phone ? null : { direction: "outbound", minutes: 5, notes: "" })}>
+          <span className="ml-auto" />
+          <DialButtons ticketId={t.id} customer={d.customer?.name ?? null} number={t.number} phone={d.customer?.phone ?? null} />
+          <Button size="sm" variant="ghost" onClick={() => setPhone(phone ? null : { direction: "outbound", minutes: 5, notes: "" })}>
             <PhoneIcon /> Log a phone call
           </Button>
           {d.customer?.phone && (
@@ -638,14 +500,14 @@ export function NewTicket({ queues }: { queues: { id: string; name: string }[] }
 
 // The desk around the inbox and the open ticket, holding the call in progress.
 export function Desk({ status, record, children }: { status: string; record: boolean; children: React.ReactNode }) {
-  const [call, setCall] = React.useState<Ring | null>(null);
   return (
     <DeskLive>
-      <div className="space-y-3">
-        <AgentBar status={status} onCall={(r) => setCall((c) => c ?? r)} />
-        {call && <CallPanel ring={call} record={record} onDone={() => setCall(null)} />}
-        {children}
-      </div>
+      <CallProvider record={record}>
+        <div className="space-y-3">
+          <AgentBar status={status} />
+          {children}
+        </div>
+      </CallProvider>
     </DeskLive>
   );
 }

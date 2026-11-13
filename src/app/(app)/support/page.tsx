@@ -12,6 +12,7 @@ import { CategoryReport, HelpMenuSetup, TelegramSetup } from "@/components/app/s
 import * as hp from "@/server/support-help";
 import { Systems } from "@/components/app/support/systems";
 import { BotManager } from "@/components/app/support/bot-manager";
+import { CallsCenter } from "@/components/app/support/call-center";
 import { StudentsTable } from "@/components/app/support/students-table";
 import * as ch from "@/server/support-channels";
 import { all } from "@/server/db";
@@ -34,8 +35,8 @@ export default async function SupportPage({ searchParams }: { searchParams: Prom
         <EmptyState title={cfg.enabled ? "You are not a support agent" : "Customer support is switched off"} description={cfg.enabled ? "A support lead adds agents to the queues." : "Admin switches it on in Support setup."} />
       </div>
     );
-  const tabs = [...(cfg.enabled && agent ? ["desk", "students", "kb"] : []), ...(lead && cfg.enabled ? ["monitor"] : []), ...(lead ? ["queues", "help", "telegram", "bots", "apps", "systems"] : []), ...(admin || lead ? ["settings"] : [])];
-  const LABELS: Record<string, string> = { desk: "Desk", students: "Students & Parents", kb: "Knowledge base", monitor: "Monitor", queues: "Queues and replies", help: "Help menu and routing", telegram: "Telegram", bots: "Bot manager", apps: "Apps and SDK", systems: "Connected systems", settings: "Settings" };
+  const tabs = [...(cfg.enabled && agent ? ["desk", "calls", "students", "kb"] : []), ...(lead && cfg.enabled ? ["monitor"] : []), ...(lead ? ["queues", "help", "telegram", "bots", "apps", "systems"] : []), ...(admin || lead ? ["settings"] : [])];
+  const LABELS: Record<string, string> = { desk: "Desk", calls: "Calls", students: "Students & Parents", kb: "Knowledge base", monitor: "Monitor", queues: "Queues and replies", help: "Help menu and routing", telegram: "Telegram", bots: "Bot manager", apps: "Apps and SDK", systems: "Connected systems", settings: "Settings" };
   const tab = tabs.includes(sp.tab ?? "") ? sp.tab! : tabs[0]!;
   const people = (await userDirectory()).map((u) => ({ id: u.id, name: u.name }));
   const queues = await sd.listQueues();
@@ -54,10 +55,9 @@ export default async function SupportPage({ searchParams }: { searchParams: Prom
       { key: "solved", label: "Solved" },
     ];
     const detail = sp.ticket ? await sd.ticketDetail(viewer, sp.ticket).catch(() => null) : null;
-    const me = await get<{ status: string; last_seen_at: string | null }>("SELECT status, last_seen_at FROM sup_agents WHERE user_id = ?", viewer.id);
     const agents = people.filter((p) => queues.some((q) => q.members.includes(p.id)) || cfg.leads.includes(p.id));
     panel = (
-      <Desk status={me?.status ?? "offline"} record={cfg.recordCalls}>
+      <>
         <div className="flex justify-end">
           <NewTicket queues={queues.filter((q) => q.active).map((q) => ({ id: q.id, name: q.name }))} />
         </div>
@@ -76,7 +76,7 @@ export default async function SupportPage({ searchParams }: { searchParams: Prom
             <div className="hidden lg:block"><EmptyState title="Choose a ticket" description="Go online to be given new tickets and calls. Tickets that wait because nobody is free are given out as agents come online." /></div>
           )}
         </div>
-      </Desk>
+      </>
     );
   } else if (tab === "students") {
     panel = <StudentsTable />;
@@ -146,7 +146,19 @@ export default async function SupportPage({ searchParams }: { searchParams: Prom
     panel = <Systems systems={data.systems} unattached={data.unattached} admin={admin} origin={await appOrigin()} />;
   }
   else if (tab === "settings")
-    panel = <SupportSettings cfg={cfg} people={people} admin={admin} mailboxes={(await all<{ address: string }>("SELECT address FROM email_senders WHERE mailbox = 1 AND active = 1 ORDER BY address")).map((m) => m.address)} telegram={await ch.telegramInfo()} />;
+    panel = <SupportSettings cfg={cfg} people={people} admin={admin} mailboxes={(await all<{ address: string }>("SELECT address FROM email_senders WHERE mailbox = 1 AND active = 1 ORDER BY address")).map((m) => m.address)} telegram={await ch.telegramInfo()} queues={queues.filter((q) => q.active).map((q) => ({ id: q.id, name: q.name }))} />;
+  else if (tab === "calls") {
+    const sc = await import("@/server/support-calls");
+    const filters = { status: sp.status ?? "", direction: sp.direction ?? "", q: sp.q ?? "", from: sp.from ?? "", to: sp.to ?? "" };
+    panel = (
+      <CallsCenter
+        rows={await sc.callHistory(viewer, { ...filters, customerId: sp.customer ?? null })}
+        callbacks={(await sc.callHistory(viewer, { status: "callback" })).reverse()}
+        stats={await sc.callStats(viewer)}
+        filters={filters}
+      />
+    );
+  }
   else if (tab === "kb") panel = <KnowledgeBase list={await ch.listArticles(viewer)} lead={lead} origin={await appOrigin()} />;
 
   return (
@@ -163,7 +175,13 @@ export default async function SupportPage({ searchParams }: { searchParams: Prom
           </Link>
         ))}
       </nav>
-      {panel}
+      {cfg.enabled && agent ? (
+        <Desk status={(await get<{ status: string }>("SELECT status FROM sup_agents WHERE user_id = ?", viewer.id))?.status ?? "offline"} record={cfg.recordCalls}>
+          {panel}
+        </Desk>
+      ) : (
+        panel
+      )}
     </div>
   );
 }

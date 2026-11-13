@@ -200,6 +200,7 @@ export type TelegramTexts = {
   resources: boolean;
   surveys: boolean;
   feedback: boolean;
+  callback: boolean;
   feedbackAsk: string;
   feedbackAskAm: string;
   feedbackThanks: string;
@@ -218,6 +219,7 @@ export const DEFAULT_TG_TEXTS: TelegramTexts = {
   resources: true,
   surveys: true,
   feedback: true,
+  callback: true,
   feedbackAsk: "Write your feedback in one message. It goes to our team.",
   feedbackAskAm: "አስተያየትዎን በአንድ መልዕክት ይጻፉ። ለቡድናችን ይደርሳል።",
   feedbackThanks: "Thank you for your feedback.",
@@ -248,6 +250,7 @@ export async function saveTelegramTexts(user: AppUser, input: Partial<TelegramTe
     resources: input.resources ?? cur.resources,
     surveys: input.surveys ?? cur.surveys,
     feedback: input.feedback ?? cur.feedback,
+    callback: input.callback ?? cur.callback,
     feedbackAsk: t("feedbackAsk"),
     feedbackAskAm: t("feedbackAskAm"),
     feedbackThanks: t("feedbackThanks"),
@@ -421,7 +424,7 @@ async function telegramButton(q: NonNullable<TgUpdate["callback_query"]>, x: Tel
   const data = String(q.data ?? "");
   const h = await import("./support-help");
   if (data === "m") return sendMenu(chat, x);
-  if (/^(r|s|f)$|^(r|s|q|x):/.test(data)) {
+  if (/^(r|s|f|cb)$|^(r|s|q|x):/.test(data)) {
     const who = await customerFor({ channel: "telegram", key: chat, name: nameOf(q.from) });
     if (await (await import("./bot-manager")).button(currentBot(), chat, who, data, x)) return;
   }
@@ -495,6 +498,8 @@ async function handleUpdate(update: TgUpdate) {
       const phone = clean(m.contact.phone_number, 40).replace(/^(?=\d)/, "+");
       await run("UPDATE sup_customers SET phone = ? WHERE id = ?", phone, customerId);
       await telegramSend(chat, x.lang === "am" ? "እናመሰግናለን፣ ስልክ ቁጥርዎ ተቀምጧል።" : "Thank you, your number is saved.", { reply_markup: { remove_keyboard: true } });
+      // A call-back asked for before the number was shared.
+      await (await import("./bot-manager")).afterContact(currentBot(), chat, customerId, x);
     }
     return { ok: true };
   }
