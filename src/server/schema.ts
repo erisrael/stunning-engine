@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 69;
+export const SCHEMA_VERSION = 70;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -3662,6 +3662,12 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS presence TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS online_since TEXT;
 CREATE INDEX IF NOT EXISTS idx_users_last_active ON users(last_active_at);
 CREATE INDEX IF NOT EXISTS idx_sup_calls_agent_live ON sup_calls(agent_id, status);
+
+-- v70: support conversations work like chat (Update 1.1): a message can answer an earlier one (reply_to), and carry
+-- emoji reactions from agents and the customer ({"<emoji>": ["a:<user>", "c:<customer>"]}); reacted_at tells live views.
+ALTER TABLE sup_messages ADD COLUMN IF NOT EXISTS reply_to TEXT;
+ALTER TABLE sup_messages ADD COLUMN IF NOT EXISTS reactions TEXT;
+ALTER TABLE sup_messages ADD COLUMN IF NOT EXISTS reacted_at TEXT;
 
 `;
 

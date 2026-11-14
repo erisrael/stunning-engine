@@ -82,11 +82,13 @@ async function handle(request: Request, ctx: Ctx, method: "GET" | "POST") {
     else if (a === "tickets" && !id && method === "GET") out = await sd.customerTickets(app, token);
     else if (a === "tickets" && !id && method === "POST") out = { id: await sd.customerCreateTicket(app, token, { subject: s(body.subject), message: s(body.message), priority: s(body.priority) as sd.Priority }) };
     else if (a === "tickets" && id && b === "messages" && method === "GET") out = await sd.customerMessages(app, token, id, new URL(request.url).searchParams.get("since"));
-    else if (a === "tickets" && id && b === "messages" && method === "POST") out = (await sd.customerReply(app, token, id, s(body.body)), { ok: true });
+    else if (a === "tickets" && id && b === "messages" && path[3] && path[4] === "react" && method === "POST") out = await sd.customerReact(app, token, id, path[3], s(body.emoji));
+    else if (a === "tickets" && id && b === "messages" && method === "POST") out = { ok: true, id: await sd.customerReply(app, token, id, s(body.body), s(body.replyTo) || null) };
+    else if (a === "phone" && !id && method === "POST") out = await sd.customerSharePhone(app, token, s(body.phone));
     else if (a === "tickets" && id && b === "typing" && method === "POST") out = (await sd.customerTyping(app, token, id), { ok: true });
     else if (a === "tickets" && id && b === "read" && method === "POST") out = (await sd.customerRead(app, token, id), { ok: true });
     else if (a === "tickets" && id && b === "files" && method === "GET") out = await sd.customerFiles(app, token, id);
-    else if (a === "tickets" && id && b === "files" && method === "POST") out = await sd.customerUpload(app, token, id, { name: s(body.name), mime: s(body.mime), data: s(body.data) });
+    else if (a === "tickets" && id && b === "files" && method === "POST") out = await sd.customerUpload(app, token, id, { name: s(body.name), mime: s(body.mime), data: s(body.data), caption: s(body.caption), replyTo: s(body.replyTo) || null });
     else if (a === "tickets" && id && b === "rating" && method === "POST") out = (await sd.customerRate(app, token, id, Number(body.rating), s(body.comment)), { ok: true });
     else if (a === "articles" && !id && method === "GET") out = await (await import("@/server/support-channels")).searchArticles(new URL(request.url).searchParams.get("q") ?? "");
     else if (a === "articles" && id && !b && method === "GET") out = await (await import("@/server/support-channels")).readArticle(id);

@@ -76,9 +76,9 @@ try {
   check("the ticket is Sara's at once", await visible(row));
   await row.click();
   check("the customer's details are beside it", await visible(sara.getByText("abebe@example.com")));
-  await sara.getByLabel("Reply").fill("Selam Abebe, I sent you a new code.");
+  await sara.getByLabel("Reply", { exact: true }).fill("Selam Abebe, I sent you a new code.");
   await sara.getByRole("button", { name: "Send", exact: true }).click();
-  check("sent", await toast(sara, /Sent/));
+  check("sent", await visible(sara.locator("[data-desk-chat] [data-from=agent]").filter({ hasText: "I sent you a new code" })));
   await sara.getByRole("button", { name: /Internal note/ }).click({ force: true });
   await sara.getByLabel("Internal note").fill("SMS provider was slow");
   await sara.getByRole("button", { name: "Add note" }).click({ force: true });

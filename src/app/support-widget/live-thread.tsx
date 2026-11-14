@@ -4,7 +4,8 @@
 // slow check as a fallback), the agent's typing, "Seen" under the customer's messages, the agent's online state,
 // files and voice notes both ways, and English or Amharic (with Latin-to-Ge'ez typing).
 import * as React from "react";
-import { Loader2Icon, MicIcon, PaperclipIcon, SendIcon, SquareIcon, StarIcon } from "lucide-react";
+import { Loader2Icon, StarIcon } from "lucide-react";
+import { ChatTimeline, Composer, KIT_WORDS, type ComposerHandle, type KitMsg, type KitReaction, type KitWords } from "@/components/support-chat/kit";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -56,10 +57,49 @@ const WORDS = {
 export const words = (l: Lang) => WORDS[l];
 
 type Api = <T>(path: string, body?: unknown) => Promise<T>;
-type Msg = { id: string; from: string; name: string; body: string; at: string };
-type File = { id: string; message_id: string | null; name: string; mime: string; size: number };
+type Quote = { id: string; name?: string; author?: string; body: string };
+type Msg = { id: string; from: string; name: string; body: string; at: string; replyTo: { id: string; author: string; body: string } | null; reactions: KitReaction[] };
+type FileRow = { id: string; message_id: string | null; name: string; mime: string; size: number };
+type Call = { id: string; direction: string; kind: string; status: string; at: string; durationS: number | null };
 type Live = { stamp: string; status: string; closed: boolean; typing: string | null; read: string | null; online: boolean };
-const MAX = 10 * 1024 * 1024;
+
+// The chat kit's words in Amharic.
+const KIT_AM: KitWords = {
+  ...KIT_WORDS,
+  today: "ዛሬ",
+  yesterday: "ትናንት",
+  reply: "መልስ",
+  react: "ስሜት ይግለጹ",
+  replyThis: "ለዚህ መልዕክት ይመልሱ",
+  reactThis: "ለዚህ መልዕክት ስሜት ይግለጹ",
+  replyingTo: "ለ",
+  cancel: "ይቅር",
+  typing: (n: string) => `${n} እየጻፈ ነው`,
+  write: "መልዕክት ይጻፉ",
+  send: "ላክ",
+  attach: "ፋይሎች ያያይዙ",
+  emoji: "ስሜት ገላጭ",
+  record: "የድምፅ መልዕክት ይቅዱ",
+  recording: "እየተቀዳ ነው",
+  stopSend: "የድምፅ መልዕክቱን ላክ",
+  discard: "ሰርዝ",
+  caption: "መግለጫ ያክሉ",
+  photo: "ፎቶ",
+  voice: "የድምፅ መልዕክት",
+  file: "ፋይል",
+  download: "አውርድ",
+  close: "ዝጋ",
+  play: "አጫውት",
+  pause: "ለአፍታ አቁም",
+  speed: "ፍጥነት",
+  newMessages: "አዲስ መልዕክቶች",
+  seen: "ታይቷል",
+  sent: "ተልኳል",
+  tooBig: (n: string) => `${n} ከ10 ሜጋባይት ይበልጣል።`,
+  mic: "ለመቅዳት ማይክሮፎኑን ይፍቀዱ።",
+  call: { inbound: "ገቢ ጥሪ", outbound: "ወጪ ጥሪ", missed: "ያመለጠ ጥሪ", declined: "ያልተቀበሉት ጥሪ", callback: "መልሰው እንዲደውሉ ተጠይቋል", ringing: "እየጠራ ነው…", answered: "በጥሪ ላይ" },
+  drop: "ለመላክ ፋይሎችን እዚህ ይጣሉ",
+};
 
 const toBase64 = (b: Blob) =>
   new Promise<string>((ok, no) => {
@@ -71,25 +111,25 @@ const toBase64 = (b: Blob) =>
 
 export function LiveThread({ api, appKey, token, id, color, lang, online: startOnline, callButton }: { api: Api; appKey: string; token: string; id: string; color: string; lang: Lang; online: boolean; callButton?: (reload: () => void) => React.ReactNode }) {
   const w = words(lang);
+  const kw = lang === "am" ? KIT_AM : KIT_WORDS;
   const [t, setT] = React.useState<{ id: string; number: number; subject: string; status: string; rating: number | null } | null>(null);
   const [msgs, setMsgs] = React.useState<Msg[]>([]);
-  const [files, setFiles] = React.useState<File[]>([]);
+  const [calls, setCalls] = React.useState<Call[]>([]);
+  const [files, setFiles] = React.useState<FileRow[]>([]);
   const [live, setLive] = React.useState<Live | null>(null);
   const [text, setText] = React.useState("");
   const [geez, setGeez] = React.useState(lang === "am");
-  const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState<string | null>(null);
-  const [rec, setRec] = React.useState<{ r: MediaRecorder; chunks: Blob[]; started: number } | null>(null);
-  const [secs, setSecs] = React.useState(0);
-  const end = React.useRef<HTMLDivElement>(null);
+  const [reply, setReply] = React.useState<Quote | null>(null);
+  const composer = React.useRef<ComposerHandle>(null);
   const lastTyping = React.useRef(0);
-  const fileInput = React.useRef<HTMLInputElement>(null);
   const q = `key=${encodeURIComponent(appKey)}&token=${encodeURIComponent(token)}`;
 
   const load = React.useCallback(async () => {
-    const [r, f] = await Promise.all([api<{ ticket: NonNullable<typeof t>; messages: Msg[] }>(`tickets/${id}/messages`), api<File[]>(`tickets/${id}/files`).catch(() => [] as File[])]);
+    const [r, f] = await Promise.all([api<{ ticket: NonNullable<typeof t>; messages: Msg[]; calls?: Call[] }>(`tickets/${id}/messages`), api<FileRow[]>(`tickets/${id}/files`).catch(() => [] as FileRow[])]);
     setT(r.ticket);
     setMsgs(r.messages);
+    setCalls(r.calls ?? []);
     setFiles(f);
     void api(`tickets/${id}/read`, {}).catch(() => null);
   }, [api, id]);
@@ -114,16 +154,8 @@ export function LiveThread({ api, appKey, token, id, color, lang, online: startO
       window.clearInterval(slow);
     };
   }, [id, q, load]);
-  React.useEffect(() => {
-    end.current?.scrollIntoView({ block: "nearest" });
-  }, [msgs.length, live?.typing]);
   // Switching the widget to Amharic turns Latin-to-Ge'ez typing on (it can be turned off below the box).
   React.useEffect(() => setGeez(lang === "am"), [lang]);
-  React.useEffect(() => {
-    if (!rec) return;
-    const i = window.setInterval(() => setSecs(Math.round((Date.now() - rec.started) / 1000)), 500);
-    return () => window.clearInterval(i);
-  }, [rec]);
 
   const typed = (v: string) => {
     setText(geez ? geezAsYouType(v) : v);
@@ -132,57 +164,53 @@ export function LiveThread({ api, appKey, token, id, color, lang, online: startO
       void api(`tickets/${id}/typing`, {}).catch(() => null);
     }
   };
-  const send = async () => {
-    const body = geez ? toGeez(text) : text;
-    if (!body.trim()) return;
-    setBusy(true);
+  const sendText = async (body: string) => {
+    const b = geez ? toGeez(body) : body;
+    if (!b.trim()) return;
     setErr(null);
-    try {
-      await api(`tickets/${id}/messages`, { body });
-      setText("");
-      await load();
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "Could not send.");
-    }
-    setBusy(false);
+    await api(`tickets/${id}/messages`, { body: b, replyTo: reply?.id ?? null });
+    setReply(null);
+    await load();
   };
-  const upload = async (blob: Blob, name: string) => {
-    if (blob.size > MAX) return setErr(w.tooBig);
-    setBusy(true);
+  const upload = async (blob: Blob, name: string, caption = "") => {
+    await api(`tickets/${id}/files`, { name, mime: blob.type || "application/octet-stream", data: await toBase64(blob), caption, replyTo: reply?.id ?? null });
+  };
+  const sendFiles = async (list: File[], caption: string) => {
     setErr(null);
-    try {
-      await api(`tickets/${id}/files`, { name, mime: blob.type || "application/octet-stream", data: await toBase64(blob) });
-      await load();
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "Could not send.");
-    }
-    setBusy(false);
+    // The caption goes with the first file.
+    for (const [i, f] of list.entries()) await upload(f, f.name, i === 0 ? (geez ? toGeez(caption) : caption) : "");
+    setReply(null);
+    await load();
   };
-  const startRec = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const r = new MediaRecorder(stream);
-      const chunks: Blob[] = [];
-      r.ondataavailable = (e) => e.data.size && chunks.push(e.data);
-      r.onstop = () => {
-        stream.getTracks().forEach((x) => x.stop());
-        void upload(new Blob(chunks, { type: r.mimeType || "audio/webm" }), `voice-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.webm`);
-      };
-      r.start();
-      setSecs(0);
-      setRec({ r, chunks, started: Date.now() });
-    } catch {
-      setErr(w.mic);
-    }
+  const sendVoice = async (blob: Blob) => {
+    setErr(null);
+    await upload(blob, `voice-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.${blob.type.includes("mp4") ? "m4a" : blob.type.includes("ogg") ? "ogg" : "webm"}`);
+    setReply(null);
+    await load();
+  };
+  const react = async (m: KitMsg, emoji: string) => {
+    await api(`tickets/${id}/messages/${m.id}/react`, { emoji }).catch((e) => setErr(e instanceof Error ? e.message : String(e)));
+    await load();
   };
 
   if (!t) return <Loader2Icon className="m-6 size-5 animate-spin text-muted-foreground" />;
   const status = live?.status ?? t.status;
   const done = ["solved", "closed"].includes(status);
   const online = live ? live.online : startOnline;
-  const lastMine = [...msgs].reverse().find((m) => m.from === "customer");
-  const seen = !!(live?.read && lastMine && live.read >= lastMine.at);
-  const fileUrl = (f: File) => `/api/support/v1/files/${f.id}?${q}`;
+  const fileUrl = (f: FileRow) => `/api/support/v1/files/${f.id}?${q}`;
+  const kitMsgs: KitMsg[] = msgs.map((m) => ({
+    id: m.id,
+    side: m.from === "customer" ? "out" : m.from === "system" ? "system" : "in",
+    author: m.from === "customer" ? null : m.name,
+    authorKey: m.from === "agent" ? `a:${m.name}` : m.from,
+    body: m.body,
+    at: m.at,
+    files: files.filter((f) => f.message_id === m.id).map((f) => ({ id: f.id, name: f.name, mime: f.mime, size: f.size, url: fileUrl(f) })),
+    replyTo: m.replyTo,
+    reactions: m.reactions ?? [],
+    status: m.from === "customer" ? (live?.read && live.read >= m.at ? "seen" : "sent") : null,
+    role: m.from,
+  }));
   return (
     <div className="flex h-full flex-col" data-live-thread>
       <div className="flex items-center gap-2 border-b px-4 py-2 text-sm">
@@ -197,78 +225,54 @@ export function LiveThread({ api, appKey, token, id, color, lang, online: startO
           {online ? w.online : w.away}
         </span>
       </div>
-      <div className="flex-1 space-y-2 overflow-y-auto p-3" data-thread>
-        {msgs.map((m) => {
-          const mine = m.from === "customer";
-          const att = files.filter((f) => f.message_id === m.id);
-          return (
-            <div key={m.id} className={cn("max-w-[85%] rounded-lg px-3 py-2 text-sm", mine ? "ml-auto text-white" : m.from === "system" ? "mx-auto bg-muted text-xs text-muted-foreground" : "bg-muted")} style={mine ? { background: color } : undefined} data-from={m.from}>
-              {m.from === "agent" && <p className="text-xs font-medium">{m.name}</p>}
-              {att.length ? null : <p className="whitespace-pre-wrap break-words">{m.body}</p>}
-              {att.map((f) =>
-                f.mime.startsWith("audio/") ? (
-                  <audio key={f.id} controls src={fileUrl(f)} className="mt-1 h-9 max-w-full" aria-label={w.voice} data-voice-note />
-                ) : f.mime.startsWith("image/") ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img key={f.id} src={fileUrl(f)} alt={f.name} className="mt-1 max-h-48 rounded" />
-                ) : (
-                  <a key={f.id} href={fileUrl(f)} target="_blank" rel="noreferrer" className={cn("mt-1 flex items-center gap-1 underline", mine && "text-white")} data-widget-file>
-                    <PaperclipIcon className="size-3.5" /> {f.name}
-                  </a>
-                ),
-              )}
-              {mine && m.id === lastMine?.id && seen && <p className="mt-0.5 text-right text-[10px] opacity-80" data-seen>{w.seen}</p>}
-            </div>
-          );
-        })}
-        {live?.typing && !done && (
-          <p className="text-xs text-muted-foreground" data-agent-typing>
-            {w.typing(live.typing)}
-          </p>
-        )}
-        <div ref={end} />
-      </div>
+      <ChatTimeline
+        messages={kitMsgs}
+        calls={calls.map((c) => ({ ...c }))}
+        accent={color}
+        typing={!done ? live?.typing : null}
+        words={kw}
+        onReply={status === "closed" ? undefined : (m) => setReply({ id: m.id, author: m.side === "out" ? (lang === "am" ? "እርስዎ" : "You") : (m.author ?? ""), body: m.body })}
+        onReact={status === "closed" ? undefined : (m, e) => void react(m, e)}
+        onDropFiles={status === "closed" ? undefined : (list) => composer.current?.addFiles(list)}
+      />
+      {live?.typing && !done && (
+        <p className="sr-only" data-agent-typing>
+          {w.typing(live.typing)}
+        </p>
+      )}
       {done && t.rating === null && <Rate api={api} id={id} lang={lang} onDone={load} />}
       {status === "closed" ? (
         <p className="border-t p-3 text-center text-xs text-muted-foreground" data-closed>
           {w.closed}
         </p>
       ) : (
-        <div className="space-y-2 border-t p-2">
-          {!done && callButton?.(() => void load())}
-          {err && <p className="text-xs text-[#D93025]">{err}</p>}
-          {rec ? (
-            <div className="flex items-center gap-2 text-sm" data-recording>
-              <span className="size-2 animate-pulse rounded-full bg-[#D93025]" />
-              <span className="flex-1 tabular-nums">
-                0:{String(secs).padStart(2, "0")}
-              </span>
-              <Button size="sm" variant="outline" onClick={() => (rec.r.stop(), setRec(null))} aria-label={w.stop}>
-                <SquareIcon /> {w.stop}
-              </Button>
-            </div>
-          ) : (
-            <div className="flex items-center gap-1">
-              <input ref={fileInput} type="file" className="hidden" onChange={(e) => (e.target.files?.[0] && void upload(e.target.files[0], e.target.files[0].name), (e.target.value = ""))} data-widget-file-input />
-              <Button size="icon" variant="ghost" aria-label={w.attach} title={w.attach} disabled={busy} onClick={() => fileInput.current?.click()}>
-                <PaperclipIcon />
-              </Button>
-              <Button size="icon" variant="ghost" aria-label={w.record} title={w.record} disabled={busy} onClick={() => void startRec()}>
-                <MicIcon />
-              </Button>
-              <Input aria-label={w.write} placeholder={w.write} value={text} onChange={(e) => typed(e.target.value)} onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && text.trim() && (e.preventDefault(), void send())} />
-              <Button size="icon" className="shrink-0 text-white" style={{ background: color }} aria-label={w.send} disabled={busy || !text.trim()} onClick={() => void send()}>
-                {busy ? <Loader2Icon className="animate-spin" /> : <SendIcon />}
-              </Button>
-            </div>
-          )}
+        <>
+          <Composer
+            ref={composer}
+            value={text}
+            onChange={typed}
+            onSend={sendText}
+            onFiles={sendFiles}
+            onVoice={sendVoice}
+            replyTo={reply ? { id: reply.id, author: reply.author ?? "", body: reply.body } : null}
+            onCancelReply={() => setReply(null)}
+            accent={color}
+            words={kw}
+            onError={setErr}
+            above={
+              <>
+                {!done && callButton?.(() => void load())}
+                {err && <p className="text-xs text-[#D93025]">{err}</p>}
+              </>
+            }
+          />
           {lang === "am" && (
-            <label className="flex items-center gap-1.5 px-1 text-[11px] text-muted-foreground">
+            <label className="flex items-center gap-1.5 px-3 pb-2 text-[11px] text-muted-foreground">
               <input type="checkbox" checked={geez} onChange={(e) => setGeez(e.target.checked)} data-geez-toggle />
               {w.geez}
             </label>
           )}
-        </div>
+        </>
       )}
     </div>
   );

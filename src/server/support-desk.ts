@@ -36,6 +36,49 @@ import {
 export * from "@/lib/support";
 
 const clean = (v: unknown, max: number) => String(v ?? "").trim().slice(0, max);
+
+// --- Chat features on support messages (replies and reactions) ------------------
+export type Reaction = { emoji: string; count: number; mine: boolean; who: string[] };
+const REACTION = /^(?:\p{Extended_Pictographic}|\p{Emoji_Modifier}|\p{Emoji_Component}|\u200d|\ufe0f){1,8}$/u;
+function reactionsOf(raw: string | null | undefined, me: string, names: Map<string, string>): Reaction[] {
+  const r = parseJson<Record<string, string[]>>(raw ?? "{}", {});
+  return Object.entries(r)
+    .filter(([, who]) => who.length)
+    .map(([emoji, who]) => ({ emoji, count: who.length, mine: who.includes(me), who: who.map((w) => names.get(w) ?? (w.startsWith("c:") ? "Customer" : "Support")) }));
+}
+// The message a reply quotes, checked to be in the same conversation (and public, for the customer).
+async function replyTarget(ticketId: string, replyTo: string | null | undefined, publicOnly: boolean) {
+  if (!replyTo) return null;
+  const m = await get<{ id: string; internal: number }>("SELECT id, internal FROM sup_messages WHERE id = ? AND ticket_id = ?", clean(replyTo, 40), ticketId);
+  if (!m || (publicOnly && Number(m.internal))) throw new WorkflowError("VALIDATION", "That message is not in this conversation.");
+  return m.id;
+}
+type Quoted = { id: string; author: string; body: string; internal: boolean };
+async function quotes(ids: (string | null)[], customerView: boolean): Promise<Map<string, Quoted>> {
+  const list = [...new Set(ids.filter((x): x is string => !!x))];
+  if (!list.length) return new Map();
+  const rows = await all<{ id: string; author_kind: string; agent: string | null; customer: string | null; body: string; internal: number }>(
+    `SELECT m.id, m.author_kind, u.name AS agent, c.name AS customer, m.body, m.internal FROM sup_messages m LEFT JOIN users u ON u.id = m.author_id LEFT JOIN sup_customers c ON c.id = m.author_id WHERE m.id IN (${list.map(() => "?").join(",")})`,
+    ...list,
+  );
+  return new Map(
+    rows
+      .filter((r) => !(customerView && Number(r.internal)))
+      .map((r) => [r.id, { id: r.id, author: r.author_kind === "agent" ? (customerView ? (r.agent ?? "Support").split(" ")[0]! : (r.agent ?? "Agent")) : r.author_kind === "customer" ? (customerView ? "You" : (r.customer ?? "Customer")) : "Support", body: r.body.slice(0, 200), internal: !!Number(r.internal) }]),
+  );
+}
+async function toggleReaction(messageId: string, who: string, emoji: string) {
+  const e = clean(emoji, 32);
+  if (!REACTION.test(e)) throw new WorkflowError("VALIDATION", "Choose an emoji.");
+  const m = await get<{ reactions: string | null }>("SELECT reactions FROM sup_messages WHERE id = ?", messageId);
+  const r = parseJson<Record<string, string[]>>(m?.reactions ?? "{}", {});
+  const has = (r[e] ?? []).includes(who);
+  r[e] = has ? r[e]!.filter((x) => x !== who) : [...(r[e] ?? []), who];
+  if (!r[e]!.length) delete r[e];
+  if (Object.keys(r).length > 20) throw new WorkflowError("VALIDATION", "Too many reactions.");
+  await run("UPDATE sup_messages SET reactions = ?, reacted_at = ? WHERE id = ?", JSON.stringify(r), nowIso(), messageId);
+  return !has;
+}
 const minutesFrom = (iso: string, min: number) => new Date(Date.parse(iso) + min * 60e3).toISOString();
 const hmac = (key: string, v: string) => crypto.createHmac("sha256", key).update(v).digest("hex");
 
@@ -533,28 +576,52 @@ async function customerTicket(app: AppFull, token: string, ticketId: string) {
 
 export async function customerMessages(app: AppFull, token: string, ticketId: string, since?: string | null) {
   const { t } = await customerTicket(app, token, ticketId);
-  const msgs = await all<{ id: string; author_kind: string; name: string | null; body: string; created_at: string }>(
-    `SELECT m.id, m.author_kind, u.name, m.body, m.created_at FROM sup_messages m LEFT JOIN users u ON u.id = m.author_id AND m.author_kind = 'agent'
+  const msgs = await all<{ id: string; author_kind: string; name: string | null; body: string; created_at: string; reply_to: string | null; reactions: string | null }>(
+    `SELECT m.id, m.author_kind, u.name, m.body, m.created_at, m.reply_to, m.reactions FROM sup_messages m LEFT JOIN users u ON u.id = m.author_id AND m.author_kind = 'agent'
      WHERE m.ticket_id = ? AND m.internal = 0 ${since ? "AND m.created_at > ?" : ""} ORDER BY m.created_at`,
     t.id,
     ...(since ? [since] : []),
   );
-  // Customers see the agent's first name only.
-  return { ticket: { id: t.id, number: t.number, subject: t.subject, status: t.status, rating: t.rating }, messages: msgs.map((m) => ({ id: m.id, from: m.author_kind, name: m.author_kind === "agent" ? (m.name ?? "Support").split(" ")[0] : m.author_kind === "system" ? "Support" : "You", body: m.body, at: m.created_at })) };
+  // Customers see the agent's first name only; replies quote only public messages.
+  const me = `c:${t.customer_id}`;
+  const q = await quotes(msgs.map((m) => m.reply_to), true);
+  const calls = await all<{ id: string; direction: string; kind: string; status: string; started_at: string; duration_s: number | null }>("SELECT id, direction, kind, status, started_at, duration_s FROM sup_calls WHERE ticket_id = ? AND parent_id IS NULL ORDER BY started_at", t.id);
+  return {
+    ticket: { id: t.id, number: t.number, subject: t.subject, status: t.status, rating: t.rating },
+    messages: msgs.map((m) => ({ id: m.id, from: m.author_kind, name: m.author_kind === "agent" ? (m.name ?? "Support").split(" ")[0] : m.author_kind === "system" ? "Support" : "You", body: m.body, at: m.created_at, replyTo: m.reply_to ? (q.get(m.reply_to) ?? null) : null, reactions: reactionsOf(m.reactions, me, new Map([[me, "You"]])) })),
+    calls: calls.map((k) => ({ id: k.id, direction: k.direction, kind: k.kind, status: k.status, at: k.started_at, durationS: k.duration_s })),
+  };
 }
 
-export async function customerReply(app: AppFull, token: string, ticketId: string, body: string) {
+export async function customerReply(app: AppFull, token: string, ticketId: string, body: string, replyTo?: string | null) {
   await (await import("./connected-systems")).needChannel(app.id, "web_chat");
   const { c, t } = await customerTicket(app, token, ticketId);
   const text = clean(body, 8000);
   if (!text) throw new WorkflowError("VALIDATION", "Write a message.");
   if (t.status === "closed") throw new WorkflowError("INVALID_STATE", "This conversation is closed. Start a new one.");
   const now = nowIso();
-  await run("INSERT INTO sup_messages (id, ticket_id, author_kind, author_id, body, internal, created_at) VALUES (?, ?, 'customer', ?, ?, 0, ?)", uid("smg_"), t.id, c.id, text, now);
+  const msgId = uid("smg_");
+  await run("INSERT INTO sup_messages (id, ticket_id, author_kind, author_id, body, internal, created_at, reply_to) VALUES (?, ?, 'customer', ?, ?, 0, ?, ?)", msgId, t.id, c.id, text, now, await replyTarget(t.id, replyTo, true));
   // A reply reopens a solved ticket and takes a waiting one back to the agent.
   await run("UPDATE sup_tickets SET status = CASE WHEN status IN ('pending','solved') THEN 'open' ELSE status END, solved_at = CASE WHEN status = 'solved' THEN NULL ELSE solved_at END, close_reason = CASE WHEN status = 'solved' THEN NULL ELSE close_reason END, customer_typing_at = NULL, last_customer_at = ?, updated_at = ? WHERE id = ?", now, now, t.id);
   if (t.assignee_id) await notify([t.assignee_id], { type: "assignment", title: `#${t.number}: ${c.name} replied`, body: text.slice(0, 200), link: `/support?ticket=${t.id}`, dedupeKey: `sup-reply-${t.id}-${now}` }, now);
   else await autoAssign(t.id);
+  return msgId;
+}
+
+// A reaction from the customer (on public messages only); again to take it back.
+export async function customerReact(app: AppFull, token: string, ticketId: string, messageId: string, emoji: string) {
+  const { t } = await customerTicket(app, token, ticketId);
+  const m = await get<{ internal: number }>("SELECT internal FROM sup_messages WHERE id = ? AND ticket_id = ?", messageId, t.id);
+  if (!m || Number(m.internal)) throw new WorkflowError("NOT_FOUND", "Message not found.");
+  return { on: await toggleReaction(messageId, `c:${t.customer_id}`, emoji) };
+}
+// The customer shares their phone number from the widget: kept and matched to our records for the agent.
+export async function customerSharePhone(app: AppFull, token: string, phone: string) {
+  const c = await customerByToken(app, token);
+  const r = await (await import("./customer-records")).recordPhone(c.id, phone, "widget");
+  if (!r) throw new WorkflowError("VALIDATION", "Enter a phone number.");
+  return { phone: r.phone };
 }
 
 export async function customerRate(app: AppFull, token: string, ticketId: string, rating: number, comment?: string | null) {
@@ -622,8 +689,8 @@ export async function ticketDetail(user: AppUser, ticketId: string) {
     t.id,
   );
   const customer = t.customer_id ? await get<{ id: string; name: string; email: string | null; phone: string | null; meta: string; verified: number; external_id: string | null; app: string | null }>("SELECT c.*, a.name AS app FROM sup_customers c LEFT JOIN sup_apps a ON a.id = c.app_id WHERE c.id = ?", t.customer_id) : null;
-  const messages = await all<{ id: string; author_kind: string; author: string | null; body: string; internal: number; created_at: string }>(
-    `SELECT m.id, m.author_kind, CASE WHEN m.author_kind = 'agent' THEN u.name WHEN m.author_kind = 'customer' THEN c.name ELSE 'System' END AS author, m.body, m.internal, m.created_at
+  const messages = await all<{ id: string; author_kind: string; author_id: string | null; author: string | null; body: string; internal: number; created_at: string; reply_to: string | null; reactions: string | null }>(
+    `SELECT m.id, m.author_kind, m.author_id, CASE WHEN m.author_kind = 'agent' THEN u.name WHEN m.author_kind = 'customer' THEN c.name ELSE 'System' END AS author, m.body, m.internal, m.created_at, m.reply_to, m.reactions
      FROM sup_messages m LEFT JOIN users u ON u.id = m.author_id LEFT JOIN sup_customers c ON c.id = m.author_id WHERE m.ticket_id = ? ORDER BY m.created_at`,
     t.id,
   );
@@ -634,19 +701,30 @@ export async function ticketDetail(user: AppUser, ticketId: string) {
   const log = await all<{ kind: string; detail: string | null; at: string; who: string | null }>("SELECT a.kind, a.detail, a.at, u.name AS who FROM sup_activity a LEFT JOIN users u ON u.id = a.user_id WHERE a.ticket_id = ? AND a.kind <> 'viewed' ORDER BY a.at DESC LIMIT 100", t.id);
   const history = t.customer_id ? await all<{ id: string; number: number; subject: string; status: string; created_at: string }>("SELECT id, number, subject, status, created_at FROM sup_tickets WHERE customer_id = ? AND id <> ? ORDER BY created_at DESC LIMIT 10", t.customer_id, t.id) : [];
   const files = await (await import("./support-help")).ticketFiles([t.id]);
-  return { ticket: full, customer: customer ? { ...customer, meta: parseJson<Record<string, string>>(customer.meta, {}), verified: !!Number(customer.verified) } : null, messages: messages.map((m) => ({ ...m, internal: !!Number(m.internal) })), calls, log, history, files };
+  const q = await quotes(messages.map((m) => m.reply_to), false);
+  const names = new Map<string, string>([[`c:${t.customer_id}`, customer?.name ?? "Customer"], ...(await listUsers()).map((u) => [`a:${u.id}`, u.name] as [string, string])]);
+  return {
+    ticket: full,
+    customer: customer ? { ...customer, meta: parseJson<Record<string, string>>(customer.meta, {}), verified: !!Number(customer.verified), telegram: !!customer.external_id?.startsWith("tg:") } : null,
+    messages: messages.map(({ reactions, reply_to, ...m }) => ({ ...m, internal: !!Number(m.internal), mine: m.author_kind === "agent" && m.author_id === user.id, replyTo: reply_to ? (q.get(reply_to) ?? null) : null, reactions: reactionsOf(reactions, `a:${user.id}`, names) })),
+    calls,
+    log,
+    history,
+    files,
+  };
 }
 
-export async function agentReply(user: AppUser, ticketId: string, input: { body: string; internal?: boolean; status?: TicketStatus | null }) {
+export async function agentReply(user: AppUser, ticketId: string, input: { body: string; internal?: boolean; status?: TicketStatus | null; replyTo?: string | null; file?: boolean }) {
   const t = await canWork(user, ticketId);
   const body = clean(input.body, 8000);
   if (!body) throw new WorkflowError("VALIDATION", "Write the reply.");
   const now = nowIso();
   const msgId = uid("smg_");
-  await run("INSERT INTO sup_messages (id, ticket_id, author_kind, author_id, body, internal, created_at) VALUES (?, ?, 'agent', ?, ?, ?, ?)", msgId, t.id, user.id, body, input.internal ? 1 : 0, now);
+  // A public reply may quote only a public message.
+  await run("INSERT INTO sup_messages (id, ticket_id, author_kind, author_id, body, internal, created_at, reply_to) VALUES (?, ?, 'agent', ?, ?, ?, ?, ?)", msgId, t.id, user.id, body, input.internal ? 1 : 0, now, await replyTarget(t.id, input.replyTo, !input.internal));
   await run("UPDATE sup_tickets SET agent_typing_at = NULL WHERE id = ?", t.id);
-  // Email and Telegram tickets: the reply goes back the same way.
-  if (!input.internal) {
+  // Email and Telegram tickets: the reply goes back the same way (a file goes as the file itself, from agentUpload).
+  if (!input.internal && !input.file) {
     try {
       const sent = await (await import("./support-channels")).deliverReply(t.id, body, user.name);
       if (sent && sent !== "telegram") await run("UPDATE sup_messages SET email_id = ? WHERE id = ?", sent, msgId);
@@ -669,6 +747,15 @@ export async function agentReply(user: AppUser, ticketId: string, input: { body:
   await activity(user.id, t.id, input.internal ? "note" : "replied", body.slice(0, 120));
   if (!input.internal) await ticketEvent(t.id, "ticket.replied", { reply: body.slice(0, 2000), agent: user.name.split(" ")[0] });
   if (input.status) await setTicketStatus(user, t.id, input.status);
+  return msgId;
+}
+
+// An agent's reaction on any message of a ticket they work on; again to take it back.
+export async function agentReact(user: AppUser, messageId: string, emoji: string) {
+  const m = await get<{ ticket_id: string }>("SELECT ticket_id FROM sup_messages WHERE id = ?", clean(messageId, 40));
+  if (!m) throw new WorkflowError("NOT_FOUND", "Message not found.");
+  await canWork(user, m.ticket_id);
+  return { on: await toggleReaction(clean(messageId, 40), `a:${user.id}`, emoji) };
 }
 
 // The agent texts the customer (the system's SMS channel must be on); kept on the ticket as a public message.
@@ -1396,7 +1483,9 @@ async function liveRow(ticketId: string) {
 async function msgStamp(ticketId: string, publicOnly: boolean) {
   const r = await get<{ n: number | string; last: string | null }>(`SELECT COUNT(*) AS n, MAX(created_at) AS last FROM sup_messages WHERE ticket_id = ? ${publicOnly ? "AND internal = 0" : ""}`, ticketId);
   const f = await get<{ n: number | string }>("SELECT COUNT(*) AS n FROM sup_files WHERE ticket_id = ?", ticketId);
-  return `${r?.n ?? 0}:${r?.last ?? ""}:${f?.n ?? 0}`;
+  const x = await get<{ r: string | null }>(`SELECT MAX(reacted_at) AS r FROM sup_messages WHERE ticket_id = ? ${publicOnly ? "AND internal = 0" : ""}`, ticketId);
+  const k = await get<{ n: number | string; s: string | null }>("SELECT COUNT(*) AS n, MAX(status || COALESCE(ended_at, answered_at, started_at)) AS s FROM sup_calls WHERE ticket_id = ?", ticketId);
+  return `${r?.n ?? 0}:${r?.last ?? ""}:${f?.n ?? 0}:${x?.r ?? ""}:${k?.n ?? 0}:${k?.s ?? ""}`;
 }
 
 export type CustomerLive = { stamp: string; status: string; closed: boolean; closeReason: string | null; typing: string | null; read: string | null; online: boolean };
@@ -1431,15 +1520,16 @@ export async function customerRead(app: AppFull, token: string, ticketId: string
 
 const VOICE = /^audio\//;
 // A file or voice note from the customer: a message says what it is and the file is kept with it.
-export async function customerUpload(app: AppFull, token: string, ticketId: string, input: { name?: string; mime?: string; data?: string }) {
+export async function customerUpload(app: AppFull, token: string, ticketId: string, input: { name?: string; mime?: string; data?: string; caption?: string; replyTo?: string | null }) {
   const { t } = await customerTicket(app, token, ticketId);
   const data = Buffer.from(String(input.data ?? ""), "base64");
   if (!data.length) throw new WorkflowError("VALIDATION", "The file is empty.");
   const name = clean(input.name, 160) || "file";
   const mime = clean(input.mime, 100) || "application/octet-stream";
-  await customerReply(app, token, t.id, VOICE.test(mime) ? "(a voice note)" : `(a file: ${name})`);
   const h = await import("./support-help");
-  return { id: await h.attachTicketFile(t.id, { name, mime, data }) };
+  if (data.length > h.TICKET_FILE_MAX) throw new WorkflowError("VALIDATION", "The file is larger than 10 MB.");
+  const msgId = await customerReply(app, token, t.id, clean(input.caption, 4000) || (VOICE.test(mime) ? "(a voice note)" : `(a file: ${name})`), input.replyTo);
+  return { id: await h.attachTicketFile(t.id, { name, mime, data }, msgId) };
 }
 // The customer's own files (and files agents sent them).
 export async function customerFile(app: AppFull, token: string, fileId: string) {
@@ -1476,16 +1566,25 @@ export async function agentRead(user: AppUser, ticketId: string) {
   await heartbeat(user);
 }
 // A file or voice note from the agent: a public message says what it is; the customer opens it in the widget.
-export async function agentUpload(user: AppUser, ticketId: string, input: { name: string; mime: string; data: string }) {
+export async function agentUpload(user: AppUser, ticketId: string, input: { name: string; mime: string; data: string; caption?: string | null; replyTo?: string | null }) {
   const t = await canWork(user, ticketId);
   const data = Buffer.from(input.data, "base64");
   if (!data.length) throw new WorkflowError("VALIDATION", "The file is empty.");
   const name = clean(input.name, 160) || "file";
   const mime = clean(input.mime, 100) || "application/octet-stream";
-  await agentReply(user, t.id, { body: VOICE.test(mime) ? "(a voice note)" : `(a file: ${name})` });
-  const msg = await get<{ id: string }>("SELECT id FROM sup_messages WHERE ticket_id = ? AND author_kind = 'agent' AND author_id = ? ORDER BY created_at DESC LIMIT 1", t.id, user.id);
+  const caption = clean(input.caption, 4000);
   const h = await import("./support-help");
-  return { id: await h.attachTicketFile(t.id, { name, mime, data }, msg?.id ?? null) };
+  if (data.length > h.TICKET_FILE_MAX) throw new WorkflowError("VALIDATION", "The file is larger than 10 MB.");
+  const msgId = await agentReply(user, t.id, { body: caption || (VOICE.test(mime) ? "(a voice note)" : `(a file: ${name})`), replyTo: input.replyTo, file: true });
+  const id = await h.attachTicketFile(t.id, { name, mime, data }, msgId);
+  // Telegram customers get the photo, voice note or file itself; email gets the text as before.
+  try {
+    const sent = await (await import("./support-channels")).deliverFile(t.id, { name, mime, data }, caption, user.name);
+    if (sent === null) await (await import("./support-channels")).deliverReply(t.id, caption || (VOICE.test(mime) ? "(a voice note)" : `(a file: ${name})`), user.name);
+  } catch (e) {
+    await run("INSERT INTO sup_messages (id, ticket_id, author_kind, author_id, body, internal, created_at) VALUES (?, ?, 'system', NULL, ?, 1, ?)", uid("smg_"), t.id, `${name} could not be sent to the customer: ${e instanceof Error ? e.message : String(e)}`, nowIso());
+  }
+  return { id };
 }
 
 // The whole conversation as text (customers see none of the internal notes; agents get them marked).

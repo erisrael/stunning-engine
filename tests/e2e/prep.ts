@@ -439,6 +439,7 @@ PREPS["hotfix-support-home"] = async () => {
 
 // Update 1.1 connected systems: support on with one connected app (MySeed Academy).
 PREPS["update-1-1-live"] = async () => PREPS["update-1-1-systems"]!();
+PREPS["update-1-1-chat"] = async () => PREPS["update-1-1-systems"]!();
 PREPS["update-1-1-systems"] = async () => {
   await passwordOnly();
   const sd = await import("../../src/server/support-desk");

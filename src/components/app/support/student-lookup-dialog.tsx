@@ -9,9 +9,10 @@ import { Input } from "@/components/ui/input";
 import { searchStudentParentAction } from "@/app/actions/external-api";
 import type { ExternalStudent } from "@/server/external-api";
 
-export function StudentLookupDialog({ trigger }: { trigger?: React.ReactNode }) {
+// initialQuery: opens already searching it (a ticket's phone number).
+export function StudentLookupDialog({ trigger, initialQuery = "" }: { trigger?: React.ReactNode; initialQuery?: string }) {
   const [open, setOpen] = React.useState(false);
-  const [query, setQuery] = React.useState("");
+  const [query, setQuery] = React.useState(initialQuery);
   const [busy, setBusy] = React.useState(false);
   const [results, setResults] = React.useState<ExternalStudent[]>([]);
   const [hasSearched, setHasSearched] = React.useState(false);
@@ -29,6 +30,12 @@ export function StudentLookupDialog({ trigger }: { trigger?: React.ReactNode }) 
     }
     setResults(res.data ?? []);
   };
+  // Opened with a number: search it at once.
+  React.useEffect(() => {
+    if (open && initialQuery && !hasSearched) void search();
+    // Only when the dialog opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   const copy = (phone: string) => {
     navigator.clipboard.writeText(phone);

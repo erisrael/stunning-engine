@@ -16,14 +16,16 @@ import * as A from "@/app/actions/support-desk";
 import { transferTicketAction } from "@/app/actions/support-help";
 import { CHANNEL_LABELS, PRIORITIES, PRIORITY_LABELS, TICKET_STATUSES, TICKET_STATUS_LABELS, type Priority, type TicketStatus } from "@/lib/support";
 import { cn } from "@/lib/utils";
-import { AgentAttach, CustomerPresence, CustomerTyping, DeskLive, TranscriptLink, seenBy, useAgentTyping, useTicketLive } from "./desk-live";
+import { CustomerPresence, DeskLive, TranscriptLink, seenBy, useAgentTyping, useTicketLive } from "./desk-live";
+import { ChatTimeline, Composer, type ComposerHandle, type KitCall, type KitMsg, type KitQuote, type KitReaction } from "@/components/support-chat/kit";
+import { StudentLookupDialog } from "./student-lookup-dialog";
 
 type Res = { ok: boolean; error?: string; data?: unknown };
 type Row = { id: string; number: number; subject: string; status: TicketStatus; priority: Priority; channel: string; queue: string | null; customer: string | null; assignee: string | null; assignee_id: string | null; updated_at: string; sla_first_due: string | null; sla_resolve_due: string | null; first_response_at: string | null; breached: number };
 type Detail = {
   ticket: Record<string, unknown>;
-  customer: { id: string; name: string; email: string | null; phone: string | null; meta: Record<string, string>; verified: boolean; app: string | null } | null;
-  messages: { id: string; author_kind: string; author: string | null; body: string; internal: boolean; created_at: string }[];
+  customer: { id: string; name: string; email: string | null; phone: string | null; meta: Record<string, string>; verified: boolean; app: string | null; telegram?: boolean } | null;
+  messages: { id: string; author_kind: string; author_id?: string | null; author: string | null; body: string; internal: boolean; created_at: string; mine?: boolean; replyTo?: { id: string; author: string; body: string } | null; reactions?: KitReaction[] }[];
   calls: { id: string; status: string; direction: string; kind: string; agent: string | null; started_at: string; duration_s: number | null; recording_id: string | null; recording_size: number | null; notes: string | null }[];
   log: { kind: string; detail: string | null; at: string; who: string | null }[];
   history: { id: string; number: number; subject: string; status: string; created_at: string }[];
@@ -159,6 +161,36 @@ export function Inbox({ rows, view, views, q, openId, base = "/support?" }: { ro
 // A ticket
 // ---------------------------------------------------------------------------
 
+// The customer's number: shared on Telegram (or ask for it), typed by the agent, and their records looked up.
+function CustomerPhone({ customer, ticketId }: { customer: NonNullable<Detail["customer"]>; ticketId: string }) {
+  const { act, busy } = useAct();
+  const [edit, setEdit] = React.useState<string | null>(null);
+  return (
+    <div className="space-y-1.5 pb-1" data-customer-phone>
+      <div className="flex flex-wrap items-center gap-1.5">
+        {customer.phone ? <span className="font-medium tabular-nums" data-phone>{customer.phone}</span> : <span className="text-muted-foreground">No phone number yet</span>}
+        {customer.phone && <StudentLookupDialog initialQuery={customer.phone} trigger={<Button size="xs" variant="outline" data-lookup-records>Look up records</Button>} />}
+        {customer.telegram && !customer.phone && (
+          <Button size="xs" variant="outline" disabled={busy} onClick={() => act(() => A.askPhoneAction(ticketId), "The customer was asked to share their number")} data-ask-phone>
+            <PhoneIcon /> Ask for their number
+          </Button>
+        )}
+        <Button size="xs" variant="ghost" onClick={() => setEdit(edit === null ? (customer.phone ?? "") : null)}>
+          {customer.phone ? "Change" : "Add"}
+        </Button>
+      </div>
+      {edit !== null && (
+        <div className="flex gap-1">
+          <Input aria-label="Customer phone number" inputMode="tel" placeholder="+251 9..." className="h-7 text-xs" value={edit} onChange={(e) => setEdit(e.target.value)} />
+          <Button size="xs" disabled={busy || !edit.trim()} onClick={async () => (await act(() => A.recordPhoneAction(customer.id, edit), "Saved and matched")) && setEdit(null)}>
+            Save
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function TicketView({ d, agents, queues, canned, me, lead, articles = [], origin = "" }: { d: Detail; agents: { id: string; name: string }[]; queues: { id: string; name: string }[]; canned: { id: string; title: string; body: string }[]; me: string; lead: boolean; articles?: { id: string; title: string }[]; origin?: string }) {
   const { act, busy } = useAct();
   const t = d.ticket as { id: string; number: number; subject: string; status: TicketStatus; priority: Priority; channel: string; queue_id: string | null; assignee_id: string | null; assignee: string | null; created_at: string; rating: number | null; rating_comment: string | null; tags: string };
@@ -169,13 +201,32 @@ export function TicketView({ d, agents, queues, canned, me, lead, articles = [],
   const [sms, setSms] = React.useState<string | null>(null);
   // Moving to another queue (Support to Finance and back) asks for a note for the next team.
   const [move, setMove] = React.useState<{ queueId: string; note: string } | null>(null);
-  const end = React.useRef<HTMLDivElement>(null);
+  const router = useRouter();
   const { ticket: live } = useTicketLive();
   const typing = useAgentTyping(t.id);
-  const lastPublic = [...d.messages].reverse().find((m) => m.author_kind === "agent" && !m.internal);
-  React.useEffect(() => {
-    end.current?.scrollIntoView({ block: "nearest" });
-  }, [d.messages.length, live?.typing]);
+  const [reply, setReply] = React.useState<KitQuote | null>(null);
+  const composer = React.useRef<ComposerHandle>(null);
+  // The conversation for the chat kit: agents on the right (the customer reads them), notes in yellow.
+  const fileUrl = (id: string) => `/api/support/files/${id}`;
+  const kitMsgs: KitMsg[] = d.messages.map((m) => ({
+    id: m.id,
+    side: m.internal ? (m.author_kind === "system" ? "system" : "note") : m.author_kind === "agent" ? "out" : m.author_kind === "system" ? "system" : "in",
+    author: m.author_kind === "agent" ? (m.mine ? null : m.author) : m.author,
+    authorKey: m.author_kind === "customer" ? "customer" : `a:${m.author_id ?? m.author ?? ""}`,
+    body: m.body,
+    at: m.created_at,
+    files: (d.files ?? []).filter((f) => f.message_id === m.id).map((f) => ({ ...f, url: fileUrl(f.id) })),
+    replyTo: m.replyTo ?? null,
+    reactions: m.reactions ?? [],
+    status: m.author_kind === "agent" && !m.internal ? (seenBy(live?.read, m.created_at) ? "seen" : "sent") : null,
+    role: m.internal ? "note" : m.author_kind,
+  }));
+  const kitCalls: KitCall[] = d.calls.map((c) => ({ id: c.id, at: c.started_at, direction: c.direction, kind: c.kind, status: c.status, durationS: c.duration_s, who: c.agent, recordingUrl: c.recording_id ? `/api/support/recording/${c.id}` : null }));
+  const uploadFile = async (blob: Blob, name: string, caption: string) => {
+    const qs = new URLSearchParams({ ticket: t.id, name, ...(caption ? { caption } : {}), ...(reply ? { replyTo: reply.id } : {}) });
+    const r = await fetch(`/api/support/upload?${qs}`, { method: "POST", headers: { "Content-Type": blob.type || "application/octet-stream" }, body: blob });
+    if (!r.ok) throw new Error(((await r.json().catch(() => ({}))) as { error?: string }).error ?? "Could not send the file.");
+  };
   return (
     <div className="space-y-3" data-ticket={t.number}>
       <Card>
@@ -285,88 +336,91 @@ export function TicketView({ d, agents, queues, canned, me, lead, articles = [],
 
       <div className="grid gap-3 xl:grid-cols-[1fr_18rem]">
         <Card>
-          <CardContent className="space-y-3 py-3">
-            <div className="max-h-[28rem] space-y-2 overflow-y-auto pr-1" data-conversation>
-              {d.messages.map((m) => (
-                <div key={m.id} className={cn("max-w-[85%] rounded-lg px-3 py-2 text-sm", m.internal ? "ml-auto border border-[#F9AB00]/50 bg-[#F9AB00]/10" : m.author_kind === "agent" ? "ml-auto bg-primary/10" : m.author_kind === "system" ? "mx-auto bg-muted text-xs text-muted-foreground" : "bg-muted")} data-msg={m.internal ? "note" : m.author_kind}>
-                  <p className="mb-0.5 flex items-center gap-1 text-xs text-muted-foreground">
-                    {m.internal && <LockIcon className="size-3" />} {m.author ?? ""} · {when(m.created_at)}
-                  </p>
-                  <p className="whitespace-pre-wrap">{m.body}</p>
-                  {(d.files ?? [])
-                    .filter((f) => f.message_id === m.id)
-                    .map((f) => (
-                      f.mime.startsWith("audio/") ? (
-                        <audio key={f.id} controls src={`/api/support/files/${f.id}`} className="mt-1 h-9 max-w-full" data-voice-note />
-                      ) : (
-                      <a key={f.id} href={`/api/support/files/${f.id}`} target="_blank" rel="noreferrer" className="mt-1 block text-xs text-primary hover:underline" data-ticket-file>
-                        {f.mime.startsWith("image/") ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={`/api/support/files/${f.id}`} alt={f.name} className="mt-1 max-h-48 rounded border" />
-                        ) : (
-                          <><PaperclipIcon className="inline size-3.5" /> {f.name} ({Math.max(1, Math.round(f.size / 1024))} KB)</>
-                        )}
-                      </a>
-                      )
-                    ))}
-                  {m.id === lastPublic?.id && seenBy(live?.read, m.created_at) && <p className="mt-0.5 text-right text-[10px] text-muted-foreground" data-seen>Seen</p>}
+          <CardContent className="flex h-[34rem] flex-col p-0" data-desk-chat>
+            <ChatTimeline
+              messages={kitMsgs}
+              calls={kitCalls}
+              typing={live?.typing ? (d.customer?.name ?? "The customer").split(" ")[0]! : null}
+              onReply={(m) => setReply({ id: m.id, author: m.side === "in" ? (d.customer?.name ?? "Customer") : (m.author ?? "Support"), body: m.body })}
+              onReact={(m, e) => void act(() => A.reactAction(m.id, e))}
+              onDropFiles={internal ? undefined : (list) => composer.current?.addFiles(list)}
+            />
+            <Composer
+              ref={composer}
+              value={body}
+              onChange={setBody}
+              onTyping={internal ? undefined : typing}
+              tone={internal ? "note" : undefined}
+              placeholder={internal ? "Only agents see this" : "Your answer to the customer"}
+              label={internal ? "Internal note" : "Reply"}
+              sendLabel={internal ? "Add note" : "Send"}
+              replyTo={reply}
+              onCancelReply={() => setReply(null)}
+              onError={(e) => toast.error(e)}
+              onSend={async (text) => {
+                const r = await A.agentReplyAction(t.id, { body: text, internal, status: after || null, replyTo: reply?.id ?? null });
+                if (!r.ok) throw new Error(r.error ?? "Not sent.");
+                if (internal) toast.success("Note added");
+                setReply(null);
+                setAfter("");
+                router.refresh();
+              }}
+              onFiles={internal ? undefined : async (list, caption) => {
+                for (const [i, f] of list.entries()) await uploadFile(f, f.name, i === 0 ? caption : "");
+                setReply(null);
+                router.refresh();
+              }}
+              onVoice={internal ? undefined : async (blob) => {
+                await uploadFile(blob, `voice-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.${blob.type.includes("mp4") ? "m4a" : blob.type.includes("ogg") ? "ogg" : "webm"}`, "");
+                setReply(null);
+                router.refresh();
+              }}
+              above={
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button size="xs" variant={internal ? "outline" : "default"} onClick={() => setInternal(false)}>
+                    Reply to the customer
+                  </Button>
+                  <Button size="xs" variant={internal ? "default" : "outline"} onClick={() => setInternal(true)}>
+                    <LockIcon /> Internal note
+                  </Button>
+                  {articles.length > 0 && !internal && (
+                    <select
+                      aria-label="Help article"
+                      className={cn(select, "h-7 text-xs")}
+                      value=""
+                      onChange={(e) => {
+                        const x = articles.find((y) => y.id === e.target.value);
+                        if (x) setBody((b) => `${b}${b ? "\n\n" : ""}${x.title}: ${origin}/help/${x.id}`);
+                      }}
+                    >
+                      <option value="">Link an article…</option>
+                      {articles.map((x) => (
+                        <option key={x.id} value={x.id}>
+                          {x.title}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  {canned.length > 0 && (
+                    <select aria-label="Saved reply" className={cn(select, "h-7 text-xs")} value="" onChange={(e) => setBody((b) => `${b}${b ? "\n" : ""}${canned.find((c) => c.id === e.target.value)?.body ?? ""}`)}>
+                      <option value="">Saved replies…</option>
+                      {canned.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.title}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  {!internal && (
+                    <select aria-label="Then" className={cn(select, "h-7 text-xs")} value={after} onChange={(e) => setAfter(e.target.value as TicketStatus | "")}>
+                      <option value="">and keep the status</option>
+                      <option value="pending">and wait for the customer</option>
+                      <option value="solved">and mark it solved</option>
+                    </select>
+                  )}
                 </div>
-              ))}
-              <CustomerTyping />
-              <div ref={end} />
-            </div>
-            <div className="space-y-2 border-t pt-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <Button size="xs" variant={internal ? "outline" : "default"} onClick={() => setInternal(false)}>
-                  Reply to the customer
-                </Button>
-                <Button size="xs" variant={internal ? "default" : "outline"} onClick={() => setInternal(true)}>
-                  <LockIcon /> Internal note
-                </Button>
-                {articles.length > 0 && !internal && (
-                  <select
-                    aria-label="Help article"
-                    className={cn(select, "h-7 text-xs")}
-                    value=""
-                    onChange={(e) => {
-                      const x = articles.find((y) => y.id === e.target.value);
-                      if (x) setBody((b) => `${b}${b ? "\n\n" : ""}${x.title}: ${origin}/help/${x.id}`);
-                    }}
-                  >
-                    <option value="">Link an article…</option>
-                    {articles.map((x) => (
-                      <option key={x.id} value={x.id}>
-                        {x.title}
-                      </option>
-                    ))}
-                  </select>
-                )}
-                {canned.length > 0 && (
-                  <select aria-label="Saved reply" className={cn(select, "h-7 text-xs")} value="" onChange={(e) => setBody((b) => `${b}${b ? "\n" : ""}${canned.find((c) => c.id === e.target.value)?.body ?? ""}`)}>
-                    <option value="">Saved replies…</option>
-                    {canned.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.title}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </div>
-              <Textarea aria-label={internal ? "Internal note" : "Reply"} placeholder={internal ? "Only agents see this" : "Your answer to the customer"} className={cn("min-h-24", internal && "bg-[#F9AB00]/5")} value={body} onChange={(e) => (setBody(e.target.value), !internal && typing())} />
-              <div className="flex flex-wrap items-center gap-2">
-                {!internal && <AgentAttach ticketId={t.id} />}
-                {!internal && (
-                  <select aria-label="Then" className={select} value={after} onChange={(e) => setAfter(e.target.value as TicketStatus | "")}>
-                    <option value="">and keep the status</option>
-                    <option value="pending">and wait for the customer</option>
-                    <option value="solved">and mark it solved</option>
-                  </select>
-                )}
-                <Button size="sm" disabled={busy || !body.trim()} onClick={async () => (await act(() => A.agentReplyAction(t.id, { body, internal, status: after || null }), internal ? "Note added" : "Sent")) && (setBody(""), setAfter(""))}>
-                  {busy ? <Loader2Icon className="animate-spin" /> : <SendIcon />} {internal ? "Add note" : "Send"}
-                </Button>
-              </div>
-            </div>
+              }
+            />
           </CardContent>
         </Card>
 
@@ -381,7 +435,8 @@ export function TicketView({ d, agents, queues, canned, me, lead, articles = [],
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-1 text-xs">
-                {Object.entries(d.customer.meta).map(([k, v]) => (
+                <CustomerPhone customer={d.customer} ticketId={t.id} />
+                {Object.entries(d.customer.meta).filter(([k]) => !k.startsWith("tg")).map(([k, v]) => (
                   <p key={k}>
                     <span className="text-muted-foreground">{k}:</span> {v}
                   </p>

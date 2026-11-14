@@ -46,14 +46,14 @@ try {
 
   // Typing both ways.
   await cust.getByLabel("Write a message").fill("hello");
-  check("the agent sees the customer typing", await seen(agent.locator("[data-customer-typing]"), 8000));
+  check("the agent sees the customer typing", await seen(agent.locator("[data-desk-chat] [data-typing]"), 8000));
   await cust.getByLabel("Write a message").fill("");
-  await agent.getByLabel("Reply").fill("Let me check");
+  await agent.getByLabel("Reply", { exact: true }).fill("Let me check");
   check("the customer sees the agent typing", await seen(thread.locator("[data-agent-typing]"), 8000));
   check("the customer sees the agent online", await seen(thread.locator("[data-agent-presence=online]")));
 
   // A reply arrives at once (well under the 30 s fallback).
-  await agent.getByLabel("Reply").fill("Please update the app and try again");
+  await agent.getByLabel("Reply", { exact: true }).fill("Please update the app and try again");
   await agent.getByRole("button", { name: /^Send$/ }).click();
   const t0 = Date.now();
   const arrived = await seen(thread.locator("[data-from=agent]").filter({ hasText: "Please update the app" }), 10000);
@@ -64,15 +64,16 @@ try {
   await cust.getByLabel("Write a message").fill("Updated, still stops");
   await cust.getByLabel("Write a message").press("Enter");
   check("the customer's reply reaches the desk live", await seen(agent.locator("[data-msg=customer]").filter({ hasText: "Updated, still stops" }), 10000));
-  await cust.locator("[data-widget-file-input]").setInputFiles({ name: "screen.txt", mimeType: "text/plain", buffer: Buffer.from("error 403 at 01:12") });
-  check("the file reaches the desk", await seen(agent.locator("[data-ticket-file]").filter({ hasText: "screen.txt" }), 10000));
-  check("and the widget shows it", await seen(thread.locator("[data-widget-file]").filter({ hasText: "screen.txt" })));
+  await cust.locator("[data-chat-file-input]").setInputFiles({ name: "screen.txt", mimeType: "text/plain", buffer: Buffer.from("error 403 at 01:12") });
+  await cust.locator("[data-composer] [data-chat-send]").click();
+  check("the file reaches the desk", await seen(agent.locator("[data-chat-file]").filter({ hasText: "screen.txt" }), 10000));
+  check("and the widget shows it", await seen(thread.locator("[data-chat-file]").filter({ hasText: "screen.txt" })));
   check("the agent's reply shows Seen once the customer read it", await seen(agent.locator("[data-seen]"), 10000));
   await agent.screenshot({ path: path.join(shots, "1-desk.png"), fullPage: true });
 
   // Amharic.
   await cust.locator("[data-lang-toggle]").click();
-  check("the widget switches to Amharic", await seen(cust.getByRole("button", { name: "ላክ" })));
+  check("the widget switches to Amharic", await seen(cust.getByLabel("መልዕክት ይጻፉ")));
   const box = cust.getByLabel("መልዕክት ይጻፉ");
   await box.pressSequentially("selam ");
   check("Latin letters become Ge'ez as you type", (await box.inputValue()) === "ሰላም ", await box.inputValue());

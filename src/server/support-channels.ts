@@ -106,6 +106,45 @@ export async function pollSupportMailbox() {
 }
 
 // An agent's public reply on an email or Telegram ticket goes back the same way.
+// An agent's photo, voice note or file sent to a Telegram customer as itself (with the caption and the agent's name).
+// Returns null for tickets that are not on Telegram.
+export async function deliverFile(ticketId: string, file: { name: string; mime: string; data: Buffer }, caption: string, agentName: string) {
+  const t = await get<{ number: number; channel: string; customer_id: string | null }>("SELECT number, channel, customer_id FROM sup_tickets WHERE id = ?", ticketId);
+  if (!t?.customer_id || t.channel !== "telegram") return null;
+  const c = await get<{ external_id: string | null; app_id: string | null }>("SELECT external_id, app_id FROM sup_customers WHERE id = ?", t.customer_id);
+  if (!c?.external_id?.startsWith("tg:")) return null;
+  const m = file.mime.toLowerCase();
+  const [method, field] = /^image\/(jpe?g|png|webp)$/.test(m) ? ["sendPhoto", "photo"] : /^audio\/ogg/.test(m) ? ["sendVoice", "voice"] : /^audio\/(mpeg|mp3|mp4|m4a|x-m4a|aac)$/.test(m) ? ["sendAudio", "audio"] : /^video\/mp4$/.test(m) ? ["sendVideo", "video"] : ["sendDocument", "document"];
+  const send = async () => {
+    const token = await botToken();
+    if (!token) throw new Error("The Telegram bot is not connected.");
+    const form = new FormData();
+    form.set("chat_id", c.external_id!.slice(3));
+    form.set(field, new Blob([new Uint8Array(file.data)], { type: file.mime }), file.name);
+    form.set("caption", `${caption ? `${caption}\n\n` : ""}- ${agentName.split(" ")[0]}, support (#${t.number})`.slice(0, 1024));
+    const r = await uploader(method, token, form);
+    if (!r.ok) throw new Error(r.description ?? "Telegram did not take the file");
+    return "telegram";
+  };
+  const sys = await systemBot(c.app_id);
+  return sys ? botCtx.run(sys, send) : send();
+}
+
+// The agent asks a Telegram customer for their number: the bot shows the "Share my phone number" button.
+export async function askTelegramPhone(user: AppUser, ticketId: string) {
+  const sd = await import("./support-desk");
+  const t = await sd.canWork(user, ticketId);
+  const c = t.customer_id ? await get<{ external_id: string | null; app_id: string | null }>("SELECT external_id, app_id FROM sup_customers WHERE id = ?", t.customer_id) : null;
+  if (!c?.external_id?.startsWith("tg:")) throw new WorkflowError("VALIDATION", "This customer is not on Telegram.");
+  const x = await telegramTexts((await systemBot(c.app_id))?.appId ?? "default");
+  const send = () => askPhone(c.external_id!.slice(3), x);
+  const sys = await systemBot(c.app_id);
+  if (sys) await botCtx.run(sys, send);
+  else await send();
+  await run("INSERT INTO sup_messages (id, ticket_id, author_kind, author_id, body, internal, created_at) VALUES (?, ?, 'system', NULL, ?, 1, ?)", uid("smg_"), t.id, `${user.name} asked the customer to share their phone number.`, nowIso());
+  return { ok: true };
+}
+
 export async function deliverReply(ticketId: string, body: string, agentName: string) {
   const t = await get<{ number: number; subject: string; channel: string; customer_id: string | null }>("SELECT number, subject, channel, customer_id FROM sup_tickets WHERE id = ?", ticketId);
   if (!t?.customer_id) return null;
@@ -137,6 +176,12 @@ type Poster = (url: string, body: unknown) => Promise<{ ok: boolean; result?: un
 let poster: Poster = async (url, body) => (await trackedFetch("telegram", url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })).json() as Promise<{ ok: boolean }>;
 export function setTelegramPoster(p: Poster) {
   poster = p;
+}
+// Files agents send go to Telegram as a form upload (replaced in tests).
+type Uploader = (method: string, token: string, form: FormData) => Promise<{ ok: boolean; description?: string }>;
+let uploader: Uploader = async (method, token, form) => (await trackedFetch("telegram", `https://api.telegram.org/bot${token}/${method}`, { method: "POST", body: form })).json() as Promise<{ ok: boolean; description?: string }>;
+export function setTelegramUploader(u: Uploader) {
+  uploader = u;
 }
 // Files customers send are downloaded from Telegram's file server (replaced in tests).
 type Downloader = (url: string) => Promise<Buffer>;
@@ -378,12 +423,22 @@ async function telegramSend(chatId: string, text: string, extra: Record<string, 
 }
 
 // The help menu as buttons, two in a row, and the help center (Mini App) when the site has a public https address.
+// "Share my phone number": Telegram's own button, which sends the person's verified number. Shown on /start until
+// they share it, on /phone and from the menu at any time (to change it too).
+const PHONE_BUTTON = (x: TelegramTexts) => (x.lang === "am" ? "ስልክ ቁጥሬን አጋራ" : "Share my phone number");
+async function askPhone(chat: string, x: TelegramTexts) {
+  await telegramSend(chat, x.lang === "am" ? "ስልክ ቁጥርዎን ያጋሩ፤ መለያዎን አግኝተን በፍጥነት እንረዳዎታለን። ከታች ያለውን ቁልፍ ይጫኑ።" : "Share your phone number so we can find your account and help you faster. Press the button below.", {
+    reply_markup: { keyboard: [[{ text: PHONE_BUTTON(x), request_contact: true }]], resize_keyboard: true, is_persistent: true },
+  });
+}
+
 async function sendMenu(chat: string, x: TelegramTexts) {
   const { helpCategories } = await import("./support-help");
   const cats = await helpCategories({ activeOnly: true });
   const rows: { text: string; callback_data?: string; web_app?: { url: string } }[][] = [];
   for (let i = 0; i < cats.length; i += 2) rows.push(cats.slice(i, i + 2).map((c) => ({ text: label(x, c), callback_data: `c:${c.key}` })));
   rows.push(...(await (await import("./bot-manager")).menuRows(currentBot(), x)));
+  rows.push([{ text: PHONE_BUTTON(x), callback_data: "ph" }]);
   const url = helpUrl((await telegramState()).origin);
   if (url && x.miniApp && currentBot() === "default") rows.push([{ text: x.lang === "am" ? "የእርዳታ ማዕከል" : "Open the help center", web_app: { url } }]);
   await telegramSend(chat, say(x, x.welcome, x.welcomeAm), { reply_markup: { inline_keyboard: rows } });
@@ -400,6 +455,10 @@ type TgUpdate = {
     contact?: { phone_number: string; user_id?: number };
     photo?: { file_id: string; file_size?: number; width?: number }[];
     document?: { file_id: string; file_name?: string; mime_type?: string; file_size?: number };
+    voice?: { file_id: string; mime_type?: string; file_size?: number; duration?: number };
+    audio?: { file_id: string; file_name?: string; mime_type?: string; file_size?: number };
+    video?: { file_id: string; file_name?: string; mime_type?: string; file_size?: number };
+    video_note?: { file_id: string; file_size?: number };
   };
   callback_query?: { id: string; data?: string; from: TgFrom; message?: { chat: { id: number; type: string } } };
 };
@@ -424,6 +483,7 @@ async function telegramButton(q: NonNullable<TgUpdate["callback_query"]>, x: Tel
   const data = String(q.data ?? "");
   const h = await import("./support-help");
   if (data === "m") return sendMenu(chat, x);
+  if (data === "ph") return askPhone(chat, x);
   if (data.startsWith("g:")) {
     const msgs = await (await import("./kb-guides")).guideMessages(data.slice(2)).catch(() => null);
     if (!msgs) return telegramSend(chat, x.lang === "am" ? "ይህ መረጃ ከእንግዲህ የለም።" : "This is no longer available.");
@@ -497,14 +557,20 @@ async function handleUpdate(update: TgUpdate) {
   const customerId = await customerFor({ channel: "telegram", key: chat, name });
   if (/^\/(start|menu|help)\b/.test(text)) {
     await (await import("./bot-manager")).message(currentBot(), chat, customerId, "", x);
+    // Until we have their number, the share button sits under the message box (before the menu, which stays last).
+    if (/^\/start\b/.test(text) && !(await get<{ phone: string | null }>("SELECT phone FROM sup_customers WHERE id = ?", customerId))?.phone) await askPhone(chat, x);
     await sendMenu(chat, x);
+    return { ok: true };
+  }
+  if (/^\/phone\b/.test(text)) {
+    await askPhone(chat, x);
     return { ok: true };
   }
   // Their own number, shared with the button: kept on the customer so agents can find their records by phone.
   if (m.contact) {
     if (!m.contact.user_id || m.contact.user_id === m.from?.id) {
-      const phone = clean(m.contact.phone_number, 40).replace(/^(?=\d)/, "+");
-      await run("UPDATE sup_customers SET phone = ? WHERE id = ?", phone, customerId);
+      // Kept, and matched to the student, payment and invoice records for the agent (the customer sees none of it).
+      await (await import("./customer-records")).recordPhone(customerId, clean(m.contact.phone_number, 40), "telegram");
       await telegramSend(chat, x.lang === "am" ? "እናመሰግናለን፣ ስልክ ቁጥርዎ ተቀምጧል።" : "Thank you, your number is saved.", { reply_markup: { remove_keyboard: true } });
       // A call-back asked for before the number was shared.
       await (await import("./bot-manager")).afterContact(currentBot(), chat, customerId, x);
@@ -513,14 +579,27 @@ async function handleUpdate(update: TgUpdate) {
   }
   // Answers to a form, feedback, and the content and form commands.
   if (await (await import("./bot-manager")).message(currentBot(), chat, customerId, text, x)) return { ok: true };
-  const file = m.document ? { id: m.document.file_id, name: m.document.file_name ?? "file", mime: m.document.mime_type ?? "application/octet-stream", size: m.document.file_size ?? 0 } : m.photo?.length ? { id: m.photo.at(-1)!.file_id, name: `photo-${m.message_id}.jpg`, mime: "image/jpeg", size: m.photo.at(-1)!.file_size ?? 0 } : null;
+  // Photos, files, voice notes, music, videos and round video notes are all kept on the conversation.
+  const file = m.document
+    ? { id: m.document.file_id, name: m.document.file_name ?? "file", mime: m.document.mime_type ?? "application/octet-stream", size: m.document.file_size ?? 0 }
+    : m.photo?.length
+      ? { id: m.photo.at(-1)!.file_id, name: `photo-${m.message_id}.jpg`, mime: "image/jpeg", size: m.photo.at(-1)!.file_size ?? 0 }
+      : m.voice
+        ? { id: m.voice.file_id, name: `voice-${m.message_id}.ogg`, mime: m.voice.mime_type ?? "audio/ogg", size: m.voice.file_size ?? 0 }
+        : m.audio
+          ? { id: m.audio.file_id, name: m.audio.file_name ?? `audio-${m.message_id}.mp3`, mime: m.audio.mime_type ?? "audio/mpeg", size: m.audio.file_size ?? 0 }
+          : m.video
+            ? { id: m.video.file_id, name: m.video.file_name ?? `video-${m.message_id}.mp4`, mime: m.video.mime_type ?? "video/mp4", size: m.video.file_size ?? 0 }
+            : m.video_note
+              ? { id: m.video_note.file_id, name: `video-note-${m.message_id}.mp4`, mime: "video/mp4", size: m.video_note.file_size ?? 0 }
+              : null;
   // The open conversation continues; otherwise a new ticket, in the category chosen from the menu (for a day).
   const open = await get<{ id: string }>("SELECT id FROM sup_tickets WHERE customer_id = ? AND channel = 'telegram' AND status NOT IN ('closed') ORDER BY updated_at DESC LIMIT 1", customerId);
   const meta = await customerMeta(customerId);
   const category = !open && meta.tgCategory && Date.now() - Date.parse(meta.tgCategoryAt ?? "") < 86400e3 ? meta.tgCategory : null;
   const h = category ? await import("./support-help") : null;
   const cat = h ? await h.helpCategory(category) : null;
-  const body = text || (file ? (m.photo ? "(a photo)" : `(a file: ${file.name})`) : "(an empty message)");
+  const body = text || (file ? (m.photo ? "(a photo)" : m.voice ? "(a voice note)" : m.video_note ? "(a video note)" : `(a file: ${file.name})`) : "(an empty message)");
   const id = await incoming({ channel: "telegram", customerId, ticketId: open?.id ?? null, subject: `${cat ? `${cat.labelEn}: ` : ""}${text.slice(0, 70) || (file ? file.name : "Telegram message")}`, body, category });
   if (category) await setCustomerMeta(customerId, { tgCategory: null, tgCategoryAt: null });
   if (file) {

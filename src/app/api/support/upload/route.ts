@@ -10,7 +10,7 @@ export async function POST(request: Request) {
   const data = Buffer.from(await request.arrayBuffer());
   if (data.length > TICKET_FILE_MAX) return Response.json({ error: "The file is larger than 10 MB." }, { status: 400 });
   try {
-    const r = await sd.agentUpload(viewer, u.searchParams.get("ticket") ?? "", { name: u.searchParams.get("name") ?? "file", mime: request.headers.get("content-type") ?? "application/octet-stream", data: data.toString("base64") });
+    const r = await sd.agentUpload(viewer, u.searchParams.get("ticket") ?? "", { name: u.searchParams.get("name") ?? "file", mime: request.headers.get("content-type") ?? "application/octet-stream", data: data.toString("base64"), caption: u.searchParams.get("caption"), replyTo: u.searchParams.get("replyTo") });
     return Response.json(r);
   } catch (e) {
     return Response.json({ error: e instanceof Error ? e.message : "Failed" }, { status: 400 });

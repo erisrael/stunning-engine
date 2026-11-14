@@ -26,7 +26,22 @@ export async function setAgentStatusAction(status: "online" | "away" | "offline"
 export async function setAgentLimitAction(agentId: string, maxOpen: number) {
   return wrap(async () => sd.setAgentLimit(await requireViewer(), agentId, maxOpen));
 }
-export async function agentReplyAction(ticketId: string, input: { body: string; internal?: boolean; status?: sd.TicketStatus | null }) {
+export async function reactAction(messageId: string, emoji: string) {
+  return wrap(async () => sd.agentReact(await requireViewer(), messageId, emoji));
+}
+export async function askPhoneAction(ticketId: string) {
+  return wrap(async () => (await import("@/server/support-channels")).askTelegramPhone(await requireViewer(), ticketId));
+}
+export async function recordPhoneAction(customerId: string, phone: string) {
+  return wrap(async () => {
+    const viewer = await requireViewer();
+    await sd.needAgent(viewer);
+    const r = await (await import("@/server/customer-records")).recordPhone(customerId, phone, "agent");
+    if (!r) throw new Error("Enter a phone number.");
+    return r.lines;
+  });
+}
+export async function agentReplyAction(ticketId: string, input: { body: string; internal?: boolean; status?: sd.TicketStatus | null; replyTo?: string | null }) {
   return wrap(async () => sd.agentReply(await requireViewer(), ticketId, input));
 }
 export async function setTicketStatusAction(ticketId: string, status: sd.TicketStatus) {

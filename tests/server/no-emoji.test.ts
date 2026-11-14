@@ -1,5 +1,5 @@
 // No emojis in the product (Update 1.1): pages, bot texts, seeds and scripts use monochrome icons. The chat emoji
-// picker is the one exception, since people choose those themselves. Old help menus saved with emojis read as icons.
+// picker is the one exception (team chat and the support conversation's chat kit), since people choose those themselves. Old help menus saved with emojis read as icons.
 import fs from "node:fs";
 import path from "node:path";
 import { supportIconKey } from "../../src/lib/support-icon-keys";
@@ -11,7 +11,7 @@ const check = (name: string, ok: boolean, extra?: unknown) => {
   console.log(`${ok ? "PASS" : "FAIL"} ${name}${!ok && extra !== undefined ? ` ${JSON.stringify(extra).slice(0, 800)}` : ""}`);
 };
 
-const ALLOWED = [path.join("src", "app", "(app)", "chat", "chat-extras.tsx")];
+const ALLOWED = [path.join("src", "app", "(app)", "chat", "chat-extras.tsx"), path.join("src", "components", "support-chat", "kit.tsx")];
 const emoji = /\p{Extended_Pictographic}/u;
 const found: string[] = [];
 function walk(dir: string) {
