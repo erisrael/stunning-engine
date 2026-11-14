@@ -386,7 +386,6 @@ PREPS["repair-ui"]=async()=>{
  return {};
 };
 
-PREPS["cms-background"] = PREPS["repair-ui"];
 
 // Update 1.0 Phase 1: sticky context, Kiosk visibility, assistant show and hide. Password sign-in only.
 PREPS["update-1"] = async () => {

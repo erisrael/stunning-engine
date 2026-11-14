@@ -19,10 +19,7 @@ import { QuestionRoutingConfigDialog } from "@/components/app/questions/question
 import { cn } from "@/lib/utils";
 import { useLegacyCmsState, type LegacyCmsProps } from "./state";
 import { LegacyCmsContext } from "./context";
-import { TablesView } from "./views/tables";
 import { RelationsView } from "./views/relations";
-import { RevenueView } from "./views/revenue";
-import { GrowthView } from "./views/growth";
 import { StorageView } from "./views/storage";
 
 export function LegacyCmsClient(props: LegacyCmsProps) {
@@ -33,116 +30,6 @@ export function LegacyCmsClient(props: LegacyCmsProps) {
       <div className="space-y-4">
         {cmsProgress && <div role="status" className="flex items-center justify-between gap-3 rounded-lg border bg-muted/40 p-3 text-sm"><span><RefreshCwIcon className="mr-2 inline size-4 animate-spin"/>{cmsProgress}</span><Button variant="outline" size="sm" onClick={()=>{syncCancelled.current=true;setCmsProgress("Cancelling after the current page…");}}>Cancel refresh</Button></div>}
         {dataSourceMode==="live" && liveError && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm"><span>{liveError} Completed scan pages are kept for retry.</span><Button variant="outline" size="sm" onClick={()=>handleFetchLivePage(category,1,search)}>Retry query</Button></div>}
-        {/* CMS connection status */}
-        {showChrome && <>
-        <div className="bg-emerald-500/[0.08] border border-emerald-500/20 rounded-xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs">
-          <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-300 font-medium">
-            <ShieldCheckIcon className="size-4 shrink-0 text-emerald-600" />
-            <span>
-              <strong>Noor CMS workspace:</strong> Browse live tables or synchronized records. Authorized feedback actions update Noor; receipt verification is recorded locally.
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Badge variant="outline" className="border-emerald-500/30 text-[10px] text-emerald-700 dark:text-emerald-300 gap-1">
-              <LockIcon className="size-2.5" /> Role-based access
-            </Badge>
-            <Badge
-              variant="secondary"
-              className={cn(
-                "text-[10px] gap-1",
-                authStatus.status === "connected" && "bg-emerald-500/10 text-emerald-600",
-                authStatus.status === "checking" && "bg-amber-500/10 text-amber-600",
-                (authStatus.status === "disconnected" || authStatus.status === "error") && "bg-rose-500/10 text-rose-600"
-              )}
-            >
-              {authStatus.status === "connected" ? <CheckCircle2Icon className="size-2.5" /> : <AlertCircleIcon className="size-2.5" />}
-              {authStatus.status === "connected" ? "Live Session Verified" : "Re-auth Required"}
-            </Badge>
-          </div>
-        </div>
-
-        {/* Top Header Card */}
-        <Card className="border bg-card">
-          <CardHeader className="pb-3 flex flex-row items-center justify-between gap-4">
-            <div className="space-y-1">
-              <CardTitle className="text-base flex items-center gap-2">
-                <DatabaseIcon className="size-4 text-emerald-600" />
-                <span>Noor Ethiopia CMS Integration Hub</span>
-                <Badge variant="secondary" className="text-[10px] font-mono">
-                  cms.noorethiopia.com
-                </Badge>
-              </CardTitle>
-              <CardDescription className="text-xs">
-                Synchronized mirror for student records, parent contacts, payment receipts, and business intelligence.
-              </CardDescription>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleCheckAuthStatus(true)}
-                disabled={checkingAuth}
-                className="h-8 text-xs gap-1.5"
-              >
-                <RefreshCwIcon className={cn("size-3.5", checkingAuth && "animate-spin")} />
-                Check Session
-              </Button>
-
-              {cmsProgress ? (
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={async () => {
-                    syncCancelled.current = true;
-                    const res = await stopLegacyCmsSyncAction();
-                    if (res.ok) toast.success(res.message);
-                    else toast.error(res.message);
-                  }}
-                  className="h-8 text-xs gap-1.5"
-                >
-                  <SquareIcon className="size-3.5" />
-                  Stop Sync
-                </Button>
-              ) : null}
-
-              {isAdmin && (
-                <>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={async () => {
-                      if (confirm("Disconnect Noor CMS? This will clear the active session cookie.")) {
-                        const res = await disconnectLegacyCmsAction();
-                        if (res.ok) {
-                          toast.success(res.message);
-                          await handleCheckAuthStatus(false);
-                        } else {
-                          toast.error(res.message);
-                        }
-                      }
-                    }}
-                    className="h-8 text-xs gap-1.5 text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/20"
-                  >
-                    <Unlink2Icon className="size-3.5" />
-                    Disconnect
-                  </Button>
-
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setSettingsOpen(true)}
-                    className="h-8 text-xs gap-1.5"
-                  >
-                    <Settings2Icon className="size-3.5" />
-                    Settings
-                  </Button>
-                </>
-              )}
-            </div>
-          </CardHeader>
-        </Card>
-        </>}
 
         {/* Main Top Navigation Tabs */}
         <Tabs
@@ -152,17 +39,8 @@ export function LegacyCmsClient(props: LegacyCmsProps) {
         >
           <div className={cn("flex items-center justify-between border-b pb-2", view && "hidden")}>
             <TabsList className={cn("bg-muted/50 p-1", view && "hidden")}>
-              <TabsTrigger value="subpages" className="text-xs gap-1.5">
-                <LayersIcon className="size-3.5 text-blue-600" /> CMS Tables &amp; Pages
-              </TabsTrigger>
               <TabsTrigger value="relations" className="text-xs gap-1.5">
                 <UsersIcon className="size-3.5 text-emerald-600" /> Student &rarr; Parent Directory
-              </TabsTrigger>
-              <TabsTrigger value="revenue" className="text-xs gap-1.5">
-                <DollarSignIcon className="size-3.5 text-amber-600" /> Finance Revenue &amp; Approvals
-              </TabsTrigger>
-              <TabsTrigger value="growth" className="text-xs gap-1.5">
-                <TrendingUpIcon className="size-3.5 text-indigo-600" /> Growth &amp; Insights
               </TabsTrigger>
               <TabsTrigger value="storage" className="text-xs gap-1.5">
                 <DatabaseIcon className="size-3.5 text-purple-600" /> Storage &amp; Archives
@@ -173,9 +51,6 @@ export function LegacyCmsClient(props: LegacyCmsProps) {
           {/* =========================================================================
               VIEW 1: SUBPAGES TABLES (LIVE CMS SYNC OR LOCAL SCRAPED CACHE)
               ========================================================================= */}
-          <TabsContent value="subpages" className="space-y-4 m-0">
-            <TablesView />
-          </TabsContent>
 
           {/* =========================================================================
               VIEW 2: STUDENT TO PARENT DIRECTORY
@@ -187,16 +62,10 @@ export function LegacyCmsClient(props: LegacyCmsProps) {
           {/* =========================================================================
               VIEW 3: FINANCE REVENUE & INVOICE APPROVAL QUEUE
               ========================================================================= */}
-          <TabsContent value="revenue" className="space-y-4 m-0">
-            <RevenueView />
-          </TabsContent>
 
           {/* =========================================================================
               VIEW 4: GROWTH & INSIGHTS DASHBOARD
               ========================================================================= */}
-          <TabsContent value="growth" className="space-y-4 m-0">
-            <GrowthView />
-          </TabsContent>
 
           {/* =========================================================================
               VIEW 5: STORAGE & SCRAPED ARCHIVES MANAGEMENT
