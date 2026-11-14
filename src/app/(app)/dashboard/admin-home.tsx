@@ -29,6 +29,7 @@ import { Badge } from "@/components/ui/badge";
 import { fmtDateTime, fmtShortDate } from "@/lib/format";
 import { myApprovals } from "@/server/assistant-ops";
 import { cn } from "@/lib/utils";
+import { LiveOps } from "@/components/app/live-ops";
 
 export async function AdminHome({
   viewer,
@@ -92,7 +93,9 @@ export async function AdminHome({
 
   const totalPendingApprovals =
     approvals.leave.length + approvals.claims.length + approvals.corrections.length;
-  const onlineCount = Number(onlineSessions?.c ?? 0);
+  // The live view (Admin): who is in the app now, from the presence each open app reports.
+  const live = isSuper && !viewer.previewBy ? await (await import("@/server/live-dashboard")).liveDashboard(viewer).catch(() => null) : null;
+  const onlineCount = live ? live.roster.rows.length - live.roster.counts.offline : Number(onlineSessions?.c ?? 0);
   const totalUserCount = Number(totalUsers?.c ?? 0);
 
   const adminActions = [
@@ -188,10 +191,13 @@ export async function AdminHome({
             <CardDescription className="text-xs">User Accounts</CardDescription>
             <CardTitle className="text-2xl font-bold flex items-center justify-between">
               {totalUserCount}
-              <span className="text-xs font-normal text-emerald-600 bg-emerald-500/10 px-2 py-0.5 rounded-full flex items-center gap-1">
-                <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                {onlineCount} online now
-              </span>
+              {/* With the live view below, its roster is the one count of who is online. */}
+              {!live && (
+                <span className="text-xs font-normal text-emerald-600 bg-emerald-500/10 px-2 py-0.5 rounded-full flex items-center gap-1">
+                  <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  {onlineCount} online now
+                </span>
+              )}
             </CardTitle>
           </CardHeader>
           <CardContent className="pb-3 text-xs text-muted-foreground">
@@ -257,6 +263,8 @@ export async function AdminHome({
           </CardContent>
         </Card>
       </div>
+
+      {live && <LiveOps initial={live} />}
 
       {/* Quick Action Navigation Grid */}
       <div>
@@ -455,11 +463,11 @@ export async function AdminHome({
             <CardContent className="text-xs space-y-1.5 text-muted-foreground pb-4">
               <div className="flex justify-between">
                 <span>Database Engine:</span>
-                <span className="font-mono font-medium text-foreground">PostgreSQL (Pooled)</span>
+                <span className="font-mono font-medium text-foreground">{(await import("@/server/db")).databaseLabel()}</span>
               </div>
               <div className="flex justify-between">
                 <span>App Server Runtime:</span>
-                <span className="font-mono font-medium text-foreground">Next.js 15 (Node.js VPS)</span>
+                <span className="font-mono font-medium text-foreground">{`Next.js ${(await import("next/package.json")).version} · Node ${process.versions.node}`}</span>
               </div>
               <div className="flex justify-between">
                 <span>Timezone:</span>
@@ -467,7 +475,7 @@ export async function AdminHome({
               </div>
               <div className="flex justify-between">
                 <span>Google OAuth Verification:</span>
-                <span className="font-mono font-medium text-foreground">Active & Configured</span>
+                <span className="font-mono font-medium text-foreground">{(await (await import("@/server/password-reset")).googleConfig().catch(() => null)) ? "Configured" : "Not set up"}</span>
               </div>
             </CardContent>
           </Card>

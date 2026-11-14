@@ -38,6 +38,7 @@ import { Assistant } from "@/components/app/assistant";
 import { OfflineCheckinSync } from "@/components/app/attendance/offline-sync";
 import { MobileNav } from "@/components/app/mobile-nav";
 import { GeofenceWatch } from "@/components/app/attendance/geofence-watch";
+import { PresencePing } from "@/components/app/presence-ping";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const viewer = await requireViewer();
@@ -90,6 +91,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           return <MobileNav work={h ? { href: h.base, label: h.kind === "studio" ? "Studio" : "Work" } : (viewer.leads.length || viewer.roles.some((r) => ["recording", "editing", "uploading", "publication"].includes(r))) ? { href: "/my-work", label: "My work" } : null} chat={counts.chat} alerts={counts.notifications} approvals={counts.approvals} />;
         })()}
         <ChatKeyBootstrap viewerId={viewer.id} />
+        {!viewer.previewBy && <PresencePing />}
         <Localizer defaultCalendar={settings.workspace.calendarDisplay} />
         <EthiopianDatePicker defaultCalendar={settings.workspace.calendarDisplay} />
         {!viewer.mustChangePassword && !viewer.previewBy && (viewer.prefs.assistantShown ?? (await (await import("@/server/assistant")).roleOptions(viewer.activeRole)).shown) && <Assistant ctx={await assistantContext(viewer)} ai={await aiAvailable(viewer)} agent={await agentAvailable(viewer)} />}

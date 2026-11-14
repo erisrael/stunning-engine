@@ -503,6 +503,18 @@ PREPS["update-1-phase8"] = async () => {
   return { key: (await sd.listApps(a))[0]!.publicKey };
 };
 
+// Update 1.1 phase 16: support on, Sara an agent in the Academy queue of one system; the live dashboard is Admin's.
+PREPS["update-1-1-live-dashboard"] = async () => {
+  await passwordOnly();
+  const sd = await import("../../src/server/support-desk");
+  const a = await admin();
+  const sara = (await get<{ id: string }>("SELECT id FROM users WHERE email = 'sara@demo.local'"))!;
+  await sd.saveSupportConfig(a, { enabled: true, leads: [] });
+  const q = await sd.saveQueue(a, { name: "Academy", keywords: [], members: [sara.id], strategy: "least_busy" });
+  await sd.saveApp(a, { name: "MySeed Academy", origins: [], queueId: q });
+  return { key: (await sd.listApps(a))[0]!.publicKey };
+};
+
 // Update 1.0 Phase 2: Legacy CMS points at the fake Noor that the browser test starts on this port.
 PREPS["update-1-p2"] = async () => {
   await passwordOnly();
