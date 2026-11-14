@@ -6,7 +6,8 @@ import { appOrigin } from "@/server/password-reset";
 import * as sd from "@/server/support-desk";
 import { EmptyState, PageHeader } from "@/components/app/primitives";
 import { Desk, Inbox, NewTicket, TicketView } from "@/components/app/support/desk";
-import { Apps, Canned, DeveloperApi, KnowledgeBase, Monitor, Queues, SupportSettings } from "@/components/app/support/setup";
+import { Apps, Canned, DeveloperApi, Monitor, Queues, SupportSettings } from "@/components/app/support/setup";
+import { KnowledgeBaseScreen } from "@/components/app/support/knowledge-base";
 import { StudentLookupDialog } from "@/components/app/support/student-lookup-dialog";
 import { CategoryReport, HelpMenuSetup, TelegramSetup } from "@/components/app/support/help-setup";
 import * as hp from "@/server/support-help";
@@ -159,7 +160,12 @@ export default async function SupportPage({ searchParams }: { searchParams: Prom
       />
     );
   }
-  else if (tab === "kb") panel = <KnowledgeBase list={await ch.listArticles(viewer)} lead={lead} origin={await appOrigin()} />;
+  else if (tab === "kb") {
+    const kb = await import("@/server/kb-guides");
+    const filters = { q: sp.q ?? "", status: sp.status ?? "", category: sp.category ?? "", kind: sp.kind ?? "" };
+    const categories = (await all<{ category: string }>("SELECT DISTINCT category FROM sup_articles WHERE category IS NOT NULL ORDER BY category")).map((r) => r.category);
+    panel = <KnowledgeBaseScreen list={await kb.listKb(viewer, filters)} lead={lead} origin={await appOrigin()} categories={categories} filters={filters} />;
+  }
 
   return (
     <div className="space-y-4">

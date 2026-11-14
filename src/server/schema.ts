@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 67;
+export const SCHEMA_VERSION = 68;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -3647,6 +3647,14 @@ CREATE INDEX IF NOT EXISTS idx_sup_calls_customer ON sup_calls(customer_id, star
 CREATE INDEX IF NOT EXISTS idx_sup_calls_agent ON sup_calls(agent_id, started_at);
 ALTER TABLE sup_apps ADD COLUMN IF NOT EXISTS call_engine TEXT NOT NULL DEFAULT 'browser';
 ALTER TABLE sup_apps ADD COLUMN IF NOT EXISTS call_phone TEXT;
+
+-- v68: knowledge base guides (Update 1.1): an article is a plain answer or a how-to guide with ordered steps, each
+-- with text and an optional YouTube video (checked, with its title kept); an article can have one video too.
+ALTER TABLE sup_articles ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'article';
+ALTER TABLE sup_articles ADD COLUMN IF NOT EXISTS steps TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE sup_articles ADD COLUMN IF NOT EXISTS video TEXT;
+ALTER TABLE sup_articles ADD COLUMN IF NOT EXISTS intro TEXT;
+CREATE INDEX IF NOT EXISTS idx_sup_articles_cat ON sup_articles(category, published);
 
 `;
 

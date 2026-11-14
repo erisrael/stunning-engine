@@ -74,6 +74,16 @@ export async function iceAction() {
 export async function saveArticleAction(input: Parameters<typeof import("@/server/support-channels").saveArticle>[1]) {
   return wrap(async () => (await import("@/server/support-channels")).saveArticle(await requireViewer(), input));
 }
+// Knowledge base, Update 1.1: guides, videos, bulk actions (import is a route: src/app/api/support/kb/route.ts).
+export async function saveKbArticleAction(input: import("@/server/kb-guides").ArticleInput) {
+  return wrap(async () => (await import("@/server/kb-guides")).saveKbArticle(await requireViewer(), input));
+}
+export async function checkVideoAction(url: string) {
+  return wrap(async () => (await import("@/server/kb-guides")).checkVideoFor(await requireViewer(), url), { revalidate: false });
+}
+export async function bulkKbAction(ids: string[], action: "publish" | "unpublish" | "delete" | "move", category?: string | null) {
+  return wrap(async () => (await import("@/server/kb-guides")).bulkKb(await requireViewer(), ids, action, category));
+}
 export async function connectTelegramAction(token: string) {
   return wrap(async () => (await import("@/server/support-channels")).connectTelegram(await requireViewer(), token, await (await import("@/server/password-reset")).appOrigin()));
 }

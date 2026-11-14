@@ -138,11 +138,11 @@ export async function categoryArticles(key: string, limit = 6) {
   const c = await helpCategory(key);
   if (!c) return [];
   const rows = c.kbCategory
-    ? await all<{ id: string; title: string; body: string }>("SELECT id, title, body FROM sup_articles WHERE published = 1 AND LOWER(COALESCE(category, '')) = LOWER(?) ORDER BY helpful DESC, views DESC, title LIMIT ?", c.kbCategory, limit)
+    ? await all<{ id: string; title: string; body: string; kind: string; video: string | null }>("SELECT id, title, body, kind, video FROM sup_articles WHERE published = 1 AND LOWER(COALESCE(category, '')) = LOWER(?) ORDER BY helpful DESC, views DESC, title LIMIT ?", c.kbCategory, limit)
     : c.selfHelp
-      ? await all<{ id: string; title: string; body: string }>("SELECT id, title, body FROM sup_articles WHERE published = 1 ORDER BY views DESC, helpful DESC, title LIMIT ?", limit)
+      ? await all<{ id: string; title: string; body: string; kind: string; video: string | null }>("SELECT id, title, body, kind, video FROM sup_articles WHERE published = 1 ORDER BY views DESC, helpful DESC, title LIMIT ?", limit)
       : [];
-  return rows.map((r) => ({ id: r.id, title: r.title, snippet: r.body.slice(0, 160) }));
+  return rows.map((r) => ({ id: r.id, title: r.title, snippet: r.body.slice(0, 160), kind: r.kind === "guide" ? "guide" : "article", video: !!r.video }));
 }
 
 // ---------------------------------------------------------------------------

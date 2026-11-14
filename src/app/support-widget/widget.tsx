@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { LiveThread, words, type Lang } from "./live-thread";
 import { CallButton, CallLayer } from "./calls";
+import { ArticleBody, type PublicArticle } from "@/components/help/article-body";
 
 type User = { id: string | null; name: string | null; email: string | null; phone: string | null; hash: string | null; meta?: Record<string, string> };
 export type Session = { token: string; customer: { id: string; name: string }; app: { name: string; greeting: string | null; color: string | null }; online: boolean; hours: string; awayMessage: string; recordCalls: boolean; recordingNotice: string; channels?: { web_chat: boolean; telegram: boolean; calls: boolean; sms: boolean }; callEngine?: { engine: "browser" | "phone"; phone: string | null } };
@@ -182,15 +183,15 @@ function HelpSearch({ api, onOpen }: { api: Api; onOpen: (id: string) => void })
 }
 
 function ArticleView({ api, id, onAsk }: { api: Api; id: string; onAsk: () => void }) {
-  const [a, setA] = React.useState<{ title: string; body: string; category: string | null } | null>(null);
+  const [a, setA] = React.useState<PublicArticle | null>(null);
   const [voted, setVoted] = React.useState<boolean | null>(null);
-  React.useEffect(() => void api<{ title: string; body: string; category: string | null }>(`articles/${id}`).then(setA).catch(() => null), [api, id]);
+  React.useEffect(() => void api<PublicArticle>(`articles/${id}`).then(setA).catch(() => null), [api, id]);
   if (!a) return <Loader2Icon className="m-6 size-5 animate-spin text-muted-foreground" />;
   return (
     <div className="space-y-3 p-4 text-sm" data-help-article>
       {a.category && <p className="text-xs text-muted-foreground">{a.category}</p>}
       <p className="text-base font-semibold">{a.title}</p>
-      <p className="whitespace-pre-wrap">{a.body}</p>
+      <ArticleBody a={a} compact />
       {voted === null ? (
         <div className="flex items-center gap-2 border-t pt-2">
           <span className="text-xs">Did this help?</span>

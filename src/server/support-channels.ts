@@ -424,6 +424,12 @@ async function telegramButton(q: NonNullable<TgUpdate["callback_query"]>, x: Tel
   const data = String(q.data ?? "");
   const h = await import("./support-help");
   if (data === "m") return sendMenu(chat, x);
+  if (data.startsWith("g:")) {
+    const msgs = await (await import("./kb-guides")).guideMessages(data.slice(2)).catch(() => null);
+    if (!msgs) return telegramSend(chat, x.lang === "am" ? "ይህ መረጃ ከእንግዲህ የለም።" : "This is no longer available.");
+    for (const m of msgs) await telegramSend(chat, m);
+    return;
+  }
   if (/^(r|s|f|cb)$|^(r|s|q|x):/.test(data)) {
     const who = await customerFor({ channel: "telegram", key: chat, name: nameOf(q.from) });
     if (await (await import("./bot-manager")).button(currentBot(), chat, who, data, x)) return;
@@ -439,6 +445,8 @@ async function telegramButton(q: NonNullable<TgUpdate["callback_query"]>, x: Tel
       const https = !!helpUrl(origin);
       const list = arts.map((a, i) => `${i + 1}. ${a.title}${https ? "" : origin ? `\n${origin}/help/${a.id}` : ""}`).join("\n");
       const rows: { text: string; url?: string; callback_data?: string }[][] = https ? arts.map((a) => [{ text: a.title.slice(0, 60), url: `${origin}/help/${a.id}` }]) : [];
+      // Guides and video answers can also be read here in the chat.
+      for (const a of arts.filter((x) => x.kind === "guide" || x.video)) rows.push([{ text: `${x.lang === "am" ? "እዚህ ያንብቡ" : "Read here"}: ${a.title}`.slice(0, 60), callback_data: `g:${a.id}` }]);
       rows.push([{ text: x.lang === "am" ? "አሁንም እርዳታ ይፈልጋሉ?" : "Still need help?", callback_data: `a:${c.key}` }], [{ text: x.lang === "am" ? "« ማውጫ" : "« Menu", callback_data: "m" }]);
       await telegramSend(chat, `${label(x, c)}\n\n${list}`, { reply_markup: { inline_keyboard: rows } });
       return;
@@ -554,6 +562,7 @@ export async function listArticles(user: AppUser) {
 }
 
 export async function saveArticle(user: AppUser, input: { id?: string | null; title: string; body: string; category?: string | null; keywords?: string; published?: boolean }) {
+  if (input.id && (await get<{ kind: string }>("SELECT kind FROM sup_articles WHERE id = ?", input.id))?.kind === "guide") return (await import("./kb-guides")).saveKbArticle(user, { ...input, kind: "guide" });
   const sd = await import("./support-desk");
   if (!(await sd.isAgent(user))) throw new WorkflowError("FORBIDDEN", "Only support agents write articles.");
   // Agents write drafts; leads publish.
@@ -591,11 +600,9 @@ export async function searchArticles(q: string, limit = 8) {
     .map(({ r }) => ({ id: r.id, title: r.title, category: r.category, snippet: r.body.slice(0, 160) }));
 }
 
+// A published article or guide with its steps and videos (src/server/kb-guides.ts).
 export async function readArticle(id: string) {
-  const a = await get<{ id: string; title: string; body: string; category: string | null; updated_at: string }>("SELECT id, title, body, category, updated_at FROM sup_articles WHERE id = ? AND published = 1", id);
-  if (!a) throw new WorkflowError("NOT_FOUND", "Article not found.");
-  await run("UPDATE sup_articles SET views = views + 1 WHERE id = ?", id);
-  return a;
+  return (await import("./kb-guides")).publicArticle(id);
 }
 
 export async function voteArticle(id: string, helpful: boolean) {

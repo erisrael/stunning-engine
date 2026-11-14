@@ -1,4 +1,5 @@
 import { readArticle } from "@/server/support-channels";
+import { ArticleBody } from "@/components/help/article-body";
 
 // A published help article (customer support knowledge base), for links in replies by email or Telegram.
 export const dynamic = "force-dynamic";
@@ -11,7 +12,7 @@ export default async function HelpArticle({ params }: { params: Promise<{ id: st
     <article className="mx-auto max-w-2xl space-y-4 px-4 py-10" data-help-article>
       {a.category && <p className="text-sm text-muted-foreground">{a.category}</p>}
       <h1 className="text-3xl font-semibold">{a.title}</h1>
-      <div className="whitespace-pre-wrap text-base leading-relaxed">{a.body}</div>
+      <ArticleBody a={a} />
       <p className="text-xs text-muted-foreground">Updated {a.updated_at.slice(0, 10)}</p>
     </article>
   );

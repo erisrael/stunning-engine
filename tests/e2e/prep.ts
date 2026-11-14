@@ -475,6 +475,21 @@ PREPS["update-1-1-calls"] = async () => {
   return { key: (await sd.listApps(a))[0]!.publicKey };
 };
 
+// Update 1.1 phase 15: the knowledge base with one published article and one draft; Admin leads support.
+PREPS["update-1-1-kb"] = async () => {
+  await passwordOnly();
+  const sd = await import("../../src/server/support-desk");
+  const kb = await import("../../src/server/kb-guides");
+  kb.setYoutubeChecker(async () => ({ ok: true, title: "Prep video" }));
+  const a = await admin();
+  await sd.saveSupportConfig(a, { enabled: true, leads: [] });
+  const q = await sd.saveQueue(a, { name: "Academy", keywords: [], members: [a.id], strategy: "least_busy" });
+  await sd.saveApp(a, { name: "MySeed Academy", origins: [], queueId: q });
+  await kb.saveKbArticle(a, { title: "Reset your password", body: "Press **Forgot password** on the sign-in page.", category: "Account", published: true });
+  await kb.saveKbArticle(a, { title: "Old exam dates", body: "These dates changed.", category: "Account", published: false });
+  return { key: (await sd.listApps(a))[0]!.publicKey };
+};
+
 // Update 1.0 Phase 2: Legacy CMS points at the fake Noor that the browser test starts on this port.
 PREPS["update-1-p2"] = async () => {
   await passwordOnly();
