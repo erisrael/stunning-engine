@@ -1,10 +1,12 @@
 "use client";
 
 import * as React from "react";
+import { PRESET_FREE_PATHS, THEME_PRESETS, isPreset } from "@/lib/themes";
+import { APPEARANCE_KEY } from "@/lib/appearance-script";
 
-// Accent colour, corner style, text size and colourful or plain icons. Stored per browser; applied to <html> before
-// paint.
-export type Appearance = { accent: string; radius: string; text: string; icons: string; iconPack: string; iconWeight: string; font: string; contrast: string; lite: string; lang: string; calendar: string; helpLinks: string; tips: string };
+// Colour theme preset, accent colour, corner style, text size and colourful or plain icons. Stored per browser; applied
+// to <html> before paint. preset: "" follows the workspace's (Admin), "none" is plain Light or Dark.
+export type Appearance = { preset: string; accent: string; radius: string; text: string; icons: string; iconPack: string; iconWeight: string; font: string; contrast: string; lite: string; lang: string; calendar: string; helpLinks: string; tips: string };
 
 export const FONTS = [
   { key: "app", label: "Jakarta (default)" },
@@ -12,7 +14,12 @@ export const FONTS = [
   { key: "readable", label: "Atkinson (easy to read)" },
   { key: "rounded", label: "Nunito (rounded)" },
   { key: "serif", label: "Lora (serif)" },
+  { key: "manrope", label: "Manrope" },
+  { key: "plex", label: "IBM Plex Sans" },
+  { key: "source", label: "Source Sans 3" },
+  { key: "roboto", label: "Roboto" },
   { key: "ethiopic", label: "Noto Ethiopic (Amharic first)" },
+  { key: "abyssinica", label: "Abyssinica SIL (Amharic, traditional)" },
 ];
 
 export const ACCENTS = [
@@ -25,8 +32,8 @@ export const ACCENTS = [
   { key: "slate", label: "Slate", color: "#3d4350" },
 ];
 
-const KEY = "myseed.appearance";
-const DEFAULTS: Appearance = { accent: "violet", radius: "default", text: "normal", icons: "colour", iconPack: "lucide", iconWeight: "regular", font: "app", contrast: "normal", lite: "off", lang: "en", calendar: "", helpLinks: "on", tips: "on" };
+const KEY = APPEARANCE_KEY;
+const DEFAULTS: Appearance = { preset: "", accent: "violet", radius: "default", text: "normal", icons: "colour", iconPack: "lucide", iconWeight: "regular", font: "app", contrast: "normal", lite: "off", lang: "en", calendar: "", helpLinks: "on", tips: "on" };
 
 export function readAppearance(): Appearance {
   try {
@@ -36,8 +43,22 @@ export function readAppearance(): Appearance {
   }
 }
 
+// The preset in effect: the person's, else the workspace's; none on pages that keep their own look.
+function applyPreset(el: HTMLElement, chosen: string) {
+  const key = chosen || el.dataset.presetDefault || "";
+  const p = THEME_PRESETS.find((x) => x.key === key);
+  if (p && isPreset(key) && !PRESET_FREE_PATHS.some((x) => location.pathname.startsWith(x))) {
+    el.dataset.preset = p.key;
+    el.dataset.mode = p.mode;
+  } else {
+    delete el.dataset.preset;
+    delete el.dataset.mode;
+  }
+}
+
 function apply(a: Appearance) {
   const el = document.documentElement;
+  applyPreset(el, a.preset);
   el.dataset.accent = a.accent;
   el.dataset.radius = a.radius;
   el.dataset.text = a.text;
@@ -81,6 +102,3 @@ export function useAppearance() {
   };
   return [a, update] as const;
 }
-
-// Inline script for the root layout, so the saved appearance is applied before the first paint.
-export const APPEARANCE_SCRIPT = `try{var a=JSON.parse(localStorage.getItem("${KEY}")||"{}");var d=document.documentElement;d.dataset.accent=a.accent||"violet";d.dataset.radius=a.radius||"default";d.dataset.text=a.text||"normal";d.dataset.icons=a.icons||"colour";d.dataset.iconPack=a.iconPack||"lucide";d.dataset.iconWeight=a.iconWeight||"regular";d.dataset.font=a.font||"app";d.dataset.contrast=a.contrast||"normal";d.dataset.lite=a.lite||"off";d.dataset.lang=a.lang||"en";d.dataset.helplinks=a.helpLinks||"on";d.dataset.tips=a.tips||"on";if(a.calendar)d.dataset.calendar=a.calendar;if(a.lang==="am")d.lang="am";}catch(e){}`;

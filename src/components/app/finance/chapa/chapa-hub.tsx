@@ -2,7 +2,7 @@
 import * as React from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { FileSpreadsheetIcon, DownloadIcon, FileTextIcon, PhoneIcon, RefreshCwIcon, SendIcon, ShieldCheckIcon, RotateCcwIcon } from "lucide-react";
+import { ArrowDownIcon, ArrowUpIcon, FileSpreadsheetIcon, DownloadIcon, FileTextIcon, LayoutGridIcon, PhoneIcon, RefreshCwIcon, SendIcon, ShieldCheckIcon, RotateCcwIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -11,7 +11,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { EmptyState, StatusStrip, Toolbar, ViewSwitcher } from "@/components/app/page-kit";
 import { MetricCard } from "@/components/app/primitives";
 import { cn } from "@/lib/utils";
-import { CHAPA_STATUSES, CHAPA_STATUS_LABEL, CHAPA_TYPES, CHAPA_METHODS, chapaMethodLabel, chapaTypeLabel, type ChapaSettings, type ChapaStatus, type ChapaTx } from "@/lib/chapa";
+import { CHAPA_STATUSES, CHAPA_STATUS_LABEL, CHAPA_TYPES, CHAPA_METHODS, CHAPA_WIDGETS, chapaMethodLabel, chapaTypeLabel, type ChapaSettings, type ChapaStatus, type ChapaTx, type ChapaWidget } from "@/lib/chapa";
 import type { ChapaBusiness, FollowupRow, TxFilter } from "@/server/chapa-hub";
 import * as A from "@/app/actions/chapa-hub";
 import { BalanceView, WithdrawalsView, RefundsView, SettingsView, RefundButton } from "./chapa-money";
@@ -81,7 +81,8 @@ function BizSwitcher({ businesses, biz }: { businesses: ChapaBusiness[]; biz: st
   );
 }
 
-export function ChapaHub({ tab, biz, businesses, admin, settings }: { tab: ChapaTab; biz: string; businesses: ChapaBusiness[]; admin: boolean; settings: ChapaSettings | null }) {
+export type OverviewLayout = { widgets: ChapaWidget[]; own: boolean; def: ChapaWidget[]; canSetDefault: boolean };
+export function ChapaHub({ tab, biz, businesses, admin, settings, layout }: { tab: ChapaTab; biz: string; businesses: ChapaBusiness[]; admin: boolean; settings: ChapaSettings | null; layout?: OverviewLayout | null }) {
   const b = biz === "all" ? null : biz;
   const can = (a: keyof ChapaBusiness["rights"]) => (b ? !!businesses.find((x) => x.id === b)?.rights[a] : businesses.some((x) => x.rights[a]));
   if (!businesses.length)
@@ -94,7 +95,7 @@ export function ChapaHub({ tab, biz, businesses, admin, settings }: { tab: Chapa
           <span className="text-xs text-muted-foreground">{biz === "all" ? "Totals per currency; test businesses are left out." : businesses.find((x) => x.id === biz)?.mode === "test" ? "Test mode" : "Live"}</span>
         </Toolbar>
       )}
-      {tab === "overview" && <Overview biz={b} />}
+      {tab === "overview" && <Overview biz={b} layout={layout ?? null} />}
       {tab === "transactions" && <Transactions biz={b} businesses={businesses} canExport={can("export")} />}
       {tab === "daily" && <Daily biz={b} businesses={businesses} />}
       {tab === "customers" && <Customers biz={b} />}
@@ -136,71 +137,182 @@ function SyncButton({ biz }: { biz: string | null }) {
 
 // ---------------------------------------------------------------------------
 
-function Overview({ biz }: { biz: string | null }) {
+type OverviewData = Awaited<ReturnType<typeof import("@/server/chapa-hub").chapaOverview>>;
+type Cur = OverviewData["currencies"][number];
+const WINDOW_LABEL = { today: "Today", d7: "Last 7 days", d30: "Last 30 days" } as const;
+const WIDGET_LABEL = Object.fromEntries(CHAPA_WIDGETS) as Record<ChapaWidget, string>;
+
+function Breakdown({ title, list, cur, isMoney }: { title: string; list: [string, number][]; cur: string; isMoney: boolean }) {
+  return (
+    <div className="rounded-lg border p-3">
+      <p className="mb-2 text-xs font-medium text-muted-foreground">{title}</p>
+      <ul className="space-y-1 text-xs">
+        {list.slice(0, 8).map(([k, v]) => (
+          <li key={k} className="flex justify-between gap-2">
+            <span className="truncate">{k}</span>
+            <span className="tabular-nums">{isMoney ? money(v, cur) : v.toLocaleString()}</span>
+          </li>
+        ))}
+        {!list.length && <li className="text-muted-foreground">None</li>}
+      </ul>
+    </div>
+  );
+}
+
+// One currency's widgets in the chosen order; neighbours of one kind (totals, breakdowns) share a row.
+function CurrencyWidgets({ c, widgets }: { c: Cur; widgets: ChapaWidget[] }) {
+  const max = Math.max(1, ...c.daily.map((d) => d.volume));
+  const one = (k: ChapaWidget): React.ReactNode => {
+    if (k === "today" || k === "d7" || k === "d30") {
+      const w = c.windows[k];
+      return <MetricCard key={k} label={WINDOW_LABEL[k]} value={money(w.volume, c.currency)} hint={`${w.success} paid · ${w.failed} failed · ${w.pending} pending${w.rate !== null ? ` · ${Math.round(w.rate * 100)}% success` : ""}`} />;
+    }
+    if (k === "daily")
+      return (
+        <div key={k}>
+          <p className="mb-1 text-xs font-medium text-muted-foreground">Paid per day, last 30 days</p>
+          <div className="flex h-32 items-end gap-0.5" role="img" aria-label={`Daily paid volume in ${c.currency}`}>
+            {c.daily.map((d) => (
+              <div key={d.day} className="group relative flex-1" title={`${d.day}: ${money(d.volume, c.currency)} (${d.count})`}>
+                <div className="rounded-t bg-primary/80 group-hover:bg-primary" style={{ height: `${Math.max(2, (d.volume / max) * 120)}px` }} />
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    if (k === "method") return <Breakdown key={k} title="By payment method" list={c.byMethod} cur={c.currency} isMoney />;
+    if (k === "type") return <Breakdown key={k} title="By type" list={c.byType.map(([t, v]) => [chapaTypeLabel(t), v] as [string, number])} cur={c.currency} isMoney />;
+    if (k === "status") return <Breakdown key={k} title="By status (count)" list={c.byStatus.map(([t, v]) => [CHAPA_STATUS_LABEL[t as ChapaStatus] ?? t, v] as [string, number])} cur={c.currency} isMoney={false} />;
+    return null;
+  };
+  const group = (k: ChapaWidget) => (k === "today" || k === "d7" || k === "d30" ? "total" : k === "method" || k === "type" || k === "status" ? "list" : k);
+  const rows: ChapaWidget[][] = [];
+  for (const k of widgets.filter((x) => x !== "sync")) {
+    const last = rows.at(-1);
+    if (last && group(last[0]!) === group(k) && group(k) !== "daily") last.push(k);
+    else rows.push([k]);
+  }
+  return (
+    <>
+      {rows.map((r) =>
+        r.length === 1 && group(r[0]!) === "daily" ? (
+          one(r[0]!)
+        ) : (
+          <div key={r.join("-")} className={cn("grid gap-3", group(r[0]!) === "total" ? "grid-cols-2 lg:grid-cols-3" : "md:grid-cols-3")}>
+            {r.map(one)}
+          </div>
+        ),
+      )}
+    </>
+  );
+}
+
+// Pick and arrange the widgets: for me, back to the default, or (Admin) for everyone.
+function CustomizeOverview({ layout, onClose }: { layout: OverviewLayout; onClose: () => void }) {
+  const router = useRouter();
+  const [list, setList] = React.useState<ChapaWidget[]>(layout.widgets);
+  const [busy, setBusy] = React.useState(false);
+  const order: ChapaWidget[] = [...list, ...CHAPA_WIDGETS.map(([k]) => k).filter((k) => !list.includes(k))];
+  const move = (k: ChapaWidget, by: number) => {
+    const i = list.indexOf(k);
+    const next = [...list];
+    next.splice(i, 1);
+    next.splice(i + by, 0, k);
+    setList(next);
+  };
+  const save = async (scope: "me" | "default" | "reset") => {
+    setBusy(true);
+    const r = await A.saveChapaOverviewLayoutAction(list, scope);
+    setBusy(false);
+    if (!r.ok) return void toast.error(r.error ?? "Could not save.");
+    toast.success(scope === "default" ? "Saved for everyone" : scope === "reset" ? "Back to the default" : "Overview saved");
+    onClose();
+    router.refresh();
+  };
+  return (
+    <section className="space-y-3 rounded-xl border border-primary/40 bg-card p-4" data-customize-overview>
+      <div>
+        <h2 className="text-sm font-semibold">Customize the Overview</h2>
+        <p className="text-xs text-muted-foreground">Tick the widgets to show and put them in order. {layout.own ? "You have your own layout." : "You see the default layout."}</p>
+      </div>
+      <ul className="space-y-1">
+        {order.map((k) => {
+          const on = list.includes(k);
+          const i = list.indexOf(k);
+          return (
+            <li key={k} className="flex items-center gap-2 rounded-md border px-2 py-1.5 text-sm" data-widget-row={k}>
+              <Checkbox id={`w-${k}`} checked={on} onCheckedChange={(v) => setList(v ? [...list, k] : list.filter((x) => x !== k))} aria-label={`Show ${WIDGET_LABEL[k]}`} />
+              <label htmlFor={`w-${k}`} className={cn("flex-1", !on && "text-muted-foreground")}>
+                {WIDGET_LABEL[k]}
+              </label>
+              {on && (
+                <>
+                  <Button type="button" size="icon-sm" variant="ghost" aria-label={`Move ${WIDGET_LABEL[k]} up`} disabled={i === 0} onClick={() => move(k, -1)}>
+                    <ArrowUpIcon />
+                  </Button>
+                  <Button type="button" size="icon-sm" variant="ghost" aria-label={`Move ${WIDGET_LABEL[k]} down`} disabled={i === list.length - 1} onClick={() => move(k, 1)}>
+                    <ArrowDownIcon />
+                  </Button>
+                </>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" disabled={busy || !list.length} onClick={() => save("me")}>
+          Save for me
+        </Button>
+        {layout.canSetDefault && (
+          <Button size="sm" variant="outline" disabled={busy || !list.length} onClick={() => save("default")}>
+            Save for everyone
+          </Button>
+        )}
+        {layout.own && (
+          <Button size="sm" variant="ghost" disabled={busy} onClick={() => save("reset")}>
+            Use the default
+          </Button>
+        )}
+        <Button size="sm" variant="ghost" onClick={onClose}>
+          Cancel
+        </Button>
+      </div>
+    </section>
+  );
+}
+
+function Overview({ biz, layout }: { biz: string | null; layout: OverviewLayout | null }) {
   const { data, error } = useLoad(() => A.chapaOverviewAction(biz), [biz]);
+  const [custom, setCustom] = React.useState(false);
+  const widgets = layout?.widgets ?? CHAPA_WIDGETS.map(([k]) => k);
   if (error) return <StatusStrip tone="danger">{error}</StatusStrip>;
   if (!data) return <StatusStrip>Loading…</StatusStrip>;
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap gap-2 text-xs">
-        {data.businesses.map((b) => (
-          <span key={b.id} className={cn("rounded-full border px-2.5 py-1", b.health === "error" ? "border-rose-500/40 text-rose-700 dark:text-rose-300" : "text-muted-foreground")} title={b.lastError ?? undefined}>
-            {b.name}: {b.health === "error" ? `sync failed (${b.lastError?.slice(0, 60)})` : b.lastSyncAt ? `synced ${when(b.lastSyncAt)}` : "not synced yet"}
-          </span>
-        ))}
-      </div>
+    <div className="space-y-4" data-overview={widgets.join(",")}>
+      {layout && (
+        <div className="flex justify-end">
+          <Button size="sm" variant="outline" onClick={() => setCustom(!custom)} aria-expanded={custom}>
+            <LayoutGridIcon /> Customize
+          </Button>
+        </div>
+      )}
+      {custom && layout && <CustomizeOverview layout={layout} onClose={() => setCustom(false)} />}
+      {widgets.includes("sync") && (
+        <div className="flex flex-wrap gap-2 text-xs" data-widget="sync">
+          {data.businesses.map((b) => (
+            <span key={b.id} className={cn("rounded-full border px-2.5 py-1", b.health === "error" ? "border-rose-500/40 text-rose-700 dark:text-rose-300" : "text-muted-foreground")} title={b.lastError ?? undefined}>
+              {b.name}: {b.health === "error" ? `sync failed (${b.lastError?.slice(0, 60)})` : b.lastSyncAt ? `synced ${when(b.lastSyncAt)}` : "not synced yet"}
+            </span>
+          ))}
+        </div>
+      )}
       {!data.currencies.length && <EmptyState title="No transactions in the last 30 days" description="Sync now to read them from Chapa, or wait for the next automatic sync." />}
-      {data.currencies.map((c) => {
-        const max = Math.max(1, ...c.daily.map((d) => d.volume));
-        return (
-          <section key={c.currency} className="space-y-3 rounded-xl border bg-card p-4">
-            <h2 className="text-sm font-semibold">{c.currency}</h2>
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
-              {(["today", "d7", "d30"] as const).map((k) => {
-                const w = c.windows[k];
-                return (
-                  <MetricCard
-                    key={k}
-                    label={{ today: "Today", d7: "Last 7 days", d30: "Last 30 days" }[k]}
-                    value={money(w.volume, c.currency)}
-                    hint={`${w.success} paid · ${w.failed} failed · ${w.pending} pending${w.rate !== null ? ` · ${Math.round(w.rate * 100)}% success` : ""}`}
-                  />
-                );
-              })}
-            </div>
-            <div>
-              <p className="mb-1 text-xs font-medium text-muted-foreground">Paid per day, last 30 days</p>
-              <div className="flex h-32 items-end gap-0.5" role="img" aria-label={`Daily paid volume in ${c.currency}`}>
-                {c.daily.map((d) => (
-                  <div key={d.day} className="group relative flex-1" title={`${d.day}: ${money(d.volume, c.currency)} (${d.count})`}>
-                    <div className="rounded-t bg-primary/80 group-hover:bg-primary" style={{ height: `${Math.max(2, (d.volume / max) * 120)}px` }} />
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="grid gap-3 md:grid-cols-3">
-              {[
-                ["By payment method", c.byMethod, true],
-                ["By type", c.byType.map(([k, v]) => [chapaTypeLabel(k), v] as [string, number]), true],
-                ["By status (count)", c.byStatus.map(([k, v]) => [CHAPA_STATUS_LABEL[k as ChapaStatus] ?? k, v] as [string, number]), false],
-              ].map(([title, list, isMoney]) => (
-                <div key={title as string} className="rounded-lg border p-3">
-                  <p className="mb-2 text-xs font-medium text-muted-foreground">{title as string}</p>
-                  <ul className="space-y-1 text-xs">
-                    {(list as [string, number][]).slice(0, 8).map(([k, v]) => (
-                      <li key={k} className="flex justify-between gap-2">
-                        <span className="truncate">{k}</span>
-                        <span className="tabular-nums">{isMoney ? money(v, c.currency) : v.toLocaleString()}</span>
-                      </li>
-                    ))}
-                    {!(list as unknown[]).length && <li className="text-muted-foreground">None</li>}
-                  </ul>
-                </div>
-              ))}
-            </div>
-          </section>
-        );
-      })}
+      {data.currencies.map((c) => (
+        <section key={c.currency} className="space-y-3 rounded-xl border bg-card p-4">
+          <h2 className="text-sm font-semibold">{c.currency}</h2>
+          <CurrencyWidgets c={c} widgets={widgets} />
+        </section>
+      ))}
     </div>
   );
 }

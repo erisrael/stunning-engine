@@ -490,6 +490,19 @@ PREPS["update-1-1-kb"] = async () => {
   return { key: (await sd.listApps(a))[0]!.publicKey };
 };
 
+// Update 1.0 Phase 8: a Chapa business (for the Overview) and a support app (its widget keeps its own look).
+PREPS["update-1-phase8"] = async () => {
+  await passwordOnly();
+  const { saveChapaAccount } = await import("../../src/server/chapa");
+  const sd = await import("../../src/server/support-desk");
+  const a = await admin();
+  await saveChapaAccount(a, { name: "Subscriptions", secretKey: "CHASECK-AAA", currency: "ETB" });
+  await sd.saveSupportConfig(a, { enabled: true, leads: [] });
+  const q = await sd.saveQueue(a, { name: "Academy", keywords: [], members: [a.id], strategy: "least_busy" });
+  await sd.saveApp(a, { name: "MySeed Academy", origins: [], queueId: q });
+  return { key: (await sd.listApps(a))[0]!.publicKey };
+};
+
 // Update 1.0 Phase 2: Legacy CMS points at the fake Noor that the browser test starts on this port.
 PREPS["update-1-p2"] = async () => {
   await passwordOnly();

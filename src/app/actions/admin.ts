@@ -47,6 +47,12 @@ export async function saveSettingsAction<K extends keyof Settings>(key: K, value
     }
     if (key === "destinations" && !(value as Settings["destinations"]).some((d) => d.active && d.requiredByDefault))
       throw new WorkflowError("VALIDATION", "Keep at least one active destination that is required by default.");
+    if (key === "workspace") {
+      const w = value as Settings["workspace"];
+      const { isPreset } = await import("@/lib/themes");
+      if (w.themePreset && !isPreset(w.themePreset)) throw new WorkflowError("VALIDATION", "Choose one of the colour themes.");
+      w.themePreset = w.themePreset || "";
+    }
     if (key === "calendar") {
       const cal = value as Settings["calendar"];
       if (!/^\d{2}:\d{2}$/.test(cal.dayStart) || !/^\d{2}:\d{2}$/.test(cal.dayEnd) || cal.dayStart >= cal.dayEnd)

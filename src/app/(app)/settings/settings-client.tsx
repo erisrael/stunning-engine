@@ -25,6 +25,7 @@ import {
   upsertUnitAction,
 } from "@/app/actions/admin";
 import type { Settings } from "@/server/settings";
+import { THEME_PRESETS } from "@/lib/themes";
 import { NEXT_STAGE, PREV_STAGE, STAGE_LABELS, STAGES, type Stage } from "@/lib/domain";
 import { DEFAULT_TEAM_RULES, teamRules, type TeamRules } from "@/lib/team-rules";
 import { Textarea } from "@/components/ui/textarea";
@@ -90,6 +91,22 @@ export function WorkspaceSettings({ settings }: { settings: Settings }) {
                 <SelectItem value="gregorian">Gregorian, 24-hour</SelectItem>
                 <SelectItem value="ethiopian">Ethiopian</SelectItem>
                 <SelectItem value="both">Both</SelectItem>
+              </SelectContent>
+            </Select>
+          </Row>
+          <Row label="Colour theme" hint="For everyone who has not chosen one for themselves (Settings, Appearance). Takes effect when a page is next opened.">
+            <Select value={w.themePreset || "none"} onValueChange={(v) => setW({ ...w, themePreset: v === "none" ? "" : v })}>
+              <SelectTrigger className="w-56" aria-label="Colour theme for everyone"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">None (Light or Dark)</SelectItem>
+                {THEME_PRESETS.map((p) => (
+                  <SelectItem key={p.key} value={p.key}>
+                    <span className="flex items-center gap-1.5">
+                      <span className="flex overflow-hidden rounded-sm border">{p.swatch.map((c) => <span key={c} className="size-3" style={{ background: c }} />)}</span>
+                      {p.label}
+                    </span>
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </Row>

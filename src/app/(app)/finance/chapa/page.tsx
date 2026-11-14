@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { ArrowLeftRightIcon, BarChart3Icon, CalendarDaysIcon, CoinsIcon, GitCompareIcon, LandmarkIcon, LifeBuoyIcon, ListIcon, RotateCcwIcon, Settings2Icon, UsersIcon, WalletIcon } from "lucide-react";
 import { requireViewer } from "@/server/auth";
-import { chapaBusinesses, chapaSettings } from "@/server/chapa-hub";
+import { chapaBusinesses, chapaOverviewLayout, chapaSettings } from "@/server/chapa-hub";
 import { can } from "@/server/users";
 import { PageHeader, PageTabs, type PageTab } from "@/components/app/page-kit";
 import { ChapaHub, type ChapaTab } from "@/components/app/finance/chapa/chapa-hub";
@@ -41,7 +41,7 @@ export default async function ChapaPage({ searchParams }: { searchParams: Promis
         description="Payments for every business on Chapa: overview, transactions, the daily board, customers, follow-up to Support, balances and withdrawals."
       />
       <PageTabs tabs={tabs} active={tab} href={qs} label="Chapa pages" />
-      <ChapaHub tab={tab} biz={biz} businesses={businesses} admin={admin} settings={tab === "settings" ? await chapaSettings() : null} />
+      <ChapaHub tab={tab} biz={biz} businesses={businesses} admin={admin} settings={tab === "settings" ? await chapaSettings() : null} layout={tab === "overview" ? await chapaOverviewLayout(viewer) : null} />
     </div>
   );
 }

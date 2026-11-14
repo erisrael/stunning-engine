@@ -72,6 +72,25 @@ export type ChapaAction = (typeof CHAPA_ACTIONS)[number][0];
 export const MONEY_ACTIONS: ChapaAction[] = ["refund", "transfer", "bulk_transfer", "swap"];
 
 export type ChapaActionRule = { enabled: boolean; roles: string[]; limit?: number | null; dailyCap?: number | null; secondApprover?: boolean };
+// The Overview's widgets (Update 1.0 Phase 8), in their default order. Each person picks and arranges them; Admin
+// sets the order for everyone who has not.
+export const CHAPA_WIDGETS = [
+  ["sync", "Sync status of each business"],
+  ["today", "Today"],
+  ["d7", "Last 7 days"],
+  ["d30", "Last 30 days"],
+  ["daily", "Paid per day (chart)"],
+  ["method", "By payment method"],
+  ["type", "By type"],
+  ["status", "By status"],
+] as const;
+export type ChapaWidget = (typeof CHAPA_WIDGETS)[number][0];
+export const DEFAULT_CHAPA_WIDGETS: ChapaWidget[] = CHAPA_WIDGETS.map(([k]) => k);
+export function cleanWidgets(list: unknown): ChapaWidget[] {
+  const keys = new Set<string>(DEFAULT_CHAPA_WIDGETS);
+  return [...new Set((Array.isArray(list) ? list : []).map(String).filter((k) => keys.has(k)))] as ChapaWidget[];
+}
+
 export type ChapaSettings = {
   rules: { pendingMinutes: number; autoSendTime: string | null; dedupeHours: number; defaultSyncMinutes: number };
   // "*" applies to every business; a business id overrides it for that business.

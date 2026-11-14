@@ -21,6 +21,8 @@ export type UserPrefs = {
   tour?: { seen?: Audience[]; steps?: string[] };
   // Sidebar entries this person hid (by link).
   sidebarHidden?: string[];
+  // Finance, Chapa, Overview: the widgets shown, in order (unset follows Admin's default).
+  chapaOverview?: string[];
   // The assistant button: true shown, false hidden, unset follows Admin's default for the role.
   assistantShown?: boolean;
   // Help: chapters hidden, pinned or added, and guides hidden (Settings, Help).

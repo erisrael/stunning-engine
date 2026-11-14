@@ -666,14 +666,15 @@ export function AppSidebar({
 
   const keyOf = (i: NavItem) => i.id ?? i.href;
   const hidden = [...roleHidden, ...userHidden];
-  const tabParam = searchParams.get("tab");
+  // A page opened without a tab shows its first one (Admin opens on People), so the sidebar marks that one.
+  const tabParam = searchParams.get("tab") ?? (pathname === "/admin" && has("users.manage") ? "people" : null);
   // Department entries match on the whole address; of several matching ones (Board, My board), the one with the
   // most matching query parts wins.
   const exactScore = (href: string) => {
     const [path, query] = href.split("?");
     if (pathname !== path) return 0;
     const want = new URLSearchParams(query ?? "");
-    for (const [k, v] of want) if (searchParams.get(k) !== v) return 0;
+    for (const [k, v] of want) if ((k === "tab" ? tabParam : searchParams.get(k)) !== v) return 0;
     if (!query && tabParam) return 0;
     return 1 + [...want.keys()].length;
   };

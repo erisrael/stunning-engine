@@ -11,6 +11,7 @@ import { BellIcon, CheckCheckIcon, ClockIcon, FlagIcon, HelpCircleIcon, IdCardIc
   TypeIcon,
   LanguagesIcon, SearchIcon, SettingsIcon, SquareIcon, SunIcon, UserIcon } from "lucide-react";
 import { ACCENTS, FONTS, useAppearance } from "@/components/app/appearance";
+import { THEME_PRESETS } from "@/lib/themes";
 import { Button } from "@/components/ui/button";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
@@ -248,6 +249,14 @@ function UserMenu({ user }: { user: { name: string; email: string; avatar?: stri
   const [feedbackOpen, setFeedbackOpen] = React.useState(false);
   const { theme, setTheme } = useTheme();
   const [look, setLook] = useAppearance();
+  // The preset in effect (the person's or the workspace's), read from the page.
+  const [preset, setPreset] = React.useState("");
+  React.useEffect(() => {
+    const read = () => setPreset(document.documentElement.dataset.preset ?? "");
+    read();
+    window.addEventListener("myseed-appearance", read);
+    return () => window.removeEventListener("myseed-appearance", read);
+  }, []);
   return (
     <>
     <DropdownMenu>
@@ -302,10 +311,24 @@ function UserMenu({ user }: { user: { name: string; email: string; avatar?: stri
             {theme === "dark" ? <MoonIcon /> : theme === "system" ? <MonitorIcon /> : <SunIcon />} Theme
           </DropdownMenuSubTrigger>
           <DropdownMenuSubContent>
-            <DropdownMenuRadioGroup value={theme} onValueChange={setTheme}>
+            {/* Light, Dark or System turn a colour theme off; a colour theme replaces them. */}
+            <DropdownMenuRadioGroup
+              value={preset || theme}
+              onValueChange={(v) => {
+                if (THEME_PRESETS.some((p) => p.key === v)) return setLook({ preset: v });
+                setLook({ preset: "none" });
+                setTheme(v);
+              }}
+            >
               <DropdownMenuRadioItem value="light">Light</DropdownMenuRadioItem>
               <DropdownMenuRadioItem value="dark">Dark</DropdownMenuRadioItem>
               <DropdownMenuRadioItem value="system">System</DropdownMenuRadioItem>
+              <DropdownMenuSeparator />
+              {THEME_PRESETS.map((p) => (
+                <DropdownMenuRadioItem key={p.key} value={p.key}>
+                  <span className="flex overflow-hidden rounded-sm border">{p.swatch.map((c) => <span key={c} className="size-2.5" style={{ background: c }} />)}</span> {p.label}
+                </DropdownMenuRadioItem>
+              ))}
             </DropdownMenuRadioGroup>
           </DropdownMenuSubContent>
         </DropdownMenuSub>

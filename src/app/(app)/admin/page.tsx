@@ -9,7 +9,7 @@ import { getPermissionMatrix } from "@/server/settings";
 import { taxonomy } from "@/server/queries";
 import { can, listUsers } from "@/server/users";
 import { workspaceCounts } from "@/server/workspace-data";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { BrandingAdmin } from "./branding-admin";
 import { IdentityAdmin } from "./identity-admin";
 import { identity } from "@/server/identity";
@@ -22,6 +22,7 @@ import { usageReport } from "@/server/announcements";
 import { ROLE_LABELS } from "@/lib/domain";
 import { bannerSections, banners, navBrand } from "@/server/branding";
 import { PageHeader } from "@/components/app/primitives";
+import { PageTabs } from "@/components/app/page-kit";
 import { ROLES, STAGES, type Role, type Stage } from "@/lib/domain";
 import { AdminRoleProvider, AccessAdmin, DataAdmin, PeopleAdmin, PermissionsAdmin, TeamsAdmin, type AdminUser, type TeamPerson } from "./admin-client";
 import { PageImport } from "@/components/app/page-import";
@@ -61,6 +62,8 @@ import { getExternalApiConfig } from "@/server/external-api";
 import { SupportSettings } from "@/components/app/support/setup";
 import { supportConfig } from "@/server/support-desk";
 import * as ch from "@/server/support-channels";
+
+import { AdminSearch, AdminSectionHead } from "./admin-search";
 
 export const metadata = { title: "Admin" };
 
@@ -215,6 +218,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
         }
       />
       <div className="space-y-3">
+        <AdminSearch rights={{ users: manageUsers, data: manageData, settings: can(viewer, "settings.manage") }} />
         {ADMIN_TAB_GROUPS.length > 1 && (
           <div className="flex flex-wrap items-center gap-1.5 border-b border-border/60 pb-2.5">
             {ADMIN_TAB_GROUPS.map((g) => {
@@ -237,74 +241,100 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           </div>
         )}
         <Tabs key={tab} value={tab} className="gap-4">
-          {currentGroup && (
-            <TabsList className="inline-flex h-9 w-auto max-w-full items-center justify-start gap-1 overflow-x-auto rounded-lg bg-muted/60 p-1 text-muted-foreground">
-              {currentGroup.tabs.map((t) => (
-                <TabsTrigger key={t.id} value={t.id} className="h-7 px-3 text-xs" asChild>
-                  <Link href={`/admin?tab=${t.id}`} className="flex items-center gap-1.5">
-                    <span>{t.label}</span>
-                    {t.count !== undefined && t.count > 0 && (
-                      <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-primary/15 px-1 text-[10px] font-semibold text-primary tabular-nums">
-                        {t.count}
-                      </span>
-                    )}
-                  </Link>
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          )}
+          {currentGroup && <PageTabs tabs={currentGroup.tabs.map((t) => ({ key: t.id, label: t.label, count: t.count ? t.count : undefined }))} active={tab} href={(k) => `/admin?tab=${k}`} label={`${currentGroup.label} sections`} />}
+          <AdminSectionHead tab={tab} />
         {manageUsers && (
           <>
             <TabsContent value="people" className="space-y-4">
-              <PeopleAdmin users={users} grades={grades} subjects={subjects} viewerId={viewer.id} />
-              <PeopleVisibilityAdmin config={await peopleVisibility()} roles={ROLES.map((r) => ({ key: r, label: ROLE_LABELS[r] }))} />
+              {tab === "people" && (
+                <>
+                  <PeopleAdmin users={users} grades={grades} subjects={subjects} viewerId={viewer.id} />
+                  <PeopleVisibilityAdmin config={await peopleVisibility()} roles={ROLES.map((r) => ({ key: r, label: ROLE_LABELS[r] }))} />
+                </>
+              )}
             </TabsContent>
             <TabsContent value="teams">
-              <TeamsAdmin people={team} />
+              {tab === "teams" && (
+                <>
+                  <TeamsAdmin people={team} />
+                </>
+              )}
             </TabsContent>
             <TabsContent value="departments">
-              <DepartmentsAdmin
-                departments={await Promise.all(DEPARTMENTS.map(async (d) => ({ dept: d, people: (await deptPeople(d)).map((x) => ({ id: x.id, name: x.name, roles: x.roles, position: x.position })) })))}
-                custom={await Promise.all(
-                  (await customDepartments({ includeArchived: true })).map(async (c) => ({ ...c, people: (await deptPeople(c.key)).map((x) => ({ id: x.id, name: x.name, roles: x.roles, position: x.position })) })),
-                )}
-                everyone={users.filter((u) => u.active).map((u) => ({ id: u.id, name: u.name }))}
-                presenters={await all<{ id: string; name: string; kind: string; subjects: string | null; department: string | null }>("SELECT id, name, kind, subjects, department FROM presenters WHERE active = 1 ORDER BY name")}
-              />
+              {tab === "departments" && (
+                <>
+                  <DepartmentsAdmin
+                    departments={await Promise.all(DEPARTMENTS.map(async (d) => ({ dept: d, people: (await deptPeople(d)).map((x) => ({ id: x.id, name: x.name, roles: x.roles, position: x.position })) })))}
+                    custom={await Promise.all(
+                      (await customDepartments({ includeArchived: true })).map(async (c) => ({ ...c, people: (await deptPeople(c.key)).map((x) => ({ id: x.id, name: x.name, roles: x.roles, position: x.position })) })),
+                    )}
+                    everyone={users.filter((u) => u.active).map((u) => ({ id: u.id, name: u.name }))}
+                    presenters={await all<{ id: string; name: string; kind: string; subjects: string | null; department: string | null }>("SELECT id, name, kind, subjects, department FROM presenters WHERE active = 1 ORDER BY name")}
+                  />
+                </>
+              )}
             </TabsContent>
             <TabsContent value="permissions">
-              <PermissionsAdmin matrix={await getPermissionMatrix()} counts={roleCounts} leadCounts={leadCounts} />
+              {tab === "permissions" && (
+                <>
+                  <PermissionsAdmin matrix={await getPermissionMatrix()} counts={roleCounts} leadCounts={leadCounts} />
+                </>
+              )}
             </TabsContent>
             <TabsContent value="access">
-              <AccessAdmin users={users} grades={grades} subjects={subjects} />
+              {tab === "access" && (
+                <>
+                  <AccessAdmin users={users} grades={grades} subjects={subjects} />
+                </>
+              )}
             </TabsContent>
             <TabsContent value="sessions">
-              <SessionsTable rows={await listSessions(viewer, { everyone: true })} blocked={await listBlocked(viewer)} everyone />
+              {tab === "sessions" && (
+                <>
+                  <SessionsTable rows={await listSessions(viewer, { everyone: true })} blocked={await listBlocked(viewer)} everyone />
+                </>
+              )}
             </TabsContent>
             <TabsContent value="chat">
-              <ChatAdmin config={await chatConfig()} usage={await chatUsage(viewer)} hardMaxMb={Math.round(maxUploadBytes() / 1048576)} />
+              {tab === "chat" && (
+                <>
+                  <ChatAdmin config={await chatConfig()} usage={await chatUsage(viewer)} hardMaxMb={Math.round(maxUploadBytes() / 1048576)} />
+                </>
+              )}
             </TabsContent>
             <TabsContent value="feedback">
-              <FeedbackAdmin rows={await listFeedback(viewer)} categories={FEEDBACK_CATEGORIES} statuses={FEEDBACK_STATUSES} />
+              {tab === "feedback" && (
+                <>
+                  <FeedbackAdmin rows={await listFeedback(viewer)} categories={FEEDBACK_CATEGORIES} statuses={FEEDBACK_STATUSES} />
+                </>
+              )}
             </TabsContent>
             <TabsContent value="reports">
-              <ReportsAdmin rows={await listReports(viewer)} reasons={REPORT_REASONS} statuses={REPORT_STATUSES} />
+              {tab === "reports" && (
+                <>
+                  <ReportsAdmin rows={await listReports(viewer)} reasons={REPORT_REASONS} statuses={REPORT_STATUSES} />
+                </>
+              )}
             </TabsContent>
             <TabsContent value="signin" className="space-y-6">
-              <SignInPolicyAdmin
-                data={{
-                  policy: await signInPolicy(),
-                  googleReady: !!(await googleConfig()),
-                  emailReady: (await smtpSettings()).source !== "none",
-                  redirectUris: Object.fromEntries(await Promise.all(PROVIDER_IDS.map(async (id) => [id, await redirectUri(id)]))),
-                  invites: await listInvites(viewer),
-                  requests: await listSignupRequests(viewer),
-                  roster: await twoStepRoster(viewer),
-                  log: await signInLog(viewer, { limit: 200 }),
-                  unconfirmed: await (await import("@/server/email-verify")).unconfirmedPeople(viewer),
-                }}
-              />
-              <SignInAdmin google={await googleSettings()} emailReady={(await smtpSettings()).source !== "none"} profileFields={await profileFieldsConfig()} />
+              {tab === "signin" && (
+                <>
+                  <SignInPolicyAdmin
+                    data={{
+                      policy: await signInPolicy(),
+                      googleReady: !!(await googleConfig()),
+                      emailReady: (await smtpSettings()).source !== "none",
+                      redirectUris: Object.fromEntries(await Promise.all(PROVIDER_IDS.map(async (id) => [id, await redirectUri(id)]))),
+                      invites: await listInvites(viewer),
+                      requests: await listSignupRequests(viewer),
+                      roster: await twoStepRoster(viewer),
+                      log: await signInLog(viewer, { limit: 200 }),
+                      unconfirmed: await (await import("@/server/email-verify")).unconfirmedPeople(viewer),
+                    }}
+                  />
+                  <SignInAdmin google={await googleSettings()} emailReady={(await smtpSettings()).source !== "none"} profileFields={await profileFieldsConfig()} />
+                </>
+              )}
             </TabsContent>
             <TabsContent value="files">
               {tab === "files" && <FilesAdmin storage={await storageConfig()} app={await appConfigView()} broken={await brokenLinks()} outside={await linksOutside()} />}
@@ -349,7 +379,11 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
               )}
             </TabsContent>
             <TabsContent value="sidebar">
-              <SidebarAdmin defaults={await sidebarDefaults()} roles={await roleCatalog()} departments={await customDepartments()} />
+              {tab === "sidebar" && (
+                <>
+                  <SidebarAdmin defaults={await sidebarDefaults()} roles={await roleCatalog()} departments={await customDepartments()} />
+                </>
+              )}
             </TabsContent>
             <TabsContent value="legacy-cms">
               {tab === "legacy-cms" && (
@@ -359,28 +393,32 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
               )}
             </TabsContent>
             <TabsContent value="integrations">
-              <IntegrationsAdmin
-                tokens={await listTokens(viewer)}
-                datasets={Object.fromEntries(Object.entries(DATASETS).map(([k, v]) => [k, v.label])) as Record<Dataset, string>}
-                origin={`${(await headers()).get("x-forwarded-proto") ?? "https"}://${(await headers()).get("host") ?? "localhost"}`}
-              />
-              {tab === "integrations" &&
-                (await (async () => {
-                  const C = await import("@/server/connectors");
-                  const { notionStatus } = await import("@/server/notion");
-                  const { IntegrationsHub } = await import("@/components/app/integrations-hub");
-                  return (
-                    <div className="mt-4">
-                      <IntegrationsHub
-                        datasets={Object.entries(DATASETS).map(([k, v]) => ({ key: k, label: v.label }))}
-                        notion={await notionStatus()}
-                        connectors={await C.listConnectors(viewer)}
-                        presets={C.PRESETS.map((x) => ({ key: x.key, name: x.name, capability: x.capability, region: x.region, docsUrl: x.docsUrl ?? null, secrets: x.secrets }))}
-                        calls={await C.callLog(viewer, 40)}
-                      />
-                    </div>
-                  );
-                })())}
+              {tab === "integrations" && (
+                <>
+                  <IntegrationsAdmin
+                    tokens={await listTokens(viewer)}
+                    datasets={Object.fromEntries(Object.entries(DATASETS).map(([k, v]) => [k, v.label])) as Record<Dataset, string>}
+                    origin={`${(await headers()).get("x-forwarded-proto") ?? "https"}://${(await headers()).get("host") ?? "localhost"}`}
+                  />
+                  {tab === "integrations" &&
+                    (await (async () => {
+                      const C = await import("@/server/connectors");
+                      const { notionStatus } = await import("@/server/notion");
+                      const { IntegrationsHub } = await import("@/components/app/integrations-hub");
+                      return (
+                        <div className="mt-4">
+                          <IntegrationsHub
+                            datasets={Object.entries(DATASETS).map(([k, v]) => ({ key: k, label: v.label }))}
+                            notion={await notionStatus()}
+                            connectors={await C.listConnectors(viewer)}
+                            presets={C.PRESETS.map((x) => ({ key: x.key, name: x.name, capability: x.capability, region: x.region, docsUrl: x.docsUrl ?? null, secrets: x.secrets }))}
+                            calls={await C.callLog(viewer, 40)}
+                          />
+                        </div>
+                      );
+                    })())}
+                </>
+              )}
             </TabsContent>
             <TabsContent value="customer-support" className="space-y-4">
               {tab === "customer-support" && (

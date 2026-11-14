@@ -9,6 +9,7 @@ import type { ChapaSettings } from "@/lib/chapa";
 const read = { revalidate: false } as const;
 export const chapaBusinessesAction = async () => wrap(async () => h.chapaBusinesses(await requireViewer()), read);
 export const chapaOverviewAction = async (biz: string | null) => wrap(async () => h.chapaOverview(await requireViewer(), biz), read);
+export const saveChapaOverviewLayoutAction = async (widgets: string[], scope: "me" | "default" | "reset") => wrap(async () => h.saveChapaOverviewLayout(await requireViewer(), widgets, scope));
 export const chapaTxAction = async (f: h.TxFilter) => wrap(async () => h.listChapaTx(await requireViewer(), f), read);
 export const chapaTxDetailAction = async (accountId: string, txRef: string) => wrap(async () => h.chapaTxDetail(await requireViewer(), accountId, txRef), read);
 export const chapaVerifyAction = async (accountId: string, txRef: string) => wrap(async () => h.verifyChapaTx(await requireViewer(), accountId, txRef));

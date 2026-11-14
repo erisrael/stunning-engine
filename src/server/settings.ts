@@ -27,6 +27,8 @@ export type Settings = {
     weekStartsOn: number;
     codePrefix: string;
     calendarDisplay: "gregorian" | "ethiopian" | "both";
+    // The colour theme preset for everyone who has not chosen one ("" = plain Light or Dark); src/lib/themes.ts.
+    themePreset?: string;
   };
   calendar: {
     workdays: number[];
@@ -81,6 +83,7 @@ export const DEFAULT_SETTINGS: Settings = {
     weekStartsOn: 1,
     codePrefix: "MY",
     calendarDisplay: "gregorian",
+    themePreset: "",
   },
   calendar: {
     workdays: [1, 2, 3, 4, 5],

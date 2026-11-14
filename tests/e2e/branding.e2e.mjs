@@ -29,11 +29,13 @@ try {
   await side.getByRole("link", { name: "Teams", exact: true }).click();
   await page.waitForURL(/tab=teams/);
   check("the sidebar link opens Teams", await visible(page.locator("main [role=tabpanel][data-state=active]")) && (await page.locator('main [role=tabpanel][data-state=active]').first().getAttribute("id"))?.includes("teams"));
-  await side.getByRole("link", { name: "Sign-in", exact: true }).click();
+  await side.getByRole("button", { name: "Expand Security" }).click();
+  await side.getByRole("link", { name: "Sign-in policy", exact: true }).click();
   await page.waitForURL(/tab=signin/);
   check("and then Sign-in", (await page.locator('main [role=tabpanel][data-state=active]').first().getAttribute("id"))?.includes("signin"));
 
   // Branding: a banner on Home.
+  await side.getByRole("button", { name: "Expand System & workspace" }).click();
   await side.getByRole("link", { name: "Branding", exact: true }).click();
   await page.waitForURL(/tab=branding/);
   const ed = page.locator('[data-banner-editor="home"]');
@@ -43,8 +45,8 @@ try {
   await ed.getByRole("button", { name: "Save" }).click();
   check("banner saved", await toast(page, /Banner saved/));
   // Another icon and colour for Admin.
-  const row = page.locator('[data-nav-brand="/admin"]');
-  await row.getByRole("button", { name: "Admin in red" }).click();
+  const row = page.locator('[data-nav-brand="/email"]');
+  await row.getByRole("button", { name: "Email in red" }).click();
   await row.getByRole("button", { name: "Icon" }).click();
   await row.getByRole("option", { name: "Rocket" }).click();
   await page.getByRole("button", { name: "Save sidebar icons" }).click();
@@ -54,8 +56,8 @@ try {
   await page.goto(`${base}/dashboard`);
   const banner = page.locator('[data-section-banner="home"]');
   check("the banner shows on Home", await visible(banner) && /Welcome to Myseed/.test(await banner.innerText()));
-  const att = side.getByRole("link", { name: "Admin", exact: true });
-  check("Admin has the rocket in red", (await att.locator("svg.lucide-rocket").count()) === 1 && (await att.locator("svg.lucide-rocket").getAttribute("class"))?.includes("D93025"));
+  const att = side.getByRole("link", { name: "Email", exact: true });
+  check("Email has the rocket in red", (await att.locator("svg.lucide-rocket").count()) === 1 && (await att.locator("svg.lucide-rocket").getAttribute("class"))?.includes("D93025"));
   check("other pages have no banner", await page.goto(`${base}/attendance`).then(() => page.locator("[data-section-banner]").count()) === 0);
 
   // The person's style: icon pack, font, contrast (as the account menu sets them).

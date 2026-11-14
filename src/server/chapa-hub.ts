@@ -983,3 +983,34 @@ export async function scheduledChapa(now = Date.now()) {
 }
 
 void tx;
+
+// ---------------------------------------------------------------------------
+// Overview layout (Update 1.0 Phase 8): the widgets each person shows, in order, with Admin's default for everyone.
+// ---------------------------------------------------------------------------
+
+export async function chapaOverviewLayout(user: AppUser) {
+  const { cleanWidgets, DEFAULT_CHAPA_WIDGETS } = await import("@/lib/chapa");
+  const saved = await getMeta("chapa.overview.default");
+  const def = saved ? cleanWidgets(parseJson(saved, [])) : DEFAULT_CHAPA_WIDGETS;
+  const mine = user.prefs.chapaOverview ? cleanWidgets(user.prefs.chapaOverview) : null;
+  return { widgets: mine ?? def, own: !!mine, def, canSetDefault: can(user, "users.manage") || can(user, "settings.manage") };
+}
+
+// scope: "me" saves the person's own; "default" (Admin) sets everyone's; "reset" goes back to the default.
+export async function saveChapaOverviewLayout(user: AppUser, widgets: string[], scope: "me" | "default" | "reset") {
+  const { cleanWidgets } = await import("@/lib/chapa");
+  const list = cleanWidgets(widgets);
+  if (scope !== "reset" && !list.length) throw new WorkflowError("VALIDATION", "Keep at least one widget on the Overview.");
+  const row = await get<{ prefs: string }>("SELECT prefs FROM users WHERE id = ?", user.id);
+  const prefs = parseJson<Record<string, unknown>>(row?.prefs ?? "{}", {});
+  if (scope === "default") {
+    if (!can(user, "users.manage") && !can(user, "settings.manage")) throw new WorkflowError("FORBIDDEN", "Only Admin sets the Overview for everyone.");
+    await setMeta("chapa.overview.default", JSON.stringify(list));
+    await audit({ actor: user }, { action: "chapa.overview", summary: `${user.name} set the Chapa Overview for everyone: ${list.join(", ")}` });
+  }
+  // Saving everyone's also makes it the Admin's own; reset forgets the person's own.
+  if (scope === "reset" || scope === "default") delete prefs.chapaOverview;
+  else prefs.chapaOverview = list;
+  await run("UPDATE users SET prefs = ? WHERE id = ?", JSON.stringify(prefs), user.id);
+  return list;
+}

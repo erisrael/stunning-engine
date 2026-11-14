@@ -10,6 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { ACCENTS, FONTS, useAppearance } from "@/components/app/appearance";
+import { THEME_PRESETS } from "@/lib/themes";
 import { PushToggle } from "@/components/app/push-toggle";
 import { Preferences } from "@/app/(app)/notifications/notifications-client";
 import { readConsent, writeConsent } from "@/components/app/attendance/geofence-watch";
@@ -83,6 +84,18 @@ export function PersonalSettings({ muted, emailed, geofence, assistant }: { mute
   const [routes, setRoutes] = React.useState<Record<string, string>>({});
   const [geo, setGeo] = React.useState<string | null>(null);
   const [mounted, setMounted] = React.useState(false);
+  // The workspace's theme (Admin) and the one in effect, read from the page.
+  const [wsPreset, setWsPreset] = React.useState("");
+  const [preset, setPreset] = React.useState("");
+  React.useEffect(() => {
+    const read = () => {
+      setWsPreset(document.documentElement.dataset.presetDefault ?? "");
+      setPreset(document.documentElement.dataset.preset ?? "");
+    };
+    read();
+    window.addEventListener("myseed-appearance", read);
+    return () => window.removeEventListener("myseed-appearance", read);
+  }, []);
   React.useEffect(() => {
     setRoutes(readRoutes());
     setGeo(readConsent());
@@ -116,7 +129,34 @@ export function PersonalSettings({ muted, emailed, geofence, assistant }: { mute
       </nav>
 
       <Section id="look" icon={<PaletteIcon className="size-4" />} title="Appearance" description="On this device.">
-        <Choice id="theme" label="Theme" value={mounted ? (theme ?? "system") : "system"} onChange={setTheme} options={[{ value: "light", label: "Light" }, { value: "dark", label: "Dark" }, { value: "system", label: "Like the device" }]} />
+        <Choice
+          id="preset"
+          label="Colour theme"
+          value={look.preset}
+          onChange={(v) => setLook({ preset: v })}
+          options={[
+            { value: "", label: `As set for the workspace${wsPreset ? ` (${THEME_PRESETS.find((p) => p.key === wsPreset)?.label})` : ""}` },
+            { value: "none", label: "None" },
+            ...THEME_PRESETS.map((p) => ({
+              value: p.key,
+              label: (
+                <span className="flex items-center gap-1.5">
+                  <span className="flex overflow-hidden rounded-sm border">{p.swatch.map((c) => <span key={c} className="size-3" style={{ background: c }} />)}</span>
+                  {p.label}
+                </span>
+              ),
+            })),
+          ]}
+        />
+        {preset ? (
+          <p className="text-xs text-muted-foreground" data-preset-note>
+            The {THEME_PRESETS.find((p) => p.key === preset)?.label} theme sets the colours, so Light or Dark and the accent colour apply only with None.
+          </p>
+        ) : (
+          <>
+            <Choice id="theme" label="Theme" value={mounted ? (theme ?? "system") : "system"} onChange={setTheme} options={[{ value: "light", label: "Light" }, { value: "dark", label: "Dark" }, { value: "system", label: "Like the device" }]} />
+          </>
+        )}
         <Choice
           id="accent"
           label="Accent colour"

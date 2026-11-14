@@ -2,7 +2,7 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-@custom-variant dark (&:is(.dark *));
+@custom-variant dark (&:is(.dark *, [data-mode="dark"] *):not([data-mode="light"] *));
 
 @theme inline {
   --color-background: var(--background);
@@ -137,7 +137,7 @@
   --st-failed-fg: #b3233a;
 }
 
-.dark {
+.dark:not([data-mode="light"]), :root[data-mode="dark"] {
   --background: #1e1f21;
   --foreground: #e3e4e8;
   --card: #25262a;
@@ -317,12 +317,83 @@
 :root[data-font="rounded"] { --font-chosen: var(--font-rounded); }
 :root[data-font="serif"] { --font-chosen: var(--font-serif); }
 :root[data-font="ethiopic"] { --font-chosen: var(--font-ethiopic); }
+:root[data-font="manrope"] { --font-chosen: var(--font-manrope); }
+:root[data-font="plex"] { --font-chosen: var(--font-plex); }
+:root[data-font="source"] { --font-chosen: var(--font-source); }
+:root[data-font="roboto"] { --font-chosen: var(--font-roboto); }
+:root[data-font="abyssinica"] { --font-chosen: var(--font-abyssinica); }
 
 /* High contrast: darker text and borders, stronger focus rings, underlined links. */
 :root[data-contrast="high"] { --foreground: #000; --muted-foreground: #2b2b2b; --border: #6b6b6b; --input: #6b6b6b; --sidebar-foreground: #000; --sidebar-border: #6b6b6b; }
 :root[data-contrast="high"].dark { --foreground: #fff; --muted-foreground: #e6e6e6; --border: #a3a3a3; --input: #a3a3a3; --sidebar-foreground: #fff; --sidebar-border: #a3a3a3; --background: #000; --card: #0a0a0a; --popover: #0a0a0a; }
 :root[data-contrast="high"] :is(p, li, td) > a { text-decoration: underline; text-underline-offset: 2px; }
 :root[data-contrast="high"] *:focus-visible { outline: 3px solid var(--ring) !important; outline-offset: 2px; }
+
+/* Theme presets (src/lib/themes.ts): whole colour sets that replace Light or Dark and the accent colour. */
+:root[data-mode="dark"] { color-scheme: dark !important; }
+:root[data-mode="light"] { color-scheme: light !important; }
+:root[data-preset="dim"] {
+  --background: #22272e; --foreground: #adbac7; --card: #2d333b; --card-foreground: #adbac7; --popover: #2d333b; --popover-foreground: #adbac7;
+  --primary: #539bf5; --primary-foreground: #0d1117; --secondary: #2d333b; --secondary-foreground: #adbac7;
+  --muted: #2d333b; --muted-foreground: #8b98a5; --accent: #253a57; --accent-foreground: #c6dcfb;
+  --border: #444c56; --input: #545d68; --ring: #539bf5; --chart-1: #539bf5; --role-manager: #539bf5;
+  --seq-1: #253a57; --seq-2: #316dca; --seq-3: #539bf5; --seq-4: #a5cdff;
+  --sidebar: #1c2128; --sidebar-foreground: #adbac7; --sidebar-primary: #539bf5; --sidebar-primary-foreground: #0d1117;
+  --sidebar-accent: #253a57; --sidebar-accent-foreground: #c6dcfb; --sidebar-border: #444c56; --sidebar-ring: #539bf5;
+  --chat-wallpaper: #1c2128; --chat-dots: #2d333b;
+}
+:root[data-preset="midnight"] {
+  --background: #0b1020; --foreground: #c9cce0; --card: #141b2e; --card-foreground: #c9cce0; --popover: #18203a; --popover-foreground: #c9cce0;
+  --primary: #8c7cf0; --primary-foreground: #0b1020; --secondary: #18203a; --secondary-foreground: #c9cce0;
+  --muted: #18203a; --muted-foreground: #9198b8; --accent: #262150; --accent-foreground: #d8d2ff;
+  --border: #252e4a; --input: #2f3958; --ring: #8c7cf0; --chart-1: #8c7cf0; --role-manager: #8c7cf0;
+  --seq-1: #262150; --seq-2: #4a3fa3; --seq-3: #8c7cf0; --seq-4: #cbc3ff;
+  --sidebar: #080c18; --sidebar-foreground: #c9cce0; --sidebar-primary: #8c7cf0; --sidebar-primary-foreground: #0b1020;
+  --sidebar-accent: #221d48; --sidebar-accent-foreground: #d8d2ff; --sidebar-border: #252e4a; --sidebar-ring: #8c7cf0;
+  --chat-wallpaper: #080c18; --chat-dots: #141b2e;
+}
+:root[data-preset="forest"] {
+  --background: #0f1a14; --foreground: #e8f5ec; --card: #18261d; --card-foreground: #e8f5ec; --popover: #1c2c22; --popover-foreground: #e8f5ec;
+  --primary: #34a853; --primary-foreground: #08130c; --secondary: #1c2c22; --secondary-foreground: #e8f5ec;
+  --muted: #1c2c22; --muted-foreground: #9fbcaa; --accent: #173a24; --accent-foreground: #bfeccd;
+  --border: #2a3d31; --input: #33493b; --ring: #34a853; --chart-1: #34a853; --role-manager: #34a853;
+  --seq-1: #173a24; --seq-2: #1f7a3c; --seq-3: #34a853; --seq-4: #8fdca6;
+  --sidebar: #0b140f; --sidebar-foreground: #e8f5ec; --sidebar-primary: #34a853; --sidebar-primary-foreground: #08130c;
+  --sidebar-accent: #163a24; --sidebar-accent-foreground: #bfeccd; --sidebar-border: #2a3d31; --sidebar-ring: #34a853;
+  --chat-wallpaper: #0b140f; --chat-dots: #18261d;
+}
+:root[data-preset="ocean"] {
+  --background: #f2f8fb; --foreground: #14213d; --card: #ffffff; --card-foreground: #14213d; --popover: #ffffff; --popover-foreground: #14213d;
+  --primary: #006d77; --primary-foreground: #ffffff; --secondary: #e6f0f5; --secondary-foreground: #14213d;
+  --muted: #e6f0f5; --muted-foreground: #4a5a72; --accent: #dcf0f1; --accent-foreground: #00525a;
+  --border: #d3e2ea; --input: #c4d6e0; --ring: #006d77; --chart-1: #006d77; --role-manager: #006d77;
+  --seq-1: #d2ebee; --seq-2: #83c5cb; --seq-3: #2a9aa4; --seq-4: #00525a;
+  --sidebar: #e8f2f7; --sidebar-foreground: #14213d; --sidebar-primary: #006d77; --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #d2ebee; --sidebar-accent-foreground: #00525a; --sidebar-border: #d3e2ea; --sidebar-ring: #006d77;
+  --chat-wallpaper: #e6f0f5; --chat-dots: #d3e2ea;
+}
+:root[data-preset="sand"] {
+  --background: #faf6ee; --foreground: #2b2620; --card: #ffffff; --card-foreground: #2b2620; --popover: #ffffff; --popover-foreground: #2b2620;
+  --primary: #a14c08; --primary-foreground: #ffffff; --secondary: #f2ece0; --secondary-foreground: #2b2620;
+  --muted: #f2ece0; --muted-foreground: #6b6357; --accent: #f8e6d4; --accent-foreground: #7e3b06;
+  --border: #e6dccb; --input: #dacfba; --ring: #a14c08; --chart-1: #a14c08; --role-manager: #a14c08;
+  --seq-1: #f8e6d4; --seq-2: #e9b07f; --seq-3: #c97633; --seq-4: #7e3b06;
+  --sidebar: #f4eee2; --sidebar-foreground: #2b2620; --sidebar-primary: #a14c08; --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f1dfcb; --sidebar-accent-foreground: #7e3b06; --sidebar-border: #e6dccb; --sidebar-ring: #a14c08;
+  --chat-wallpaper: #f2ece0; --chat-dots: #e6dccb;
+}
+:root[data-preset="contrast"] {
+  --background: #000000; --foreground: #ffffff; --card: #111111; --card-foreground: #ffffff; --popover: #111111; --popover-foreground: #ffffff;
+  --primary: #ffd400; --primary-foreground: #000000; --secondary: #1a1a1a; --secondary-foreground: #ffffff;
+  --muted: #1a1a1a; --muted-foreground: #e6e6e6; --accent: #332b00; --accent-foreground: #ffe866;
+  --border: #a3a3a3; --input: #bdbdbd; --ring: #ffd400; --chart-1: #ffd400; --role-manager: #ffd400;
+  --seq-1: #332b00; --seq-2: #806a00; --seq-3: #ffd400; --seq-4: #fff0a0;
+  --sidebar: #000000; --sidebar-foreground: #ffffff; --sidebar-primary: #ffd400; --sidebar-primary-foreground: #000000;
+  --sidebar-accent: #332b00; --sidebar-accent-foreground: #ffe866; --sidebar-border: #a3a3a3; --sidebar-ring: #ffd400;
+  --chat-wallpaper: #000000; --chat-dots: #1a1a1a;
+}
+:root[data-preset="contrast"] :is(p, li, td) > a { text-decoration: underline; text-underline-offset: 2px; }
+:root[data-preset="contrast"] *:focus-visible { outline: 3px solid var(--ring) !important; outline-offset: 2px; }
 
 /* Light mode for slow connections: no animations or transitions, no banner pictures (their colour stays). */
 :root[data-lite="on"] *, :root[data-lite="on"] *::before, :root[data-lite="on"] *::after { animation: none !important; transition: none !important; }
