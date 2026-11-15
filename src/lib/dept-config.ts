@@ -38,6 +38,11 @@ export const CONFIG_POSITIONS = ["head", "lead", "member"] as const;
 export type ConfigPosition = (typeof CONFIG_POSITIONS)[number];
 
 export const RIGHTS = [
+  { key: "dataManager", label: "Open Data Manager", hint: "Only records visible to this membership are shown" },
+  { key: "createTasks", label: "Create tasks" },
+  { key: "updateTasks", label: "Update tasks", hint: "Own tasks unless edit everyone?s tasks is also checked" },
+  { key: "deleteTasks", label: "Delete tasks", hint: "Own tasks unless delete anyone?s tasks is also checked" },
+  { key: "bulkActions", label: "Bulk actions", hint: "Each selected record is checked separately" },
   { key: "seeAll", label: "See everyone's tasks", hint: "Off: only tasks they are assigned or created" },
   { key: "editAll", label: "Edit and move everyone's tasks" },
   { key: "assign", label: "Assign tasks to other people" },
@@ -195,7 +200,7 @@ export type DeptConfig = {
 const PALETTE = ["#64748b", "#0ea5e9", "#7b68ee", "#f59e0b", "#22c55e", "#ef4444", "#ec4899", "#14b8a6", "#a855f7", "#f97316"];
 export const colorAt = (i: number) => PALETTE[i % PALETTE.length]!;
 
-const ALL_RIGHTS: Rights = { seeAll: true, editAll: true, assign: true, deleteAll: true, projects: true, restricted: true, kpis: true, configure: true };
+const ALL_RIGHTS: Rights = { dataManager: true, createTasks: true, updateTasks: true, deleteTasks: true, bulkActions: true, seeAll: true, editAll: true, assign: true, deleteAll: true, projects: true, restricted: true, kpis: true, configure: true };
 
 // Today's fixed values for Dev and Marketing, so nothing changes until someone edits the configuration. Other
 // departments start from a template (deptTemplateConfig) when they are created; this is only their fallback.
@@ -241,7 +246,7 @@ function builtInBase(dept: "dev" | "marketing"): DeptConfig {
     rights: {
       head: { ...ALL_RIGHTS },
       lead: { ...ALL_RIGHTS, configure: false },
-      member: { seeAll: false, editAll: false, assign: false, deleteAll: false, projects: false, restricted: true, kpis: true, configure: false },
+      member: { dataManager: true, createTasks: true, updateTasks: true, deleteTasks: true, bulkActions: true, seeAll: false, editAll: false, assign: false, deleteAll: false, projects: false, restricted: true, kpis: true, configure: false },
     },
     features: { ...BASE_FEATURES, kpis: marketing },
     notify: { assigned: true, statusToReporter: false, reviewToManagers: false, comments: true },
@@ -319,7 +324,7 @@ export function deptTemplateConfig(template: string, title: string, codePrefix: 
     rights: {
       head: { ...ALL_RIGHTS },
       lead: { ...ALL_RIGHTS, configure: false },
-      member: { seeAll: false, editAll: false, assign: false, deleteAll: false, projects: false, restricted: true, kpis: true, configure: false },
+      member: { dataManager: true, createTasks: true, updateTasks: true, deleteTasks: true, bulkActions: true, seeAll: false, editAll: false, assign: false, deleteAll: false, projects: false, restricted: true, kpis: true, configure: false },
     },
     features: { ...BASE_FEATURES, budget: false },
     notify: { assigned: true, statusToReporter: true, reviewToManagers: false, comments: true },
@@ -426,8 +431,8 @@ function templateBase(base: DeptConfig, template: string): DeptConfig {
 }
 
 export const ADMIN_RIGHTS: Rights = { ...ALL_RIGHTS };
-export const NO_RIGHTS: Rights = { seeAll: false, editAll: false, assign: false, deleteAll: false, projects: false, restricted: false, kpis: false, configure: false };
-export const READ_RIGHTS: Rights = { ...NO_RIGHTS, seeAll: true };
+export const NO_RIGHTS: Rights = { dataManager: false, createTasks: false, updateTasks: false, deleteTasks: false, bulkActions: false, seeAll: false, editAll: false, assign: false, deleteAll: false, projects: false, restricted: false, kpis: false, configure: false };
+export const READ_RIGHTS: Rights = { ...NO_RIGHTS, dataManager: true, seeAll: true };
 
 // A stable key from a label: "In QA" -> "in_qa", made unique against the keys already used.
 export function makeKey(label: string, taken: string[]) {

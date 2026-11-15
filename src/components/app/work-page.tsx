@@ -22,7 +22,7 @@ import { FinanceAccounting } from "./integrations";
 import { DEPT_VIEW_LABELS, DEPT_VIEWS, deptPath, deptViewPath } from "@/lib/work";
 import { flowHome } from "@/server/dept-flow";
 
-const TABS = ["dashboard", "board", "list", "sheet", "overview", "timeline", "team", "report", "projects", "calendar", "configure", "repos", "accounting", "sprint", "roadmap", "docs", "present", "tools", "analyze", "requests"] as const;
+const TABS = ["dashboard", "data", "board", "list", "sheet", "overview", "timeline", "team", "report", "projects", "calendar", "configure", "repos", "accounting", "sprint", "roadmap", "docs", "present", "tools", "analyze", "requests"] as const;
 const SORTS = ["updated", "due", "priority", "code", "title", "status"] as const;
 
 // The Dev and Marketing sections share this page; their vocabulary, workflow and rights come from the configuration.
@@ -41,7 +41,7 @@ export async function WorkPage({ dept, searchParams, view }: { dept: WorkDept; s
   }
   // The dashboard is the department's home; a link to a task opens the board with it.
   const tab = (view ?? "dashboard") as (typeof TABS)[number];
-  if ((tab === "configure" && !access.rights.configure) || ((tab === "team" || tab === "analyze") && !access.rights.seeAll)) redirect(deptViewPath(dept, "board"));
+  if ((tab === "data" && !access.rights.dataManager) || (tab === "configure" && !access.rights.configure) || ((tab === "team" || tab === "analyze") && !access.rights.seeAll)) redirect(deptViewPath(dept, "board"));
   // Department-specific tabs: GitHub for the Dev team, accounting exports for a Finance department.
   const template = (await customDepartment(dept))?.template ?? null;
   const extraTabs: { key: "repos" | "accounting"; label: string }[] = [

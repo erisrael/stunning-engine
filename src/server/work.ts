@@ -695,6 +695,7 @@ async function setBlockers(dp: WorkDept, id: string, code: string, ids: string[]
 export async function saveTask(user: AppUser, d: string, input: TaskInput, opts: { automations?: boolean } = {}) {
   const dp = await dept(d);
   const a = await workAccess(user, dp, "write");
+  need(a, input.id ? "updateTasks" : "createTasks", "Your membership cannot perform this task action.");
   const cfg = a.config;
   const old = input.id ? await get<OldTask>("SELECT id, type, assignee_id, reporter_id, reviewer_id, project_id, parent_id, status, status_category, code, title, fields, checklist, recur, requested_by FROM dept_tasks WHERE id = ? AND dept = ?", input.id, dp) : null;
   if (input.id && !old) throw new WorkflowError("NOT_FOUND", "Task not found.");
@@ -990,6 +991,7 @@ export async function moveTask(user: AppUser, d: string, id: string, status: str
   if (!s || !s.active) throw new WorkflowError("VALIDATION", "Unknown status.");
   const t = await get<OldTask>("SELECT id, type, assignee_id, reporter_id, reviewer_id, project_id, parent_id, status, status_category, code, title, fields, checklist, recur, requested_by FROM dept_tasks WHERE id = ? AND dept = ?", id, dp);
   if (!t) throw new WorkflowError("NOT_FOUND", "Task not found.");
+  need(a, "updateTasks", "Your membership cannot update tasks.");
   if (!a.rights.editAll && !own(user, t)) throw new WorkflowError("FORBIDDEN", "You can move only your own tasks.");
   if (t.status !== status) {
     await gate(a, user, { id, code: t.code, type: t.type, status: t.status, reviewer_id: t.reviewer_id, checklist: parseJson(t.checklist, []), fields: parseJson(t.fields, {}) }, status);
@@ -1048,6 +1050,8 @@ export async function reviewTask(user: AppUser, d: string, id: string, decision:
 export async function bulkTasks(user: AppUser, d: string, ids: string[], patch: { status?: string; assigneeId?: string | null; priority?: string; projectId?: string | null; dueDate?: string | null; sprintId?: string | null; delete?: boolean }) {
   const dp = await dept(d);
   const a = await workAccess(user, dp, "write");
+  if (ids.length > 1) need(a, "bulkActions", "Your membership cannot use bulk actions.");
+  need(a, patch.delete ? "deleteTasks" : "updateTasks", "Your membership cannot perform this task action.");
   const results: { id: string; ok: boolean; error?: string }[] = [];
   for (const id of ids.slice(0, 500)) {
     try {
@@ -1091,6 +1095,8 @@ export async function bulkTasks(user: AppUser, d: string, ids: string[], patch: 
 export async function importTasks(user: AppUser, d: string, rows: Record<string, string>[]) {
   const dp = await dept(d);
   const a = await workAccess(user, dp, "write");
+  need(a, "createTasks", "Your membership cannot create tasks.");
+  if (rows.length > 1) need(a, "bulkActions", "Your membership cannot import multiple rows.");
   const people = await deptPeople(dp);
   const projects = await all<{ id: string; key: string }>("SELECT id, key FROM dept_projects WHERE dept = ?", dp);
   const byKeyOrLabel = (items: { key: string; label: string }[], v: string | undefined) => {

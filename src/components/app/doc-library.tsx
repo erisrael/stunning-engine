@@ -1,5 +1,8 @@
 "use client";
 
+import { ImportTemplateButton } from "./import-template-button";
+import { DOCUMENT_IMPORT_TEMPLATE } from "@/lib/dev-import-templates";
+
 // The department's document library (Phase 26): a folder tree, the open folder's folders, documents and files,
 // search, pinned and recent documents, upload, import from Word or Markdown, move, duplicate and export.
 
@@ -165,6 +168,7 @@ export function DocLibrary({ dept }: { dept: string }) {
             <Button size="sm" variant="outline" disabled={busy} onClick={() => imp.current?.click()}>
               <FileUpIcon /> Import Word or Markdown
             </Button>
+            <ImportTemplateButton template={DOCUMENT_IMPORT_TEMPLATE} label="Document template" />
             {lib.notion && (
               <Button
                 size="sm"

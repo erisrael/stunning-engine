@@ -15,6 +15,7 @@ export type HomeDept = {
   kind: "work" | "studio";
   // Leads and heads see everything and the team; heads (and Admin) configure.
   seeAll: boolean;
+  dataManager?: boolean;
   configure: boolean;
   repos: boolean;
   // The Dev studio views: Sprint (when sprints are on), Roadmap, Specs and docs.
@@ -58,6 +59,7 @@ export async function homeDepartment(user: AppUser & { activeRole: string }): Pr
     base: deptPath(key),
     kind: "work",
     seeAll: !!rights?.seeAll,
+    dataManager: !!rights?.dataManager,
     configure: !!rights?.configure,
     repos: key === "dev" || custom?.template === "dev",
     sprints: cfg.features.sprints,

@@ -1,5 +1,8 @@
 "use client";
 
+import { ImportTemplateButton } from "./import-template-button";
+import { externalImportTemplate } from "@/lib/dev-import-templates";
+
 // A department's Tools (Phases 12b.2, 12b.4, 12b.5): releases with versions and deployments per environment,
 // incidents, test cases and runs, traceability, project templates, import and export, and (for the head) the API
 // key, webhooks and Slack or Telegram notices.
@@ -368,6 +371,7 @@ export function DevToolsView(props: { releaseReview:Awaited<ReturnType<typeof im
                 <option value="trello">Trello JSON</option>
                 <option value="asana">Asana CSV</option>
               </select>
+              <ImportTemplateButton template={externalImportTemplate(imp.source)} label={`${imp.source === "jira" ? "Jira CSV" : imp.source === "asana" ? "Asana CSV" : "Trello JSON"} template`} />
               <Input aria-label="Import file" type="file" accept=".csv,.json" className="w-64" onChange={(e) => pickFile(e.target.files?.[0])} />
               <label className="flex items-center gap-1 text-xs">
                 <input type="checkbox" checked={imp.includeDone} onChange={(e) => setImp({ ...imp, includeDone: e.target.checked })} /> include finished items

@@ -1,5 +1,8 @@
 "use client";
 
+import { ImportTemplateButton } from "./import-template-button";
+import { taskImportTemplate } from "@/lib/dev-import-templates";
+
 // Dev and Marketing work: board, list, projects (campaigns) and calendar, with task and project dialogs.
 
 import * as React from "react";
@@ -63,6 +66,7 @@ import { deptViewPath, type WorkDept } from "@/lib/work";
 import { fieldRequired, fieldShown, formatField, labelOf, statusOf, type DeptConfig, type DeptField, type FieldValue, type Rights } from "@/lib/dept-config";
 import { cn } from "@/lib/utils";
 import { today, usable, type Access, type Person } from "./work-shared";
+import { DepartmentDataManager } from "./department-data-manager";
 import { Board, OverviewTree, SheetView, TaskList, ViewOptions } from "./work-views";
 import { TaskDialog } from "./work-task-dialog";
 import { DeptFlowHome } from "./dept-flow";
@@ -111,7 +115,7 @@ export function WorkClient({
   // The saved plan of each task (Tools, Epics and baseline), drawn under its bar on the Timeline.
   baselines?: Record<string, { start: string | null; due: string | null; savedAt: string }>;
   dept: WorkDept;
-  tab: "dashboard" | "board" | "list" | "sheet" | "overview" | "timeline" | "team" | "report" | "projects" | "calendar" | "repos" | "accounting" | "sprint" | "roadmap" | "docs" | "tools" | "analyze";
+  tab: "data" | "dashboard" | "board" | "list" | "sheet" | "overview" | "timeline" | "team" | "report" | "projects" | "calendar" | "repos" | "accounting" | "sprint" | "roadmap" | "docs" | "tools" | "analyze";
   filter: TaskFilter;
   tasks: Task[];
   projects: Project[];
@@ -154,7 +158,7 @@ export function WorkClient({
   const [editing, setEditing] = React.useState<Task | { status?: string; dueDate?: string; parentId?: string; title?: string; description?: string; assigneeId?: string } | null>(null);
   // ?new=1 (from the assistant): the new-task form opens filled in; the person checks it and presses Create.
   React.useEffect(() => {
-    if (params.get("new") !== "1" || access.readOnly) return;
+    if (params.get("new") !== "1" || access.readOnly || !access.rights.createTasks) return;
     setEditing({ title: params.get("title") ?? undefined, description: params.get("desc") ?? undefined, assigneeId: params.get("assignee") ?? undefined, dueDate: params.get("due") ?? undefined });
     const p = new URLSearchParams(params.toString());
     for (const k of ["new", "title", "desc", "assignee", "due"]) p.delete(k);
@@ -246,12 +250,13 @@ export function WorkClient({
             toast.success("Timer stopped");
             router.refresh();
           }} />}
-          {writable && (
+          {writable && access.rights.createTasks && access.rights.bulkActions && (
             <>
               <input ref={fileRef} type="file" accept=".csv,text/csv" className="hidden" onChange={(e) => e.target.files?.[0] && importCsv(e.target.files[0])} />
               <Button size="sm" variant="outline" onClick={() => fileRef.current?.click()} title={`Columns: title, description, type, status, priority, assignee_email, project_key, due_date, estimate_hours, labels${fieldCols.length ? `, ${fieldCols.map((f) => f.key).join(", ")}` : ""}`}>
                 <UploadIcon /> Import CSV
               </Button>
+              <ImportTemplateButton template={taskImportTemplate(dept, cfg)} hint="Replace the example row. Dates: YYYY-MM-DD. Use existing assignee emails and project keys; fill required custom fields." />
             </>
           )}
           {tab !== "dashboard" && !panel && (
@@ -264,7 +269,7 @@ export function WorkClient({
               <PlusIcon /> New {names.project.toLowerCase()}
             </Button>
           )}
-          {writable && (
+          {writable && access.rights.createTasks && (
             <Button size="sm" onClick={() => setEditing({})}>
               <PlusIcon /> New {names.task.toLowerCase()}
             </Button>
@@ -305,7 +310,7 @@ export function WorkClient({
           {cfg.features.requests && access.rights.assign && (
             <FilterSelect value={filter.request} onChange={(v) => go({ request: v })} placeholder="All work" options={[{ value: "pending", label: "Requests waiting" }]} />
           )}
-          {(tab === "list" || tab === "sheet" || tab === "overview" || tab === "timeline") && (
+          {(tab === "data" || tab === "list" || tab === "sheet" || tab === "overview" || tab === "timeline") && (
             <FilterSelect
               value={filter.open ? "open" : filter.status?.length === 1 ? filter.status[0] : null}
               onChange={(v) => go({ status: v })}
@@ -322,6 +327,7 @@ export function WorkClient({
       {tab === "dashboard" && dashboard}
       {panel}
       {tab === "board" && <Board dept={dept} config={cfg} people={people} tasks={tasks} viewerId={viewerId} access={access} onOpen={setEditing} onDetails={(status) => setEditing({ status })} />}
+      {tab === "data" && <DepartmentDataManager dept={dept} config={cfg} tasks={tasks} filter={filter} people={people} projects={projects} access={access} viewerId={viewerId} go={go} onOpen={setEditing} onExport={exportCsv} />}
       {tab === "sheet" && <SheetView dept={dept} config={cfg} tasks={tasks} people={people} projects={projects} access={access} viewerId={viewerId} onOpen={setEditing} />}
       {tab === "overview" && <OverviewTree config={cfg} tasks={tasks} projects={projects} onOpen={setEditing} />}
       {tab === "timeline" && <TimelineView dept={dept} config={cfg} tasks={tasks} projects={projects} access={access} viewerId={viewerId} onOpen={setEditing} baselines={baselines} />}
@@ -331,7 +337,7 @@ export function WorkClient({
       {tab === "list" && <TaskList dept={dept} config={cfg} tasks={tasks} filter={filter} people={people} projects={projects} access={access} viewerId={viewerId} go={go} onOpen={setEditing} onExport={exportCsv} />}
       {tab === "projects" && cfg.features.sprints && <Sprints dept={dept} sprints={sprints} canEdit={!access.readOnly && access.rights.projects} go={go} />}
       {tab === "projects" && <Projects dept={dept} config={cfg} projects={projects} access={access} showArchived={showArchived} go={go} onEdit={setProjectDialog} />}
-      {tab === "calendar" && <MonthCalendar tasks={tasks} onOpen={setEditing} onAdd={writable ? (d) => setEditing({ dueDate: d }) : undefined} />}
+      {tab === "calendar" && <MonthCalendar tasks={tasks} onOpen={setEditing} onAdd={writable && access.rights.createTasks ? (d) => setEditing({ dueDate: d }) : undefined} />}
 
       {editing && (
         <TaskDialog dept={dept} config={cfg} task={"id" in editing ? editing : null} preset={"id" in editing ? {} : editing} people={people} projects={projects} tasks={tasks} sprints={sprints} access={access} viewerId={viewerId} onClose={closeTask} />

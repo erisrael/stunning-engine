@@ -15,7 +15,7 @@ export const today = () => new Date().toISOString().slice(0, 10);
 export const finished = (t: Task) => t.status_category === "done" || t.status_category === "cancelled";
 // Active items, plus the one already in use (a switched-off status or type stays readable on old tasks).
 export const usable = <T extends { key: string; active: boolean }>(items: T[], current?: string) => items.filter((i) => i.active || i.key === current);
-export const canEditTask = (access: Access, t: Task, viewerId: string) => !access.readOnly && (access.rights.editAll || t.assignee_id === viewerId || t.reporter_id === viewerId);
+export const canEditTask = (access: Access, t: Task, viewerId: string) => !access.readOnly && access.rights.updateTasks && (access.rights.editAll || t.assignee_id === viewerId || t.reporter_id === viewerId);
 
 // The full input to save a task again with some changes (the server takes the whole task).
 export function taskInput(t: Task, patch: Partial<TaskInput> = {}): TaskInput {

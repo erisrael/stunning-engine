@@ -92,7 +92,7 @@ export function TaskDialog({
 }) {
   const router = useRouter();
   const f$ = cfg.features;
-  const canEdit = !access.readOnly && (!task || access.rights.editAll || [task.assignee_id, task.reporter_id, task.reviewer_id].includes(viewerId));
+  const canEdit = !access.readOnly && (task ? access.rights.updateTasks : access.rights.createTasks) && (!task || access.rights.editAll || [task.assignee_id, task.reporter_id, task.reviewer_id].includes(viewerId));
   const firstStatus = (cfg.statuses.find((s) => s.active && s.category === "open") ?? cfg.statuses.find((s) => s.active))!.key;
   const [f, setF] = React.useState({
     title: task?.title ?? preset.title ?? "",
@@ -612,7 +612,7 @@ export function TaskDialog({
         </Tabs>
 
         <DialogFooter className="sm:justify-between">
-          {task && canEdit && (access.rights.deleteAll || task.reporter_id === viewerId) ? (
+          {task && !access.readOnly && access.rights.deleteTasks && (access.rights.deleteAll || task.reporter_id === viewerId) ? (
             <Button
               variant="ghost"
               className="text-destructive"

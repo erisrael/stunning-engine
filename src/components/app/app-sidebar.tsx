@@ -154,6 +154,7 @@ const deptViews = (base: string, extra: { label: string; view: string }[] = [], 
   { label: "Report", href: `${base}/report` },
   { label: "Analyze", href: `${base}/analyze` },
   { label: "Requests", href: `${base}/requests` },
+  { label: "Data Manager", href: `${base}/data` },
   ...extra.map((e) => ({ label: e.label, href: `${base}/${e.view}` })),
   ...(configure ? [{ label: "Configure", href: `${base}/configure` }] : []),
 ];
@@ -238,6 +239,7 @@ function homeGroups(h: HomeDept, viewerId: string): { label: string; items: NavI
       items: [
         ...(h.repos ? [{ href: `${b}/repos`, label: "Repositories", icon: GitBranchIcon, exact: true }] : []),
         ...(h.studio ? [{ href: `${b}/docs`, label: "Specs and docs", icon: FileTextIcon, exact: true }] : []),
+        ...(h.dataManager ? [{ href: `${b}/data`, label: "Data Manager", icon: SheetIcon, exact: true }] : []),
         { href: `${b}/tools`, label: "Releases and quality", icon: WrenchIcon, exact: true },
         ...(h.accounting ? [{ href: `${b}/accounting`, label: "Accounting", icon: CalculatorIcon, exact: true }] : []),
         { href: `${b}/requests`, label: "Requests", icon: InboxIcon, exact: true },

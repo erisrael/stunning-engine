@@ -1,5 +1,8 @@
 "use client";
 
+import { ImportTemplateButton } from "./import-template-button";
+
+
 // Dev and Marketing views, as configurable as the production workflow's: List (columns, grouping, totals), Board
 // (swimlanes, card contents, collapsible columns, quick add), Sheet (type into cells, paste rows, undo) and the
 // Overview tree (project, milestone, task with rollups). View settings live in the URL, so saved views keep them.
@@ -647,7 +650,7 @@ export function Board({
                       {col.limit != null && ` / ${col.limit}`}
                     </span>
                     <span className="ml-auto flex items-center">
-                      {!access.readOnly && col.active && (
+                      {!access.readOnly && access.rights.createTasks && col.active && (
                         <Button size="icon-xs" variant="ghost" aria-label={`Add to ${col.label}`} onClick={() => setAdding(addKey)}>
                           <PlusIcon />
                         </Button>
@@ -800,7 +803,7 @@ export function TaskList({
                 <Checkbox checked={ids.length === tasks.length ? true : ids.length ? "indeterminate" : false} onCheckedChange={(v) => setPicked(v ? new Set(tasks.map((t) => t.id)) : new Set())} aria-label="Select all" />
               </th>
               {cols.map((c) => (
-                <th key={c.key} className="p-2 font-medium whitespace-nowrap">
+                <th data-column={c.key} key={c.key} className="p-2 font-medium whitespace-nowrap">
                   {c.sort ? (
                     <button type="button" className="inline-flex items-center gap-1 hover:text-foreground" onClick={() => sortBy(c.sort!)}>
                       {c.label}
@@ -836,7 +839,7 @@ export function TaskList({
                   g.tasks.map((t) => {
                     const mine = canEditTask(access, t, viewerId);
                     return (
-                      <tr key={t.id} className={cn("border-t", picked.has(t.id) && "bg-primary/5")}>
+                      <tr data-record={t.id} key={t.id} className={cn("border-t", picked.has(t.id) && "bg-primary/5")}>
                         <td className="p-2">
                           <Checkbox checked={picked.has(t.id)} aria-label={`Select ${t.code}`} onCheckedChange={(v) => setPicked((s) => (v ? new Set(s.add(t.id)) : (s.delete(t.id), new Set(s))))} />
                         </td>
@@ -885,7 +888,7 @@ export function TaskList({
       {ids.length > 0 && (
         <div className="sticky bottom-3 z-20 mx-auto flex w-fit max-w-full flex-wrap items-center gap-2 rounded-xl border bg-popover px-3 py-2 shadow-lg">
           <span className="text-sm font-medium tabular">{ids.length} selected</span>
-          {!access.readOnly && (
+          {!access.readOnly && access.rights.updateTasks && access.rights.bulkActions && (
             <>
               <BulkPick label="Status" options={usable(config.statuses).map((s) => ({ value: s.key, label: s.label }))} onPick={(v) => bulk({ status: v }, "updated")} disabled={busy} />
               <BulkPick label="Priority" options={usable(config.priorities).map((p) => ({ value: p.key, label: p.label }))} onPick={(v) => bulk({ priority: v }, "updated")} disabled={busy} />
@@ -901,7 +904,7 @@ export function TaskList({
           <Button size="xs" variant="outline" onClick={() => onExport(tasks.filter((t) => picked.has(t.id)))}>
             <DownloadIcon /> Export
           </Button>
-          {!access.readOnly && (
+          {!access.readOnly && access.rights.deleteTasks && access.rights.bulkActions && (
             <Button size="xs" variant="outline" className="text-destructive" disabled={busy} onClick={() => bulk({ delete: true }, "deleted")}>
               <Trash2Icon /> Delete
             </Button>
@@ -923,7 +926,7 @@ type UndoStep = { label: string; run: () => Promise<{ ok: boolean; error?: strin
 
 const cellInput = "h-8 w-full min-w-24 rounded-none border-0 bg-transparent px-2 text-xs shadow-none focus-visible:ring-2 focus-visible:ring-primary/50 disabled:cursor-default disabled:opacity-100";
 
-export function SheetView({ dept, config, tasks, people, projects, access, viewerId, onOpen }: { dept: WorkDept; config: DeptConfig; tasks: Task[]; people: Person[]; projects: Project[]; access: Access; viewerId: string; onOpen: (t: Task) => void }) {
+export function SheetView({ dept, config, tasks, people, projects, access, viewerId, onOpen, selection }: { dept: WorkDept; config: DeptConfig; tasks: Task[]; people: Person[]; projects: Project[]; access: Access; viewerId: string; onOpen: (t: Task) => void; selection?: { ids: Set<string>; toggle: (id: string) => void } }) {
   const router = useRouter();
   const params = useSearchParams();
   const all = React.useMemo(() => columnsFor(config, people, projects), [config, people, projects]);
@@ -1024,7 +1027,7 @@ export function SheetView({ dept, config, tasks, people, projects, access, viewe
           </span>
         )}
         <span className="ml-auto flex gap-2">
-          {!access.readOnly && (
+          {!access.readOnly && access.rights.createTasks && access.rights.bulkActions && (
             <Button size="sm" variant="outline" onClick={() => setPasting(true)}>
               <ClipboardPasteIcon /> Paste rows
             </Button>
@@ -1038,8 +1041,9 @@ export function SheetView({ dept, config, tasks, people, projects, access, viewe
         <table className="w-full border-collapse text-sm">
           <thead className="bg-muted/50 text-left text-xs text-muted-foreground">
             <tr>
+              {selection && <th className="p-2">Select</th>}
               {cols.map((c) => (
-                <th key={c.key} className="border-r px-2 py-1.5 font-medium whitespace-nowrap last:border-r-0">
+                <th data-column={c.key} key={c.key} className="border-r px-2 py-1.5 font-medium whitespace-nowrap last:border-r-0">
                   {c.label}
                 </th>
               ))}
@@ -1047,7 +1051,8 @@ export function SheetView({ dept, config, tasks, people, projects, access, viewe
           </thead>
           <tbody>
             {tasks.map((t) => (
-              <tr key={t.id} className="border-t hover:bg-muted/20">
+              <tr data-record={t.id} key={t.id} className="border-t hover:bg-muted/20">
+                {selection && <td className="p-2"><Checkbox aria-label={`Select ${t.code}`} checked={selection.ids.has(t.id)} onCheckedChange={() => selection.toggle(t.id)} /></td>}
                 {cols.map((c) => (
                   <td key={c.key} className="border-r p-0 last:border-r-0">
                     {editor(t, c)}
@@ -1055,9 +1060,9 @@ export function SheetView({ dept, config, tasks, people, projects, access, viewe
                 ))}
               </tr>
             ))}
-            {!access.readOnly && (
+            {!access.readOnly && access.rights.createTasks && (
               <tr className="border-t">
-                <td colSpan={cols.length} className="p-0">
+                <td colSpan={cols.length + (selection ? 1 : 0)} className="p-0">
                   <AddRow placeholder={`Add a ${config.names.task.toLowerCase()}: type a title and press Enter`} onAdd={addRow} />
                 </td>
               </tr>
@@ -1165,6 +1170,7 @@ function PasteRows({ dept, config, cols, people, onClose }: { dept: WorkDept; co
             {config.names.task.toLowerCase()}.
           </DialogDescription>
         </DialogHeader>
+        <ImportTemplateButton template={{ name: `${dept}-sheet-import-template.tsv`, mime: "text/tab-separated-values;charset=utf-8", text: cols.map(c => c.label.replace(/[\t\r\n]/g, " ")).join("\t") + "\r\n" + cols.map(c => c.key === "title" ? "Replace with your task title" : "").join("\t") + "\r\n" }} hint="Open in Excel or Sheets, fill in the rows, then copy the cells back here. Keep ignored columns blank and preserve the column order." />
         <Textarea rows={8} value={text} onChange={(e) => setText(e.target.value)} placeholder={cols.map((c) => c.label).join("\t")} className="font-mono text-xs" aria-label="Rows to paste" />
         <p className="text-xs text-muted-foreground">
           {data.length} row{data.length === 1 ? "" : "s"}
@@ -1256,7 +1262,7 @@ export function OverviewTree({ config, tasks, projects, onOpen }: { config: Dept
   ].filter((g) => g.tasks.length || g.key !== "none");
   const allKeys = groups.flatMap((g) => [g.key, ...g.milestones.map((m) => `${g.key}:${m.id}`), `${g.key}:none`]);
   const taskRow = (t: Task, depth: number) => (
-    <tr key={t.id} className="border-t">
+    <tr data-record={t.id} key={t.id} className="border-t">
       <td className="p-2" style={{ paddingLeft: `${depth * 20 + 8}px` }}>
         <button type="button" onClick={() => onOpen(t)} className="flex items-center gap-2 text-left hover:underline">
           <span className="font-mono text-[11px] text-muted-foreground">{t.code}</span>

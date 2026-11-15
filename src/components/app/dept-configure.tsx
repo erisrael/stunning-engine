@@ -1,5 +1,10 @@
 "use client";
 
+import { ImportTemplateButton } from "./import-template-button";
+
+
+import { Checkbox } from "@/components/ui/checkbox";
+
 // The department's Configure tab: names, statuses, task types, priorities, labels, custom fields, project statuses,
 // KPIs, rights per position, features and notifications. Edits are collected and saved together as a new version;
 // earlier versions can be restored. Items in use can be switched off but not removed.
@@ -118,6 +123,7 @@ export function DeptConfigure({
           <Button size="sm" variant="outline" onClick={() => fileRef.current?.click()}>
             <UploadIcon /> Import
           </Button>
+          <ImportTemplateButton template={{ name: `${dept}-configuration-template.json`, mime: "application/json", text: JSON.stringify(config, null, 2) }} hint="Starts from the saved department configuration. Edit the file, import it, review, then Save changes." />
           <Button size="sm" variant="outline" onClick={exportJson}>
             <DownloadIcon /> Export
           </Button>
@@ -371,11 +377,11 @@ export function DeptConfigure({
                       </td>
                       {CONFIG_POSITIONS.map((p) => (
                         <td key={p} className="p-2 text-center">
-                          <Switch
+                          <Checkbox
                             aria-label={`${POSITION_LABELS[p]}: ${r.label}`}
                             checked={c.rights[p][r.key]}
                             disabled={p === "head" && r.key === "configure"}
-                            onCheckedChange={(v) => set("rights", { ...c.rights, [p]: { ...c.rights[p], [r.key]: v } })}
+                            onCheckedChange={(v) => set("rights", { ...c.rights, [p]: { ...c.rights[p], [r.key]: v === true } })}
                           />
                         </td>
                       ))}
