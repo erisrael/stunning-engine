@@ -353,10 +353,10 @@ export async function listDocs(user: AppUser, d: string) {
 
 // Heads and Admin can explicitly review their own submission. Other authors need another lead or head.
 async function docReviewOptions(user: AppUser, access: WorkAccess) {
-  const selfReview = !access.readOnly && (access.position === "head" || can(user, "users.manage"));
+  const selfReview = !access.readOnly && (access.position === "head" || can(user, "users.manage") || user.roles.includes("admin"));
   const managers = new Set(await deptManagers(access.dept));
   const eligible = (await deptPeople(access.dept))
-    .filter(person => managers.has(person.id) && (person.id !== user.id || selfReview))
+    .filter(person => (managers.has(person.id) || (selfReview && person.id === user.id)) && (person.id !== user.id || selfReview))
     .map(person => ({ id: person.id, name: person.name, self: person.id === user.id }));
   if (selfReview && !eligible.some(person => person.id === user.id)) eligible.push({ id: user.id, name: user.name, self: true });
   return { selfReview, eligible };
@@ -397,7 +397,7 @@ export async function getDoc(user: AppUser, d: string, id: string) {
     canEdit: !a.readOnly,
     canSelfReview: reviewOptions.selfReview,
     eligibleReviewers: reviewOptions.eligible,
-    canApprove: !a.readOnly && reviewers.includes(user.id) && r.status === "review" && (can(user, "users.manage") || (await deptManagers(a.dept)).includes(user.id)),
+    canApprove: !a.readOnly && reviewers.includes(user.id) && r.status === "review" && (can(user, "users.manage") || user.roles.includes("admin") || (await deptManagers(a.dept)).includes(user.id)),
   };
 }
 export type DocView = Awaited<ReturnType<typeof getDoc>>;
@@ -450,7 +450,7 @@ export async function decideDoc(user: AppUser, d: string, id: string, approve: b
   const r = await get<DocRow>("SELECT * FROM dept_docs WHERE id = ? AND dept = ?", id, a.dept);
   if (!r || r.status !== "review") throw new WorkflowError("INVALID_STATE", "This document is not waiting for review.");
   const reviewers = parseJson<string[]>(r.reviewers, []);
-  if ((!can(user, "users.manage") && !(await deptManagers(a.dept)).includes(user.id)) || !reviewers.includes(user.id)) throw new WorkflowError("FORBIDDEN", "Only the named reviewers decide.");
+  if ((!can(user, "users.manage") && !user.roles.includes("admin") && !(await deptManagers(a.dept)).includes(user.id)) || !reviewers.includes(user.id)) throw new WorkflowError("FORBIDDEN", "Only the named reviewers decide.");
   const now = nowIso();
   if (!approve) {
     if (!note?.trim()) throw new WorkflowError("VALIDATION", "Say what needs to change.");
