@@ -1063,6 +1063,7 @@ function DocEditor({ dept, id, people, workspace, onBack }: { dept: string; id: 
     if (!r.ok) return void toast.error(r.error);
     const v = r.data as DocView;
     setD(v);
+    setReviewers(selected => selected.filter(id => v.eligibleReviewers.some(person => person.id === id)));
     setTitle(v.title);
     setBody(v.body);
   }, [dept, id]);
@@ -1119,18 +1120,18 @@ function DocEditor({ dept, id, people, workspace, onBack }: { dept: string; id: 
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle className="text-base">Document Review &amp; Approval Workflow</CardTitle>
-              <Badge variant={d.status === "approved" ? "default" : d.status === "in_review" ? "secondary" : "outline"}>
+              <Badge variant={d.status === "approved" ? "default" : d.status === "review" ? "secondary" : "outline"}>
                 {d.status === "draft"
                   ? "Draft (Editable by any Dev)"
-                  : d.status === "in_review"
-                  ? "Under Team Lead Review"
+                  : d.status === "review"
+                  ? "Under review"
                   : d.status === "approved"
                   ? "Approved Specification"
                   : "Changes Requested"}
               </Badge>
             </div>
             <CardDescription>
-              Any developer can create and edit specs; Team Lead and assigned reviewers review, approve, or request modifications.
+              Select an eligible lead or head to review. Department heads and Admin may explicitly select themselves.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
@@ -1155,25 +1156,27 @@ function DocEditor({ dept, id, people, workspace, onBack }: { dept: string; id: 
             )}
             {d.status === "draft" && d.canEdit && (
               <div className="space-y-2 pt-1 border-t">
-                <span className="text-xs text-muted-foreground">Select Team Lead / Reviewers to evaluate:</span>
+                <span className="text-xs text-muted-foreground">Select reviewers:</span>
                 <div className="flex flex-wrap gap-1.5">
-                  {people.map((p) => {
+                  {d.eligibleReviewers.map((p) => {
                     const on = reviewers.includes(p.id);
                     return (
                       <button key={p.id} type="button" aria-pressed={on} onClick={() => setReviewers(on ? reviewers.filter((x) => x !== p.id) : [...reviewers, p.id])} className={cn("rounded-full border px-2 py-0.5 text-xs", on ? "border-primary bg-primary text-primary-foreground" : "hover:bg-muted")}>
-                        {p.name}
+                        {p.name}{p.self ? " (you, head/Admin review)" : ""}
                       </button>
                     );
                   })}
                 </div>
+                {!d.eligibleReviewers.length && <p className="text-sm text-muted-foreground">No eligible reviewer is available. A department head or Admin can assign another lead or head in Admin, Departments.</p>}
+                {d.canSelfReview && <p className="text-xs text-muted-foreground">As head or Admin, select yourself to submit for your own review. Approval is a separate action.</p>}
                 <Button size="sm" className="gap-1.5" disabled={!reviewers.length || dirty || busy === "submit"} onClick={async () => (await run("submit", () => A.submitDocAction(dept, id, reviewers), "Submitted for review")) && load()}>
-                  <CheckCircle2Icon className="size-3.5" /> Submit for Team Lead Review
+                  <CheckCircle2Icon className="size-3.5" /> Submit for review
                 </Button>
               </div>
             )}
             {d.canApprove && (
               <div className="space-y-2 pt-2 border-t">
-                <span className="text-xs font-semibold text-foreground">Team Lead Decision:</span>
+                <span className="text-xs font-semibold text-foreground">Reviewer decision:</span>
                 <Textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Review feedback or requested modifications..." aria-label="Review comments" />
                 <div className="flex gap-2">
                   <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1" onClick={async () => (await run("ok", () => A.decideDocAction(dept, id, true, note), "Specification Approved")) && load()}>

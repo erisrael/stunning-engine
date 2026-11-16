@@ -114,6 +114,23 @@ async function main() {
   doc = await ds.getDoc(lead, "dev", docId);
   check("changing an approved document starts a new version", doc.version === 2 && doc.status === "draft" && doc.versions.some((v) => v.version === 1 && v.status === "approved"), { v: doc.version, s: doc.status });
 
+  // Heads and Admin may submit for their own explicit review, without opening self-review to leads.
+  const head = await mk("head");
+  await setPosition(admin, "dev", head.id, "head");
+  const headDoc = await ds.createDoc(head, "dev", { kind: "srs", title: "Head review" });
+  check("heads see themselves as eligible reviewers", (await ds.getDoc(head, "dev", headDoc)).eligibleReviewers.some(p => p.id === head.id && p.self));
+  check("leads do not see themselves as reviewers", !(await ds.getDoc(lead, "dev", docId)).eligibleReviewers.some(p => p.id === lead.id));
+  await ds.submitDoc(head, "dev", headDoc, [head.id]);
+  check("heads can submit their own document for review", (await ds.getDoc(head, "dev", headDoc)).canApprove);
+  check("head self-review is an explicit approval step", (await ds.decideDoc(head, "dev", headDoc, true)) === "approved");
+  const adminDoc = await ds.createDoc(admin, "dev", { kind: "srs", title: "Admin review" });
+  await ds.submitDoc(admin, "dev", adminDoc, [admin.id]);
+  check("Admin can self-review without a department position", (await ds.decideDoc(admin, "dev", adminDoc, true)) === "approved");
+  await ds.saveDoc(head, "dev", headDoc, { title: "Head review v2", body: "Changed" });
+  await ds.submitDoc(head, "dev", headDoc, [head.id]);
+  await setPosition(admin, "dev", head.id, "member");
+  check("removing head membership removes approval rights", !!(await throws(() => ds.decideDoc(head, "dev", headDoc, true))));
+
   // DORA from releases
   await run("INSERT INTO dept_releases (id, dept, name, notes, task_count, created_by, created_at) VALUES ('rel_t1', 'dev', 'v1.0', '', 1, ?, ?)", lead.id, nowIso());
   await run("UPDATE dept_tasks SET release_id = 'rel_t1' WHERE id = ?", t1);

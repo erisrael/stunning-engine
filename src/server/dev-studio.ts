@@ -14,7 +14,7 @@ import { notify } from "./notifications";
 import { deptManagers, deptPeople } from "./departments";
 import { need, workAccess, type WorkAccess } from "./dept-config";
 import { saveTask } from "./work";
-import type { AppUser } from "./users";
+import { can, type AppUser } from "./users";
 import { labelOf, type SprintConfig } from "@/lib/dept-config";
 import { DOC_KINDS, DOC_TEMPLATES, requirementIds, type DocKind } from "@/lib/dev-docs";
 import { deptPath } from "@/lib/work";
@@ -351,6 +351,17 @@ export async function listDocs(user: AppUser, d: string) {
   ).map((r) => ({ id: r.id, kind: r.kind, title: r.title, status: r.status, version: Number(r.version), project: r.project, projectId: r.project_id, author: r.author, updatedAt: r.updated_at }));
 }
 
+// Heads and Admin can explicitly review their own submission. Other authors need another lead or head.
+async function docReviewOptions(user: AppUser, access: WorkAccess) {
+  const selfReview = !access.readOnly && (access.position === "head" || can(user, "users.manage"));
+  const managers = new Set(await deptManagers(access.dept));
+  const eligible = (await deptPeople(access.dept))
+    .filter(person => managers.has(person.id) && (person.id !== user.id || selfReview))
+    .map(person => ({ id: person.id, name: person.name, self: person.id === user.id }));
+  if (selfReview && !eligible.some(person => person.id === user.id)) eligible.push({ id: user.id, name: user.name, self: true });
+  return { selfReview, eligible };
+}
+
 export async function getDoc(user: AppUser, d: string, id: string) {
   const a = await workAccess(user, d);
   const r = await get<DocRow>("SELECT * FROM dept_docs WHERE id = ? AND dept = ?", id, a.dept);
@@ -363,6 +374,8 @@ export async function getDoc(user: AppUser, d: string, id: string) {
   const reviewers = parseJson<string[]>(r.reviewers, []);
   const approvals = parseJson<{ by: string; at: string }[]>(r.approvals, []);
   const names = new Map((await deptPeople(a.dept)).map((p) => [p.id, p.name]));
+  names.set(user.id, user.name);
+  const reviewOptions = await docReviewOptions(user, a);
   return {
     id: r.id,
     kind: r.kind,
@@ -382,7 +395,9 @@ export async function getDoc(user: AppUser, d: string, id: string) {
       id,
     ),
     canEdit: !a.readOnly,
-    canApprove: reviewers.includes(user.id) && r.status === "review",
+    canSelfReview: reviewOptions.selfReview,
+    eligibleReviewers: reviewOptions.eligible,
+    canApprove: !a.readOnly && reviewers.includes(user.id) && r.status === "review" && (can(user, "users.manage") || (await deptManagers(a.dept)).includes(user.id)),
   };
 }
 export type DocView = Awaited<ReturnType<typeof getDoc>>;
@@ -421,10 +436,12 @@ export async function submitDoc(user: AppUser, d: string, id: string, reviewerId
   const r = await get<DocRow>("SELECT * FROM dept_docs WHERE id = ? AND dept = ?", id, a.dept);
   if (!r) throw new WorkflowError("NOT_FOUND", "Document not found.");
   if (r.status !== "draft") throw new WorkflowError("INVALID_STATE", "Only a draft is sent for review.");
-  const people = await deptManagers(a.dept);
-  const reviewers = [...new Set(reviewerIds.filter((x) => people.includes(x) && x !== user.id))].slice(0, 10);
-  if (!reviewers.length) throw new WorkflowError("VALIDATION", "Choose a team lead or department head as reviewer (not yourself).");
+  const options = await docReviewOptions(user, a);
+  const reviewers = [...new Set(reviewerIds)];
+  if (!reviewers.length || reviewers.length > 10 || reviewers.some(id => !options.eligible.some(person => person.id === id)))
+    throw new WorkflowError("VALIDATION", options.selfReview ? "Choose a team lead or department head. You may select yourself as head or Admin." : "Choose another team lead or department head as reviewer.");
   await run("UPDATE dept_docs SET status = 'review', reviewers = ?, approvals = '[]', updated_at = ? WHERE id = ?", JSON.stringify(reviewers), nowIso(), id);
+  await audit({ actor: user }, { action: `${a.dept}.doc.review`, summary: `${user.name} submitted "${r.title}" version ${r.version} for review${reviewers.includes(user.id) ? " (includes head/Admin self-review)" : ""}` });
   await notify(reviewers, { type: "approval", title: `Review: ${r.title}`, body: `${user.name} asks you to review version ${r.version}.`, link: `/dashboard`, dedupeKey: `doc-review:${id}:${r.version}` }, nowIso(), user.id);
 }
 
@@ -433,7 +450,7 @@ export async function decideDoc(user: AppUser, d: string, id: string, approve: b
   const r = await get<DocRow>("SELECT * FROM dept_docs WHERE id = ? AND dept = ?", id, a.dept);
   if (!r || r.status !== "review") throw new WorkflowError("INVALID_STATE", "This document is not waiting for review.");
   const reviewers = parseJson<string[]>(r.reviewers, []);
-  if (!(await deptManagers(a.dept)).includes(user.id) || !reviewers.includes(user.id)) throw new WorkflowError("FORBIDDEN", "Only the named reviewers decide.");
+  if ((!can(user, "users.manage") && !(await deptManagers(a.dept)).includes(user.id)) || !reviewers.includes(user.id)) throw new WorkflowError("FORBIDDEN", "Only the named reviewers decide.");
   const now = nowIso();
   if (!approve) {
     if (!note?.trim()) throw new WorkflowError("VALIDATION", "Say what needs to change.");
