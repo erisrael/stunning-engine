@@ -570,7 +570,7 @@ export function ReportDialog({ target, evidence, onClose }: { target: { targetTy
 // ---------------------------------------------------------------------------
 
 export function ForwardDialog({ message, plainText, sourceName, viewerId, onClose }: { message: ChatMessage; plainText: string; sourceName: string; viewerId: string; onClose: () => void }) {
-  const [targets, setTargets] = React.useState<{ groups: { id: string; name: string; kind: "group" | "channel" }[]; people: { id: string; name: string; handle: string }[] } | null>(null);
+  const [targets, setTargets] = React.useState<{ groups: { id: string; name: string; kind: "group" | "channel" }[]; people: { id: string; name: string; handle: string; priority?: number }[] } | null>(null);
   const [picked, setPicked] = React.useState<Set<string>>(new Set());
   const [q, setQ] = React.useState("");
   const [busy, setBusy] = React.useState(false);
@@ -654,7 +654,7 @@ export function ForwardDialog({ message, plainText, sourceName, viewerId, onClos
                   <Checkbox checked={picked.has(`u:${p.id}`)} onCheckedChange={() => toggle(`u:${p.id}`)} />
                   <UserAvatar name={p.name} />
                   <span className="flex-1 truncate">{p.name}</span>
-                  <span className="text-xs text-muted-foreground">@{p.handle}</span>
+                  <span className="text-xs text-muted-foreground">{p.priority ? "Lead / Admin" : `@${p.handle}`}</span>
                 </label>
               ))}
         </div>

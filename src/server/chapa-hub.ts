@@ -250,21 +250,42 @@ const apiError = (r: { status: number; json: unknown }) => {
   return typeof j?.message === "string" ? j.message : j?.message ? JSON.stringify(j.message).slice(0, 200) : `HTTP ${r.status}`;
 };
 
-// The transactions list comes in a few shapes; paging may be Laravel-style (next_page_url) or absent.
-export function parseTxList(json: unknown): { list: Record<string, unknown>[]; next: string | null; lastPage: number | null } {
+// The transactions list comes in a few response shapes; paging may be explicit or absent.
+export function parseTxList(json: unknown): { list: Record<string, unknown>[]; next: string | null; lastPage: number | null; hasNext: boolean | null } {
   const j = (json ?? {}) as Record<string, any>;
   const d = j.data;
   const list: Record<string, unknown>[] = Array.isArray(d) ? d : Array.isArray(d?.transactions) ? d.transactions : Array.isArray(d?.data) ? d.data : Array.isArray(j.transactions) ? j.transactions : [];
-  const p = d?.pagination ?? j.pagination ?? (d && !Array.isArray(d) ? d : null) ?? {};
-  const next = typeof p?.next_page_url === "string" && p.next_page_url ? p.next_page_url : null;
-  const lastPage = Number(p?.last_page ?? p?.total_pages) || null;
-  return { list, next, lastPage };
+  // Chapa responses may put paging in `pagination`, `meta`, `links`, or beside
+  // the data. Read all supported variants so a valid page is not mistaken for
+  // the end of the dataset.
+  const p = d?.pagination ?? j.pagination ?? d?.meta ?? j.meta ?? (d && !Array.isArray(d) ? d : null) ?? {};
+  const links = j.links ?? d?.links ?? {};
+  const nextValue = p?.next_page_url ?? p?.next ?? links?.next;
+  const next = typeof nextValue === "string" && nextValue ? nextValue : null;
+  const currentPage = Number(p?.current_page ?? p?.currentPage ?? p?.page ?? j.current_page ?? j.currentPage) || null;
+  const lastPage = Number(p?.last_page ?? p?.lastPage ?? p?.total_pages ?? p?.totalPages ?? j.last_page ?? j.total_pages) || null;
+  const explicitNoNext = Object.hasOwn(p, "next_page_url") || Object.hasOwn(p, "next") || Object.hasOwn(links, "next");
+  const hasNext = next ? true : lastPage && currentPage ? currentPage < lastPage : explicitNoNext ? false : null;
+  return { list, next, lastPage, hasNext };
+}
+
+export function parseChapaDate(created: unknown): string {
+  if (!created) return nowIso();
+  const s = String(created).trim();
+  if (!s) return nowIso();
+  const zoned = /(?:Z|[+-]\d{2}:?\d{2}|GMT|UTC)$/i.test(s);
+  if (!zoned && /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}/.test(s)) {
+    const iso = new Date(s.replace(" ", "T") + "+03:00");
+    if (!Number.isNaN(+iso)) return iso.toISOString();
+  }
+  const d = new Date(s);
+  return !Number.isNaN(+d) ? d.toISOString() : nowIso();
 }
 
 export function txFromApi(t: Record<string, any>, r: Pick<AccRow, "currency">) {
   const c = (t.customer ?? {}) as Record<string, any>;
   const created = t.created_at ?? t.createdAt ?? t.date ?? t.updated_at;
-  const at = created && !Number.isNaN(Date.parse(created)) ? new Date(created).toISOString() : nowIso();
+  const at = parseChapaDate(created);
   return {
     txRef: String(t.tx_ref ?? t.trans_id ?? t.reference ?? t.ref_id ?? t.id ?? "").slice(0, 200),
     refId: (t.ref_id ?? t.chapa_reference ?? t.reference ?? null) as string | null,
@@ -329,7 +350,7 @@ export async function syncChapaBusiness(accountId: string, opts: { full?: boolea
     while (path && page <= 500) {
       const res = await chapaApi(r, path);
       if (!res.ok) throw new Error(apiError(res));
-      const { list, next, lastPage } = parseTxList(res.json);
+      const { list, next, lastPage, hasNext } = parseTxList(res.json);
       if (!list.length) {
         reachedEnd = true;
         break;
@@ -354,7 +375,7 @@ export async function syncChapaBusiness(accountId: string, opts: { full?: boolea
       if (since && oldest < since) break;
       if (next) path = next;
       else if (lastPage && page < lastPage) path = `/v1/transactions?page=${page + 1}&per_page=100`;
-      else if (!lastPage && list.length >= 100) path = `/v1/transactions?page=${page + 1}&per_page=100`;
+      else if (hasNext !== false && !lastPage && list.length > 0) path = `/v1/transactions?page=${page + 1}&per_page=100`;
       else {
         reachedEnd = true;
         path = null;

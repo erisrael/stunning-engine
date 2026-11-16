@@ -42,7 +42,17 @@ export async function forwardTargetsAction() {
       "SELECT g.id, g.name, g.kind, m.member_role FROM chat_groups g JOIN chat_members m ON m.group_id = g.id AND m.user_id = ? WHERE g.archived = 0 AND g.kind <> 'direct' ORDER BY g.last_message_at DESC NULLS LAST",
       viewer.id,
     );
-    const people = await all<{ id: string; name: string; handle: string }>("SELECT id, name, handle FROM users WHERE active = 1 AND id <> ? ORDER BY name", viewer.id);
+    const people = await all<{ id: string; name: string; handle: string; priority: number }>(
+      `SELECT u.id, u.name, u.handle,
+        CASE WHEN EXISTS (
+          SELECT 1 FROM role_assignments r
+          WHERE r.user_id = u.id AND r.role IN ('admin', 'owner', 'developer', 'finance_manager')
+        ) THEN 1 ELSE 0 END AS priority
+       FROM users u
+       WHERE u.active = 1 AND u.id <> ?
+       ORDER BY priority DESC, u.name`,
+      viewer.id,
+    );
     return {
       groups: groups.filter((g) => g.kind !== "channel" || g.member_role === "admin").map((g) => ({ id: g.id, name: g.name, kind: g.kind as "group" | "channel" })),
       people,

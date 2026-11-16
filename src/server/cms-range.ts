@@ -234,7 +234,8 @@ async function viaNoorFilter(t: CmsTable, filter: CmsRemoteFilter, base: Base, f
   const outside = first.dates.filter((d) => d < lo || d >= hi).length;
   if (first.dates.length >= 3 && outside > first.dates.length / 2) return null;
   const pages = await rest(t, q, first, "Noor date filter", progress);
-  return { records: pages.flatMap((p) => p.records), total: first.total, exact: false };
+  const allRecords = pages.flatMap((p) => p.records);
+  return { records: allRecords, total: Math.max(first.total, allRecords.length), exact: false };
 }
 
 async function viaSortedSearch(t: CmsTable, column: string, base: Base, from: string, until: string, progress: (m: string) => Promise<void>, now: number, newestFirst = true) {
@@ -253,7 +254,9 @@ async function viaSortedSearch(t: CmsTable, column: string, base: Base, from: st
       return time !== null && time >= start0 && time < end0;
     };
     const out = p1.records.filter(keep);
-    if (Math.min(...p1.dates) < start0 || p1.pages === 1) return { records: out, total: out.length, exact: true };
+    if ((p1.dates.length && Math.max(...p1.dates) < start0) || (p1.pages === 1 && p1.records.length < 50)) {
+      return { records: out, total: out.length, exact: true };
+    }
     // How many pages the range needs, judged from the time the first page covers (plus one for safety).
     const span1 = Math.max(1, Math.max(...p1.dates) - Math.min(...p1.dates));
     let step = Math.min(CONCURRENCY, Math.max(1, Math.ceil((Math.min(...p1.dates) - start0) / span1) + 1));
@@ -261,7 +264,7 @@ async function viaSortedSearch(t: CmsTable, column: string, base: Base, from: st
       const batch = await Promise.all(Array.from({ length: Math.min(step, p1.pages - p + 1) }, (_, i) => small(p + i)));
       await progress(`Newest first: ${Math.min(p1.pages, p + CONCURRENCY - 1)} pages read`);
       out.push(...batch.flatMap((b) => b.records).filter(keep));
-      if (batch.some((b) => b.dates.length && Math.min(...b.dates) < start0)) break;
+      if (batch.some((b) => b.records.length === 0 || (b.dates.length && Math.max(...b.dates) < start0))) break;
     }
     return { records: out, total: out.length, exact: true };
   }
@@ -287,7 +290,7 @@ async function viaSortedSearch(t: CmsTable, column: string, base: Base, from: st
       const batch = await Promise.all(Array.from({ length: Math.min(CONCURRENCY, n - p + 1) }, (_, i) => get(p + i)));
       await progress(`Newest first: ${Math.min(n, p + CONCURRENCY - 1)} of ${n} pages read`);
       out.push(...batch.flatMap((b) => b.records).filter(inRange));
-      if (batch.some((b) => b.dates.length && Math.min(...b.dates) < start)) break;
+      if (batch.some((b) => b.records.length === 0 || (b.dates.length && Math.max(...b.dates) < start))) break;
     }
     return { records: out, total: out.length, exact: true };
   }

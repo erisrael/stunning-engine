@@ -164,9 +164,14 @@ export async function queryCmsTable(html: string, baseUrl: string, cookie: strin
 }
 
 export function cmsPagination(html: string, count: number, page: number, pageSize: number) {
-  const match = plain(html).match(/Showing\s+([\d,]+)\s+to\s+([\d,]+)\s+of\s+([\d,]+)\s+results/i);
+  const match = plain(html).match(/(?:Showing|Displaying|Results)?\s*([\d,]+)\s*(?:to|-)\s*([\d,]+)\s+of\s+([\d,]+)\s*(?:results|records|entries|items)?/i);
   const number = (s: string) => Number(s.replace(/,/g, ""));
-  return match ? { from: number(match[1]), to: number(match[2]), totalResults: number(match[3]) } : { from: count ? (page - 1) * pageSize + 1 : 0, to: count ? (page - 1) * pageSize + count : 0, totalResults: count };
+  if (match) {
+    return { from: number(match[1]), to: number(match[2]), totalResults: number(match[3]) };
+  }
+  const hasNext = /wire:click="(?:nextPage|gotoPage\(\s*[2-9])/i.test(html) || /rel="next"/i.test(html);
+  const estimatedTotal = hasNext ? Math.max(count + 1, page * pageSize + 1) : count;
+  return { from: count ? (page - 1) * pageSize + 1 : 0, to: count ? (page - 1) * pageSize + count : 0, totalResults: estimatedTotal };
 }
 
 // Mount the remote form first; its signed snapshot and field names remain server-owned.
