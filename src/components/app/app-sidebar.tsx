@@ -168,6 +168,7 @@ function homeGroups(h: HomeDept, viewerId: string): { label: string; items: NavI
         label: "Studio",
         items: [
           { href: b, label: "Home", icon: HomeIcon, exact: true },
+          { href: `${b}/data`, label: "Data Manager", icon: SheetIcon, exact: true },
           { href: `${b}?tab=board`, label: "Board", icon: KanbanIcon, exact: true },
           { href: `${b}?tab=calendar`, label: "Calendar", icon: CalendarIcon, exact: true },
         ],
@@ -411,7 +412,7 @@ export function AppSidebar({
         { href: "/company", label: "Company overview", icon: Building2Icon, cap: "company.view" },
         { href: "/present", label: "Company presentation", icon: PresentationIcon, cap: "company.view" },
         { href: "/dev", label: "Dev team", icon: CodeIcon, cap: ["dev.access", "owners.view"], sub: deptViews("/dev", [{ label: "Sprint", view: "sprint" }, { label: "Repositories", view: "repos" }, { label: "Roadmap", view: "roadmap" }, { label: "Specs and docs", view: "docs" }, { label: "Releases and quality", view: "tools" }], has("users.manage")) },
-        { href: "/studio", label: "Studio", icon: BookOpenIcon, cap: ["studio.access", "owners.view"] },
+        { href: "/studio", label: "Studio", icon: BookOpenIcon, cap: ["studio.access", "owners.view"], sub: [{ label: "Home", href: "/studio" }, { label: "Data Manager", href: "/studio/data" }] },
         { href: "/marketing", label: "Marketing", icon: MegaphoneIcon, cap: ["marketing.access", "owners.view"], sub: deptViews("/marketing", [], has("users.manage")) },
         ...customDepts.map((d) => ({ href: `/d/${d.key}`, label: d.title, icon: BriefcaseIcon, sub: deptViews(`/d/${d.key}`, [], has("users.manage")) })),
         {
@@ -421,6 +422,7 @@ export function AppSidebar({
           cap: "hr.access",
           sub: [
             { label: "People", href: "/hr" },
+            { label: "Data Manager", href: "/hr/data" },
             { label: "Leave", href: "/hr?tab=leave" },
             { label: "Attendance", href: "/attendance?tab=team" },
             { label: "Hiring", href: "/hr?tab=hiring" },
@@ -443,6 +445,7 @@ export function AppSidebar({
             { label: "Overview", href: "/finance" },
             ...(has("finance.access") || has("finance.view")
               ? [
+                  { label: "Data Manager", href: "/finance/data" },
                   { label: "Transactions", href: "/finance?tab=transactions" },
                   { label: "Bills", href: "/finance?tab=bills" },
                   { label: "Invoices", href: "/finance?tab=invoices" },
@@ -627,6 +630,7 @@ export function AppSidebar({
       {
         label: "Assets & Compliance",
         items: [
+          { href: "/hr/data", label: "Data Manager", icon: SheetIcon, exact: true },
           { href: "/hr?tab=equipment", label: "Staff equipment", icon: LaptopIcon, exact: true },
           { href: "/resources", label: "Finance & equipment", icon: InboxIcon },
           { href: "/presenters", label: "Presenters & fees", icon: MicIcon },

@@ -20,6 +20,7 @@ export const SIDEBAR_ENTRIES: { key: string; label: string; group: string }[] = 
     settings:["recording","editing","uploading","publication","sla","destinations","calendar","lists","workspace","calls"],
     studio:["board","calendar","note","exam","flashcards","questions","team","configure"],
   }).flatMap(([section,tabs])=>tabs.map(tab=>({key:`/${section}?tab=${tab}`,label:tab[0].toUpperCase()+tab.slice(1),group:`${section} pages`}))),
+  ...["studio", "hr", "finance"].map(scope => ({ key: `/${scope}/data`, label: "Data Manager", group: `${scope} pages` })),
   {key:"/admin/data",label:"Data manager",group:"Manage"},
   {key:"/presenters",label:"Presenters",group:"Workflow"},
   { key: "/resources", label: "Finance requests & equipment", group: "Departments" },

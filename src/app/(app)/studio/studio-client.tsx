@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 
 import * as React from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -139,11 +140,15 @@ export function StudioClient({
   const [open, setOpen] = React.useState<string | "new" | null>(openId);
   const [questionDialog, setQuestionDialog] = React.useState<Question | "new" | null>(null);
   React.useEffect(() => setOpen(openId), [openId]);
+  React.useEffect(() => {
+    if (current === "questions" && openId) setQuestionDialog(questions.find(question => question.id === openId) ?? null);
+  }, [current, openId, questions]);
   const units = taxonomy.units.filter((u) => (!filter.gradeId || u.gradeId === filter.gradeId) && (!filter.subjectId || u.subjectId === filter.subjectId));
   const writable = !access.readOnly;
   const nav = (
     <Tabs value={current} onValueChange={(v) => (v === "dashboard" ? router.push(pathname) : go({ tab: v, status: null, sort: null, type: null, difficulty: null, period: null, person: null, grade: null }))}>
       <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1">
+        <Button size="sm" variant="outline" asChild><Link href="/studio/data">Data Manager</Link></Button>
         <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
         <TabsTrigger value="board">Board</TabsTrigger>
         <TabsTrigger value="calendar">Calendar</TabsTrigger>
@@ -245,7 +250,7 @@ export function StudioClient({
       )}
 
       {open && tab !== "questions" && <ResourceEditor id={open === "new" ? null : open} type={tab} taxonomy={taxonomy} access={access} viewerId={viewerId} people={people} onClose={() => (setOpen(null), openId && go({ open: null }))} />}
-      {questionDialog && <QuestionDialog question={questionDialog === "new" ? null : questionDialog} taxonomy={taxonomy} access={access} onClose={() => setQuestionDialog(null)} onSaved={() => (setQuestionDialog(null), router.refresh())} />}
+      {questionDialog && <QuestionDialog question={questionDialog === "new" ? null : questionDialog} taxonomy={taxonomy} access={access} onClose={() => (setQuestionDialog(null), openId && go({ open: null }))} onSaved={() => (setQuestionDialog(null), openId ? go({ open: null }) : router.refresh())} />}
     </div>
   );
 }

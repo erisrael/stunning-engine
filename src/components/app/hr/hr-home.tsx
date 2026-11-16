@@ -72,6 +72,7 @@ export function HrHome(props: {
     <div className="space-y-4">
       <Tabs value={props.tab} onValueChange={(v) => go({ tab: v === "people" ? null : v })}>
         <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1">
+          <Button size="sm" variant="outline" asChild><Link href="/hr/data">Data Manager</Link></Button>
           <TabsTrigger value="people">People</TabsTrigger>
           {(
             [

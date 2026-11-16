@@ -88,6 +88,7 @@ export function FinanceHome(props: {
     <div className="space-y-4">
       <Tabs value={tab} onValueChange={(v) => go({ tab: v === "overview" ? null : v })}>
         <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1">
+          {ctx.rights.view && <Button size="sm" variant="outline" asChild><Link href="/finance/data">Data Manager</Link></Button>}
           {FIN_TABS.filter(show).map((t) => (
             <TabsTrigger key={t} value={t}>
               {TAB_LABELS[t]}
