@@ -610,6 +610,18 @@ export async function customerTickets(app: AppFull, token: string) {
   );
 }
 
+export async function customerCallHistory(app: AppFull, token: string) {
+  const c = await customerByToken(app, token);
+  return all<{ id: string; ticket_id: string | null; direction: string; kind: string; status: string; started_at: string; ended_at: string | null; duration_s: number | null; recording_id: string | null }>(
+    `SELECT id, ticket_id, direction, kind, status, started_at, ended_at, duration_s, recording_id
+     FROM sup_calls
+     WHERE customer_id = ?
+     ORDER BY started_at DESC
+     LIMIT 100`,
+    c.id,
+  );
+}
+
 async function customerTicket(app: AppFull, token: string, ticketId: string) {
   const c = await customerByToken(app, token);
   const t = await get<{ id: string; number: number; subject: string; status: string; customer_id: string; assignee_id: string | null; rating: number | null }>("SELECT id, number, subject, status, customer_id, assignee_id, rating FROM sup_tickets WHERE id = ?", ticketId);

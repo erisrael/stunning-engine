@@ -262,8 +262,11 @@ export function parseTxList(json: unknown): { list: Record<string, unknown>[]; n
   const links = j.links ?? d?.links ?? {};
   const nextValue = p?.next_page_url ?? p?.next ?? links?.next;
   const next = typeof nextValue === "string" && nextValue ? nextValue : null;
-  const currentPage = Number(p?.current_page ?? p?.currentPage ?? p?.page ?? j.current_page ?? j.currentPage) || null;
-  const lastPage = Number(p?.last_page ?? p?.lastPage ?? p?.total_pages ?? p?.totalPages ?? j.last_page ?? j.total_pages) || null;
+  const currentPage = Number(p?.current_page ?? p?.currentPage ?? p?.page ?? j.current_page ?? j.currentPage) || (list.length ? 1 : null);
+  const explicitLastPage = Number(p?.last_page ?? p?.lastPage ?? p?.total_pages ?? p?.totalPages ?? j.last_page ?? j.total_pages) || null;
+  const total = Number(p?.total ?? p?.total_count ?? p?.totalCount ?? j.total ?? j.total_count ?? j.totalCount) || null;
+  const pageSize = Number(p?.per_page ?? p?.perPage ?? p?.page_size ?? p?.pageSize ?? j.per_page ?? j.perPage) || list.length || null;
+  const lastPage = explicitLastPage ?? (total && pageSize ? Math.ceil(total / pageSize) : null);
   const explicitNoNext = Object.hasOwn(p, "next_page_url") || Object.hasOwn(p, "next") || Object.hasOwn(links, "next");
   const hasNext = next ? true : lastPage && currentPage ? currentPage < lastPage : explicitNoNext ? false : null;
   return { list, next, lastPage, hasNext };

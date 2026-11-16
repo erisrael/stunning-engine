@@ -18,6 +18,8 @@ import { StudentsTable } from "@/components/app/support/students-table";
 import * as ch from "@/server/support-channels";
 import { all } from "@/server/db";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { MessageCircleIcon, PhoneCallIcon } from "lucide-react";
 
 export const metadata = { title: "Customer support" };
 
@@ -32,7 +34,7 @@ export default async function SupportPage({ searchParams }: { searchParams: Prom
   if (!admin && (!cfg.enabled || !agent))
     return (
       <div className="space-y-4">
-        <PageHeader title="Customer support" description="The help desk for the customers of Myseed's apps." />
+        <PageHeader title="Customer support" description="The help desk for the customers of Myseed's apps." actions={<Button asChild size="sm"><Link href="/chat"><MessageCircleIcon /> Open team chat</Link></Button>} />
         <EmptyState title={cfg.enabled ? "You are not a support agent" : "Customer support is switched off"} description={cfg.enabled ? "A support lead adds agents to the queues." : "Admin switches it on in Support setup."} />
       </div>
     );
@@ -172,7 +174,13 @@ export default async function SupportPage({ searchParams }: { searchParams: Prom
       <PageHeader
         title="Customer support"
         description="Questions and calls from customers of Myseed's apps, given out to agents by queue, with targets, recordings and monitoring."
-        actions={<StudentLookupDialog />}
+        actions={
+          <div className="flex flex-wrap gap-2">
+            <Button asChild size="sm" variant="outline"><Link href="/chat"><MessageCircleIcon /> Team chat</Link></Button>
+            {tabs.includes("calls") && <Button asChild size="sm" variant="outline"><Link href="/support?tab=calls"><PhoneCallIcon /> Call records</Link></Button>}
+            <StudentLookupDialog />
+          </div>
+        }
       />
       <nav className="flex gap-1 overflow-x-auto border-b" aria-label="Support">
         {tabs.map((t) => (

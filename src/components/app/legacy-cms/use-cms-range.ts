@@ -46,6 +46,54 @@ export function useCmsRange() {
     }
   }, []);
 
+  const loadAll = React.useCallback(async (q: { category: LegacyCmsCategory; search?: string; filters?: Record<string, string> }) => {
+    const id = ++run.current;
+    setLoading(true);
+    setProgress("Starting complete Noor scan…");
+    setError("");
+    try {
+      const all = await waitForCmsTask<{
+        records: Record<string, string>[];
+        headers: string[];
+        filters: CmsRangeResult["filters"];
+        total: number;
+        requests: number;
+      }>(
+        { kind: "all", ...q },
+        (m) => id === run.current && setProgress(m),
+        () => id !== run.current,
+        (task) => id === run.current && setTaskId(task),
+      );
+      if (id !== run.current) return null;
+      const result: CmsRangeResult = {
+        ok: true,
+        category: q.category,
+        from: "all",
+        until: "all",
+        method: "full-scan",
+        headers: all.headers,
+        records: all.records,
+        total: all.records.length,
+        requests: all.requests,
+        cachedDays: 0,
+        fetchedDays: 0,
+        undated: 0,
+        filters: all.filters,
+        fetchedAt: new Date().toISOString(),
+      };
+      setResult(result);
+      return result;
+    } catch (e) {
+      if (id === run.current) setError(e instanceof Error ? e.message : String(e));
+      return null;
+    } finally {
+      if (id === run.current) {
+        setLoading(false);
+        setProgress("");
+      }
+    }
+  }, []);
+
   // Stop: the job is cancelled and ends at its next Noor page.
   const stop = React.useCallback(() => {
     run.current++;
@@ -65,7 +113,7 @@ export function useCmsRange() {
     return null;
   }, []);
 
-  return { result, taskId, loading, progress, error, load, stop, open, setResult };
+  return { result, taskId, loading, progress, error, load, loadAll, stop, open, setResult };
 }
 
 export function exportHref(taskId: string, format: "xlsx" | "csv" | "pdf", spec: object) {

@@ -80,6 +80,7 @@ async function handle(request: Request, ctx: Ctx, method: "GET" | "POST") {
     } else if (method === "POST" && a === "identify") out = await sd.identify(app, body as Parameters<typeof sd.identify>[1]);
     else if (a === "customers" && id === "sync" && method === "POST") out = await (await import("@/server/connected-systems")).syncCustomers(app.public_key, request.headers.get("x-app-secret"), body.customers);
     else if (a === "tickets" && !id && method === "GET") out = await sd.customerTickets(app, token);
+    else if (a === "calls" && id === "history" && method === "GET") out = await sd.customerCallHistory(app, token);
     else if (a === "tickets" && !id && method === "POST") out = { id: await sd.customerCreateTicket(app, token, { subject: s(body.subject), message: s(body.message), priority: s(body.priority) as sd.Priority }) };
     else if (a === "tickets" && id && b === "messages" && method === "GET") out = await sd.customerMessages(app, token, id, new URL(request.url).searchParams.get("since"));
     else if (a === "tickets" && id && b === "messages" && path[3] && path[4] === "react" && method === "POST") out = await sd.customerReact(app, token, id, path[3], s(body.emoji));

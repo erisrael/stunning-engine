@@ -2,14 +2,14 @@
 import * as React from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { BarChart3Icon, CalendarRangeIcon, CheckCheckIcon, DatabaseIcon, RadioIcon, RefreshCwIcon, SearchIcon, SquareIcon } from "lucide-react";
+import { BarChart3Icon, CheckCheckIcon, DatabaseIcon, RadioIcon, RefreshCwIcon, SearchIcon, SquareIcon } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { EmptyState, StatusStrip, Toolbar, ViewSwitcher } from "@/components/app/page-kit";
-import { cmsDateMatches, cmsPresetRange, CMS_DATE_PRESETS } from "@/lib/cms-filters";
+import { StatusStrip, Toolbar, ViewSwitcher } from "@/components/app/page-kit";
+import { cmsDateMatches, cmsPresetRange } from "@/lib/cms-filters";
 import { LEGACY_CMS_CATEGORIES, type LegacyCmsCategory } from "@/lib/legacy-cms";
 import { waitForCmsTask } from "@/lib/cms-task-client";
 import { listLegacyCmsRecordsAction, resolveLegacyCmsFeedbackAction } from "@/app/actions/legacy-cms";
@@ -41,11 +41,14 @@ export function CmsLiveView({ categories, canReview, initialCategory, canManageD
   const [resolve, setResolve] = React.useState<Record<string, string> | null>(null);
   const cms = useCmsRange();
   const range = period ? cmsPresetRange(period, start, end) : null;
-  const key = range ? JSON.stringify([category, range, sent, filters, dateField]) : "";
+  const key = JSON.stringify([category, range, sent, filters, dateField]);
 
   React.useEffect(() => {
-    if (!range || source !== "live") return;
-    const t = setTimeout(() => void cms.load({ category, ...range, search: sent, filters, dateField: dateField || undefined }), 250);
+    if (source !== "live") return;
+    const t = setTimeout(() => {
+      if (range) void cms.load({ category, ...range, search: sent, filters, dateField: dateField || undefined });
+      else void cms.loadAll({ category, search: sent, filters });
+    }, 250);
     return () => clearTimeout(t);
   }, [key, source]); // eslint-disable-line react-hooks/exhaustive-deps
   React.useEffect(() => {
@@ -147,7 +150,7 @@ export function CmsLiveView({ categories, canReview, initialCategory, canManageD
         {source === "saved" && period && <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => setPeriod(null)}>All dates</Button>}
       </Toolbar>
 
-      {(source === "saved" || range) && (
+      {(source === "saved" || source === "live") && (
         <Toolbar
           label="Filters"
           end={
@@ -156,7 +159,7 @@ export function CmsLiveView({ categories, canReview, initialCategory, canManageD
                 {cms.loading ? (
                   <Button variant="destructive" size="sm" className="h-8 text-xs" onClick={cms.stop}><SquareIcon /> Stop</Button>
                 ) : (
-                  <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => range && void cms.load({ category, ...range, search: sent, filters, dateField: dateField || undefined, refresh: true })} title="Fetch again from Noor, ignoring cached days"><RefreshCwIcon /> Refresh</Button>
+                  <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => range ? void cms.load({ category, ...range, search: sent, filters, dateField: dateField || undefined, refresh: true }) : void cms.loadAll({ category, search: sent, filters })} title="Fetch the complete dataset from Noor"><RefreshCwIcon /> Fetch all</Button>
                 )}
                 <ExportButtons hrefs={hrefs} disabled={cms.loading} />
                 {cms.taskId && r && (
@@ -199,15 +202,7 @@ export function CmsLiveView({ categories, canReview, initialCategory, canManageD
         </Toolbar>
       )}
 
-      {source === "live" && !range ? (
-        <EmptyState
-          icon={<CalendarRangeIcon className="size-5" />}
-          title="Pick a date range to load"
-          description="Live data loads by date: Noor returns only the rows in the range, so even big tables come back in a few requests. Closed days are kept, so loading them again is instant. For everything already saved in Myseed, use Saved copy."
-          action={<ViewSwitcher label="Quick range" options={CMS_DATE_PRESETS.filter(([k]) => k !== "custom")} value={null} onChange={(p) => setPeriod(p)} />}
-        />
-      ) : (
-        <>
+      <>
           {source === "live" && cms.loading && <StatusStrip><RefreshCwIcon className="size-3.5 animate-spin" /> {cms.progress || "Loading from Noor…"}</StatusStrip>}
           {source === "live" && cms.error && !cms.loading && <StatusStrip tone="danger">{cms.error}</StatusStrip>}
           {source === "saved" && !saved && <StatusStrip>Opening the saved copy…</StatusStrip>}
@@ -232,7 +227,7 @@ export function CmsLiveView({ categories, canReview, initialCategory, canManageD
           {source === "live" && r && !cms.loading && (
             <StatusStrip tone="success">
               <strong className="text-foreground tabular-nums" data-testid="live-total">{r.total.toLocaleString()} {label.toLowerCase()}</strong>
-              <span>{r.from === r.until ? r.from : `${r.from} → ${r.until}`}</span>
+              <span>{r.from === "all" ? "complete Noor dataset" : r.from === r.until ? r.from : `${r.from} → ${r.until}`}</span>
               <span>· {METHOD_LABEL[r.method] ?? r.method}{r.dateField ? ` by ${r.dateFields?.find((f) => f.key === r.dateField)?.label ?? r.dateField}` : ""}</span>
               <span>· {r.requests ? `${r.requests} request${r.requests === 1 ? "" : "s"} to Noor` : "no requests to Noor"}</span>
               {r.cachedDays > 0 && <span>· {r.cachedDays} day{r.cachedDays === 1 ? "" : "s"} from the cache</span>}
@@ -260,8 +255,7 @@ export function CmsLiveView({ categories, canReview, initialCategory, canManageD
               rowClass={(x) => (fresh?.ids.has(invoiceKey(x)) ? "bg-emerald-500/10 animate-in fade-in" : undefined)}
             />
           )}
-        </>
-      )}
+      </>
       <HistoryDialog invoiceId={history} onClose={() => setHistory(null)} />
       <ResolveDialog row={resolve} onClose={() => setResolve(null)} />
     </div>

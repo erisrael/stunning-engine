@@ -3,7 +3,7 @@
 // The customer's support panel: conversations, a new question, replies (checked every few seconds), rating the help,
 // and calling an agent from the browser (after agreeing to the recording when calls are recorded).
 import * as React from "react";
-import { ArrowLeftIcon, BookOpenIcon, ExternalLinkIcon, FileIcon, ImageIcon, LinkIcon, Loader2Icon, PhoneIcon, PlusIcon, SendIcon, VideoIcon } from "lucide-react";
+import { ArrowLeftIcon, BookOpenIcon, ExternalLinkIcon, FileIcon, ImageIcon, LinkIcon, Loader2Icon, MessageCircleIcon, PhoneIcon, PlusIcon, SendIcon, VideoIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -15,6 +15,7 @@ import { ArticleBody, type PublicArticle } from "@/components/help/article-body"
 type User = { id: string | null; name: string | null; email: string | null; phone: string | null; hash: string | null; meta?: Record<string, string> };
 export type Session = { token: string; customer: { id: string; name: string }; app: { name: string; greeting: string | null; color: string | null }; online: boolean; hours: string; awayMessage: string; recordCalls: boolean; recordingNotice: string; channels?: { web_chat: boolean; telegram: boolean; calls: boolean; sms: boolean }; callEngine?: { engine: "browser" | "phone"; phone: string | null } };
 type Ticket = { id: string; number: number; subject: string; status: string; updated_at: string; rating: number | null };
+type CallRecord = { id: string; ticket_id: string | null; direction: string; kind: string; status: string; started_at: string; ended_at: string | null; duration_s: number | null; recording_id: string | null };
 
 const STATUS: Record<string, string> = { new: "Sent", open: "Being answered", pending: "Waiting for you", on_hold: "On hold", solved: "Solved", closed: "Closed" };
 
@@ -39,7 +40,9 @@ export function SupportWidget({ appKey: givenKey, initialUser, waitForParent, te
   const [s, setS] = React.useState<Session | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [tickets, setTickets] = React.useState<Ticket[]>([]);
+  const [calls, setCalls] = React.useState<CallRecord[]>([]);
   const [open, setOpen] = React.useState<string | "new" | null>(null);
+  const [tab, setTab] = React.useState<"home" | "chats" | "calls" | "help">("home");
   // English or Amharic, remembered on this browser.
   const [lang, setLangState] = React.useState<Lang>(() => {
     try {
@@ -104,6 +107,8 @@ export function SupportWidget({ appKey: givenKey, initialUser, waitForParent, te
         setS(j.session);
         const list = await fetch("/api/support/v1/tickets", { headers: { "X-App-Key": j.key, Authorization: `Bearer ${j.session.token}` } }).then((x) => x.json());
         if (!stop && Array.isArray(list)) setTickets(list);
+        const history = await fetch("/api/support/v1/calls/history", { headers: { "X-App-Key": j.key, Authorization: `Bearer ${j.session.token}` } }).then((x) => x.json());
+        if (!stop && Array.isArray(history)) setCalls(history);
       } catch (e) {
         if (!stop) setError(e instanceof Error ? e.message : "Support is not available.");
       }
@@ -134,8 +139,14 @@ export function SupportWidget({ appKey: givenKey, initialUser, waitForParent, te
         const session = await api<Session>("identify", { ...(user ?? {}), id }, "");
         if (stop) return;
         setS(session);
-        const list = await api<Ticket[]>("tickets", undefined, session.token);
-        if (!stop) setTickets(list);
+        const [list, history] = await Promise.all([
+          api<Ticket[]>("tickets", undefined, session.token),
+          api<CallRecord[]>("calls/history", undefined, session.token),
+        ]);
+        if (!stop) {
+          setTickets(list);
+          setCalls(history);
+        }
       } catch (e) {
         if (!stop) setError(e instanceof Error ? e.message : "Support is not available.");
       }
@@ -147,7 +158,12 @@ export function SupportWidget({ appKey: givenKey, initialUser, waitForParent, te
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appKey, user]);
 
-  const reload = async () => s && setTickets(await api<Ticket[]>("tickets"));
+  const reload = async () => {
+    if (!s) return;
+    const [nextTickets, nextCalls] = await Promise.all([api<Ticket[]>("tickets"), api<CallRecord[]>("calls/history")]);
+    setTickets(nextTickets);
+    setCalls(nextCalls);
+  };
   const color = s?.app.color ?? "#1A73E8";
   if (error) return <p className="p-6 text-center text-sm text-muted-foreground">{error}</p>;
   if (!s)
@@ -172,12 +188,26 @@ export function SupportWidget({ appKey: givenKey, initialUser, waitForParent, te
         </div>
         <p className="text-xs opacity-90">{s.online ? (am ? "መስመር ላይ ነን" : "We are online") : `${am ? "በተለምዶ" : "Usually"}: ${s.hours}`}</p>
       </header>
+      {!open && (
+        <nav className="grid grid-cols-4 border-b bg-card" aria-label="Support sections">
+          {([
+            ["home", am ? "መነሻ" : "Home"],
+            ["chats", am ? "ውይይቶች" : "Chats"],
+            ["calls", am ? "ጥሪዎች" : "Calls"],
+            ["help", am ? "እርዳታ" : "Help"],
+          ] as const).map(([key, label]) => (
+            <button key={key} type="button" className={cn("border-b-2 px-2 py-2 text-xs", tab === key ? "border-primary font-semibold text-primary" : "border-transparent text-muted-foreground")} onClick={() => setTab(key)}>
+              {label}
+            </button>
+          ))}
+        </nav>
+      )}
       <CallLayer api={api} s={s}>
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {open === null && (
+        {open === null && tab === "home" && (
           <div className="space-y-3 p-4">
             <p className="text-sm">{s.app.greeting ?? `Hi ${s.customer.name.split(" ")[0]}! How can we help?`}</p>
-            <Button className="w-full text-white" style={{ background: color }} onClick={() => setOpen("new")} data-new-question>
+            <Button className="w-full text-white" style={{ background: color }} onClick={() => { setTab("chats"); setOpen("new"); }} data-new-question>
               <PlusIcon /> {am ? "ጥያቄ ይጠይቁ" : "Ask a question"}
             </Button>
             {startCall && (
@@ -186,7 +216,7 @@ export function SupportWidget({ appKey: givenKey, initialUser, waitForParent, te
               </p>
             )}
             <CallButton api={api} s={s} ticketId={null} color={color} onTicket={(id) => (setOpen(id), void reload())} />
-            <HelpSearch api={api} onOpen={(id) => setOpen(`a:${id}`)} />
+            <HelpSearch api={api} onOpen={(id) => { setTab("help"); setOpen(`a:${id}`); }} />
             {telegram && <Resources api={api} am={am} />}
             {tickets.length > 0 && <p className="pt-2 text-xs font-medium text-muted-foreground">{am ? "ውይይቶችዎ" : "Your conversations"}</p>}
             <ul className="space-y-1">
@@ -203,6 +233,28 @@ export function SupportWidget({ appKey: givenKey, initialUser, waitForParent, te
             </ul>
           </div>
         )}
+        {open === null && tab === "chats" && (
+          <div className="space-y-3 p-4">
+            <div className="flex items-center justify-between">
+              <div><p className="font-semibold">{am ? "ውይይቶችዎ" : "Your conversations"}</p><p className="text-xs text-muted-foreground">{am ? "ሙሉ ታሪክዎ እዚህ ይቀመጣል" : "Your full conversation history is kept here."}</p></div>
+              <Button size="sm" onClick={() => setOpen("new")}><PlusIcon /> New</Button>
+            </div>
+            <ul className="space-y-2">
+              {tickets.map((t) => <li key={t.id}><button type="button" className="w-full rounded-xl border p-3 text-left hover:bg-muted" onClick={() => setOpen(t.id)}><span className="flex items-center gap-2"><MessageCircleIcon className="size-4 text-primary" /><span className="min-w-0 flex-1 truncate font-medium">{t.subject}</span><span className="text-xs text-muted-foreground">#{t.number}</span></span><span className="mt-1 block text-xs text-muted-foreground">{words(lang).status[t.status] ?? STATUS[t.status] ?? t.status} · {new Date(t.updated_at).toLocaleDateString()}</span></button></li>)}
+              {!tickets.length && <li className="rounded-xl border border-dashed p-5 text-center text-sm text-muted-foreground">No conversations yet.</li>}
+            </ul>
+          </div>
+        )}
+        {open === null && tab === "calls" && (
+          <div className="space-y-3 p-4">
+            <div><p className="font-semibold">{am ? "የጥሪ መዝገብ" : "Call records"}</p><p className="text-xs text-muted-foreground">Completed, missed, and requested calls.</p></div>
+            <ul className="space-y-2">
+              {calls.map((c) => <li key={c.id} className="flex items-center gap-3 rounded-xl border p-3"><PhoneIcon className={cn("size-4", c.status === "missed" ? "text-destructive" : "text-primary")} /><span className="min-w-0 flex-1"><span className="block font-medium">{c.direction === "inbound" ? "Incoming" : "Outgoing"} {c.kind === "web" ? "app call" : "phone call"}</span><span className="text-xs text-muted-foreground">{new Date(c.started_at).toLocaleString()} · {c.status}{c.duration_s ? ` · ${Math.round(c.duration_s / 60)} min` : ""}</span></span></li>)}
+              {!calls.length && <li className="rounded-xl border border-dashed p-5 text-center text-sm text-muted-foreground">No call records yet.</li>}
+            </ul>
+          </div>
+        )}
+        {open === null && tab === "help" && <div className="p-4"><HelpSearch api={api} onOpen={(id) => setOpen(`a:${id}`)} /></div>}
         {open === "new" && <NewQuestion api={api} color={color} onDone={(id) => (setOpen(id), void reload())} onArticle={(id) => setOpen(`a:${id}`)} />}
         {open?.startsWith("a:") && <ArticleView api={api} id={open.slice(2)} onAsk={() => setOpen("new")} />}
         {open && open !== "new" && !open.startsWith("a:") && (
