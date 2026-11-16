@@ -3,7 +3,7 @@
 // The customer's support panel: conversations, a new question, replies (checked every few seconds), rating the help,
 // and calling an agent from the browser (after agreeing to the recording when calls are recorded).
 import * as React from "react";
-import { ArrowLeftIcon, Loader2Icon, PlusIcon, SendIcon } from "lucide-react";
+import { ArrowLeftIcon, BookOpenIcon, ExternalLinkIcon, FileIcon, ImageIcon, LinkIcon, Loader2Icon, PhoneIcon, PlusIcon, SendIcon, VideoIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -18,7 +18,23 @@ type Ticket = { id: string; number: number; subject: string; status: string; upd
 
 const STATUS: Record<string, string> = { new: "Sent", open: "Being answered", pending: "Waiting for you", on_hold: "On hold", solved: "Solved", closed: "Closed" };
 
-export function SupportWidget({ appKey, initialUser, waitForParent }: { appKey: string; initialUser: User | null; waitForParent: boolean }) {
+// Telegram's Mini App data: the signed initData (from the page address, or Telegram's script when it is there).
+type TgWebApp = { initData?: string; ready?: () => void; expand?: () => void; colorScheme?: string };
+function telegramInitData(bot: string) {
+  const tg = (window as unknown as { Telegram?: { WebApp?: TgWebApp } }).Telegram?.WebApp;
+  if (tg?.initData) return tg.initData;
+  const fromHash = new URLSearchParams(window.location.hash.slice(1)).get("tgWebAppData");
+  if (fromHash) return fromHash;
+  try {
+    return sessionStorage.getItem(`myseed-tg-init:${bot}`) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+export function SupportWidget({ appKey: givenKey, initialUser, waitForParent, telegram = null, startCall = false }: { appKey: string; initialUser: User | null; waitForParent: boolean; telegram?: string | null; startCall?: boolean }) {
+  // Inside Telegram the key comes with the sign-in.
+  const [appKey, setAppKey] = React.useState(givenKey);
   const [user, setUser] = React.useState<User | null>(initialUser);
   const [s, setS] = React.useState<Session | null>(null);
   const [error, setError] = React.useState<string | null>(null);
@@ -60,7 +76,48 @@ export function SupportWidget({ appKey, initialUser, waitForParent }: { appKey: 
     return () => window.removeEventListener("message", on);
   }, [waitForParent]);
 
+  // Inside Telegram: sign in with Telegram's signed data (kept for this visit, as Telegram may clear the address).
   React.useEffect(() => {
+    if (!telegram) return;
+    let stop = false;
+    const tg = (window as unknown as { Telegram?: { WebApp?: TgWebApp } }).Telegram?.WebApp;
+    tg?.ready?.();
+    tg?.expand?.();
+    // Telegram's script may load after this: tell it again once it is there.
+    const later = window.setTimeout(() => {
+      const w = (window as unknown as { Telegram?: { WebApp?: TgWebApp } }).Telegram?.WebApp;
+      w?.ready?.();
+      w?.expand?.();
+    }, 800);
+    (async () => {
+      const initData = telegramInitData(telegram);
+      if (!initData) return setError(am ? "ይህን ከቴሌግራም ቦቱ ይክፈቱ።" : "Open this from the Telegram bot.");
+      try {
+        sessionStorage.setItem(`myseed-tg-init:${telegram}`, initData);
+      } catch {}
+      try {
+        const r = await fetch("/api/support/telegram/webapp", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ initData, bot: telegram }) });
+        const j = (await r.json().catch(() => ({}))) as { key?: string; session?: Session; error?: string };
+        if (!r.ok || !j.key || !j.session) throw new Error(j.error ?? "Support is not available.");
+        if (stop) return;
+        setAppKey(j.key);
+        setS(j.session);
+        const list = await fetch("/api/support/v1/tickets", { headers: { "X-App-Key": j.key, Authorization: `Bearer ${j.session.token}` } }).then((x) => x.json());
+        if (!stop && Array.isArray(list)) setTickets(list);
+      } catch (e) {
+        if (!stop) setError(e instanceof Error ? e.message : "Support is not available.");
+      }
+    })();
+    return () => {
+      stop = true;
+      window.clearTimeout(later);
+    };
+    // Once, when opened in Telegram.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [telegram]);
+
+  React.useEffect(() => {
+    if (telegram) return;
     if (!appKey) return setError("This support link is missing its app key.");
     if (!user && waitForParent) return;
     let stop = false;
@@ -123,8 +180,14 @@ export function SupportWidget({ appKey, initialUser, waitForParent }: { appKey: 
             <Button className="w-full text-white" style={{ background: color }} onClick={() => setOpen("new")} data-new-question>
               <PlusIcon /> {am ? "ጥያቄ ይጠይቁ" : "Ask a question"}
             </Button>
+            {startCall && (
+              <p className="flex items-center gap-2 rounded-lg border border-dashed p-2 text-sm" data-call-prompt>
+                <PhoneIcon className="size-4 shrink-0" style={{ color }} /> {am ? "ከድጋፍ ቡድናችን ጋር ለመነጋገር ከታች ይደውሉ።" : "Call our support team below. You talk in this app."}
+              </p>
+            )}
             <CallButton api={api} s={s} ticketId={null} color={color} onTicket={(id) => (setOpen(id), void reload())} />
             <HelpSearch api={api} onOpen={(id) => setOpen(`a:${id}`)} />
+            {telegram && <Resources api={api} am={am} />}
             {tickets.length > 0 && <p className="pt-2 text-xs font-medium text-muted-foreground">{am ? "ውይይቶችዎ" : "Your conversations"}</p>}
             <ul className="space-y-1">
               {tickets.map((t) => (
@@ -152,6 +215,36 @@ export function SupportWidget({ appKey, initialUser, waitForParent }: { appKey: 
 }
 
 export type Api = <T>(path: string, body?: unknown) => Promise<T>;
+
+type Resource = { id: string; title: string; kind: string; caption: string | null; fileName: string | null; size: number; url: string | null };
+const RES_ICON: Record<string, React.ComponentType<{ className?: string }>> = { video: VideoIcon, image: ImageIcon, pdf: FileIcon, document: FileIcon, link: LinkIcon };
+
+// The bot's resources (videos, PDFs, links the team added in Bot manager), opened here in the support app.
+function Resources({ api, am }: { api: Api; am: boolean }) {
+  const [list, setList] = React.useState<Resource[] | null>(null);
+  React.useEffect(() => void api<Resource[]>("resources").then(setList).catch(() => setList([])), [api]);
+  if (!list?.length) return null;
+  return (
+    <div className="space-y-1.5 pt-2" data-resources>
+      <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+        <BookOpenIcon className="size-3.5" /> {am ? "መረጃዎች" : "Resources"}
+      </p>
+      {list.map((r) => {
+        const Icon = RES_ICON[r.kind] ?? FileIcon;
+        return (
+          <a key={r.id} href={r.url ?? "#"} target="_blank" rel="noreferrer" className="flex items-center gap-2 rounded-lg border p-2 text-sm hover:bg-muted" data-resource={r.title}>
+            <Icon className="size-4 shrink-0 text-muted-foreground" />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate font-medium">{r.title}</span>
+              {r.caption && <span className="block truncate text-xs text-muted-foreground">{r.caption}</span>}
+            </span>
+            <ExternalLinkIcon className="size-3.5 shrink-0 text-muted-foreground" />
+          </a>
+        );
+      })}
+    </div>
+  );
+}
 
 type Found = { id: string; title: string; category: string | null; snippet: string };
 

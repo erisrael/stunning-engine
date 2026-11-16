@@ -6,7 +6,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { BotIcon, CalendarClockIcon, FileIcon, FileTextIcon, ImageIcon, LinkIcon, Loader2Icon, PlusIcon, SendIcon, Trash2Icon, VideoIcon, XIcon } from "lucide-react";
+import { BotIcon, CalendarClockIcon, FileIcon, FileTextIcon, ImageIcon, LinkIcon, Loader2Icon, PencilIcon, PlusIcon, SendIcon, Trash2Icon, VideoIcon, XIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -118,7 +118,71 @@ function SendControls({ bot, target, label }: { bot: string; target: { contentId
   );
 }
 
+// Change a library item: its title, caption and link, or a new file in place of the old one (also a link to a file
+// and back). Saved for the bot's menu, the support app and future sends.
+function ContentEditor({ bot, item, onClose }: { bot: string; item: ContentItem; onClose: () => void }) {
+  const router = useRouter();
+  const [title, setTitle] = React.useState(item.title);
+  const [caption, setCaption] = React.useState(item.caption ?? "");
+  const [url, setUrl] = React.useState(item.kind === "link" ? (item.url ?? "") : "");
+  const [file, setFile] = React.useState<File | null>(null);
+  const [busy, setBusy] = React.useState(false);
+  const save = async () => {
+    setBusy(true);
+    try {
+      let error: string | null = null;
+      if (file) {
+        if (file.size > 20 * 1048576) error = "The file is larger than 20 MB. Upload it to YouTube or a drive and add the link instead.";
+        else {
+          const q = new URLSearchParams({ bot, id: item.id, title, caption, name: file.name, active: item.active ? "1" : "0" });
+          const r = await fetch(`/api/support/bot-content?${q}`, { method: "POST", headers: { "Content-Type": file.type || "application/octet-stream" }, body: file }).then((x) => x.json().catch(() => ({ error: "Upload failed" })));
+          error = r.error ?? null;
+        }
+      } else {
+        const r = await A.saveLinkContentAction(bot, { id: item.id, title, caption, url: url.trim() || null, active: item.active });
+        error = r.ok ? null : (r.error ?? "Could not save.");
+      }
+      setBusy(false);
+      if (error) return void toast.error(error);
+      toast.success("Saved");
+      onClose();
+      router.refresh();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not save. Try again.");
+    } finally { setBusy(false); }
+  };
+  return (
+    <div className="grid w-full gap-2 rounded-md border border-primary/40 bg-primary/5 p-3 sm:grid-cols-2" data-content-editor={item.title}>
+      <div className="space-y-1">
+        <Label htmlFor={`ce-title-${item.id}`}>Title</Label>
+        <Input id={`ce-title-${item.id}`} value={title} onChange={(e) => setTitle(e.target.value)} />
+      </div>
+      <div className="space-y-1">
+        <Label htmlFor={`ce-url-${item.id}`}>{item.kind === "link" ? "Link" : "Link (instead of the file)"}</Label>
+        <Input id={`ce-url-${item.id}`} value={url} disabled={!!file} onChange={(e) => setUrl(e.target.value)} placeholder="https://..." />
+      </div>
+      <div className="space-y-1 sm:col-span-2">
+        <Label htmlFor={`ce-caption-${item.id}`}>Caption</Label>
+        <Textarea id={`ce-caption-${item.id}`} rows={2} value={caption} onChange={(e) => setCaption(e.target.value)} />
+      </div>
+      <div className="flex flex-wrap items-center gap-2 sm:col-span-2">
+        <Input type="file" aria-label={`New file for ${item.title}`} className="w-auto" accept="video/*,image/*,application/pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt" onChange={(e) => setFile(e.target.files?.[0] ?? null)} data-content-replace />
+        <span className="text-xs text-muted-foreground">{file ? `Replaces ${item.fileName ?? "the link"} (${size(file.size)})` : item.kind === "link" ? "Or choose a file to send instead of the link." : `Now: ${item.fileName}`}</span>
+        <span className="ml-auto flex gap-2">
+          <Button size="sm" variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button size="sm" disabled={busy || !title.trim() || (item.kind === "link" && !file && !url.trim())} onClick={save} data-content-save>
+            {busy && <Loader2Icon className="size-3.5 animate-spin" />} Save changes
+          </Button>
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function ContentSection({ bot, content, pushes }: { bot: string; content: ContentItem[]; pushes: Push[] }) {
+  const [editing, setEditing] = React.useState<string | null>(null);
   const router = useRouter();
   const { busy, go } = useRun();
   const [title, setTitle] = React.useState("");
@@ -205,9 +269,13 @@ function ContentSection({ bot, content, pushes }: { bot: string; content: Conten
                   <Switch checked={c.active} aria-label={`Show ${c.title} in the menu`} onCheckedChange={(v) => go(`a${c.id}`, () => A.saveLinkContentAction(bot, { id: c.id, title: c.title, caption: c.caption, active: v }))} />
                   In menu
                 </div>
-                <Button size="icon" variant="ghost" aria-label={`Remove ${c.title}`} onClick={() => confirm(`Remove "${c.title}"?`) && go(`d${c.id}`, () => A.deleteContentAction(c.id), "Removed")}>
+                <Button size="icon" variant="ghost" aria-label={`Edit ${c.title}`} aria-expanded={editing === c.id} onClick={() => setEditing(editing === c.id ? null : c.id)}>
+                  <PencilIcon className="size-4" />
+                </Button>
+                <Button size="icon" variant="ghost" aria-label={`Remove ${c.title}`} onClick={() => confirm(`Remove "${c.title}"? Scheduled sends of it are cancelled.`) && go(`d${c.id}`, () => A.deleteContentAction(c.id), "Removed")}>
                   <Trash2Icon className="size-4" />
                 </Button>
+                {editing === c.id && <ContentEditor bot={bot} item={c} onClose={() => setEditing(null)} />}
               </div>
             );
           })}

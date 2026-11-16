@@ -244,9 +244,27 @@ export async function newAppSecret(user: AppUser, id: string) {
 
 export type AppFull = { id: string; name: string; public_key: string; secret: string; origins: string; queue_id: string | null; verify_identity: number; greeting: string | null; color: string | null; active: number };
 
+// The support app inside the default Telegram bot (its customers belong to no system): the widget's API runs for
+// them as this app, keyed "telegram" and signed with the bot's own secret. Customers sign in only through
+// telegramMiniApp (Telegram's signed data), never by identify.
+export const TELEGRAM_APP_KEY = "telegram";
+export async function defaultTelegramApp(): Promise<AppFull> {
+  const st = parseJson<{ secret?: string; tokenEnc?: string }>((await get<{ value: string }>("SELECT value FROM settings WHERE key = 'sup.telegram'"))?.value, {});
+  if (!st.secret || !st.tokenEnc) throw new WorkflowError("FORBIDDEN", "The Telegram bot is not connected.");
+  return { id: null as unknown as string, name: "Telegram", public_key: TELEGRAM_APP_KEY, secret: `tg-app:${st.secret}`, origins: "[]", queue_id: null, verify_identity: 1, greeting: null, color: "#229ED9", active: 1 };
+}
+// The channel a customer's chat belongs to: Telegram customers (bot or Mini App) are on Telegram.
+const chatChannel = (externalId: string | null | undefined) => (/^tg:/.test(externalId ?? "") ? ("telegram" as const) : ("web_chat" as const));
+
 // The app a request comes from: its public key, and the page's web address when the app limits them.
 export async function appByKey(publicKey: string | null | undefined, origin: string | null | undefined) {
   if (!publicKey) throw new WorkflowError("FORBIDDEN", "Missing app key.");
+  if (publicKey === TELEGRAM_APP_KEY) {
+    // Served only to pages of this app (the Mini App), never to other sites.
+    if (origin) throw new WorkflowError("FORBIDDEN", "This web address may not use this app's support.");
+    if (!(await supportConfig()).enabled) throw new WorkflowError("INVALID_STATE", "Support is not available right now.");
+    return defaultTelegramApp();
+  }
   const a = await get<AppFull>("SELECT * FROM sup_apps WHERE public_key = ?", publicKey);
   if (!a || !Number(a.active)) throw new WorkflowError("FORBIDDEN", "Unknown or switched-off app key.");
   const origins = parseJson<string[]>(a.origins, []);
@@ -264,7 +282,9 @@ const tokenFor = (app: AppFull, customerId: string) => `${customerId}.${hmac(app
 // The app says who the customer is. With "verify identity" on, the app's server signs the customer's id with the
 // app secret (hash = HMAC-SHA256(secret, id), hex), so nobody can pretend to be another customer.
 export async function identify(app: AppFull, input: { id?: string | null; name?: string | null; email?: string | null; phone?: string | null; hash?: string | null; meta?: Record<string, unknown> | null }) {
+  if (app.public_key === TELEGRAM_APP_KEY) throw new WorkflowError("FORBIDDEN", "Open support from the Telegram bot.");
   const ext = clean(input.id, 120) || null;
+  if (/^tg:/i.test(ext ?? "")) throw new WorkflowError("FORBIDDEN", "Open support from the Telegram bot.");
   if (Number(app.verify_identity)) {
     if (!ext || !input.hash) throw new WorkflowError("FORBIDDEN", "This app signs its customers: send id and hash.");
     const want = hmac(app.secret, ext);
@@ -296,18 +316,40 @@ export async function identify(app: AppFull, input: { id?: string | null; name?:
       now,
     );
   }
+  return sessionFor(app, id);
+}
+
+// What the widget needs once the customer is known: their token, the app's look, who is online, the channels.
+export async function sessionFor(app: AppFull, customerId: string) {
+  const c = (await get<{ name: string; email: string | null; external_id: string | null; phone: string | null }>("SELECT name, email, external_id, phone FROM sup_customers WHERE id = ? AND app_id IS NOT DISTINCT FROM ?", customerId, app.id));
+  if (!c) throw new WorkflowError("FORBIDDEN", "Sign in to support again.");
   const cfg = await supportConfig();
   const online = await availableAgents(null, cfg);
-  const channels = (await import("./connected-systems")).channelsOf((await get<{ channels: string | null }>("SELECT channels FROM sup_apps WHERE id = ?", app.id))?.channels);
-  return { token: tokenFor(app, id), customer: { id, name, email }, app: { name: app.name, greeting: app.greeting, color: app.color }, channels, online: online.length > 0, hours: cfg.hours, awayMessage: cfg.awayMessage, recordCalls: cfg.recordCalls, recordingNotice: cfg.recordingNotice, callEngine: await (await import("./support-calls")).callEngineOf(app.id) };
+  const { channelsOf } = await import("./connected-systems");
+  const channels = app.id ? channelsOf((await get<{ channels: string | null }>("SELECT channels FROM sup_apps WHERE id = ?", app.id))?.channels) : channelsOf(null);
+  await run("UPDATE sup_customers SET app_seen_at = ? WHERE id = ?", nowIso(), customerId);
+  return {
+    token: tokenFor(app, customerId),
+    customer: { id: customerId, name: c.name, email: c.email, phone: c.phone, telegram: /^tg:/.test(c.external_id ?? "") },
+    app: { name: app.name, greeting: app.greeting, color: app.color },
+    channels,
+    online: online.length > 0,
+    hours: cfg.hours,
+    awayMessage: cfg.awayMessage,
+    recordCalls: cfg.recordCalls,
+    recordingNotice: cfg.recordingNotice,
+    callEngine: await (await import("./support-calls")).callEngineOf(app.id),
+  };
 }
 
 export async function customerByToken(app: AppFull, token: string | null | undefined) {
   const [id] = String(token ?? "").split(".");
   if (!id || !token || token !== tokenFor(app, id)) throw new WorkflowError("FORBIDDEN", "Sign in to support again.");
-  const c = await get<{ id: string; name: string; email: string | null; app_id: string }>("SELECT id, name, email, app_id FROM sup_customers WHERE id = ?", id);
-  if (!c || c.app_id !== app.id) throw new WorkflowError("FORBIDDEN", "Sign in to support again.");
-  await run("UPDATE sup_customers SET last_seen_at = ? WHERE id = ?", nowIso(), id);
+  const c = await get<{ id: string; name: string; email: string | null; app_id: string | null; external_id: string | null }>("SELECT id, name, email, app_id, external_id FROM sup_customers WHERE id = ?", id);
+  // The default Telegram app's customers belong to no system.
+  if (!c || (c.app_id ?? null) !== (app.id ?? null)) throw new WorkflowError("FORBIDDEN", "Sign in to support again.");
+  const now = nowIso();
+  await run("UPDATE sup_customers SET last_seen_at = ?, app_seen_at = ? WHERE id = ?", now, now, id);
   return c;
 }
 
@@ -537,9 +579,10 @@ async function ticketEvent(ticketId: string, event: "ticket.created" | "ticket.r
 }
 
 export async function customerCreateTicket(app: AppFull, token: string, input: { subject?: string; message: string; priority?: Priority }) {
-  await (await import("./connected-systems")).needChannel(app.id, "web_chat");
   const c = await customerByToken(app, token);
-  const id = await createTicketRow({ subject: input.subject ?? "", body: input.message, customerId: c.id, appId: app.id, appQueue: app.queue_id, channel: "widget", priority: input.priority === "urgent" ? "high" : input.priority, authorKind: "customer", authorId: c.id });
+  await (await import("./connected-systems")).needChannel(app.id, chatChannel(c.external_id));
+  // From the Telegram Mini App the ticket is a Telegram one, so replies also reach the chat.
+  const id = await createTicketRow({ subject: input.subject ?? "", body: input.message, customerId: c.id, appId: app.id, appQueue: app.queue_id, channel: chatChannel(c.external_id) === "telegram" ? "telegram" : "widget", priority: input.priority === "urgent" ? "high" : input.priority, authorKind: "customer", authorId: c.id });
   const who = await autoAssign(id);
   if (!who) {
     const leads = (await supportConfig()).leads;
@@ -594,8 +637,8 @@ export async function customerMessages(app: AppFull, token: string, ticketId: st
 }
 
 export async function customerReply(app: AppFull, token: string, ticketId: string, body: string, replyTo?: string | null) {
-  await (await import("./connected-systems")).needChannel(app.id, "web_chat");
   const { c, t } = await customerTicket(app, token, ticketId);
+  await (await import("./connected-systems")).needChannel(app.id, chatChannel((await get<{ external_id: string | null }>("SELECT external_id FROM sup_customers WHERE id = ?", c.id))?.external_id));
   const text = clean(body, 8000);
   if (!text) throw new WorkflowError("VALIDATION", "Write a message.");
   if (t.status === "closed") throw new WorkflowError("INVALID_STATE", "This conversation is closed. Start a new one.");

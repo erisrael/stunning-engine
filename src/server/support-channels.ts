@@ -303,17 +303,36 @@ export async function saveTelegramTexts(user: AppUser, input: Partial<TelegramTe
   };
   await run("INSERT INTO settings (key, value, updated_at, updated_by) VALUES (?, ?, ?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by", textsKey(bot), JSON.stringify(next), nowIso(), user.id);
   await audit({ actor: user }, { action: "support.telegram", summary: `${user.name} changed the ${bot === "default" ? "default" : "system"} Telegram bot's texts` });
-  if (bot === "default" && (await telegramState()).tokenEnc) await setMenuButton(next).catch(() => null);
+  if (bot !== "default" || (await telegramState()).tokenEnc) await withBot(bot, () => setMenuButton(next)).catch(() => null);
   return next;
 }
 const say = (x: TelegramTexts, en: string, am: string) => (x.lang === "en" ? en : x.lang === "am" ? am : `${en}\n${am}`);
 const label = (x: TelegramTexts, c: { icon: string; labelEn: string; labelAm: string }) => `${x.lang === "am" ? c.labelAm : x.lang === "en" || c.labelAm === c.labelEn ? c.labelEn : `${c.labelEn} · ${c.labelAm}`}`;
 const helpUrl = (origin: string | undefined) => (origin && /^https:\/\//.test(origin) ? `${origin}/help?from=telegram` : null);
+// The support app inside Telegram (a Mini App): the same chat, calls, help and resources as the web widget.
+const supportAppUrl = (origin: string | null | undefined, bot: string, extra = "") => (origin && /^https:\/\//.test(origin) ? `${origin}/support-widget?tg=${encodeURIComponent(bot)}${extra}` : null);
 
-// The menu button next to the chat's text box opens the help center as a Mini App (needs a public https address).
+// The menu button next to the chat's text box opens the support app (needs a public https address).
 async function setMenuButton(x: TelegramTexts) {
-  const url = helpUrl((await telegramState()).origin);
-  return api("setChatMenuButton", url && x.miniApp ? { menu_button: { type: "web_app", text: x.lang === "am" ? "የእርዳታ ማዕከል" : "Help center", web_app: { url } } } : { menu_button: { type: "commands" } });
+  const url = supportAppUrl(await botOrigin(), currentBot());
+  return api("setChatMenuButton", url && x.miniApp ? { menu_button: { type: "web_app", text: x.lang === "am" ? "ድጋፍ" : "Support", web_app: { url } } } : { menu_button: { type: "commands" } });
+}
+
+// The support app opened from a bot: Telegram's signed data says who it is; they get the widget's session as the
+// bot's system (or, for the default bot, as the Telegram app), the same customer as in the chat.
+export async function telegramMiniApp(initData: string, bot: string) {
+  const sd = await import("./support-desk");
+  if (!(await sd.supportConfig()).enabled) throw new WorkflowError("INVALID_STATE", "Support is not available right now.");
+  const sys = bot && bot !== "default" ? await systemBot(bot) : null;
+  if (bot && bot !== "default" && !sys) throw new WorkflowError("NOT_FOUND", "That bot is not connected.");
+  const token = sys ? sys.token : await botToken();
+  if (!token) throw new WorkflowError("INVALID_STATE", "The Telegram bot is not connected.");
+  const who = (await import("./support-help")).verifyTelegramInitData(initData, token);
+  const run1 = () => customerFor({ channel: "telegram", key: String(who.id), name: who.name });
+  const customerId = sys ? await botCtx.run(sys, run1) : await run1();
+  const app = sys ? (await get<import("./support-desk").AppFull>("SELECT * FROM sup_apps WHERE id = ?", sys.appId))! : await sd.defaultTelegramApp();
+  if (sys && !Number(app.active)) throw new WorkflowError("INVALID_STATE", "Support for this app is switched off.");
+  return { key: app.public_key, session: await sd.sessionFor(app, customerId) };
 }
 
 // Tells Telegram where to send messages and button presses, and sets the menu button.
@@ -382,6 +401,7 @@ export async function connectSystemBot(user: AppUser, appId: string, token: stri
   await run("UPDATE sup_apps SET tg_token = ?, tg_secret = ?, tg_bot = ?, tg_origin = ? WHERE id = ?", await seal(t), secret, bot, origin, appId);
   await poster(`https://api.telegram.org/bot${t}/setMyCommands`, { commands: [{ command: "start", description: "Help menu" }, { command: "menu", description: "Help menu" }, { command: "feedback", description: "Send feedback" }] }).catch(() => null);
   await audit({ actor: user }, { action: "support.telegram", summary: `${user.name} connected the bot @${bot} to ${a.name}` });
+  await withBot(appId, async () => setMenuButton(await telegramTexts(appId))).catch(() => null);
   return { bot };
 }
 
@@ -439,8 +459,14 @@ async function sendMenu(chat: string, x: TelegramTexts) {
   for (let i = 0; i < cats.length; i += 2) rows.push(cats.slice(i, i + 2).map((c) => ({ text: label(x, c), callback_data: `c:${c.key}` })));
   rows.push(...(await (await import("./bot-manager")).menuRows(currentBot(), x)));
   rows.push([{ text: PHONE_BUTTON(x), callback_data: "ph" }]);
-  const url = helpUrl((await telegramState()).origin);
-  if (url && x.miniApp && currentBot() === "default") rows.push([{ text: x.lang === "am" ? "የእርዳታ ማዕከል" : "Open the help center", web_app: { url } }]);
+  const origin = await botOrigin();
+  const appUrl = supportAppUrl(origin, currentBot());
+  if (appUrl && x.miniApp) {
+    rows.push([{ text: x.lang === "am" ? "የድጋፍ መተግበሪያውን ክፈት" : "Open the support app", web_app: { url: appUrl } }]);
+    // Telegram bots cannot call; the support app can, in the browser inside Telegram.
+    const { channelOn } = await import("./connected-systems");
+    if (await channelOn(currentBot() === "default" ? null : currentBot(), "calls")) rows.push([{ text: x.lang === "am" ? "ወደ ድጋፍ ይደውሉ" : "Call support", web_app: { url: supportAppUrl(origin, currentBot(), "&call=1")! } }]);
+  }
   await telegramSend(chat, say(x, x.welcome, x.welcomeAm), { reply_markup: { inline_keyboard: rows } });
 }
 

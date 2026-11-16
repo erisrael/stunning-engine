@@ -369,6 +369,23 @@ export async function helpReply(token: string, ticketId: string, body: string) {
 
 // Inside Telegram (Mini App): the page sends Telegram's signed initData; checked with the bot token, it says who the
 // customer is, the same customer as in the bot's chat.
+// Telegram's signed data for a Mini App (checked with the bot's token, at most a day old): who opened it.
+export function verifyTelegramInitData(initData: string, botToken: string) {
+  const p = new URLSearchParams(String(initData ?? ""));
+  if ([...new Set(p.keys())].some(key => p.getAll(key).length !== 1)) throw new WorkflowError("FORBIDDEN", "Telegram could not confirm who you are.");
+  const hash = p.get("hash") ?? "";
+  p.delete("hash");
+  const check = [...p.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => `${k}=${v}`).join("\n");
+  const key = crypto.createHmac("sha256", "WebAppData").update(botToken).digest();
+  const want = crypto.createHmac("sha256", key).update(check).digest("hex");
+  if (hash.length !== want.length || !crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(want))) throw new WorkflowError("FORBIDDEN", "Telegram could not confirm who you are. Open support from the bot again.");
+  const authDate = Number(p.get("auth_date") ?? 0);
+  if (!Number.isFinite(authDate) || !authDate || authDate > Date.now() / 1000 + 60 || Date.now() / 1000 - authDate > 86400) throw new WorkflowError("FORBIDDEN", "This Telegram session is old. Open support from the bot again.");
+  const u = parseJson<{ id?: number; first_name?: string; last_name?: string; username?: string }>(p.get("user"), {});
+  if (!Number.isSafeInteger(u.id) || Number(u.id) <= 0) throw new WorkflowError("FORBIDDEN", "Telegram did not say who you are.");
+  return { id: u.id, name: [u.first_name, u.last_name].filter(Boolean).join(" ") || u.username || "Telegram customer" };
+}
+
 export async function helpTelegram(initData: string, botToken: string | null) {
   await needOn();
   if (!botToken) throw new WorkflowError("INVALID_STATE", "The Telegram bot is not connected.");

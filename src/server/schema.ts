@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 70;
+export const SCHEMA_VERSION = 71;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -3668,6 +3668,10 @@ CREATE INDEX IF NOT EXISTS idx_sup_calls_agent_live ON sup_calls(agent_id, statu
 ALTER TABLE sup_messages ADD COLUMN IF NOT EXISTS reply_to TEXT;
 ALTER TABLE sup_messages ADD COLUMN IF NOT EXISTS reactions TEXT;
 ALTER TABLE sup_messages ADD COLUMN IF NOT EXISTS reacted_at TEXT;
+
+-- v71: the support app inside Telegram (Mini App): app_seen_at is when the customer last had the widget or the Mini
+-- App open (bot messages do not count), so agents can call them in the app only then.
+ALTER TABLE sup_customers ADD COLUMN IF NOT EXISTS app_seen_at TEXT;
 
 `;
 

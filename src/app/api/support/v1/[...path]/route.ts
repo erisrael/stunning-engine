@@ -90,6 +90,7 @@ async function handle(request: Request, ctx: Ctx, method: "GET" | "POST") {
     else if (a === "tickets" && id && b === "files" && method === "GET") out = await sd.customerFiles(app, token, id);
     else if (a === "tickets" && id && b === "files" && method === "POST") out = await sd.customerUpload(app, token, id, { name: s(body.name), mime: s(body.mime), data: s(body.data), caption: s(body.caption), replyTo: s(body.replyTo) || null });
     else if (a === "tickets" && id && b === "rating" && method === "POST") out = (await sd.customerRate(app, token, id, Number(body.rating), s(body.comment)), { ok: true });
+    else if (a === "resources" && !id && method === "GET") out = await (await import("@/server/bot-manager")).customerResources(app, token);
     else if (a === "articles" && !id && method === "GET") out = await (await import("@/server/support-channels")).searchArticles(new URL(request.url).searchParams.get("q") ?? "");
     else if (a === "articles" && id && !b && method === "GET") out = await (await import("@/server/support-channels")).readArticle(id);
     else if (a === "articles" && id && b === "vote" && method === "POST") out = (await (await import("@/server/support-channels")).voteArticle(id, body.helpful === true), { ok: true });

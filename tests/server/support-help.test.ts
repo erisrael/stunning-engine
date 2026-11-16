@@ -68,7 +68,7 @@ async function main() {
   const hook = posts.find((p) => p.url.endsWith("/setWebhook"))!;
   const secret = String(hook.body.secret_token);
   check("the webhook asks for button presses too", JSON.stringify(hook.body.allowed_updates) === JSON.stringify(["message", "callback_query"]));
-  check("the menu button opens the help center inside Telegram", posts.some((p) => p.url.endsWith("/setChatMenuButton") && JSON.stringify(p.body).includes("https://cm.myseed.et/help")));
+  check("the menu button opens the help center inside Telegram", posts.some((p) => p.url.endsWith("/setChatMenuButton") && (JSON.stringify(p.body).includes("https://cm.myseed.et/help") || JSON.stringify(p.body).includes("https://cm.myseed.et/support-widget"))));
   const health = await ch.telegramHealth();
   check("the health check reads the webhook", health.connected && health.buttons && health.miniApp && health.pending === 0, health);
   const last = () => posts.filter((p) => p.url.endsWith("/sendMessage")).at(-1)!.body;

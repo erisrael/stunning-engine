@@ -10,6 +10,9 @@ export async function POST(request: Request) {
   const data = Buffer.from(await request.arrayBuffer());
   try {
     const r = await saveContent(viewer, u.searchParams.get("bot") ?? "", {
+      // With an id, the file replaces that item's file.
+      id: u.searchParams.get("id"),
+      active: u.searchParams.get("active") !== "0",
       title: u.searchParams.get("title") ?? "",
       caption: u.searchParams.get("caption"),
       file: { name: u.searchParams.get("name") ?? "file", mime: request.headers.get("content-type") ?? "application/octet-stream", data },

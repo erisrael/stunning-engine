@@ -117,11 +117,15 @@ export async function inviteToCall(user: AppUser, callId: string, toUserId: stri
 // system, its engine is the browser)? And the phone number on file.
 export async function dialInfo(user: AppUser, ticketId: string) {
   const t = await sd.canWork(user, ticketId);
-  const c = t.customer_id ? await get<{ id: string; app_id: string | null; external_id: string | null; phone: string | null; last_seen_at: string | null }>("SELECT id, app_id, external_id, phone, last_seen_at FROM sup_customers WHERE id = ?", t.customer_id) : null;
+  const c = t.customer_id ? await get<{ id: string; app_id: string | null; external_id: string | null; phone: string | null; last_seen_at: string | null; app_seen_at: string | null }>("SELECT id, app_id, external_id, phone, last_seen_at, app_seen_at FROM sup_customers WHERE id = ?", t.customer_id) : null;
   const app = c?.app_id ? await get<{ channels: string | null; call_engine: string | null }>("SELECT channels, call_engine FROM sup_apps WHERE id = ?", c.app_id) : null;
   const { channelsOf } = await import("./connected-systems");
-  const inApp = !!c && !!app && !/^(tg|mail):/.test(c.external_id ?? "") && channelsOf(app.channels).calls && (app.call_engine ?? "browser") === "browser";
-  const online = inApp && !!c!.last_seen_at && Date.now() - Date.parse(c!.last_seen_at) < CUSTOMER_ONLINE_MS;
+  // Telegram customers can be called in the support app inside Telegram (the Mini App) while it is open.
+  const tg = /^tg:/.test(c?.external_id ?? "");
+  const inApp = !!c && !/^mail:/.test(c.external_id ?? "") && (app ? channelsOf(app.channels).calls && (app.call_engine ?? "browser") === "browser" : tg);
+  const recent = (x: string | null | undefined) => !!x && Date.now() - Date.parse(x) < CUSTOMER_ONLINE_MS;
+  // Bot messages update last_seen_at; only the open app counts for Telegram customers.
+  const online = inApp && (tg ? recent(c!.app_seen_at) : recent(c!.last_seen_at));
   return { inApp, online, phone: c?.phone ?? null };
 }
 

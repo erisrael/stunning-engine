@@ -100,7 +100,13 @@ export async function saveContent(user: AppUser, botKey: string, input: { id?: s
     const cur = await get<{ id: string }>("SELECT id FROM sup_bot_content WHERE id = ? AND bot = ?", input.id, bot);
     if (!cur) throw new WorkflowError("NOT_FOUND", "Unknown content.");
     await run("UPDATE sup_bot_content SET title = ?, caption = ?, active = ? WHERE id = ?", title, caption, input.active === false ? 0 : 1, cur.id);
-    if (url) await run("UPDATE sup_bot_content SET url = ?, kind = CASE WHEN data IS NULL THEN 'link' ELSE kind END WHERE id = ?", url, cur.id);
+    if (input.file) {
+      // A new file replaces the old one (and its link, so Telegram fetches the new one).
+      const f = input.file;
+      const name = clean(f.name, 160).replace(/[\\/]/g, "_") || "file";
+      const mime = clean(f.mime, 100) || "application/octet-stream";
+      await run("UPDATE sup_bot_content SET kind = ?, file_name = ?, mime = ?, size = ?, data = ?, url = NULL, pub = ? WHERE id = ?", kindOf(mime, name), name, mime, f.data.length, f.data.toString("base64"), crypto.randomBytes(18).toString("hex"), cur.id);
+    } else if (url) await run("UPDATE sup_bot_content SET url = ?, kind = 'link', file_name = NULL, mime = NULL, size = 0, data = NULL WHERE id = ?", url, cur.id);
     await audit({ actor: user }, { action: "support.bot", summary: `${user.name} changed bot content "${title}"` });
     return { id: cur.id };
   }
@@ -137,6 +143,25 @@ export async function deleteContent(user: AppUser, id: string) {
   await run("UPDATE sup_bot_pushes SET status = 'cancelled' WHERE content_id = ? AND status = 'scheduled'", id);
   await run("DELETE FROM sup_bot_content WHERE id = ?", id);
   await audit({ actor: user }, { action: "support.bot", summary: `${user.name} removed bot content "${c.title}"` });
+}
+
+// The bot's resources in its support app (Mini App): what is shown in the bot's menu, with a link to open each.
+export async function botResources(bot: string) {
+  const origin = await ch.withBot(bot, () => ch.botOrigin()).catch(() => null);
+  const rows = await all<{ id: string; title: string; kind: ContentKind; caption: string | null; url: string | null; file_name: string | null; size: number; pub: string; data_len: number | null }>(
+    "SELECT id, title, kind, caption, url, file_name, size, pub, CASE WHEN data IS NULL THEN NULL ELSE 1 END AS data_len FROM sup_bot_content WHERE bot = ? AND active = 1 ORDER BY created_at DESC",
+    bot,
+  );
+  return rows.map((r) => ({ id: r.id, title: r.title, kind: r.kind, caption: r.caption, fileName: r.file_name, size: Number(r.size), url: r.data_len ? `${origin ?? ""}/api/support/bot-file/${r.id}?k=${r.pub}` : r.url }));
+}
+
+// For the customer in the support app: the resources of the bot their app belongs to.
+export async function customerResources(app: import("./support-desk").AppFull, token: string) {
+  const sd = await import("./support-desk");
+  await sd.customerByToken(app, token);
+  const bot = app.id ?? "default";
+  if (app.id && !(await get("SELECT id FROM sup_apps WHERE id = ? AND tg_token IS NOT NULL", app.id))) return [];
+  return botResources(bot);
 }
 
 // The file itself, for Telegram to fetch (the link carries an unguessable key) and for staff to preview.

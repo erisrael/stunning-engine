@@ -463,6 +463,15 @@ PREPS["update-1-1-bots"] = async () => {
   return { key, bot: app.id };
 };
 
+// Update 1.1: the support app inside Telegram (Mini App), with a resource and subscriber.
+PREPS["update-1-1-miniapp"] = async () => {
+  const { key, bot } = (await PREPS["update-1-1-bots"]!()) as { key: string; bot: string };
+  const a = await admin();
+  const bm = await import("../../src/server/bot-manager");
+  await bm.saveContent(a, bot, { title: "Student Handbook", caption: "Essential guidelines", url: "https://myseed.test/handbook" });
+  return { key, bot, token: "999000:AAe2eBotTokenNotRealAtAll_abc" };
+};
+
 // Update 1.1 phase 14: Admin and Sara answer calls in the Academy queue; calls are not recorded (no consent step).
 PREPS["update-1-1-calls"] = async () => {
   await passwordOnly();
@@ -537,6 +546,25 @@ PREPS["update-1-p3"] = async () => {
 PREPS["noor-access"] = async () => {
   await passwordOnly();
   return {};
+};
+
+PREPS["department-records"] = async () => {
+  await passwordOnly();
+  const { getPermissionMatrix, savePermissionMatrix } = await import("../../src/server/settings");
+  const matrix = await getPermissionMatrix();
+  matrix.admin = [...new Set([...matrix.admin, "finance.view", "finance.access", "finance.approve", "hr.sensitive"] as const)];
+  await savePermissionMatrix(matrix);
+  return {};
+};
+
+PREPS["doc-head-review"] = async () => {
+  await passwordOnly();
+  const email = "doc-head@demo.local";
+  const account = await upsertAccount({ name: "Document Head", email, title: "Dev head", roles: ["developer"], password: "Demo-Workflow-2026", mustChangePassword: false });
+  const head = (await loadUser(account.id))!;
+  await (await import("../../src/server/departments")).setPosition(await admin(), "dev", head.id, "head");
+  const doc = await (await import("../../src/server/dev-studio")).createDoc(head, "dev", { kind: "srs", title: "Head review browser check" });
+  return { email, doc };
 };
 
 async function main() {
