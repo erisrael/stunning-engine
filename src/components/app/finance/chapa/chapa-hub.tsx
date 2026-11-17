@@ -15,8 +15,10 @@ import { CHAPA_STATUSES, CHAPA_STATUS_LABEL, CHAPA_TYPES, CHAPA_METHODS, CHAPA_W
 import type { ChapaBusiness, FollowupRow, TxFilter } from "@/server/chapa-hub";
 import * as A from "@/app/actions/chapa-hub";
 import { BalanceView, WithdrawalsView, RefundsView, SettingsView, RefundButton } from "./chapa-money";
+import { SyncView } from "./chapa-sync";
+import { TransactionsView } from "./chapa-transactions";
 
-export type ChapaTab = "overview" | "transactions" | "daily" | "customers" | "followup" | "balance" | "withdrawals" | "refunds" | "funds" | "match" | "settings";
+export type ChapaTab = "overview" | "transactions" | "daily" | "customers" | "followup" | "balance" | "withdrawals" | "refunds" | "funds" | "match" | "sync" | "settings";
 export const money = (n: number, c = "ETB") => `${c} ${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const today = () => new Date(Date.now() + 3 * 3600e3).toISOString().slice(0, 10);
 // Fixed to the workspace's zone so the server and the browser render the same text.
@@ -90,13 +92,13 @@ export function ChapaHub({ tab, biz, businesses, admin, settings, layout }: { ta
   return (
     <div className="space-y-3">
       {tab !== "settings" && (
-        <Toolbar label="Business" end={can("verify") ? <SyncButton biz={b} /> : undefined}>
+        <Toolbar label="Business" end={can("verify") && tab !== "sync" ? <SyncButton biz={b} /> : undefined}>
           <BizSwitcher businesses={businesses} biz={biz} />
           <span className="text-xs text-muted-foreground">{biz === "all" ? "Totals per currency; test businesses are left out." : businesses.find((x) => x.id === biz)?.mode === "test" ? "Test mode" : "Live"}</span>
         </Toolbar>
       )}
       {tab === "overview" && <Overview biz={b} layout={layout ?? null} />}
-      {tab === "transactions" && <Transactions biz={b} businesses={businesses} canExport={can("export")} />}
+      {tab === "transactions" && <TransactionsView biz={b} businesses={businesses} canExport={can("export")} admin={admin} />}
       {tab === "daily" && <Daily biz={b} businesses={businesses} />}
       {tab === "customers" && <Customers biz={b} />}
       {tab === "followup" && <Followup biz={b} />}
@@ -105,6 +107,7 @@ export function ChapaHub({ tab, biz, businesses, admin, settings, layout }: { ta
       {tab === "refunds" && <RefundsView biz={b} />}
       {tab === "funds" && <Funds biz={b} />}
       {tab === "match" && <Match biz={b} />}
+      {tab === "sync" && <SyncView biz={b} />}
       {tab === "settings" && settings && <SettingsView businesses={businesses} settings={settings} />}
     </div>
   );
@@ -125,8 +128,10 @@ function SyncButton({ biz }: { biz: string | null }) {
         setBusy(false);
         if (!r.ok) return toast.error(r.error);
         const bad = r.data?.filter((x) => x.error) ?? [];
+        const open = r.data?.filter((x) => !x.error && !x.complete) ?? [];
         if (bad.length) toast.error(bad.map((x) => `${x.name}: ${x.error}`).join("; "));
-        else toast.success(`Synced: ${r.data?.map((x) => `${x.name} ${x.rows}`).join(", ")}`);
+        else if (open.length) toast.warning(`${open.map((x) => x.name).join(", ")}: the history is not complete yet. See Sync and reconcile.`);
+        else toast.success(`Synced: ${r.data?.map((x) => `${x.name} ${x.rows.toLocaleString()} read, ${x.inserted.toLocaleString()} new`).join("; ")}`);
         router.refresh();
       }}
     >
@@ -335,69 +340,6 @@ function MultiChips<T extends string>({ label, options, value, onChange }: { lab
   );
 }
 
-const filterQs = (f: TxFilter) => {
-  const p = new URLSearchParams();
-  if (f.biz) p.set("biz", f.biz);
-  if (f.q) p.set("q", f.q);
-  if (f.status?.length) p.set("status", f.status.join(","));
-  if (f.type?.length) p.set("type", f.type.join(","));
-  if (f.method?.length) p.set("method", f.method.join(","));
-  if (f.currency) p.set("currency", f.currency);
-  if (f.from) p.set("from", f.from);
-  if (f.until) p.set("until", f.until);
-  return p.toString();
-};
-
-function Transactions({ biz, businesses, canExport }: { biz: string | null; businesses: ChapaBusiness[]; canExport: boolean }) {
-  const [q, setQ] = React.useState("");
-  const [sent, setSent] = React.useState("");
-  const [status, setStatus] = React.useState<string[]>([]);
-  const [type, setType] = React.useState<string[]>([]);
-  const [method, setMethod] = React.useState<string[]>([]);
-  const [currency, setCurrency] = React.useState("");
-  const [from, setFrom] = React.useState(new Date(Date.now() + 3 * 3600e3 - 6 * 86400e3).toISOString().slice(0, 10));
-  const [until, setUntil] = React.useState(today());
-  const [open, setOpen] = React.useState<ChapaTx | null>(null);
-  const f: TxFilter = { biz, q: sent || undefined, status, type, method, currency: currency || undefined, from: from || undefined, until: until || undefined };
-  const { data, error, loading, reload } = useLoad(() => A.chapaTxAction(f), [JSON.stringify(f)]);
-  const qs = filterQs(f);
-  return (
-    <div className="space-y-3">
-      <Toolbar label="Filters" end={canExport && <div className="flex gap-1"><Button asChild size="sm" variant="outline" className="h-8 text-xs"><a href={`/api/finance/chapa/export?format=xlsx&${qs}`}><FileSpreadsheetIcon /> Excel</a></Button><Button asChild size="sm" variant="outline" className="h-8 text-xs"><a href={`/api/finance/chapa/export?format=csv&${qs}`}><DownloadIcon /> CSV</a></Button><Button asChild size="sm" variant="outline" className="h-8 text-xs"><a href={`/export/cms-report?list=chapa&${qs}`} target="_blank" rel="noopener"><FileTextIcon /> PDF</a></Button></div>}>
-        <form className="flex" onSubmit={(e) => (e.preventDefault(), setSent(q.trim()))}>
-          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search reference, amount, email, phone or name" className="h-8 w-80 text-xs" aria-label="Search transactions" />
-        </form>
-        <span className="flex items-center gap-1 text-xs text-muted-foreground">
-          <Input type="date" aria-label="From" value={from} onChange={(e) => setFrom(e.target.value)} className="h-8 w-[9.5rem] text-xs" />–
-          <Input type="date" aria-label="Until" value={until} onChange={(e) => setUntil(e.target.value)} className="h-8 w-[9.5rem] text-xs" />
-        </span>
-        <select aria-label="Currency" value={currency} onChange={(e) => setCurrency(e.target.value)} className="h-8 rounded-md border bg-background px-2 text-xs">
-          <option value="">Any currency</option>
-          <option value="ETB">ETB</option>
-          <option value="USD">USD</option>
-        </select>
-      </Toolbar>
-      <div className="space-y-1.5 rounded-xl border bg-card p-2">
-        <MultiChips label="Status" options={CHAPA_STATUSES} value={status} onChange={setStatus} />
-        <MultiChips label="Type" options={CHAPA_TYPES} value={type} onChange={setType} />
-        <MultiChips label="Method" options={CHAPA_METHODS.map((m) => [m, chapaMethodLabel(m)] as const)} value={method} onChange={setMethod} />
-      </div>
-      {error && <StatusStrip tone="danger">{error}</StatusStrip>}
-      {data && (
-        <StatusStrip>
-          <strong className="text-foreground">{data.rows.length.toLocaleString()} transactions</strong>
-          {Object.entries(data.totals.reduce<Record<string, number>>((a, t) => (t.status === "success" ? ((a[t.currency] = (a[t.currency] ?? 0) + t.sum), a) : a), {})).map(([c, v]) => (
-            <span key={c}>· paid {money(v, c)}</span>
-          ))}
-          {loading && <span className="ml-auto">Updating…</span>}
-        </StatusStrip>
-      )}
-      <TxTable rows={data?.rows ?? []} showBiz={!biz && businesses.length > 1} onOpen={setOpen} />
-      <TxDrawer tx={open} onClose={() => setOpen(null)} onChanged={reload} businesses={businesses} />
-    </div>
-  );
-}
-
 export function TxTable({ rows, showBiz, onOpen, select }: { rows: ChapaTx[]; showBiz: boolean; onOpen?: (t: ChapaTx) => void; select?: { selected: Set<string>; onChange: (s: Set<string>) => void } }) {
   const [limit, setLimit] = React.useState(100);
   return (
@@ -450,7 +392,7 @@ export function TxTable({ rows, showBiz, onOpen, select }: { rows: ChapaTx[]; sh
   );
 }
 
-function TxDrawer({ tx, onClose, onChanged, businesses }: { tx: ChapaTx | null; onClose: () => void; onChanged: () => void; businesses: ChapaBusiness[] }) {
+export function TxDrawer({ tx, onClose, onChanged, businesses }: { tx: ChapaTx | null; onClose: () => void; onChanged: () => void; businesses: ChapaBusiness[] }) {
   const [d, setD] = React.useState<Awaited<ReturnType<typeof A.chapaTxDetailAction>> | null>(null);
   const [busy, setBusy] = React.useState(false);
   const rights = businesses.find((b) => b.id === tx?.accountId)?.rights;
@@ -477,6 +419,9 @@ function TxDrawer({ tx, onClose, onChanged, businesses }: { tx: ChapaTx | null; 
                 <dt className="text-muted-foreground">Fee</dt><dd>{money(tx.charge, tx.currency)}</dd>
                 <dt className="text-muted-foreground">Phone</dt><dd>{tx.phone ? <a className="text-primary" href={`tel:${tx.phone}`}>{tx.phone}</a> : "-"}</dd>
                 <dt className="text-muted-foreground">Email</dt><dd>{tx.email ?? "-"}</dd>
+                {det?.tx.providerStatus && <><dt className="text-muted-foreground">Chapa's status</dt><dd>{det.tx.providerStatus}</dd></>}
+                <dt className="text-muted-foreground">Created</dt><dd>{when(tx.createdAt)}{det?.tx.undated ? " (Chapa gave no date)" : ""}</dd>
+                {det?.tx.providerUpdatedAt && <><dt className="text-muted-foreground">Updated at Chapa</dt><dd>{when(det.tx.providerUpdatedAt)}</dd></>}
                 <dt className="text-muted-foreground">Last verified</dt><dd>{det?.tx.verifiedAt ? when(det.tx.verifiedAt) : "Never"}</dd>
               </dl>
               <div className="flex flex-wrap gap-2">
@@ -503,6 +448,22 @@ function TxDrawer({ tx, onClose, onChanged, businesses }: { tx: ChapaTx | null; 
                     <h3 className="mb-1 text-xs font-semibold">Chapa events</h3>
                     {det.eventsError ? <p className="text-xs text-muted-foreground">Not available: {det.eventsError}</p> : !det.events.length ? <p className="text-xs text-muted-foreground">None.</p> : (
                       <ol className="space-y-1 text-xs">{det.events.map((e, i) => <li key={i} className="rounded border p-1.5 font-mono text-[11px]">{JSON.stringify(e)}</li>)}</ol>
+                    )}
+                  </section>
+                  <section data-webhooks>
+                    <h3 className="mb-1 text-xs font-semibold">Callbacks from Chapa</h3>
+                    {!det.webhooks.length ? <p className="text-xs text-muted-foreground">None received for this payment.</p> : (
+                      <ol className="space-y-1 text-xs">
+                        {det.webhooks.map((w, i) => (
+                          <li key={i} className="rounded border p-1.5">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <span className="font-medium">{w.event ?? "Callback"}{w.status ? ` · ${w.status}` : ""}</span>
+                              <span className="text-muted-foreground">{when(w.at)}</span>
+                            </div>
+                            <div className={cn("text-[11px]", w.signed ? "text-muted-foreground" : "text-destructive")}>{w.outcome ?? (w.signed ? "Received" : "Refused")}</div>
+                          </li>
+                        ))}
+                      </ol>
                     )}
                   </section>
                   <section>

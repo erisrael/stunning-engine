@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 71;
+export const SCHEMA_VERSION = 72;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -3673,6 +3673,70 @@ ALTER TABLE sup_messages ADD COLUMN IF NOT EXISTS reacted_at TEXT;
 -- App open (bot messages do not count), so agents can call them in the app only then.
 ALTER TABLE sup_customers ADD COLUMN IF NOT EXISTS app_seen_at TEXT;
 
+-- v72 (Update 1.2): one run log for every data collection (Chapa, Noor). A run keeps its window, where it got to
+-- (cursor, so an interrupted run resumes), what it found, and each failed request.
+CREATE TABLE IF NOT EXISTS sync_runs (
+  id TEXT PRIMARY KEY,
+  source TEXT NOT NULL,
+  scope_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'running',
+  range_from TEXT,
+  range_until TEXT,
+  cursor TEXT,
+  discovered INTEGER NOT NULL DEFAULT 0,
+  inserted INTEGER NOT NULL DEFAULT 0,
+  updated INTEGER NOT NULL DEFAULT 0,
+  skipped INTEGER NOT NULL DEFAULT 0,
+  failed INTEGER NOT NULL DEFAULT 0,
+  requests INTEGER NOT NULL DEFAULT 0,
+  error TEXT,
+  detail_json TEXT,
+  started_by TEXT,
+  started_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  finished_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_sync_runs_scope ON sync_runs(source, scope_id, started_at);
+CREATE TABLE IF NOT EXISTS sync_errors (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL REFERENCES sync_runs(id) ON DELETE CASCADE,
+  at TEXT NOT NULL,
+  request TEXT,
+  status INTEGER,
+  message TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sync_errors_run ON sync_errors(run_id, at);
+-- What each Chapa business's API was seen to do: whether it applies from_date/to_date, the zone of dates that carry
+-- none, and the most rows one answer holds. last_ok_sync_at is the end of the last window read without a failure.
+ALTER TABLE chapa_accounts ADD COLUMN IF NOT EXISTS date_filter TEXT;
+ALTER TABLE chapa_accounts ADD COLUMN IF NOT EXISTS date_filter_checked_at TEXT;
+ALTER TABLE chapa_accounts ADD COLUMN IF NOT EXISTS date_zone TEXT;
+ALTER TABLE chapa_accounts ADD COLUMN IF NOT EXISTS row_cap INTEGER;
+ALTER TABLE chapa_accounts ADD COLUMN IF NOT EXISTS last_ok_sync_at TEXT;
+-- The status exactly as Chapa wrote it, Chapa's own updated time, and a flag for a row whose date Chapa did not give.
+ALTER TABLE chapa_transactions ADD COLUMN IF NOT EXISTS provider_status TEXT;
+ALTER TABLE chapa_transactions ADD COLUMN IF NOT EXISTS provider_updated_at TEXT;
+ALTER TABLE chapa_transactions ADD COLUMN IF NOT EXISTS date_flag INTEGER NOT NULL DEFAULT 0;
+CREATE INDEX IF NOT EXISTS idx_chapa_tx_ref ON chapa_transactions(account_id, ref_id);
+CREATE INDEX IF NOT EXISTS idx_chapa_tx_acc_status ON chapa_transactions(account_id, status, created_at);
+-- Every webhook Chapa sent, kept (with a refused signature too) so a payment's detail shows its callbacks.
+CREATE TABLE IF NOT EXISTS chapa_webhook_events (
+  id TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL REFERENCES chapa_accounts(id) ON DELETE CASCADE,
+  tx_ref TEXT,
+  ref_id TEXT,
+  event TEXT,
+  status TEXT,
+  signature_ok INTEGER NOT NULL DEFAULT 1,
+  outcome TEXT,
+  body_json TEXT,
+  received_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_chapa_webhook_tx ON chapa_webhook_events(account_id, tx_ref, received_at);
+CREATE INDEX IF NOT EXISTS idx_chapa_webhook_time ON chapa_webhook_events(account_id, received_at);
+ALTER TABLE chapa_transactions ADD COLUMN IF NOT EXISTS last_webhook_at TEXT;
+
 `;
 
 // Tables in dependency order; used to empty the workspace and to export or restore backups.
@@ -3918,4 +3982,7 @@ export const TABLES = [
   "sup_bot_forms",
   "sup_bot_responses",
   "sup_bot_feedback",
+  "sync_runs",
+  "sync_errors",
+  "chapa_webhook_events",
 ] as const;

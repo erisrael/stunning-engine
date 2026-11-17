@@ -55,17 +55,18 @@ try {
   const tabs = await page.getByRole("navigation", { name: "Chapa pages" }).getByRole("link").allInnerTexts();
   check("Chapa has every page", ["Overview", "Transactions", "Daily board", "Customers", "Follow-up", "Balance & swap", "Withdrawals", "Refunds", "Account funds", "Match to Noor", "Settings"].every((t) => tabs.some((x) => x.includes(t))), tabs);
   await page.getByRole("button", { name: "Sync now" }).click();
-  await page.getByText(/Synced: Subscriptions 30, Donations 10/).waitFor({ timeout: 20000 });
+  await page.getByText(/Synced: Subscriptions 30 read, 30 new; Donations 10 read, 10 new/).waitFor({ timeout: 20000 });
   await page.reload();
   await page.getByText("Last 30 days").first().waitFor();
   check("the overview shows paid volume per window", (await page.getByText(/ETB [\d,]+\.\d\d/).count()) > 0);
   await page.screenshot({ path: path.join(shots, "overview.png"), fullPage: true });
 
   await page.goto(`${base}/finance/chapa?tab=transactions`);
-  await page.getByText(/40 transactions/).waitFor({ timeout: 15000 });
+  await page.locator("[data-total]").filter({ hasText: "of 40 transactions" }).waitFor({ timeout: 15000 });
   check("All businesses lists both businesses' transactions", true);
+  await page.getByRole("button", { name: /^Filters/ }).click();
   await page.getByRole("group", { name: "Status" }).getByRole("button", { name: "Failed / cancelled" }).click();
-  await page.getByText(/^\d+ transactions$/).filter({ hasText: /^7 transactions$/ }).waitFor({ timeout: 10000 });
+  await page.locator("[data-total]").filter({ hasText: "of 7 transactions" }).waitFor({ timeout: 10000 });
   check("the status filter narrows to failed payments", (await page.locator("tbody tr").filter({ hasText: "Failed / cancelled" }).count()) === 7);
   await page.locator("tbody tr").first().click();
   await page.getByText("Chapa events").waitFor();
@@ -73,7 +74,9 @@ try {
   check("a payment's detail shows its history and Chapa's events", (await page.getByText("Status history").count()) === 1);
   await page.screenshot({ path: path.join(shots, "transaction.png") });
   await page.keyboard.press("Escape");
-  const xlsx = await page.request.get(`${base}${await page.getByRole("link", { name: "Excel" }).getAttribute("href")}`);
+  await page.getByRole("button", { name: "Export" }).click();
+  const xlsx = await page.request.get(`${base}${await page.locator('a[href*="format=xlsx"]').getAttribute("href")}`);
+  await page.keyboard.press("Escape");
   check("transactions export to Excel", xlsx.ok() && (await xlsx.body()).subarray(0, 2).toString() === "PK");
 
   await page.goto(`${base}/finance/chapa?tab=daily`);

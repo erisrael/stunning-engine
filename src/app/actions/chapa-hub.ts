@@ -40,3 +40,12 @@ export const invoicesToFinanceAction = async (ids: string[], assigneeId: string)
 export const invoiceOutcomeAction = async (id: string, outcome: string) => wrap(async () => inv.setInvoiceOutcome(await requireViewer(), id, outcome));
 export const invoiceFollowupsAction = async (ids: string[]) => wrap(async () => inv.invoiceFollowups(await requireViewer(), ids), read);
 export const financeMembersAction = async () => wrap(async () => inv.financeMembers(await requireViewer()), read);
+
+// Update 1.2: the sync run log, full sync and reconciliation (src/server/chapa-sync.ts).
+export const chapaSyncStateAction = async (biz: string | null) => wrap(async () => (await import("@/server/chapa-sync")).chapaSyncState(await requireViewer(), biz), read);
+export const chapaReconcileAction = async (accountId: string, from: string, until: string) => wrap(async () => (await import("@/server/chapa-sync")).reconcileChapa(await requireViewer(), accountId, from, until));
+export const chapaRunErrorsAction = async (runId: string) => wrap(async () => (await import("@/server/chapa-sync")).chapaRunErrors(await requireViewer(), runId), read);
+export const chapaTxPageAction = async (f: h.TxPageInput) => wrap(async () => h.chapaTxPage(await requireViewer(), f), read);
+export const chapaTxViewsAction = async () => wrap(async () => h.chapaTxViews(await requireViewer()), read);
+export const chapaSaveTxViewAction = async (input: { name: string; filter: Record<string, unknown>; shared?: boolean }) => wrap(async () => h.saveChapaTxView(await requireViewer(), input));
+export const chapaDeleteTxViewAction = async (id: string) => wrap(async () => h.deleteChapaTxView(await requireViewer(), id));

@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { ArrowLeftRightIcon, BarChart3Icon, CalendarDaysIcon, CoinsIcon, GitCompareIcon, LandmarkIcon, LifeBuoyIcon, ListIcon, RotateCcwIcon, Settings2Icon, UsersIcon, WalletIcon } from "lucide-react";
+import { ArrowLeftRightIcon, BarChart3Icon, CalendarDaysIcon, CoinsIcon, GitCompareIcon, LandmarkIcon, RefreshCwIcon, LifeBuoyIcon, ListIcon, RotateCcwIcon, Settings2Icon, UsersIcon, WalletIcon } from "lucide-react";
 import { requireViewer } from "@/server/auth";
 import { chapaBusinesses, chapaOverviewLayout, chapaSettings } from "@/server/chapa-hub";
 import { can } from "@/server/users";
@@ -28,6 +28,7 @@ export default async function ChapaPage({ searchParams }: { searchParams: Promis
     { key: "refunds", label: "Refunds", icon: <RotateCcwIcon /> },
     { key: "funds", label: "Account funds", icon: <CoinsIcon /> },
     { key: "match", label: "Match to Noor", icon: <GitCompareIcon /> },
+    { key: "sync", label: "Sync and reconcile", icon: <RefreshCwIcon />, hidden: !any("verify") },
     { key: "settings", label: "Settings", icon: <Settings2Icon />, hidden: !admin },
   ];
   const tab = (tabs.find((t) => t.key === sp.tab && !t.hidden)?.key ?? "overview") as ChapaTab;

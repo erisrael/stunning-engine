@@ -89,7 +89,7 @@ async function main() {
   calls = [];
   const s1 = await H.syncChapaBusiness(A);
   const stored = Number((await get<{ c: number }>("SELECT COUNT(*) AS c FROM chapa_transactions WHERE account_id = ?", A))?.c);
-  check("the first sync reads all history across pages", s1.rows === 90 && stored === 90 && calls.filter((c) => c.includes("/v1/transactions")).length === 3, { s1, stored });
+  check("the first sync reads all history across pages", s1.rows === 90 && stored === 90 && calls.filter((c) => c.includes("/v1/transactions")).length === 4, { s1, stored, calls });
   calls = [];
   await H.syncChapaBusiness(A);
   check("later syncs stop at the last sync", calls.filter((c) => c.includes("/v1/transactions")).length === 1, calls);
@@ -171,7 +171,7 @@ async function main() {
   const probe = await H.probeChapaBusiness(admin, A);
   check("the API probe records shapes, paging, statuses and types", (probe.transactions as { paging: string; statuses: string[] }).paging === "next_page_url" && (probe.transactions as { statuses: string[] }).statuses.includes("failed"));
   const rep = await H.chapaReport(admin, { biz: A, status: ["failed"] });
-  check("exports carry the filtered rows", rep.report.totals.count === txA.filter((t) => /fail/.test(t.status)).length && rep.report.columns.includes("Chapa reference"));
+  check("exports carry the filtered rows", rep.report.totals.count === txA.filter((t) => /fail/.test(t.status)).length && rep.report.columns.includes("Chapa reference"), { got: rep.report.totals, want: txA.filter((t) => /fail/.test(t.status)).length, cols: rep.report.columns });
 
   // Match to Noor.
   await run("INSERT INTO legacy_cms_records (id, category, external_id, title, data_json, synced_at) VALUES ('inv1','invoices','777','Invoice 777',?,?)", JSON.stringify({ _recordId: "777", Student: "Cust1", Amount: "ETB 150", Reference: txA[2].tx_ref, "Created at": txA[2].created_at.replace("T", " ").slice(0, 19) }), new Date().toISOString());

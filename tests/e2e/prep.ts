@@ -542,6 +542,14 @@ PREPS["update-1-p3"] = async () => {
   return { sub, don };
 };
 
+// Update 1.2: one Chapa business whose API (the fake the browser test starts) applies date ranges, 20 rows an answer.
+PREPS["update-1-2-chapa"] = async () => {
+  await passwordOnly();
+  const { saveChapaAccount } = await import("../../src/server/chapa");
+  const sub = await saveChapaAccount(await admin(), { name: "Subscriptions", secretKey: "CHASECK-AAA", webhookSecret: "whsec-A", currency: "ETB" });
+  return { sub };
+};
+
 // Admin, Noor access, the new sidebar entries and Finance requests for Admin.
 PREPS["noor-access"] = async () => {
   await passwordOnly();

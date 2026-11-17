@@ -3,14 +3,15 @@ import { chapaReport, type TxFilter } from "@/server/chapa-hub";
 import { logReportExport, reportCsv, reportXlsx } from "@/server/cms-reports";
 
 // Chapa transactions as Excel or CSV, with the same filters as the Transactions page:
-//   ?format=xlsx|csv&biz=&q=&status=a,b&from=&until=&currency=&type=a,b&method=a,b
+//   ?format=xlsx|csv&biz=&q=&status=a,b&from=&until=&fromTime=&untilTime=&currency=&type=a,b&method=a,b&customer=&ref=
+// Every row the filter matches is exported, not the page on screen.
 export async function GET(request: Request) {
   const viewer = await getViewer();
   if (!viewer) return new Response("Sign in required", { status: 401 });
   const u = new URL(request.url);
   const q = (k: string) => u.searchParams.get(k) ?? "";
   const list = (k: string) => (q(k) ? q(k).split(",").filter(Boolean).slice(0, 20) : undefined);
-  const f: TxFilter = { biz: q("biz") || null, q: q("q") || undefined, status: list("status"), from: q("from") || undefined, until: q("until") || undefined, currency: q("currency") || undefined, type: list("type"), method: list("method") };
+  const f: TxFilter = { biz: q("biz") || null, q: q("q") || undefined, status: list("status"), from: q("from") || undefined, until: q("until") || undefined, currency: q("currency") || undefined, fromTime: q("fromTime") || undefined, untilTime: q("untilTime") || undefined, customer: q("customer") || undefined, ref: q("ref") || undefined, type: list("type"), method: list("method") };
   const format = q("format") === "csv" ? "csv" : "xlsx";
   try {
     const { report, meta } = await chapaReport(viewer, f);

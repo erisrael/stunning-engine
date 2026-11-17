@@ -20,12 +20,13 @@ import {
   type ChapaTx,
 } from "@/lib/chapa";
 import { trackedFetch } from "./call-monitor";
+import { rangeInstants } from "@/lib/date-presets";
 
 // Chapa for every business (Update 1.0, Phase 3).
 //   - Each Chapa account is a business with its own keys, mode (test/live), sync interval and health.
-//   - Sync: transactions are read page by page (newest first) and kept in chapa_transactions, one row per
-//     business and tx_ref with its status history; the first run reads all history, later runs stop at the
-//     last sync. Every 15 minutes by default (per business), plus the webhook, plus a re-check of pending.
+//   - Sync: transactions are kept in chapa_transactions, one row per business and tx_ref with its status
+//     history. How they are read from Chapa is in chapa-sync.ts. Every 15 minutes by default (per business),
+//     plus the webhook, plus a re-check of pending, plus a nightly reconciliation.
 //   - Admin decides, per business and role, who may view, export, verify, send to Support, and move money
 //     (refund, withdraw, bulk withdraw, swap). Money actions start off and can need a second approver.
 //   - Failed and stuck pending payments become cases in the support desk's Payment follow-up queue; a case
@@ -115,7 +116,12 @@ async function need(user: AppUser, action: ChapaAction, accountId?: string | nul
 // Businesses
 // ---------------------------------------------------------------------------
 
-type AccRow = {
+export type AccRow = {
+  date_filter?: string | null;
+  date_filter_checked_at?: string | null;
+  date_zone?: string | null;
+  row_cap?: number | null;
+  last_ok_sync_at?: string | null;
   id: string;
   name: string;
   secret_key_enc: string;
@@ -152,7 +158,7 @@ export type ChapaBusiness = {
   rights: Record<ChapaAction, boolean>;
 };
 
-async function accRow(id: string) {
+export async function accRow(id: string) {
   const r = await get<AccRow>("SELECT * FROM chapa_accounts WHERE id = ?", id);
   if (!r) throw new WorkflowError("NOT_FOUND", "Chapa business not found.");
   return r;
@@ -272,143 +278,161 @@ export function parseTxList(json: unknown): { list: Record<string, unknown>[]; n
   return { list, next, lastPage, hasNext };
 }
 
-export function parseChapaDate(created: unknown): string {
-  if (!created) return nowIso();
-  const s = String(created).trim();
-  if (!s) return nowIso();
+// Chapa writes dates with a zone (2023-08-27T19:21:18.000000Z) or without one. A date with no zone is read in the
+// zone this business's answers were seen to use (chapa_accounts.date_zone, learned by the sync), Addis Ababa until
+// then. A missing or unreadable date is null: it is never replaced by "now".
+export type ChapaZone = "utc" | "addis";
+export function parseChapaDate(created: unknown, zone: ChapaZone = "addis"): string | null {
+  const s = String(created ?? "").trim();
+  if (!s) return null;
   const zoned = /(?:Z|[+-]\d{2}:?\d{2}|GMT|UTC)$/i.test(s);
   if (!zoned && /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}/.test(s)) {
-    const iso = new Date(s.replace(" ", "T") + "+03:00");
+    const iso = new Date(s.replace(" ", "T") + (zone === "utc" ? "Z" : "+03:00"));
     if (!Number.isNaN(+iso)) return iso.toISOString();
   }
+  if (!zoned && /^\d{4}-\d{2}-\d{2}$/.test(s)) return new Date(`${s}T00:00:00${zone === "utc" ? "Z" : "+03:00"}`).toISOString();
   const d = new Date(s);
-  return !Number.isNaN(+d) ? d.toISOString() : nowIso();
+  return !Number.isNaN(+d) ? d.toISOString() : null;
 }
+export const chapaZoneOf = (r: { date_zone?: string | null }): ChapaZone => (r.date_zone === "utc" ? "utc" : "addis");
 
-export function txFromApi(t: Record<string, any>, r: Pick<AccRow, "currency">) {
+const text = (v: unknown) => (v == null || v === "" ? null : String(v));
+export function txFromApi(t: Record<string, any>, r: Pick<AccRow, "currency"> & { date_zone?: string | null }) {
   const c = (t.customer ?? {}) as Record<string, any>;
-  const created = t.created_at ?? t.createdAt ?? t.date ?? t.updated_at;
-  const at = parseChapaDate(created);
+  const zone = chapaZoneOf(r);
+  // tx_ref is the merchant's reference and the key everywhere (verify, webhook). The list may leave it out and
+  // give only Chapa's own reference; then that is the key until a later answer brings the tx_ref.
+  const own = text(t.tx_ref ?? t.trx_ref ?? t.trans_id);
+  const refId = text(t.ref_id ?? t.chapa_reference ?? t.reference);
   return {
-    txRef: String(t.tx_ref ?? t.trans_id ?? t.reference ?? t.ref_id ?? t.id ?? "").slice(0, 200),
-    refId: (t.ref_id ?? t.chapa_reference ?? t.reference ?? null) as string | null,
+    txRef: String(own ?? refId ?? t.id ?? "").slice(0, 200),
+    hasTxRef: !!own,
+    refId: refId ? refId.slice(0, 200) : null,
     amount: num(t.amount),
     charge: num(t.charge ?? t.fee),
     currency: String(t.currency ?? r.currency ?? "ETB").toUpperCase().slice(0, 3),
-    method: (t.payment_method ?? t.method ?? t.channel ?? null) as string | null,
+    method: text(t.payment_method ?? t.method ?? t.channel),
     type: normalizeChapaType(t.type ?? t.transaction_type ?? t.payment_type),
     status: normalizeChapaStatus(t.status),
-    firstName: (t.first_name ?? c.first_name ?? null) as string | null,
-    lastName: (t.last_name ?? c.last_name ?? null) as string | null,
-    email: (t.email ?? c.email ?? null) as string | null,
-    phone: (t.phone_number ?? t.mobile ?? c.mobile ?? c.phone_number ?? null) as string | null,
-    createdAt: at,
+    providerStatus: text(t.status)?.slice(0, 80) ?? null,
+    firstName: text(t.first_name ?? c.first_name),
+    lastName: text(t.last_name ?? c.last_name),
+    email: text(t.email ?? c.email),
+    phone: text(t.phone_number ?? t.mobile ?? c.mobile ?? c.phone_number),
+    createdAt: parseChapaDate(t.created_at ?? t.createdAt ?? t.date, zone),
+    providerUpdatedAt: parseChapaDate(t.updated_at ?? t.updatedAt, zone),
     raw: t,
   };
 }
 
-type Parsed = ReturnType<typeof txFromApi>;
+export type ParsedTx = ReturnType<typeof txFromApi>;
+type Parsed = ParsedTx;
+export type StoredTx = {
+  tx_ref: string; ref_id: string | null; status: string; status_history: string; amount: number; charge: number; currency: string; method: string | null; type: string | null;
+  first_name: string | null; last_name: string | null; email: string | null; phone: string | null; created_at: string; provider_status: string | null; date_flag: number;
+};
+export const STORED_TX = "tx_ref, ref_id, status, status_history, amount, charge, currency, method, type, first_name, last_name, email, phone, created_at, provider_status, date_flag";
+const rawOf = (t: Parsed) => {
+  const s = JSON.stringify(t.raw);
+  return s.length <= 200_000 ? s : JSON.stringify({ note: "The answer was too large to keep.", tx_ref: t.txRef, ref_id: t.refId, status: t.providerStatus });
+};
 
-// Insert or update one transaction; a status change is added to its history. Returns the status before.
-async function upsertTx(accountId: string, t: Parsed, source: string, prev?: { status: string; status_history: string } | null) {
+// Insert one transaction or bring the stored one up to date. The row is found by its tx_ref or by Chapa's own
+// reference, so a payment first seen in the list (Chapa reference only) and later in a webhook (tx_ref) stays one
+// row. Every field Chapa changed is updated; a status change is added to the history.
+export async function upsertTx(accountId: string, t: Parsed, source: string, opts: { known?: StoredTx | null; fallbackDate?: string } = {}): Promise<{ previous: string | null; op: "inserted" | "updated" | "skipped" }> {
   const now = nowIso();
-  const before = prev === undefined ? await get<{ status: string; status_history: string }>("SELECT status, status_history FROM chapa_transactions WHERE account_id = ? AND tx_ref = ?", accountId, t.txRef) : prev;
+  let before = opts.known ?? (await get<StoredTx>(`SELECT ${STORED_TX} FROM chapa_transactions WHERE account_id = ? AND tx_ref = ?`, accountId, t.txRef)) ?? null;
+  // By Chapa's reference: a row stored under that reference (the list gave no tx_ref then), or, when this answer has
+  // no tx_ref itself, the row that carries the reference. Two payments that each have their own tx_ref are never merged.
+  if (!before && t.refId)
+    before =
+      (await get<StoredTx>(`SELECT ${STORED_TX} FROM chapa_transactions WHERE account_id = ? AND (tx_ref = ? ${t.hasTxRef ? "" : "OR ref_id = ?"}) ORDER BY created_at LIMIT 1`, accountId, t.refId, ...(t.hasTxRef ? [] : [t.refId]))) ?? null;
   if (!before) {
-    await run(
-      `INSERT INTO chapa_transactions (account_id, tx_ref, ref_id, amount, charge, currency, method, type, status, first_name, last_name, email, phone, created_at, updated_at, verified_at, status_history, raw_json)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (account_id, tx_ref) DO NOTHING`,
-      accountId, t.txRef, t.refId, t.amount, t.charge, t.currency, t.method, t.type, t.status, t.firstName, t.lastName, t.email, t.phone, t.createdAt, now, source === "verify" ? now : null,
-      JSON.stringify([{ status: t.status, at: now, source }]), JSON.stringify(t.raw).slice(0, 20000),
+    const r = await run(
+      `INSERT INTO chapa_transactions (account_id, tx_ref, ref_id, amount, charge, currency, method, type, status, first_name, last_name, email, phone, created_at, updated_at, verified_at, status_history, raw_json, provider_status, provider_updated_at, date_flag)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (account_id, tx_ref) DO NOTHING`,
+      accountId, t.txRef, t.refId, t.amount, t.charge, t.currency, t.method, t.type, t.status, t.firstName, t.lastName, t.email, t.phone, t.createdAt ?? opts.fallbackDate ?? now, now, source === "verify" ? now : null,
+      JSON.stringify([{ status: t.status, at: now, source }]), rawOf(t), t.providerStatus, t.providerUpdatedAt, t.createdAt ? 0 : 1,
     );
-    return null;
+    return { previous: null, op: r.changes > 0 ? "inserted" : "skipped" };
   }
-  if (before.status !== t.status) {
+  let key = before.tx_ref;
+  // The row was keyed by Chapa's reference and the merchant's tx_ref is now known: move it to the tx_ref.
+  if (t.hasTxRef && key !== t.txRef && key === (before.ref_id ?? t.refId) && !(await get("SELECT 1 AS x FROM chapa_transactions WHERE account_id = ? AND tx_ref = ?", accountId, t.txRef))) {
+    await run("UPDATE chapa_transactions SET tx_ref = ? WHERE account_id = ? AND tx_ref = ?", t.txRef, accountId, key);
+    key = t.txRef;
+  }
+  // A webhook body or a refund carries only part of the payment: it never blanks what is stored.
+  const partial = source === "webhook" || source === "refund";
+  const typed = !!(t.raw.type || t.raw.transaction_type || t.raw.payment_type);
+  const next = {
+    // What a webhook body says is not proof: it never changes the status of a payment we already hold.
+    status: source === "webhook" ? before.status : t.status,
+    amount: partial && !t.amount ? Number(before.amount) : t.amount,
+    charge: t.charge || Number(before.charge),
+    currency: partial ? before.currency : t.currency,
+    method: t.method ?? before.method,
+    type: typed ? t.type : (before.type ?? t.type),
+    ref_id: t.refId ?? before.ref_id,
+    first_name: t.firstName ?? before.first_name,
+    last_name: t.lastName ?? before.last_name,
+    email: t.email ?? before.email,
+    phone: t.phone ?? before.phone,
+    created_at: t.createdAt ?? before.created_at,
+    provider_status: t.providerStatus ?? before.provider_status,
+    date_flag: t.createdAt ? 0 : Number(before.date_flag),
+  };
+  const same =
+    next.status === before.status && Number(next.amount) === Number(before.amount) && Number(next.charge) === Number(before.charge) && next.currency === before.currency && next.method === before.method && next.type === before.type &&
+    next.ref_id === before.ref_id && next.first_name === before.first_name && next.last_name === before.last_name && next.email === before.email && next.phone === before.phone &&
+    Date.parse(next.created_at) === Date.parse(before.created_at) && next.provider_status === before.provider_status && next.date_flag === Number(before.date_flag);
+  if (same) {
+    if (source === "verify") await run("UPDATE chapa_transactions SET verified_at = ? WHERE account_id = ? AND tx_ref = ?", now, accountId, key);
+    return { previous: before.status, op: "skipped" };
+  }
+  let history = before.status_history;
+  if (next.status !== before.status) {
     const hist = parseJson<{ status: string; at: string; source: string }[]>(before.status_history, []);
-    hist.push({ status: t.status, at: now, source });
-    await run(
-      `UPDATE chapa_transactions SET status = ?, status_history = ?, updated_at = ?, ref_id = COALESCE(?, ref_id), method = COALESCE(?, method), phone = COALESCE(phone, ?), email = COALESCE(email, ?), raw_json = ?, verified_at = CASE WHEN ? = 'verify' THEN ? ELSE verified_at END WHERE account_id = ? AND tx_ref = ?`,
-      t.status, JSON.stringify(hist.slice(-50)), now, t.refId, t.method, t.phone, t.email, JSON.stringify(t.raw).slice(0, 20000), source, now, accountId, t.txRef,
-    );
-  } else if (source === "verify") await run("UPDATE chapa_transactions SET verified_at = ? WHERE account_id = ? AND tx_ref = ?", now, accountId, t.txRef);
-  return before.status;
+    hist.push({ status: next.status, at: now, source });
+    history = JSON.stringify(hist.slice(-50));
+  }
+  await run(
+    `UPDATE chapa_transactions SET status = ?, status_history = ?, amount = ?, charge = ?, currency = ?, method = ?, type = ?, ref_id = ?, first_name = ?, last_name = ?, email = ?, phone = ?, created_at = ?, provider_status = ?,
+       provider_updated_at = COALESCE(?, provider_updated_at), date_flag = ?, updated_at = ?, raw_json = CASE WHEN ? = 1 THEN raw_json ELSE ? END, verified_at = CASE WHEN ? = 'verify' THEN ? ELSE verified_at END
+     WHERE account_id = ? AND tx_ref = ?`,
+    next.status, history, next.amount, next.charge, next.currency, next.method, next.type, next.ref_id, next.first_name, next.last_name, next.email, next.phone, next.created_at, next.provider_status,
+    t.providerUpdatedAt, next.date_flag, now, partial ? 1 : 0, rawOf(t), source, now, accountId, key,
+  );
+  return { previous: before.status, op: "updated" };
 }
 
-async function afterStatus(accountId: string, t: Parsed, previous: string | null) {
+export async function afterStatus(accountId: string, t: Parsed, previous: string | null) {
   if (t.status === "success" && previous !== "success") {
     const { closeFollowupsFor } = await import("./support-desk");
     await closeFollowupsFor("chapa", { phone: t.phone ? t.phone : null, email: t.email ?? null }, `The customer paid ${t.amount} ${t.currency} (${chapaMethodLabel(t.method)}, ${t.txRef}). Closed by the system.`);
   }
 }
 
-// One business: newest pages first until we reach the last sync (with a two-hour overlap), or all history once.
-export async function syncChapaBusiness(accountId: string, opts: { full?: boolean } = {}, progress: (m: string) => Promise<void> = async () => {}) {
-  const r = await accRow(accountId);
-  const since = !opts.full && r.backfilled_at && r.last_sync_at ? Date.parse(r.last_sync_at) - 2 * HOUR : 0;
-  let path: string | null = "/v1/transactions?page=1&per_page=100";
-  let page = 1;
-  let rows = 0;
-  let reachedEnd = false;
-  const seen = new Set<string>();
-  try {
-    while (path && page <= 500) {
-      const res = await chapaApi(r, path);
-      if (!res.ok) throw new Error(apiError(res));
-      const { list, next, lastPage, hasNext } = parseTxList(res.json);
-      if (!list.length) {
-        reachedEnd = true;
-        break;
-      }
-      const parsed = list.map((x) => txFromApi(x as Record<string, any>, r)).filter((t) => t.txRef);
-      if (parsed.every((t) => seen.has(t.txRef))) {
-        reachedEnd = true; // the API ignored the page number
-        break;
-      }
-      const refs = parsed.map((t) => t.txRef);
-      const known = new Map(
-        (await all<{ tx_ref: string; status: string; status_history: string }>(`SELECT tx_ref, status, status_history FROM chapa_transactions WHERE account_id = ? AND tx_ref IN (${refs.map(() => "?").join(",")})`, accountId, ...refs)).map((x) => [x.tx_ref, x]),
-      );
-      for (const t of parsed) {
-        seen.add(t.txRef);
-        const prev = await upsertTx(accountId, t, "sync", known.get(t.txRef) ?? null);
-        await afterStatus(accountId, t, prev);
-      }
-      rows += parsed.length;
-      await progress(`${r.name}: ${rows.toLocaleString()} transactions read`);
-      const oldest = Math.min(...parsed.map((t) => Date.parse(t.createdAt)));
-      if (since && oldest < since) break;
-      if (next) path = next;
-      else if (lastPage && page < lastPage) path = `/v1/transactions?page=${page + 1}&per_page=100`;
-      else if (hasNext !== false && !lastPage && list.length > 0) path = `/v1/transactions?page=${page + 1}&per_page=100`;
-      else {
-        reachedEnd = true;
-        path = null;
-      }
-      page++;
-    }
-    await run(
-      "UPDATE chapa_accounts SET last_sync_at = ?, last_sync_rows = ?, health = 'ok', last_error = NULL, backfilled_at = CASE WHEN ? = 1 THEN COALESCE(backfilled_at, ?) ELSE backfilled_at END WHERE id = ?",
-      nowIso(), rows, reachedEnd || since ? 1 : 0, nowIso(), accountId,
-    );
-    return { rows, pages: page - 1, complete: reachedEnd };
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    await run("UPDATE chapa_accounts SET health = 'error', last_error = ?, last_sync_at = ? WHERE id = ?", msg.slice(0, 500), nowIso(), accountId);
-    throw e;
-  }
+// Reading a business's transactions from Chapa is in chapa-sync.ts (Update 1.2): by date windows when Chapa applies
+// from_date and to_date, page by page otherwise; resumable, logged in sync_runs, and never ended by a guess.
+export async function syncChapaBusiness(accountId: string, opts: { full?: boolean; budgetMs?: number; by?: string | null } = {}, progress: (m: string) => Promise<void> = async () => {}) {
+  return (await import("./chapa-sync")).runChapaSync(accountId, opts, progress);
 }
 
 export async function syncNow(user: AppUser, biz: string | null, full = false) {
   const list = await scope(user, biz, "verify");
-  const out: { name: string; rows: number; error?: string }[] = [];
+  if (full && !can(user, "users.manage") && !can(user, "settings.manage") && !can(user, "finance.access")) throw new WorkflowError("FORBIDDEN", "Only Admin or Finance start a full sync.");
+  const out: { id: string; name: string; rows: number; inserted: number; updated: number; complete: boolean; status: string; note?: string; error?: string }[] = [];
   for (const b of list) {
     try {
-      const r = await syncChapaBusiness(b.id, { full });
-      out.push({ name: b.name, rows: r.rows });
+      const r = await syncChapaBusiness(b.id, { full, budgetMs: 40_000, by: user.id });
+      out.push({ id: b.id, name: b.name, rows: r.rows, inserted: r.inserted, updated: r.updated, complete: r.complete, status: r.status, note: r.notes[0] });
     } catch (e) {
-      out.push({ name: b.name, rows: 0, error: e instanceof Error ? e.message : String(e) });
+      out.push({ id: b.id, name: b.name, rows: 0, inserted: 0, updated: 0, complete: false, status: "failed", error: e instanceof Error ? e.message : String(e) });
     }
   }
-  await audit({ actor: user }, { action: "finance.chapa_sync", summary: `${user.name} synced Chapa (${out.map((o) => `${o.name}: ${o.error ? "failed" : o.rows}`).join(", ")})` });
+  await audit({ actor: user }, { action: "finance.chapa_sync", summary: `${user.name} ${full ? "ran a full sync of" : "synced"} Chapa (${out.map((o) => `${o.name}: ${o.error ? "failed" : `${o.rows} read, ${o.inserted} new`}`).join(", ")})` });
   return out;
 }
 
@@ -418,8 +442,8 @@ async function verifyRef(r: AccRow, txRef: string) {
   const d = (res.json as { data?: Record<string, any> } | null)?.data;
   if (!res.ok || !d) throw new WorkflowError("INVALID_STATE", `Chapa did not confirm ${txRef}: ${apiError(res)}`);
   const t = txFromApi({ ...d, tx_ref: d.tx_ref ?? txRef }, r);
-  const prev = await upsertTx(r.id, t, "verify");
-  await afterStatus(r.id, t, prev);
+  const { previous } = await upsertTx(r.id, t, "verify");
+  await afterStatus(r.id, t, previous);
   return t.status;
 }
 
@@ -458,18 +482,34 @@ export async function chapaWebhook(accountId: string, rawBody: string, headers: 
   const secret = (await unseal(r.webhook_secret_enc))?.trim() ?? "";
   const h = (v: string) => crypto.createHmac("sha256", secret).update(v).digest("hex");
   const eq = (a: string | null, b: string) => !!a && a.length === b.length && crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
-  if (!eq(headers.get("x-chapa-signature"), h(rawBody)) && !eq(headers.get("chapa-signature"), h(secret))) return { ok: false, status: 401, message: "Bad signature" };
   const body = parseJson<Record<string, any>>(rawBody, {});
   const txRef = String(body.tx_ref ?? body.data?.tx_ref ?? body.reference ?? "");
-  await run("UPDATE chapa_accounts SET webhook_at = ? WHERE id = ?", nowIso(), accountId);
-  if (!txRef) return { ok: true, status: 200, message: "No tx_ref" };
+  const signed = eq(headers.get("x-chapa-signature"), h(rawBody)) || eq(headers.get("chapa-signature"), h(secret));
+  // Every callback is kept, a refused one too (a wrong webhook secret then shows on the payment and in the log).
+  const eventId = uid();
+  const now = nowIso();
+  await run(
+    "INSERT INTO chapa_webhook_events (id, account_id, tx_ref, ref_id, event, status, signature_ok, outcome, body_json, received_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    eventId, accountId, txRef || null, body.reference ? String(body.reference).slice(0, 200) : null, body.event ? String(body.event).slice(0, 80) : null, body.status ? String(body.status).slice(0, 80) : null, signed ? 1 : 0,
+    signed ? "received" : "refused: bad signature", signed ? rawBody.slice(0, 20000) : null, now,
+  );
+  const outcome = (text: string) => run("UPDATE chapa_webhook_events SET outcome = ? WHERE id = ?", text.slice(0, 300), eventId);
+  if (!signed) return { ok: false, status: 401, message: "Bad signature" };
+  await run("UPDATE chapa_accounts SET webhook_at = ? WHERE id = ?", now, accountId);
+  if (!txRef) {
+    await outcome("no tx_ref in the body");
+    return { ok: true, status: 200, message: "No tx_ref" };
+  }
   try {
-    await verifyRef(r, txRef);
-  } catch {
+    const status = await verifyRef(r, txRef);
+    await outcome(`confirmed with Chapa: ${status}`);
+  } catch (e) {
     // Chapa did not confirm yet: keep what the webhook said as pending, the re-check confirms later.
     const t = txFromApi({ ...body, status: "pending" }, r);
     if (t.txRef) await upsertTx(r.id, t, "webhook");
+    await outcome(`not confirmed yet (${e instanceof Error ? e.message.slice(0, 160) : "no answer"}); kept as pending`);
   }
+  await run("UPDATE chapa_transactions SET last_webhook_at = ? WHERE account_id = ? AND (tx_ref = ? OR ref_id = ?)", now, accountId, txRef, txRef);
   return { ok: true, status: 200, message: "ok" };
 }
 
@@ -508,6 +548,36 @@ export async function probeChapaBusiness(user: AppUser, accountId: string) {
       out[name] = { ok: false, error: e instanceof Error ? e.message : String(e) };
     }
   }
+  // Update 1.2: how the transactions list behaves, which decides how the sync reads it (chapa-sync.ts).
+  try {
+    const keys = (j: unknown) => parseTxList(j).list.map((x) => String((x as Record<string, any>).tx_ref ?? (x as Record<string, any>).ref_id ?? (x as Record<string, any>).id ?? ""));
+    const old = await chapaApi(r, "/v1/transactions?from_date=2015-01-01T00:00:00&to_date=2015-01-02T00:00:00");
+    const first = await chapaApi(r, "/v1/transactions");
+    const second = await chapaApi(r, "/v1/transactions?page=2");
+    const j = (first.json ?? {}) as Record<string, any>;
+    const list = parseTxList(first.json).list as Record<string, any>[];
+    const k1 = keys(first.json);
+    const k2 = keys(second.json);
+    const dates = list.map((x) => String(x.created_at ?? x.createdAt ?? "")).filter(Boolean);
+    const t = dates.map((d) => Date.parse(parseChapaDate(d, "utc") ?? "")).filter((x) => !Number.isNaN(x));
+    const dateFilterApplied = old.ok && parseTxList(old.json).list.length === 0;
+    out.listing = {
+      dateFilterApplied,
+      dateFilterAnswer: old.ok ? `${parseTxList(old.json).list.length} rows for a day in 2015` : `HTTP ${old.status}`,
+      rowsPerAnswer: list.length,
+      pagination: j.data?.pagination ?? j.pagination ?? j.meta ?? j.data?.meta ?? null,
+      pageParameter: !second.ok ? `HTTP ${second.status}` : !k2.length ? "page 2 is empty" : k2.every((k) => k1.includes(k)) ? "ignored (page 2 repeats page 1)" : "works",
+      order: t.length < 2 || t[0] === t[t.length - 1] ? "unknown" : t[0] > t[t.length - 1] ? "newest first" : "oldest first",
+      sampleDate: dates[0] ?? null,
+      datesCarryZone: dates.length ? /(?:Z|[+-]\d{2}:?\d{2})$/.test(dates[0]) : null,
+      statusesAsWritten: [...new Set(list.map((x) => String(x.status ?? "")))].slice(0, 20),
+      rowsWithoutTxRef: list.filter((x) => !x.tx_ref).length,
+      readBy: dateFilterApplied ? "date windows" : "pages",
+    };
+    await run("UPDATE chapa_accounts SET date_filter = ?, date_filter_checked_at = ? WHERE id = ?", dateFilterApplied ? "yes" : "no", nowIso(), accountId);
+  } catch (e) {
+    out.listing = { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
   await run("UPDATE chapa_accounts SET probe_json = ? WHERE id = ?", JSON.stringify(out), accountId);
   return out;
 }
@@ -516,22 +586,37 @@ export async function probeChapaBusiness(user: AppUser, accountId: string) {
 // Reading the stored transactions
 // ---------------------------------------------------------------------------
 
-export type TxFilter = { biz?: string | null; q?: string; status?: string[]; from?: string; until?: string; currency?: string; type?: string[]; method?: string[]; limit?: number };
+export type TxFilter = {
+  biz?: string | null; q?: string; status?: string[]; from?: string; until?: string; currency?: string; type?: string[]; method?: string[]; limit?: number;
+  // Update 1.2: a time of day on the first and last day (HH:mm, Addis Ababa), the customer, and the reference.
+  fromTime?: string; untilTime?: string; customer?: string; ref?: string;
+};
 type TxRow = {
   account_id: string; business: string; mode: string; tx_ref: string; ref_id: string | null; amount: number; charge: number; currency: string; method: string | null; type: string | null; status: string;
   first_name: string | null; last_name: string | null; email: string | null; phone: string | null; created_at: string; verified_at: string | null; followup_ticket_id: string | null;
+  updated_at?: string | null; provider_status?: string | null; provider_updated_at?: string | null; last_webhook_at?: string | null; date_flag?: number | null;
 };
 const toTx = (r: TxRow): ChapaTx => ({
   accountId: r.account_id, business: r.business, mode: r.mode, txRef: r.tx_ref, refId: r.ref_id, amount: Number(r.amount), charge: Number(r.charge), currency: r.currency, method: r.method, type: r.type,
   status: r.status as ChapaStatus, customer: [r.first_name, r.last_name].filter(Boolean).join(" ") || r.email || r.phone || "Customer", email: r.email, phone: r.phone, createdAt: r.created_at, verifiedAt: r.verified_at, followupTicketId: r.followup_ticket_id,
+  updatedAt: r.updated_at ?? null, providerStatus: r.provider_status ?? null, providerUpdatedAt: r.provider_updated_at ?? null, lastWebhookAt: r.last_webhook_at ?? null, undated: !!Number(r.date_flag ?? 0),
 });
 
 async function where(user: AppUser, f: TxFilter, action: ChapaAction = "view") {
   const biz = await scope(user, f.biz, action);
   const w: string[] = [`t.account_id IN (${biz.map(() => "?").join(",") || "''"})`];
   const a: Param[] = biz.map((b) => b.id);
-  if (f.from) w.push("t.created_at >= ?"), a.push(dayStartIso(f.from));
-  if (f.until) w.push("t.created_at < ?"), a.push(dayEndIso(f.until));
+  const span = rangeInstants(f.from, f.until, f.fromTime, f.untilTime);
+  if (span.start) w.push("t.created_at >= ?"), a.push(span.start);
+  if (span.end) w.push("t.created_at < ?"), a.push(span.end);
+  if (f.customer?.trim()) {
+    const c = f.customer.trim().toLowerCase();
+    const digits = c.replace(/\D/g, "");
+    w.push(`(LOWER(COALESCE(t.first_name,'') || ' ' || COALESCE(t.last_name,'')) LIKE ? OR LOWER(COALESCE(t.email,'')) LIKE ? ${digits.length >= 4 ? "OR COALESCE(t.phone,'') LIKE ?" : ""})`);
+    a.push(`%${c}%`, `%${c}%`);
+    if (digits.length >= 4) a.push(`%${digits.slice(-9)}%`);
+  }
+  if (f.ref?.trim()) w.push("(LOWER(t.tx_ref) LIKE ? OR LOWER(COALESCE(t.ref_id,'')) LIKE ?)"), a.push(`%${f.ref.trim().toLowerCase()}%`, `%${f.ref.trim().toLowerCase()}%`);
   if (f.status?.length) w.push(`t.status IN (${f.status.map(() => "?").join(",")})`), a.push(...f.status);
   if (f.type?.length) w.push(`t.type IN (${f.type.map(() => "?").join(",")})`), a.push(...f.type);
   if (f.method?.length) w.push(`(${f.method.map(() => "LOWER(COALESCE(t.method,'')) LIKE ?").join(" OR ")})`), a.push(...f.method.map((m) => `%${m.toLowerCase().replace(/[^a-z]/g, "")}%`));
@@ -551,9 +636,76 @@ const TX_SELECT = "SELECT t.*, a.name AS business, a.mode FROM chapa_transaction
 
 export async function listChapaTx(user: AppUser, f: TxFilter, action: ChapaAction = "view") {
   const w = await where(user, f, action);
-  const rows = await all<TxRow>(`${TX_SELECT} WHERE ${w.sql} ORDER BY t.created_at DESC LIMIT ?`, ...w.args, Math.min(10000, f.limit ?? 2000));
+  const rows = await all<TxRow>(`${TX_SELECT} WHERE ${w.sql} ORDER BY t.created_at DESC LIMIT ?`, ...w.args, Math.min(500_000, f.limit ?? 2000));
   const totals = await all<{ currency: string; status: string; n: number; sum: number }>(`SELECT t.currency, t.status, COUNT(*) AS n, SUM(t.amount) AS sum FROM chapa_transactions t WHERE ${w.sql} GROUP BY t.currency, t.status`, ...w.args);
   return { rows: rows.map(toTx), totals: totals.map((t) => ({ currency: t.currency, status: t.status, n: Number(t.n), sum: Number(t.sum) })), businesses: w.biz.map((b) => ({ id: b.id, name: b.name })) };
+}
+
+// Update 1.2: one page of the filtered transactions, sorted and counted by the database, with the summary cards for
+// the same filter. The table, the cards, the export and the paging all read this one filter, so they always agree.
+export const TX_SORTS = { created: "t.created_at", updated: "t.updated_at", amount: "t.amount", status: "t.status", method: "LOWER(COALESCE(t.method,''))", customer: "LOWER(COALESCE(t.first_name,'') || ' ' || COALESCE(t.last_name,''))", verified: "t.verified_at", reference: "t.tx_ref" } as const;
+export type TxSort = keyof typeof TX_SORTS;
+export type TxSummary = { currency: string; total: number; success: number; successAmount: number; pending: number; failed: number; refunded: number; reversed: number; average: number | null; rate: number | null; fees: number };
+export type TxPageInput = TxFilter & { page?: number; pageSize?: number; sort?: TxSort; dir?: "asc" | "desc" };
+
+export async function chapaTxPage(user: AppUser, f: TxPageInput) {
+  const w = await where(user, f);
+  const pageSize = [25, 50, 100, 200].includes(Number(f.pageSize)) ? Number(f.pageSize) : 50;
+  const sort = TX_SORTS[f.sort as TxSort] ?? TX_SORTS.created;
+  const dir = f.dir === "asc" ? "ASC" : "DESC";
+  const groups = await all<{ currency: string; status: string; n: number | string; sum: number | string | null; fees: number | string | null }>(`SELECT t.currency, t.status, COUNT(*) AS n, SUM(t.amount) AS sum, SUM(t.charge) AS fees FROM chapa_transactions t WHERE ${w.sql} GROUP BY t.currency, t.status`, ...w.args);
+  const total = groups.reduce((a, g) => a + Number(g.n), 0);
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  const page = Math.min(pages, Math.max(1, Math.round(Number(f.page) || 1)));
+  const rows = await all<TxRow>(`${TX_SELECT} WHERE ${w.sql} ORDER BY ${sort} ${dir} NULLS LAST, t.created_at DESC, t.tx_ref LIMIT ? OFFSET ?`, ...w.args, pageSize, (page - 1) * pageSize);
+  const by = new Map<string, TxSummary>();
+  for (const g of groups) {
+    const s = by.get(g.currency) ?? { currency: g.currency, total: 0, success: 0, successAmount: 0, pending: 0, failed: 0, refunded: 0, reversed: 0, average: null, rate: null, fees: 0 };
+    const n = Number(g.n);
+    s.total += n;
+    s.fees += Number(g.fees ?? 0);
+    if (g.status === "success") (s.success += n), (s.successAmount += Number(g.sum ?? 0));
+    else if (g.status === "pending") s.pending += n;
+    else if (g.status === "failed") s.failed += n;
+    else if (g.status === "refunded") s.refunded += n;
+    else if (g.status === "reversed") s.reversed += n;
+    by.set(g.currency, s);
+  }
+  for (const s of by.values()) {
+    s.average = s.success ? s.successAmount / s.success : null;
+    // Of the payments that ended (paid or failed): how many were paid. Pending ones are not counted against it.
+    s.rate = s.success + s.failed ? s.success / (s.success + s.failed) : null;
+  }
+  // Businesses whose history is not all here yet: the numbers above may be short for older ranges.
+  const state = w.biz.length ? await all<{ id: string; name: string; backfilled_at: string | null; health: string; last_error: string | null; last_ok_sync_at: string | null }>(`SELECT id, name, backfilled_at, health, last_error, last_ok_sync_at FROM chapa_accounts WHERE id IN (${w.biz.map(() => "?").join(",")})`, ...w.biz.map((b) => b.id)) : [];
+  const partial = state.filter((b) => !b.backfilled_at || b.health === "error" || b.health === "partial").map((b) => ({ id: b.id, name: b.name, reason: b.health === "error" ? `the last sync failed${b.last_error ? ` (${b.last_error.slice(0, 120)})` : ""}` : !b.backfilled_at ? "its history has not been read completely" : (b.last_error ?? "the last sync was partial") }));
+  const lastSync = state.map((b) => b.last_ok_sync_at).filter(Boolean).sort()[0] ?? null;
+  return { rows: rows.map(toTx), total, page, pages, pageSize, summary: [...by.values()].sort((a, b) => b.total - a.total), businesses: w.biz.map((b) => ({ id: b.id, name: b.name })), partial, lastSync };
+}
+
+// Saved filters of the Transactions page: a person's own, and those Admin shares with everyone.
+const TX_VIEW_PAGE = "chapa:transactions";
+export async function chapaTxViews(user: AppUser) {
+  const rows = await all<{ id: string; name: string; query: string; shared: number; owner_id: string }>("SELECT id, name, query, shared, owner_id FROM saved_views WHERE page = ? AND (owner_id = ? OR shared = 1) ORDER BY shared DESC, LOWER(name)", TX_VIEW_PAGE, user.id);
+  return rows.map((r) => ({ id: r.id, name: r.name, filter: parseJson<Record<string, unknown>>(r.query, {}), shared: !!Number(r.shared), mine: r.owner_id === user.id }));
+}
+export async function saveChapaTxView(user: AppUser, input: { name: string; filter: Record<string, unknown>; shared?: boolean }) {
+  if (!(await chapaBusinesses(user)).length) throw new WorkflowError("FORBIDDEN", "Chapa is not open to you.");
+  const name = input.name.trim().slice(0, 60);
+  if (!name) throw new WorkflowError("VALIDATION", "Give the filter a name.");
+  const shared = !!input.shared && (can(user, "users.manage") || can(user, "settings.manage"));
+  const query = JSON.stringify(input.filter ?? {}).slice(0, 4000);
+  const same = await get<{ id: string }>("SELECT id FROM saved_views WHERE page = ? AND owner_id = ? AND LOWER(name) = LOWER(?)", TX_VIEW_PAGE, user.id, name);
+  if (same) await run("UPDATE saved_views SET query = ?, shared = ? WHERE id = ?", query, shared ? 1 : 0, same.id);
+  else await run("INSERT INTO saved_views (id, owner_id, name, page, query, config, shared, created_at) VALUES (?, ?, ?, ?, ?, '{}', ?, ?)", uid(), user.id, name, TX_VIEW_PAGE, query, shared ? 1 : 0, nowIso());
+  return chapaTxViews(user);
+}
+export async function deleteChapaTxView(user: AppUser, id: string) {
+  const v = await get<{ owner_id: string }>("SELECT owner_id FROM saved_views WHERE id = ? AND page = ?", id, TX_VIEW_PAGE);
+  if (!v) return chapaTxViews(user);
+  if (v.owner_id !== user.id && !can(user, "users.manage")) throw new WorkflowError("FORBIDDEN", "This filter belongs to someone else.");
+  await run("DELETE FROM saved_views WHERE id = ?", id);
+  return chapaTxViews(user);
 }
 
 // h10: volume, count and success rate for today, 7 and 30 days, by method, type and status, and a daily chart.
@@ -660,7 +812,14 @@ export async function chapaTxDetail(user: AppUser, accountId: string, txRef: str
   }
   const { ticketStatusOf } = await import("./support-desk");
   const ticket = r.followup_ticket_id ? ((await ticketStatusOf([r.followup_ticket_id]))[r.followup_ticket_id] ?? null) : null;
-  return { tx: toTx(r), history: parseJson<{ status: string; at: string; source: string }[]>(r.status_history, []), raw: parseJson<unknown>(r.raw_json ?? "null", null), events, eventsError, cms: (await cmsPhoneIndex()).get(phoneKey(r.phone)) ?? null, ticket };
+  const webhooks = await all<{ event: string | null; status: string | null; signature_ok: number; outcome: string | null; received_at: string }>(
+    "SELECT event, status, signature_ok, outcome, received_at FROM chapa_webhook_events WHERE account_id = ? AND (tx_ref = ? OR tx_ref = ? OR ref_id = ?) ORDER BY received_at DESC LIMIT 50",
+    accountId, r.tx_ref, r.ref_id ?? r.tx_ref, r.ref_id ?? r.tx_ref,
+  );
+  return {
+    tx: toTx(r), history: parseJson<{ status: string; at: string; source: string }[]>(r.status_history, []), raw: parseJson<unknown>(r.raw_json ?? "null", null), events, eventsError, cms: (await cmsPhoneIndex()).get(phoneKey(r.phone)) ?? null, ticket,
+    webhooks: webhooks.map((x) => ({ event: x.event, status: x.status, signed: !!Number(x.signature_ok), outcome: x.outcome, at: x.received_at })),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -962,7 +1121,7 @@ export async function matchChapaToNoor(user: AppUser, f: { from: string; until: 
 // ---------------------------------------------------------------------------
 
 export async function chapaReport(user: AppUser, f: TxFilter) {
-  const { rows, businesses } = await listChapaTx(user, { ...f, limit: 10000 }, "export");
+  const { rows, businesses } = await listChapaTx(user, { ...f, limit: 500_000 }, "export");
   const { buildCmsReport, cmsFiltersText } = await import("@/lib/cms-report");
   const { getSettings } = await import("./settings");
   const { fmtDateTime } = await import("@/lib/format");
@@ -982,16 +1141,21 @@ export async function chapaReport(user: AppUser, f: TxFilter) {
 // ---------------------------------------------------------------------------
 
 export async function scheduledChapa(now = Date.now()) {
-  const accounts = await all<{ id: string; sync_minutes: number; last_sync_at: string | null }>("SELECT id, sync_minutes, last_sync_at FROM chapa_accounts WHERE active = 1");
+  const accounts = await all<{ id: string; name: string; sync_minutes: number; last_sync_at: string | null }>("SELECT id, name, sync_minutes, last_sync_at FROM chapa_accounts WHERE active = 1");
   if (!accounts.length) return;
   const { acquireLease, releaseLease } = await import("./ops");
   if (!(await acquireLease("chapa-sync", 20 * 60e3))) return;
   try {
+    const { openRun } = await import("./sync-runs");
     for (const a of accounts) {
-      if (a.last_sync_at && now - Date.parse(a.last_sync_at) < a.sync_minutes * 60e3) continue;
-      await syncChapaBusiness(a.id).catch(() => null);
+      // A full run that ran out of time, or has windows to try again, goes on whatever the interval.
+      const unfinished = await openRun("chapa", a.id, "full");
+      if (!unfinished && a.last_sync_at && now - Date.parse(a.last_sync_at) < a.sync_minutes * 60e3) continue;
+      // A failure is on the business (health, last error) and in its run log; the other businesses still sync.
+      await syncChapaBusiness(a.id, { full: !!unfinished, budgetMs: 90_000 }).catch((e) => console.error(`Chapa sync failed for ${a.name}`, e));
     }
-    await recheckPending(now).catch(() => null);
+    await recheckPending(now).catch((e) => console.error("Chapa pending re-check failed", e));
+    await (await import("./chapa-sync")).scheduledChapaReconcile(now).catch((e) => console.error("Chapa reconcile failed", e));
     const s = await chapaSettings();
     if (s.rules.autoSendTime) {
       const local = new Date(now + 3 * HOUR).toISOString().slice(11, 16);

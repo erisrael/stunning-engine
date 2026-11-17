@@ -11,11 +11,12 @@ export type ChapaStatus = (typeof CHAPA_STATUSES)[number][0];
 export const CHAPA_STATUS_LABEL = Object.fromEntries(CHAPA_STATUSES) as Record<ChapaStatus, string>;
 
 export function normalizeChapaStatus(v: unknown): ChapaStatus {
-  const s = String(v ?? "").toLowerCase();
-  if (/success|paid|complete/.test(s)) return "success";
+  const s = String(v ?? "").toLowerCase().trim();
+  // Negatives first: "unpaid", "incomplete" and "unsuccessful" must never read as paid.
   if (/refund/.test(s)) return "refunded";
-  if (/revers/.test(s)) return "reversed";
-  if (/fail|cancel|declin|expire|error/.test(s)) return "failed";
+  if (/revers|chargeback/.test(s)) return "reversed";
+  if (/fail|cancel|declin|expire|error|reject|abandon|unpaid|incomplete|unsuccess|not[ _-]?paid/.test(s)) return "failed";
+  if (/^(success(ful)?|succeeded|paid|completed?|approved|settled)$/.test(s) || /^success/.test(s)) return "success";
   return "pending";
 }
 
@@ -138,4 +139,10 @@ export type ChapaTx = {
   verifiedAt: string | null;
   followupTicketId: string | null;
   mode: string;
+  // Update 1.2: Chapa's own words and times, and the last callback received for the payment.
+  updatedAt?: string | null;
+  providerStatus?: string | null;
+  providerUpdatedAt?: string | null;
+  lastWebhookAt?: string | null;
+  undated?: boolean;
 };
