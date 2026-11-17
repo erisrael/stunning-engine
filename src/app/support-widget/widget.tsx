@@ -13,14 +13,34 @@ import { CallButton, CallLayer } from "./calls";
 import { ArticleBody, type PublicArticle } from "@/components/help/article-body";
 
 type User = { id: string | null; name: string | null; email: string | null; phone: string | null; hash: string | null; meta?: Record<string, string> };
-export type Session = { token: string; customer: { id: string; name: string }; app: { name: string; greeting: string | null; color: string | null }; online: boolean; hours: string; awayMessage: string; recordCalls: boolean; recordingNotice: string; channels?: { web_chat: boolean; telegram: boolean; calls: boolean; sms: boolean }; callEngine?: { engine: "browser" | "phone"; phone: string | null } };
+export type Session = { token: string; customer: { id: string; name: string }; app: { name: string; greeting: string | null; color: string | null }; online: boolean; hours: string; awayMessage: string; recordCalls: boolean; recordingNotice: string; channels?: { web_chat: boolean; telegram: boolean; calls: boolean; sms: boolean }; callEngine?: { engine: "browser" | "phone"; phone: string | null }; content?: WidgetContent };
+type Pair = { en: string; am: string };
+// The words from Customer support, Content (Update 1.2): welcome, conversation topics, policy and privacy notice.
+type WidgetContent = { welcome: Pair; topics: ({ key: string } & Pair)[]; policy: Pair; terms: Pair };
+type Update = { id: string; ticket_id: string; number: number; subject: string; body: string; author_kind: string; created_at: string };
 type Ticket = { id: string; number: number; subject: string; status: string; updated_at: string; rating: number | null };
 type CallRecord = { id: string; ticket_id: string | null; direction: string; kind: string; status: string; started_at: string; ended_at: string | null; duration_s: number | null; recording_id: string | null };
 
 const STATUS: Record<string, string> = { new: "Sent", open: "Being answered", pending: "Waiting for you", on_hold: "On hold", solved: "Solved", closed: "Closed" };
 
 // Telegram's Mini App data: the signed initData (from the page address, or Telegram's script when it is there).
-type TgWebApp = { initData?: string; ready?: () => void; expand?: () => void; colorScheme?: string };
+type TgWebApp = { initData?: string; ready?: () => void; expand?: () => void; colorScheme?: string; themeParams?: Record<string, string | undefined> };
+// Inside Telegram the app takes Telegram's own colours (light or dark, the person's theme).
+function applyTelegramTheme() {
+  const tg = (window as unknown as { Telegram?: { WebApp?: TgWebApp } }).Telegram?.WebApp;
+  const t = tg?.themeParams;
+  if (!t) return;
+  const root = document.documentElement;
+  const set = (v: string, c?: string) => c && /^#[0-9a-f]{3,8}$/i.test(c) && root.style.setProperty(v, c);
+  set("--background", t.bg_color);
+  set("--card", t.secondary_bg_color ?? t.bg_color);
+  set("--foreground", t.text_color);
+  set("--card-foreground", t.text_color);
+  set("--muted-foreground", t.hint_color);
+  set("--primary", t.button_color);
+  set("--primary-foreground", t.button_text_color);
+  if (tg?.colorScheme === "dark") root.classList.add("dark");
+}
 function telegramInitData(bot: string) {
   const tg = (window as unknown as { Telegram?: { WebApp?: TgWebApp } }).Telegram?.WebApp;
   if (tg?.initData) return tg.initData;
@@ -43,6 +63,18 @@ export function SupportWidget({ appKey: givenKey, initialUser, waitForParent, te
   const [calls, setCalls] = React.useState<CallRecord[]>([]);
   const [open, setOpen] = React.useState<string | "new" | null>(null);
   const [tab, setTab] = React.useState<"home" | "chats" | "calls" | "help">("home");
+  const [topic, setTopic] = React.useState<string | null>(null);
+  const [updates, setUpdates] = React.useState<Update[]>([]);
+  React.useEffect(() => {
+    if (!telegram) return;
+    applyTelegramTheme();
+    const t = window.setTimeout(applyTelegramTheme, 1200);
+    return () => window.clearTimeout(t);
+  }, [telegram]);
+  React.useEffect(() => {
+    if (s?.token) void api<Update[]>("updates").then((u) => Array.isArray(u) && setUpdates(u)).catch(() => null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [s?.token]);
   // English or Amharic, remembered on this browser.
   const [lang, setLangState] = React.useState<Lang>(() => {
     try {
@@ -160,9 +192,10 @@ export function SupportWidget({ appKey: givenKey, initialUser, waitForParent, te
 
   const reload = async () => {
     if (!s) return;
-    const [nextTickets, nextCalls] = await Promise.all([api<Ticket[]>("tickets"), api<CallRecord[]>("calls/history")]);
+    const [nextTickets, nextCalls, nextUpdates] = await Promise.all([api<Ticket[]>("tickets"), api<CallRecord[]>("calls/history"), api<Update[]>("updates").catch(() => [] as Update[])]);
     setTickets(nextTickets);
     setCalls(nextCalls);
+    setUpdates(nextUpdates);
   };
   const color = s?.app.color ?? "#1A73E8";
   if (error) return <p className="p-6 text-center text-sm text-muted-foreground">{error}</p>;
@@ -206,8 +239,17 @@ export function SupportWidget({ appKey: givenKey, initialUser, waitForParent, te
       <div className="min-h-0 flex-1 overflow-y-auto">
         {open === null && tab === "home" && (
           <div className="space-y-3 p-4">
-            <p className="text-sm">{s.app.greeting ?? `Hi ${s.customer.name.split(" ")[0]}! How can we help?`}</p>
-            <Button className="w-full text-white" style={{ background: color }} onClick={() => { setTab("chats"); setOpen("new"); }} data-new-question>
+            <p className="text-sm">{s.app.greeting ?? (s.content ? (am ? s.content.welcome.am : s.content.welcome.en) : null) ?? `Hi ${s.customer.name.split(" ")[0]}! How can we help?`}</p>
+            {!!s.content?.topics.length && (
+              <div className="grid grid-cols-2 gap-1.5" aria-label={am ? "ርዕሶች" : "Topics"}>
+                {s.content.topics.map((t) => (
+                  <button key={t.key} type="button" className="rounded-lg border bg-card px-2 py-2 text-left text-xs hover:bg-muted" onClick={() => { setTopic(t.key); setTab("chats"); setOpen("new"); }} data-topic={t.key}>
+                    {am ? t.am : t.en}
+                  </button>
+                ))}
+              </div>
+            )}
+            <Button className="w-full text-white" style={{ background: color }} onClick={() => { setTopic(null); setTab("chats"); setOpen("new"); }} data-new-question>
               <PlusIcon /> {am ? "ጥያቄ ይጠይቁ" : "Ask a question"}
             </Button>
             {startCall && (
@@ -218,6 +260,17 @@ export function SupportWidget({ appKey: givenKey, initialUser, waitForParent, te
             <CallButton api={api} s={s} ticketId={null} color={color} onTicket={(id) => (setOpen(id), void reload())} />
             <HelpSearch api={api} onOpen={(id) => { setTab("help"); setOpen(`a:${id}`); }} />
             {telegram && <Resources api={api} am={am} />}
+            {updates.length > 0 && (
+              <section className="space-y-1 pt-2" aria-label={am ? "ማሳወቂያዎች" : "Updates"} data-updates>
+                <p className="text-xs font-medium text-muted-foreground">{am ? "ማሳወቂያዎች" : "Updates"}</p>
+                {updates.slice(0, 5).map((u) => (
+                  <button key={u.id} type="button" className="block w-full rounded-lg border p-2 text-left text-xs hover:bg-muted" onClick={() => setOpen(u.ticket_id)}>
+                    <span className="block text-muted-foreground">#{u.number} · {new Date(u.created_at).toLocaleString(am ? "am-ET" : "en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
+                    <span className="line-clamp-2">{u.body}</span>
+                  </button>
+                ))}
+              </section>
+            )}
             {tickets.length > 0 && <p className="pt-2 text-xs font-medium text-muted-foreground">{am ? "ውይይቶችዎ" : "Your conversations"}</p>}
             <ul className="space-y-1">
               {tickets.map((t) => (
@@ -239,10 +292,19 @@ export function SupportWidget({ appKey: givenKey, initialUser, waitForParent, te
               <div><p className="font-semibold">{am ? "ውይይቶችዎ" : "Your conversations"}</p><p className="text-xs text-muted-foreground">{am ? "ሙሉ ታሪክዎ እዚህ ይቀመጣል" : "Your full conversation history is kept here."}</p></div>
               <Button size="sm" onClick={() => setOpen("new")}><PlusIcon /> New</Button>
             </div>
-            <ul className="space-y-2">
-              {tickets.map((t) => <li key={t.id}><button type="button" className="w-full rounded-xl border p-3 text-left hover:bg-muted" onClick={() => setOpen(t.id)}><span className="flex items-center gap-2"><MessageCircleIcon className="size-4 text-primary" /><span className="min-w-0 flex-1 truncate font-medium">{t.subject}</span><span className="text-xs text-muted-foreground">#{t.number}</span></span><span className="mt-1 block text-xs text-muted-foreground">{words(lang).status[t.status] ?? STATUS[t.status] ?? t.status} · {new Date(t.updated_at).toLocaleDateString()}</span></button></li>)}
-              {!tickets.length && <li className="rounded-xl border border-dashed p-5 text-center text-sm text-muted-foreground">No conversations yet.</li>}
-            </ul>
+            {(["open", "previous"] as const).map((part) => {
+              const list = tickets.filter((t) => (part === "open") !== ["solved", "closed"].includes(t.status));
+              if (!list.length) return null;
+              return (
+                <section key={part} className="space-y-2" data-requests={part}>
+                  <p className="text-xs font-medium text-muted-foreground">{part === "open" ? (am ? "ክፍት ጥያቄዎች" : "Open requests") : am ? "ያለፉ ውይይቶች" : "Previous conversations"}</p>
+                  <ul className="space-y-2">
+                    {list.map((t) => <li key={t.id}><button type="button" className="w-full rounded-xl border p-3 text-left hover:bg-muted" onClick={() => setOpen(t.id)} data-conversation-item><span className="flex items-center gap-2"><MessageCircleIcon className="size-4 text-primary" /><span className="min-w-0 flex-1 truncate font-medium">{t.subject}</span><span className="text-xs text-muted-foreground">#{t.number}</span></span><span className="mt-1 block text-xs text-muted-foreground">{words(lang).status[t.status] ?? STATUS[t.status] ?? t.status} · {new Date(t.updated_at).toLocaleDateString()}</span></button></li>)}
+                  </ul>
+                </section>
+              );
+            })}
+            {!tickets.length && <p className="rounded-xl border border-dashed p-5 text-center text-sm text-muted-foreground">{am ? "እስካሁን ውይይት የለም።" : "No conversations yet."}</p>}
           </div>
         )}
         {open === null && tab === "calls" && (
@@ -254,8 +316,19 @@ export function SupportWidget({ appKey: givenKey, initialUser, waitForParent, te
             </ul>
           </div>
         )}
-        {open === null && tab === "help" && <div className="p-4"><HelpSearch api={api} onOpen={(id) => setOpen(`a:${id}`)} /></div>}
-        {open === "new" && <NewQuestion api={api} color={color} onDone={(id) => (setOpen(id), void reload())} onArticle={(id) => setOpen(`a:${id}`)} />}
+        {open === null && tab === "help" && (
+          <div className="space-y-4 p-4">
+            <HelpSearch api={api} onOpen={(id) => setOpen(`a:${id}`)} />
+            {s.content && (
+              <details className="rounded-lg border p-2 text-xs">
+                <summary className="cursor-pointer font-medium">{am ? "የድጋፍ መመሪያ እና ግላዊነት" : "Support policy and privacy"}</summary>
+                <p className="mt-2 whitespace-pre-wrap">{am ? s.content.policy.am : s.content.policy.en}</p>
+                <p className="mt-2 whitespace-pre-wrap text-muted-foreground">{am ? s.content.terms.am : s.content.terms.en}</p>
+              </details>
+            )}
+          </div>
+        )}
+        {open === "new" && <NewQuestion api={api} color={color} topic={s.content?.topics.find((t) => t.key === topic) ?? null} am={am} onDone={(id) => (setTopic(null), setOpen(id), void reload())} onArticle={(id) => setOpen(`a:${id}`)} />}
         {open?.startsWith("a:") && <ArticleView api={api} id={open.slice(2)} onAsk={() => setOpen("new")} />}
         {open && open !== "new" && !open.startsWith("a:") && (
           <LiveThread key={open} api={api} appKey={appKey} token={s.token} id={open} color={color} lang={lang} online={s.online} callButton={(reload) => <CallButton api={api} s={s} ticketId={open} color={color} onTicket={reload} />} />
@@ -360,13 +433,14 @@ function ArticleView({ api, id, onAsk }: { api: Api; id: string; onAsk: () => vo
   );
 }
 
-function NewQuestion({ api, color, onDone, onArticle }: { api: Api; color: string; onDone: (id: string) => void; onArticle: (id: string) => void }) {
+function NewQuestion({ api, color, topic, am, onDone, onArticle }: { api: Api; color: string; topic: ({ key: string } & Pair) | null; am: boolean; onDone: (id: string) => void; onArticle: (id: string) => void }) {
   const [f, setF] = React.useState({ subject: "", message: "" });
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState<string | null>(null);
   const suggested = useArticles(api, `${f.subject} ${f.message}`);
   return (
     <div className="space-y-2 p-4">
+      {topic && <p className="text-xs font-medium text-muted-foreground" data-chosen-topic>{am ? topic.am : topic.en}</p>}
       <Input aria-label="Subject" placeholder="Subject (optional)" value={f.subject} onChange={(e) => setF({ ...f, subject: e.target.value })} />
       <Textarea aria-label="Your question" placeholder="Tell us what you need" className="min-h-32" value={f.message} onChange={(e) => setF({ ...f, message: e.target.value })} />
       {suggested.length > 0 && (
@@ -388,7 +462,7 @@ function NewQuestion({ api, color, onDone, onArticle }: { api: Api; color: strin
           setBusy(true);
           setErr(null);
           try {
-            const r = await api<{ id: string }>("tickets", f);
+            const r = await api<{ id: string }>("tickets", { ...f, topic: topic?.key ?? null });
             onDone(r.id);
           } catch (e) {
             setErr(e instanceof Error ? e.message : "Could not send.");

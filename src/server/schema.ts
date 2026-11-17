@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 72;
+export const SCHEMA_VERSION = 77;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -3737,6 +3737,273 @@ CREATE INDEX IF NOT EXISTS idx_chapa_webhook_tx ON chapa_webhook_events(account_
 CREATE INDEX IF NOT EXISTS idx_chapa_webhook_time ON chapa_webhook_events(account_id, received_at);
 ALTER TABLE chapa_transactions ADD COLUMN IF NOT EXISTS last_webhook_at TEXT;
 
+-- v73 (Update 1.2, Phase 3): every resource Noor's admin offers (found in its navigation, not a fixed list), with
+-- Admin's on/off, and Noor's own row total against the count stored here (the nightly check).
+CREATE TABLE IF NOT EXISTS cms_resources (
+  slug TEXT PRIMARY KEY,
+  label TEXT NOT NULL,
+  path TEXT NOT NULL,
+  nav_group TEXT,
+  known INTEGER NOT NULL DEFAULT 0,
+  enabled INTEGER NOT NULL DEFAULT 0,
+  noor_total INTEGER,
+  stored INTEGER,
+  checked_at TEXT,
+  last_mirror_at TEXT,
+  last_error TEXT,
+  first_seen TEXT NOT NULL,
+  last_seen TEXT NOT NULL
+);
+-- The field registry: each column of each Noor resource, what it holds, and what may be done with it. The inferred
+-- type and flags come from Noor; label_override, type_override and sensitive are Admin's and survive rediscovery.
+CREATE TABLE IF NOT EXISTS cms_fields (
+  resource TEXT NOT NULL,
+  name TEXT NOT NULL,
+  label TEXT NOT NULL,
+  label_override TEXT,
+  inferred_type TEXT NOT NULL DEFAULT 'string',
+  type_override TEXT,
+  filterable INTEGER NOT NULL DEFAULT 0,
+  searchable INTEGER NOT NULL DEFAULT 1,
+  sortable INTEGER NOT NULL DEFAULT 0,
+  exportable INTEGER NOT NULL DEFAULT 1,
+  nullable INTEGER NOT NULL DEFAULT 0,
+  relationship TEXT,
+  sensitive INTEGER NOT NULL DEFAULT 0,
+  hidden_in_noor INTEGER NOT NULL DEFAULT 0,
+  source TEXT NOT NULL,
+  options_json TEXT,
+  sample TEXT,
+  position INTEGER NOT NULL DEFAULT 0,
+  first_seen TEXT NOT NULL,
+  last_seen TEXT NOT NULL,
+  PRIMARY KEY (resource, name)
+);
+-- v74 (Update 1.2, Phase 5): everything the Telegram bot and the Mini App say, in one versioned store. One row per
+-- key, bot ('default' or a system's app id) and language; a draft is edited and published, each publish is kept.
+CREATE TABLE IF NOT EXISTS sup_content (
+  id TEXT PRIMARY KEY,
+  key TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  bot TEXT NOT NULL DEFAULT 'default',
+  lang TEXT NOT NULL DEFAULT 'en',
+  parent_key TEXT,
+  action TEXT,
+  sort INTEGER NOT NULL DEFAULT 0,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  draft_body TEXT,
+  published_body TEXT,
+  published_at TEXT,
+  updated_at TEXT NOT NULL,
+  updated_by TEXT,
+  UNIQUE (key, bot, lang)
+);
+CREATE INDEX IF NOT EXISTS idx_sup_content_kind ON sup_content(bot, kind, sort);
+CREATE TABLE IF NOT EXISTS sup_content_versions (
+  id TEXT PRIMARY KEY,
+  content_id TEXT NOT NULL REFERENCES sup_content(id) ON DELETE CASCADE,
+  body TEXT NOT NULL,
+  action TEXT,
+  published_at TEXT NOT NULL,
+  published_by TEXT,
+  note TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_sup_content_versions ON sup_content_versions(content_id, published_at);
+
+-- v75 (Update 1.2, Phase 6): support chat at team-chat level. A conversation can be archived and escalated; a
+-- message can be edited, deleted (kept for the record, hidden from the customer), delivered (Telegram accepted it),
+-- saved by an agent and reported to the leads.
+ALTER TABLE sup_tickets ADD COLUMN IF NOT EXISTS archived_at TEXT;
+ALTER TABLE sup_tickets ADD COLUMN IF NOT EXISTS escalated_at TEXT;
+ALTER TABLE sup_tickets ADD COLUMN IF NOT EXISTS escalation_note TEXT;
+ALTER TABLE sup_messages ADD COLUMN IF NOT EXISTS edited_at TEXT;
+ALTER TABLE sup_messages ADD COLUMN IF NOT EXISTS deleted_at TEXT;
+ALTER TABLE sup_messages ADD COLUMN IF NOT EXISTS deleted_by TEXT;
+ALTER TABLE sup_messages ADD COLUMN IF NOT EXISTS delivered_at TEXT;
+CREATE TABLE IF NOT EXISTS sup_saved_messages (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  message_id TEXT NOT NULL REFERENCES sup_messages(id) ON DELETE CASCADE,
+  saved_at TEXT NOT NULL,
+  PRIMARY KEY (user_id, message_id)
+);
+CREATE TABLE IF NOT EXISTS sup_message_reports (
+  id TEXT PRIMARY KEY,
+  message_id TEXT NOT NULL REFERENCES sup_messages(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  reason TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'open',
+  created_at TEXT NOT NULL
+);
+-- Where an agent may forward a customer message (Admin sets them): a person, a department, or a department's head,
+-- who may use it, whether it needs a lead's approval, and what goes with it.
+CREATE TABLE IF NOT EXISTS sup_forward_targets (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  target TEXT NOT NULL,
+  label TEXT NOT NULL,
+  allowed_json TEXT NOT NULL DEFAULT '[]',
+  needs_approval INTEGER NOT NULL DEFAULT 0,
+  include_files INTEGER NOT NULL DEFAULT 1,
+  include_customer INTEGER NOT NULL DEFAULT 0,
+  link_conversation INTEGER NOT NULL DEFAULT 1,
+  active INTEGER NOT NULL DEFAULT 1,
+  sort INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS sup_forwards (
+  id TEXT PRIMARY KEY,
+  target_id TEXT NOT NULL REFERENCES sup_forward_targets(id) ON DELETE CASCADE,
+  message_id TEXT NOT NULL REFERENCES sup_messages(id) ON DELETE CASCADE,
+  ticket_id TEXT NOT NULL,
+  by_id TEXT NOT NULL,
+  note TEXT,
+  status TEXT NOT NULL DEFAULT 'sent',
+  decided_by TEXT,
+  decided_at TEXT,
+  recipients_json TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sup_forwards_status ON sup_forwards(status, created_at);
+
+-- v76 (Update 1.2, Phase 7): Customer Support Requests. Support asks an internal team (a department, its head, a
+-- chosen member, the support leads or Admin) for help on a customer's case. Eleven statuses with set moves, a history
+-- and discussion, approval chains set by Admin with no self-approval unless an exception is allowed (and audited),
+-- and, once acknowledged, a linked task in the department's own workspace.
+CREATE TABLE IF NOT EXISTS sup_request_destinations (
+  id TEXT PRIMARY KEY,
+  label TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  dept TEXT,
+  member_id TEXT,
+  types_json TEXT NOT NULL DEFAULT '[]',
+  active INTEGER NOT NULL DEFAULT 1,
+  sort INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS sup_request_chains (
+  id TEXT PRIMARY KEY,
+  destination_id TEXT,
+  type TEXT,
+  steps_json TEXT NOT NULL DEFAULT '[]',
+  allow_self INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS sup_requests (
+  id TEXT PRIMARY KEY,
+  reference TEXT NOT NULL UNIQUE,
+  type TEXT NOT NULL,
+  title TEXT NOT NULL,
+  description TEXT,
+  destination_id TEXT REFERENCES sup_request_destinations(id) ON DELETE SET NULL,
+  assignee_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+  priority TEXT NOT NULL DEFAULT 'normal',
+  status TEXT NOT NULL DEFAULT 'draft',
+  customer_id TEXT,
+  ticket_id TEXT,
+  chapa_ref TEXT,
+  requested_action TEXT,
+  error_details TEXT,
+  due_date TEXT,
+  resolution TEXT,
+  task_id TEXT,
+  task_dept TEXT,
+  chain_id TEXT,
+  approval_step INTEGER NOT NULL DEFAULT 0,
+  created_by TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  submitted_at TEXT,
+  resolved_at TEXT,
+  closed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_sup_requests_status ON sup_requests(status, updated_at);
+CREATE INDEX IF NOT EXISTS idx_sup_requests_creator ON sup_requests(created_by, updated_at);
+CREATE TABLE IF NOT EXISTS sup_request_events (
+  id TEXT PRIMARY KEY,
+  request_id TEXT NOT NULL REFERENCES sup_requests(id) ON DELETE CASCADE,
+  user_id TEXT,
+  kind TEXT NOT NULL,
+  from_status TEXT,
+  to_status TEXT,
+  body TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sup_request_events ON sup_request_events(request_id, created_at);
+CREATE TABLE IF NOT EXISTS sup_request_approvals (
+  id TEXT PRIMARY KEY,
+  request_id TEXT NOT NULL REFERENCES sup_requests(id) ON DELETE CASCADE,
+  step INTEGER NOT NULL,
+  approver_id TEXT NOT NULL,
+  decision TEXT NOT NULL,
+  reason TEXT,
+  self_exception INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS sup_request_files (
+  id TEXT PRIMARY KEY,
+  request_id TEXT NOT NULL REFERENCES sup_requests(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  mime TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  data TEXT NOT NULL,
+  uploaded_by TEXT,
+  created_at TEXT NOT NULL
+);
+
+-- v77 (Update 1.2, Phase 8): one call lifecycle, kept by the database itself so no code path can skip it. phase is
+-- the spec's state (initiated, ringing, accepted, connecting, connected, on_hold, transferring, completed, declined,
+-- missed, failed, cancelled, callback); every change of status, phase or hold writes a sup_call_events row.
+ALTER TABLE sup_calls ADD COLUMN IF NOT EXISTS phase TEXT;
+CREATE TABLE IF NOT EXISTS sup_call_events (
+  id BIGSERIAL PRIMARY KEY,
+  call_id TEXT NOT NULL,
+  phase TEXT NOT NULL,
+  status TEXT,
+  detail TEXT,
+  at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sup_call_events ON sup_call_events(call_id, id);
+CREATE OR REPLACE FUNCTION sup_call_phase_of(st TEXT, hold INTEGER, answered TEXT) RETURNS TEXT LANGUAGE sql IMMUTABLE AS $fn$
+  SELECT CASE
+    WHEN st = 'ringing' THEN 'ringing'
+    WHEN st = 'answered' AND hold = 1 THEN 'on_hold'
+    WHEN st = 'answered' THEN 'accepted'
+    WHEN st = 'transferred' THEN 'transferring'
+    WHEN st = 'ended' AND answered IS NOT NULL THEN 'completed'
+    WHEN st = 'ended' THEN 'cancelled'
+    WHEN st IN ('missed', 'declined', 'failed', 'cancelled', 'callback') THEN st
+    ELSE st
+  END
+$fn$;
+CREATE OR REPLACE FUNCTION sup_call_track() RETURNS trigger LANGUAGE plpgsql AS $fn$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    NEW.phase := COALESCE(NEW.phase, sup_call_phase_of(NEW.status, NEW.on_hold, NEW.answered_at));
+    INSERT INTO sup_call_events (call_id, phase, status, detail, at) VALUES (NEW.id, 'initiated', NEW.status, NEW.direction, COALESCE(NEW.started_at, to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')));
+    IF NEW.phase <> 'initiated' THEN
+      INSERT INTO sup_call_events (call_id, phase, status, at) VALUES (NEW.id, NEW.phase, NEW.status, COALESCE(NEW.started_at, to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')));
+    END IF;
+    RETURN NEW;
+  END IF;
+  -- A status or hold change sets the phase, unless the same update set it (connecting, connected, failed).
+  IF (NEW.status IS DISTINCT FROM OLD.status OR NEW.on_hold IS DISTINCT FROM OLD.on_hold) AND NEW.phase IS NOT DISTINCT FROM OLD.phase THEN
+    NEW.phase := sup_call_phase_of(NEW.status, NEW.on_hold, NEW.answered_at);
+    -- Back from hold to a call that had connected.
+    IF NEW.phase = 'accepted' AND OLD.phase = 'on_hold' THEN NEW.phase := 'connected'; END IF;
+  END IF;
+  IF NEW.phase IS DISTINCT FROM OLD.phase THEN
+    INSERT INTO sup_call_events (call_id, phase, status, at) VALUES (NEW.id, NEW.phase, NEW.status, to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'));
+  END IF;
+  RETURN NEW;
+END
+$fn$;
+DROP TRIGGER IF EXISTS sup_call_track ON sup_calls;
+CREATE TRIGGER sup_call_track BEFORE INSERT OR UPDATE ON sup_calls FOR EACH ROW EXECUTE FUNCTION sup_call_track();
+
+-- A row hash per mirrored record, so a later read can tell new, changed and unchanged rows apart.
+ALTER TABLE legacy_cms_records ADD COLUMN IF NOT EXISTS row_hash TEXT;
+CREATE INDEX IF NOT EXISTS idx_legacy_cms_cat_ext ON legacy_cms_records(category, external_id);
+
 `;
 
 // Tables in dependency order; used to empty the workspace and to export or restore backups.
@@ -3985,4 +4252,19 @@ export const TABLES = [
   "sync_runs",
   "sync_errors",
   "chapa_webhook_events",
+  "cms_resources",
+  "cms_fields",
+  "sup_content",
+  "sup_content_versions",
+  "sup_saved_messages",
+  "sup_message_reports",
+  "sup_forward_targets",
+  "sup_forwards",
+  "sup_request_destinations",
+  "sup_request_chains",
+  "sup_requests",
+  "sup_request_events",
+  "sup_request_approvals",
+  "sup_request_files",
+  "sup_call_events",
 ] as const;

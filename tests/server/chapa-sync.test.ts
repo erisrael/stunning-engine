@@ -213,6 +213,23 @@ async function main() {
   const probe = (await H.probeChapaBusiness(admin, a)) as { listing: { dateFilterApplied: boolean; pageParameter: string; order: string; readBy: string } };
   check("the API check reports the date filter, paging and order", probe.listing.dateFilterApplied && /ignored/.test(probe.listing.pageParameter) && probe.listing.order === "newest first" && probe.listing.readBy === "date windows", probe.listing);
 
+  // 11. A key sealed with another encryption secret (database restored elsewhere, APP_SECRET changed): it is named
+  // as unreadable, no run is started, the schedule does not retry it every minute, and a new key clears it.
+  const k = await saveChapaAccount(admin, { name: "Unreadable key", secretKey: "CHASECK-KKK", currency: "ETB" });
+  const sealed = (await get<{ s: string }>("SELECT secret_key_enc s FROM chapa_accounts WHERE id = ?", k))!.s.split(":");
+  sealed[3] = Buffer.from("not-this-key").toString("base64");
+  await run("UPDATE chapa_accounts SET secret_key_enc = ? WHERE id = ?", sealed.join(":"), k);
+  const before = (await listRuns("chapa", [k])).length;
+  const keyErr = await H.syncChapaBusiness(k, { full: true }).then(() => "", (e: Error) => e.message);
+  check("an unreadable key is named as such, not as a missing key", /cannot be read/.test(keyErr) && /enter the secret key again/i.test(keyErr), keyErr);
+  calls = [];
+  await H.scheduledChapa(NOW + 10 * DAY);
+  const kRow = (await get<{ health: string; last_error: string | null }>("SELECT health, last_error FROM chapa_accounts WHERE id = ?", k))!;
+  check("no run and no request is made with an unreadable key", (await listRuns("chapa", [k])).length === before && !calls.some((c) => c.includes("KKK")) && kRow.health === "error" && /cannot be read/.test(kRow.last_error ?? ""), { kRow, runs: (await listRuns("chapa", [k])).length });
+  await saveChapaAccount(admin, { id: k, name: "Unreadable key", secretKey: "CHASECK-KKK", currency: "ETB", active: false });
+  const kAfter = (await get<{ health: string; last_error: string | null }>("SELECT health, last_error FROM chapa_accounts WHERE id = ?", k))!;
+  check("entering the key again clears the key error", kAfter.health !== "error" && kAfter.last_error === null, kAfter);
+
   console.log(`\n${pass} passed, ${fail} failed`);
   await closeDb();
   process.exit(fail ? 1 : 0);

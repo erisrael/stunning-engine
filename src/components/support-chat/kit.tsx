@@ -11,6 +11,7 @@ import {
   CheckCheckIcon,
   CheckIcon,
   ChevronLeftIcon,
+  CopyIcon,
   ChevronRightIcon,
   DownloadIcon,
   FileIcon,
@@ -33,6 +34,7 @@ import {
   XIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@/components/ui/context-menu";
 
 // ---------------------------------------------------------------------------
 // Types and words
@@ -52,10 +54,15 @@ export type KitMsg = {
   files: KitFile[];
   replyTo: KitQuote | null;
   reactions: KitReaction[];
-  status?: "sent" | "seen" | null;
+  status?: "sent" | "delivered" | "seen" | null;
   // Who wrote it (customer, agent, system, note), kept on the element for tests and styling.
   role?: string;
+  edited?: boolean;
+  deleted?: boolean;
+  saved?: boolean;
 };
+// The message menu (right-click, or a long press on a phone): what the screen offers for this message.
+export type KitMenuItem = { key: string; label: string; icon?: React.ReactNode; danger?: boolean; separatorBefore?: boolean; onSelect: () => void };
 export type KitCall = { id: string; at: string; direction: string; kind: string; status: string; durationS: number | null; recordingUrl?: string | null; who?: string | null };
 
 export const KIT_WORDS = {
@@ -89,6 +96,11 @@ export const KIT_WORDS = {
   note: "Internal note",
   seen: "Seen",
   sent: "Sent",
+  delivered: "Delivered",
+  edited: "edited",
+  deleted: "This message was deleted",
+  saved: "Saved",
+  copy: "Copy",
   tooBig: (n: string) => `${n} is larger than 10 MB.`,
   mic: "Allow the microphone to record.",
   call: { inbound: "Incoming call", outbound: "Outgoing call", missed: "Missed call", declined: "Declined call", callback: "Call-back requested", ringing: "Ringing…", answered: "In the call" } as Record<string, string>,
@@ -350,8 +362,52 @@ function Attachments({ m, out, accent, w, onImage }: { m: KitMsg; out: boolean; 
   );
 }
 
-function Bubble({ m, grouped, accent, w, onReply, onReact, onImage, highlight }: { m: KitMsg; grouped: boolean; accent?: string; w: KitWords; onReply?: (m: KitMsg) => void; onReact?: (m: KitMsg, emoji: string) => void; onImage: (f: KitFile) => void; highlight: boolean }) {
+function Bubble(props: { m: KitMsg; grouped: boolean; accent?: string; w: KitWords; onReply?: (m: KitMsg) => void; onReact?: (m: KitMsg, emoji: string) => void; onImage: (f: KitFile) => void; highlight: boolean; menu?: (m: KitMsg) => KitMenuItem[] }) {
   const [picker, setPicker] = React.useState(false);
+  const { m, w } = props;
+  const own = props.menu && m.side !== "system" && !m.deleted ? props.menu(m) : [];
+  // Every screen with a menu gets Reply, React and Copy first; the screen adds its own after them.
+  const items: KitMenuItem[] = own.length
+    ? [
+        ...(props.onReply && m.side !== "note" ? [{ key: "reply", label: w.reply, icon: <ReplyIcon />, onSelect: () => props.onReply!(m) }] : []),
+        ...(props.onReact ? [{ key: "react", label: w.react, icon: <SmilePlusIcon />, onSelect: () => setPicker(true) }] : []),
+        ...(m.body && !PLACEHOLDER.test(m.body.trim()) ? [{ key: "copy", label: w.copy, icon: <CopyIcon />, onSelect: () => void navigator.clipboard?.writeText(m.body).catch(() => null) }] : []),
+        ...own,
+      ]
+    : [];
+  if (!items.length) return <BubbleBody {...props} picker={picker} setPicker={setPicker} />;
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <div data-msg-menu>
+          <BubbleBody {...props} picker={picker} setPicker={setPicker} />
+        </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent className="w-52" data-msg-menu-content>
+        {items.map((it) => (
+          <React.Fragment key={it.key}>
+            {it.separatorBefore && <ContextMenuSeparator />}
+            <ContextMenuItem variant={it.danger ? "destructive" : "default"} onSelect={it.onSelect} data-menu-item={it.key}>
+              {it.icon}
+              {it.label}
+            </ContextMenuItem>
+          </React.Fragment>
+        ))}
+      </ContextMenuContent>
+    </ContextMenu>
+  );
+}
+
+function BubbleBody({ m, grouped, accent, w, onReply, onReact, onImage, highlight, picker, setPicker }: { m: KitMsg; grouped: boolean; accent?: string; w: KitWords; onReply?: (m: KitMsg) => void; onReact?: (m: KitMsg, emoji: string) => void; onImage: (f: KitFile) => void; highlight: boolean; picker: boolean; setPicker: React.Dispatch<React.SetStateAction<boolean>> }) {
+  if (m.deleted)
+    return (
+      <div id={`sc-${m.id}`} className={cn("flex", !grouped && "mt-2", m.side === "out" || m.side === "note" ? "justify-end" : "justify-start pl-10")} data-chat-msg={m.id} data-deleted>
+        <p className="rounded-2xl border border-dashed px-3 py-1.5 text-xs text-muted-foreground italic">
+          {w.deleted}
+          {m.body ? `: ${m.body}` : ""} <span className="ml-1 text-[10px] not-italic">{time(m.at)}</span>
+        </p>
+      </div>
+    );
   const out = m.side === "out";
   const note = m.side === "note";
   const caption = m.files.length && PLACEHOLDER.test(m.body.trim()) ? "" : m.body;
@@ -407,8 +463,10 @@ function Bubble({ m, grouped, accent, w, onReply, onReact, onImage, highlight }:
             <Attachments m={m} out={out} accent={accent} w={w} onImage={onImage} />
             {caption && <Text text={caption} out={out} />}
             <span className={cn("float-right mt-0.5 ml-2 flex items-center gap-0.5 text-[10px] tabular-nums", out ? "text-white/75" : "text-muted-foreground")}>
+              {m.edited && <span className="mr-0.5 italic" data-edited>{w.edited}</span>}
+              {m.saved && <span className="mr-0.5" aria-label={w.saved} title={w.saved} data-saved>*</span>}
               {time(m.at)}
-              {out && m.status && (m.status === "seen" ? <CheckCheckIcon className="size-3.5 text-sky-200" aria-label={w.seen} data-seen /> : <CheckIcon className="size-3.5" aria-label={w.sent} />)}
+              {out && m.status && (m.status === "seen" ? <CheckCheckIcon className="size-3.5 text-sky-200" aria-label={w.seen} data-seen /> : m.status === "delivered" ? <CheckCheckIcon className="size-3.5" aria-label={w.delivered} data-delivered /> : <CheckIcon className="size-3.5" aria-label={w.sent} />)}
             </span>
           </div>
         )}
@@ -505,7 +563,9 @@ export function ChatTimeline({
   onDropFiles,
   className,
   empty,
+  menu,
 }: {
+  menu?: (m: KitMsg) => KitMenuItem[];
   messages: KitMsg[];
   calls?: KitCall[];
   accent?: string;
@@ -612,7 +672,7 @@ export function ChatTimeline({
           return (
             <React.Fragment key={m.id}>
               {sep}
-              <Bubble m={m} grouped={grouped} accent={accent} w={w} onReply={m.side === "note" && onReply ? undefined : onReply} onReact={onReact} onImage={(f) => setLight(images.findIndex((x) => x.id === f.id))} highlight={flash === m.id} />
+              <Bubble m={m} grouped={grouped} accent={accent} w={w} onReply={m.side === "note" && onReply ? undefined : onReply} onReact={onReact} onImage={(f) => setLight(images.findIndex((x) => x.id === f.id))} highlight={flash === m.id} menu={menu} />
             </React.Fragment>
           );
         })}

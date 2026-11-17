@@ -217,9 +217,20 @@ async function scope(user: AppUser, biz?: string | null, action: ChapaAction = "
 // Chapa API
 // ---------------------------------------------------------------------------
 
-async function secretOf(r: AccRow) {
+// Why this business's secret key cannot be used, or null when it can. A key that is stored but cannot be decrypted
+// was sealed with another encryption secret (APP_SECRET set or changed, or the database restored from another
+// server); only entering the key again fixes it, so it is said plainly instead of "no secret key".
+export const CHAPA_KEY_UNREADABLE = "cannot be read";
+export async function chapaKeyProblem(r: Pick<AccRow, "name" | "secret_key_enc">): Promise<string | null> {
+  if (!r.secret_key_enc) return `${r.name} has no secret key. Enter it in Finance › Chapa › Settings.`;
   const k = (await unseal(r.secret_key_enc))?.trim() ?? "";
-  if (!k) throw new WorkflowError("INVALID_STATE", `${r.name} has no secret key.`);
+  if (k) return null;
+  return `The saved secret key of ${r.name} ${CHAPA_KEY_UNREADABLE}: it was encrypted with a different encryption secret (APP_SECRET was set or changed, or the database came from another server). Enter the secret key again in Finance › Chapa › Settings.`;
+}
+
+async function secretOf(r: AccRow) {
+  const k = (await unseal(r.secret_key_enc ?? ""))?.trim() ?? "";
+  if (!k) throw new WorkflowError("INVALID_STATE", (await chapaKeyProblem(r)) ?? `${r.name} has no secret key.`);
   return k;
 }
 
@@ -517,6 +528,8 @@ export async function chapaWebhook(accountId: string, rawBody: string, headers: 
 export async function probeChapaBusiness(user: AppUser, accountId: string) {
   await need(user, "verify", accountId);
   const r = await accRow(accountId);
+  const keyProblem = await chapaKeyProblem(r);
+  if (keyProblem) throw new WorkflowError("INVALID_STATE", keyProblem);
   const shape = (j: unknown) => {
     const o = (j ?? {}) as Record<string, any>;
     const d = o.data;
@@ -1141,13 +1154,20 @@ export async function chapaReport(user: AppUser, f: TxFilter) {
 // ---------------------------------------------------------------------------
 
 export async function scheduledChapa(now = Date.now()) {
-  const accounts = await all<{ id: string; name: string; sync_minutes: number; last_sync_at: string | null }>("SELECT id, name, sync_minutes, last_sync_at FROM chapa_accounts WHERE active = 1");
+  const accounts = await all<{ id: string; name: string; sync_minutes: number; last_sync_at: string | null; secret_key_enc: string; last_error: string | null }>("SELECT id, name, sync_minutes, last_sync_at, secret_key_enc, last_error FROM chapa_accounts WHERE active = 1");
   if (!accounts.length) return;
   const { acquireLease, releaseLease } = await import("./ops");
   if (!(await acquireLease("chapa-sync", 20 * 60e3))) return;
   try {
     const { openRun } = await import("./sync-runs");
     for (const a of accounts) {
+      // A key that is missing or cannot be decrypted fails every request: say so once on the business and wait for
+      // the key to be entered again, instead of starting a failing run every minute.
+      const keyProblem = await chapaKeyProblem(a);
+      if (keyProblem) {
+        if (a.last_error !== keyProblem) await run("UPDATE chapa_accounts SET health = 'error', last_error = ?, last_sync_at = ? WHERE id = ?", keyProblem, nowIso(), a.id);
+        continue;
+      }
       // A full run that ran out of time, or has windows to try again, goes on whatever the interval.
       const unfinished = await openRun("chapa", a.id, "full");
       if (!unfinished && a.last_sync_at && now - Date.parse(a.last_sync_at) < a.sync_minutes * 60e3) continue;

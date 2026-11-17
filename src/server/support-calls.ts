@@ -126,15 +126,22 @@ export async function dialInfo(user: AppUser, ticketId: string) {
   const recent = (x: string | null | undefined) => !!x && Date.now() - Date.parse(x) < CUSTOMER_ONLINE_MS;
   // Bot messages update last_seen_at; only the open app counts for Telegram customers.
   const online = inApp && (tg ? recent(c!.app_seen_at) : recent(c!.last_seen_at));
-  return { inApp, online, phone: c?.phone ?? null };
+  // A Telegram customer whose app is closed is still reached: the bot tells them and its button opens the app on
+  // the call while it rings.
+  const byBot = inApp && tg && !online && !!(await (await import("./support-channels")).telegramReachable(c!.app_id));
+  return { inApp, online, byBot, phone: c?.phone ?? null };
 }
 
 // The agent calls the customer in the app: it rings in their open widget until they answer or decline.
 export async function dialCustomer(user: AppUser, ticketId: string, offer: string) {
+  // The checks, in order (spec 8.1): the customer can be reached, the agent may call this customer, the agent is
+  // available, calls are on for the customer's system; then the session, then the customer is told.
   const t = await sd.canWork(user, ticketId);
   const info = await dialInfo(user, ticketId);
   if (!info.inApp) throw new WorkflowError("INVALID_STATE", "This customer cannot be called in the app. Call their phone.");
-  if (!info.online) throw new WorkflowError("INVALID_STATE", "The customer does not have the app open right now. Call their phone, or try again later.");
+  if (!info.online && !info.byBot) throw new WorkflowError("INVALID_STATE", "The customer does not have the app open right now. Call their phone, or try again later.");
+  const me = await get<{ status: string }>("SELECT status FROM sup_agents WHERE user_id = ?", user.id);
+  if (me && me.status === "offline") throw new WorkflowError("INVALID_STATE", "Go online (or away) to call customers.");
   if (!offer || offer.length > 20000) throw new WorkflowError("VALIDATION", "The call could not start.");
   if (await get("SELECT id FROM sup_calls WHERE customer_id = ? AND status IN ('ringing','answered') AND kind = 'web'", t.customer_id)) throw new WorkflowError("INVALID_STATE", "The customer is already in a call.");
   const cfg = await sd.supportConfig();
@@ -152,6 +159,8 @@ export async function dialCustomer(user: AppUser, ticketId: string, offer: strin
     app?.app_id ?? null,
   );
   await sd.activity(user.id, t.id, "call_dial", "Called the customer in the app");
+  // A Telegram customer also gets the bot's call notice, with a button that opens the support app to answer.
+  await (await import("./support-channels")).notifyTelegramCall(t.customer_id, "incoming", user.name).catch((e) => console.error("Telegram call notice failed", e));
   return { callId: id, record: cfg.recordCalls };
 }
 
@@ -164,7 +173,7 @@ export async function customerIncoming(app: sd.AppFull, token: string) {
   );
   if (!k) return { call: null };
   const cfg = await sd.supportConfig();
-  return { call: { id: k.id, offer: k.offer, agent: k.agent?.split(" ")[0] ?? null, ticketId: k.ticket_id, record: cfg.recordCalls, notice: cfg.recordCalls ? cfg.recordingNotice : null } };
+  return { call: { id: k.id, offer: k.offer, agent: k.agent?.split(" ")[0] ?? null, ticketId: k.ticket_id, record: cfg.recordCalls, notice: cfg.recordCalls ? cfg.recordingNotice : null, startedAt: k.started_at, ringSeconds: cfg.ringSeconds } };
 }
 
 export async function customerAnswer(app: sd.AppFull, token: string, callId: string, input: { answer: string; consent: boolean }) {
@@ -389,4 +398,37 @@ export async function customerCallback(app: sd.AppFull, token: string, input: { 
   const r = await requestCallback({ customerId: c.id, phone, appId: app.id, channel: "widget", ticketId: input.ticketId ?? null });
   if (clean(input.phone, 40)) await run("UPDATE sup_customers SET phone = COALESCE(phone, ?) WHERE id = ?", phone.replace(/[^\d+]/g, ""), c.id);
   return r;
+}
+
+// The media state, as each browser sees it (Update 1.2, Phase 8): connecting once accepted, connected when audio
+// flows, failed when it never does (the call then ends). Recorded in the call's lifecycle by the database trigger.
+const MEDIA_STATES = ["connecting", "connected", "failed"] as const;
+async function setMediaState(callId: string, state: string) {
+  if (!(MEDIA_STATES as readonly string[]).includes(state)) throw new WorkflowError("VALIDATION", "Unknown call state.");
+  if (state === "failed") {
+    await run("UPDATE sup_calls SET status = 'ended', phase = 'failed', ended_at = ? WHERE id = ? AND status IN ('ringing','answered')", nowIso(), callId);
+    return;
+  }
+  // Only forward: connecting before connected, never back once connected.
+  await run(`UPDATE sup_calls SET phase = ? WHERE id = ? AND status = 'answered' AND on_hold = 0 AND COALESCE(phase, '') NOT IN (${state === "connecting" ? "'connecting','connected'" : "'connected'"})`, state, callId);
+}
+export async function customerCallState(app: sd.AppFull, token: string, callId: string, state: string) {
+  const c = await sd.customerByToken(app, token);
+  const k = await sd.callFor(callId);
+  if (k.customer_id !== c.id) throw new WorkflowError("NOT_FOUND", "Call not found.");
+  await setMediaState(k.id, state);
+  return { ok: true };
+}
+export async function agentCallState(user: AppUser, callId: string, state: string) {
+  const k = await sd.callFor(callId);
+  if (k.ticket_id) await sd.canWork(user, k.ticket_id);
+  else if (k.agent_id !== user.id && k.host_id !== user.id) throw new WorkflowError("FORBIDDEN", "Not your call.");
+  await setMediaState(k.id, state);
+  return { ok: true };
+}
+// A call's lifecycle, for the desk and the reports.
+export async function callLifecycle(user: AppUser, callId: string) {
+  const k = await sd.callFor(callId);
+  if (k.ticket_id) await sd.canWork(user, k.ticket_id);
+  return all<{ phase: string; status: string | null; detail: string | null; at: string }>("SELECT phase, status, detail, at FROM sup_call_events WHERE call_id = ? ORDER BY id", k.id);
 }

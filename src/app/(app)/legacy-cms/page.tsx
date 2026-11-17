@@ -1,6 +1,6 @@
 import { eligibleQuestionRecipients } from "@/server/question-routing";
 import { redirect } from "next/navigation";
-import { BarChart3Icon, DatabaseIcon, DollarSignIcon, FileCheck2Icon, RadioIcon, TrendingUpIcon, UsersIcon } from "lucide-react";
+import { BarChart3Icon, DatabaseIcon, DollarSignIcon, FileCheck2Icon, ListTreeIcon, RadioIcon, TableIcon, TrendingUpIcon, UsersIcon } from "lucide-react";
 import { requireViewer } from "@/server/auth";
 import {
   getLegacyCmsConfigForUser,
@@ -24,6 +24,8 @@ import { CmsInvoicesView } from "@/components/app/legacy-cms/invoices-view";
 import { CmsReportsHome } from "@/components/app/legacy-cms/reports-view";
 import { CmsRevenueView } from "@/components/app/legacy-cms/revenue-view";
 import { CmsGrowthView } from "@/components/app/legacy-cms/growth-view";
+import { CmsFieldsView } from "@/components/app/legacy-cms/fields-view";
+import { CmsRecordsView } from "@/components/app/legacy-cms/records-view";
 import { LegacyCmsClient } from "./legacy-cms-client";
 
 export const metadata = { title: "Noor Ethiopia CMS (Legacy)" };
@@ -32,7 +34,7 @@ export const metadata = { title: "Noor Ethiopia CMS (Legacy)" };
 // date-first; Contacts and Storage & snapshots are views of the earlier client, which loads only when shown.
 // Tables & sync was folded into Live (Saved copy, Sync, slips, feedback) and the connection into Admin.
 const OLD = { contacts: "relations", storage: "storage" } as const;
-type View = "live" | "invoices" | "revenue" | "growth" | "reports" | keyof typeof OLD;
+type View = "live" | "invoices" | "revenue" | "growth" | "reports" | "records" | "fields" | keyof typeof OLD;
 
 export default async function LegacyCmsPage({ searchParams }: { searchParams: Promise<{ category?: string; view?: string }> }) {
   const viewer = await requireViewer();
@@ -45,18 +47,20 @@ export default async function LegacyCmsPage({ searchParams }: { searchParams: Pr
   const canReview = has("invoices") && canReviewInvoices(viewer);
   const canSchedule = can(viewer, "finance.access") || can(viewer, "users.manage");
 
+  const flags = await cmsViewerFlags(viewer);
   const tabs: PageTab[] = [
     { key: "live", label: "Live", icon: <RadioIcon /> },
+    { key: "records", label: "Records", icon: <TableIcon /> },
     { key: "invoices", label: "Invoices", icon: <FileCheck2Icon />, hidden: !canReview },
     { key: "revenue", label: "Revenue", icon: <DollarSignIcon />, hidden: !has("invoices") },
     { key: "growth", label: "Growth", icon: <TrendingUpIcon />, hidden: !allowedCategories.some((c) => ["students", "parents", "subscriptions"].includes(c)) },
     { key: "reports", label: "Reports", icon: <BarChart3Icon /> },
     { key: "contacts", label: "Contacts", icon: <UsersIcon />, hidden: !has("students", "parents") },
     { key: "storage", label: "Storage & snapshots", icon: <DatabaseIcon /> },
+    { key: "fields", label: "Resources & fields", icon: <ListTreeIcon />, hidden: !flags.canManageData },
   ];
   // Old links to Tables & sync open Live.
   const requested = tabs.find((t) => t.key === (sp.view === "tables" ? "live" : sp.view) && !t.hidden)?.key as View | undefined;
-  const flags = await cmsViewerFlags(viewer);
   const view: View = requested ?? "live";
   const requestedCategory = sp.category as LegacyCmsCategory;
   const initialCategory: LegacyCmsCategory = allowedCategories.includes(requestedCategory) ? requestedCategory : allowedCategories.includes("invoices") ? "invoices" : allowedCategories[0];
@@ -65,6 +69,8 @@ export default async function LegacyCmsPage({ searchParams }: { searchParams: Pr
   if (view === "live") body = <CmsLiveView categories={allowedCategories} canReview={canReview} initialCategory={initialCategory} canManageData={flags.canManageData} canResolveFeedback={flags.canResolveFeedback} />;
   else if (view === "invoices") body = <CmsInvoicesView />;
   else if (view === "revenue") body = <CmsRevenueView canReview={canReview} />;
+  else if (view === "fields") body = <CmsFieldsView />;
+  else if (view === "records") body = <CmsRecordsView resources={await (await import("@/server/cms-query")).cmsRecordResources(viewer)} />;
   else if (view === "growth") body = <CmsGrowthView categories={allowedCategories} />;
   else if (view === "reports") {
     const { listGroups } = await import("@/server/chat");

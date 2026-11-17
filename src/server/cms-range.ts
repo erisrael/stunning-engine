@@ -7,6 +7,7 @@ import { WorkflowError } from "./workflow";
 import {
   authenticateFilament,
   cmsStoppedSince,
+  getLegacyCmsConfig,
   getLegacyCmsConfigForUser,
   parseFilamentTable,
   requireCmsCategories,
@@ -111,11 +112,14 @@ export class CmsTable {
   private cookie = "";
   private base = "";
   private url = "";
+  // user null: the shared Noor login (the schedule). category: one of the fixed tables, or any resource slug
+  // found in Noor's navigation (cms-fields.ts), opened at /admin/<slug> unless a path is given.
   constructor(
-    private user: AppUser,
-    readonly category: LegacyCmsCategory,
+    private user: AppUser | null,
+    readonly category: LegacyCmsCategory | string,
     private check: () => Promise<void>,
     private conn?: CmsConnection,
+    private path?: string,
   ) {}
   async open(fresh = false): Promise<this> {
     let username = "";
@@ -123,13 +127,13 @@ export class CmsTable {
       this.base = this.conn.base;
       this.cookie = this.conn.cookie;
     } else {
-      const config = await getLegacyCmsConfigForUser(this.user);
+      const config = this.user ? await getLegacyCmsConfigForUser(this.user) : await getLegacyCmsConfig();
       if (!config.username && !config.sessionCookie) throw new WorkflowError("VALIDATION", "Connect Noor CMS first (Admin, Noor access).");
       username = config.username;
       this.base = config.baseUrl.replace(/\/+$/, "");
       this.cookie = await cmsSession(config, authenticateFilament, fresh);
     }
-    this.url = `${this.base}${LEGACY_CMS_CATEGORIES.find((c) => c.key === this.category)!.path}`;
+    this.url = `${this.base}${this.path ?? LEGACY_CMS_CATEGORIES.find((c) => c.key === this.category)?.path ?? `/admin/${this.category}`}`;
     try {
       this.seed = await cmsTableSeed(this.url, this.cookie, fresh);
     } catch (e) {

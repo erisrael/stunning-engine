@@ -23,6 +23,7 @@ export async function register() {
       await (await import("./server/cms-reports")).scheduledCmsReports();
       await (await import("./server/chapa-hub")).scheduledChapa();
       await (await import("./server/cms-metrics")).scheduledCmsMetrics();
+      await (await import("./server/cms-fields")).scheduledCmsMirror();
     } catch (e) {
       console.error("CMS automatic refresh failed", e);
     }

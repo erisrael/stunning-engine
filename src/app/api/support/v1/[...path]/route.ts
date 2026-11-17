@@ -22,6 +22,7 @@ import { sseResponse } from "@/server/sse";
 //   GET  calls/incoming               -> { call: { id, offer, agent, ticketId, record, notice } | null }   an agent calling
 //   POST calls/<id>/accept            { answer, consent }
 //   POST calls/<id>/decline
+//   POST calls/<id>/state            { state: connecting | connected | failed }   what this browser sees of the audio
 //   POST callback                     { phone?, ticketId? }                         -> { callId, ticketId }   ask to be called
 //   POST customers/sync             server to server, X-App-Secret: <app secret>  { customers: [{ id, name, email?, phone?, meta? }] }
 //   GET  tickets/<id>/live            server-sent events: { stamp, status, typing, read, online } (token may be ?token=)
@@ -80,8 +81,9 @@ async function handle(request: Request, ctx: Ctx, method: "GET" | "POST") {
     } else if (method === "POST" && a === "identify") out = await sd.identify(app, body as Parameters<typeof sd.identify>[1]);
     else if (a === "customers" && id === "sync" && method === "POST") out = await (await import("@/server/connected-systems")).syncCustomers(app.public_key, request.headers.get("x-app-secret"), body.customers);
     else if (a === "tickets" && !id && method === "GET") out = await sd.customerTickets(app, token);
+    else if (a === "updates" && !id && method === "GET") out = await sd.customerUpdates(app, token);
     else if (a === "calls" && id === "history" && method === "GET") out = await sd.customerCallHistory(app, token);
-    else if (a === "tickets" && !id && method === "POST") out = { id: await sd.customerCreateTicket(app, token, { subject: s(body.subject), message: s(body.message), priority: s(body.priority) as sd.Priority }) };
+    else if (a === "tickets" && !id && method === "POST") out = { id: await sd.customerCreateTicket(app, token, { subject: s(body.subject), message: s(body.message), priority: s(body.priority) as sd.Priority, topic: s(body.topic) || null }) };
     else if (a === "tickets" && id && b === "messages" && method === "GET") out = await sd.customerMessages(app, token, id, new URL(request.url).searchParams.get("since"));
     else if (a === "tickets" && id && b === "messages" && path[3] && path[4] === "react" && method === "POST") out = await sd.customerReact(app, token, id, path[3], s(body.emoji));
     else if (a === "tickets" && id && b === "messages" && method === "POST") out = { ok: true, id: await sd.customerReply(app, token, id, s(body.body), s(body.replyTo) || null) };
@@ -103,6 +105,7 @@ async function handle(request: Request, ctx: Ctx, method: "GET" | "POST") {
     else if (a === "calls" && !id && method === "POST") out = await sd.customerStartCall(app, token, { ticketId: s(body.ticketId) || null, offer: s(body.offer), consent: body.consent === true, transferFrom: s(body.transferFrom) || null });
     else if (a === "calls" && id && !b && method === "GET") out = await sd.customerPollCall(app, token, id);
     else if (a === "calls" && id && b === "ice" && method === "POST") out = (await sd.customerIce(app, token, id, body.candidate), { ok: true });
+    else if (a === "calls" && id && b === "state" && method === "POST") out = await (await import("@/server/support-calls")).customerCallState(app, token, id, s(body.state));
     else if (a === "calls" && id && b === "end" && method === "POST") out = (await sd.customerEndCall(app, token, id), { ok: true });
     else return Response.json({ error: "Unknown request." }, { status: 404, headers });
     return Response.json(out ?? { ok: true }, { headers });

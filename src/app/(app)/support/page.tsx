@@ -18,6 +18,8 @@ import { StudentsTable } from "@/components/app/support/students-table";
 import * as ch from "@/server/support-channels";
 import { all } from "@/server/db";
 import { cn } from "@/lib/utils";
+import { CHANNEL_LABELS } from "@/lib/support";
+import { DEPARTMENTS, DEPARTMENT_LABELS } from "@/lib/domain";
 import { Button } from "@/components/ui/button";
 import { MessageCircleIcon, PhoneCallIcon } from "lucide-react";
 
@@ -38,8 +40,8 @@ export default async function SupportPage({ searchParams }: { searchParams: Prom
         <EmptyState title={cfg.enabled ? "You are not a support agent" : "Customer support is switched off"} description={cfg.enabled ? "A support lead adds agents to the queues." : "Admin switches it on in Support setup."} />
       </div>
     );
-  const tabs = [...(cfg.enabled && agent ? ["desk", "calls", "students", "kb"] : []), ...(lead && cfg.enabled ? ["monitor"] : []), ...(lead ? ["queues", "help", "telegram", "bots", "apps", "systems"] : []), ...(admin || lead ? ["settings"] : [])];
-  const LABELS: Record<string, string> = { desk: "Desk", calls: "Calls", students: "Students & Parents", kb: "Knowledge base", monitor: "Monitor", queues: "Queues and replies", help: "Help menu and routing", telegram: "Telegram", bots: "Bot manager", apps: "Apps and SDK", systems: "Connected systems", settings: "Settings" };
+  const tabs = [...(cfg.enabled && agent ? ["desk", "calls", "students", "kb"] : []), ...(lead && cfg.enabled ? ["monitor"] : []), ...(lead ? ["queues", "help", "content", "telegram", "bots", "apps", "systems"] : []), ...(admin || lead ? ["settings"] : [])];
+  const LABELS: Record<string, string> = { desk: "Desk", calls: "Calls", students: "Students & Parents", kb: "Knowledge base", monitor: "Monitor", queues: "Queues and replies", help: "Help menu and routing", content: "Content", telegram: "Telegram", bots: "Bot manager", apps: "Apps and SDK", systems: "Connected systems", settings: "Settings" };
   const tab = tabs.includes(sp.tab ?? "") ? sp.tab! : tabs[0]!;
   const people = (await userDirectory()).map((u) => ({ id: u.id, name: u.name }));
   const queues = await sd.listQueues();
@@ -47,15 +49,15 @@ export default async function SupportPage({ searchParams }: { searchParams: Prom
   let panel: React.ReactNode = null;
   if (tab === "desk") {
     const view = sp.view ?? "mine";
-    const rows = await sd.inbox(viewer, view, sp.q ?? null);
+    const filter = { priority: sp.pri ?? null, channel: sp.ch ?? null };
+    const rows = await sd.inbox(viewer, view, sp.q ?? null, filter);
     const count = async (v: string) => (await sd.inbox(viewer, v)).length;
+    // The spec's ten views (counts where they ask for action), then Late and each queue.
+    const counted = new Set(["mine", "unassigned", "waiting", "escalated"]);
     const views = [
-      { key: "mine", label: "Mine", count: await count("mine") },
-      { key: "unassigned", label: "Unassigned", count: await count("unassigned") },
-      { key: "all", label: "All open" },
+      ...(await Promise.all(sd.INBOX_VIEWS.map(async ([key, label]) => ({ key, label, count: counted.has(key) ? await count(key) : undefined })))),
       { key: "breached", label: "Late", count: await count("breached") },
       ...queues.filter((q) => q.active && (lead || q.members.includes(viewer.id))).map((q) => ({ key: `queue:${q.id}`, label: q.name })),
-      { key: "solved", label: "Solved" },
     ];
     const detail = sp.ticket ? await sd.ticketDetail(viewer, sp.ticket).catch(() => null) : null;
     const agents = people.filter((p) => queues.some((q) => q.members.includes(p.id)) || cfg.leads.includes(p.id));
@@ -66,7 +68,7 @@ export default async function SupportPage({ searchParams }: { searchParams: Prom
         </div>
         <div className="grid gap-4 lg:grid-cols-[22rem_1fr]">
           <div className={cn(detail && "hidden lg:block")}>
-            <Inbox rows={rows} view={view} views={views} q={sp.q ?? ""} openId={sp.ticket ?? null} />
+            <Inbox rows={rows} view={view} views={views} q={sp.q ?? ""} openId={sp.ticket ?? null} pri={sp.pri ?? ""} ch={sp.ch ?? ""} channels={Object.entries(CHANNEL_LABELS).map(([key, label]) => ({ key, label }))} />
           </div>
           {detail ? (
             <div className="min-w-0 space-y-2">
@@ -98,6 +100,14 @@ export default async function SupportPage({ searchParams }: { searchParams: Prom
       <div className="grid gap-4 xl:grid-cols-2">
         <Queues queues={queues} people={people} />
         <Canned list={await sd.cannedReplies()} />
+        {await (async () => {
+          const F = await import("@/server/support-forward");
+          const { ForwardingSetup } = await import("@/components/app/support/forwarding");
+          const { customDepartments } = await import("@/server/departments");
+          const departments = [...DEPARTMENTS.map((d) => ({ key: d as string, label: DEPARTMENT_LABELS[d] })), ...(await customDepartments()).map((d) => ({ key: d.key, label: d.title }))];
+          const roles = (await (await import("@/server/role-catalog")).roleCatalog()).map((r) => ({ key: r.key, label: r.label }));
+          return <ForwardingSetup initial={await F.listForwardTargets(viewer)} pending={lead ? await F.pendingForwards(viewer) : []} people={people} departments={departments} roles={roles} lead={lead} />;
+        })()}
       </div>
     );
   else if (tab === "help")
@@ -110,6 +120,12 @@ export default async function SupportPage({ searchParams }: { searchParams: Prom
       />
     );
   else if (tab === "telegram") panel = <TelegramSetup texts={await ch.telegramTexts()} categories={await hp.helpCategories()} health={await ch.telegramHealth()} admin={admin} />;
+  else if (tab === "content") {
+    const { listBots } = await import("@/server/bot-manager");
+    const { SupportContentManager } = await import("@/components/app/support/content-manager");
+    const bots = (await listBots(viewer)).map((b) => ({ key: b.key, name: b.name }));
+    panel = <SupportContentManager bots={bots.length ? bots : [{ key: "default", name: "Default bot" }]} />;
+  }
   else if (tab === "apps") {
     const apps = await sd.listApps(viewer);
     panel = (

@@ -143,6 +143,8 @@ function useCustomerCall(api: Api) {
   const [info, setInfo] = React.useState<string | null>(null);
   const [secs, setSecs] = React.useState(0);
   const [held, setHeld] = React.useState(false);
+  // The microphone was refused (Telegram's in-app browser does this on some phones): offer the browser or a call-back.
+  const [micBlocked, setMicBlocked] = React.useState(false);
   const ref = React.useRef<{ pc?: RTCPeerConnection; mic?: MediaStream; poll?: number; timer?: number; callId?: string; consent?: boolean; ticketId?: string | null }>({});
   const audio = React.useRef<HTMLAudioElement>(null);
   const waiting = useWaitingMessage(state === "ringing");
@@ -175,6 +177,12 @@ function useCustomerCall(api: Api) {
   const newPc = async () => {
     const ice = await api<{ iceServers: RTCIceServer[] }>("ice");
     const pc = new RTCPeerConnection({ iceServers: ice.iceServers });
+    // What this browser sees of the audio goes into the call's lifecycle on the server.
+    pc.onconnectionstatechange = () => {
+      const id = ref.current.callId;
+      const st = pc.connectionState === "connected" ? "connected" : pc.connectionState === "failed" ? "failed" : null;
+      if (id && st) void api(`calls/${id}/state`, { state: st }).catch(() => {});
+    };
     const mic = ref.current.mic ?? (await navigator.mediaDevices.getUserMedia({ audio: true }));
     Object.assign(ref.current, { pc, mic });
     mic.getTracks().forEach((t) => ((t.enabled = true), pc.addTrack(t, mic)));
@@ -230,7 +238,9 @@ function useCustomerCall(api: Api) {
       if (!ticketId && onTicket) onTicket(r.ticketId);
       follow(r.callId, pc, true);
     } catch (e) {
-      setInfo(e instanceof Error && /Permission|NotAllowed/.test(e.name + e.message) ? "Allow the microphone to call us." : e instanceof Error ? e.message : "The call could not start.");
+      const blocked = e instanceof Error && /Permission|NotAllowed/.test(e.name + e.message);
+      setMicBlocked(blocked);
+      setInfo(blocked ? "The microphone is not allowed here. Open this page in your browser, or ask us to call you back." : e instanceof Error ? e.message : "The call could not start.");
       await stop(false);
     }
   };
@@ -241,17 +251,21 @@ function useCustomerCall(api: Api) {
       await pc.setRemoteDescription(JSON.parse(c.offer) as RTCSessionDescriptionInit);
       await pc.setLocalDescription(await pc.createAnswer());
       await gathered(pc);
+      ref.current.callId = c.id;
       await api(`calls/${c.id}/accept`, { answer: JSON.stringify(pc.localDescription), consent: true });
+      void api(`calls/${c.id}/state`, { state: "connecting" }).catch(() => {});
       Object.assign(ref.current, { consent: true, ticketId: c.ticketId });
       live(c.agent);
       follow(c.id, pc, false);
     } catch (e) {
-      setInfo(e instanceof Error && /Permission|NotAllowed/.test(e.name + e.message) ? "Allow the microphone to answer." : e instanceof Error ? e.message : "The call could not connect.");
+      const blocked = e instanceof Error && /Permission|NotAllowed/.test(e.name + e.message);
+      setMicBlocked(blocked);
+      setInfo(blocked ? "The microphone is not allowed here. Open this page in your browser, or ask us to call you back." : e instanceof Error ? e.message : "The call could not connect.");
       await stop(false);
     }
   };
 
-  return { state, setState, info, secs, setSecs, held, audio, waiting, call, accept, stop };
+  return { state, setState, info, secs, setSecs, held, audio, waiting, call, accept, stop, micBlocked, setMicBlocked };
 }
 
 function CallBar({ c, onOk }: { c: ReturnType<typeof useCustomerCall>; onOk: () => void }) {
@@ -388,7 +402,51 @@ export function CallButton({ api, s, ticketId, color, onTicket }: { api: Api; s:
   return null;
 }
 
-type Incoming = { id: string; offer: string; agent: string | null; ticketId: string | null; record: boolean; notice: string | null };
+type Incoming = { id: string; offer: string; agent: string | null; ticketId: string | null; record: boolean; notice: string | null; startedAt?: string; ringSeconds?: number };
+
+// While a call rings: the phone vibrates and a soft tone plays (when the browser allows), and the seconds left show.
+function useRinging(ring: Incoming | null) {
+  const [left, setLeft] = React.useState<number | null>(null);
+  React.useEffect(() => {
+    if (!ring) return setLeft(null);
+    const end = Date.parse(ring.startedAt ?? new Date().toISOString()) + (ring.ringSeconds ?? 45) * 1000;
+    let ac: AudioContext | null = null;
+    try {
+      ac = new AudioContext();
+    } catch {}
+    const beep = () => {
+      try {
+        navigator.vibrate?.([400, 200, 400]);
+        if (!ac || ac.state === "closed") return;
+        const o = ac.createOscillator();
+        const g = ac.createGain();
+        o.frequency.value = 440;
+        g.gain.value = 0.05;
+        o.connect(g).connect(ac.destination);
+        o.start();
+        o.stop(ac.currentTime + 0.4);
+      } catch {}
+    };
+    const tick = () => setLeft(Math.max(0, Math.round((end - Date.now()) / 1000)));
+    tick();
+    beep();
+    const t1 = window.setInterval(tick, 1000);
+    const t2 = window.setInterval(beep, 2500);
+    return () => {
+      window.clearInterval(t1);
+      window.clearInterval(t2);
+      navigator.vibrate?.(0);
+      void ac?.close().catch(() => {});
+    };
+  }, [ring]);
+  return left;
+}
+// Open this page outside Telegram's in-app browser (where the microphone may be refused).
+const openInBrowser = () => {
+  const tg = (window as unknown as { Telegram?: { WebApp?: { openLink?: (u: string) => void } } }).Telegram?.WebApp;
+  if (tg?.openLink) tg.openLink(window.location.href);
+  else window.open(window.location.href, "_blank");
+};
 
 // The widget's one call, shown at the top whichever page is open (so it carries on when the conversation opens),
 // and an agent calling the customer: it rings here while the panel is open; answer (agreeing to the recording when
@@ -396,7 +454,9 @@ type Incoming = { id: string; offer: string; agent: string | null; ticketId: str
 export function CallLayer({ api, s, children }: { api: Api; s: Session; children: React.ReactNode }) {
   const c = useCustomerCall(api);
   const [ring, setRing] = React.useState<Incoming | null>(null);
+  const [askBack, setAskBack] = React.useState(false);
   const idle = c.state === "idle";
+  const left = useRinging(idle ? ring : null);
   React.useEffect(() => {
     if (!idle || s.channels?.calls === false || s.callEngine?.engine === "phone") return;
     let stop = false;
@@ -418,9 +478,22 @@ export function CallLayer({ api, s, children }: { api: Api; s: Session; children
           <CallBar c={c} onOk={() => (c.setState("idle"), c.setSecs(0), setRing(null))} />
         </div>
       )}
+      {c.micBlocked && (
+        <div className="space-y-2 border-b px-4 py-3 text-sm" data-mic-blocked>
+          <p>{c.info}</p>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="outline" onClick={openInBrowser} data-open-browser>Open in my browser</Button>
+            <Button size="sm" variant="outline" onClick={() => (setAskBack(true), c.setMicBlocked(false))} data-mic-callback>Call me back</Button>
+            <Button size="sm" variant="ghost" onClick={() => c.setMicBlocked(false)}>Close</Button>
+          </div>
+        </div>
+      )}
+      {askBack && <div className="px-4 pt-3"><CallbackForm api={api} ticketId={null} color={s.app.color ?? "#1A73E8"} onClose={() => setAskBack(false)} /></div>}
       {idle && ring && (
         <div className="space-y-2 border-b px-4 py-3 text-sm" data-incoming-call>
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{s.app.name} support</p>
           <p className="font-medium">{ring.agent ?? "Support"} is calling you</p>
+          {left !== null && <p className="text-xs text-muted-foreground" data-ring-left>Rings for {left} more second{left === 1 ? "" : "s"}. Nothing connects until you answer.</p>}
           {ring.record && ring.notice && <p className="text-xs text-muted-foreground">{ring.notice} Answering means you agree.</p>}
           <div className="flex gap-2">
             <Button size="sm" className="text-white" style={{ background: "#188038" }} onClick={() => (setRing(null), void c.accept(ring))} data-answer-call>

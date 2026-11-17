@@ -233,8 +233,8 @@ export type ChapaSyncResult = { runId: string; rows: number; pages: number; inse
 
 // Full history by date windows, newest first, resumable.
 async function fullByWindows(ctx: Ctx, runRow: SyncRun, progress: (m: string) => Promise<void>) {
-  const d = { emptyWindows: 0, failedWindows: [] as [number, number][], attempts: 0, ...(runRow.detail as object) } as { emptyWindows: number; failedWindows: [number, number][]; attempts: number; [k: string]: unknown };
-  d.attempts++;
+  // attempts was counted by runChapaSync before this call.
+  const d = { emptyWindows: 0, failedWindows: [] as [number, number][], attempts: 1, ...(runRow.detail as object) } as { emptyWindows: number; failedWindows: [number, number][]; attempts: number; [k: string]: unknown };
   let cursor = Date.parse(runRow.cursor ?? "") || Date.parse(runRow.until ?? nowIso());
   let rows = runRow.discovered;
   let paused = false;
@@ -336,13 +336,23 @@ async function byPages(ctx: Ctx, runRow: SyncRun, full: boolean, since: number, 
 export async function runChapaSync(accountId: string, opts: { full?: boolean; budgetMs?: number; by?: string | null } = {}, progress: (m: string) => Promise<void> = async () => {}): Promise<ChapaSyncResult> {
   await reviveStaleRuns("chapa");
   const r = await H.accRow(accountId);
+  // No run is started with a key that cannot be used: every request would fail the same way.
+  const keyProblem = await H.chapaKeyProblem(r);
+  if (keyProblem) {
+    await run("UPDATE chapa_accounts SET health = 'error', last_error = ?, last_sync_at = ? WHERE id = ?", keyProblem, nowIso(), accountId);
+    throw new WorkflowError("INVALID_STATE", keyProblem);
+  }
   const now = Date.now();
   const full = !!opts.full || !r.backfilled_at;
   const open = full ? await openRun("chapa", accountId, "full") : null;
+  // Each call that works on a full run is one attempt, counted before anything can fail, so a run that keeps
+  // failing ends after six attempts instead of being taken up again on every tick.
+  if (open) open.detail = { ...open.detail, attempts: Number(open.detail.attempts ?? 0) + 1 };
   const lastGood = Date.parse(r.last_ok_sync_at ?? r.last_sync_at ?? "") || now - 7 * DAY;
   const since = Math.max(lastGood - 2 * HOUR, now - 30 * DAY);
   const runRow = open ?? (await startRun({ source: "chapa", scopeId: accountId, kind: full ? "full" : "incremental", from: full ? null : iso(since), until: iso(now + 5 * 60e3), by: opts.by ?? null }));
-  if (open) await saveRun(open.id, { status: "running", error: null });
+  if (open) await saveRun(open.id, { status: "running", error: null, detail: open.detail });
+  else if (full) await saveRun(runRow.id, { detail: (runRow.detail = { ...runRow.detail, attempts: 1 }) });
   const ctx: Ctx = { r, runId: runRow.id, requests: 0, saved: 0, cap: r.row_cap ?? null, capped: 0, dupes: 0, votes: { utc: 0, addis: 0 }, sample: null, zoneAsked: false, notes: [], deadline: now + (opts.budgetMs ?? 4 * 60e3) };
   let mode: "windows" | "pages" = "pages";
   try {

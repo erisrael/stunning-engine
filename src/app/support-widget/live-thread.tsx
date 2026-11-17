@@ -66,6 +66,11 @@ type Live = { stamp: string; status: string; closed: boolean; typing: string | n
 // The chat kit's words in Amharic.
 const KIT_AM: KitWords = {
   ...KIT_WORDS,
+  delivered: "ደርሷል",
+  edited: "ተስተካክሏል",
+  deleted: "ይህ መልዕክት ተሰርዟል",
+  saved: "ተቀምጧል",
+  copy: "ቅዳ",
   today: "ዛሬ",
   yesterday: "ትናንት",
   reply: "መልስ",

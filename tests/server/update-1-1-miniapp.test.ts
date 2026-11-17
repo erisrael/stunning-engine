@@ -60,7 +60,7 @@ async function main() {
   await ch.telegramUpdate(secret, secret, { message: { message_id: 1, text: "/start", chat: { id: 4242, type: "private" }, from: { id: 4242, first_name: "Selam" } } });
   const menu = posts.filter((p) => p.url.endsWith("/sendMessage")).at(-1)!;
   const rows = ((menu.body.reply_markup as { inline_keyboard: { text: string; web_app?: { url: string } }[][] }).inline_keyboard ?? []).flat();
-  check("the menu opens the support app", rows.some((b) => b.text === "Open the support app" && b.web_app?.url === "https://cm.myseed.et/support-widget?tg=default"));
+  check("the menu opens the support app", rows.some((b) => b.text.startsWith("Open the support app") && b.web_app?.url === "https://cm.myseed.et/support-widget?tg=default"));
   check("and calling support in it", rows.some((b) => b.text === "Call support" && b.web_app?.url === "https://cm.myseed.et/support-widget?tg=default&call=1"));
   const botCustomer = (await get<{ id: string }>("SELECT id FROM sup_customers WHERE external_id = 'tg:4242' AND app_id IS NULL"))!;
 
@@ -80,6 +80,15 @@ async function main() {
   posts.length = 0;
   await sd.assignTicket(admin, tid, sara.id).catch(() => null);
   await sd.agentReply(sara, tid, { body: "We activated it" });
+  // Update 1.2: the Mini App's words and topics come from the content store; a topic names and routes a question;
+  // what support wrote comes back as the customer's updates.
+  const content = (mini.session as { content?: { welcome: { en: string }; topics: { key: string; en: string }[] } }).content;
+  check("the app has the content store's welcome and seven topics", !!content?.welcome.en.startsWith("Welcome to MySeed Support") && content.topics.length === 7, content);
+  const tid2 = await sd.customerCreateTicket(A, mini.session.token, { message: "My card was charged twice", topic: "topic.payments" });
+  const t2 = (await get<{ subject: string; category: string | null }>("SELECT subject, category FROM sup_tickets WHERE id = ?", tid2))!;
+  check("a topic names the question and routes it by its category", t2.subject.startsWith("Payments and Billing:") && t2.category === "payments", t2);
+  const ups = await sd.customerUpdates(A, mini.session.token);
+  check("support's replies are the customer's updates", ups.some((u) => u.ticket_id === tid && u.body === "We activated it"), ups);
   check("the agent's reply shows in the app", (await sd.customerMessages(A, mini.session.token, tid)).messages.some((m) => m.body === "We activated it"));
   check("and reaches the chat as a message", posts.some((p) => p.url.endsWith("/sendMessage") && String(p.body.chat_id) === "4242" && /We activated it/.test(String(p.body.text))));
   await sd.customerReply(A, mini.session.token, tid, "Thank you");

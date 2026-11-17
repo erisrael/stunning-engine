@@ -55,7 +55,8 @@ async function incoming(input: { channel: "email" | "telegram"; customerId: stri
     const t = await get<{ id: string; number: number; status: string; assignee_id: string | null }>("SELECT id, number, status, assignee_id FROM sup_tickets WHERE id = ?", input.ticketId);
     if (t && t.status !== "closed") {
       await run("INSERT INTO sup_messages (id, ticket_id, author_kind, author_id, body, internal, created_at, email_id) VALUES (?, ?, 'customer', ?, ?, 0, ?, ?)", uid("smg_"), t.id, input.customerId, body, now, input.emailId ?? null);
-      await run("UPDATE sup_tickets SET status = CASE WHEN status IN ('pending','solved') THEN 'open' ELSE status END, solved_at = CASE WHEN status = 'solved' THEN NULL ELSE solved_at END, last_customer_at = ?, updated_at = ? WHERE id = ?", now, now, t.id);
+      // A customer writing again brings an archived conversation back to the lists.
+      await run("UPDATE sup_tickets SET status = CASE WHEN status IN ('pending','solved') THEN 'open' ELSE status END, solved_at = CASE WHEN status = 'solved' THEN NULL ELSE solved_at END, archived_at = NULL, last_customer_at = ?, updated_at = ? WHERE id = ?", now, now, t.id);
       if (t.assignee_id) await (await import("./notifications")).notify([t.assignee_id], { type: "assignment", title: `#${t.number}: the customer replied (${input.channel === "email" ? "email" : "Telegram"})`, body: body.slice(0, 200), link: `/support?ticket=${t.id}`, dedupeKey: `sup-in-${t.id}-${now}` }, now);
       else await sd.autoAssign(t.id);
       return t.id;
@@ -274,7 +275,10 @@ export const DEFAULT_TG_TEXTS: TelegramTexts = {
 const textsKey = (bot: string) => (bot === "default" ? "sup.telegram.texts" : `sup.telegram.texts.${bot}`);
 const readTexts = async (key: string) => parseJson<Partial<TelegramTexts>>((await get<{ value: string }>("SELECT value FROM settings WHERE key = ?", key))?.value, {});
 export async function telegramTexts(bot = currentBot()): Promise<TelegramTexts> {
-  return { ...DEFAULT_TG_TEXTS, ...(await readTexts(textsKey("default"))), ...(bot === "default" ? {} : await readTexts(textsKey(bot))) };
+  // The switches (language, Mini App, phone, resources...) are kept here; the words are the published content
+  // (support-content.ts), the one copy every reader uses.
+  const base = { ...DEFAULT_TG_TEXTS, ...(await readTexts(textsKey("default"))), ...(bot === "default" ? {} : await readTexts(textsKey(bot))) };
+  return { ...base, ...(await (await import("./support-content")).botTextsFromContent(bot)) } as TelegramTexts;
 }
 export async function saveTelegramTexts(user: AppUser, input: Partial<TelegramTexts>, bot = "default") {
   const sd = await import("./support-desk");
@@ -302,6 +306,7 @@ export async function saveTelegramTexts(user: AppUser, input: Partial<TelegramTe
     feedbackThanksAm: t("feedbackThanksAm"),
   };
   await run("INSERT INTO settings (key, value, updated_at, updated_by) VALUES (?, ?, ?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by", textsKey(bot), JSON.stringify(next), nowIso(), user.id);
+  await (await import("./support-content")).publishBotTexts(bot, next, user.id);
   await audit({ actor: user }, { action: "support.telegram", summary: `${user.name} changed the ${bot === "default" ? "default" : "system"} Telegram bot's texts` });
   if (bot !== "default" || (await telegramState()).tokenEnc) await withBot(bot, () => setMenuButton(next)).catch(() => null);
   return next;
@@ -452,22 +457,184 @@ async function askPhone(chat: string, x: TelegramTexts) {
   });
 }
 
+// Words from the content store, in the customer's language (both while they have not chosen and the bot speaks both).
+async function sayKey(x: TelegramTexts, key: string, vars: Record<string, string | number> = {}) {
+  return (await import("./support-content")).contentSay(key, x.lang, currentBot(), vars);
+}
+async function btn(x: TelegramTexts, key: string) {
+  const c = await import("./support-content");
+  const [en, am] = await Promise.all([c.contentText(key, "en", currentBot()), c.contentText(key, "am", currentBot())]);
+  return (x.lang === "am" ? am || en : x.lang === "en" ? en || am : en && am && en !== am ? `${en} · ${am}` : en || am).slice(0, 64);
+}
+async function withLang(x: TelegramTexts, customerId: string): Promise<TelegramTexts> {
+  const l = (await customerMeta(customerId)).lang;
+  return l === "en" || l === "am" ? { ...x, lang: l } : x;
+}
+const backRow = async (x: TelegramTexts) => [{ text: await btn(x, "button.menu"), callback_data: "m" }];
+
+// The main menu (Customer support, Content): its entries in order, one a row; then resources, forms, feedback and
+// call-back; the phone and language buttons; the support app.
 async function sendMenu(chat: string, x: TelegramTexts) {
+  const c = await import("./support-content");
   const { helpCategories } = await import("./support-help");
-  const cats = await helpCategories({ activeOnly: true });
-  const rows: { text: string; callback_data?: string; web_app?: { url: string } }[][] = [];
-  for (let i = 0; i < cats.length; i += 2) rows.push(cats.slice(i, i + 2).map((c) => ({ text: label(x, c), callback_data: `c:${c.key}` })));
+  const cats = new Set((await helpCategories({ activeOnly: true })).map((k) => k.key));
+  const rows: { text: string; callback_data?: string; web_app?: { url: string }; url?: string }[][] = [];
+  for (const e of await c.contentEntries("menu", x.lang, currentBot())) {
+    const a = e.action;
+    if (a.startsWith("url:")) rows.push([{ text: e.label, url: a.slice(4) }]);
+    // A category entry is the category's own button: its help articles first, then the question.
+    else if (a.startsWith("category:")) rows.push([{ text: e.label, callback_data: cats.has(a.slice(9)) ? `c:${a.slice(9)}` : "mn:start" }]);
+    else rows.push([{ text: e.label, callback_data: a === "language" ? "lang" : `mn:${a}` }]);
+  }
   rows.push(...(await (await import("./bot-manager")).menuRows(currentBot(), x)));
-  rows.push([{ text: PHONE_BUTTON(x), callback_data: "ph" }]);
+  rows.push([{ text: PHONE_BUTTON(x), callback_data: "ph" }, { text: await btn(x, "button.language"), callback_data: "lang" }]);
   const origin = await botOrigin();
   const appUrl = supportAppUrl(origin, currentBot());
   if (appUrl && x.miniApp) {
-    rows.push([{ text: x.lang === "am" ? "የድጋፍ መተግበሪያውን ክፈት" : "Open the support app", web_app: { url: appUrl } }]);
+    rows.push([{ text: await btn(x, "button.open_app"), web_app: { url: appUrl } }]);
     // Telegram bots cannot call; the support app can, in the browser inside Telegram.
     const { channelOn } = await import("./connected-systems");
     if (await channelOn(currentBot() === "default" ? null : currentBot(), "calls")) rows.push([{ text: x.lang === "am" ? "ወደ ድጋፍ ይደውሉ" : "Call support", web_app: { url: supportAppUrl(origin, currentBot(), "&call=1")! } }]);
   }
-  await telegramSend(chat, say(x, x.welcome, x.welcomeAm), { reply_markup: { inline_keyboard: rows } });
+  await telegramSend(chat, (await sayKey(x, "welcome")) || say(x, x.welcome, x.welcomeAm), { reply_markup: { inline_keyboard: rows } });
+}
+
+const STATUS_WORDS: Record<string, [string, string]> = {
+  new: ["Received", "ደርሷል"],
+  open: ["In progress", "በሂደት ላይ"],
+  pending: ["Waiting for your answer", "መልስዎን እየጠበቅን ነው"],
+  on_hold: ["On hold", "ተይዟል"],
+  solved: ["Solved", "ተፈቷል"],
+  closed: ["Closed", "ተዘግቷል"],
+};
+const statusWord = (x: TelegramTexts, s: string) => {
+  const [en, am] = STATUS_WORDS[s] ?? [s, s];
+  return x.lang === "am" ? am : x.lang === "en" ? en : `${en} · ${am}`;
+};
+const REOPEN_DAYS = 7;
+const openTicketOf = (customerId: string) =>
+  get<{ id: string; number: number; queue_id: string | null; status: string }>("SELECT id, number, queue_id, status FROM sup_tickets WHERE customer_id = ? AND status NOT IN ('solved','closed') ORDER BY updated_at DESC LIMIT 1", customerId);
+const reopenableOf = (customerId: string) =>
+  get<{ id: string; number: number }>("SELECT id, number FROM sup_tickets WHERE customer_id = ? AND status IN ('solved','closed') AND updated_at >= ? ORDER BY updated_at DESC LIMIT 1", customerId, new Date(Date.now() - REOPEN_DAYS * 86400e3).toISOString());
+
+// The customer's requests: open ones (with change topic and close), or earlier ones (with reopen when allowed).
+async function sendRequests(chat: string, x: TelegramTexts, customerId: string, earlier: boolean) {
+  const list = await all<{ number: number; subject: string; status: string; updated_at: string }>(
+    `SELECT number, subject, status, updated_at FROM sup_tickets WHERE customer_id = ? AND status ${earlier ? "IN" : "NOT IN"} ('solved','closed') ORDER BY updated_at DESC LIMIT 10`,
+    customerId,
+  );
+  if (!list.length) return telegramSend(chat, await sayKey(x, earlier ? "history.none" : "requests.none"), { reply_markup: { inline_keyboard: [await backRow(x)] } });
+  const day = (iso: string) => new Date(iso).toLocaleDateString("en-GB", { day: "2-digit", month: "short", timeZone: "Africa/Addis_Ababa" });
+  const lines = list.map((t) => `#${t.number} · ${t.subject.slice(0, 60)}\n   ${statusWord(x, t.status)} · ${day(t.updated_at)}`);
+  const rows: { text: string; callback_data: string }[][] = [];
+  if (!earlier) rows.push([{ text: await btn(x, "button.transfer"), callback_data: "tr" }, { text: await btn(x, "button.close"), callback_data: "cl" }]);
+  else if (await reopenableOf(customerId)) rows.push([{ text: await btn(x, "button.reopen"), callback_data: "ro" }]);
+  rows.push(await backRow(x));
+  await telegramSend(chat, `${await sayKey(x, earlier ? "history.title" : "requests.title")}\n\n${lines.join("\n")}`, { reply_markup: { inline_keyboard: rows } });
+}
+
+async function sendTopics(chat: string, x: TelegramTexts, prefix: "tp" | "tt", intro: string) {
+  const topics = await (await import("./support-content")).contentEntries("category", x.lang, currentBot());
+  const rows = topics.map((t) => [{ text: t.label, callback_data: `${prefix}:${t.key}`.slice(0, 64) }]);
+  rows.push(await backRow(x));
+  await telegramSend(chat, await sayKey(x, intro), { reply_markup: { inline_keyboard: rows } });
+}
+
+async function closeConversation(chat: string, x: TelegramTexts, customerId: string) {
+  const t = await openTicketOf(customerId);
+  if (!t) return telegramSend(chat, await sayKey(x, "close.none"));
+  const now = nowIso();
+  await run("UPDATE sup_tickets SET status = 'closed', close_reason = 'customer', solved_at = COALESCE(solved_at, ?), updated_at = ? WHERE id = ?", now, now, t.id);
+  await run("INSERT INTO sup_messages (id, ticket_id, author_kind, author_id, body, internal, created_at) VALUES (?, ?, 'system', NULL, ?, 1, ?)", uid("smg_"), t.id, "The customer closed the conversation in Telegram.", now);
+  await (await import("./support-desk")).activity(null, t.id, "closed", "Closed by the customer");
+  await telegramSend(chat, await sayKey(x, "close.done", { number: t.number }), { reply_markup: { inline_keyboard: [await backRow(x)] } });
+}
+async function reopenConversation(chat: string, x: TelegramTexts, customerId: string) {
+  if (await openTicketOf(customerId)) return sendRequests(chat, x, customerId, false);
+  const t = await reopenableOf(customerId);
+  if (!t) return telegramSend(chat, await sayKey(x, "reopen.none"), { reply_markup: { inline_keyboard: [await backRow(x)] } });
+  const now = nowIso();
+  await run("UPDATE sup_tickets SET status = 'open', solved_at = NULL, close_reason = NULL, updated_at = ? WHERE id = ?", now, t.id);
+  await run("INSERT INTO sup_messages (id, ticket_id, author_kind, author_id, body, internal, created_at) VALUES (?, ?, 'system', NULL, ?, 1, ?)", uid("smg_"), t.id, "The customer reopened the conversation in Telegram.", now);
+  const sd = await import("./support-desk");
+  await sd.activity(null, t.id, "reopened", "Reopened by the customer");
+  await sd.autoAssign(t.id).catch(() => null);
+  await telegramSend(chat, await sayKey(x, "reopen.done", { number: t.number }));
+}
+async function transferConversation(chat: string, x: TelegramTexts, customerId: string, topicKey: string) {
+  const t = await openTicketOf(customerId);
+  if (!t) return telegramSend(chat, await sayKey(x, "transfer.none"), { reply_markup: { inline_keyboard: [await backRow(x)] } });
+  const topic = (await (await import("./support-content")).contentEntries("category", x.lang, currentBot())).find((e) => e.key === topicKey);
+  if (!topic) return sendTopics(chat, x, "tt", "transfer.choose");
+  const cat = topic.action.startsWith("category:") ? await (await import("./support-help")).helpCategory(topic.action.slice(9)) : null;
+  const now = nowIso();
+  const sd = await import("./support-desk");
+  const moves = !!cat?.queueId && cat.queueId !== t.queue_id;
+  if (moves) await run("UPDATE sup_tickets SET queue_id = ?, assignee_id = NULL, updated_at = ? WHERE id = ?", cat!.queueId, now, t.id);
+  else await run("UPDATE sup_tickets SET updated_at = ? WHERE id = ?", now, t.id);
+  await run("INSERT INTO sup_messages (id, ticket_id, author_kind, author_id, body, internal, created_at) VALUES (?, ?, 'system', NULL, ?, 1, ?)", uid("smg_"), t.id, `The customer moved this conversation to "${topic.label}".`, now);
+  await sd.activity(null, t.id, "transferred", `Moved by the customer to ${topic.label}`);
+  if (moves) await sd.autoAssign(t.id).catch(() => null);
+  await telegramSend(chat, await sayKey(x, "transfer.done", { number: t.number, topic: topic.label }));
+}
+
+// After a new request: who is there, the customer's place in line and, when enough answers were timed, the usual wait.
+async function sendQueueInfo(chat: string, x: TelegramTexts, ticketId: string) {
+  const sd = await import("./support-desk");
+  const t = await get<{ queue_id: string | null; assignee_id: string | null; created_at: string }>("SELECT queue_id, assignee_id, created_at FROM sup_tickets WHERE id = ?", ticketId);
+  if (!t) return;
+  if (t.assignee_id) return telegramSend(chat, await sayKey(x, "agent.available"));
+  if (!(await sd.availableAgents(t.queue_id, undefined, { ignoreLimit: true })).length) {
+    const off = await sayKey(x, "offline");
+    if (off) await telegramSend(chat, off);
+    return;
+  }
+  const ahead = Number((await get<{ n: number }>("SELECT COUNT(*) AS n FROM sup_tickets WHERE assignee_id IS NULL AND status IN ('new','open') AND COALESCE(queue_id, '') = COALESCE(?, '') AND created_at < ?", t.queue_id, t.created_at))?.n ?? 0);
+  const timed = await all<{ created_at: string; first_response_at: string }>(
+    "SELECT created_at, first_response_at FROM sup_tickets WHERE COALESCE(queue_id, '') = COALESCE(?, '') AND first_response_at IS NOT NULL AND created_at >= ? ORDER BY created_at DESC LIMIT 200",
+    t.queue_id,
+    new Date(Date.now() - 14 * 86400e3).toISOString(),
+  );
+  const waits = timed.map((r) => (Date.parse(r.first_response_at) - Date.parse(r.created_at)) / 60e3).filter((m) => m >= 0 && m < 24 * 60).sort((a, b) => a - b);
+  // Only with ten timed answers or more: a median of fewer would mislead.
+  const wait = waits.length >= 10 ? Math.max(1, Math.round(waits[Math.floor(waits.length / 2)])) : null;
+  const parts = [await sayKey(x, "queue.position", { position: ahead + 1 }), wait ? await sayKey(x, "queue.wait", { minutes: wait }) : ""].filter(Boolean);
+  if (parts.length) await telegramSend(chat, parts.join("\n"));
+}
+
+// FAQ search: the customer's words against the published help articles.
+async function answerFaq(chat: string, x: TelegramTexts, q: string) {
+  const arts = await searchArticles(q, 5);
+  if (!arts.length) return telegramSend(chat, await sayKey(x, "faq.none"), { reply_markup: { inline_keyboard: [[{ text: await btn(x, "menu.contact"), callback_data: "mn:contact" }], await backRow(x)] } });
+  const origin = (await telegramState()).origin;
+  const https = !!helpUrl(origin);
+  const rows: { text: string; url?: string; callback_data?: string }[][] = arts.map((a) => (https ? [{ text: a.title.slice(0, 60), url: `${origin}/help/${a.id}` }] : [{ text: a.title.slice(0, 60), callback_data: `g:${a.id}` }]));
+  rows.push([{ text: await btn(x, "menu.contact"), callback_data: "mn:contact" }], await backRow(x));
+  await telegramSend(chat, await sayKey(x, "faq.results"), { reply_markup: { inline_keyboard: rows } });
+}
+
+// Whether the bot of a customer's system (or the default bot) is connected, so a message reaches them.
+export async function telegramReachable(appId: string | null) {
+  const sys = await systemBot(appId);
+  return sys ? true : !!(await botToken());
+}
+
+// A call to a Telegram customer: the bot says so, with a button that opens the support app to answer.
+export async function notifyTelegramCall(customerId: string | null, kind: "incoming" | "missed" | "ended", agentName?: string | null) {
+  if (!customerId) return;
+  const c = await get<{ external_id: string | null; app_id: string | null }>("SELECT external_id, app_id FROM sup_customers WHERE id = ?", customerId);
+  if (!c?.external_id?.startsWith("tg:")) return;
+  const chat = c.external_id.slice(3);
+  const go = async () => {
+    if (!(await botToken())) return;
+    const x = await withLang(await telegramTexts(), customerId);
+    const text = await sayKey(x, `call.${kind}`, { agent: (agentName ?? "").split(" ")[0] || (x.lang === "am" ? "ወኪል" : "An agent") });
+    if (!text) return;
+    const url = kind === "incoming" ? supportAppUrl(await botOrigin(), currentBot(), "&call=1") : null;
+    await telegramSend(chat, text, url ? { reply_markup: { inline_keyboard: [[{ text: await btn(x, "button.open_app"), web_app: { url } }]] } } : {});
+  };
+  const sys = await systemBot(c.app_id);
+  await (sys ? botCtx.run(sys, go) : go());
 }
 
 type TgFrom = { id?: number; first_name?: string; last_name?: string; username?: string };
@@ -506,10 +673,51 @@ async function telegramButton(q: NonNullable<TgUpdate["callback_query"]>, x: Tel
   await api("answerCallbackQuery", { callback_query_id: q.id }).catch(() => null);
   const chat = String(q.message?.chat.id ?? q.from.id ?? "");
   if (!chat || (q.message && q.message.chat.type !== "private")) return;
-  const data = String(q.data ?? "");
+  let data = String(q.data ?? "");
   const h = await import("./support-help");
+  const me = await customerFor({ channel: "telegram", key: chat, name: nameOf(q.from) });
+  x = await withLang(x, me);
   if (data === "m") return sendMenu(chat, x);
   if (data === "ph") return askPhone(chat, x);
+  // Language: chosen once, kept on the customer.
+  if (data === "lang") return telegramSend(chat, await sayKey({ ...x, lang: "both" }, "language.choose"), { reply_markup: { inline_keyboard: [[{ text: "English", callback_data: "l:en" }, { text: "አማርኛ", callback_data: "l:am" }]] } });
+  if (data === "l:en" || data === "l:am") {
+    const lang = data.slice(2) as "en" | "am";
+    await setCustomerMeta(me, { lang });
+    const y = { ...x, lang };
+    await telegramSend(chat, await sayKey(y, "language.saved"));
+    return sendMenu(chat, y);
+  }
+  // The main menu's own entries (Customer support, Content).
+  if (data.startsWith("mn:")) {
+    const a = data.slice(3);
+    if (a === "start") return sendTopics(chat, x, "tp", "topics.choose");
+    if (a === "requests") return sendRequests(chat, x, me, false);
+    if (a === "history") return sendRequests(chat, x, me, true);
+    if (a === "faq") {
+      await setCustomerMeta(me, { tgAwait: "faq", tgAwaitAt: nowIso() });
+      return telegramSend(chat, await sayKey(x, "faq.prompt"), { reply_markup: { inline_keyboard: [await backRow(x)] } });
+    }
+    if (a === "contact") {
+      if ((await h.helpCategory("person"))?.active) data = "a:person";
+      else return telegramSend(chat, await sayKey(x, "ask"));
+    } else return sendMenu(chat, x);
+  }
+  // A conversation topic: straight to the question, in the topic's category.
+  if (data.startsWith("tp:")) {
+    const topic = (await (await import("./support-content")).contentEntries("category", "en", currentBot())).find((e) => e.key === data.slice(3));
+    if (!topic) return sendTopics(chat, x, "tp", "topics.choose");
+    await setCustomerMeta(me, { tgTopic: topic.label, tgTopicAt: nowIso() });
+    if (!topic.action.startsWith("category:") || !(await h.helpCategory(topic.action.slice(9)))?.active) {
+      await setCustomerMeta(me, { tgCategory: null, tgCategoryAt: null });
+      return telegramSend(chat, `${topic.label}\n${await sayKey(x, "ask")}`);
+    }
+    data = `a:${topic.action.slice(9)}`;
+  }
+  if (data === "tr") return sendTopics(chat, x, "tt", "transfer.choose");
+  if (data.startsWith("tt:")) return transferConversation(chat, x, me, data.slice(3));
+  if (data === "cl") return closeConversation(chat, x, me);
+  if (data === "ro") return reopenConversation(chat, x, me);
   if (data.startsWith("g:")) {
     const msgs = await (await import("./kb-guides")).guideMessages(data.slice(2)).catch(() => null);
     if (!msgs) return telegramSend(chat, x.lang === "am" ? "ይህ መረጃ ከእንግዲህ የለም።" : "This is no longer available.");
@@ -569,7 +777,7 @@ export async function telegramUpdate(secret: string, headerSecret: string | null
 async function handleUpdate(update: TgUpdate) {
   const sd = await import("./support-desk");
   if (!(await sd.supportConfig()).enabled) return { ok: true };
-  const x = await telegramTexts();
+  let x = await telegramTexts();
   if (update.callback_query) {
     await telegramButton(update.callback_query, x);
     return { ok: true };
@@ -581,6 +789,7 @@ async function handleUpdate(update: TgUpdate) {
   const name = nameOf(m.from);
   // Kept from /start on, so everyone who opened the bot gets its sends.
   const customerId = await customerFor({ channel: "telegram", key: chat, name });
+  x = await withLang(x, customerId);
   if (/^\/(start|menu|help)\b/.test(text)) {
     await (await import("./bot-manager")).message(currentBot(), chat, customerId, "", x);
     // Until we have their number, the share button sits under the message box (before the menu, which stays last).
@@ -591,6 +800,25 @@ async function handleUpdate(update: TgUpdate) {
   if (/^\/phone\b/.test(text)) {
     await askPhone(chat, x);
     return { ok: true };
+  }
+  // The commands of the content store's command list.
+  const cmd = text.match(/^\/(requests|history|language|transfer|close|reopen)\b/)?.[1];
+  if (cmd) {
+    if (cmd === "requests" || cmd === "history") await sendRequests(chat, x, customerId, cmd === "history");
+    else if (cmd === "language") await telegramSend(chat, await sayKey({ ...x, lang: "both" }, "language.choose"), { reply_markup: { inline_keyboard: [[{ text: "English", callback_data: "l:en" }, { text: "አማርኛ", callback_data: "l:am" }]] } });
+    else if (cmd === "transfer") await sendTopics(chat, x, "tt", "transfer.choose");
+    else if (cmd === "close") await closeConversation(chat, x, customerId);
+    else await reopenConversation(chat, x, customerId);
+    return { ok: true };
+  }
+  // The answer to "Frequently Asked Questions": searched in the help articles (asked within ten minutes).
+  const waiting = await customerMeta(customerId);
+  if (waiting.tgAwait === "faq" && text && !text.startsWith("/") && !m.contact) {
+    await setCustomerMeta(customerId, { tgAwait: null, tgAwaitAt: null });
+    if (Date.now() - Date.parse(waiting.tgAwaitAt ?? "") < 10 * 60e3) {
+      await answerFaq(chat, x, text);
+      return { ok: true };
+    }
   }
   // Their own number, shared with the button: kept on the customer so agents can find their records by phone.
   if (m.contact) {
@@ -626,8 +854,9 @@ async function handleUpdate(update: TgUpdate) {
   const h = category ? await import("./support-help") : null;
   const cat = h ? await h.helpCategory(category) : null;
   const body = text || (file ? (m.photo ? "(a photo)" : m.voice ? "(a voice note)" : m.video_note ? "(a video note)" : `(a file: ${file.name})`) : "(an empty message)");
-  const id = await incoming({ channel: "telegram", customerId, ticketId: open?.id ?? null, subject: `${cat ? `${cat.labelEn}: ` : ""}${text.slice(0, 70) || (file ? file.name : "Telegram message")}`, body, category });
-  if (category) await setCustomerMeta(customerId, { tgCategory: null, tgCategoryAt: null });
+  const topic = !open && meta.tgTopic && Date.now() - Date.parse(meta.tgTopicAt ?? "") < 86400e3 ? meta.tgTopic : null;
+  const id = await incoming({ channel: "telegram", customerId, ticketId: open?.id ?? null, subject: `${topic ? `${topic}: ` : cat ? `${cat.labelEn}: ` : ""}${text.slice(0, 70) || (file ? file.name : "Telegram message")}`, body, category });
+  if (category || topic) await setCustomerMeta(customerId, { tgCategory: null, tgCategoryAt: null, tgTopic: null, tgTopicAt: null });
   if (file) {
     const h2 = await import("./support-help");
     try {
@@ -644,6 +873,7 @@ async function handleUpdate(update: TgUpdate) {
   if (!open) {
     const t = await get<{ number: number }>("SELECT number FROM sup_tickets WHERE id = ?", id);
     await telegramSend(chat, say(x, x.thanks, x.thanksAm).replaceAll("{number}", String(t?.number ?? "")));
+    await sendQueueInfo(chat, x, id).catch((e) => console.error("Queue message failed", e));
   }
   return { ok: true };
 }

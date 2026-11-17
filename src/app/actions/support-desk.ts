@@ -78,6 +78,12 @@ export async function agentPollCallAction(callId: string) {
 export async function agentIceAction(callId: string, candidate: unknown) {
   return wrap(async () => sd.agentIce(await requireViewer(), callId, candidate), { revalidate: false });
 }
+export async function callStateAction(callId: string, state: string) {
+  return wrap(async () => (await import("@/server/support-calls")).agentCallState(await requireViewer(), callId, state), { revalidate: false });
+}
+export async function callLifecycleAction(callId: string) {
+  return wrap(async () => (await import("@/server/support-calls")).callLifecycle(await requireViewer(), callId), { revalidate: false });
+}
 export async function agentEndCallAction(callId: string, notes?: string | null) {
   return wrap(async () => sd.agentEndCall(await requireViewer(), callId, notes));
 }

@@ -199,6 +199,11 @@ function CallPanel({ call, record, onDone, onEnded }: { call: Exclude<ActiveCall
       try {
         const ice = await A.iceAction();
         const pc = new RTCPeerConnection({ iceServers: ice.ok ? ((ice.data as { iceServers: RTCIceServer[] }).iceServers ?? []) : [] });
+        // What this browser sees of the audio goes into the call's lifecycle (Update 1.2).
+        pc.onconnectionstatechange = () => {
+          const st = pc.connectionState === "connected" ? "connected" : pc.connectionState === "failed" ? "failed" : null;
+          if (p.current.callId && st) void A.callStateAction(p.current.callId, st);
+        };
         const mic = await navigator.mediaDevices.getUserMedia({ audio: true });
         Object.assign(p.current, { pc, mic });
         p.current.sender = pc.addTrack(mic.getAudioTracks()[0]!, mic);

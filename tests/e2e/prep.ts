@@ -463,6 +463,30 @@ PREPS["update-1-1-bots"] = async () => {
   return { key, bot: app.id };
 };
 
+// Update 1.2 Phases 5 and 6: the desk at team-chat level and the content manager, on the systems setup.
+PREPS["update-1-2-desk"] = async () => PREPS["update-1-1-systems"]!();
+
+// Update 1.2 Phase 7: a conversation, the Dev team's head, a destination and an approval chain.
+PREPS["update-1-2-requests"] = async () => {
+  await PREPS["update-1-1-systems"]!();
+  const a = await admin();
+  const sd = await import("../../src/server/support-desk");
+  const R = await import("../../src/server/support-requests");
+  const head = await upsertAccount({ name: "Tigist Head", email: "tigist@demo.local", title: "Dev head", roles: ["developer"], password: "Demo-Workflow-2026", mustChangePassword: false });
+  await (await import("../../src/server/departments")).setPosition(a, "dev", head.id, "head");
+  const dc = await import("../../src/server/dept-config");
+  const cfg = await dc.getDeptConfig("dev");
+  await dc.saveDeptConfig(a, "dev", { ...cfg, features: { ...cfg.features, requests: true } }, cfg.version, "Take requests");
+  const cus = uid("cus_");
+  await run("INSERT INTO sup_customers (id, app_id, external_id, name, phone, created_at) VALUES (?, NULL, 'test:req', 'Hana Girma', '0911223344', ?)", cus, nowIso());
+  const q = (await get<{ id: string }>("SELECT id FROM sup_queues LIMIT 1"))!.id;
+  const ticket = await sd.createTicketFromChannel({ subject: "Lesson 4 does not load", body: "The video never loads on Android", customerId: cus, channel: "web", appQueue: q });
+  await run("UPDATE sup_tickets SET assignee_id = ? WHERE id = ?", a.id, ticket);
+  const setup = await R.saveDestination(a, { label: "Developer Team Head", kind: "dept_head", dept: "dev", types: ["technical", "bug"] });
+  await R.saveChain(a, { destinationId: setup.destinations[0]!.id, steps: [{ kind: "dept_head", target: "dev" }] });
+  return { ticket, head: "tigist@demo.local" };
+};
+
 // Update 1.1: the support app inside Telegram (Mini App), with a resource and subscriber.
 PREPS["update-1-1-miniapp"] = async () => {
   const { key, bot } = (await PREPS["update-1-1-bots"]!()) as { key: string; bot: string };
@@ -548,6 +572,28 @@ PREPS["update-1-2-chapa"] = async () => {
   const { saveChapaAccount } = await import("../../src/server/chapa");
   const sub = await saveChapaAccount(await admin(), { name: "Subscriptions", secretKey: "CHASECK-AAA", webhookSecret: "whsec-A", currency: "ETB" });
   return { sub };
+};
+
+// Update 1.2 Phases 3 and 4: a resource found in Noor's menu ("teachers"), its field registry and 120 stored rows.
+PREPS["update-1-2-noor"] = async () => {
+  await passwordOnly();
+  const { isoValues } = await import("../../src/server/cms-fields");
+  const now = nowIso();
+  await run("INSERT INTO cms_resources (slug, label, path, nav_group, known, enabled, noor_total, stored, checked_at, first_seen, last_seen) VALUES ('teachers', 'Teachers', '/admin/teachers', 'People', 0, 1, 120, 120, ?, ?, ?)", now, now, now);
+  const fields: [string, string, string, number, number][] = [
+    ["id", "ID", "integer", 0, 1], ["name", "Name", "string", 0, 0], ["salary", "Salary", "currency", 0, 0], ["status", "Status", "status", 1, 0], ["created_at", "Created at", "datetime", 0, 1], ["password_hint", "Password hint", "string", 0, 0],
+  ];
+  for (const [i, [name, label, type, filterable, sortable]] of fields.entries())
+    await run(
+      "INSERT INTO cms_fields (resource, name, label, inferred_type, filterable, sortable, sensitive, source, options_json, position, first_seen, last_seen) VALUES ('teachers', ?, ?, ?, ?, ?, ?, 'column', ?, ?, ?, ?)",
+      name, label, type, filterable, sortable, name === "password_hint" ? 1 : 0, name === "status" ? JSON.stringify(["active", "left", "on leave"]) : null, i, now, now,
+    );
+  for (let i = 1; i <= 120; i++) {
+    const d: Record<string, unknown> = { ID: String(i), Name: `Teacher ${i}`, Salary: `ETB ${(5000 + i * 10).toLocaleString("en-US")}`, Status: ["active", "on leave", "left"][i % 3], "Created at": `2026-0${1 + (i % 9)}-1${i % 9} 10:00:00`, "Password hint": `hint${i}`, _recordId: String(i) };
+    d._iso = isoValues(d);
+    await run("INSERT INTO legacy_cms_records (id, category, external_id, title, data_json, synced_at) VALUES (?, 'teachers', ?, ?, ?, ?)", uid(), String(i), `Teacher ${i}`, JSON.stringify(d), now);
+  }
+  return {};
 };
 
 // Admin, Noor access, the new sidebar entries and Finance requests for Admin.

@@ -193,7 +193,7 @@ function homeGroups(h: HomeDept, viewerId: string): { label: string; items: NavI
             },
           ]
         : []),
-      { label: "Tools", items: [{ href: "/requests", label: "Requests", icon: InboxIcon }] },
+      { label: "Tools", items: [{ href: "/requests", label: "Requests", icon: InboxIcon }, { href: "/support-requests", label: "Support requests", icon: InboxIcon }] },
     ];
   return [
     {
@@ -469,6 +469,7 @@ export function AppSidebar({
         },
         { href: "/people", label: "People", icon: UsersRoundIcon },
         { href: "/requests", label: "Requests", icon: InboxIcon },
+        { href: "/support-requests", label: "Support requests", icon: InboxIcon },
         { href: "/owners", label: "Owners", icon: CrownIcon, cap: "owners.view", sub: [{ label: "Overview", href: "/owners" }, { label: "Department reports", href: "/owners?tab=reports" }] },
         ...(reportsLink ? [{ href: "/owners?tab=reports", label: "Department reports", icon: FileTextIcon }] : []),
       ],

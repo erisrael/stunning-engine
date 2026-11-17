@@ -77,7 +77,7 @@ async function main() {
 
   await ch.telegramUpdate(secret, secret, msg("/start"));
   const menu = JSON.stringify(last().reply_markup);
-  check("/start shows the menu as buttons, in both languages", menu.includes("c:payments") && menu.includes("Payments · ክፍያዎች") && String(last().text).includes("ሰላም") && menu.includes("web_app"), last());
+  check("/start shows the spec's menu as buttons, in both languages", menu.includes("c:payments") && menu.includes("Payment Assistance · የክፍያ እርዳታ") && menu.includes("mn:start") && menu.includes("mn:requests") && String(last().text).includes("Welcome to MySeed Support") && String(last().text).includes("እንኳን") && menu.includes("web_app"), last());
   await ch.saveArticle(liya, { title: "Paid but not active", body: "Send the receipt from telebirr and we activate it within a day.", category: "Payments", published: true });
   await ch.telegramUpdate(secret, secret, press("c:payments"));
   check("a topic shows its articles, then Still need help?", String(last().text).includes("Paid but not active") && JSON.stringify(last().reply_markup).includes("a:payments"), last());
@@ -90,7 +90,9 @@ async function main() {
   await ch.telegramUpdate(secret, secret, msg("I paid 300 birr with telebirr yesterday but my plan is not active", 3));
   const tk = await get<{ id: string; number: number; queue_id: string; category: string; assignee_id: string | null }>("SELECT id, number, queue_id, category, assignee_id FROM sup_tickets WHERE customer_id = ?", cus!.id);
   check("the request goes to Finance, with its topic, to the Finance agent", tk?.queue_id === finance && tk.category === "payments" && tk.assignee_id === dawit.id, tk);
-  check("and the customer gets the number", String(last().text).includes(`#${tk!.number}`));
+  const said = posts.filter((p) => p.url.endsWith("/sendMessage")).slice(-2).map((p) => String(p.body.text));
+  check("and the customer gets the number", said.some((t) => t.includes(`#${tk!.number}`)), said);
+  check("and is told an agent has it", said.at(-1)!.includes("An agent is available"), said);
   await ch.telegramUpdate(secret, secret, msg("", 4, { caption: "the receipt", photo: [{ file_id: "small", file_size: 100 }, { file_id: "big", file_size: 2000 }] }));
   const files = await h.ticketFiles([tk!.id]);
   check("a photo is kept on the ticket, not as placeholder text", files.length === 1 && files[0]!.mime === "image/jpeg" && posts.some((p) => p.url.endsWith("/getFile") && p.body.file_id === "big"), files);

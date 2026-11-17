@@ -123,7 +123,8 @@ export async function saveChapaAccount(user: AppUser, input: ChapaAccountInput):
       input.id
     );
 
-    if (input.secretKey) await run("UPDATE chapa_accounts SET mode = ? WHERE id = ?", input.secretKey.trim().startsWith("CHASECK_TEST-") ? "test" : "live", input.id);
+    // A new key clears the key error, so the schedule takes the business up again at once.
+    if (input.secretKey) await run("UPDATE chapa_accounts SET mode = ?, health = CASE WHEN health = 'error' THEN 'ok' ELSE health END, last_error = NULL, last_sync_at = NULL WHERE id = ?", input.secretKey.trim().startsWith("CHASECK_TEST-") ? "test" : "live", input.id);
     await audit({ actor: user }, { action: "finance.chapa_account_update", summary: `${user.name} updated Chapa account "${name}"` });
     return input.id;
   } else {
@@ -178,7 +179,7 @@ export async function testChapaAccount(user: AppUser, id: string): Promise<{ ok:
   if (!row) throw new WorkflowError("NOT_FOUND", "Account not found.");
 
   const secretKey = (await unseal(row.secret_key_enc))?.trim() ?? "";
-  if (!secretKey) return { ok: false, message: "Missing secret key." };
+  if (!secretKey) return { ok: false, message: row.secret_key_enc ? "The saved secret key cannot be read: it was encrypted with a different encryption secret (APP_SECRET set or changed, or the database came from another server). Enter the secret key again." : "Missing secret key." };
 
   const isTest = secretKey.startsWith("CHASECK_TEST-");
   const mode = isTest ? "Test Mode" : "Live Production";

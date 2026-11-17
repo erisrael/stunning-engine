@@ -11,6 +11,7 @@ async function _GET(request: Request) {
   await (await import("@/server/cms-reports")).scheduledCmsReports();
   await (await import("@/server/chapa-hub")).scheduledChapa();
   await (await import("@/server/cms-metrics")).scheduledCmsMetrics();
+  await (await import("@/server/cms-fields")).scheduledCmsMirror().catch((e) => console.error("Noor mirror failed", e));
   return Response.json({ ok: true, at: new Date().toISOString(), counts });
 }
 

@@ -898,4 +898,1289 @@ Implement:
 - Declined.
 - Missed.
 - Failed.
-- Cancel
+- Cancelled.
+
+Maintain an accurate server-side call state machine.
+
+Handle:
+
+Customer disconnecting.
+
+Agent disconnecting.
+
+Browser refresh.
+
+Telegram Mini App closing.
+
+Network interruptions.
+
+Device permission denial.
+
+Microphone unavailable.
+
+Connection timeout.
+
+TURN fallback.
+
+Unexpected call termination.
+
+8.5 Call controls
+
+During calls provide:
+
+Mute/unmute.
+
+Speaker/audio device selection where supported.
+
+Connection quality indicator.
+
+Call duration.
+
+Hold/resume.
+
+End call.
+
+Transfer call.
+
+Add authorized participant if enabled.
+
+Recording indicator.
+
+Network reconnection state.
+
+8.6 Incoming calls while the Mini App is closed
+
+Do not assume a Telegram Mini App can reliably receive background WebRTC calls while closed.
+
+Implement a fallback strategy:
+
+Telegram bot incoming-call notification.
+
+Reopen Mini App action.
+
+Call invitation expiration.
+
+Missed-call notification.
+
+Callback request.
+
+Queue retention where applicable.
+
+The customer must enter or reopen the Mini App to establish the browser-based call unless a separately supported calling channel is implemented.
+
+PART F — IVR SYSTEM
+
+9. FULL INTERACTIVE VOICE RESPONSE ENGINE
+
+Build a dedicated IVR management module.
+
+This must be a real configurable call-routing engine, not a static menu.
+
+9.1 IVR builder
+
+Create a visual IVR flow builder.
+
+Allow administrators to create call flows using configurable nodes.
+
+Supported nodes:
+
+Welcome Message.
+
+Language Selection.
+
+Audio Playback.
+
+Text-to-Speech.
+
+DTMF Input.
+
+Menu Selection.
+
+Department Routing.
+
+Queue Entry.
+
+Agent Routing.
+
+Business Hours Check.
+
+Holiday Check.
+
+Conditional Branch.
+
+Customer Identification.
+
+Payment Verification Routing.
+
+Repeat Menu.
+
+Transfer.
+
+Voicemail.
+
+Callback Request.
+
+End Call.
+
+Support:
+
+Drag-and-drop node placement.
+
+Node configuration.
+
+Connection management.
+
+Branch conditions.
+
+Flow validation.
+
+Preview.
+
+Draft.
+
+Publish.
+
+Version history.
+
+Activate/deactivate.
+
+Test execution.
+
+9.2 Example default IVR flow
+
+Welcome
+
+"Welcome to MySeed Customer Support."
+
+Language selection
+
+Press 1 for Amharic.
+
+Press 2 for English.
+
+Main menu
+
+Press 1 for Account and Login Assistance.
+
+Press 2 for Learning and Subscription Assistance.
+
+Press 3 for Payment and Billing Assistance.
+
+Press 4 for Technical Support.
+
+Press 5 to speak with a customer support agent.
+
+Press 0 to speak with an operator.
+
+9.3 Advanced IVR
+
+Support:
+
+Configurable timeout.
+
+Invalid input handling.
+
+Repeat menu.
+
+Maximum retry count.
+
+Conditional routing.
+
+Department availability.
+
+Business hours.
+
+Holiday schedules.
+
+Emergency announcements.
+
+Queue overflow.
+
+Callback requests.
+
+Voicemail fallback.
+
+Allow different IVR flows for different organizations, products, languages, and service categories where applicable.
+
+9.4 Voice channel compatibility
+
+The IVR must support the actual configured voice channels.
+
+For Telegram browser calls, implement an in-call interactive menu using DTMF-like controls or on-screen menu selections.
+
+For PSTN/SIP calls, integrate an appropriate telephony provider or SIP infrastructure if enabled.
+
+Do not pretend that Telegram WebRTC calls are ordinary telephone network calls.
+
+Design the IVR engine to support multiple channel adapters.
+
+PART G — INTELLIGENT CALL QUEUE SYSTEM
+
+10. QUEUE MANAGEMENT
+
+Create a dedicated Call Queue module.
+
+Administrators should be able to create multiple queues.
+
+Examples:
+
+General Support.
+
+Payment Support.
+
+Technical Support.
+
+Subscription Support.
+
+Account Support.
+
+Priority Support.
+
+10.1 Queue configuration
+
+Each queue must support:
+
+Queue name.
+
+Description.
+
+Department.
+
+Assigned agents.
+
+Active hours.
+
+Maximum queue size.
+
+Priority rules.
+
+Maximum wait time.
+
+Overflow destination.
+
+Queue announcements.
+
+Music/audio configuration.
+
+Callback option.
+
+Auto-assignment.
+
+Manual assignment.
+
+Enabled/disabled state.
+
+10.2 Routing strategies
+
+Support:
+
+Round Robin.
+
+Least Busy Agent.
+
+Longest Idle Agent.
+
+Skill-Based Routing.
+
+Priority-Based Routing.
+
+Manual Assignment.
+
+Allow administrators to define routing rules and fallback behavior.
+
+10.3 Queue dashboard
+
+Display:
+
+Calls waiting.
+
+Active calls.
+
+Agents available.
+
+Agents busy.
+
+Average waiting time.
+
+Longest waiting call.
+
+Average handling time.
+
+Abandoned calls.
+
+Missed calls.
+
+Calls completed.
+
+Queue service level.
+
+10.4 Customer queue experience
+
+When waiting, customers should receive:
+
+Queue position where reliable.
+
+Estimated waiting time when sufficient historical data exists.
+
+Waiting audio or messages.
+
+Option to request a callback.
+
+Option to cancel.
+
+Option to change support category.
+
+Queue position and wait estimates must be updated from actual queue state.
+
+10.5 Queue distribution logic
+
+Build a reliable backend queue manager.
+
+Requirements:
+
+Atomic assignment.
+
+Concurrency protection.
+
+No duplicate agent assignment.
+
+No duplicate active call sessions.
+
+Agent availability validation.
+
+Queue timeout.
+
+Queue recovery after service restart.
+
+Priority handling.
+
+Overflow.
+
+Callback scheduling.
+
+Queue event logs.
+
+PART H — CALL RECORDING AND CALL HISTORY
+
+11. DEDICATED CALL RECORDS SECTION
+
+Create a separate navigation item:
+
+Call Records
+
+This section must be available to the Customer Support Head and any administrators or managers explicitly authorized to access recordings.
+
+Agents should be able to access their own call records according to their assigned permissions.
+
+11.1 Call record information
+
+Store:
+
+Call ID.
+
+Customer ID.
+
+Customer name.
+
+Agent ID.
+
+Agent name.
+
+Department.
+
+Queue.
+
+Call direction.
+
+Call start time.
+
+Call end time.
+
+Duration.
+
+Wait duration.
+
+Call status.
+
+Call category.
+
+Related conversation.
+
+Related support request.
+
+Recording status.
+
+Recording reference.
+
+Call outcome.
+
+Notes.
+
+Tags.
+
+11.2 Recording capabilities
+
+When recording is enabled:
+
+Start recording through the approved media infrastructure.
+
+Show a recording indicator.
+
+Notify participants where required.
+
+Store the recording securely.
+
+Associate the recording with the call record.
+
+Preserve recording metadata.
+
+Allow authorized playback.
+
+Allow authorized downloads.
+
+Record access and download events.
+
+Recording must respect applicable consent, privacy, and data protection requirements.
+
+Never silently record a customer call.
+
+If recording is disabled or consent is unavailable, store call metadata without an audio recording.
+
+11.3 Recording management
+
+Build:
+
+Recording list.
+
+Audio player.
+
+Playback speed controls.
+
+Duration.
+
+Recording date.
+
+Search.
+
+Filters.
+
+Agent filters.
+
+Department filters.
+
+Customer filters.
+
+Queue filters.
+
+Call status filters.
+
+Date range.
+
+Duration range.
+
+Recording availability.
+
+Download permissions.
+
+Retention settings.
+
+11.4 Recording retention
+
+Implement configurable retention policies.
+
+Support:
+
+Retain indefinitely when permitted.
+
+Retain for a configured number of days.
+
+Automatic expiration.
+
+Legal or administrative hold.
+
+Manual deletion by authorized administrators.
+
+Audit trail for deletion.
+
+Do not permanently delete call records simply because their audio recording expires.
+
+11.5 Agent call history
+
+Each agent should have a personal call history containing their own permitted records.
+
+Allow agents to:
+
+View previous calls.
+
+Add call notes.
+
+Add call outcome.
+
+Categorize calls.
+
+Link calls to conversations.
+
+Link calls to support requests.
+
+Search their history.
+
+Agents must not be able to access recordings belonging to other agents unless explicitly authorized.
+
+PART I — CUSTOMER SUPPORT AGENT WORKSPACE
+
+12. COMPLETE AGENT DESKTOP
+
+Create a unified workspace for customer support agents.
+
+The agent should not have to switch between unrelated modules to perform ordinary support work.
+
+Main workspace
+
+Include:
+
+Agent status.
+
+Assigned conversations.
+
+Unassigned conversations.
+
+Active queue.
+
+Incoming calls.
+
+Active calls.
+
+Missed calls.
+
+Customer search.
+
+Customer profile.
+
+Support request creation.
+
+Internal chat.
+
+Call history.
+
+Notifications.
+
+Knowledge base.
+
+Agent availability
+
+Statuses:
+
+Available.
+
+Busy.
+
+On Call.
+
+Away.
+
+Break.
+
+Offline.
+
+Availability must influence queue assignment.
+
+Conversation workflow
+
+Customer initiates a conversation.
+
+Conversation enters the appropriate queue.
+
+An eligible agent receives the conversation.
+
+Agent accepts or declines according to queue policy.
+
+Agent reviews customer details.
+
+Agent responds.
+
+Agent can request assistance from another department.
+
+Agent can initiate a voice call.
+
+Agent can create an internal support request.
+
+Agent resolves or escalates the conversation.
+
+Conversation history is retained.
+
+PART J — CUSTOMER SUPPORT HISTORY AND DATA RETENTION
+
+13. FULL CONVERSATION HISTORY
+
+Customer support chat history must be retained by default.
+
+Do not automatically clear or truncate conversation history.
+
+Store:
+
+Conversation records.
+
+Messages.
+
+Attachments.
+
+Message timestamps.
+
+Sender identities.
+
+Recipient identities.
+
+Delivery states.
+
+Read states.
+
+Assignment history.
+
+Internal notes.
+
+Transfers.
+
+Related calls.
+
+Related requests.
+
+Status changes.
+
+Resolution details.
+
+Retention rules
+
+Conversations remain available unless an authorized administrator clears or deletes them.
+
+Deletion must be permission-controlled.
+
+Preserve audit records.
+
+Support archived conversations.
+
+Support restoration where appropriate.
+
+Support legal retention holds.
+
+Make retention configurable.
+
+Do not confuse hiding, archiving, and permanent deletion.
+
+Provide clear distinction between these actions.
+
+PART K — ADMINISTRATION AND CONTENT CONFIGURATION
+
+14. CUSTOMER SUPPORT ADMINISTRATION
+
+Build a complete administration module.
+
+14.1 Role and permission management
+
+Support roles such as:
+
+Customer Support Head.
+
+Customer Support Supervisor.
+
+Customer Support Agent.
+
+Call Center Supervisor.
+
+Finance Head.
+
+Finance Staff.
+
+Auditor.
+
+Use configurable RBAC with granular permissions.
+
+Permissions should cover:
+
+View conversations.
+
+Assign conversations.
+
+Transfer conversations.
+
+Delete messages.
+
+Forward messages.
+
+Initiate calls.
+
+Receive calls.
+
+Access call recordings.
+
+Download recordings.
+
+Configure IVR.
+
+Configure queues.
+
+Manage agents.
+
+Manage content.
+
+Manage requests.
+
+Approve requests.
+
+Access analytics.
+
+Access customer information.
+
+Export data.
+
+Manage retention.
+
+Manage integrations.
+
+Support department-level access and explicit member-level permissions.
+
+14.2 Configuration center
+
+Provide dedicated settings for:
+
+Telegram Bot.
+
+Telegram Mini App.
+
+Customer Support Content.
+
+Chat.
+
+Notifications.
+
+Voice Calling.
+
+WebRTC.
+
+IVR.
+
+Queue Management.
+
+Call Recording.
+
+Call Retention.
+
+Business Hours.
+
+Holidays.
+
+Departments.
+
+Agent Groups.
+
+Permissions.
+
+Escalation Rules.
+
+Data Retention.
+
+Integrations.
+
+All configurable functionality must have a working management interface.
+
+PART L — CUSTOMER-FACING TELEGRAM MINI APP REDESIGN
+
+15. COMPLETE CLIENT EXPERIENCE
+
+Rebuild the customer-facing Telegram Mini App.
+
+It must be visually consistent with the MySeed Operations platform while remaining optimized for customer use.
+
+Use a modern Apple-inspired design standard:
+
+Clear visual hierarchy.
+
+Refined typography.
+
+Consistent spacing.
+
+Restrained colors.
+
+Subtle borders.
+
+Soft shadows.
+
+Well-designed cards.
+
+Smooth transitions.
+
+Native-feeling mobile interactions.
+
+Responsive layouts.
+
+Accessible controls.
+
+Clear loading states.
+
+Do not copy Apple's proprietary interface. Use its usability and visual-quality principles.
+
+15.1 Main pages
+
+Implement:
+
+Home.
+
+Start Conversation.
+
+Active Conversation.
+
+Conversation History.
+
+Support Requests.
+
+Request Details.
+
+Call Interface.
+
+Incoming Call.
+
+Active Call.
+
+Call History.
+
+FAQ and Help Center.
+
+Notifications.
+
+Customer Profile.
+
+Language Settings.
+
+Support Information.
+
+15.2 Improve every button
+
+Audit every existing button, menu, navigation item, and interaction.
+
+For each one:
+
+Define its purpose.
+
+Implement the actual action.
+
+Add permission checks where required.
+
+Add loading state.
+
+Add success feedback.
+
+Add failure feedback.
+
+Add confirmation for destructive actions.
+
+Add disabled states when unavailable.
+
+Add appropriate navigation.
+
+Make it accessible.
+
+Remove placeholder actions and nonfunctional controls.
+
+15.3 Telegram integration
+
+Use Telegram Web App capabilities appropriately:
+
+Secure initialization data validation.
+
+Telegram user identity.
+
+Theme parameters.
+
+Viewport management.
+
+Back button.
+
+Main button where appropriate.
+
+Haptic feedback where supported.
+
+Deep links.
+
+Telegram notifications through the bot.
+
+Never trust client-supplied Telegram identity without server-side verification.
+
+
+PART M — DESIGN AND RESPONSIVENESS
+
+16. APPLE-QUALITY MOBILE AND DESKTOP EXPERIENCE
+
+The internal Operations UI and Telegram customer Mini App must share a coherent design system.
+
+However, their layouts should be optimized for their different users and purposes.
+
+Desktop operations UI
+
+Professional sidebar.
+
+Clear page hierarchy.
+
+Data-rich dashboards.
+
+Efficient tables.
+
+Contextual side panels.
+
+Multi-column chat.
+
+Keyboard shortcuts.
+
+Quick actions.
+
+Responsive resizing.
+
+Mobile operations UI
+
+Bottom navigation where appropriate.
+
+Slide-out contextual panels.
+
+Touch-friendly buttons.
+
+Full-screen conversations.
+
+Bottom sheets.
+
+Mobile-friendly tables.
+
+Accessible forms.
+
+Responsive call controls.
+
+Visual standards
+
+Light and dark themes.
+
+Consistent typography.
+
+Consistent spacing.
+
+Consistent radii.
+
+Consistent iconography.
+
+Semantic color usage.
+
+WCAG-conscious contrast.
+
+Focus states.
+
+Screen-reader labels.
+
+Reduced-motion support.
+
+Skeleton loaders.
+
+Empty states.
+
+Error states.
+
+Offline states.
+
+Use the existing MySeed design system where available.
+
+Do not introduce conflicting design systems.
+
+PART N — DATABASE AND BACKEND ARCHITECTURE
+
+17. DATA MODEL AND PERSISTENCE
+
+Inspect the existing schema before introducing new tables.
+
+Extend existing entities where possible.
+
+Create appropriate models or equivalent structures for:
+
+Financial integrations
+
+Integration.
+
+IntegrationSyncJob.
+
+IntegrationSyncCursor.
+
+IntegrationSyncLog.
+
+ExternalRecord.
+
+Transaction.
+
+TransactionReconciliation.
+
+DynamicFieldDefinition.
+
+SavedFilter.
+
+Customer support
+
+SupportCustomer.
+
+SupportConversation.
+
+SupportMessage.
+
+MessageAttachment.
+
+ConversationAssignment.
+
+ConversationTransfer.
+
+ConversationNote.
+
+ConversationTag.
+
+SupportCategory.
+
+SupportContent.
+
+SupportRequest.
+
+SupportRequestComment.
+
+SupportRequestApproval.
+
+Communications
+
+AgentPresence.
+
+AgentGroup.
+
+Department.
+
+InternalMessage.
+
+ForwardedMessage.
+
+Notification.
+
+Voice
+
+CallSession.
+
+CallParticipant.
+
+CallEvent.
+
+CallQueue.
+
+QueueEntry.
+
+QueueAssignment.
+
+CallRecording.
+
+CallNote.
+
+CallOutcome.
+
+CallbackRequest.
+
+IVR
+
+IVRFlow.
+
+IVRNode.
+
+IVRConnection.
+
+IVRExecution.
+
+IVRExecutionEvent.
+
+IVRAudioAsset.
+
+Administration
+
+SupportRole.
+
+SupportPermission.
+
+SupportRolePermission.
+
+AgentPermission.
+
+RetentionPolicy.
+
+AuditLog.
+
+These are conceptual entities, not a requirement to create duplicate tables where the existing system already has equivalent models.
+
+17.1 Backend requirements
+
+Implement:
+
+Strict validation.
+
+Authentication.
+
+Authorization.
+
+Tenant isolation where applicable.
+
+Database transactions.
+
+Idempotency.
+
+Pagination.
+
+Rate limiting.
+
+Structured logging.
+
+Error handling.
+
+Audit logging.
+
+Background jobs.
+
+Retry mechanisms.
+
+Real-time event handling.
+
+Database indexing.
+
+Secure file storage.
+
+API documentation.
+
+17.2 Security
+
+Implement:
+
+Secure Telegram authentication.
+
+Server-side authorization.
+
+Secure WebSocket authentication.
+
+Short-lived WebRTC tokens.
+
+Private recording storage.
+
+Signed download URLs.
+
+File upload validation.
+
+Malware scanning where infrastructure supports it.
+
+Rate limiting.
+
+CSRF protection where applicable.
+
+Input validation.
+
+Audit trails.
+
+Sensitive-data access controls.
+
+Secure secret management.
+
+PART O — ANALYTICS AND REPORTING
+
+18. CUSTOMER SUPPORT ANALYTICS
+
+Build a complete support analytics dashboard.
+
+Conversation metrics
+
+Total conversations.
+
+New conversations.
+
+Active conversations.
+
+Resolved conversations.
+
+Unresolved conversations.
+
+Average first response time.
+
+Average resolution time.
+
+Customer satisfaction.
+
+Reopened conversations.
+
+Escalation rate.
+
+Agent metrics
+
+Conversations handled.
+
+Calls handled.
+
+Average handling time.
+
+Average response time.
+
+Resolution rate.
+
+Missed calls.
+
+Customer feedback.
+
+Agent availability.
+
+Queue participation.
+
+Call center metrics
+
+Total calls.
+
+Incoming calls.
+
+Outgoing calls.
+
+Answered calls.
+
+Missed calls.
+
+Declined calls.
+
+Abandoned calls.
+
+Average waiting time.
+
+Average call duration.
+
+Queue service level.
+
+Callback completion rate.
+
+Financial support metrics
+
+Payment inquiries.
+
+Payment verification requests.
+
+Failed transaction inquiries.
+
+Refund requests.
+
+Resolved payment issues.
+
+Pending finance requests.
+
+All analytics must be calculated from real persisted data.
+
+Provide filters by:
+
+Date.
+
+Agent.
+
+Department.
+
+Queue.
+
+Category.
+
+Customer.
+
+Status.
+
+Support CSV and Excel exports where authorized.

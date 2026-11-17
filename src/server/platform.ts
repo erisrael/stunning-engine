@@ -231,8 +231,13 @@ export async function statusInfo(user: AppUser) {
   const ai = await aiConfig().catch(() => null);
   const conns = await all<{ name: string; capability: string; status: string }>("SELECT name, capability, status FROM int_connectors WHERE status = 'active'").catch(() => []);
   const failing = await all<{ name: string | null; n: number }>("SELECT c.name, COUNT(*) AS n FROM int_calls l LEFT JOIN int_connectors c ON c.id = l.connector_id WHERE l.ok = 0 AND l.at >= ? GROUP BY c.name", new Date(Date.now() - DAY).toISOString()).catch(() => []);
+  // Calls need a TURN relay to connect across mobile networks and office firewalls (Update 1.2): without one in
+  // production, many calls ring and are answered but no sound passes.
+  const turn = await (await import("./calls")).turnSettings();
+  const callsOn = !!(await get<{ v: number }>("SELECT 1 AS v FROM sup_calls LIMIT 1").catch(() => null)) || (await (await import("./support-desk")).supportConfig()).enabled;
   const parts = [
     ...checks.map((c) => ({ key: c.key, label: c.label, state: c.state, text: c.text })),
+    { key: "turn", label: "Call relay (TURN)", state: (turn.source !== "none" && turn.hasToken ? "ok" : callsOn && process.env.NODE_ENV === "production" ? "bad" : "warn") as "ok" | "warn" | "bad", text: turn.source !== "none" && turn.hasToken ? `Set (${turn.source === "env" ? "hosting environment" : "Admin"})` : "Not set: calls may connect without sound on mobile networks. Set it in Admin, Integrations, Calls." },
     { key: "ai", label: "AI assistant", state: (ai?.on ? (ai.hasKey || ai.envKey || ai.fake ? "ok" : "warn") : "ok") as "ok" | "warn" | "bad", text: ai?.on ? `On (${ai.model})` : "Off" },
     ...conns.map((c) => ({ key: `con:${c.name}`, label: `${c.name} (${c.capability})`, state: (failing.some((f) => f.name === c.name) ? "warn" : "ok") as "ok" | "warn" | "bad", text: failing.find((f) => f.name === c.name) ? `${failing.find((f) => f.name === c.name)!.n} failed calls in a day` : "Working" })),
   ];

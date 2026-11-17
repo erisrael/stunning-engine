@@ -339,6 +339,21 @@ export async function sessionFor(app: AppFull, customerId: string) {
     recordCalls: cfg.recordCalls,
     recordingNotice: cfg.recordingNotice,
     callEngine: await (await import("./support-calls")).callEngineOf(app.id),
+    content: await widgetContent(app.id ? (await get("SELECT id FROM sup_apps WHERE id = ? AND tg_token IS NOT NULL", app.id)) ? app.id : "default" : "default"),
+  };
+}
+
+// The Mini App's words from the content store (Update 1.2, Phase 5), in English and Amharic: the welcome, the
+// conversation topics, the support policy and the privacy notice.
+async function widgetContent(bot: string) {
+  const c = await import("./support-content");
+  const pair = async (key: string) => ({ en: await c.contentText(key, "en", bot), am: await c.contentText(key, "am", bot) });
+  const [en, am] = await Promise.all([c.contentEntries("category", "en", bot), c.contentEntries("category", "am", bot)]);
+  return {
+    welcome: await pair("welcome"),
+    topics: en.map((t) => ({ key: t.key, en: t.label, am: am.find((x) => x.key === t.key)?.label ?? t.label })),
+    policy: await pair("policy.support"),
+    terms: await pair("terms.privacy"),
   };
 }
 
@@ -578,11 +593,15 @@ async function ticketEvent(ticketId: string, event: "ticket.created" | "ticket.r
   }
 }
 
-export async function customerCreateTicket(app: AppFull, token: string, input: { subject?: string; message: string; priority?: Priority }) {
+export async function customerCreateTicket(app: AppFull, token: string, input: { subject?: string; message: string; priority?: Priority; topic?: string | null }) {
   const c = await customerByToken(app, token);
   await (await import("./connected-systems")).needChannel(app.id, chatChannel(c.external_id));
+  // A conversation topic (Customer support, Content) names the request and routes it as its help category does.
+  const topic = input.topic ? (await (await import("./support-content")).contentEntries("category", "en", app.id ?? "default")).find((t) => t.key === input.topic) : null;
+  const category = topic?.action.startsWith("category:") ? topic.action.slice(9) : null;
+  const subject = topic ? `${topic.label}: ${input.subject || input.message.slice(0, 60)}` : (input.subject ?? "");
   // From the Telegram Mini App the ticket is a Telegram one, so replies also reach the chat.
-  const id = await createTicketRow({ subject: input.subject ?? "", body: input.message, customerId: c.id, appId: app.id, appQueue: app.queue_id, channel: chatChannel(c.external_id) === "telegram" ? "telegram" : "widget", priority: input.priority === "urgent" ? "high" : input.priority, authorKind: "customer", authorId: c.id });
+  const id = await createTicketRow({ subject, body: input.message, customerId: c.id, appId: app.id, appQueue: app.queue_id, channel: chatChannel(c.external_id) === "telegram" ? "telegram" : "widget", priority: input.priority === "urgent" ? "high" : input.priority, authorKind: "customer", authorId: c.id, category });
   const who = await autoAssign(id);
   if (!who) {
     const leads = (await supportConfig()).leads;
@@ -610,6 +629,16 @@ export async function customerTickets(app: AppFull, token: string) {
   );
 }
 
+// The customer's notifications: what support wrote to them lately, newest first, across their conversations.
+export async function customerUpdates(app: AppFull, token: string) {
+  const c = await customerByToken(app, token);
+  return all<{ id: string; ticket_id: string; number: number; subject: string; status: string; body: string; author_kind: string; created_at: string }>(
+    `SELECT m.id, t.id AS ticket_id, t.number, t.subject, t.status, m.body, m.author_kind, m.created_at FROM sup_messages m JOIN sup_tickets t ON t.id = m.ticket_id
+     WHERE t.customer_id = ? AND m.internal = 0 AND m.author_kind IN ('agent', 'system') AND m.created_at >= ? ORDER BY m.created_at DESC LIMIT 30`,
+    c.id, new Date(Date.now() - 30 * 86400e3).toISOString(),
+  );
+}
+
 export async function customerCallHistory(app: AppFull, token: string) {
   const c = await customerByToken(app, token);
   return all<{ id: string; ticket_id: string | null; direction: string; kind: string; status: string; started_at: string; ended_at: string | null; duration_s: number | null; recording_id: string | null }>(
@@ -633,7 +662,7 @@ export async function customerMessages(app: AppFull, token: string, ticketId: st
   const { t } = await customerTicket(app, token, ticketId);
   const msgs = await all<{ id: string; author_kind: string; name: string | null; body: string; created_at: string; reply_to: string | null; reactions: string | null }>(
     `SELECT m.id, m.author_kind, u.name, m.body, m.created_at, m.reply_to, m.reactions FROM sup_messages m LEFT JOIN users u ON u.id = m.author_id AND m.author_kind = 'agent'
-     WHERE m.ticket_id = ? AND m.internal = 0 ${since ? "AND m.created_at > ?" : ""} ORDER BY m.created_at`,
+     WHERE m.ticket_id = ? AND m.internal = 0 AND m.deleted_at IS NULL ${since ? "AND m.created_at > ?" : ""} ORDER BY m.created_at`,
     t.id,
     ...(since ? [since] : []),
   );
@@ -658,7 +687,7 @@ export async function customerReply(app: AppFull, token: string, ticketId: strin
   const msgId = uid("smg_");
   await run("INSERT INTO sup_messages (id, ticket_id, author_kind, author_id, body, internal, created_at, reply_to) VALUES (?, ?, 'customer', ?, ?, 0, ?, ?)", msgId, t.id, c.id, text, now, await replyTarget(t.id, replyTo, true));
   // A reply reopens a solved ticket and takes a waiting one back to the agent.
-  await run("UPDATE sup_tickets SET status = CASE WHEN status IN ('pending','solved') THEN 'open' ELSE status END, solved_at = CASE WHEN status = 'solved' THEN NULL ELSE solved_at END, close_reason = CASE WHEN status = 'solved' THEN NULL ELSE close_reason END, customer_typing_at = NULL, last_customer_at = ?, updated_at = ? WHERE id = ?", now, now, t.id);
+  await run("UPDATE sup_tickets SET status = CASE WHEN status IN ('pending','solved') THEN 'open' ELSE status END, solved_at = CASE WHEN status = 'solved' THEN NULL ELSE solved_at END, close_reason = CASE WHEN status = 'solved' THEN NULL ELSE close_reason END, archived_at = NULL, customer_typing_at = NULL, last_customer_at = ?, updated_at = ? WHERE id = ?", now, now, t.id);
   if (t.assignee_id) await notify([t.assignee_id], { type: "assignment", title: `#${t.number}: ${c.name} replied`, body: text.slice(0, 200), link: `/support?ticket=${t.id}`, dedupeKey: `sup-reply-${t.id}-${now}` }, now);
   else await autoAssign(t.id);
   return msgId;
@@ -691,20 +720,45 @@ export async function customerRate(app: AppFull, token: string, ticketId: string
 
 // --- Agent side --------------------------------------------------------------
 
-export type TicketListRow = { id: string; number: number; subject: string; status: TicketStatus; priority: Priority; channel: string; queue: string | null; customer: string | null; assignee: string | null; assignee_id: string | null; updated_at: string; created_at: string; sla_first_due: string | null; sla_resolve_due: string | null; first_response_at: string | null; breached: number; last_customer_at: string | null; last_agent_at: string | null };
+export type TicketListRow = { id: string; number: number; subject: string; status: TicketStatus; priority: Priority; channel: string; queue: string | null; customer: string | null; assignee: string | null; assignee_id: string | null; updated_at: string; created_at: string; sla_first_due: string | null; sla_resolve_due: string | null; first_response_at: string | null; breached: number; last_customer_at: string | null; last_agent_at: string | null; escalated_at?: string | null; archived_at?: string | null; unread?: number };
 
-export async function inbox(user: AppUser, view: string, q?: string | null) {
+// The conversation lists (Update 1.2): the spec's ten views. Archived conversations show only under Archived.
+export const INBOX_VIEWS = [
+  ["all", "All conversations"],
+  ["involved", "My conversations"],
+  ["unassigned", "Unassigned"],
+  ["mine", "Assigned to me"],
+  ["waiting", "Waiting in queue"],
+  ["active", "Active"],
+  ["pending", "Pending"],
+  ["solved", "Resolved"],
+  ["archived", "Archived"],
+  ["escalated", "Escalated"],
+] as const;
+export type InboxFilter = { priority?: string | null; channel?: string | null };
+
+export async function inbox(user: AppUser, view: string, q?: string | null, filter: InboxFilter = {}) {
   const cfg = await needAgent(user);
   const lead = await isLead(user, cfg);
   const mine = await memberQueues(user.id);
   const where: string[] = [];
   const args: Param[] = [];
   if (view === "mine") (where.push(`t.assignee_id = ? AND t.status IN ${OPEN_SQL.replace(")", ",'pending','on_hold')")}`), args.push(user.id));
+  else if (view === "involved") (where.push("(t.assignee_id = ? OR EXISTS (SELECT 1 FROM sup_messages x WHERE x.ticket_id = t.id AND x.author_kind = 'agent' AND x.author_id = ?))"), args.push(user.id, user.id));
   else if (view === "unassigned") where.push(`t.assignee_id IS NULL AND t.status IN ${OPEN_SQL}`);
+  else if (view === "waiting") where.push("t.assignee_id IS NULL AND t.status = 'new'");
+  else if (view === "active") where.push("t.assignee_id IS NOT NULL AND t.status IN ('new','open')");
+  else if (view === "pending") where.push("t.status IN ('pending','on_hold')");
   else if (view === "breached") where.push(`t.breached = 1 AND t.status NOT IN ('solved','closed')`);
   else if (view === "solved") where.push(`t.status IN ('solved','closed')`);
+  else if (view === "escalated") where.push("t.escalated_at IS NOT NULL AND t.status NOT IN ('solved','closed')");
+  else if (view === "archived") where.push("t.archived_at IS NOT NULL");
   else if (view.startsWith("queue:")) (where.push(`t.queue_id = ? AND t.status NOT IN ('solved','closed')`), args.push(view.slice(6)));
+  else if (view === "all") where.push("1 = 1");
   else where.push(`t.status NOT IN ('solved','closed')`);
+  if (view !== "archived") where.push("t.archived_at IS NULL");
+  if (filter.priority && ["low", "normal", "high", "urgent"].includes(filter.priority)) (where.push("t.priority = ?"), args.push(filter.priority));
+  if (filter.channel && /^[a-z_]{2,20}$/.test(filter.channel)) (where.push("t.channel = ?"), args.push(filter.channel));
   // Agents see their queues' tickets and their own; leads see all.
   if (!lead) {
     where.push(`(t.assignee_id = ? ${mine.length ? `OR t.queue_id IN (${mine.map(() => "?").join(",")})` : ""})`);
@@ -712,12 +766,14 @@ export async function inbox(user: AppUser, view: string, q?: string | null) {
   }
   if (q?.trim()) {
     const like = `%${q.trim().toLowerCase()}%`;
-    where.push("(LOWER(t.subject) LIKE ? OR LOWER(c.name) LIKE ? OR LOWER(COALESCE(c.email,'')) LIKE ? OR CAST(t.number AS TEXT) = ?)");
-    args.push(like, like, like, q.trim().replace(/^#/, ""));
+    // Message search too: a conversation whose messages hold the words.
+    where.push("(LOWER(t.subject) LIKE ? OR LOWER(c.name) LIKE ? OR LOWER(COALESCE(c.email,'')) LIKE ? OR COALESCE(c.phone,'') LIKE ? OR CAST(t.number AS TEXT) = ? OR EXISTS (SELECT 1 FROM sup_messages sm WHERE sm.ticket_id = t.id AND sm.deleted_at IS NULL AND LOWER(sm.body) LIKE ?))");
+    args.push(like, like, like, like, q.trim().replace(/^#/, ""), like);
   }
   return all<TicketListRow>(
     `SELECT t.id, t.number, t.subject, t.status, t.priority, t.channel, sq.name AS queue, c.name AS customer, u.name AS assignee, t.assignee_id, t.updated_at, t.created_at,
-            t.sla_first_due, t.sla_resolve_due, t.first_response_at, t.breached, t.last_customer_at, t.last_agent_at
+            t.sla_first_due, t.sla_resolve_due, t.first_response_at, t.breached, t.last_customer_at, t.last_agent_at, t.escalated_at, t.archived_at,
+            (SELECT COUNT(*) FROM sup_messages um WHERE um.ticket_id = t.id AND um.author_kind = 'customer' AND um.deleted_at IS NULL AND um.created_at > COALESCE(t.agent_read_at, '')) AS unread
      FROM sup_tickets t LEFT JOIN sup_queues sq ON sq.id = t.queue_id LEFT JOIN sup_customers c ON c.id = t.customer_id LEFT JOIN users u ON u.id = t.assignee_id
      WHERE ${where.join(" AND ")}
      ORDER BY CASE t.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END, t.updated_at DESC LIMIT 300`,
@@ -739,16 +795,23 @@ export async function canWork(user: AppUser, ticketId: string) {
 export async function ticketDetail(user: AppUser, ticketId: string) {
   const t = await canWork(user, ticketId);
   await activity(user.id, t.id, "viewed");
+  // Opened by an agent: the customer's messages so far are read (the customer's read mark, the unread counts).
+  await run("UPDATE sup_tickets SET agent_read_at = ? WHERE id = ?", nowIso(), t.id);
   const full = await get<Record<string, unknown>>(
     `SELECT t.*, sq.name AS queue, u.name AS assignee FROM sup_tickets t LEFT JOIN sup_queues sq ON sq.id = t.queue_id LEFT JOIN users u ON u.id = t.assignee_id WHERE t.id = ?`,
     t.id,
   );
   const customer = t.customer_id ? await get<{ id: string; name: string; email: string | null; phone: string | null; meta: string; verified: number; external_id: string | null; app: string | null }>("SELECT c.*, a.name AS app FROM sup_customers c LEFT JOIN sup_apps a ON a.id = c.app_id WHERE c.id = ?", t.customer_id) : null;
-  const messages = await all<{ id: string; author_kind: string; author_id: string | null; author: string | null; body: string; internal: number; created_at: string; reply_to: string | null; reactions: string | null }>(
-    `SELECT m.id, m.author_kind, m.author_id, CASE WHEN m.author_kind = 'agent' THEN u.name WHEN m.author_kind = 'customer' THEN c.name ELSE 'System' END AS author, m.body, m.internal, m.created_at, m.reply_to, m.reactions
+  const messages = await all<{ id: string; author_kind: string; author_id: string | null; author: string | null; body: string; internal: number; created_at: string; reply_to: string | null; reactions: string | null; edited_at: string | null; deleted_at: string | null; delivered_at: string | null; saved: number }>(
+    `SELECT m.id, m.author_kind, m.author_id, CASE WHEN m.author_kind = 'agent' THEN u.name WHEN m.author_kind = 'customer' THEN c.name ELSE 'System' END AS author, m.body, m.internal, m.created_at, m.reply_to, m.reactions,
+            m.edited_at, m.deleted_at, m.delivered_at, (SELECT COUNT(*) FROM sup_saved_messages s WHERE s.message_id = m.id AND s.user_id = ?) AS saved
      FROM sup_messages m LEFT JOIN users u ON u.id = m.author_id LEFT JOIN sup_customers c ON c.id = m.author_id WHERE m.ticket_id = ? ORDER BY m.created_at`,
+    user.id,
     t.id,
   );
+  // A deleted message's words stay on record for the leads (View details); others see that it was deleted.
+  const leadView = await isLead(user);
+  for (const m of messages) if (m.deleted_at && !leadView) m.body = "";
   const calls = await all<{ id: string; status: string; direction: string; kind: string; agent: string | null; started_at: string; duration_s: number | null; recording_id: string | null; recording_size: number | null; notes: string | null; consent: number }>(
     "SELECT k.id, k.status, k.direction, k.kind, u.name AS agent, k.started_at, k.duration_s, k.recording_id, k.recording_size, k.notes, k.consent FROM sup_calls k LEFT JOIN users u ON u.id = k.agent_id WHERE k.ticket_id = ? ORDER BY k.started_at DESC",
     t.id,
@@ -761,7 +824,7 @@ export async function ticketDetail(user: AppUser, ticketId: string) {
   return {
     ticket: full,
     customer: customer ? { ...customer, meta: parseJson<Record<string, string>>(customer.meta, {}), verified: !!Number(customer.verified), telegram: !!customer.external_id?.startsWith("tg:") } : null,
-    messages: messages.map(({ reactions, reply_to, ...m }) => ({ ...m, internal: !!Number(m.internal), mine: m.author_kind === "agent" && m.author_id === user.id, replyTo: reply_to ? (q.get(reply_to) ?? null) : null, reactions: reactionsOf(reactions, `a:${user.id}`, names) })),
+    messages: messages.map(({ reactions, reply_to, saved, ...m }) => ({ ...m, saved: Number(saved) > 0, internal: !!Number(m.internal), mine: m.author_kind === "agent" && m.author_id === user.id, replyTo: reply_to ? (q.get(reply_to) ?? null) : null, reactions: reactionsOf(reactions, `a:${user.id}`, names) })),
     calls,
     log,
     history,
@@ -783,6 +846,8 @@ export async function agentReply(user: AppUser, ticketId: string, input: { body:
     try {
       const sent = await (await import("./support-channels")).deliverReply(t.id, body, user.name);
       if (sent && sent !== "telegram") await run("UPDATE sup_messages SET email_id = ? WHERE id = ?", sent, msgId);
+      // Telegram or the mail server took it: delivered.
+      if (sent) await run("UPDATE sup_messages SET delivered_at = ? WHERE id = ?", nowIso(), msgId);
     } catch (e) {
       await run("INSERT INTO sup_messages (id, ticket_id, author_kind, author_id, body, internal, created_at) VALUES (?, ?, 'system', NULL, ?, 1, ?)", uid("smg_"), t.id, `The reply could not be sent to the customer: ${e instanceof Error ? e.message : String(e)}`, nowIso());
     }
@@ -1011,13 +1076,14 @@ async function expireRinging() {
   await run("UPDATE sup_calls SET ring_stage = 1 WHERE status = 'ringing' AND ring_stage = 0 AND agent_id IS NULL AND direction = 'inbound' AND kind = 'web'");
   if (cfg.callOverflowQueue)
     await run("UPDATE sup_calls SET ring_queue = ?, ring_stage = 2 WHERE status = 'ringing' AND ring_stage = 1 AND direction = 'inbound' AND kind = 'web' AND started_at < ?", cfg.callOverflowQueue, new Date(Date.now() - 2 * esc).toISOString());
-  const old = await all<{ id: string; ticket_id: string | null; direction: string; kind: string }>("SELECT id, ticket_id, direction, kind FROM sup_calls WHERE status = 'ringing' AND started_at < ?", new Date(Date.now() - cfg.ringSeconds * 1000).toISOString());
+  const old = await all<{ id: string; ticket_id: string | null; direction: string; kind: string; customer_id: string | null }>("SELECT id, ticket_id, direction, kind, customer_id FROM sup_calls WHERE status = 'ringing' AND started_at < ?", new Date(Date.now() - cfg.ringSeconds * 1000).toISOString());
   for (const k of old) {
     await run("UPDATE sup_calls SET status = 'missed', ended_at = ? WHERE id = ? AND status = 'ringing'", nowIso(), k.id);
     if (k.kind === "staff") continue;
     if (k.direction === "outbound" && k.ticket_id) {
       await run("INSERT INTO sup_messages (id, ticket_id, author_kind, author_id, body, internal, created_at) VALUES (?, ?, 'system', NULL, ?, 0, ?)", uid("smg_"), k.ticket_id, "We tried to call you. Reply here or call us when it suits you.", nowIso());
       await activity(null, k.ticket_id, "call_missed", "The customer did not answer");
+      await (await import("./support-channels")).notifyTelegramCall(k.customer_id, "missed").catch((e) => console.error("Telegram call notice failed", e));
       continue;
     }
     if (k.ticket_id) {
