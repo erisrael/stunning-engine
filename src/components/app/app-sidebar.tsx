@@ -684,7 +684,7 @@ export function AppSidebar({
     };
     payments.push(chapaItem);
   }
-  if(cmsAccess){const cmsItem:NavItem={href:"/legacy-cms",label:"Legacy CMS (Noor)",icon:GraduationCapIcon,sub:[{label:"Live",href:"/legacy-cms?view=live"},{label:"Invoices",href:"/legacy-cms?view=invoices"},{label:"Revenue",href:"/legacy-cms?view=revenue"},{label:"Growth",href:"/legacy-cms?view=growth"},{label:"Reports & dashboard",href:"/legacy-cms?view=reports"},{label:"Contacts",href:"/legacy-cms?view=contacts"},{label:"Storage & snapshots",href:"/legacy-cms?view=storage"},...(has("users.manage")?[{label:"User access & credentials",href:"/admin?tab=legacy-cms"}]:[])]};payments.push(cmsItem);}
+  if(cmsAccess){const cmsItem:NavItem={href:"/legacy-cms",label:"Legacy CMS (Noor)",icon:GraduationCapIcon,sub:[{label:"Live",href:"/legacy-cms?view=live"},{label:"Invoices",href:"/legacy-cms?view=invoices"},{label:"Revenue",href:"/legacy-cms?view=revenue"},{label:"Growth",href:"/legacy-cms?view=growth"},{label:"Records",href:"/legacy-cms?view=records"},{label:"Noor admin",href:"/legacy-cms?view=admin"},{label:"Reports & dashboard",href:"/legacy-cms?view=reports"},{label:"Contacts",href:"/legacy-cms?view=contacts"},{label:"Storage & snapshots",href:"/legacy-cms?view=storage"},...(has("users.manage")?[{label:"User access & credentials",href:"/admin?tab=legacy-cms"}]:[])]};payments.push(cmsItem);}
   if (payments.length) {
     const before = groups.findIndex((g) => ["Manage", "Data & records"].includes(g.label));
     groups.splice(before < 0 ? groups.length : before, 0, { label: "Payments & Noor", items: payments });

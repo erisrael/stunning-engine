@@ -36,7 +36,10 @@ export default async function IntegrationsHubPage({ searchParams }: { searchPara
   } else if (tab === "sms") {
     const sms = await import("@/server/sms");
     const data = await sms.smsOverview(viewer);
-    panel = <SmsSetup data={{ ...data, lastReport: await sms.lastDeliveryReport() }} dlrUrl={`${origin}/api/integrations/sms/dlr?t=${data.config.dlrToken}`} />;
+    const { smsConsole } = await import("@/server/sms-console");
+    const { SmsConsole } = await import("@/components/app/integrations/sms-console");
+    const section = (["compose", "history", "usage", "setup"] as const).find((s) => s === sp.sms) ?? "compose";
+    panel = <SmsConsole data={await smsConsole(viewer)} initial={section} setup={<SmsSetup data={{ ...data, lastReport: await sms.lastDeliveryReport() }} dlrUrl={`${origin}/api/integrations/sms/dlr?t=${data.config.dlrToken}`} />} />;
   } else if (tab === "email") {
     const eh = await import("@/server/email-health");
     const s = await eh.emailSetupSteps(viewer);

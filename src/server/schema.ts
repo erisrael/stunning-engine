@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 80;
+export const SCHEMA_VERSION = 81;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -3450,6 +3450,34 @@ CREATE TABLE IF NOT EXISTS sms_messages (
 );
 CREATE INDEX IF NOT EXISTS idx_sms_messages ON sms_messages(created_at);
 CREATE INDEX IF NOT EXISTS idx_sms_provider ON sms_messages(provider_id);
+-- Update 1.2, System improvements 5: SMS parts, encoding, cost and the batch a message was sent in.
+ALTER TABLE sms_messages ADD COLUMN IF NOT EXISTS batch_id TEXT;
+ALTER TABLE sms_messages ADD COLUMN IF NOT EXISTS recipient_name TEXT;
+ALTER TABLE sms_messages ADD COLUMN IF NOT EXISTS segments INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE sms_messages ADD COLUMN IF NOT EXISTS encoding TEXT;
+ALTER TABLE sms_messages ADD COLUMN IF NOT EXISTS cost DOUBLE PRECISION;
+ALTER TABLE sms_messages ADD COLUMN IF NOT EXISTS currency TEXT;
+ALTER TABLE sms_messages ADD COLUMN IF NOT EXISTS sent_at TEXT;
+ALTER TABLE sms_messages ADD COLUMN IF NOT EXISTS report_status TEXT;
+CREATE INDEX IF NOT EXISTS idx_sms_batch ON sms_messages(batch_id);
+CREATE TABLE IF NOT EXISTS sms_batches (
+  id TEXT PRIMARY KEY,
+  created_by TEXT,
+  purpose TEXT NOT NULL,
+  sender TEXT,
+  connector_id TEXT,
+  preview TEXT,
+  recipients INTEGER NOT NULL DEFAULT 0,
+  segments INTEGER NOT NULL DEFAULT 0,
+  est_cost DOUBLE PRECISION,
+  currency TEXT,
+  sent INTEGER NOT NULL DEFAULT 0,
+  failed INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'sending',
+  created_at TEXT NOT NULL,
+  finished_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_sms_batches ON sms_batches(created_at);
 CREATE TABLE IF NOT EXISTS email_bounces (
   id TEXT PRIMARY KEY,
   address TEXT NOT NULL,

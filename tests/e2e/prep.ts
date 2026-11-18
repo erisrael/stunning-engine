@@ -607,6 +607,25 @@ PREPS["update-1-p2"] = async () => {
   return { port: 47391 };
 };
 
+// Update 1.2, System improvements 4: Noor admin pages against the fake Noor the browser test starts on this port.
+PREPS["update-1-2-noor-admin"] = async () => {
+  await passwordOnly();
+  const { saveLegacyCmsConfig } = await import("../../src/server/legacy-cms");
+  await saveLegacyCmsConfig(await admin(), { baseUrl: "http://127.0.0.1:47393", username: "fixture", password: "fixture", sessionCookie: "session=fixture", autoSync: false });
+  return { port: 47393 };
+};
+// Update 1.2, System improvements 5: one SMS provider (the fake the browser test starts on this port), priced.
+PREPS["update-1-2-sms-console"] = async () => {
+  await passwordOnly();
+  const a = await admin();
+  const C = await import("../../src/server/connectors");
+  const S = await import("../../src/server/sms");
+  const X = await import("../../src/server/sms-console");
+  const id = await C.saveConnector(a, { name: "AfroMessage", capability: "sms", baseUrl: "http://127.0.0.1:47394", auth: { kind: "none" } as never, operation: { method: "POST", path: "/api/send", contentType: "json", map: { to: "{{to}}", message: "{{message}}", sender: "{{sender}}" }, headers: {} }, response: { idPath: "response.message_id", errorPath: "message" }, secrets: { token: "k" }, status: "active" });
+  await S.saveSmsConfig(a, { retries: 0, routes: { otp: { connectors: [], sender: "" }, alerts: { connectors: [id], sender: "MYSEED" }, marketing: { connectors: [], sender: "" } } });
+  await X.saveSmsPrice(a, id, { perPart: 0.35, currency: "ETB", source: "Price list, November 2026" });
+  return { token: (await S.smsConfig()).dlrToken };
+};
 // Update 1.0 Phase 3: two Chapa businesses whose API is the fake the browser test starts (CHAPA_API_BASE).
 PREPS["update-1-p3"] = async () => {
   await passwordOnly();

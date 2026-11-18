@@ -5,6 +5,18 @@ import { can, type AppUser } from "./users";
 import { audit, WorkflowError } from "./workflow";
 import { callConnector, connectorsFor, pick, type Connector } from "./connectors";
 import { recordIncoming } from "./call-monitor";
+import { smsCount } from "@/lib/sms-segments";
+
+export type SmsPrice = { perPart: number; currency: string; source: string; updatedAt: string };
+// Price per SMS part per provider (connector id): from the provider's price list or its pricing API.
+export async function smsPrices(): Promise<Record<string, SmsPrice>> {
+  try {
+    const raw = JSON.parse((await getMeta("sms.pricing")) ?? "{}") as Record<string, SmsPrice>;
+    return Object.fromEntries(Object.entries(raw).filter(([, v]) => v && Number.isFinite(v.perPart) && v.perPart >= 0));
+  } catch {
+    return {};
+  }
+}
 
 // SMS (Update 1.0, phase 7): every message is kept with its delivery status. Messages are routed by purpose (OTP,
 // alerts, marketing) to Admin's providers in order, each with its sender ID; a failed send is retried and then goes
@@ -80,7 +92,7 @@ async function providersFor(purpose: Purpose, cfg: SmsConfig): Promise<Connector
   return chosen.length ? chosen : active;
 }
 
-export async function sendSmsMessage(input: { to: string; message?: string; sender?: string | null; purpose?: Purpose; template?: string; vars?: Record<string, string | number>; only?: string | null }) {
+export async function sendSmsMessage(input: { to: string; message?: string; sender?: string | null; purpose?: Purpose; template?: string; vars?: Record<string, string | number>; only?: string | null; batchId?: string | null; name?: string | null }) {
   const cfg = await smsConfig();
   const purpose: Purpose = isPurpose(input.purpose) ? input.purpose : "alerts";
   let message = input.message ?? "";
@@ -99,8 +111,9 @@ export async function sendSmsMessage(input: { to: string; message?: string; send
   const sender = (input.sender ?? "") || cfg.routes[purpose].sender;
   const id = uid("sms_");
   const now = nowIso();
+  const count = smsCount(message);
   await run(
-    "INSERT INTO sms_messages (id, to_phone, purpose, sender, preview, length, status, attempts, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'queued', 0, ?, ?)",
+    "INSERT INTO sms_messages (id, to_phone, purpose, sender, preview, length, status, attempts, created_at, updated_at, batch_id, recipient_name, segments, encoding) VALUES (?, ?, ?, ?, ?, ?, 'queued', 0, ?, ?, ?, ?, ?, ?)",
     id,
     phone,
     purpose,
@@ -110,7 +123,12 @@ export async function sendSmsMessage(input: { to: string; message?: string; send
     message.length,
     now,
     now,
+    input.batchId ?? null,
+    input.name?.slice(0, 120) ?? null,
+    count.segments,
+    count.encoding,
   );
+  const prices = await smsPrices();
   const errors: string[] = [];
   let attempts = 0;
   for (const c of providers) {
@@ -118,7 +136,10 @@ export async function sendSmsMessage(input: { to: string; message?: string; send
       attempts++;
       const r = await callConnector(c, { to: phone, message, sender: sender ?? "" });
       if (r.ok) {
-        await run("UPDATE sms_messages SET status = 'sent', connector_id = ?, provider_id = ?, attempts = ?, error = NULL, updated_at = ? WHERE id = ?", c.id, r.id, attempts, nowIso(), id);
+        // Cost: the parts sent times the price per part Admin keeps for the provider that sent it.
+        const price = prices[c.id];
+        const cost = price ? Math.round(price.perPart * count.segments * 10000) / 10000 : null;
+        await run("UPDATE sms_messages SET status = 'sent', connector_id = ?, provider_id = ?, attempts = ?, error = NULL, sent_at = ?, cost = ?, currency = ?, updated_at = ? WHERE id = ?", c.id, r.id, attempts, nowIso(), cost, price?.currency ?? null, nowIso(), id);
         return { id, providerId: r.id, provider: c.name, attempts, fallback: c.id !== providers[0].id };
       }
       errors.push(`${c.name}: ${r.error}`);
@@ -130,7 +151,9 @@ export async function sendSmsMessage(input: { to: string; message?: string; send
 
 // Delivery reports: Africa's Talking posts id and status as a form; others send JSON with similar names.
 const DELIVERED = /^(success|delivered|deliveredtohandset|delivrd)$/i;
-const FAILED = /^(failed|rejected|undelivered|undeliv|expired|absentsubscriber|insufficientcredit|userinblacklist|invalidphonenumber)$/i;
+// Rejected: the provider or network refused the message outright; failed: it was tried and not delivered.
+const REJECTED = /^(rejected|rejectd|userinblacklist|invalidphonenumber|insufficientcredit|blacklisted|invalid)$/i;
+const FAILED = /^(failed|undelivered|undeliv|expired|absentsubscriber|deliveryfailure)$/i;
 
 export async function handleDeliveryReport(token: string | null, body: Record<string, unknown>) {
   const cfg = await smsConfig();
@@ -145,13 +168,15 @@ export async function handleDeliveryReport(token: string | null, body: Record<st
     const pid = String(b.id ?? b.messageId ?? b.message_id ?? b.MessageSid ?? pick(b, "response.message_id") ?? "").trim();
     const raw = String(b.status ?? b.deliveryStatus ?? b.MessageStatus ?? b.dlr_status ?? "").replace(/\s+/g, "");
     if (!pid) continue;
-    const status = DELIVERED.test(raw) ? "delivered" : FAILED.test(raw) ? "failed" : "sent";
+    const status = DELIVERED.test(raw) ? "delivered" : REJECTED.test(raw) ? "rejected" : FAILED.test(raw) ? "failed" : "sent";
     const reason = String(b.failureReason ?? b.reason ?? b.ErrorCode ?? "").slice(0, 200) || null;
     const r = await run(
-      "UPDATE sms_messages SET status = ?, error = CASE WHEN ? = 'failed' THEN COALESCE(?, error) ELSE error END, delivered_at = CASE WHEN ? = 'delivered' THEN ? ELSE delivered_at END, updated_at = ? WHERE provider_id = ?",
+      "UPDATE sms_messages SET status = ?, report_status = ?, error = CASE WHEN ? IN ('failed', 'rejected') THEN COALESCE(?, error, ?) ELSE error END, delivered_at = CASE WHEN ? = 'delivered' THEN ? ELSE delivered_at END, updated_at = ? WHERE provider_id = ?",
       status,
+      raw.slice(0, 60) || null,
       status,
       reason,
+      raw ? `The provider reported ${raw}` : null,
       status,
       nowIso(),
       nowIso(),
@@ -169,7 +194,10 @@ export async function smsBalance(user: AppUser, connectorId: string) {
   const c = (await connectorsFor("sms")).find((x) => x.id === connectorId);
   if (!c) throw new WorkflowError("NOT_FOUND", "That SMS provider is not active.");
   const cfg = await smsConfig();
-  const b = cfg.balance[c.id] ?? (c.preset === "africastalking" ? { path: "/version1/user?username={{secret.username}}", valuePath: "UserData.balance" } : null);
+  // Documented balance addresses: Africa's Talking (User data) and Twilio (Account balance); others are set by Admin.
+  const b =
+    cfg.balance[c.id] ??
+    (c.preset === "africastalking" ? { path: "/version1/user?username={{secret.username}}", valuePath: "UserData.balance" } : c.preset === "twilio" ? { path: "/2010-04-01/Accounts/{{secret.username}}/Balance.json", valuePath: "balance" } : null);
   if (!b) throw new WorkflowError("INVALID_STATE", `Set the balance address for ${c.name} first.`);
   const probe: Connector = { ...c, operation: { method: "GET", path: b.path, contentType: "none", map: {}, headers: c.operation.headers }, response: {} };
   const r = await callConnector(probe, {}, { test: true });

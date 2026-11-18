@@ -66,7 +66,7 @@ try {
   await admin.screenshot({ path: path.join(shots, "2-monitor.png"), fullPage: true });
 
   // 3. SMS setup.
-  await admin.goto(`${base}/admin/integrations?tab=sms`);
+  await admin.goto(`${base}/admin/integrations?tab=sms&sms=setup`);
   const sms = admin.locator("[data-sms-setup]");
   check("SMS setup opens with routing for three purposes", await seen(sms) && (await sms.locator("[data-sms-route]").count()) === 3);
   await sms.getByLabel("Sender ID for Sign-in codes (OTP)").fill("MYSEED");
