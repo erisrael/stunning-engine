@@ -27,6 +27,7 @@ import {
   PhoneIncomingIcon,
   PhoneMissedIcon,
   PhoneOutgoingIcon,
+  PaletteIcon,
   PlusIcon,
   SendIcon,
   UserIcon,
@@ -39,7 +40,8 @@ import { cn } from "@/lib/utils";
 import { LiveThread, words, type Lang } from "./live-thread";
 import { CallButton, CallLayer } from "./calls";
 import { ArticleBody, type PublicArticle } from "@/components/help/article-body";
-import { applyTelegramTheme, haptic, startParam, tgWebApp, useBackButton, useMainButton, useTelegram, type TgWebApp } from "./tg";
+import { haptic, startParam, tgWebApp, useBackButton, useMainButton, useTelegram, type TgWebApp } from "./tg";
+import { AppearancePage, Group, LOOK_WORDS, Row, Tile, useLook } from "./look";
 
 type User = { id: string | null; name: string | null; email: string | null; phone: string | null; hash: string | null; meta?: Record<string, string> };
 export type Session = { token: string; customer: { id: string; name: string; email?: string | null; phone?: string | null; telegram?: boolean }; app: { name: string; greeting: string | null; color: string | null }; online: boolean; hours: string; awayMessage: string; recordCalls: boolean; recordingNotice: string; channels?: { web_chat: boolean; telegram: boolean; calls: boolean; sms: boolean }; callEngine?: { engine: "browser" | "phone"; phone: string | null }; content?: WidgetContent; schedule?: Schedule | null };
@@ -97,7 +99,7 @@ const TABS = ["home", "chats", "requests", "calls", "more"] as const;
 type Tab = (typeof TABS)[number];
 const TAB_ICON: Record<Tab, React.ComponentType<{ className?: string }>> = { home: HomeIcon, chats: MessageCircleIcon, requests: ClipboardListIcon, calls: PhoneIcon, more: MenuIcon };
 // The pages a deep link may name (startapp=<page>, or t_<conversation>, r_<request>, a_<article>).
-const NAMED = ["home", "chats", "requests", "calls", "more", "new", "faq", "notifications", "profile", "language", "info"];
+const NAMED = ["home", "chats", "requests", "calls", "more", "new", "faq", "notifications", "profile", "language", "info", "appearance"];
 function deepPage(p: string | null | undefined): string | null {
   if (!p) return null;
   if (NAMED.includes(p)) return p;
@@ -133,11 +135,11 @@ const store = {
 const when = (iso: string, am: boolean, withTime = true) => new Date(iso).toLocaleString(am ? "am-ET" : "en-GB", { day: "2-digit", month: "short", ...(withTime ? { hour: "2-digit", minute: "2-digit" } : { year: "numeric" }) });
 const mmss = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
 
-export function SupportWidget({ appKey: givenKey, initialUser, waitForParent, telegram = null, startCall = false, incomingCall = false, page: linkPage = null }: { appKey: string; initialUser: User | null; waitForParent: boolean; telegram?: string | null; startCall?: boolean; incomingCall?: boolean; page?: string | null }) {
-  // Inside Telegram the key comes with the sign-in.
-  const [appKey, setAppKey] = React.useState(givenKey);
+export function SupportWidget({ appKey: givenKey, initialUser, waitForParent, telegram = null, startCall = false, incomingCall = false, page: linkPage = null, preset = null, onSignOut }: { appKey: string; initialUser: User | null; waitForParent: boolean; telegram?: string | null; startCall?: boolean; incomingCall?: boolean; page?: string | null; preset?: { key: string; session: Session } | null; onSignOut?: () => void }) {
+  // Inside Telegram the key comes with the sign-in; on the web support app (/support-app) it comes signed in.
+  const [appKey, setAppKey] = React.useState(preset?.key ?? givenKey);
   const [user, setUser] = React.useState<User | null>(initialUser);
-  const [s, setS] = React.useState<Session | null>(null);
+  const [s, setS] = React.useState<Session | null>(preset?.session ?? null);
   const [error, setError] = React.useState<string | null>(null);
   const [tickets, setTickets] = React.useState<Ticket[]>([]);
   const [calls, setCalls] = React.useState<CallRecord[]>([]);
@@ -149,17 +151,8 @@ export function SupportWidget({ appKey: givenKey, initialUser, waitForParent, te
   const tab = (TABS as readonly string[]).includes(stack[0]!) ? (stack[0] as Tab) : "home";
   const [callBusy, setCallBusy] = React.useState(false);
   const tg = useTelegram(!!telegram);
-  React.useEffect(() => {
-    if (!telegram) return;
-    applyTelegramTheme();
-    const t = window.setTimeout(applyTelegramTheme, 1200);
-    const w = tgWebApp();
-    w?.onEvent?.("themeChanged", applyTelegramTheme);
-    return () => {
-      window.clearTimeout(t);
-      w?.offEvent?.("themeChanged", applyTelegramTheme);
-    };
-  }, [telegram, tg]);
+  // The look the customer chose (theme, accent, text size, corners), on top of Telegram's or the phone's theme.
+  const { look, setLook, hex } = useLook(s?.app.color ?? null, !!telegram);
   // English or Amharic, remembered on this browser (and, once chosen on the Language page, for the bot too).
   const [lang, setLangState] = React.useState<Lang>(() => (store.get("myseed-support-lang") === "am" ? "am" : "en"));
   const setLang = (l: Lang) => {
@@ -246,7 +239,13 @@ export function SupportWidget({ appKey: givenKey, initialUser, waitForParent, te
   }, [telegram]);
 
   React.useEffect(() => {
-    if (telegram) return;
+    if (!preset) return;
+    void loadLists(preset.key, preset.session.token);
+    // Once, signed in by the page around it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  React.useEffect(() => {
+    if (telegram || preset) return;
     if (!appKey) return setError("This support link is missing its app key.");
     if (!user && waitForParent) return;
     let stop = false;
@@ -280,7 +279,7 @@ export function SupportWidget({ appKey: givenKey, initialUser, waitForParent, te
     const p = deepPage(linkPage) ?? deepPage(startParam());
     if (!p) return;
     linked.current = true;
-    setStack(p === "home" || (TABS as readonly string[]).includes(p) ? [p] : [p.startsWith("t:") ? "chats" : p.startsWith("r:") ? "requests" : p.startsWith("a:") || ["faq", "notifications", "profile", "language", "info"].includes(p) ? "more" : "home", p]);
+    setStack(p === "home" || (TABS as readonly string[]).includes(p) ? [p] : [p.startsWith("t:") ? "chats" : p.startsWith("r:") ? "requests" : p.startsWith("a:") || ["faq", "notifications", "profile", "language", "info", "appearance"].includes(p) ? "more" : "home", p]);
   }, [s, linkPage, tg]);
 
   const reload = React.useCallback(async () => {
@@ -306,7 +305,7 @@ export function SupportWidget({ appKey: givenKey, initialUser, waitForParent, te
 
   // Telegram's Back button while a page is open over a tab; its Main button for the page's main action.
   useBackButton(tg, stack.length > 1, back);
-  const color = s?.app.color ?? "#1A73E8";
+  const color = hex;
   const mainText = callBusy ? null : page === "new" ? undefined : page === "home" || page === "chats" ? w.ask : null;
   useMainButton(tg, mainText, () => (setTopic(null), go("new")), { color });
 
@@ -318,52 +317,73 @@ export function SupportWidget({ appKey: givenKey, initialUser, waitForParent, te
       </div>
     );
   const own = !!tg; // Telegram shows its own Back and Main buttons
-  const title = pageTitle(page, w, s.app.name);
+  const title = pageTitle(page, w, s.app.name, am);
   const openTickets = tickets.filter((t) => !CLOSED.includes(t.status));
   const doneTickets = tickets.filter((t) => CLOSED.includes(t.status));
-  const ticketRow = (t: Ticket, big = false) => (
-    <li key={t.id}>
-      <button type="button" className={cn("w-full rounded-xl border bg-card text-left transition-colors hover:bg-muted active:bg-muted", big ? "p-3" : "p-2.5 text-sm")} onClick={() => go(`t:${t.id}`)} data-conversation-item data-ticket={t.id}>
-        <span className="flex items-center gap-2">
-          <MessageCircleIcon className="size-4 shrink-0 text-primary" />
-          <span className="min-w-0 flex-1 truncate font-medium">{t.subject}</span>
-          <span className="text-xs text-muted-foreground">#{t.number}</span>
-        </span>
-        <span className="mt-0.5 block text-xs text-muted-foreground" suppressHydrationWarning>
-          {words(lang).status[t.status] ?? STATUS[t.status] ?? t.status} · {when(t.updated_at, am)}
-        </span>
-      </button>
-    </li>
+  const ticketRow = (t: Ticket) => (
+    <Row
+      key={t.id}
+      icon={MessageCircleIcon}
+      tint={CLOSED.includes(t.status) ? "#8e8e93" : "var(--primary)"}
+      label={t.subject}
+      sub={<span suppressHydrationWarning>{`#${t.number} · ${words(lang).status[t.status] ?? STATUS[t.status] ?? t.status} · ${when(t.updated_at, am)}`}</span>}
+      onClick={() => go(`t:${t.id}`)}
+      data-conversation-item
+      data-ticket={t.id}
+    />
   );
   const askButton = !own && (
-    <Button className="w-full text-white" style={{ background: color }} onClick={() => (setTopic(null), go("new"))} data-new-question>
+    <Button className="h-11 w-full rounded-[calc(var(--radius)+6px)] text-[15px]" onClick={() => (setTopic(null), go("new"))} data-new-question>
       <PlusIcon /> {w.ask}
     </Button>
   );
+  const first = s.customer.name.split(" ")[0];
+  const lw = LOOK_WORDS[lang];
+  const langButton = (
+    <button type="button" className="rounded-full border px-2.5 py-1 text-xs font-medium" onClick={() => setLang(am ? "en" : "am")} aria-label={am ? "English" : "Amharic"} data-lang-toggle>
+      {am ? "EN" : "አማ"}
+    </button>
+  );
 
   return (
-    <div className="flex h-full flex-col bg-background" data-widget data-page={page}>
-      <header className="space-y-0.5 px-4 py-3 text-white" style={{ background: color }}>
-        <div className="flex items-center gap-2">
+    <div className="flex h-full flex-col bg-background text-foreground" data-widget data-page={page}>
+      {page === "home" ? (
+        <header className="px-4 pt-4 pb-2" data-header="home">
+          <div className="flex items-center gap-3">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary text-base font-semibold text-primary-foreground" aria-hidden>
+              {s.app.name.slice(0, 1).toUpperCase()}
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-xs text-muted-foreground">
+                {s.app.name} {w.support}
+              </p>
+              <p className="truncate text-xl leading-tight font-bold">{am ? `ሰላም ${first}` : `Hi ${first}`} 👋</p>
+            </div>
+            {langButton}
+          </div>
+          <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 text-xs" data-online={s.online ? "yes" : "no"}>
+            <span className={cn("size-2 rounded-full", s.online ? "bg-emerald-500" : "bg-amber-500")} />
+            {s.online ? w.online : `${w.usually}: ${s.hours}`}
+          </p>
+        </header>
+      ) : (
+        <header className="sticky top-0 z-10 flex items-center gap-2 border-b bg-background/85 px-3 py-2.5 backdrop-blur" data-header="page">
           {stack.length > 1 && !own && (
-            <button type="button" aria-label="Back" className="-ml-1 rounded-md p-1 hover:bg-white/15" onClick={back}>
+            <button type="button" aria-label={w.back} className="-ml-1 rounded-full p-1.5 text-primary hover:bg-muted" onClick={back}>
               <ArrowLeftIcon className="size-5" />
             </button>
           )}
-          <p className="min-w-0 flex-1 truncate font-semibold">{title ?? `${s.app.name} ${w.support}`}</p>
-          <button type="button" className="rounded border border-white/40 px-1.5 py-0.5 text-xs" onClick={() => setLang(am ? "en" : "am")} aria-label={am ? "English" : "Amharic"} data-lang-toggle>
-            {am ? "EN" : "አማ"}
-          </button>
-        </div>
-        {page === "home" && <p className="text-xs opacity-90">{s.online ? w.online : `${w.usually}: ${s.hours}`}</p>}
-      </header>
+          <p className="min-w-0 flex-1 truncate text-[17px] font-semibold">{title ?? `${s.app.name} ${w.support}`}</p>
+          {stack.length === 1 && langButton}
+        </header>
+      )}
       <CallLayer api={api} s={s} openedForCall={incomingCall} onBusy={setCallBusy}>
         <main className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
           {page === "home" && (
-            <div className="space-y-3 p-4" data-page-home>
-              <p className="text-sm">{s.app.greeting ?? (s.content ? (am ? s.content.welcome.am : s.content.welcome.en) : null) ?? `Hi ${s.customer.name.split(" ")[0]}! How can we help?`}</p>
+            <div className="space-y-5 px-4 pt-2 pb-6" data-page-home>
+              <p className="text-[15px] text-muted-foreground">{s.app.greeting ?? (s.content ? (am ? s.content.welcome.am : s.content.welcome.en) : null) ?? (am ? "በምን እንርዳዎ?" : "How can we help?")}</p>
               {s.schedule && !s.schedule.status.open && (
-                <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100" data-closed-now>
+                <div className="rounded-[calc(var(--radius)+6px)] border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100" data-closed-now>
                   <p className="font-medium">
                     {w.closedNow}
                     {s.schedule.status.holiday ? ` · ${s.schedule.status.holiday}` : ""}
@@ -376,64 +396,84 @@ export function SupportWidget({ appKey: givenKey, initialUser, waitForParent, te
                   )}
                 </div>
               )}
+              <div className="grid grid-cols-2 gap-2" aria-label={am ? "ፈጣን እርምጃዎች" : "Quick actions"} data-quick-actions>
+                <Tile icon={PlusIcon} label={w.ask} sub={am ? "በጽሑፍ" : "By message"} onClick={() => (setTopic(null), go("new"))} data-quick="new" />
+                {s.channels?.calls !== false && <Tile icon={PhoneIcon} tint="#16a34a" label={w.callTitle} sub={s.online ? w.online : s.hours} onClick={() => go("calls")} data-quick="call" />}
+                <Tile icon={MessageCircleIcon} tint="#2563eb" label={w.chats} sub={openTickets.length ? `${openTickets.length} ${w.active.toLowerCase()}` : w.history} onClick={() => go("chats")} data-quick="chats" />
+                <Tile icon={BookOpenIcon} tint="#e8590c" label={w.faq} sub={am ? "መልሶች" : "Answers"} onClick={() => go("faq")} data-quick="faq" />
+              </div>
               {!!s.content?.topics.length && (
-                <div className="grid grid-cols-2 gap-1.5" aria-label={w.topics}>
-                  {s.content.topics.map((t) => (
-                    <button key={t.key} type="button" className="rounded-lg border bg-card px-2 py-2 text-left text-xs hover:bg-muted" onClick={() => (setTopic(t.key), go("new"))} data-topic={t.key}>
-                      {am ? t.am : t.en}
-                    </button>
-                  ))}
-                </div>
+                <section className="space-y-2" aria-label={w.topics}>
+                  <p className="px-1 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">{w.topics}</p>
+                  <div className="flex flex-wrap gap-2">
+                    {s.content.topics.map((t) => (
+                      <button key={t.key} type="button" className="rounded-full border bg-card px-3 py-1.5 text-sm shadow-xs transition active:scale-[0.97]" onClick={() => (setTopic(t.key), go("new"))} data-topic={t.key}>
+                        {am ? t.am : t.en}
+                      </button>
+                    ))}
+                  </div>
+                </section>
               )}
-              {askButton}
               {startCall && (
-                <p className="flex items-center gap-2 rounded-lg border border-dashed p-2 text-sm" data-call-prompt>
-                  <PhoneIcon className="size-4 shrink-0" style={{ color }} /> {am ? "ከድጋፍ ቡድናችን ጋር ለመነጋገር ከታች ይደውሉ።" : "Call our support team below. You talk in this app."}
+                <p className="flex items-center gap-2 rounded-[calc(var(--radius)+6px)] border border-dashed p-3 text-sm" data-call-prompt>
+                  <PhoneIcon className="size-4 shrink-0 text-primary" /> {am ? "ከድጋፍ ቡድናችን ጋር ለመነጋገር ከታች ይደውሉ።" : "Call our support team below. You talk in this app."}
                 </p>
               )}
               <CallButton api={api} s={s} ticketId={null} color={color} lang={lang} onTicket={(id) => (go(`t:${id}`), void reload())} />
               <HelpSearch api={api} placeholder={w.searchHelp} onOpen={(id) => go(`a:${id}`)} />
-              {telegram && <Resources api={api} title={w.resources} />}
               {updates.length > 0 && (
-                <section className="space-y-1 pt-2" aria-label={w.updates} data-updates>
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs font-medium text-muted-foreground">{w.updates}</p>
-                    <button type="button" className="text-xs text-primary" onClick={() => go("notifications")}>{w.seeAll}</button>
-                  </div>
+                <Group
+                  title={
+                    <span className="flex items-center justify-between">
+                      {w.updates}
+                      <button type="button" className="text-[11px] font-semibold text-primary normal-case" onClick={() => go("notifications")}>
+                        {w.seeAll}
+                      </button>
+                    </span>
+                  }
+                  data-updates
+                >
                   {updates.slice(0, 3).map((u) => (
-                    <button key={u.id} type="button" className="block w-full rounded-lg border p-2 text-left text-xs hover:bg-muted" onClick={() => go(`t:${u.ticket_id}`)}>
-                      <span className="block text-muted-foreground" suppressHydrationWarning>#{u.number} · {when(u.created_at, am)}</span>
-                      <span className="line-clamp-2">{u.body}</span>
-                    </button>
+                    <Row key={u.id} icon={BellIcon} tint="#f59e0b" label={u.body} sub={<span suppressHydrationWarning>{`#${u.number} · ${when(u.created_at, am)}`}</span>} onClick={() => go(`t:${u.ticket_id}`)} />
                   ))}
-                </section>
+                </Group>
               )}
               {tickets.length > 0 && (
-                <div className="flex items-center justify-between pt-2">
-                  <p className="text-xs font-medium text-muted-foreground">{w.recent}</p>
-                  {tickets.length > 3 && <button type="button" className="text-xs text-primary" onClick={() => go("chats")}>{w.seeAll}</button>}
-                </div>
+                <Group
+                  title={
+                    <span className="flex items-center justify-between">
+                      {w.recent}
+                      {tickets.length > 3 && (
+                        <button type="button" className="text-[11px] font-semibold text-primary normal-case" onClick={() => go("chats")}>
+                          {w.seeAll}
+                        </button>
+                      )}
+                    </span>
+                  }
+                >
+                  {tickets.slice(0, 3).map((t) => ticketRow(t))}
+                </Group>
               )}
-              <ul className="space-y-1">{tickets.slice(0, 3).map((t) => ticketRow(t))}</ul>
+              {telegram && <Resources api={api} title={w.resources} />}
+              {askButton}
             </div>
           )}
 
           {page === "chats" && (
-            <div className="space-y-4 p-4" data-page-chats>
+            <div className="space-y-5 p-4" data-page-chats>
               <div className="flex items-center justify-between gap-2">
                 <p className="text-xs text-muted-foreground">{w.kept}</p>
                 {!own && (
-                  <Button size="sm" onClick={() => (setTopic(null), go("new"))}>
+                  <Button size="sm" className="rounded-full" onClick={() => (setTopic(null), go("new"))}>
                     <PlusIcon /> {w.newConv}
                   </Button>
                 )}
               </div>
               {([["open", w.active, openTickets], ["previous", w.history, doneTickets]] as const).map(([part, label, list]) =>
                 list.length ? (
-                  <section key={part} className="space-y-2" data-requests={part}>
-                    <p className="text-xs font-medium text-muted-foreground">{label} ({list.length})</p>
-                    <ul className="space-y-2">{list.map((t) => ticketRow(t, true))}</ul>
-                  </section>
+                  <Group key={part} title={`${label} (${list.length})`} data-requests={part}>
+                    {list.map((t) => ticketRow(t))}
+                  </Group>
                 ) : null,
               )}
               {!tickets.length && <Empty icon={MessageCircleIcon} text={w.noConv} />}
@@ -445,8 +485,11 @@ export function SupportWidget({ appKey: givenKey, initialUser, waitForParent, te
 
           {page === "calls" && (
             <div className="space-y-4 p-4" data-page-calls>
-              <section className="space-y-2 rounded-xl border bg-card p-3" data-call-interface>
-                <p className="font-medium">{w.callTitle}</p>
+              <section className="space-y-3 rounded-[calc(var(--radius)+6px)] border bg-card p-4 shadow-xs" data-call-interface>
+                <div className="flex items-center gap-3">
+                  <span className="flex size-10 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-600"><PhoneIcon className="size-5" /></span>
+                  <p className="text-[17px] font-semibold">{w.callTitle}</p>
+                </div>
                 <p className="text-xs text-muted-foreground">{s.callEngine?.engine === "phone" ? (s.online ? w.status : s.hours) : w.callIntro}</p>
                 <CallButton api={api} s={s} ticketId={null} color={color} lang={lang} onTicket={(id) => (go(`t:${id}`), void reload())} />
               </section>
@@ -461,7 +504,7 @@ export function SupportWidget({ appKey: givenKey, initialUser, waitForParent, te
                     const state = missed ? w.missed : c.status === "ended" || c.status === "completed" ? w.completed : c.status === "requested" || c.status === "callback" ? w.requested : c.status === "cancelled" ? w.cancelled : c.status;
                     return (
                       <li key={c.id}>
-                        <button type="button" disabled={!c.ticket_id} className="flex w-full items-center gap-3 rounded-xl border bg-card p-3 text-left enabled:hover:bg-muted" onClick={() => c.ticket_id && go(`t:${c.ticket_id}`)} data-call-row={c.status}>
+                        <button type="button" disabled={!c.ticket_id} className="flex w-full items-center gap-3 rounded-[calc(var(--radius)+6px)] border bg-card p-3 text-left shadow-xs enabled:active:bg-muted" onClick={() => c.ticket_id && go(`t:${c.ticket_id}`)} data-call-row={c.status}>
                           <Icon className={cn("size-4 shrink-0", missed ? "text-destructive" : "text-primary")} />
                           <span className="min-w-0 flex-1">
                             <span className="block text-sm font-medium">{dir} · {state}</span>
@@ -482,31 +525,29 @@ export function SupportWidget({ appKey: givenKey, initialUser, waitForParent, te
           )}
 
           {page === "more" && (
-            <nav className="space-y-1 p-4" aria-label={w.more} data-page-more>
-              {(
-                [
-                  ["notifications", w.notifications, BellIcon, unseen],
-                  ["faq", w.faq, MessageCircleQuestionIcon, 0],
-                  ["profile", w.profile, UserIcon, 0],
-                  ["language", w.language, LanguagesIcon, 0],
-                  ["info", w.info, InfoIcon, 0],
-                ] as const
-              ).map(([key, label, Icon, n]) => (
-                <button key={key} type="button" className="flex w-full items-center gap-3 rounded-xl border bg-card px-3 py-3 text-left text-sm hover:bg-muted" onClick={() => go(key)} data-more={key}>
-                  <Icon className="size-4 text-primary" />
-                  <span className="flex-1">{label}</span>
-                  {n > 0 && <span className="rounded-full bg-primary px-1.5 text-[10px] font-semibold text-primary-foreground">{n}</span>}
-                  <ChevronRightIcon className="size-4 text-muted-foreground" />
-                </button>
-              ))}
+            <nav className="space-y-5 p-4" aria-label={w.more} data-page-more>
+              <Group>
+                <Row icon={BellIcon} tint="#ef4444" label={w.notifications} badge={unseen} onClick={() => go("notifications")} data-more="notifications" />
+                <Row icon={MessageCircleQuestionIcon} tint="#e8590c" label={w.faq} onClick={() => go("faq")} data-more="faq" />
+              </Group>
+              <Group>
+                <Row icon={UserIcon} tint="#2563eb" label={w.profile} sub={s.customer.name} onClick={() => go("profile")} data-more="profile" />
+                <Row icon={PaletteIcon} tint="#8b5cf6" label={lw.appearance} onClick={() => go("appearance")} data-more="appearance" />
+                <Row icon={LanguagesIcon} tint="#0f8a8a" label={w.language} value={am ? "አማርኛ" : "English"} onClick={() => go("language")} data-more="language" />
+              </Group>
+              <Group>
+                <Row icon={InfoIcon} tint="#64748b" label={w.info} onClick={() => go("info")} data-more="info" />
+                {onSignOut && <Row icon={ArrowLeftIcon} tint="#ef4444" label={am ? "ውጣ" : "Sign out"} chevron={false} onClick={onSignOut} data-more="sign-out" />}
+              </Group>
             </nav>
           )}
+          {page === "appearance" && <AppearancePage look={look} setLook={setLook} am={am} brand={s.app.color} />}
 
           {page === "faq" && <FaqPage api={api} w={w} onOpen={(id) => go(`a:${id}`)} />}
           {page === "notifications" && (
             <div className="space-y-2 p-4" data-page-notifications>
               {updates.map((u) => (
-                <button key={u.id} type="button" className={cn("block w-full rounded-xl border bg-card p-3 text-left text-sm hover:bg-muted", u.created_at > seenAt && "border-primary/50")} onClick={() => go(`t:${u.ticket_id}`)} data-notification>
+                <button key={u.id} type="button" className={cn("block w-full rounded-[calc(var(--radius)+6px)] border bg-card p-3 text-left text-sm shadow-xs active:bg-muted", u.created_at > seenAt && "border-primary/50")} onClick={() => go(`t:${u.ticket_id}`)} data-notification>
                   <span className="block text-xs text-muted-foreground" suppressHydrationWarning>
                     #{u.number} {u.subject} · {when(u.created_at, am)}
                   </span>
@@ -538,16 +579,18 @@ export function SupportWidget({ appKey: givenKey, initialUser, waitForParent, te
         </main>
       </CallLayer>
       {stack.length === 1 && (
-        <nav className="grid grid-cols-5 border-t bg-card pb-[env(safe-area-inset-bottom)]" aria-label="Support sections">
+        <nav className="grid grid-cols-5 border-t bg-background/90 pb-[env(safe-area-inset-bottom)] backdrop-blur" aria-label="Support sections">
           {TABS.map((key) => {
             const Icon = TAB_ICON[key];
             const on = tab === key;
             const badge = key === "more" ? unseen : key === "chats" ? openTickets.length : 0;
             return (
-              <button key={key} type="button" aria-current={on ? "page" : undefined} className={cn("relative flex flex-col items-center gap-0.5 py-2 text-[11px]", on ? "font-semibold text-primary" : "text-muted-foreground")} onClick={() => go(key)} data-tab={key}>
-                <Icon className="size-5" />
+              <button key={key} type="button" aria-current={on ? "page" : undefined} className={cn("relative flex h-14 flex-col items-center justify-center gap-0.5 text-[11px]", on ? "font-semibold text-primary" : "text-muted-foreground")} onClick={() => go(key)} data-tab={key}>
+                <span className={cn("flex h-7 w-12 items-center justify-center rounded-full transition-colors", on && "bg-primary/12")}>
+                  <Icon className="size-5" />
+                </span>
                 {w[key]}
-                {badge > 0 && <span className="absolute top-1 right-[calc(50%-1.25rem)] min-w-4 rounded-full bg-primary px-1 text-[9px] leading-4 text-primary-foreground">{badge > 9 ? "9+" : badge}</span>}
+                {badge > 0 && <span className="absolute top-1 left-1/2 ml-2 min-w-4 rounded-full bg-[#D93025] px-1 text-center text-[10px] leading-4 font-semibold text-white">{badge > 9 ? "9+" : badge}</span>}
               </button>
             );
           })}
@@ -558,8 +601,9 @@ export function SupportWidget({ appKey: givenKey, initialUser, waitForParent, te
 }
 
 type Words = (typeof W)["en"];
-function pageTitle(page: string, w: Words, app: string): string | null {
+function pageTitle(page: string, w: Words, app: string, am = false): string | null {
   if (page === "home") return null;
+  if (page === "appearance") return LOOK_WORDS[am ? "am" : "en"].appearance;
   if (page === "new") return w.newConv;
   if (page.startsWith("t:")) return w.conversations;
   if (page.startsWith("r:")) return w.requests;
@@ -570,7 +614,7 @@ function pageTitle(page: string, w: Words, app: string): string | null {
 
 function Empty({ icon: Icon, text }: { icon: React.ComponentType<{ className?: string }>; text: string }) {
   return (
-    <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
+    <div className="flex flex-col items-center gap-2 rounded-[calc(var(--radius)+6px)] border border-dashed p-8 text-center text-sm text-muted-foreground">
       <Icon className="size-5" />
       {text}
     </div>

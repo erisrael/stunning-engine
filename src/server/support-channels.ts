@@ -1020,3 +1020,71 @@ export async function readArticle(id: string) {
 export async function voteArticle(id: string, helpful: boolean) {
   await run(`UPDATE sup_articles SET ${helpful ? "helpful = helpful + 1" : "not_helpful = not_helpful + 1"} WHERE id = ? AND published = 1`, id);
 }
+
+// ---------------------------------------------------------------------------
+// The support app on the web (/support-app), outside Telegram
+// ---------------------------------------------------------------------------
+// Two ways in, both free:
+//  - Telegram's Login Widget: Telegram signs who the person is with the bot's token (the bot's domain is set once in
+//    BotFather with /setdomain). It is the same customer as in the bot's chat, so web, Mini App and bot share one
+//    conversation history.
+//  - As a guest, with a name and a phone number. The number is not confirmed (no paid SMS code); it is matched to
+//    the students' and parents' records for the agent, who sees that the customer is a guest.
+export function verifyTelegramLogin(data: Record<string, unknown>, token: string, now = Date.now()) {
+  const fields = Object.fromEntries(Object.entries(data ?? {}).filter(([k, v]) => /^[a-z_]{1,20}$/.test(k) && (typeof v === "string" || typeof v === "number")).map(([k, v]) => [k, String(v)]));
+  const hash = fields.hash ?? "";
+  delete fields.hash;
+  const check = Object.keys(fields)
+    .sort()
+    .map((k) => `${k}=${fields[k]}`)
+    .join("\n");
+  const want = crypto.createHmac("sha256", crypto.createHash("sha256").update(token).digest()).update(check).digest("hex");
+  if (hash.length !== want.length || !crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(want))) throw new WorkflowError("FORBIDDEN", "Telegram could not confirm who you are. Sign in again.");
+  const at = Number(fields.auth_date ?? 0);
+  // Kept on the phone for a month, as an app keeps its sign-in.
+  if (!at || at > now / 1000 + 60 || now / 1000 - at > 30 * 86400) throw new WorkflowError("FORBIDDEN", "Your Telegram sign-in is old. Sign in again.");
+  const id = Number(fields.id);
+  if (!Number.isSafeInteger(id) || id <= 0) throw new WorkflowError("FORBIDDEN", "Telegram did not say who you are.");
+  return { id, name: [fields.first_name, fields.last_name].filter(Boolean).join(" ") || fields.username || "Telegram customer" };
+}
+
+export async function webAppLoginInfo() {
+  const sd = await import("./support-desk");
+  const enabled = (await sd.supportConfig()).enabled;
+  const s = await telegramState();
+  return { enabled, bot: enabled && s.tokenEnc ? (s.bot ?? null) : null, guest: enabled };
+}
+
+export async function webAppSignIn(input: { telegram?: Record<string, unknown> | null; guest?: { device?: unknown; name?: unknown; phone?: unknown } | null }) {
+  const sd = await import("./support-desk");
+  if (!(await sd.supportConfig()).enabled) throw new WorkflowError("INVALID_STATE", "Support is not available right now.");
+  const app = await sd.defaultTelegramApp().catch(() => null);
+  if (!app) throw new WorkflowError("INVALID_STATE", "Support on the web is not set up yet.");
+  const now = nowIso();
+  let customerId: string;
+  if (input.telegram) {
+    const token = await botToken();
+    if (!token) throw new WorkflowError("INVALID_STATE", "The Telegram bot is not connected.");
+    const who = verifyTelegramLogin(input.telegram, token);
+    customerId = await customerFor({ channel: "telegram", key: String(who.id), name: who.name });
+    const meta = await customerMeta(customerId);
+    if (!meta["Signed in"]) await setCustomerMeta(customerId, { "Signed in": "With Telegram, in the support app on the web" });
+  } else if (input.guest) {
+    const device = clean(input.guest.device, 64);
+    const name = clean(input.guest.name, 120);
+    const phone = clean(input.guest.phone, 40);
+    if (!/^[A-Za-z0-9_-]{12,64}$/.test(device)) throw new WorkflowError("VALIDATION", "Open the support app again.");
+    if (name.length < 2) throw new WorkflowError("VALIDATION", "Write your name.");
+    const { normalPhone, phoneKey, recordPhone } = await import("./customer-records");
+    if (!phoneKey(normalPhone(phone))) throw new WorkflowError("VALIDATION", "Write your phone number, for example 0911 234 567.");
+    const ext = `web:${device}`;
+    const found = await get<{ id: string; phone: string | null; name: string }>("SELECT id, phone, name FROM sup_customers WHERE app_id IS NULL AND external_id = ?", ext);
+    customerId = found?.id ?? uid("cus_");
+    if (!found) await run("INSERT INTO sup_customers (id, app_id, external_id, name, email, created_at, last_seen_at) VALUES (?, NULL, ?, ?, NULL, ?, ?)", customerId, ext, name, now, now);
+    else await run("UPDATE sup_customers SET name = ?, last_seen_at = ? WHERE id = ?", name, now, customerId);
+    await setCustomerMeta(customerId, { "Signed in": "As a guest on the web (phone number not confirmed)" });
+    // Matched to the students and parents with this number, for the agent.
+    if (!found || phoneKey(found.phone) !== phoneKey(normalPhone(phone))) await recordPhone(customerId, phone, "widget");
+  } else throw new WorkflowError("VALIDATION", "Sign in with Telegram, or continue as a guest.");
+  return { key: app.public_key, session: await sd.sessionFor(app, customerId) };
+}

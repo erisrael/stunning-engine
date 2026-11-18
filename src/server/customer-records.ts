@@ -25,12 +25,33 @@ export type RecordMatch = {
   payments: { count: number; paid: number; currency: string; lastAt: string | null; lastAmount: number | null; name: string | null } | null;
   invoices: { count: number; student: string | null; grade: string | null; plan: string | null; lastDate: string | null } | null;
   customers: { id: string; name: string; channel: string; app: string | null }[];
+  // Noor's parents and students with this number (the copy of Noor kept in ops).
+  noor?: { kind: "parent" | "student"; id: string; name: string; detail: string }[];
 };
 
 export async function matchByPhone(phone: string, exceptCustomer?: string | null): Promise<RecordMatch> {
   const key = phoneKey(phone);
-  const out: RecordMatch = { students: [], payments: null, invoices: null, customers: [] };
+  const out: RecordMatch = { students: [], payments: null, invoices: null, customers: [], noor: [] };
   if (!key) return out;
+  // Noor's parents and students: any phone field of the record with the same last nine digits.
+  try {
+    const rows = await all<{ category: string; external_id: string; title: string | null; data_json: string }>(
+      `SELECT category, external_id, title, data_json FROM legacy_cms_records WHERE category IN ('parents', 'students') AND regexp_replace(data_json, '[^0-9]', '', 'g') LIKE ? LIMIT 50`,
+      `%${key}%`,
+    );
+    for (const r of rows) {
+      const d = parseJson<Record<string, unknown>>(r.data_json, {});
+      const phones = Object.entries(d).filter(([k, v]) => /phone|mobile|tel/i.test(k) && phoneKey(String(v ?? "")) === key);
+      if (!phones.length) continue;
+      const pick = (...names: string[]) => names.map((n) => Object.entries(d).find(([k]) => k.toLowerCase() === n)?.[1]).find((v) => v !== undefined && v !== null && String(v).trim()) as string | undefined;
+      const name = String(pick("name", "full name", "student", "parent") ?? r.title ?? r.external_id);
+      const detail = [pick("grade", "primary grade"), pick("subscription status", "status"), pick("city")].filter(Boolean).join(", ");
+      out.noor!.push({ kind: r.category === "parents" ? "parent" : "student", id: r.external_id, name, detail });
+      if (out.noor!.length >= 8) break;
+    }
+  } catch {
+    /* the Noor copy is not there: the other sources still count */
+  }
   // The academy's records, only from the real API.
   try {
     const ext = await import("./external-api");
@@ -72,6 +93,7 @@ export function matchLines(m: RecordMatch): Record<string, string | null> {
     "Student records": m.students.length ? m.students.map((s) => `${s.studentName} (${[s.grade, s.studentId, s.status !== "active" ? s.status : null].filter(Boolean).join(", ")}), parent ${s.parentName}`).join("; ") : null,
     "Chapa payments": m.payments ? `${m.payments.count} payment${m.payments.count === 1 ? "" : "s"}, ${money(m.payments.paid, m.payments.currency)} paid${m.payments.lastAt ? `, last ${m.payments.lastAmount !== null ? money(m.payments.lastAmount, m.payments.currency) : ""} on ${m.payments.lastAt.slice(0, 10)}` : ""}${m.payments.name ? ` (${m.payments.name})` : ""}` : null,
     "Noor invoices": m.invoices ? `${m.invoices.count} invoice${m.invoices.count === 1 ? "" : "s"}${m.invoices.student ? `, ${m.invoices.student}` : ""}${m.invoices.grade ? `, ${m.invoices.grade}` : ""}${m.invoices.plan ? `, ${m.invoices.plan}` : ""}${m.invoices.lastDate ? `, last ${m.invoices.lastDate.slice(0, 10)}` : ""}` : null,
+    "Noor records": m.noor?.length ? m.noor.map((n) => `${n.kind === "parent" ? "Parent" : "Student"} ${n.name} (#${n.id}${n.detail ? `, ${n.detail}` : ""})`).join("; ") : null,
     "Also contacted us": m.customers.length ? m.customers.map((c) => `${c.name} by ${c.channel}${c.app ? ` (${c.app})` : ""}`).join("; ") : null,
   };
 }
