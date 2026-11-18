@@ -1255,6 +1255,8 @@ def ssh_opts(port_flag: str, v: dict) -> list[str]:
         "-o", "StrictHostKeyChecking=accept-new",
         "-o", f"UserKnownHostsFile={KNOWN_HOSTS}",
         "-o", "ConnectTimeout=20",
+        # Some networks drop a share of new connections to the VPS: try the connection again before giving up.
+        "-o", "ConnectionAttempts=3",
         "-o", "ServerAliveInterval=30",
         "-o", "ServerAliveCountMax=6",
     ]

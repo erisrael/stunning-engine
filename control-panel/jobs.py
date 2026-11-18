@@ -303,6 +303,33 @@ def _resolve(arg: str, secrets_seen: list[str]) -> str:
     return re.sub(r"\{latest:([^}]+)\}", latest, arg)
 
 
+# Some networks drop a share of new connections to the VPS. A step whose ssh or scp failed only because the
+# connection dropped is run again. An ssh step is retried only when the connection never opened (its command never
+# ran on the server); a copy is safe to repeat whenever it was cut off.
+NET_RETRIES = 4
+_NO_CONNECT = re.compile(r"connect to host .* (timed out|refused|unreachable)|Connection timed out during banner|kex_exchange_identification|Could not resolve hostname .*Temporary|Network is unreachable", re.I)
+_CUT_OFF = re.compile(r"Connection (closed|reset)|Broken pipe|lost connection|client_loop: send disconnect", re.I)
+
+
+def _network_drop(tool: str, code: int, out: list[str]) -> bool:
+    if tool not in ("ssh", "scp") or code != 255:
+        return False
+    text = "\n".join(out[-20:])
+    if _NO_CONNECT.search(text):
+        return True
+    return tool == "scp" and bool(_CUT_OFF.search(text))
+
+
+def _cancel_wait(d: Path, seconds: float) -> bool:
+    """Wait, unless the job is stopped meanwhile (then True)."""
+    end = time.time() + seconds
+    while time.time() < end:
+        if (d / "cancel").exists():
+            return True
+        time.sleep(0.5)
+    return False
+
+
 def run_wrapper(d: Path) -> int:
     spec = _read_json(d / "job.json", {})
     status_path = d / "status.json"
@@ -361,29 +388,42 @@ def run_wrapper(d: Path) -> int:
             # must reach a server without appearing in the command line or the log.
             stdin_lines = [_resolve(str(x), secrets_seen) for x in step.get("stdin") or []]
             stdin_text = "".join(f"{line}\n" for line in stdin_lines) if step.get("stdin") else None
-            proc = subprocess.Popen(
-                cmd,
-                cwd=str(store.PROJECT_DIR / step.get("cwd", ".")),
-                env=env,
-                stdin=subprocess.PIPE if stdin_text is not None else subprocess.DEVNULL,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                creationflags=CREATE_NO_WINDOW if IS_WIN else 0,
-                start_new_session=not IS_WIN,
-            )
-            st = _read_json(status_path, {})
-            st["child_pid"] = proc.pid
-            _write_json(status_path, st)
-            if stdin_text is not None and proc.stdin:
-                try:
-                    proc.stdin.write(stdin_text.encode("utf-8"))
-                    proc.stdin.close()
-                except OSError:
-                    pass
-            assert proc.stdout
-            for raw in iter(proc.stdout.readline, b""):
-                log.write(mask(raw.decode("utf-8", errors="replace").rstrip("\r\n")) + "\n")
-            code = proc.wait()
+            tool = Path(cmd[0]).stem.lower()
+            attempt = 0
+            while True:
+                attempt += 1
+                proc = subprocess.Popen(
+                    cmd,
+                    cwd=str(store.PROJECT_DIR / step.get("cwd", ".")),
+                    env=env,
+                    stdin=subprocess.PIPE if stdin_text is not None else subprocess.DEVNULL,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    creationflags=CREATE_NO_WINDOW if IS_WIN else 0,
+                    start_new_session=not IS_WIN,
+                )
+                st = _read_json(status_path, {})
+                st["child_pid"] = proc.pid
+                _write_json(status_path, st)
+                if stdin_text is not None and proc.stdin:
+                    try:
+                        proc.stdin.write(stdin_text.encode("utf-8"))
+                        proc.stdin.close()
+                    except OSError:
+                        pass
+                assert proc.stdout
+                out: list[str] = []
+                for raw in iter(proc.stdout.readline, b""):
+                    line = mask(raw.decode("utf-8", errors="replace").rstrip("\r\n"))
+                    out.append(line)
+                    log.write(line + "\n")
+                code = proc.wait()
+                if code == 0 or (d / "cancel").exists() or attempt > NET_RETRIES or not _network_drop(tool, code, out):
+                    break
+                wait = 5 * 2 ** (attempt - 1)
+                log.write(f"  ↻ The connection to the server dropped. Trying again in {wait} s (attempt {attempt + 1} of {NET_RETRIES + 1}).\n")
+                if _cancel_wait(d, wait):
+                    break
             if code != 0:
                 if (d / "cancel").exists():
                     state, message = "cancelled", "Stopped from the control panel."
