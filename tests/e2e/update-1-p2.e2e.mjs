@@ -69,14 +69,19 @@ try {
   const admin = await login("admin@demo.local");
   await admin.goto(`${base}/legacy-cms`);
   const nav = admin.getByRole("navigation", { name: "Legacy CMS views" });
-  check("the page kit tab bar lists the views", (await nav.getByRole("link").allInnerTexts()).join("|").includes("Live") && (await nav.getByRole("link", { name: /Invoices/ }).count()) === 1 && (await nav.getByRole("link", { name: /Reports/ }).count()) === 1);
-  check("Live waits for a date before loading", await admin.getByText("Pick a date range to load").isVisible());
-  posts = 0;
-  await admin.getByRole("radiogroup", { name: "Quick range" }).getByRole("radio", { name: "Yesterday" }).click();
+  await nav.getByRole("link", { name: /Reports/ }).waitFor({ timeout: 20000 });
+  const views = (await nav.getByRole("link").allInnerTexts()).join("|");
+  check("the page kit tab bar lists the views", views.includes("Live") && (await nav.getByRole("link", { name: /Invoices/ }).count()) === 1 && (await nav.getByRole("link", { name: /Reports/ }).count()) === 1, views);
+  // Live opens on Today and loads it by itself.
   const total = admin.getByTestId("live-total");
   await total.waitFor({ timeout: 30000 });
+  check("Live opens on Today", (await admin.getByRole("radiogroup", { name: "Date range" }).getByRole("radio", { name: "Today" }).getAttribute("aria-checked")) === "true");
+  await admin.waitForTimeout(1500);
+  posts = 0;
+  await admin.getByRole("radiogroup", { name: "Date range" }).getByRole("radio", { name: "Yesterday" }).click();
+  await admin.waitForFunction(() => document.querySelector("[data-testid=live-total]")?.textContent?.startsWith("30 "), null, { timeout: 30000 }).catch(() => {});
   check("Yesterday loads 30 invoices with Noor's total", (await total.innerText()).startsWith("30 "), await total.innerText());
-  check("loaded through Noor's date filter in one request", (await admin.getByText("Noor date filter").count()) > 0 && posts === 1, { posts });
+  check("loaded through Noor's date filter in at most one request (days already read come from the cache)", (await admin.getByText(/Noor date filter/).count()) > 0 && posts <= 1, { posts });
   await admin.screenshot({ path: path.join(shots, "live.png") });
 
   // Live updates: Today refreshes on its own and a new invoice appears highlighted.
