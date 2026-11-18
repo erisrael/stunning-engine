@@ -3,6 +3,7 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   serverExternalPackages: ["exceljs", "@electric-sql/pglite", "postgres"],
   experimental: {
+    agentUpgrade: "security",
     serverActions: {
       bodySizeLimit: "12mb",
       allowedOrigins: [
