@@ -174,6 +174,10 @@ export function CallLayer({ children, disabled = false }: { children: React.Reac
   const [, tick] = React.useState(0);
 
   const phaseRef = React.useRef<Phase>("idle");
+  // A page reload (a new version, version-watch) waits while a call rings or runs.
+  React.useEffect(() => {
+    document.documentElement.dataset.callActive = phase !== "idle" && phase !== "ended" ? "1" : "";
+  }, [phase]);
   const callRef = React.useRef<CallView | null>(null);
   const pcRef = React.useRef<RTCPeerConnection | null>(null);
   const localRef = React.useRef<MediaStream | null>(null);

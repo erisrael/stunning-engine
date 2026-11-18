@@ -19,7 +19,13 @@ async function load(viewer: Awaited<ReturnType<typeof requireViewer>>, sp: Recor
     if (sp.list === "chapa") {
       const { chapaReport } = await import("@/server/chapa-hub");
       const l = (k: string) => (sp[k] ? sp[k]!.split(",").filter(Boolean) : undefined);
-      return await chapaReport(viewer, { biz: sp.biz || null, q: sp.q, status: l("status"), from: sp.from, until: sp.until, currency: sp.currency, type: l("type"), method: l("method") });
+      return await chapaReport(viewer, { biz: sp.biz || null, q: sp.q, status: l("status"), from: sp.from, until: sp.until, fromTime: sp.fromTime, untilTime: sp.untilTime, customer: sp.customer, ref: sp.ref, currency: sp.currency, type: l("type"), method: l("method") });
+    }
+    if (sp.list === "chapa-customers") {
+      const { chapaCustomersReport } = await import("@/server/chapa-hub");
+      const l = (k: string) => (sp[k] ? sp[k]!.split(",").filter(Boolean) : undefined);
+      const { report, meta } = await chapaCustomersReport(viewer, { biz: sp.biz || null, q: sp.q, from: sp.from, until: sp.until, method: l("method"), outcome: l("outcome") as never, sort: sp.sort as never });
+      return { report, meta };
     }
     if (sp.list === "unable") return await unableReport(viewer, { search: sp.q, verifier: sp.verifier, ids: sp.ids ? sp.ids.split(",").slice(0, 2000) : undefined });
     const source = sp.run ? await reportRun(viewer, sp.run) : null;

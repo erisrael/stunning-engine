@@ -47,7 +47,7 @@ async function main() {
   const slugs = cat.groups.flatMap((g) => g.pages.map((p) => p.slug));
   const spec = ["users", "parents", "students", "grades", "roles", "permissions", "subject-templates", "academic-contents", "academic-quizzes", "flashcards", "national-exams", "feedback", "faqs", "send-sms", "send-push-notification", "settings", "subscription-plans", "subscriptions", "invoices", "mandates", "subscription-histories"];
   check("every page the spec names is in the catalogue", spec.every((s) => slugs.includes(s)), spec.filter((s) => !slugs.includes(s)));
-  check("grouped as Noor groups them", cat.groups.map((g) => g.key).join() === "people,access,academics,engagement,billing");
+  check("grouped as Noor groups them", cat.groups.map((g) => g.key).join() === "people,access,academics,agents,rewards,engagement,billing", cat.groups.map((g) => g.key));
   check("form pages are told apart from lists", cat.groups.flatMap((g) => g.pages).filter((p) => p.kind === "page").map((p) => p.slug).join() === "send-sms,send-push-notification,settings");
   check("before Noor's menu is read, it says so", cat.menuRead === false && cat.groups[0].pages[0].found === null);
   await run("INSERT INTO cms_resources (slug, label, path, nav_group, known, enabled, noor_total, stored, first_seen, last_seen) VALUES ('learners', 'Students', '/admin/learners', 'People', 0, 1, 77, 0, '2026-11-01', '2026-11-01'), ('coupons', 'Coupons', '/admin/coupons', 'Billing', 0, 1, 4, 0, '2026-11-01', '2026-11-01')");

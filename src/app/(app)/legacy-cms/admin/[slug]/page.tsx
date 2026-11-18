@@ -10,9 +10,11 @@ import { NoorAdminList, NoorFormView, NoorOpenLink } from "@/components/app/lega
 export const metadata = { title: "Noor admin" };
 
 // One of Noor's admin pages (Update 1.2, System improvements 4): a list read live from Noor, or a Noor form page.
-export default async function NoorAdminPage({ params }: { params: Promise<{ slug: string }> }) {
+export default async function NoorAdminPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<Record<string, string | undefined>> }) {
   const viewer = await requireViewer();
   const { slug } = await params;
+  const tab = (await searchParams).tab;
+  const target = { mode: "page" as const, tab: tab && /^[\w-]{1,40}$/.test(tab) ? tab : null };
   if (!/^[a-z0-9_-]{1,80}$/i.test(slug)) notFound();
   const X = await import("@/server/cms-admin");
   const { getLegacyCmsConfigForUser } = await import("@/server/legacy-cms");
@@ -26,10 +28,10 @@ export default async function NoorAdminPage({ params }: { params: Promise<{ slug
     const list = await X.noorAdminList(viewer, slug);
     if (list.kind === "list") body = <NoorAdminList slug={slug} initial={list} />;
     else {
-      const f = await X.noorAdminForm(viewer, slug, { mode: "page" });
+      const f = await X.noorAdminForm(viewer, slug, target);
       body = (
         <div className="max-w-2xl rounded-xl border bg-card p-4">
-          <NoorFormView slug={slug} target={{ mode: "page" }} form={f.form} canSubmit={f.canSubmit} />
+          <NoorFormView key={f.form.tab ?? ""} slug={slug} target={{ ...target, tab: f.form.tab ?? target.tab }} form={f.form} canSubmit={f.canSubmit} />
         </div>
       );
     }

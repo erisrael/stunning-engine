@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import * as A from "@/app/actions/support-desk";
+import * as SC from "@/app/actions/support-chat";
 import type { SupportConfig } from "@/lib/support";
 import { cn } from "@/lib/utils";
 
@@ -69,6 +70,7 @@ export function SupportSettings({ cfg, people, admin, mailboxes = [], telegram =
     </div>
   );
   return (
+    <>
     <Card data-support-settings>
       <CardHeader>
         <CardTitle className="text-base">Customer support</CardTitle>
@@ -226,6 +228,84 @@ export function SupportSettings({ cfg, people, admin, mailboxes = [], telegram =
           <Button disabled={busy} onClick={() => act(() => A.saveSupportConfigAction(c), "Saved")}>
             Save
           </Button>
+        )}
+      </CardContent>
+    </Card>
+    {admin && <ClearSupportChats />}
+    </>
+  );
+}
+
+// Admin's danger zone: clear every support conversation. Shows what goes, asks for the exact confirmation text and a
+// reason; a backup is made first on the server.
+const CLEAR_PHRASE = "DELETE ALL SUPPORT CHATS";
+function ClearSupportChats() {
+  const router = useRouter();
+  const [open, setOpen] = React.useState(false);
+  const [preview, setPreview] = React.useState<{ conversations: number; messages: number; files: number; calls: number; held: number } | null>(null);
+  const [typed, setTyped] = React.useState("");
+  const [reason, setReason] = React.useState("");
+  const [withCalls, setWithCalls] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
+  const start = async () => {
+    const r = await SC.supportClearPreviewAction();
+    if (!r.ok) return void toast.error(r.error);
+    setPreview(r.data ?? null);
+    setTyped("");
+    setReason("");
+    setOpen(true);
+  };
+  const clear = async () => {
+    setBusy(true);
+    const r = await SC.clearSupportChatsAction({ confirm: typed, reason, includeCalls: withCalls });
+    setBusy(false);
+    if (!r.ok) return void toast.error(r.error);
+    const d = r.data!;
+    toast.success(`Cleared ${d.conversations} conversations and ${d.messages} messages${withCalls ? ` and ${d.calls} call records` : ""}.${d.backup ? ` Backup ${d.backup} was made first.` : ""}`);
+    setOpen(false);
+    router.refresh();
+  };
+  return (
+    <Card className="border-destructive/40" data-clear-support>
+      <CardHeader>
+        <CardTitle className="text-base text-destructive">Clear support conversations</CardTitle>
+        <CardDescription>Permanently removes every customer support conversation with its messages and files. Conversations under legal hold are kept. Customers, support requests, help content, bots and settings stay. A full backup is made first when backups are set up.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4 text-sm">
+        {!open ? (
+          <Button variant="outline" className="border-destructive/40 text-destructive hover:text-destructive" onClick={start} data-clear-start>
+            Clear support conversations…
+          </Button>
+        ) : (
+          <div className="space-y-3">
+            {preview && (
+              <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-destructive" data-clear-preview>
+                This removes {preview.conversations} conversations, {preview.messages} messages and {preview.files} files{withCalls ? ` and ${preview.calls} call records with their recordings` : ""}.{preview.held ? ` ${preview.held} under legal hold are kept.` : ""} It cannot be undone except from a backup.
+              </p>
+            )}
+            <label className="flex items-center gap-2">
+              <Switch checked={withCalls} onCheckedChange={setWithCalls} aria-label="Also delete call records" />
+              <span>Also delete call records and recordings</span>
+            </label>
+            <div className="space-y-1">
+              <Label htmlFor="clear-reason">Reason (kept in the audit log)</Label>
+              <Input id="clear-reason" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="For example: removing test conversations before launch" />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="clear-confirm">
+                Type <span className="font-mono font-semibold">{CLEAR_PHRASE}</span> to confirm
+              </Label>
+              <Input id="clear-confirm" value={typed} onChange={(e) => setTyped(e.target.value)} autoComplete="off" className="font-mono" />
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="destructive" disabled={busy || typed.trim() !== CLEAR_PHRASE || !reason.trim()} onClick={clear} data-clear-confirm>
+                {busy ? "Clearing…" : "Delete permanently"}
+              </Button>
+              <Button variant="outline" disabled={busy} onClick={() => setOpen(false)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
         )}
       </CardContent>
     </Card>

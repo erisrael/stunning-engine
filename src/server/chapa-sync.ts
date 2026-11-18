@@ -67,7 +67,9 @@ const note = (ctx: Ctx, text: string) => void (ctx.notes.includes(text) || ctx.n
 function carry(next: string, base: string) {
   const b = new URL(base, "https://chapa.invalid");
   const u = new URL(next, "https://chapa.invalid");
-  for (const k of ["from_date", "to_date", "status", "currency"]) if (b.searchParams.has(k) && !u.searchParams.has(k)) u.searchParams.set(k, b.searchParams.get(k)!);
+  // per_page too: Chapa's next link leaves it out, and page 2 at another page size repeats rows of page 1, which
+  // read as "the page number is ignored" and ended a full read after one page.
+  for (const k of ["from_date", "to_date", "status", "currency", "per_page"]) if (b.searchParams.has(k) && !u.searchParams.has(k)) u.searchParams.set(k, b.searchParams.get(k)!);
   return `${u.pathname}${u.search}`;
 }
 function withPage(base: string, page: number) {

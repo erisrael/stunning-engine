@@ -5,7 +5,7 @@ import type { LegacyCmsCategory } from "@/lib/legacy-cms";
 import { allowedCategoriesForUser, authenticateFilament, canManageCmsData, getLegacyCmsConfigForUser, parseFilamentTable } from "./legacy-cms";
 import { cmsSession } from "./cms-session";
 import { cmsPagination, queryCmsTable, remoteFilters } from "@/lib/cms-livewire";
-import { NoorFormError, readNoorForm, sendNoorForm, unwrap, type NoorForm } from "@/lib/cms-forms";
+import { callNoorForm, NoorFormError, readNoorForm, sendNoorForm, unwrap, type NoorForm, type ParsedNoorForm } from "@/lib/cms-forms";
 
 // Noor's admin pages, worked from here (Update 1.2, System improvements 4). Each page is Noor's own: lists are read
 // live from Noor (search, filters, pages), records are created, edited and deleted through Noor's own forms and
@@ -43,6 +43,35 @@ export const NOOR_ADMIN: { key: string; label: string; pages: Def[] }[] = [
       { slug: "academic-quizzes", label: "Academic Quizzes", path: "/admin/academic-quizzes", kind: "list", about: "Quizzes and their questions.", aliases: ["quizzes"] },
       { slug: "flashcards", label: "Flashcards", path: "/admin/flashcards", kind: "list", about: "Flashcard decks for revision.", aliases: ["flash-cards"] },
       { slug: "national-exams", label: "National Exams", path: "/admin/national-exams", kind: "list", about: "Past national exam papers." },
+      { slug: "academic-years", label: "Academic Years", path: "/admin/academic-years", kind: "list", about: "The school years." },
+      { slug: "semesters", label: "Semesters", path: "/admin/semesters", kind: "list", about: "The terms of each school year." },
+      { slug: "attendances", label: "Attendances", path: "/admin/attendances", kind: "list", about: "Students' attendance." },
+      { slug: "disciplines", label: "Disciplines", path: "/admin/disciplines", kind: "list", about: "Discipline records of students." },
+      { slug: "grade-reports", label: "Grade Reports", path: "/admin/grade-reports", kind: "list", about: "Students' results per term." },
+    ],
+  },
+  {
+    key: "agents",
+    label: "Agents and commissions",
+    pages: [
+      { slug: "agents", label: "Agents", path: "/admin/agents", kind: "list", about: "Sales agents who bring in subscribers." },
+      { slug: "commission-rules", label: "Commission Rules", path: "/admin/commission-rules", kind: "list", about: "How much an agent earns per sale." },
+      { slug: "agent-commissions", label: "Agent Commissions", path: "/admin/agent-commissions", kind: "list", about: "Commissions earned by agents." },
+      { slug: "agent-payouts", label: "Agent Payouts", path: "/admin/agent-payouts", kind: "list", about: "Commissions paid out to agents." },
+      { slug: "user-commissions", label: "User Commissions", path: "/admin/user-commissions", kind: "list", about: "Referral commissions earned by users." },
+      { slug: "withdrawal-requests", label: "Withdrawal Requests", path: "/admin/withdrawal-requests", kind: "list", about: "Requests to withdraw earned commissions." },
+    ],
+  },
+  {
+    key: "rewards",
+    label: "Rewards and app content",
+    pages: [
+      { slug: "badges", label: "Badges", path: "/admin/badges", kind: "list", about: "Badges students earn." },
+      { slug: "levels", label: "Levels", path: "/admin/levels", kind: "list", about: "Levels students reach." },
+      { slug: "daily-task-definitions", label: "Daily Tasks", path: "/admin/daily-task-definitions", kind: "list", about: "The daily tasks offered in the app.", aliases: ["daily-tasks"] },
+      { slug: "certificate-templates", label: "Certificate Templates", path: "/admin/certificate-templates", kind: "list", about: "Designs of the certificates." },
+      { slug: "certificates", label: "Certificates", path: "/admin/certificates", kind: "list", about: "Certificates issued to students." },
+      { slug: "banners", label: "Banners", path: "/admin/banners", kind: "list", about: "Banners shown in the app." },
     ],
   },
   {
@@ -72,11 +101,14 @@ export const NOOR_ADMIN: { key: string; label: string; pages: Def[] }[] = [
 const ALL = NOOR_ADMIN.flatMap((g) => g.pages);
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "");
 const SAFE_PATH = /^\/admin(?:\/[a-z0-9_-]+){1,3}$/i;
+// Links in Noor's menu that do something when opened instead of showing a page: the language switch
+// (/admin/locale/am changes the shared session's language), signing out.
+const ACTION_LINK = /^\/admin\/(?:locale|lang|language|logout|log-out|impersonate)(?:\/|$)/i;
 const SAFE_ID = /^[\w-]{1,64}$/;
 
 type NavRow = { slug: string; label: string; path: string; nav_group: string | null; noor_total: number | null };
 async function navRows() {
-  return all<NavRow>("SELECT slug, label, path, nav_group, noor_total FROM cms_resources");
+  return (await all<NavRow>("SELECT slug, label, path, nav_group, noor_total FROM cms_resources")).filter((n) => !ACTION_LINK.test(n.path));
 }
 // Noor's menu decides the real path when it was read; the catalogue's path otherwise.
 function resolve(def: Def, nav: NavRow[]) {
@@ -200,21 +232,31 @@ export async function noorAdminList(user: AppUser, slug: string, q: AdminListQue
   };
 }
 
-export type FormTarget = { mode: "page" } | { mode: "create" } | { mode: "edit"; id: string };
+// tab: a page with tabs (Send SMS: students, parents, typed numbers) opened on that tab first.
+export type FormTarget = { mode: "page"; tab?: string | null } | { mode: "create" } | { mode: "edit"; id: string };
 function formPath(path: string, t: FormTarget) {
   if (t.mode === "page") return path;
   if (t.mode === "create") return `${path}/create`;
   if (!SAFE_ID.test(t.id)) throw new WorkflowError("VALIDATION", "Choose a Noor record.");
   return `${path}/${t.id}/edit`;
 }
-const publicForm = (f: NoorForm): NoorForm => ({ title: f.title, submit: f.submit, submitLabel: f.submitLabel, fields: f.fields });
+const publicForm = (f: NoorForm): NoorForm => ({ title: f.title, submit: f.submit, submitLabel: f.submitLabel, fields: f.fields, ...(f.tabs ? { tabs: f.tabs, tab: f.tab ?? null } : {}) });
+
+// The form of a page, on the tab asked for (switched through the page's own setActiveTab, as Noor's button does).
+async function formOn(html: string, cookie: string, baseUrl: string, target: FormTarget): Promise<ParsedNoorForm> {
+  const form = readNoorForm(html);
+  const tab = target.mode === "page" ? target.tab : null;
+  if (!tab || form.tab === tab) return form;
+  if (!form.tabs?.some((t) => t.value === tab)) throw new NoorFormError("This Noor page has no such tab.");
+  return callNoorForm(baseUrl, cookie, form, "setActiveTab", [tab]);
+}
 
 export async function noorAdminForm(user: AppUser, slug: string, target: FormTarget) {
   const p = await pageDef(user, slug);
   if (target.mode !== "page" && !p.manager) throw new WorkflowError("FORBIDDEN", "Creating and editing Noor records is for Admin, or the people Admin allows to manage Noor data.");
-  const { html } = await openNoor(user, formPath(p.path, target));
+  const { html, cookie, baseUrl } = await openNoor(user, formPath(p.path, target));
   try {
-    return { label: p.def.label, form: publicForm(readNoorForm(html)), canSubmit: p.manager };
+    return { label: p.def.label, form: publicForm(await formOn(html, cookie, baseUrl, target)), canSubmit: p.manager };
   } catch (e) {
     if (e instanceof NoorFormError) throw new WorkflowError("VALIDATION", e.message);
     throw e;
@@ -228,7 +270,7 @@ export async function submitNoorAdminForm(user: AppUser, slug: string, target: F
   const { html, cookie, baseUrl } = await openNoor(user, path);
   let result;
   try {
-    const form = readNoorForm(html);
+    const form = await formOn(html, cookie, baseUrl, target);
     result = await sendNoorForm(baseUrl, cookie, form, values);
   } catch (e) {
     if (e instanceof NoorFormError) return { ok: false as const, error: e.message, fieldErrors: e.fieldErrors };

@@ -77,3 +77,89 @@ export async function purgeConversations(now = nowIso()) {
   if (old.length) await audit({ actor: null }, { action: "support.conversation_deleted", summary: `${old.length} closed conversations older than ${days} days were deleted by the retention rule (#${old.map((t) => t.number).slice(0, 20).join(", #")}${old.length > 20 ? "…" : ""})` });
   return old.length;
 }
+
+// ---------------------------------------------------------------------------
+// Clear every support conversation (Admin only, typed confirmation)
+// ---------------------------------------------------------------------------
+
+// Admin types this exact text to confirm; nothing is deleted otherwise.
+export const CLEAR_SUPPORT_PHRASE = "DELETE ALL SUPPORT CHATS";
+
+export type ClearSupportSummary = { conversations: number; messages: number; files: number; calls: number; held: number; customers: number };
+
+// What a clear would remove right now (shown before Admin confirms).
+export async function supportClearPreview(user: AppUser): Promise<ClearSupportSummary> {
+  if (!sd.isAdmin(user)) throw new WorkflowError("FORBIDDEN", "Only Admin clears the support conversations.");
+  const n = async (sql: string) => Number((await get<{ n: number }>(sql))?.n ?? 0);
+  return {
+    conversations: await n("SELECT COUNT(*) AS n FROM sup_tickets WHERE legal_hold = 0"),
+    messages: await n("SELECT COUNT(*) AS n FROM sup_messages m JOIN sup_tickets t ON t.id = m.ticket_id WHERE t.legal_hold = 0"),
+    files: await n("SELECT COUNT(*) AS n FROM sup_files f JOIN sup_tickets t ON t.id = f.ticket_id WHERE t.legal_hold = 0"),
+    calls: await n("SELECT COUNT(*) AS n FROM sup_calls WHERE legal_hold = 0"),
+    held: await n("SELECT COUNT(*) AS n FROM sup_tickets WHERE legal_hold = 1"),
+    customers: await n("SELECT COUNT(*) AS n FROM sup_customers"),
+  };
+}
+
+// Removes every conversation (messages, files, reports, saved and forwarded messages, their activity) except those
+// under legal hold. Call records go too only when asked (their recordings with them, unless held). Customers, support
+// requests, help content, bots and settings stay. A full backup is made first when a backup place is set up; if that
+// backup fails, nothing is deleted. The audit log keeps who cleared what and why.
+export async function clearSupportChats(user: AppUser, input: { confirm: string; reason: string; includeCalls?: boolean }) {
+  if (!sd.isAdmin(user)) throw new WorkflowError("FORBIDDEN", "Only Admin clears the support conversations.");
+  if (String(input.confirm ?? "").trim() !== CLEAR_SUPPORT_PHRASE) throw new WorkflowError("VALIDATION", `Type ${CLEAR_SUPPORT_PHRASE} exactly to confirm.`);
+  const reason = clean(input.reason, 300);
+  if (!reason) throw new WorkflowError("VALIDATION", "Say why the conversations are cleared. The reason is kept in the audit log.");
+  const before = await supportClearPreview(user);
+
+  // A copy first, so a mistake can be undone from Admin, Backups.
+  let backup: string | null = null;
+  const bk = await import("./backups");
+  try {
+    const r = await bk.runBackup(user);
+    if (!r.ok) throw new Error("the backup did not finish");
+    backup = r.name;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (!/No place to keep backups/i.test(msg)) throw new WorkflowError("INVALID_STATE", `Nothing was deleted: the backup made first failed (${msg}).`);
+  }
+
+  const { tx } = await import("./db");
+  let calls = 0;
+  let recordings: { recording_id: string; recording_storage: string | null }[] = [];
+  await tx(async () => {
+    const ids = "SELECT id FROM sup_tickets WHERE legal_hold = 0";
+    await run(`DELETE FROM sup_activity WHERE ticket_id IN (${ids})`);
+    await run(`DELETE FROM sup_queue_events WHERE ticket_id IN (${ids})`);
+    await run(`DELETE FROM sup_forwards WHERE ticket_id IN (${ids})`);
+    await run(`UPDATE sup_bot_feedback SET ticket_id = NULL WHERE ticket_id IN (${ids})`);
+    await run(`UPDATE sup_requests SET ticket_id = NULL WHERE ticket_id IN (${ids})`);
+    if (input.includeCalls) {
+      recordings = await all<{ recording_id: string; recording_storage: string | null }>("SELECT recording_id, recording_storage FROM sup_calls WHERE legal_hold = 0 AND recording_id IS NOT NULL");
+      const callIds = "SELECT id FROM sup_calls WHERE legal_hold = 0";
+      await run(`DELETE FROM sup_call_events WHERE call_id IN (${callIds})`);
+      await run(`DELETE FROM sup_queue_events WHERE call_id IN (${callIds})`);
+      await run(`DELETE FROM sup_recording_chunks WHERE call_id IN (${callIds})`);
+      await run(`DELETE FROM sup_recording_access WHERE call_id IN (${callIds})`);
+      await run(`UPDATE sup_ivr_sessions SET call_id = NULL WHERE call_id IN (${callIds})`);
+      for (const r of recordings) if (r.recording_storage !== "supabase") await run("DELETE FROM sup_blobs WHERE id = ?", r.recording_id);
+      calls = Number((await get<{ n: number }>("SELECT COUNT(*) AS n FROM sup_calls WHERE legal_hold = 0"))?.n ?? 0);
+      await run("DELETE FROM sup_calls WHERE legal_hold = 0");
+    } else {
+      // Call records outlive their conversation: only the link goes.
+      await run(`UPDATE sup_calls SET ticket_id = NULL WHERE ticket_id IN (${ids})`);
+    }
+    await run("DELETE FROM sup_tickets WHERE legal_hold = 0");
+  });
+  for (const r of recordings) if (r.recording_storage === "supabase") await deleteStored({ id: r.recording_id, storage: r.recording_storage, path: `support/${r.recording_id}` }).catch(() => {});
+
+  const out = { ...before, calls: input.includeCalls ? calls : 0, backup };
+  await audit(
+    { actor: user },
+    {
+      action: "support.conversations_cleared",
+      summary: `${user.name} cleared all support conversations: ${before.conversations} conversations, ${before.messages} messages, ${before.files} files${input.includeCalls ? `, ${calls} call records` : ""}${before.held ? `; ${before.held} under legal hold kept` : ""}${backup ? `; backup ${backup} made first` : "; no backup place is set up"}. Reason: ${reason}`,
+    },
+  );
+  return out;
+}

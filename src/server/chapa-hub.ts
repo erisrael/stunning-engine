@@ -895,24 +895,116 @@ export async function chapaDailyBoard(user: AppUser, day: string, biz?: string |
   return { day, prevDay, tabs };
 }
 
-// h15: customers grouped by phone (or email) per business.
-export async function chapaCustomers(user: AppUser, f: { biz?: string | null; q?: string }) {
-  const w = await where(user, { biz: f.biz, q: f.q });
-  const rows = await all<{ account_id: string; business: string; k: string; name: string; phone: string | null; email: string | null; paid: number; paid_n: number; failed: number; methods: string; last_paid: string | null; last_seen: string; currency: string }>(
-    `SELECT t.account_id, a.name AS business, COALESCE(NULLIF(RIGHT(REGEXP_REPLACE(COALESCE(t.phone,''), '[^0-9]', '', 'g'), 9), ''), LOWER(t.email), t.tx_ref) AS k,
-            MAX(COALESCE(NULLIF(TRIM(COALESCE(t.first_name,'') || ' ' || COALESCE(t.last_name,'')), ''), t.email, t.phone)) AS name, MAX(t.phone) AS phone, MAX(t.email) AS email,
-            SUM(CASE WHEN t.status = 'success' THEN t.amount ELSE 0 END) AS paid, SUM(CASE WHEN t.status = 'success' THEN 1 ELSE 0 END) AS paid_n,
-            SUM(CASE WHEN t.status = 'failed' THEN 1 ELSE 0 END) AS failed, STRING_AGG(DISTINCT COALESCE(t.method,''), ',') AS methods,
-            MAX(CASE WHEN t.status = 'success' THEN t.created_at END) AS last_paid, MAX(t.created_at) AS last_seen, MAX(t.currency) AS currency
-     FROM chapa_transactions t JOIN chapa_accounts a ON a.id = t.account_id WHERE ${w.sql}
-     GROUP BY t.account_id, a.name, k ORDER BY MAX(t.created_at) DESC LIMIT 2000`,
+// h15: customers grouped by phone (or email) per business. Update 1.2: filtered by date range, method and outcome, and
+// compared over their tries: who paid on the first try, who failed and paid on a later try (recovered), who only
+// failed, and who is still pending. "Recovered" means a successful payment after the customer's first failed try.
+export type ChapaCustomerOutcome = "paid_first" | "recovered" | "failed_only" | "pending_only";
+export const CHAPA_OUTCOME_LABEL: Record<ChapaCustomerOutcome, string> = { paid_first: "Paid first time", recovered: "Paid after failing", failed_only: "Never paid", pending_only: "Pending only" };
+export type ChapaCustomerFilter = { biz?: string | null; q?: string; from?: string; until?: string; method?: string[]; outcome?: ChapaCustomerOutcome[]; sort?: "recent" | "paid" | "failed" | "name" };
+const CUSTOMER_KEY = "COALESCE(NULLIF(RIGHT(REGEXP_REPLACE(COALESCE(t.phone,''), '[^0-9]', '', 'g'), 9), ''), LOWER(t.email), t.tx_ref)";
+
+export async function chapaCustomers(user: AppUser, f: ChapaCustomerFilter) {
+  const w = await where(user, { biz: f.biz, q: f.q, from: f.from, until: f.until, method: f.method });
+  const order = { recent: "last_seen DESC", paid: "paid DESC, last_seen DESC", failed: "failed DESC, last_seen DESC", name: "LOWER(MAX(COALESCE(x.first_name,''))) ASC" }[f.sort ?? "recent"] ?? "last_seen DESC";
+  const rows = await all<{ account_id: string; business: string; k: string; name: string; phone: string | null; email: string | null; paid: number; paid_n: number; failed: number; pending: number; tries: number; methods: string; first_seen: string; first_failed: string | null; first_paid: string | null; last_paid: string | null; last_seen: string; failed_before_paid: number; currency: string }>(
+    `WITH x AS (SELECT t.*, ${CUSTOMER_KEY} AS k FROM chapa_transactions t WHERE ${w.sql}),
+          g AS (SELECT account_id, k, MIN(CASE WHEN status = 'failed' THEN created_at END) AS first_failed, MIN(CASE WHEN status = 'success' THEN created_at END) AS first_paid, MAX(CASE WHEN status = 'success' THEN created_at END) AS last_paid FROM x GROUP BY account_id, k)
+     SELECT x.account_id, a.name AS business, x.k,
+            MAX(COALESCE(NULLIF(TRIM(COALESCE(x.first_name,'') || ' ' || COALESCE(x.last_name,'')), ''), x.email, x.phone)) AS name, MAX(x.phone) AS phone, MAX(x.email) AS email,
+            SUM(CASE WHEN x.status = 'success' THEN x.amount ELSE 0 END) AS paid, SUM(CASE WHEN x.status = 'success' THEN 1 ELSE 0 END) AS paid_n,
+            SUM(CASE WHEN x.status = 'failed' THEN 1 ELSE 0 END) AS failed, SUM(CASE WHEN x.status = 'pending' THEN 1 ELSE 0 END) AS pending, COUNT(*) AS tries,
+            STRING_AGG(DISTINCT COALESCE(x.method,''), ',') AS methods, MIN(x.created_at) AS first_seen, MAX(g.first_failed) AS first_failed, MAX(g.first_paid) AS first_paid, MAX(g.last_paid) AS last_paid, MAX(x.created_at) AS last_seen,
+            SUM(CASE WHEN x.status = 'failed' AND g.last_paid IS NOT NULL AND x.created_at < g.last_paid THEN 1 ELSE 0 END) AS failed_before_paid, MAX(x.currency) AS currency
+     FROM x JOIN g ON g.account_id = x.account_id AND g.k = x.k JOIN chapa_accounts a ON a.id = x.account_id
+     GROUP BY x.account_id, a.name, x.k ORDER BY ${order} LIMIT 20000`,
     ...w.args,
   );
   const cms = await cmsPhoneIndex();
-  return rows.map((r) => ({
-    accountId: r.account_id, business: r.business, key: r.k, name: r.name, phone: r.phone, email: r.email, paid: Number(r.paid), paidCount: Number(r.paid_n), failed: Number(r.failed),
-    methods: [...new Set(r.methods.split(",").filter(Boolean).map(chapaMethodLabel))], lastPaid: r.last_paid, lastSeen: r.last_seen, currency: r.currency, cms: cms.get(phoneKey(r.phone)) ?? null,
+  const outcomes = new Set(f.outcome ?? []);
+  return rows
+    .map((r) => {
+      const paidN = Number(r.paid_n);
+      const failed = Number(r.failed);
+      // Paid after failing: a success later than the first failed try.
+      const recovered = !!r.first_failed && !!r.last_paid && r.last_paid > r.first_failed;
+      const outcome: ChapaCustomerOutcome = recovered ? "recovered" : paidN ? "paid_first" : failed ? "failed_only" : "pending_only";
+      return {
+        accountId: r.account_id, business: r.business, key: r.k, name: r.name, phone: r.phone, email: r.email, paid: Number(r.paid), paidCount: paidN, failed, pending: Number(r.pending), tries: Number(r.tries),
+        methods: [...new Set(String(r.methods ?? "").split(",").filter(Boolean).map(chapaMethodLabel))], firstSeen: r.first_seen, firstFailed: r.first_failed, firstPaid: r.first_paid, lastPaid: r.last_paid, lastSeen: r.last_seen,
+        outcome, failedBeforePaid: Number(r.failed_before_paid), recoveredAfterMs: recovered ? Date.parse(r.last_paid!) - Date.parse(r.first_failed!) : null,
+        currency: r.currency, cms: cms.get(phoneKey(r.phone)) ?? null,
+      };
+    })
+    .filter((c) => !outcomes.size || outcomes.has(c.outcome));
+}
+export type ChapaCustomer = Awaited<ReturnType<typeof chapaCustomers>>[number];
+
+// The comparison over the filtered customers: how many failed at least once, how many of those paid on a later try,
+// and the money that came in after a failure.
+export function chapaCustomerSummary(list: ChapaCustomer[]) {
+  const failedOnce = list.filter((c) => c.failed > 0);
+  const recovered = list.filter((c) => c.outcome === "recovered");
+  const byCur: Record<string, { paid: number; recoveredPaid: number }> = {};
+  for (const c of list) {
+    const x = (byCur[c.currency] ??= { paid: 0, recoveredPaid: 0 });
+    x.paid += c.paid;
+    if (c.outcome === "recovered") x.recoveredPaid += c.paid;
+  }
+  const waits = recovered.map((c) => c.recoveredAfterMs!).filter((n) => n >= 0).sort((a, b) => a - b);
+  return {
+    customers: list.length,
+    paying: list.filter((c) => c.paidCount > 0).length,
+    paidFirst: list.filter((c) => c.outcome === "paid_first").length,
+    failedOnce: failedOnce.length,
+    recovered: recovered.length,
+    recoveryRate: failedOnce.length ? recovered.length / failedOnce.length : null,
+    neverPaid: list.filter((c) => c.outcome === "failed_only").length,
+    pendingOnly: list.filter((c) => c.outcome === "pending_only").length,
+    medianRecoveryMs: waits.length ? waits[Math.floor(waits.length / 2)] : null,
+    money: Object.entries(byCur).map(([currency, v]) => ({ currency, ...v })),
+  };
+}
+
+// Every try of one customer, oldest first, to compare them side by side.
+export async function chapaCustomerTries(user: AppUser, accountId: string, key: string) {
+  await need(user, "view", accountId);
+  const rows = await all<TxRow>(`${TX_SELECT} WHERE t.account_id = ? AND ${CUSTOMER_KEY} = ? ORDER BY t.created_at ASC LIMIT 500`, accountId, key);
+  return rows.map(toTx);
+}
+
+// The customers list as a report (Excel, CSV and the PDF page share it).
+export async function chapaCustomersReport(user: AppUser, f: ChapaCustomerFilter) {
+  const list = await chapaCustomers(user, f);
+  const sum = chapaCustomerSummary(list);
+  const { buildCmsReport } = await import("@/lib/cms-report");
+  const { getSettings } = await import("./settings");
+  const { fmtDateTime } = await import("@/lib/format");
+  const s = await getSettings();
+  const tz = s.workspace.timezone;
+  const headers = ["Outcome", "Customer", "Phone", "Email", "Paid", "Currency", "Payments", "Failed tries", "Failed before paying", "Pending", "First try", "First failure", "Paid after failure", "Last payment", "Methods", "Noor", "Business"];
+  const d = (v: string | null) => (v ? fmtDateTime(v, tz) : "");
+  const data = list.map((c) => ({
+    Outcome: CHAPA_OUTCOME_LABEL[c.outcome], Customer: c.name, Phone: c.phone ?? "", Email: c.email ?? "", Paid: String(c.paid), Currency: c.currency, Payments: String(c.paidCount), "Failed tries": String(c.failed), "Failed before paying": String(c.failedBeforePaid), Pending: String(c.pending),
+    "First try": d(c.firstSeen), "First failure": d(c.firstFailed), "Paid after failure": c.outcome === "recovered" ? d(c.lastPaid) : "", "Last payment": d(c.lastPaid), Methods: c.methods.join(", "), Noor: c.cms ? `${c.cms.student} (${c.cms.grade})` : "", Business: c.business,
   }));
+  const today = addisDay(Date.now());
+  const from = f.from ?? (list.length ? [...list].map((c) => c.firstSeen).sort()[0].slice(0, 10) : today);
+  const until = f.until ?? today;
+  const outcomeText = f.outcome?.length ? f.outcome.map((o) => CHAPA_OUTCOME_LABEL[o]).join(", ") : "";
+  const spec = { category: "chapa", from, until, search: f.q, filters: { ...(outcomeText ? { outcome: outcomeText } : {}), ...(f.method?.length ? { method: f.method.join(", ") } : {}) }, columns: headers, groupBy: "none" as const, sumColumn: "Paid", title: "Chapa customers" };
+  const report = buildCmsReport(data, headers, spec);
+  const rate = sum.recoveryRate === null ? "no failed tries" : `${Math.round(sum.recoveryRate * 100)}% of the ${sum.failedOnce} who failed paid on a later try`;
+  const meta = {
+    table: "Chapa customers",
+    from,
+    until,
+    filters: [`${sum.customers} customers: ${sum.paidFirst} paid first time, ${sum.recovered} paid after failing, ${sum.neverPaid} never paid (${rate})`, outcomeText && `Outcome: ${outcomeText}`, f.method?.length && `Method: ${f.method.join(", ")}`, f.q && `Search: ${f.q}`].filter(Boolean).join(" · "),
+    exportedAt: fmtDateTime(nowIso(), tz),
+    exportedBy: user.name,
+    method: "Stored Chapa transactions, grouped by phone or email",
+    workspace: s.workspace.name,
+  };
+  return { report, meta, summary: sum };
 }
 
 // Noor students and parents by phone (from the synchronized mirror), to link a payer to a CMS record.

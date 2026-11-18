@@ -46,8 +46,8 @@ try {
   await page.goto(`${base}/legacy-cms?view=admin`);
   await page.locator("[data-noor-admin]").waitFor({ timeout: 20000 });
   const groups = await page.locator("[data-admin-group] h2").allInnerTexts();
-  check("Noor's admin pages are grouped", groups.join("|") === "People|Roles and permissions|Academics|Feedback and messages|Subscriptions and billing", groups);
-  check("every page the spec names is there", (await page.locator("a[data-admin-page]").count()) === 21, await page.locator("a[data-admin-page]").count());
+  check("Noor's admin pages are grouped", groups.join("|") === "People|Roles and permissions|Academics|Agents and commissions|Rewards and app content|Feedback and messages|Subscriptions and billing", groups);
+  check("every Noor page is there", (await page.locator("a[data-admin-page]").count()) === 38, await page.locator("a[data-admin-page]").count());
   await page.screenshot({ path: path.join(shots, "catalog.png"), fullPage: true });
 
   // A list, live from Noor.

@@ -92,7 +92,7 @@ try {
   await page.setViewportSize({ width: 390, height: 844 });
   for (const k of ["verify", "chapa", "sms", "academy", "noor"]) {
     await page.goto(`${base}/admin?tab=external-apis&api=${k}`);
-    await page.locator(`[data-api-panel=${k}]`).waitFor({ timeout: 20000 });
+    await page.locator(`[data-api-panel=${k}]`).first().waitFor({ timeout: 20000 });
     await page.waitForTimeout(800);
     const wide = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
     check(`${k} has no sideways scroll at phone width`, !wide);

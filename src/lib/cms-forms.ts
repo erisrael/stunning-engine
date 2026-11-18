@@ -6,6 +6,8 @@ export type NoorFieldKind = "text" | "email" | "tel" | "url" | "number" | "passw
 export type NoorOption = { value: string; label: string };
 export type NoorField = {
   name: string;
+  // Where Livewire keeps it: data.<name> for Filament form fields, or a property of the page itself (Send SMS's message).
+  path: string;
   label: string;
   kind: NoorFieldKind;
   required: boolean;
@@ -15,7 +17,8 @@ export type NoorField = {
   maxLength: number | null;
   placeholder: string | null;
 };
-export type NoorForm = { title: string | null; submit: string; submitLabel: string; fields: NoorField[] };
+// tabs: a page that shows other fields per tab (Send SMS: students, parents, typed numbers); tab is the open one.
+export type NoorForm = { title: string | null; submit: string; submitLabel: string; fields: NoorField[]; tabs?: NoorOption[]; tab?: string | null };
 export type ParsedNoorForm = NoorForm & { snapshot: string; csrf: string; uri: string };
 
 export class NoorFormError extends Error {
@@ -41,26 +44,36 @@ export function unwrap(v: unknown): unknown {
   return v;
 }
 
-const SKIP_COMPONENT = /notification|global-search|topbar|sidebar|user-menu|tenant/i;
+// Filament's own components on every page (the notifications bell, search, menus), not a page's form. Matched on the
+// component's own name, so a page such as send-bulk-notification is not skipped.
+const SKIP_COMPONENT = /^filament\.livewire\.|(?:^|[.-])(?:database-)?notifications$|global-search|topbar|sidebar|user-menu|tenant-menu/i;
+
+type Snap = { at: number; raw: string; name: string; data: Record<string, unknown>; root: Record<string, unknown> };
+function parseSnapshot(raw: string, at = 0): Snap | null {
+  try {
+    const json = JSON.parse(raw);
+    const root = unwrap(json.data) as Record<string, unknown> | null;
+    if (!root || typeof root !== "object" || Array.isArray(root)) return null;
+    // Filament keeps form fields under data (null on a page whose form starts empty, such as Send push notification).
+    const data = root.data && typeof root.data === "object" && !Array.isArray(root.data) ? (root.data as Record<string, unknown>) : {};
+    return { at, raw, name: String(json.memo?.name ?? ""), data, root };
+  } catch {
+    return null;
+  }
+}
 
 function formSnapshot(html: string) {
   const submitAt = html.search(/wire:submit(?:\.prevent)?="/);
   const found = [...html.matchAll(/wire:snapshot="([^"]+)"/g)]
-    .map((m) => {
-      const raw = decode(m[1]);
-      try {
-        const json = JSON.parse(raw);
-        const data = unwrap(json.data?.data);
-        return { at: m.index ?? 0, raw, name: String(json.memo?.name ?? ""), data: data && typeof data === "object" && !Array.isArray(data) ? (data as Record<string, unknown>) : null };
-      } catch {
-        return null;
-      }
-    })
-    .filter((x): x is { at: number; raw: string; name: string; data: Record<string, unknown> } => !!x && !!x.data && !SKIP_COMPONENT.test(x.name));
+    .map((m) => parseSnapshot(decode(m[1]), m.index ?? 0))
+    .filter((x): x is Snap => !!x && ("data" in x.root || Object.keys(x.data).length > 0) && !SKIP_COMPONENT.test(x.name));
   if (!found.length) return null;
   // The component around the form: the last one that opens before the form's submit.
   return (submitAt >= 0 ? found.filter((f) => f.at < submitAt).at(-1) : null) ?? found[0];
 }
+
+// Page properties Livewire and Filament keep for themselves: never offered as fields.
+const INTERNAL = /^(data|activeTab|mounted\w*|componentFileAttachments|savedDataHash|paginators|table\w*|isTable\w*|defaultAction\w*|activeRelationManager|record|previousUrl)$/;
 
 function optionsIn(selectHtml: string): NoorOption[] {
   return [...selectHtml.matchAll(/<option\b([^>]*)>([\s\S]*?)<\/option>/gi)]
@@ -95,13 +108,13 @@ function tagAround(html: string, pos: number) {
   return html.slice(Math.max(0, start), i + 1);
 }
 
-function fieldOf(html: string, name: string, value: unknown): NoorField | null {
-  const key = `data.${name}`;
+function fieldOf(html: string, name: string, value: unknown, path = `data.${name}`): NoorField | null {
+  const key = path;
   const k = esc(key);
   const labelHtml = html.match(new RegExp(`<label\\b[^>]*for="${k}"[^>]*>([\\s\\S]*?)</label>`, "i"))?.[1] ?? "";
   const label = plain(labelHtml).replace(/\s*\*\s*$/, "").trim() || humanize(name);
   const required =/<sup\b[^>]*>\s*\*/i.test(labelHtml);
-  const base = { name, label, required, options: [] as NoorOption[], value, editable: true, maxLength: null as number | null, placeholder: null as string | null };
+  const base = { name, path, label, required, options: [] as NoorOption[], value, editable: true, maxLength: null as number | null, placeholder: null as string | null };
   const attrs = (tag: string) => ({
     max: Number(tag.match(/maxlength="(\d+)"/i)?.[1]) || null,
     placeholder: tag.match(/placeholder="([^"]*)"/i)?.[1] ? decode(tag.match(/placeholder="([^"]*)"/i)![1]) : null,
@@ -159,21 +172,67 @@ function fieldOf(html: string, name: string, value: unknown): NoorField | null {
   return null;
 }
 
-export function readNoorForm(html: string): ParsedNoorForm {
-  const snap = formSnapshot(html);
-  const csrf = html.match(/name="csrf-token"\s+content="([^"]+)"/)?.[1];
-  const uri = html.match(/data-update-uri="([^"]+)"/)?.[1];
+// ctx: a component re-rendered by Livewire (after switching a tab) comes without the page's snapshot, token and
+// address; they are passed in.
+export function readNoorForm(html: string, ctx?: { snapshot: string; csrf: string; uri: string }): ParsedNoorForm {
+  const snap = ctx ? parseSnapshot(ctx.snapshot) : formSnapshot(html);
+  const csrf = ctx?.csrf ?? html.match(/name="csrf-token"\s+content="([^"]+)"/)?.[1];
+  const uri = ctx?.uri ?? html.match(/data-update-uri="([^"]+)"/)?.[1];
   if (!snap || !csrf || !uri) throw new NoorFormError("This Noor page has no form your login can use.");
   const submitMatch = html.match(/<form\b[^>]*wire:submit(?:\.prevent)?="([^"(]+)(?:\(\))?"[^>]*>/);
   const submit = submitMatch?.[1]?.trim() ?? "";
-  if (!SAFE_METHOD.test(submit)) throw new NoorFormError("This Noor page has no form your login can submit.");
+  if (!ctx && !SAFE_METHOD.test(submit)) throw new NoorFormError("This Noor page has no form your login can submit.");
   const formHtml = submitMatch ? html.slice(submitMatch.index ?? 0) : html;
   const buttons = [...formHtml.matchAll(/<button\b[^>]*type="submit"[^>]*>([\s\S]*?)<\/button>/gi)].map((b) => plain(b[1])).filter(Boolean);
-  const fields = Object.entries(snap.data)
-    .map(([name, value]) => (/^[\w-]{1,80}$/.test(name) ? fieldOf(html, name, value) : null))
-    .filter((f): f is NoorField => !!f);
+  // Form fields: those in the snapshot's data, and those the page binds to data.<name> while data is still empty.
+  const bound = (re: RegExp) => [...html.matchAll(re)].map((m) => decode(m[1]));
+  const dataNames = new Set([...Object.keys(snap.data), ...bound(/(?:wire:model(?:\.[\w.]+)?="|statePath:\s*(?:'|&#0?39;)|entangle\(\s*(?:'|&#0?39;|&quot;))data\.([\w-]{1,80})(?=["'&)])/g)]);
+  const fields: NoorField[] = [];
+  for (const name of dataNames) {
+    if (!/^[\w-]{1,80}$/.test(name)) continue;
+    const f = fieldOf(html, name, snap.data[name] ?? null);
+    if (f) fields.push(f);
+  }
+  // Page properties bound directly (wire:model="message"), not Livewire's own.
+  for (const name of new Set(bound(/wire:model(?:\.[\w.]+)?="([\w-]{1,80})"/g))) {
+    if (INTERNAL.test(name) || dataNames.has(name) || !(name in snap.root)) continue;
+    const f = fieldOf(html, name, snap.root[name] ?? null, name);
+    if (f) fields.push(f);
+  }
+  const tabs = [...html.matchAll(/<button\b[^>]*wire:click="setActiveTab\((?:'|&#0?39;)([\w-]{1,40})(?:'|&#0?39;)\)"[^>]*>([\s\S]*?)<\/button>/g)].map((m) => ({ value: m[1], label: plain(m[2]) || humanize(m[1]) }));
   const title = plain(html.match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/i)?.[1] ?? "") || null;
-  return { title, submit, submitLabel: buttons[0] || humanize(submit), fields, snapshot: snap.raw, csrf: decode(csrf), uri: decode(uri) };
+  return {
+    title,
+    submit,
+    submitLabel: buttons[0] || humanize(submit),
+    fields,
+    ...(tabs.length ? { tabs: [...new Map(tabs.map((t) => [t.value, t])).values()], tab: typeof snap.root.activeTab === "string" ? snap.root.activeTab : tabs[0].value } : {}),
+    snapshot: snap.raw,
+    csrf: decode(csrf),
+    uri: decode(uri),
+  };
+}
+
+// Calls one of the page's own methods (setActiveTab) and reads the form Noor renders after it.
+export async function callNoorForm(baseUrl: string, cookie: string, form: ParsedNoorForm, method: string, params: unknown[]): Promise<ParsedNoorForm> {
+  if (!SAFE_METHOD.test(method)) throw new NoorFormError("Not a method this page offers.");
+  const endpoint = new URL(form.uri, baseUrl);
+  if (endpoint.origin !== new URL(baseUrl).origin) throw new NoorFormError("Unexpected Noor endpoint.");
+  const r = await fetch(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Livewire": "true", "X-CSRF-TOKEN": form.csrf, Cookie: cookie },
+    body: JSON.stringify({ _token: form.csrf, components: [{ snapshot: form.snapshot, updates: {}, calls: [{ path: "", method, params }] }] }),
+    redirect: "error",
+    cache: "no-store",
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (r.status === 419 || r.status === 401) throw new NoorFormError("The Noor session ended. Try again.");
+  if (!r.ok) throw new NoorFormError(`Noor did not open that part of the page (HTTP ${r.status}).`);
+  const c = (await r.json())?.components?.[0];
+  if (!c?.snapshot || typeof c.effects?.html !== "string") throw new NoorFormError("Noor did not show that part of the page.");
+  const next = readNoorForm(c.effects.html, { snapshot: c.snapshot, csrf: form.csrf, uri: form.uri });
+  // The re-rendered part may leave out the form tag: keep the page's own submit, title and tabs.
+  return { ...next, submit: next.submit && SAFE_METHOD.test(next.submit) ? next.submit : form.submit, submitLabel: next.submit ? next.submitLabel : form.submitLabel, title: next.title ?? form.title, tabs: next.tabs ?? form.tabs, tab: next.tab ?? (method === "setActiveTab" ? String(params[0]) : form.tab) };
 }
 
 // Checks each value against the form Noor sent and turns it into what Noor's field expects.
@@ -203,7 +262,7 @@ export function noorUpdates(form: NoorForm, values: Record<string, unknown>) {
       v = s === "" ? null : s;
     }
     if (f.required && (v === null || (Array.isArray(v) && !v.length))) throw new NoorFormError(`${f.label} is required.`, { [name]: [`${f.label} is required.`] });
-    updates[`data.${name}`] = v;
+    updates[f.path] = v;
   }
   return updates;
 }

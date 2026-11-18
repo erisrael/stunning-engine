@@ -639,44 +639,143 @@ function Daily({ biz, businesses }: { biz: string | null; businesses: ChapaBusin
   );
 }
 
+// Customers (Update 1.2): filtered by date range, outcome and method, and compared over their tries. The cards say how
+// many failed at least once and how many of those paid on a later try; a row opens every try of that customer.
+const OUTCOMES = [
+  ["paid_first", "Paid first time"],
+  ["recovered", "Paid after failing"],
+  ["failed_only", "Never paid"],
+  ["pending_only", "Pending only"],
+] as const;
+type Outcome = (typeof OUTCOMES)[number][0];
+const OUTCOME_TONE: Record<Outcome, string> = {
+  paid_first: "border-emerald-500/30 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200",
+  recovered: "border-sky-500/30 bg-sky-500/10 text-sky-800 dark:text-sky-200",
+  failed_only: "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300",
+  pending_only: "border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-200",
+};
+const span = (ms: number | null) => (ms === null ? "-" : ms < 3600e3 ? `${Math.max(1, Math.round(ms / 60e3))} min` : ms < 86400e3 ? `${Math.round(ms / 3600e3)} h` : `${Math.round(ms / 86400e3)} days`);
+
 function Customers({ biz }: { biz: string | null }) {
   const [q, setQ] = React.useState("");
   const [sent, setSent] = React.useState("");
-  const { data, error } = useLoad(() => A.chapaCustomersAction(biz, sent), [biz, sent]);
+  const [from, setFrom] = React.useState("");
+  const [until, setUntil] = React.useState("");
+  const [outcome, setOutcome] = React.useState<Outcome | "">("");
+  const [method, setMethod] = React.useState("");
+  const [sort, setSort] = React.useState<"recent" | "paid" | "failed" | "name">("recent");
+  const [open, setOpen] = React.useState<string | null>(null);
+  const filter = { from: from || undefined, until: until || undefined, outcome: outcome ? [outcome] : undefined, method: method ? [method] : undefined, sort };
+  const { data, error } = useLoad(() => A.chapaCustomersAction(biz, sent, filter), [biz, sent, from, until, outcome, method, sort]);
+  const qs = new URLSearchParams({ ...(biz ? { biz } : {}), ...(sent ? { q: sent } : {}), ...(from ? { from } : {}), ...(until ? { until } : {}), ...(outcome ? { outcome } : {}), ...(method ? { method } : {}), sort }).toString();
+  const sum = data?.summary;
+  const pct = (n: number | null) => (n === null ? "-" : `${Math.round(n * 100)}%`);
+  const sel = "h-8 rounded-md border bg-background px-2 text-xs";
+  const active = !!(sent || from || until || outcome || method);
   return (
-    <div className="space-y-3">
-      <Toolbar label="Customers">
+    <div className="space-y-3" data-chapa-customers>
+      <Toolbar
+        label="Customers"
+        end={
+          <>
+            <Button asChild size="sm" variant="outline" className="h-8 text-xs"><a href={`/api/finance/chapa/customers-export?format=xlsx&${qs}`}><FileSpreadsheetIcon /> Excel</a></Button>
+            <Button asChild size="sm" variant="outline" className="h-8 text-xs"><a href={`/api/finance/chapa/customers-export?format=csv&${qs}`}><DownloadIcon /> CSV</a></Button>
+            <Button asChild size="sm" variant="outline" className="h-8 text-xs"><a href={`/export/cms-report?list=chapa-customers&${qs}`} target="_blank" rel="noreferrer" data-customers-pdf><FileTextIcon /> PDF</a></Button>
+          </>
+        }
+      >
         <form onSubmit={(e) => (e.preventDefault(), setSent(q.trim()))}>
-          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, phone or email" className="h-8 w-72 text-xs" aria-label="Search customers" />
+          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, phone or email" className="h-8 w-60 text-xs" aria-label="Search customers" />
         </form>
-        {data && <span className="text-xs text-muted-foreground">{data.length.toLocaleString()} customers</span>}
+        <Input type="date" aria-label="From" value={from} onChange={(e) => setFrom(e.target.value)} className="h-8 w-[9.5rem] text-xs" />
+        <Input type="date" aria-label="Until" value={until} onChange={(e) => setUntil(e.target.value)} className="h-8 w-[9.5rem] text-xs" />
+        <select aria-label="Outcome" className={sel} value={outcome} onChange={(e) => setOutcome(e.target.value as Outcome | "")}>
+          <option value="">Every outcome</option>
+          {OUTCOMES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+        </select>
+        <select aria-label="Method" className={sel} value={method} onChange={(e) => setMethod(e.target.value)}>
+          <option value="">Every method</option>
+          {CHAPA_METHODS.map((m) => <option key={m} value={m}>{chapaMethodLabel(m)}</option>)}
+        </select>
+        <select aria-label="Sort customers" className={sel} value={sort} onChange={(e) => setSort(e.target.value as typeof sort)}>
+          <option value="recent">Latest activity</option>
+          <option value="paid">Paid most</option>
+          <option value="failed">Most failed tries</option>
+          <option value="name">Name</option>
+        </select>
+        {active && <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => (setQ(""), setSent(""), setFrom(""), setUntil(""), setOutcome(""), setMethod(""))}>Reset</Button>}
       </Toolbar>
       {error && <StatusStrip tone="danger">{error}</StatusStrip>}
+      {sum && (
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" data-customers-summary>
+          <MetricCard label="Customers" value={sum.customers.toLocaleString()} hint={`${sum.paying.toLocaleString()} paid at least once`} />
+          <MetricCard label="Paid first time" value={sum.paidFirst.toLocaleString()} hint="Their first try went through" />
+          <MetricCard label="Paid after failing" value={sum.recovered.toLocaleString()} hint={`${pct(sum.recoveryRate)} of the ${sum.failedOnce.toLocaleString()} who failed · typically ${span(sum.medianRecoveryMs)} later`} />
+          <MetricCard label="Never paid" value={sum.neverPaid.toLocaleString()} hint={`${sum.pendingOnly.toLocaleString()} more only pending`} />
+        </div>
+      )}
       <div className="overflow-auto rounded-xl border bg-card">
         <table className="w-full text-xs">
           <thead className="bg-muted/60 text-left text-[11px] text-muted-foreground">
             <tr>
-              <th className="px-2 py-2">Customer</th><th className="px-2 py-2 text-right">Paid</th><th className="px-2 py-2 text-right">Failed tries</th><th className="px-2 py-2">Methods</th><th className="px-2 py-2">Last payment</th><th className="px-2 py-2">Noor</th><th className="px-2 py-2">Business</th><th className="px-2 py-2" />
+              <th className="px-2 py-2">Customer</th><th className="px-2 py-2">Outcome</th><th className="px-2 py-2 text-right">Paid</th><th className="px-2 py-2 text-right">Tries</th><th className="px-2 py-2">First failure → paid</th><th className="px-2 py-2">Methods</th><th className="px-2 py-2">Last payment</th><th className="px-2 py-2">Noor</th><th className="px-2 py-2">Business</th><th className="px-2 py-2" />
             </tr>
           </thead>
           <tbody>
-            {(data ?? []).slice(0, 500).map((c) => (
-              <tr key={`${c.accountId}:${c.key}`} className="border-t">
-                <td className="px-2 py-1.5"><div className="font-medium">{c.name}</div><div className="text-[11px] text-muted-foreground">{[c.phone, c.email].filter(Boolean).join(" · ")}</div></td>
-                <td className="px-2 py-1.5 text-right tabular-nums">{money(c.paid, c.currency)} <span className="text-muted-foreground">({c.paidCount})</span></td>
-                <td className={cn("px-2 py-1.5 text-right tabular-nums", c.failed && "text-rose-600")}>{c.failed}</td>
-                <td className="px-2 py-1.5">{c.methods.join(", ")}</td>
-                <td className="px-2 py-1.5">{c.lastPaid ? when(c.lastPaid) : "Never"}</td>
-                <td className="px-2 py-1.5">{c.cms ? `${c.cms.student} (${c.cms.grade})` : "-"}</td>
-                <td className="px-2 py-1.5">{c.business}</td>
-                <td className="px-2 py-1.5">{c.phone && <Button asChild size="icon" variant="ghost" className="size-7" aria-label={`Call ${c.name}`}><a href={`tel:${c.phone}`}><PhoneIcon /></a></Button>}</td>
-              </tr>
-            ))}
-            {data && !data.length && <tr><td colSpan={8} className="px-3 py-10 text-center text-muted-foreground">No customers yet.</td></tr>}
+            {(data?.list ?? []).map((c) => {
+              const id = `${c.accountId}:${c.key}`;
+              return (
+                <React.Fragment key={id}>
+                  <tr className="cursor-pointer border-t hover:bg-muted/40" onClick={() => setOpen(open === id ? null : id)} data-customer-row={c.outcome} aria-expanded={open === id}>
+                    <td className="px-2 py-1.5"><div className="font-medium">{c.name}</div><div className="text-[11px] text-muted-foreground">{[c.phone, c.email].filter(Boolean).join(" · ")}</div></td>
+                    <td className="px-2 py-1.5"><span className={cn("rounded-full border px-2 py-0.5 text-[11px] whitespace-nowrap", OUTCOME_TONE[c.outcome as Outcome])}>{OUTCOMES.find(([k]) => k === c.outcome)?.[1]}</span></td>
+                    <td className="px-2 py-1.5 text-right tabular-nums">{money(c.paid, c.currency)} <span className="text-muted-foreground">({c.paidCount})</span></td>
+                    <td className="px-2 py-1.5 text-right tabular-nums">{c.tries}{c.failed ? <span className="text-rose-600"> · {c.failed} failed</span> : null}</td>
+                    <td className="px-2 py-1.5 whitespace-nowrap">{c.outcome === "recovered" ? `${when(c.firstFailed!)} → ${when(c.lastPaid!)} (${c.failedBeforePaid} failed first)` : c.firstFailed ? `Failed ${when(c.firstFailed)}` : "-"}</td>
+                    <td className="px-2 py-1.5">{c.methods.join(", ")}</td>
+                    <td className="px-2 py-1.5">{c.lastPaid ? when(c.lastPaid) : "Never"}</td>
+                    <td className="px-2 py-1.5">{c.cms ? `${c.cms.student} (${c.cms.grade})` : "-"}</td>
+                    <td className="px-2 py-1.5">{c.business}</td>
+                    <td className="px-2 py-1.5" onClick={(e) => e.stopPropagation()}>{c.phone && <Button asChild size="icon" variant="ghost" className="size-7" aria-label={`Call ${c.name}`}><a href={`tel:${c.phone}`}><PhoneIcon /></a></Button>}</td>
+                  </tr>
+                  {open === id && (
+                    <tr className="border-t bg-muted/20">
+                      <td colSpan={10} className="px-3 py-2"><CustomerTries accountId={c.accountId} k={c.key} /></td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              );
+            })}
+            {data && !data.list.length && <tr><td colSpan={10} className="px-3 py-10 text-center text-muted-foreground">{active ? "No customer matches these filters." : "No customers yet."}</td></tr>}
           </tbody>
         </table>
       </div>
+      {data && data.total > data.list.length && <p className="text-xs text-muted-foreground">Showing the first {data.list.length.toLocaleString()} of {data.total.toLocaleString()} customers. Narrow the filters, or export them all.</p>}
     </div>
+  );
+}
+
+// Every try of one customer, oldest first: status, amount, method and the time since the try before.
+function CustomerTries({ accountId, k }: { accountId: string; k: string }) {
+  const { data, error } = useLoad(() => A.chapaCustomerTriesAction(accountId, k), [accountId, k]);
+  if (error) return <StatusStrip tone="danger">{error}</StatusStrip>;
+  if (!data) return <p className="text-xs text-muted-foreground">Loading the tries…</p>;
+  return (
+    <ol className="space-y-1" data-customer-tries>
+      {data.map((t, i) => {
+        const gap = i ? Date.parse(t.createdAt) - Date.parse(data[i - 1].createdAt) : null;
+        return (
+          <li key={t.txRef} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs">
+            <span className="w-6 text-right tabular-nums text-muted-foreground">{i + 1}.</span>
+            <span className={cn("rounded-full border px-2 py-0.5 text-[11px]", t.status === "success" ? OUTCOME_TONE.paid_first : t.status === "failed" ? OUTCOME_TONE.failed_only : OUTCOME_TONE.pending_only)}>{CHAPA_STATUS_LABEL[t.status]}</span>
+            <span className="tabular-nums">{money(t.amount, t.currency)}</span>
+            <span>{chapaMethodLabel(t.method)}</span>
+            <span className="text-muted-foreground">{when(t.createdAt)}{gap !== null ? ` · ${span(gap)} after the try before` : ""}</span>
+            <span className="font-mono text-[11px] text-muted-foreground">{t.txRef}</span>
+          </li>
+        );
+      })}
+    </ol>
   );
 }
 

@@ -6,6 +6,10 @@ ENV NEXT_TELEMETRY_DISABLED=1
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY . .
+# The release name (deploy.sh) as Next.js's deployment ID: a page left open across a deploy reloads itself instead
+# of calling Server Actions that no longer exist.
+ARG NEXT_DEPLOYMENT_ID=""
+ENV NEXT_DEPLOYMENT_ID=$NEXT_DEPLOYMENT_ID
 RUN npm run build
 ENV NODE_ENV=production PORT=3000
 EXPOSE 3000

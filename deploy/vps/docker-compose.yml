@@ -9,6 +9,8 @@ services:
     build:
       context: ../..
       dockerfile: Dockerfile
+      args:
+        NEXT_DEPLOYMENT_ID: ${RELEASE:-}
     restart: unless-stopped
     env_file:
       - ${APP_ROOT:?APP_ROOT is not set}/.env

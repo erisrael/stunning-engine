@@ -217,6 +217,7 @@ export function TransactionsView({ biz, businesses, canExport, admin }: { biz: s
               <DropdownMenuLabel>{data ? `All ${data.total.toLocaleString()} matching payments` : "All matching payments"}</DropdownMenuLabel>
               <DropdownMenuItem asChild><a href={`/api/finance/chapa/export?format=xlsx&${exportQs}`}>Excel</a></DropdownMenuItem>
               <DropdownMenuItem asChild><a href={`/api/finance/chapa/export?format=csv&${exportQs}`}>CSV</a></DropdownMenuItem>
+              <DropdownMenuItem asChild><a href={`/export/cms-report?list=chapa&${exportQs}`} target="_blank" rel="noreferrer" data-export-pdf>PDF</a></DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         )}

@@ -28,3 +28,6 @@ export const declineConversationAction = async (id: string) => wrap(async () => 
 export const conversationHoldAction = async (id: string, on: boolean, reason?: string | null) => wrap(async () => (await import("@/server/support-retention")).setConversationHold(await requireViewer(), id, on, reason));
 export const deleteConversationAction = async (id: string, reason: string) => wrap(async () => (await import("@/server/support-retention")).deleteConversation(await requireViewer(), id, reason));
 export const deleteRecordingAction = async (callId: string, reason: string) => wrap(async () => (await import("@/server/support-retention")).deleteRecording(await requireViewer(), callId, reason));
+// Admin: clear every support conversation, after typing the confirmation text (support-retention.ts).
+export const supportClearPreviewAction = async () => wrap(async () => (await import("@/server/support-retention")).supportClearPreview(await requireViewer()), read);
+export const clearSupportChatsAction = async (input: { confirm: string; reason: string; includeCalls?: boolean }) => wrap(async () => (await import("@/server/support-retention")).clearSupportChats(await requireViewer(), input));

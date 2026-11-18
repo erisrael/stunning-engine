@@ -821,6 +821,10 @@ export function CallLayer({ api, s, children, openedForCall = false, onBusy }: {
   // Tells the page when a call rings, runs or plays the phone menu (Telegram's main button steps aside then).
   const busy = c.state !== "idle" || !!ring || !!c.ivr;
   React.useEffect(() => onBusy?.(busy), [busy, onBusy]);
+  // A page reload (a new version, components/app/version-watch) waits while a call rings or runs.
+  React.useEffect(() => {
+    document.documentElement.dataset.callActive = busy ? "1" : "";
+  }, [busy]);
   const [askBack, setAskBack] = React.useState(false);
   // Opened from the bot's "is calling you" notice: show that the call is being found, or that it was missed.
   const [finding, setFinding] = React.useState(openedForCall);

@@ -35,7 +35,7 @@ try {
   check("the Customer support link is in the agent's sidebar", await visible(sara.getByRole("link", { name: "Customer support" })));
   await sara.goto(`${base}/support`);
   await sara.locator('[data-status="online"]').click();
-  check("online", await toast(sara, /You are online/));
+  check("online", await toast(sara, /You are (online|available)/));
 
   // A lead publishes a help article.
   const liya = await as("liya@demo.local");

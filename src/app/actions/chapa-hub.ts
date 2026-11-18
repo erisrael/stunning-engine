@@ -16,7 +16,12 @@ export const chapaTxAction = async (f: h.TxFilter) => wrap(async () => h.listCha
 export const chapaTxDetailAction = async (accountId: string, txRef: string) => wrap(async () => h.chapaTxDetail(await requireViewer(), accountId, txRef), read);
 export const chapaVerifyAction = async (accountId: string, txRef: string) => wrap(async () => h.verifyChapaTx(await requireViewer(), accountId, txRef));
 export const chapaDailyAction = async (day: string, biz: string | null) => wrap(async () => h.chapaDailyBoard(await requireViewer(), day, biz), read);
-export const chapaCustomersAction = async (biz: string | null, q: string) => wrap(async () => h.chapaCustomers(await requireViewer(), { biz, q }), read);
+export const chapaCustomersAction = async (biz: string | null, q: string, f: Omit<h.ChapaCustomerFilter, "biz" | "q"> = {}) =>
+  wrap(async () => {
+    const list = await h.chapaCustomers(await requireViewer(), { ...f, biz, q });
+    return { list: list.slice(0, 1000), total: list.length, summary: h.chapaCustomerSummary(list) };
+  }, read);
+export const chapaCustomerTriesAction = async (accountId: string, key: string) => wrap(async () => h.chapaCustomerTries(await requireViewer(), accountId, key), read);
 export const chapaFollowupsAction = async (day: string, biz: string | null) => wrap(async () => h.chapaFollowups(await requireViewer(), day, biz), read);
 export const chapaSendFollowupsAction = async (day: string, keys: string[] | "all", biz: string | null) => wrap(async () => h.sendFollowups(await requireViewer(), day, keys, biz));
 export const chapaBalancesAction = async (biz: string | null) => wrap(async () => h.chapaBalances(await requireViewer(), biz), read);

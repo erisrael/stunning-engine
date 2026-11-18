@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Abyssinica_SIL, Atkinson_Hyperlegible, Geist_Mono, IBM_Plex_Sans, Inter, Lora, Manrope, Noto_Sans_Ethiopic, Nunito, Plus_Jakarta_Sans, Roboto, Source_Sans_3 } from "next/font/google";
 import { ThemeProvider } from "next-themes";
 import { Toaster } from "@/components/ui/sonner";
+import { VersionWatch } from "@/components/app/version-watch";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import "./globals.css";
 import { appearanceScript } from "@/lib/appearance-script";
@@ -62,6 +63,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       </head>
       <body className="min-h-full">
         <ErrorReporter />
+        <VersionWatch />
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
           <TooltipProvider delayDuration={250}>
             {children}

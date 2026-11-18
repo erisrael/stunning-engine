@@ -343,6 +343,21 @@ export function NoorFormView({ slug, target, form, canSubmit, onDone }: { slug: 
         else void submit();
       }}
     >
+      {form.tabs && form.tabs.length > 1 && (
+        <nav className="flex flex-wrap gap-1 rounded-lg bg-muted p-1" aria-label="Noor page tabs" data-noor-tabs>
+          {form.tabs.map((t) => (
+            <Link
+              key={t.value}
+              href={`?tab=${encodeURIComponent(t.value)}`}
+              aria-current={form.tab === t.value ? "page" : undefined}
+              className={cn("rounded-md px-3 py-1.5 text-sm", form.tab === t.value ? "bg-background font-medium shadow-sm" : "text-muted-foreground hover:text-foreground")}
+              data-noor-tab={t.value}
+            >
+              {t.label}
+            </Link>
+          ))}
+        </nav>
+      )}
       {!visible.length && <p className="text-sm text-muted-foreground">This Noor form has no fields; sending it runs {form.submitLabel}.</p>}
       {visible.map((f) => (
         <FieldInput key={f.name} field={f} value={values[f.name]} onChange={(v) => set(f.name, v)} errors={errors[f.name]} disabled={!canSubmit} sms={slug === "send-sms" && MESSAGE.test(f.name)} />

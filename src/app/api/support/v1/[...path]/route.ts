@@ -1,4 +1,5 @@
 import * as sd from "@/server/support-desk";
+import { fromThisSite } from "@/server/request-origin";
 import { WorkflowError } from "@/server/workflow";
 import { sseResponse } from "@/server/sse";
 
@@ -63,7 +64,7 @@ async function handle(request: Request, ctx: Ctx, method: "GET" | "POST") {
   const path = (await ctx.params).path;
   try {
     // Pages served by this app itself (the widget) are always allowed.
-    const self = origin && new URL(request.url).origin === origin;
+    const self = fromThisSite(request, origin);
     const app = await sd.appByKey(request.headers.get("x-app-key") ?? new URL(request.url).searchParams.get("key"), self ? null : origin);
     // EventSource and file links cannot send headers: the token may come in the address (?token=).
     const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") || new URL(request.url).searchParams.get("token") || "";

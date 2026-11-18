@@ -52,12 +52,13 @@ try {
   await page.waitForURL((u) => !u.pathname.includes("/login"));
 
   await page.goto(`${base}/finance/chapa`);
+  await page.getByRole("navigation", { name: "Chapa pages" }).getByRole("link", { name: /Customers/ }).waitFor({ timeout: 20000 });
   const tabs = await page.getByRole("navigation", { name: "Chapa pages" }).getByRole("link").allInnerTexts();
   check("Chapa has every page", ["Overview", "Transactions", "Daily board", "Customers", "Follow-up", "Balance & swap", "Withdrawals", "Refunds", "Account funds", "Match to Noor", "Settings"].every((t) => tabs.some((x) => x.includes(t))), tabs);
   await page.getByRole("button", { name: "Sync now" }).click();
   await page.getByText(/Synced: Subscriptions 30 read, 30 new; Donations 10 read, 10 new/).waitFor({ timeout: 20000 });
   await page.reload();
-  await page.getByText("Last 30 days").first().waitFor();
+  await page.getByText(/ETB [\d,]+\.\d\d/).first().waitFor({ timeout: 20000 });
   check("the overview shows paid volume per window", (await page.getByText(/ETB [\d,]+\.\d\d/).count()) > 0);
   await page.screenshot({ path: path.join(shots, "overview.png"), fullPage: true });
 
