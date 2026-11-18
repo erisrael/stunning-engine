@@ -58,7 +58,7 @@ import { maxUploadBytes } from "@/server/storage";
 import { FEEDBACK_CATEGORIES, FEEDBACK_STATUSES, REPORT_REASONS, REPORT_STATUSES, listFeedback, listReports } from "@/server/support";
 import { CleanDataAdmin } from "./clean-data-admin";
 import { ExternalApiConsole } from "@/components/app/integrations/external-api-console";
-import { getExternalApiConfig } from "@/server/external-api";
+import { publicExternalApiConfig } from "@/server/external-api";
 import { SupportSettings } from "@/components/app/support/setup";
 import { supportConfig } from "@/server/support-desk";
 import * as ch from "@/server/support-channels";
@@ -66,6 +66,24 @@ import * as ch from "@/server/support-channels";
 import { AdminSearch, AdminSectionHead } from "./admin-search";
 
 export const metadata = { title: "Admin" };
+
+// Admin, External APIs: status and latest calls per provider, settings without keys, and Noor's stored counts.
+async function externalApis() {
+  const viewer = await requireViewer();
+  const { externalApiStatus } = await import("@/server/external-api-console");
+  const { publicVerifyConfig } = await import("@/server/myseed-verify");
+  const { getLegacyCmsStats } = await import("@/server/legacy-cms");
+  const n = await getLegacyCmsStats();
+  return (
+    <ExternalApiConsole
+      status={await externalApiStatus(viewer)}
+      config={await publicExternalApiConfig()}
+      verify={await publicVerifyConfig()}
+      origin={await appOrigin()}
+      noor={{ students: n.studentsCount, parents: n.parentsCount, plans: n.plansCount, subscriptions: n.activeSubscriptionsCount, invoices: n.invoicesCount, lastSyncedAt: n.lastSyncedAt }}
+    />
+  );
+}
 
 export default async function AdminPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
   const viewer = await requireViewer();
@@ -432,7 +450,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
               )}
             </TabsContent>
             <TabsContent value="external-apis">
-              {tab === "external-apis" && <ExternalApiConsole config={await getExternalApiConfig()} />}
+              {tab === "external-apis" && (await externalApis())}
             </TabsContent>
             <TabsContent value="clean-data">
               {tab === "clean-data" && <CleanDataAdmin />}

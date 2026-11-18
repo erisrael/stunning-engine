@@ -9,11 +9,14 @@ import { audit, WorkflowError } from "./workflow";
 
 export const SOURCES = [
   { key: "chapa", label: "Chapa payments" },
+  { key: "verify", label: "Myseed Verify" },
   { key: "sms", label: "SMS" },
   { key: "email", label: "Email" },
   { key: "ai", label: "AI" },
   { key: "telegram", label: "Telegram" },
   { key: "noor", label: "Noor CMS" },
+  { key: "academy", label: "Academy API" },
+  { key: "finance", label: "Finance API" },
   { key: "payment", label: "Payment connectors" },
   { key: "connector", label: "Other connectors" },
   { key: "systems", label: "Connected systems" },

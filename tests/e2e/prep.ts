@@ -691,6 +691,13 @@ PREPS["doc-head-review"] = async () => {
   return { email, doc };
 };
 
+// Update 1.2, System improvements 5: the External API console, with Noor records to count and nothing set up.
+PREPS["update-1-2-external-apis"] = async () => {
+  await passwordOnly();
+  for (let i = 0; i < 3; i++) await run("INSERT INTO legacy_cms_records (id, category, external_id, title, data_json, synced_at) VALUES (?, 'students', ?, ?, '{}', ?)", `ext-api-${i}`, String(i), `Student ${i}`, nowIso());
+  return { port: 47395 };
+};
+
 async function main() {
   const name = process.argv[2]!;
   const prep = PREPS[name];

@@ -3,10 +3,11 @@
 import { requireViewer } from "@/server/auth";
 import { wrap } from "@/server/action-result";
 import * as api from "@/server/external-api";
+import { apiProviderStatus, type ApiProvider } from "@/server/external-api-console";
 import { can, type AppUser } from "@/server/users";
 import { WorkflowError } from "@/server/workflow";
 
-// The settings hold API keys: only Admin reads them, tests them or checks balances.
+// The settings hold API keys: only Admin reads them, tests them or checks balances. Keys never go back to the browser.
 async function admin(): Promise<AppUser> {
   const u = await requireViewer();
   if (!can(u, "users.manage")) throw new WorkflowError("FORBIDDEN", "Only Admin sets up external APIs.");
@@ -16,12 +17,12 @@ async function admin(): Promise<AppUser> {
 export async function getExternalApiConfigAction() {
   return wrap(async () => {
     await admin();
-    return api.getExternalApiConfig();
-  });
+    return api.publicExternalApiConfig();
+  }, { revalidate: false });
 }
 
-export async function saveExternalApiConfigAction(input: Partial<api.ExternalApiConfig>) {
-  return wrap(async () => api.saveExternalApiConfig(await requireViewer(), input));
+export async function saveExternalApiConfigAction(input: api.ExternalApiInput) {
+  return wrap(async () => api.saveExternalApiConfig(await admin(), input));
 }
 
 export async function testExternalApiAction(service: "academy" | "finance" | "sms" | "iconicSms", phone?: string | null) {
@@ -29,6 +30,11 @@ export async function testExternalApiAction(service: "academy" | "finance" | "sm
     await admin();
     return api.testExternalApi(service, phone);
   });
+}
+
+// One provider's status and latest calls, after a test or save.
+export async function apiProviderStatusAction(key: ApiProvider) {
+  return wrap(async () => apiProviderStatus(await admin(), key), { revalidate: false });
 }
 
 export async function searchStudentParentAction(query: string) {
@@ -47,17 +53,9 @@ export async function reviewExternalReceiptAction(receiptId: string, decision: "
   return wrap(async () => api.reviewExternalReceipt(await requireViewer(), receiptId, decision, reason));
 }
 
-export async function fetchSmsStatusAction() {
-  return wrap(async () => {
-    await admin();
-    return api.fetchSmsStatus();
-  });
-}
-
 export async function fetchIconicSmsStatusAction() {
   return wrap(async () => {
     await admin();
     return api.fetchIconicSmsStatus();
   });
 }
-

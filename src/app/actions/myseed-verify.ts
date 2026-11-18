@@ -1,61 +1,46 @@
 "use server";
 
 import { requireViewer } from "@/server/auth";
+import { wrap } from "@/server/action-result";
+import { can, type AppUser } from "@/server/users";
+import { WorkflowError } from "@/server/workflow";
 import {
-  getMyseedVerifyConfig,
+  publicVerifyConfig,
   saveMyseedVerifyConfig,
   testMyseedVerifyConnection,
   createVerifyPaymentRequest,
-  type MyseedVerifyConfig,
+  type VerifyConfigInput,
   type CreatePaymentRequestInput,
 } from "@/server/myseed-verify";
 
-export async function getMyseedVerifyConfigAction() {
-  try {
-    await requireViewer();
-    const config = await getMyseedVerifyConfig();
-    return {
-      ok: true,
-      data: {
-        ...config,
-        apiKey: config.apiKey ? `${config.apiKey.slice(0, 6)}••••••••` : "",
-        hasApiKey: !!config.apiKey,
-        webhookSecret: config.webhookSecret ? "••••••••" : "",
-        hasWebhookSecret: !!config.webhookSecret,
-      },
-    };
-  } catch (err: any) {
-    return { ok: false, error: err?.message || "Failed to load verify config" };
-  }
+// Myseed Verify holds an API key and signs payment webhooks: only Admin (or Data Manager) reads, tests or uses it here.
+async function admin(): Promise<AppUser> {
+  const u = await requireViewer();
+  if (!can(u, "users.manage") && !can(u, "data.manage")) throw new WorkflowError("FORBIDDEN", "Only Admin sets up Myseed Verify.");
+  return u;
 }
 
-export async function saveMyseedVerifyConfigAction(input: Partial<MyseedVerifyConfig>) {
-  try {
-    const viewer = await requireViewer();
-    const saved = await saveMyseedVerifyConfig(viewer, input);
-    return { ok: true, data: saved };
-  } catch (err: any) {
-    return { ok: false, error: err?.message || "Failed to save verify config" };
-  }
+export async function getMyseedVerifyConfigAction() {
+  return wrap(async () => {
+    await admin();
+    return publicVerifyConfig();
+  }, { revalidate: false });
+}
+
+export async function saveMyseedVerifyConfigAction(input: VerifyConfigInput) {
+  return wrap(async () => saveMyseedVerifyConfig(await admin(), input));
 }
 
 export async function testMyseedVerifyConnectionAction() {
-  try {
-    await requireViewer();
-    const res = await testMyseedVerifyConnection();
-    return res;
-  } catch (err: any) {
-    return { ok: false, message: err?.message || "Test connection failed", ms: 0, status: "error" as const };
-  }
+  return wrap(async () => {
+    await admin();
+    return testMyseedVerifyConnection();
+  });
 }
 
 export async function createVerifyPaymentRequestAction(input: CreatePaymentRequestInput) {
-  try {
-    await requireViewer();
-    const res = await createVerifyPaymentRequest(input);
-    return { ok: true, data: res };
-  } catch (err: any) {
-    return { ok: false, error: err?.message || "Failed to create payment request" };
-  }
+  return wrap(async () => {
+    await admin();
+    return createVerifyPaymentRequest(input);
+  });
 }
-

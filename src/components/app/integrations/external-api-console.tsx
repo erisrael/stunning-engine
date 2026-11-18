@@ -1,1299 +1,983 @@
 "use client";
 
+// Admin, External APIs: one place per outside system Myseed calls or is called by. Each provider shows whether it is
+// set up and working (from its latest calls), its settings with their own Save, the tools to test it, and its latest
+// calls and callbacks from the call monitor. Keys never reach the browser: a saved key shows as saved, a blank field
+// keeps it, and removing it is a separate choice.
+
 import * as React from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import {
+  ArrowDownLeftIcon,
+  ArrowUpRightIcon,
+  BookOpenIcon,
   CheckCircle2Icon,
+  CircleAlertIcon,
+  CircleDashedIcon,
+  CirclePauseIcon,
   CopyIcon,
-  GlobeIcon,
-  KeyRoundIcon,
+  ExternalLinkIcon,
   Loader2Icon,
-  MessageSquareIcon,
-  PhoneCallIcon,
-  ReceiptIcon,
-  RefreshCwIcon,
-  SaveIcon,
-  SendIcon,
-  ShieldAlertIcon,
-  XCircleIcon,
-  CreditCardIcon,
+  PencilIcon,
   PlusIcon,
   Trash2Icon,
-  ExternalLinkIcon,
-  Building2Icon,
-  SparklesIcon,
-  CheckIcon,
-  PencilIcon,
-  ShieldCheckIcon,
+  XCircleIcon,
 } from "lucide-react";
-import {
-  getMyseedVerifyConfigAction,
-  saveMyseedVerifyConfigAction,
-  testMyseedVerifyConnectionAction,
-  createVerifyPaymentRequestAction,
-} from "@/app/actions/myseed-verify";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { saveExternalApiConfigAction, testExternalApiAction, fetchIconicSmsStatusAction } from "@/app/actions/external-api";
-import {
-  listChapaAccountsAction,
-  saveChapaAccountAction,
-  deleteChapaAccountAction,
-  testChapaAccountAction,
-  fetchChapaBalancesAction,
-  listChapaTransactionsAction,
-  clearAllChapaAccountsAction,
-} from "@/app/actions/chapa";
-import type { ExternalApiConfig } from "@/server/external-api";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { getMyseedVerifyConfigAction, saveMyseedVerifyConfigAction, testMyseedVerifyConnectionAction, createVerifyPaymentRequestAction } from "@/app/actions/myseed-verify";
+import { saveExternalApiConfigAction, testExternalApiAction, fetchIconicSmsStatusAction, apiProviderStatusAction } from "@/app/actions/external-api";
+import { checkLegacyCmsAuthAction } from "@/app/actions/legacy-cms";
+import { listChapaAccountsAction, saveChapaAccountAction, deleteChapaAccountAction, testChapaAccountAction, fetchChapaBalancesAction, listChapaTransactionsAction, clearAllChapaAccountsAction } from "@/app/actions/chapa";
+import type { PublicExternalApiConfig } from "@/server/external-api";
+import type { PublicVerifyConfig } from "@/server/myseed-verify";
+import type { ApiProvider, ApiProviderStatus, ApiState } from "@/server/external-api-console";
 import type { ChapaAccount, ChapaBalance, ChapaTransaction } from "@/server/chapa";
 import { cn } from "@/lib/utils";
 
-export function ExternalApiConsole({ config }: { config: ExternalApiConfig }) {
+const sel = "h-9 w-full rounded-md border border-input bg-background px-2 text-sm";
+const when = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "never");
+const ago = (iso: string | null | undefined) => {
+  if (!iso) return "No calls yet";
+  const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  return m < 1 ? "Just now" : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : when(iso);
+};
+const copy = (text: string) => navigator.clipboard.writeText(text).then(() => toast.success("Copied"), () => toast.error("Could not copy"));
+
+// ---------------------------------------------------------------------------
+// Status
+// ---------------------------------------------------------------------------
+
+const STATE: Record<ApiState, { label: string; cls: string; Icon: typeof CheckCircle2Icon }> = {
+  healthy: { label: "Working", cls: "text-emerald-700 dark:text-emerald-300 bg-emerald-500/10 border-emerald-500/30", Icon: CheckCircle2Icon },
+  degraded: { label: "Some failures", cls: "text-amber-800 dark:text-amber-200 bg-amber-500/10 border-amber-500/30", Icon: CircleAlertIcon },
+  failing: { label: "Failing", cls: "text-destructive bg-destructive/10 border-destructive/30", Icon: XCircleIcon },
+  untested: { label: "Not tested", cls: "text-sky-800 dark:text-sky-200 bg-sky-500/10 border-sky-500/30", Icon: CircleDashedIcon },
+  off: { label: "Off", cls: "text-muted-foreground bg-muted border-border", Icon: CirclePauseIcon },
+  not_set_up: { label: "Not set up", cls: "text-muted-foreground bg-muted border-border", Icon: CircleDashedIcon },
+};
+
+function StateBadge({ state }: { state: ApiState }) {
+  const x = STATE[state];
+  return (
+    <span className={cn("inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium", x.cls)} data-api-state={state}>
+      <x.Icon className="size-3.5" aria-hidden /> {x.label}
+    </span>
+  );
+}
+
+const ABOUT: Record<ApiProvider, { what: string; docs?: { href: string; label: string } }> = {
+  verify: { what: "Checks bank and wallet transfers (CBE, Awash, Dashen, BoA, telebirr, CBE Birr) and tells Myseed by signed webhook when a payment is accepted." },
+  chapa: { what: "Card, telebirr and bank payments. Each business has its own Chapa keys, webhook and balance.", docs: { href: "https://developer.chapa.co", label: "Chapa API docs" } },
+  sms: { what: "Every SMS Myseed sends goes through the SMS connections, in order, with retries. i-Conic is set up here; the others in Integrations, SMS.", docs: { href: "https://www.afromessage.com/developers", label: "AfroMessage API docs" } },
+  academy: { what: "The academy's student API: Customer Support looks up enrolled students and their parents' phone numbers through it." },
+  finance: { what: "The academy's finance API: platform revenue and bank slips Finance approves or rejects." },
+  noor: { what: "Noor's admin site (cms.noorethiopia.com): Myseed signs in with a Noor login, reads its tables and sends changes through Noor's own forms." },
+};
+
+// ---------------------------------------------------------------------------
+// Console
+// ---------------------------------------------------------------------------
+
+type Props = { status: ApiProviderStatus[]; config: PublicExternalApiConfig; verify: PublicVerifyConfig; origin: string; noor: { students: number; parents: number; plans: number; subscriptions: number; invoices: number; lastSyncedAt: string | null } };
+
+export function ExternalApiConsole(props: Props) {
   const router = useRouter();
-  const [f, setF] = React.useState<ExternalApiConfig>(config);
-  const [busy, setBusy] = React.useState(false);
-  const [testing, setTesting] = React.useState<string | null>(null);
-  const [testResults, setTestResults] = React.useState<Record<string, { ok: boolean; message: string; ms?: number }>>({});
-
-  // Chapa multi-account states
-  const [chapaAccounts, setChapaAccounts] = React.useState<ChapaAccount[]>([]);
-  const [chapaBalances, setChapaBalances] = React.useState<ChapaBalance[]>([]);
-  const [chapaTxs, setChapaTxs] = React.useState<ChapaTransaction[]>([]);
-  const [selectedChapaAccountId, setSelectedChapaAccountId] = React.useState<string | null>(null);
-  const [chapaTestResults, setChapaTestResults] = React.useState<Record<string, { ok: boolean; message: string; balance?: number; mode?: string }>>({});
-  const [chapaModalOpen, setChapaModalOpen] = React.useState(false);
-  const [chapaForm, setChapaForm] = React.useState({
-    id: "",
-    name: "",
-    secretKey: "",
-    publicKey: "",
-    webhookSecret: "",
-    currency: "ETB",
-    active: true,
-  });
-
-  // Myseed Verify platform state
-  const [verifyConfig, setVerifyConfig] = React.useState({
-    enabled: false,
-    baseUrl: "https://verify.myseedops.tech",
-    apiKey: "",
-    hasApiKey: false,
-    webhookSecret: "",
-    hasWebhookSecret: false,
-    environment: "sandbox" as "sandbox" | "production" | "custom",
-    autoFulfill: true,
-    status: "unconfigured" as "connected" | "unconfigured" | "error",
-    lastTestedAt: null as string | null,
-    lastError: null as string | null,
-  });
-  const [verifyBusy, setVerifyBusy] = React.useState(false);
-  const [verifyTesting, setVerifyTesting] = React.useState(false);
-  const [verifyTestResult, setVerifyTestResult] = React.useState<{ ok: boolean; message: string; ms?: number } | null>(null);
-
-  React.useEffect(() => {
-    getMyseedVerifyConfigAction().then((res) => {
-      if (res.ok && res.data) {
-        setVerifyConfig(res.data as any);
-      }
-    });
-  }, []);
-
-  // Iconic SMS state
-  const [iconicBalance, setIconicBalance] = React.useState<{ balance: number; currency: string } | null>(null);
-  const [iconicPhone, setIconicPhone] = React.useState("");
-  const setI = (patch: Partial<ExternalApiConfig["iconicSms"]>) => setF((cur) => ({ ...cur, iconicSms: { ...cur.iconicSms, ...patch } }));
-
-  const loadChapaData = async (targetAccountId?: string) => {
-    const [accRes, balRes, txRes] = await Promise.all([
-      listChapaAccountsAction(),
-      fetchChapaBalancesAction(),
-      listChapaTransactionsAction(targetAccountId || undefined),
-    ]);
-    if (accRes.ok) {
-      setChapaAccounts(accRes.data);
-      if (!selectedChapaAccountId && accRes.data.length > 0) {
-        setSelectedChapaAccountId(accRes.data[0].id);
-      }
-    }
-    if (balRes.ok) setChapaBalances(balRes.data);
-    if (txRes.ok) setChapaTxs(txRes.data);
+  const path = usePathname();
+  const sp = useSearchParams();
+  const [status, setStatus] = React.useState(props.status);
+  React.useEffect(() => setStatus(props.status), [props.status]);
+  const initial = (sp.get("api") as ApiProvider | null) ?? "verify";
+  const [active, setActive] = React.useState<ApiProvider>(props.status.some((s) => s.key === initial) ? initial : "verify");
+  const pick = (k: ApiProvider) => {
+    setActive(k);
+    const n = new URLSearchParams(sp.toString());
+    n.set("api", k);
+    router.replace(`${path}?${n.toString()}`, { scroll: false });
   };
-
-  React.useEffect(() => {
-    loadChapaData();
-  }, []);
-
-  const save = async () => {
-    setBusy(true);
-    const res = await saveExternalApiConfigAction(f);
-    setBusy(false);
-    if (!res.ok) return toast.error(res.error || "Failed to save API configuration");
-    toast.success("External API Integration Console settings saved.");
-    router.refresh();
-  };
-
-  const runTest = async (service: "academy" | "finance" | "sms" | "iconicSms") => {
-    setTesting(service);
-    const res = await testExternalApiAction(service, service === "iconicSms" ? iconicPhone.trim() || null : null);
-    setTesting(null);
-    if (!res.ok) {
-      setTestResults((prev) => ({ ...prev, [service]: { ok: false, message: res.error || "Connection test failed" } }));
-      toast.error(res.error || "Connection failed");
-      return;
-    }
-    const d = res.data;
-    setTestResults((prev) => ({ ...prev, [service]: { ok: !!d?.ok, message: d?.message || "", ms: d?.ms } }));
-    if (d?.ok) toast.success(service === "iconicSms" ? d.message : `${service.toUpperCase()} connection healthy (${d.ms}ms)`);
-    else toast.error(d?.message || "Connection failed");
-  };
-
-  const checkIconicBalance = async () => {
-    setTesting("iconicBalance");
-    const res = await fetchIconicSmsStatusAction();
-    setTesting(null);
-    if (res.ok && res.data) {
-      setIconicBalance({ balance: res.data.balance, currency: res.data.currency });
-      toast.success(`i-Conic balance: ${res.data.balance} ${res.data.currency}`);
-    } else {
-      toast.error(!res.ok ? res.error : "Failed to check balance");
-    }
-  };
-
-  const handleSaveChapaAccount = async () => {
-    if (!chapaForm.name.trim()) return toast.error("Business account name is required");
-    setBusy(true);
-    try {
-      const res = await saveChapaAccountAction({
-        id: chapaForm.id || undefined,
-        name: chapaForm.name,
-        secretKey: chapaForm.secretKey || undefined,
-        publicKey: chapaForm.publicKey || undefined,
-        webhookSecret: chapaForm.webhookSecret || undefined,
-        currency: chapaForm.currency,
-        active: chapaForm.active,
-      });
-      setBusy(false);
-      if (!res.ok) return toast.error(res.error || "Failed to save Chapa account");
-      toast.success(`Chapa account "${chapaForm.name}" saved.`);
-      setChapaModalOpen(false);
-      setChapaForm({ id: "", name: "", secretKey: "", publicKey: "", webhookSecret: "", currency: "ETB", active: true });
-      loadChapaData();
-    } catch (err: any) {
-      setBusy(false);
-      if (String(err?.message || err).includes("Server Action")) {
-        toast.error("New deployment detected. Refreshing page...");
-        window.location.reload();
-      } else {
-        toast.error(String(err?.message || err));
-      }
-    }
-  };
-
-  const handleDeleteChapaAccount = async (id: string, name: string) => {
-    if (!confirm(`Delete Chapa account "${name}"?`)) return;
-    try {
-      const res = await deleteChapaAccountAction(id);
-      if (!res.ok) return toast.error(res.error || "Failed to delete account");
-      toast.success(`Account "${name}" removed.`);
-      loadChapaData();
-    } catch (err: any) {
-      if (String(err?.message || err).includes("Server Action")) {
-        toast.error("New deployment detected. Refreshing page...");
-        window.location.reload();
-      } else {
-        toast.error(String(err?.message || err));
-      }
-    }
-  };
-
-  const handleTestChapaAccount = async (id: string) => {
-    setTesting(`chapa-${id}`);
-    try {
-      const res = await testChapaAccountAction(id);
-      setTesting(null);
-      setChapaTestResults((prev) => ({ ...prev, [id]: res }));
-      if (res.ok) {
-        toast.success(res.message);
-        loadChapaData(selectedChapaAccountId || undefined);
-      } else {
-        toast.error(res.message);
-      }
-    } catch (err: any) {
-      setTesting(null);
-      if (String(err?.message || err).includes("Server Action")) {
-        toast.error("New deployment detected. Refreshing page...");
-        window.location.reload();
-      } else {
-        toast.error(String(err?.message || err));
-      }
-    }
-  };
-
-  const handleClearAllChapaAccounts = async () => {
-    if (!confirm("Are you sure you want to delete all Chapa accounts and dummy records? This will clear test data permanently.")) return;
-    const res = await clearAllChapaAccountsAction();
-    if (res.ok) {
-      toast.success("All Chapa business accounts removed");
-      setChapaAccounts([]);
-      setChapaBalances([]);
-      setChapaTxs([]);
+  // After a save or a test: this provider's status and calls again, then the rest of the page.
+  const refresh = React.useCallback(
+    async (k: ApiProvider) => {
+      const r = await apiProviderStatusAction(k);
+      if (r.ok && r.data) setStatus((cur) => cur.map((s) => (s.key === k ? r.data! : s)));
       router.refresh();
-    } else {
-      toast.error(res.error || "Failed to clear accounts");
-    }
-  };
+    },
+    [router],
+  );
+  const s = status.find((x) => x.key === active)!;
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b">
-        <div>
-          <h2 className="text-xl font-bold tracking-tight">External API Integration Console</h2>
-          <p className="text-xs text-muted-foreground">
-            Configure external integrations: Chapa multi-business payment gateway, i-Conic SMS, Customer Support student lookup, and Noor Ethiopia CMS sync.
-          </p>
-        </div>
-        <Button onClick={save} disabled={busy} size="sm">
-          {busy ? <Loader2Icon className="size-4 animate-spin mr-1.5" /> : <SaveIcon className="size-4 mr-1.5" />}
-          Save API Settings
-        </Button>
+    <div className="space-y-4" data-api-console>
+      <p className="text-sm text-muted-foreground">
+        Each outside system Myseed talks to: whether it is set up and working, its settings and tests, and its latest calls. Every call is also in{" "}
+        <Link href="/admin/integrations?tab=monitor" className="underline underline-offset-2 hover:text-foreground">
+          the Call monitor
+        </Link>
+        .
+      </p>
+
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6" role="tablist" aria-label="Providers">
+        {status.map((p) => (
+          <button
+            key={p.key}
+            type="button"
+            role="tab"
+            aria-selected={active === p.key}
+            onClick={() => pick(p.key)}
+            data-api-tile={p.key}
+            className={cn(
+              "min-w-0 rounded-lg border bg-card p-3 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              active === p.key && "border-primary ring-1 ring-primary/40",
+            )}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <span className="truncate text-sm font-medium">{p.label}</span>
+              <StateBadge state={p.state} />
+            </div>
+            <p className="mt-1 truncate text-xs text-muted-foreground" title={p.setup}>
+              {p.setup}
+            </p>
+            <p className="mt-1 text-xs tabular-nums text-muted-foreground">
+              {p.calls ? `${p.calls} calls today${p.failures ? `, ${p.failures} failed` : ""}` : ago(p.lastAt)}
+            </p>
+          </button>
+        ))}
       </div>
 
-      <Tabs defaultValue="verify" className="space-y-4">
-        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 h-auto p-1">
-          <TabsTrigger value="verify" className="flex items-center gap-1.5 text-xs py-2">
-            <ShieldCheckIcon className="size-3.5 text-teal-600" /> Myseed Verify
-          </TabsTrigger>
-          <TabsTrigger value="chapa" className="flex items-center gap-1.5 text-xs py-2">
-            <CreditCardIcon className="size-3.5 text-emerald-600" /> Chapa Payments
-          </TabsTrigger>
-          <TabsTrigger value="sms" className="flex items-center gap-1.5 text-xs py-2">
-            <MessageSquareIcon className="size-3.5 text-blue-600" /> SMS & i-Conic SMS
-          </TabsTrigger>
-          <TabsTrigger value="academy" className="flex items-center gap-1.5 text-xs py-2">
-            <PhoneCallIcon className="size-3.5 text-purple-600" /> Academy & Support
-          </TabsTrigger>
-          <TabsTrigger value="finance" className="flex items-center gap-1.5 text-xs py-2">
-            <ReceiptIcon className="size-3.5 text-amber-600" /> External Receipts
-          </TabsTrigger>
-          <TabsTrigger value="noor" className="flex items-center gap-1.5 text-xs py-2">
-            <GlobeIcon className="size-3.5 text-indigo-600" /> Noor CMS (Legacy)
-          </TabsTrigger>
-        </TabsList>
-
-        {/* 0. Myseed Verify Platform Integration */}
-        <TabsContent value="verify" className="space-y-4">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(320px,400px)]" data-api-panel={active} role="tabpanel">
+        <div className="min-w-0 space-y-4">
           <Card>
-            <CardHeader className="pb-3 flex flex-row items-center justify-between">
-              <div>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <ShieldCheckIcon className="size-4 text-teal-600" />
-                  Myseed Verify Platform Integration
-                </CardTitle>
-                <CardDescription className="text-xs">
-                  Automated transaction verification engine for Ethiopian banks (CBE, Awash, Dashen, BoA), wallets (Telebirr, CBE Birr) and payment gateways with HMAC-signed webhooks.
-                </CardDescription>
+            <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
+              <div className="min-w-0 space-y-1">
+                <CardTitle className="flex items-center gap-2 text-base">{s.label}</CardTitle>
+                <CardDescription>{ABOUT[active].what}</CardDescription>
               </div>
               <div className="flex items-center gap-2">
-                {verifyConfig.status === "connected" && (
-                  <Badge variant="outline" className="text-xs text-emerald-600 border-emerald-300 bg-emerald-50/50">
-                    Connected
-                  </Badge>
+                {ABOUT[active].docs && (
+                  <Button asChild size="sm" variant="ghost">
+                    <a href={ABOUT[active].docs!.href} target="_blank" rel="noreferrer">
+                      <BookOpenIcon className="size-4" /> {ABOUT[active].docs!.label}
+                    </a>
+                  </Button>
                 )}
-                {verifyConfig.status === "error" && (
-                  <Badge variant="destructive" className="text-xs">
-                    Connection Error
-                  </Badge>
-                )}
+                <StateBadge state={s.state} />
               </div>
             </CardHeader>
-            <CardContent className="space-y-4 text-xs">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <Label htmlFor="verify-url" className="text-xs">Platform API Base URL</Label>
-                  <Input
-                    id="verify-url"
-                    value={verifyConfig.baseUrl}
-                    onChange={(e) => setVerifyConfig({ ...verifyConfig, baseUrl: e.target.value })}
-                    placeholder="https://verify.myseedops.tech"
-                    className="h-8 text-xs font-mono"
-                  />
-                  <p className="text-[11px] text-muted-foreground">Address of the deployed Transaction Verify cluster or sandbox endpoint.</p>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label htmlFor="verify-env" className="text-xs">Environment</Label>
-                  <select
-                    id="verify-env"
-                    value={verifyConfig.environment}
-                    onChange={(e) => setVerifyConfig({ ...verifyConfig, environment: e.target.value as any })}
-                    className="h-8 w-full rounded-md border border-input bg-background px-3 py-1 text-xs"
-                  >
-                    <option value="sandbox">Sandbox (Test Mode)</option>
-                    <option value="production">Production (Live Payments)</option>
-                    <option value="custom">Custom / Internal Cluster</option>
-                  </select>
-                  <p className="text-[11px] text-muted-foreground">Sandbox allows simulated bank transfers and test OCR slips.</p>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label htmlFor="verify-key" className="text-xs">Server API Key (Bearer Token)</Label>
-                  <Input
-                    id="verify-key"
-                    type="password"
-                    value={verifyConfig.apiKey}
-                    onChange={(e) => setVerifyConfig({ ...verifyConfig, apiKey: e.target.value })}
-                    placeholder={verifyConfig.hasApiKey ? "•••••••••••• (Leave blank to keep saved key)" : "vfy_sec_live_..."}
-                    className="h-8 text-xs font-mono"
-                  />
-                  <p className="text-[11px] text-muted-foreground">Server API key used to create payment requests and fetch statuses.</p>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label htmlFor="verify-secret" className="text-xs">Webhook Signing Secret (HMAC SHA-256)</Label>
-                  <Input
-                    id="verify-secret"
-                    type="password"
-                    value={verifyConfig.webhookSecret}
-                    onChange={(e) => setVerifyConfig({ ...verifyConfig, webhookSecret: e.target.value })}
-                    placeholder={verifyConfig.hasWebhookSecret ? "•••••••••••• (Leave blank to keep saved secret)" : "whsec_..."}
-                    className="h-8 text-xs font-mono"
-                  />
-                  <p className="text-[11px] text-muted-foreground">Used to verify X-Verify-Signature on incoming callback events.</p>
-                </div>
-              </div>
-
-              {/* Webhook Callback Information Box */}
-              <div className="rounded-lg border bg-muted/40 p-3 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="font-semibold text-xs flex items-center gap-1.5">
-                    <GlobeIcon className="size-3.5 text-primary" /> Webhook Ingestion URL
-                  </span>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-6 text-[10px] gap-1"
-                    onClick={() => {
-                      navigator.clipboard.writeText("https://myseedops.tech/api/verify/webhook");
-                      toast.success("Webhook URL copied to clipboard");
-                    }}
-                  >
-                    <CopyIcon className="size-3" /> Copy
-                  </Button>
-                </div>
-                <code className="block font-mono text-[11px] text-foreground bg-background p-1.5 rounded border">
-                  https://myseedops.tech/api/verify/webhook
-                </code>
-                <p className="text-[11px] text-muted-foreground">
-                  Register this URL in your Myseed Verify dashboard under Webhook Endpoints. Subscribed event: <code className="text-foreground">payment.accepted</code>.
+            {s.lastError && s.state === "failing" && (
+              <CardContent className="pt-0">
+                <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive" data-api-last-error>
+                  {s.lastError}
                 </p>
-              </div>
-
-              {/* Switches */}
-              <div className="grid gap-3 sm:grid-cols-2 pt-1 border-t">
-                <div className="flex items-center justify-between border rounded-lg p-2.5">
-                  <div className="space-y-0.5">
-                    <Label htmlFor="verify-enable" className="text-xs font-medium cursor-pointer">Enable Verification Service</Label>
-                    <p className="text-[10px] text-muted-foreground">Route payment approvals through Myseed Verify</p>
-                  </div>
-                  <Switch
-                    id="verify-enable"
-                    checked={verifyConfig.enabled}
-                    onCheckedChange={(val) => setVerifyConfig({ ...verifyConfig, enabled: val })}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between border rounded-lg p-2.5">
-                  <div className="space-y-0.5">
-                    <Label htmlFor="verify-fulfill" className="text-xs font-medium cursor-pointer">Automatic Fulfillment</Label>
-                    <p className="text-[10px] text-muted-foreground">Acknowledge allocation when webhook arrives</p>
-                  </div>
-                  <Switch
-                    id="verify-fulfill"
-                    checked={verifyConfig.autoFulfill}
-                    onCheckedChange={(val) => setVerifyConfig({ ...verifyConfig, autoFulfill: val })}
-                  />
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex flex-wrap items-center gap-2 pt-2">
-                <Button
-                  size="sm"
-                  onClick={async () => {
-                    setVerifyBusy(true);
-                    try {
-                      const res = await saveMyseedVerifyConfigAction(verifyConfig);
-                      if (res.ok) {
-                        toast.success("Myseed Verify configuration saved");
-                        router.refresh();
-                      } else {
-                        toast.error(res.error || "Failed to save configuration");
-                      }
-                    } finally {
-                      setVerifyBusy(false);
-                    }
-                  }}
-                  disabled={verifyBusy}
-                  className="gap-1.5 text-xs"
-                >
-                  {verifyBusy ? <Loader2Icon className="size-3.5 animate-spin" /> : <SaveIcon className="size-3.5" />}
-                  Save Settings
-                </Button>
-
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={async () => {
-                    setVerifyTesting(true);
-                    setVerifyTestResult(null);
-                    try {
-                      const res = await testMyseedVerifyConnectionAction();
-                      setVerifyTestResult(res);
-                      if (res.ok) toast.success(res.message);
-                      else toast.error(res.message);
-                    } finally {
-                      setVerifyTesting(false);
-                    }
-                  }}
-                  disabled={verifyTesting}
-                  className="gap-1.5 text-xs"
-                >
-                  <RefreshCwIcon className={cn("size-3.5", verifyTesting && "animate-spin")} />
-                  Test Connection
-                </Button>
-
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={async () => {
-                    const testRef = `test_${Date.now()}`;
-                    const res = await createVerifyPaymentRequestAction({
-                      externalReference: testRef,
-                      currency: "ETB",
-                      items: [
-                        {
-                          title: "Test Subscription Enrollment",
-                          minorAmount: "50000", // 500.00 ETB
-                          quantity: 1,
-                          category: "subscription",
-                        },
-                      ],
-                    });
-                    if (res.ok && res.data) {
-                      toast.success(`Created Request #${res.data.id} (${res.data.status})`);
-                    } else {
-                      toast.error(res.error || "Failed to create test request");
-                    }
-                  }}
-                  className="gap-1.5 text-xs"
-                >
-                  <SparklesIcon className="size-3.5 text-amber-500" />
-                  Create Test Payment Request
-                </Button>
-              </div>
-
-              {verifyTestResult && (
-                <div
-                  className={cn(
-                    "p-3 rounded-lg text-xs border flex items-center justify-between",
-                    verifyTestResult.ok
-                      ? "bg-emerald-500/10 border-emerald-300 text-emerald-800 dark:text-emerald-300"
-                      : "bg-destructive/10 border-destructive/30 text-destructive"
-                  )}
-                >
-                  <div className="flex items-center gap-2">
-                    {verifyTestResult.ok ? (
-                      <CheckCircle2Icon className="size-4 shrink-0 text-emerald-600" />
-                    ) : (
-                      <ShieldAlertIcon className="size-4 shrink-0" />
-                    )}
-                    <span>{verifyTestResult.message}</span>
-                  </div>
-                  {verifyTestResult.ms !== undefined && (
-                    <span className="font-mono text-[10px]">{verifyTestResult.ms}ms</span>
-                  )}
-                </div>
-              )}
-            </CardContent>
+              </CardContent>
+            )}
           </Card>
-        </TabsContent>
+          {active === "verify" && <VerifyPanel initial={props.verify} origin={props.origin} onChange={() => refresh("verify")} />}
+          {active === "chapa" && <ChapaPanel origin={props.origin} onChange={() => refresh("chapa")} />}
+          {active === "sms" && <SmsPanel config={props.config} onChange={() => refresh("sms")} />}
+          {(active === "academy" || active === "finance") && <ServicePanel key={active} service={active} config={props.config} onChange={() => refresh(active)} />}
+          {active === "noor" && <NoorPanel stats={props.noor} onChange={() => refresh("noor")} />}
+        </div>
+        <RecentCalls s={s} />
+      </div>
+    </div>
+  );
+}
 
-        {/* 1. Chapa Multi-Business Accounts */}
-        <TabsContent value="chapa" className="space-y-4">
-          <Card>
-            <CardHeader className="pb-3 flex flex-row items-center justify-between">
-              <div>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <CreditCardIcon className="size-4 text-emerald-600" /> Chapa Multi-Business Payment Gateway
-                </CardTitle>
-                <CardDescription className="text-xs">
-                  Manage multiple Chapa merchant accounts for different business arms (e.g. MySeed Subscriptions, MySeed Donations, Academy Tuitions).
-                </CardDescription>
-              </div>
-              <div className="flex items-center gap-2">
-                {chapaAccounts.length > 0 && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={handleClearAllChapaAccounts}
-                    className="text-xs text-destructive hover:bg-destructive/10 border-destructive/30"
-                  >
-                    Clear All Accounts
-                  </Button>
-                )}
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    setChapaForm({ id: "", name: "", secretKey: "", publicKey: "", webhookSecret: "", currency: "ETB", active: true });
-                    setChapaModalOpen(true);
-                  }}
-                  className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
-                >
-                  <PlusIcon className="size-3.5" /> Add Business Account
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Account Balances & Organizations Grid (Interactive Selection) */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                    Select Business Organization / Account
-                  </h4>
-                  {chapaAccounts.length > 0 && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 text-[11px] px-2 text-muted-foreground"
-                      onClick={() => {
-                        setSelectedChapaAccountId(null);
-                        loadChapaData();
-                      }}
-                    >
-                      Show All ({chapaAccounts.length})
-                    </Button>
-                  )}
-                </div>
+// ---------------------------------------------------------------------------
+// Latest calls
+// ---------------------------------------------------------------------------
 
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  {chapaBalances.length === 0 ? (
-                    <div className="col-span-full border border-dashed rounded-lg p-6 text-center text-xs text-muted-foreground">
-                      No business accounts configured. Click &ldquo;Add Business Account&rdquo; above to connect your Chapa API keys.
-                    </div>
-                  ) : (
-                    chapaBalances.map((bal) => {
-                      const isSelected = selectedChapaAccountId === bal.accountId;
-                      const testInfo = chapaTestResults[bal.accountId];
-                      const isChecking = testing === `chapa-${bal.accountId}`;
-
-                      return (
-                        <div
-                          key={bal.accountId}
-                          onClick={() => {
-                            setSelectedChapaAccountId(bal.accountId);
-                            loadChapaData(bal.accountId);
-                          }}
-                          className={cn(
-                            "group relative rounded-xl border p-4 space-y-2 cursor-pointer transition-all",
-                            isSelected
-                              ? "border-emerald-500 bg-emerald-500/[0.04] shadow-sm ring-1 ring-emerald-500/30"
-                              : "bg-card hover:border-border/80 hover:bg-muted/30"
-                          )}
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <span className="text-sm font-semibold text-foreground flex items-center gap-1.5">
-                              <Building2Icon className={cn("size-4", isSelected ? "text-emerald-600" : "text-muted-foreground")} />
-                              {bal.accountName}
-                            </span>
-                            <Badge
-                              variant="secondary"
-                              className={cn(
-                                "text-[10px] font-semibold shrink-0",
-                                bal.status === "connected" && "bg-emerald-500/10 text-emerald-600",
-                                bal.status === "test_mode" && "bg-blue-500/10 text-blue-600",
-                                bal.status === "error" && "bg-rose-500/10 text-rose-600"
-                              )}
-                            >
-                              {bal.status === "test_mode" ? "Test Key" : bal.status === "connected" ? "Live Connected" : "Error"}
-                            </Badge>
-                          </div>
-
-                          <div className="pt-1">
-                            <p className="text-xl font-bold tracking-tight text-foreground">
-                              {bal.availableBalance.toLocaleString()} <span className="text-xs font-normal text-muted-foreground">{bal.currency}</span>
-                            </p>
-                            <p className="text-[11px] text-muted-foreground">
-                              Ledger Balance: {bal.ledgerBalance.toLocaleString()} {bal.currency}
-                            </p>
-                          </div>
-
-                          {testInfo && (
-                            <div className={cn(
-                              "text-[11px] rounded p-1.5 leading-snug border",
-                              testInfo.ok ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-700 dark:text-emerald-300" : "bg-rose-500/10 border-rose-500/20 text-rose-700 dark:text-rose-300"
-                            )}>
-                              {testInfo.message}
-                            </div>
-                          )}
-
-                          <div className="pt-2 flex items-center justify-between border-t border-border/50">
-                            <span className="text-[10px] text-muted-foreground">
-                              {isSelected ? "● Active View" : "Click to view data"}
-                            </span>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="h-6 text-[10px] px-2 gap-1 bg-background"
-                              disabled={isChecking}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleTestChapaAccount(bal.accountId);
-                              }}
-                            >
-                              {isChecking ? <Loader2Icon className="size-2.5 animate-spin" /> : <RefreshCwIcon className="size-2.5" />}
-                              Check Connection
-                            </Button>
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
-
-              {/* Accounts Table */}
-              <div className="border rounded-lg overflow-hidden">
-                <Table>
-                  <TableHeader className="bg-muted/40">
-                    <TableRow>
-                      <TableHead className="text-xs">Business Name</TableHead>
-                      <TableHead className="text-xs">Public Key</TableHead>
-                      <TableHead className="text-xs">Currency</TableHead>
-                      <TableHead className="text-xs">Status</TableHead>
-                      <TableHead className="text-right text-xs">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {chapaAccounts.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={5} className="text-center text-xs py-6 text-muted-foreground">
-                          No Chapa business accounts configured yet.
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      chapaAccounts.map((acc) => (
-                        <TableRow
-                          key={acc.id}
-                          className={cn("text-xs cursor-pointer", selectedChapaAccountId === acc.id && "bg-muted/40 font-medium")}
-                          onClick={() => {
-                            setSelectedChapaAccountId(acc.id);
-                            loadChapaData(acc.id);
-                          }}
-                        >
-                          <TableCell className="font-semibold text-foreground">
-                            <div className="flex items-center gap-1.5">
-                              {selectedChapaAccountId === acc.id && <span className="size-1.5 rounded-full bg-emerald-500 inline-block" />}
-                              {acc.name}
-                            </div>
-                          </TableCell>
-                          <TableCell className="font-mono text-[11px] text-muted-foreground">
-                            {acc.publicKey ? acc.publicKey.slice(0, 24) + "..." : "—"}
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className="text-[10px]">
-                              {acc.currency}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <Badge
-                              variant="secondary"
-                              className={cn(
-                                "text-[10px]",
-                                acc.active ? "bg-emerald-500/10 text-emerald-600" : "bg-muted text-muted-foreground"
-                              )}
-                            >
-                              {acc.active ? "Active" : "Disabled"}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                            <div className="flex items-center justify-end gap-1">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="h-7 text-[11px] px-2"
-                                disabled={testing === `chapa-${acc.id}`}
-                                onClick={() => handleTestChapaAccount(acc.id)}
-                              >
-                                {testing === `chapa-${acc.id}` ? <Loader2Icon className="size-3 animate-spin mr-1" /> : <RefreshCwIcon className="size-3 mr-1" />}
-                                Check Connection
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="h-7 text-[11px] px-2"
-                                onClick={() => {
-                                  setChapaForm({
-                                    id: acc.id,
-                                    name: acc.name,
-                                    secretKey: "",
-                                    publicKey: acc.publicKey,
-                                    webhookSecret: "",
-                                    currency: acc.currency,
-                                    active: acc.active,
-                                  });
-                                  setChapaModalOpen(true);
-                                }}
-                              >
-                                <PencilIcon className="size-3 mr-1" />
-                                Edit
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="size-7 text-destructive hover:bg-destructive/10"
-                                onClick={() => handleDeleteChapaAccount(acc.id, acc.name)}
-                              >
-                                <Trash2Icon className="size-3.5" />
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-
-              {/* Recent Transactions Feed */}
-              <div className="space-y-2 pt-2">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                    {selectedChapaAccountId
-                      ? `Live Chapa Transactions (${chapaAccounts.find((a) => a.id === selectedChapaAccountId)?.name || "Selected Business"})`
-                      : "Recent Chapa Transactions Feed (All Businesses)"}
-                  </h4>
-                  <span className="text-[11px] text-muted-foreground">
-                    {chapaTxs.length} {chapaTxs.length === 1 ? "transaction" : "transactions"}
+function RecentCalls({ s }: { s: ApiProviderStatus }) {
+  return (
+    <Card className="h-fit" data-api-calls>
+      <CardHeader>
+        <CardTitle className="text-base">Latest calls</CardTitle>
+        <CardDescription>
+          {s.calls ? `${s.calls} in the last 24 hours, ${s.failures} failed, ${s.avgMs} ms on average.` : "None in the last 24 hours."} Tests are included and marked.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {s.recent.length === 0 ? (
+          <p className="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">No calls yet. Run a test to see the first one here.</p>
+        ) : (
+          <ol className="divide-y rounded-md border">
+            {s.recent.map((c) => (
+              <li key={c.id} className="space-y-0.5 px-3 py-2 text-sm" data-api-call={c.ok ? "ok" : "failed"}>
+                <div className="flex items-center gap-2">
+                  {c.ok ? <CheckCircle2Icon className="size-4 shrink-0 text-emerald-600" aria-label="Succeeded" /> : <XCircleIcon className="size-4 shrink-0 text-destructive" aria-label="Failed" />}
+                  {c.direction === "in" ? <ArrowDownLeftIcon className="size-3.5 shrink-0 text-muted-foreground" aria-label="Callback in" /> : <ArrowUpRightIcon className="size-3.5 shrink-0 text-muted-foreground" aria-label="Call out" />}
+                  <span className="min-w-0 flex-1 truncate" title={c.summary}>
+                    {c.summary}
                   </span>
                 </div>
+                <div className="flex flex-wrap gap-x-3 pl-6 text-xs text-muted-foreground tabular-nums">
+                  <span>{when(c.at)}</span>
+                  {c.status > 0 && <span>HTTP {c.status}</span>}
+                  <span>{c.ms} ms</span>
+                  {c.test && <span className="font-medium">Test</span>}
+                </div>
+                {c.error && <p className="break-words pl-6 text-xs text-destructive">{c.error}</p>}
+              </li>
+            ))}
+          </ol>
+        )}
+        <Button asChild size="sm" variant="outline" className="w-full">
+          <Link href={`/admin/integrations?tab=monitor&source=${s.monitorSource}&hours=168`}>All {s.label} calls in the Call monitor</Link>
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
 
-                <div className="border rounded-lg overflow-hidden">
-                  <Table>
-                    <TableHeader className="bg-muted/40">
-                      <TableRow>
-                        <TableHead className="text-xs">Tx Ref</TableHead>
-                        <TableHead className="text-xs">Account</TableHead>
-                        <TableHead className="text-xs">Customer</TableHead>
-                        <TableHead className="text-xs">Method</TableHead>
-                        <TableHead className="text-xs">Amount</TableHead>
-                        <TableHead className="text-xs">Status</TableHead>
-                        <TableHead className="text-right text-xs">Date</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {chapaTxs.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={7} className="text-center text-xs py-8 text-muted-foreground">
-                            No live transactions found for this account on the Chapa gateway API.
-                          </TableCell>
-                        </TableRow>
-                      ) : (
-                        chapaTxs.map((tx) => (
-                          <TableRow key={tx.id} className="text-xs">
-                            <TableCell className="font-mono text-[11px] font-semibold">{tx.txRef}</TableCell>
-                            <TableCell>{tx.accountName}</TableCell>
-                            <TableCell>
-                              {tx.customerName}
-                              <div className="text-[10px] text-muted-foreground">{tx.customerEmail}</div>
-                            </TableCell>
-                            <TableCell>{tx.paymentMethod}</TableCell>
-                            <TableCell className="font-semibold">
-                              {tx.amount.toLocaleString()} {tx.currency}
-                            </TableCell>
-                            <TableCell>
-                              <Badge
-                                variant="secondary"
-                                className={cn(
-                                  "text-[10px]",
-                                  tx.status === "success" && "bg-emerald-500/10 text-emerald-600",
-                                  tx.status === "pending" && "bg-amber-500/10 text-amber-600",
-                                  tx.status === "failed" && "bg-rose-500/10 text-rose-600"
-                                )}
-                              >
-                                {tx.status}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="text-right text-muted-foreground text-[11px]">
-                              {new Date(tx.createdAt).toLocaleDateString()}
-                            </TableCell>
-                          </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
+// ---------------------------------------------------------------------------
+// Shared pieces
+// ---------------------------------------------------------------------------
 
-        {/* 2. SMS Gateways & i-Conic SMS */}
-        <TabsContent value="sms" className="space-y-4">
-          {/* i-Conic SMS: nothing about the request is guessed; it comes from the i-Conic account's API page. */}
-          <Card data-iconic-card>
-            <CardHeader className="pb-3 flex flex-row items-center justify-between">
-              <div>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <MessageSquareIcon className="size-4 text-muted-foreground" /> i-Conic SMS
-                </CardTitle>
-                <CardDescription className="text-xs">
-                  Copy the address, send path, how the key is sent and the field names from your i-Conic account&apos;s API page. Saving makes i-Conic an SMS connection: it is used for SMS routing, retries and fallback, and every message is kept in the SMS log.
-                </CardDescription>
-              </div>
-              <div className="flex items-center gap-2">
-                <Label htmlFor="iconic-enable" className="text-xs">On</Label>
-                <Switch id="iconic-enable" checked={f.iconicSms.enabled} onCheckedChange={(v) => setI({ enabled: v })} />
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-3 sm:grid-cols-3">
-                <div className="space-y-1 sm:col-span-2">
-                  <Label htmlFor="iconic-url" className="text-xs">API address</Label>
-                  <Input id="iconic-url" value={f.iconicSms.baseUrl} onChange={(e) => setI({ baseUrl: e.target.value })} placeholder="https://… (from your i-Conic account)" className="h-8 text-xs font-mono" />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="iconic-sender" className="text-xs">Sender ID</Label>
-                  <Input id="iconic-sender" value={f.iconicSms.senderId} onChange={(e) => setI({ senderId: e.target.value })} placeholder="MYSEED" className="h-8 text-xs" />
-                </div>
-                <div className="space-y-1 sm:col-span-3">
-                  <Label htmlFor="iconic-key" className="text-xs">API key or token</Label>
-                  <Input id="iconic-key" type="password" autoComplete="off" value={f.iconicSms.apiKey} onChange={(e) => setI({ apiKey: e.target.value })} className="h-8 text-xs font-mono" />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="iconic-path" className="text-xs">Send path</Label>
-                  <Input id="iconic-path" value={f.iconicSms.sendPath} onChange={(e) => setI({ sendPath: e.target.value })} placeholder="/send" className="h-8 text-xs font-mono" />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="iconic-method" className="text-xs">Method</Label>
-                  <select id="iconic-method" className="h-8 w-full rounded-md border bg-background px-2 text-xs" value={f.iconicSms.method} onChange={(e) => setI({ method: e.target.value as "POST" | "GET" })}>
-                    <option value="POST">POST</option>
-                    <option value="GET">GET</option>
-                  </select>
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="iconic-format" className="text-xs">Fields sent as</Label>
-                  <select id="iconic-format" className="h-8 w-full rounded-md border bg-background px-2 text-xs" value={f.iconicSms.format} onChange={(e) => setI({ format: e.target.value as "json" | "form" | "query" })}>
-                    <option value="json">JSON body</option>
-                    <option value="form">Form body</option>
-                    <option value="query">In the address (query)</option>
-                  </select>
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="iconic-auth" className="text-xs">Key sent as</Label>
-                  <select id="iconic-auth" className="h-8 w-full rounded-md border bg-background px-2 text-xs" value={f.iconicSms.authStyle} onChange={(e) => setI({ authStyle: e.target.value as "bearer" | "header" | "query" })}>
-                    <option value="bearer">Authorization: Bearer</option>
-                    <option value="header">A header</option>
-                    <option value="query">In the address</option>
-                  </select>
-                </div>
-                {f.iconicSms.authStyle !== "bearer" && (
-                  <div className="space-y-1">
-                    <Label htmlFor="iconic-auth-name" className="text-xs">{f.iconicSms.authStyle === "header" ? "Header name" : "Address field name"}</Label>
-                    <Input id="iconic-auth-name" value={f.iconicSms.authName} onChange={(e) => setI({ authName: e.target.value })} placeholder={f.iconicSms.authStyle === "header" ? "KEY" : "token"} className="h-8 text-xs font-mono" />
-                  </div>
-                )}
-                <div className="space-y-1">
-                  <Label htmlFor="iconic-to" className="text-xs">Phone field</Label>
-                  <Input id="iconic-to" value={f.iconicSms.toField} onChange={(e) => setI({ toField: e.target.value })} placeholder="to" className="h-8 text-xs font-mono" />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="iconic-msg" className="text-xs">Message field</Label>
-                  <Input id="iconic-msg" value={f.iconicSms.messageField} onChange={(e) => setI({ messageField: e.target.value })} placeholder="message" className="h-8 text-xs font-mono" />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="iconic-from" className="text-xs">Sender field (empty: not sent)</Label>
-                  <Input id="iconic-from" value={f.iconicSms.senderField} onChange={(e) => setI({ senderField: e.target.value })} placeholder="from" className="h-8 text-xs font-mono" />
-                </div>
-                <div className="space-y-1 sm:col-span-2">
-                  <Label htmlFor="iconic-bal" className="text-xs">Balance path (optional)</Label>
-                  <Input id="iconic-bal" value={f.iconicSms.balancePath} onChange={(e) => setI({ balancePath: e.target.value })} placeholder="/balance" className="h-8 text-xs font-mono" />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="iconic-bal-field" className="text-xs">Balance field in the answer</Label>
-                  <Input id="iconic-bal-field" value={f.iconicSms.balanceField} onChange={(e) => setI({ balanceField: e.target.value })} placeholder="balance or data.balance" className="h-8 text-xs font-mono" />
-                </div>
-              </div>
+function Field({ id, label, hint, children, className }: { id: string; label: string; hint?: React.ReactNode; children: React.ReactNode; className?: string }) {
+  return (
+    <div className={cn("min-w-0 space-y-1.5", className)}>
+      <Label htmlFor={id}>{label}</Label>
+      {children}
+      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+    </div>
+  );
+}
 
-              <div className="flex flex-wrap items-end justify-between gap-3 border-t pt-3">
-                <div className="min-w-0 flex-1 space-y-1 text-xs">
-                  {iconicBalance && (
-                    <Badge variant="outline" className="text-xs font-semibold" data-iconic-balance>
-                      Balance: {iconicBalance.balance.toLocaleString()} {iconicBalance.currency}
-                    </Badge>
-                  )}
-                  {testResults.iconicSms && (
-                    <p className={cn("flex items-start gap-1 font-medium break-words", testResults.iconicSms.ok ? "text-emerald-600" : "text-destructive")} data-iconic-result>
-                      {testResults.iconicSms.ok ? <CheckCircle2Icon className="mt-0.5 size-3.5 shrink-0" /> : <XCircleIcon className="mt-0.5 size-3.5 shrink-0" />}
-                      <span>{testResults.iconicSms.message}</span>
-                    </p>
-                  )}
-                </div>
-                <div className="flex flex-wrap items-end gap-2">
-                  <div className="space-y-1">
-                    <Label htmlFor="iconic-test-phone" className="text-xs">Test phone (sends one SMS)</Label>
-                    <Input id="iconic-test-phone" inputMode="tel" value={iconicPhone} onChange={(e) => setIconicPhone(e.target.value)} placeholder="+2519…" className="h-8 w-40 text-xs" />
-                  </div>
-                  <Button size="sm" variant="outline" disabled={testing === "iconicBalance"} onClick={checkIconicBalance} className="text-xs h-8">
-                    Check balance
-                  </Button>
-                  <Button size="sm" variant="outline" disabled={testing === "iconicSms"} onClick={() => runTest("iconicSms")} className="text-xs h-8" data-iconic-test>
-                    {iconicPhone.trim() ? "Send test SMS" : "Test connection"}
-                  </Button>
-                </div>
-              </div>
-              <p className="text-xs text-muted-foreground">Save first, then test. A test SMS goes through i-Conic only (no fallback) and appears in Integrations, SMS.</p>
-            </CardContent>
-          </Card>
+// A key field: the saved key is never shown; blank keeps it.
+function KeyField({ id, label, value, onChange, saved, readable = true, onRemove, placeholder, className }: { id: string; label: string; value: string; onChange: (v: string) => void; saved: boolean; readable?: boolean; onRemove?: () => void; placeholder?: string; className?: string }) {
+  return (
+    <Field
+      id={id}
+      label={label}
+      className={className}
+      hint={
+        <span className="flex flex-wrap items-center gap-x-2" data-key-state={!saved ? "none" : readable ? "saved" : "unreadable"}>
+          {!saved ? "Not saved yet." : readable ? "Saved. Leave blank to keep it." : <span className="text-destructive">Saved, but it cannot be read on this server (the encryption secret changed). Enter it again.</span>}
+          {saved && onRemove && (
+            <button type="button" className="text-destructive underline underline-offset-2" onClick={onRemove}>
+              Remove saved key
+            </button>
+          )}
+        </span>
+      }
+    >
+      <Input id={id} type="password" autoComplete="off" value={value} onChange={(e) => onChange(e.target.value)} placeholder={saved ? "••••••••" : placeholder} className="font-mono" />
+    </Field>
+  );
+}
 
-          {/* AfroMessage Section */}
-          <Card>
-            <CardHeader className="pb-3 flex flex-row items-center justify-between">
-              <div>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <MessageSquareIcon className="size-4 text-blue-600" /> AfroMessage / Ethio Telecom SMS
-                </CardTitle>
-                <CardDescription className="text-xs">
-                  Secondary fallback SMS gateway route.
-                </CardDescription>
-              </div>
-              <div className="flex items-center gap-2">
-                <Label htmlFor="sms-enable" className="text-xs">Enable AfroMessage</Label>
-                <Switch
-                  id="sms-enable"
-                  checked={f.sms.enabled}
-                  onCheckedChange={(v) => setF({ ...f, sms: { ...f.sms, enabled: v } })}
-                />
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-3 sm:grid-cols-3">
-                <div className="space-y-1 sm:col-span-2">
-                  <Label htmlFor="sms-url" className="text-xs">Gateway API URL</Label>
-                  <Input
-                    id="sms-url"
-                    value={f.sms.baseUrl}
-                    onChange={(e) => setF({ ...f, sms: { ...f.sms, baseUrl: e.target.value } })}
-                    placeholder="https://api.afromessage.com/api/v1"
-                    className="h-8 text-xs font-mono"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="sms-sender" className="text-xs">Sender ID</Label>
-                  <Input
-                    id="sms-sender"
-                    value={f.sms.senderId}
-                    onChange={(e) => setF({ ...f, sms: { ...f.sms, senderId: e.target.value } })}
-                    placeholder="MySeed"
-                    className="h-8 text-xs"
-                  />
-                </div>
-                <div className="space-y-1 sm:col-span-3">
-                  <Label htmlFor="sms-key" className="text-xs">API Key / Token</Label>
-                  <Input
-                    id="sms-key"
-                    type="password"
-                    value={f.sms.apiKey}
-                    onChange={(e) => setF({ ...f, sms: { ...f.sms, apiKey: e.target.value } })}
-                    placeholder="eyJhbGciOiJIUzI1NiIsIn..."
-                    className="h-8 text-xs font-mono"
-                  />
-                </div>
-              </div>
-              <div className="pt-2 flex items-center justify-end border-t">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={testing === "sms" || !f.sms.baseUrl}
-                  onClick={() => runTest("sms")}
-                  className="text-xs h-8"
-                >
-                  Test AfroMessage
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
+function OnSwitch({ id, label, hint, checked, onChange }: { id: string; label: string; hint?: string; checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-md border p-3">
+      <div className="min-w-0">
+        <Label htmlFor={id}>{label}</Label>
+        {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+      </div>
+      <Switch id={id} checked={checked} onCheckedChange={onChange} />
+    </div>
+  );
+}
 
-        {/* 3. Student Academy API */}
-        <TabsContent value="academy" className="space-y-4">
-          <Card>
-            <CardHeader className="pb-3 flex flex-row items-center justify-between">
-              <div>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <GlobeIcon className="size-4 text-purple-600" /> Main Academy & Student Portal API
-                </CardTitle>
-                <CardDescription className="text-xs">
-                  Allows Customer Support agents to search for enrolled students and fetch parent phone numbers to call.
-                </CardDescription>
-              </div>
-              <div className="flex items-center gap-2">
-                <Label htmlFor="acad-enable" className="text-xs">Enable Integration</Label>
-                <Switch
-                  id="acad-enable"
-                  checked={f.academy.enabled}
-                  onCheckedChange={(v) => setF({ ...f, academy: { ...f.academy, enabled: v } })}
-                />
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-3 sm:grid-cols-3">
-                <div className="space-y-1 sm:col-span-2">
-                  <Label htmlFor="acad-url" className="text-xs">Base API URL</Label>
-                  <Input
-                    id="acad-url"
-                    value={f.academy.baseUrl}
-                    onChange={(e) => setF({ ...f, academy: { ...f.academy, baseUrl: e.target.value } })}
-                    placeholder="https://academy.myseed.com.et/api/v1"
-                    className="h-8 text-xs font-mono"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="acad-timeout" className="text-xs">Request Timeout (ms)</Label>
-                  <Input
-                    id="acad-timeout"
-                    type="number"
-                    value={f.academy.timeoutMs}
-                    onChange={(e) => setF({ ...f, academy: { ...f.academy, timeoutMs: Number(e.target.value) || 8000 } })}
-                    className="h-8 text-xs"
-                  />
-                </div>
-                <div className="space-y-1 sm:col-span-3">
-                  <Label htmlFor="acad-key" className="text-xs">API Secret Token (Bearer / Header)</Label>
-                  <Input
-                    id="acad-key"
-                    type="password"
-                    value={f.academy.apiKey}
-                    onChange={(e) => setF({ ...f, academy: { ...f.academy, apiKey: e.target.value } })}
-                    placeholder="sec_acad_live_..."
-                    className="h-8 text-xs font-mono"
-                  />
-                </div>
-              </div>
-              <div className="pt-2 flex items-center justify-end border-t">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={testing === "academy" || !f.academy.baseUrl}
-                  onClick={() => runTest("academy")}
-                  className="text-xs h-8"
-                >
-                  Test Academy Endpoint
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
+type Result = { ok: boolean; message: string; ms?: number } | null;
+function TestResult({ r, data }: { r: Result; data?: string }) {
+  if (!r) return null;
+  return (
+    <p
+      className={cn("flex items-start gap-2 rounded-md border px-3 py-2 text-sm", r.ok ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200" : "border-destructive/30 bg-destructive/10 text-destructive")}
+      data-api-result={r.ok ? "ok" : "failed"}
+      {...(data ? { [data]: "" } : {})}
+      role="status"
+    >
+      {r.ok ? <CheckCircle2Icon className="mt-0.5 size-4 shrink-0" /> : <XCircleIcon className="mt-0.5 size-4 shrink-0" />}
+      <span className="min-w-0 flex-1 break-words">{r.message}</span>
+      {r.ms !== undefined && r.ms > 0 && <span className="shrink-0 text-xs tabular-nums">{r.ms} ms</span>}
+    </p>
+  );
+}
 
-        {/* 4. External Receipts & Finance */}
-        <TabsContent value="finance" className="space-y-4">
-          <Card>
-            <CardHeader className="pb-3 flex flex-row items-center justify-between">
-              <div>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <ReceiptIcon className="size-4 text-amber-600" /> Finance Revenue & Receipts API
-                </CardTitle>
-                <CardDescription className="text-xs">
-                  Connects to external platform sales revenue and manual bank slip verification.
-                </CardDescription>
-              </div>
-              <div className="flex items-center gap-2">
-                <Label htmlFor="fin-enable" className="text-xs">Enable Integration</Label>
-                <Switch
-                  id="fin-enable"
-                  checked={f.finance.enabled}
-                  onCheckedChange={(v) => setF({ ...f, finance: { ...f.finance, enabled: v } })}
-                />
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-3 sm:grid-cols-3">
-                <div className="space-y-1 sm:col-span-2">
-                  <Label htmlFor="fin-url" className="text-xs">Finance API Endpoint</Label>
-                  <Input
-                    id="fin-url"
-                    value={f.finance.baseUrl}
-                    onChange={(e) => setF({ ...f, finance: { ...f.finance, baseUrl: e.target.value } })}
-                    placeholder="https://academy.myseed.com.et/api/v1/finance"
-                    className="h-8 text-xs font-mono"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="fin-timeout" className="text-xs">Timeout (ms)</Label>
-                  <Input
-                    id="fin-timeout"
-                    type="number"
-                    value={f.finance.timeoutMs}
-                    onChange={(e) => setF({ ...f, finance: { ...f.finance, timeoutMs: Number(e.target.value) || 8000 } })}
-                    className="h-8 text-xs"
-                  />
-                </div>
-                <div className="space-y-1 sm:col-span-3">
-                  <Label htmlFor="fin-key" className="text-xs">API Key</Label>
-                  <Input
-                    id="fin-key"
-                    type="password"
-                    value={f.finance.apiKey}
-                    onChange={(e) => setF({ ...f, finance: { ...f.finance, apiKey: e.target.value } })}
-                    placeholder="sec_fin_live_..."
-                    className="h-8 text-xs font-mono"
-                  />
-                </div>
-              </div>
-              <div className="pt-2 flex items-center justify-end border-t">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={testing === "finance" || !f.finance.baseUrl}
-                  onClick={() => runTest("finance")}
-                  className="text-xs h-8"
-                >
-                  Test Finance Endpoint
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
+function CopyRow({ label, value, hint }: { label: string; value: string; hint?: React.ReactNode }) {
+  return (
+    <div className="space-y-1.5 rounded-md border bg-muted/40 p-3">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-sm font-medium">{label}</span>
+        <Button size="sm" variant="ghost" onClick={() => copy(value)}>
+          <CopyIcon className="size-4" /> Copy
+        </Button>
+      </div>
+      <code className="block break-all rounded border bg-background px-2 py-1.5 font-mono text-xs">{value}</code>
+      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+    </div>
+  );
+}
 
-        {/* 5. Noor Ethiopia CMS (Legacy) */}
-        <TabsContent value="noor" className="space-y-4">
-          <Card>
-            <CardHeader className="pb-3 flex flex-row items-center justify-between">
-              <div>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <GlobeIcon className="size-4 text-indigo-600" /> Noor Ethiopia CMS (Legacy System)
-                </CardTitle>
-                <CardDescription className="text-xs">
-                  Automated scraping and live mirror of students, parents, plans, and invoices from <code className="text-foreground">cms.noorethiopia.com</code>.
-                </CardDescription>
-              </div>
-              <Button asChild size="sm" className="gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs">
-                <Link href="/legacy-cms">
-                  <ExternalLinkIcon className="size-3.5" /> Open Legacy CMS Viewer
-                </Link>
+function Busy({ on }: { on: boolean }) {
+  return on ? <Loader2Icon className="size-4 animate-spin" /> : null;
+}
+
+// ---------------------------------------------------------------------------
+// Myseed Verify
+// ---------------------------------------------------------------------------
+
+function VerifyPanel({ initial, origin, onChange }: { initial: PublicVerifyConfig; origin: string; onChange: () => void }) {
+  const [c, setC] = React.useState(initial);
+  const [key, setKey] = React.useState("");
+  const [secret, setSecret] = React.useState("");
+  const [busy, setBusy] = React.useState<string | null>(null);
+  const [result, setResult] = React.useState<Result>(null);
+  const [confirmReq, setConfirmReq] = React.useState(false);
+  const reload = async () => {
+    const r = await getMyseedVerifyConfigAction();
+    if (r.ok && r.data) setC(r.data);
+  };
+  const save = async (extra: { clearApiKey?: boolean; clearWebhookSecret?: boolean } = {}) => {
+    setBusy("save");
+    const r = await saveMyseedVerifyConfigAction({ enabled: c.enabled, baseUrl: c.baseUrl, environment: c.environment, autoFulfill: c.autoFulfill, apiKey: key || undefined, webhookSecret: secret || undefined, ...extra });
+    setBusy(null);
+    if (!r.ok) return toast.error(r.error);
+    setKey("");
+    setSecret("");
+    if (r.data) setC(r.data);
+    toast.success("Myseed Verify saved");
+    onChange();
+  };
+  const test = async () => {
+    setBusy("test");
+    const r = await testMyseedVerifyConnectionAction();
+    setBusy(null);
+    setResult(r.ok && r.data ? { ok: r.data.ok, message: r.data.message, ms: r.data.ms } : { ok: false, message: r.ok ? "No answer" : r.error });
+    await reload();
+    onChange();
+  };
+  const createRequest = async () => {
+    setBusy("req");
+    const r = await createVerifyPaymentRequestAction({ externalReference: `test_${Date.now()}`, currency: "ETB", items: [{ title: "Test payment request", minorAmount: "100", quantity: 1, category: "test" }] });
+    setBusy(null);
+    setResult(r.ok && r.data ? { ok: true, message: `Verify created request ${r.data.id} (${r.data.status}).${r.data.submissionUrl ? ` Payer page: ${r.data.submissionUrl}` : ""}` } : { ok: false, message: r.ok ? "No answer" : r.error });
+    onChange();
+  };
+  return (
+    <Card data-verify-card>
+      <CardHeader>
+        <CardTitle className="text-base">Settings</CardTitle>
+        <CardDescription>{c.lastTestedAt ? `Last tested ${when(c.lastTestedAt)}${c.lastError ? `: ${c.lastError}` : ", connected."}` : "Not tested yet."}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field id="verify-url" label="Address" hint="The Verify server, without /v1.">
+            <Input id="verify-url" value={c.baseUrl} onChange={(e) => setC({ ...c, baseUrl: e.target.value })} placeholder="https://verify.myseedops.tech" className="font-mono" />
+          </Field>
+          <Field id="verify-env" label="Environment" hint="Sandbox takes test transfers and slips; Production takes real money.">
+            <select id="verify-env" className={sel} value={c.environment} onChange={(e) => setC({ ...c, environment: e.target.value as PublicVerifyConfig["environment"] })}>
+              <option value="sandbox">Sandbox</option>
+              <option value="production">Production</option>
+              <option value="custom">Custom server</option>
+            </select>
+          </Field>
+          <KeyField id="verify-key" label="API key" value={key} onChange={setKey} saved={c.hasApiKey} readable={!c.keyUnreadable} placeholder="vfy_sec_..." onRemove={() => save({ clearApiKey: true })} />
+          <KeyField id="verify-secret" label="Webhook signing secret" value={secret} onChange={setSecret} saved={c.hasWebhookSecret} placeholder="whsec_..." onRemove={() => save({ clearWebhookSecret: true })} />
+        </div>
+        <CopyRow
+          label="Webhook address"
+          value={`${origin}/api/verify/webhook`}
+          hint={
+            <>
+              Add it in Verify under Webhook endpoints, for <code>payment.accepted</code>. Events are refused unless their X-Verify-Signature matches the signing secret{c.hasWebhookSecret ? "" : <strong className="text-destructive"> (none saved yet: every event is refused)</strong>}.
+            </>
+          }
+        />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <OnSwitch id="verify-enable" label="Use Myseed Verify" hint="Payment checks go through Verify" checked={c.enabled} onChange={(v) => setC({ ...c, enabled: v })} />
+          <OnSwitch id="verify-fulfill" label="Confirm fulfilment automatically" hint="Tell Verify the enrolment is done when its webhook arrives" checked={c.autoFulfill} onChange={(v) => setC({ ...c, autoFulfill: v })} />
+        </div>
+        <div className="flex flex-wrap items-center gap-2 border-t pt-4">
+          <Button onClick={() => save()} disabled={!!busy} data-api-save>
+            <Busy on={busy === "save"} /> Save
+          </Button>
+          <Button variant="outline" onClick={test} disabled={!!busy} data-api-test>
+            <Busy on={busy === "test"} /> Test connection
+          </Button>
+          <Button variant="outline" onClick={() => setConfirmReq(true)} disabled={!!busy || !c.enabled}>
+            <Busy on={busy === "req"} /> Create a test payment request
+          </Button>
+        </div>
+        <TestResult r={result} />
+      </CardContent>
+      <AlertDialog open={confirmReq} onOpenChange={setConfirmReq}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Create a test payment request?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Verify creates a real 1.00 ETB payment request in its {c.environment} environment. Nobody is charged unless someone pays it.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={createRequest}>Create it</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Chapa
+// ---------------------------------------------------------------------------
+
+const EMPTY_CHAPA = { id: "", name: "", secretKey: "", publicKey: "", webhookSecret: "", currency: "ETB", active: true };
+
+function ChapaPanel({ origin, onChange }: { origin: string; onChange: () => void }) {
+  const [accounts, setAccounts] = React.useState<ChapaAccount[] | null>(null);
+  const [balances, setBalances] = React.useState<ChapaBalance[]>([]);
+  const [txs, setTxs] = React.useState<ChapaTransaction[]>([]);
+  const [results, setResults] = React.useState<Record<string, Result>>({});
+  const [busy, setBusy] = React.useState<string | null>(null);
+  const [form, setForm] = React.useState<typeof EMPTY_CHAPA | null>(null);
+  const [del, setDel] = React.useState<ChapaAccount | "all" | null>(null);
+  const load = React.useCallback(async () => {
+    const [a, b, t] = await Promise.all([listChapaAccountsAction(), fetchChapaBalancesAction(), listChapaTransactionsAction()]);
+    setAccounts(a.ok ? a.data : []);
+    if (b.ok) setBalances(b.data);
+    if (t.ok) setTxs(t.data.slice(0, 8));
+    if (!a.ok) toast.error(a.error ?? "Could not load the Chapa businesses");
+  }, []);
+  React.useEffect(() => {
+    void load();
+  }, [load]);
+  const test = async (id: string) => {
+    setBusy(`test-${id}`);
+    const r = await testChapaAccountAction(id);
+    setBusy(null);
+    setResults((x) => ({ ...x, [id]: { ok: r.ok, message: r.message } }));
+    onChange();
+    void load();
+  };
+  const save = async () => {
+    if (!form) return;
+    if (!form.name.trim()) return toast.error("Give the business a name");
+    if (!form.id && !form.secretKey.trim()) return toast.error("Give the Chapa secret key");
+    setBusy("save");
+    const r = await saveChapaAccountAction({ id: form.id || undefined, name: form.name.trim(), secretKey: form.secretKey.trim() || undefined, publicKey: form.publicKey.trim() || undefined, webhookSecret: form.webhookSecret.trim() || undefined, currency: form.currency, active: form.active });
+    setBusy(null);
+    if (!r.ok) return toast.error(r.error ?? "Could not save");
+    toast.success(`${form.name} saved`);
+    setForm(null);
+    void load();
+    onChange();
+  };
+  const remove = async () => {
+    const target = del;
+    setDel(null);
+    if (!target) return;
+    const r = target === "all" ? await clearAllChapaAccountsAction() : await deleteChapaAccountAction(target.id);
+    if (!r.ok) return toast.error(r.error ?? "Could not remove");
+    toast.success(target === "all" ? "All Chapa businesses removed" : `${target.name} removed`);
+    void load();
+    onChange();
+  };
+  const bal = (id: string) => balances.find((b) => b.accountId === id);
+  const mode = (a: ChapaAccount) => (a.publicKey?.startsWith("CHAPUBK_TEST") ? "Test" : a.publicKey ? "Live" : null);
+
+  return (
+    <>
+      <Card data-chapa-card>
+        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
+          <div className="min-w-0 space-y-1">
+            <CardTitle className="text-base">Businesses</CardTitle>
+            <CardDescription>Each business uses its own Chapa keys. Checking a business asks Chapa for its balance (or its bank list when balances are not open to the key).</CardDescription>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button asChild size="sm" variant="outline">
+              <Link href="/finance/chapa">
+                <ExternalLinkIcon className="size-4" /> Chapa in Finance
+              </Link>
+            </Button>
+            <Button size="sm" onClick={() => setForm({ ...EMPTY_CHAPA })} data-chapa-add>
+              <PlusIcon className="size-4" /> Add business
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {accounts === null ? (
+            <p className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2Icon className="size-4 animate-spin" /> Loading…
+            </p>
+          ) : accounts.length === 0 ? (
+            <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">No business yet. Add one with its Chapa secret key from the Chapa dashboard (Settings, API).</p>
+          ) : (
+            <ul className="divide-y rounded-md border">
+              {accounts.map((a) => {
+                const b = bal(a.id);
+                return (
+                  <li key={a.id} className="space-y-2 p-3" data-chapa-account={a.id}>
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="flex flex-wrap items-center gap-2 font-medium">
+                          {a.name}
+                          {mode(a) && <span className="rounded-full border px-2 py-0.5 text-xs font-normal text-muted-foreground">{mode(a)}</span>}
+                          {!a.active && <span className="rounded-full border px-2 py-0.5 text-xs font-normal text-muted-foreground">Off</span>}
+                        </p>
+                        <p className="text-sm tabular-nums text-muted-foreground">
+                          {b ? (b.status === "error" ? <span className="text-destructive">{b.error ?? "Balance could not be read"}</span> : `${b.availableBalance.toLocaleString()} ${b.currency} available, ${b.ledgerBalance.toLocaleString()} ledger`) : `${a.currency}, balance not read`}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        <Button size="sm" variant="outline" disabled={busy === `test-${a.id}`} onClick={() => test(a.id)} data-chapa-test>
+                          <Busy on={busy === `test-${a.id}`} /> Check
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => setForm({ id: a.id, name: a.name, secretKey: "", publicKey: a.publicKey ?? "", webhookSecret: "", currency: a.currency, active: a.active })} aria-label={`Edit ${a.name}`}>
+                          <PencilIcon className="size-4" />
+                        </Button>
+                        <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => setDel(a)} aria-label={`Remove ${a.name}`}>
+                          <Trash2Icon className="size-4" />
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                      <span>Webhook:</span>
+                      <code className="min-w-0 break-all rounded border bg-muted/40 px-1.5 py-0.5">{`${origin}/api/finance/chapa/webhook/${a.id}`}</code>
+                      <button type="button" className="underline underline-offset-2 hover:text-foreground" onClick={() => copy(`${origin}/api/finance/chapa/webhook/${a.id}`)}>
+                        Copy
+                      </button>
+                      {!a.hasWebhookSecret && <span className="text-amber-700 dark:text-amber-300">No webhook secret saved</span>}
+                    </div>
+                    <TestResult r={results[a.id] ?? null} />
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          {!!accounts?.length && (
+            <div className="flex justify-end">
+              <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => setDel("all")}>
+                Remove all businesses
               </Button>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="rounded-lg border bg-muted/20 p-4 space-y-2 text-xs">
-                <div className="flex justify-between border-b pb-2">
-                  <span className="font-semibold text-muted-foreground">Target URL:</span>
-                  <span className="font-mono text-foreground">https://cms.noorethiopia.com</span>
-                </div>
-                <div className="flex justify-between border-b pb-2">
-                  <span className="font-semibold text-muted-foreground">Scraped Subpages:</span>
-                  <span className="text-right">Students, Parents, Subscription Plans, Histories, Invoices, Subscriptions</span>
-                </div>
-                <div className="flex justify-between border-b pb-2">
-                  <span className="font-semibold text-muted-foreground">Auto-Sync Status:</span>
-                  <span className="text-emerald-600 font-semibold">Enabled (Every 30 Minutes)</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="font-semibold text-muted-foreground">Customer Support & Finance Access:</span>
-                  <span className="text-emerald-600 font-semibold">Active & Searchable</span>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
-      {/* Add / Edit Chapa Account Modal */}
-      <Dialog open={chapaModalOpen} onOpenChange={setChapaModalOpen}>
+      {txs.length > 0 && (
+        <Card>
+          <CardHeader className="flex flex-row items-start justify-between gap-2">
+            <div>
+              <CardTitle className="text-base">Latest transactions</CardTitle>
+              <CardDescription>Straight from Chapa, all businesses.</CardDescription>
+            </div>
+            <Button asChild size="sm" variant="outline">
+              <Link href="/finance/chapa?tab=transactions">All transactions</Link>
+            </Button>
+          </CardHeader>
+          <CardContent>
+            <ul className="divide-y rounded-md border text-sm">
+              {txs.map((t) => (
+                <li key={t.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+                  <div className="min-w-0">
+                    <p className="truncate font-medium">{t.customerName || t.customerEmail || t.txRef}</p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {t.accountName} · {t.paymentMethod} · {when(t.createdAt)} · <span className="font-mono">{t.txRef}</span>
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 tabular-nums">
+                    <span className="font-medium">
+                      {t.amount.toLocaleString()} {t.currency}
+                    </span>
+                    <span className={cn("rounded-full border px-2 py-0.5 text-xs", t.status === "success" ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200" : t.status === "failed" ? "border-destructive/30 bg-destructive/10 text-destructive" : "border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-200")}>
+                      {t.status === "success" ? "Paid" : t.status === "failed" ? "Failed" : "Pending"}
+                    </span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
+
+      <Dialog open={!!form} onOpenChange={(o) => !o && setForm(null)}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-base">
-              <CreditCardIcon className="size-4 text-emerald-600" /> {chapaForm.id ? "Edit Chapa Business Account" : "Add Chapa Business Account"}
-            </DialogTitle>
-            <DialogDescription className="text-xs">
-              {chapaForm.id ? "Update business account credentials and settings." : "Add a distinct business sub-account (e.g. \"MySeed Subscriptions\", \"MySeed Donations\") with its own API keys."}
-            </DialogDescription>
+            <DialogTitle>{form?.id ? `Edit ${form.name}` : "Add a Chapa business"}</DialogTitle>
+            <DialogDescription>Keys come from the Chapa dashboard, Settings, API. Secret keys are stored encrypted and never shown again.</DialogDescription>
           </DialogHeader>
-
-          <div className="space-y-3 text-xs">
-            <div className="space-y-1">
-              <Label htmlFor="acc-name">Business / Account Name *</Label>
-              <Input
-                id="acc-name"
-                value={chapaForm.name}
-                onChange={(e) => setChapaForm({ ...chapaForm, name: e.target.value })}
-                placeholder="e.g. MySeed Subscriptions or MySeed Donations"
-                className="h-8 text-xs"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <Label htmlFor="acc-sec">Chapa Secret Key (CHASECK_...) {chapaForm.id ? "(Optional if unchanged)" : "*"}</Label>
-              <Input
-                id="acc-sec"
-                type="password"
-                value={chapaForm.secretKey}
-                onChange={(e) => setChapaForm({ ...chapaForm, secretKey: e.target.value })}
-                placeholder={chapaForm.id ? "•••••••• (Leave blank to keep existing key)" : "CHASECK_LIVE-... or CHASECK_TEST-..."}
-                className="h-8 text-xs font-mono"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <Label htmlFor="acc-pub">Chapa Public Key (CHAPUBK_...)</Label>
-              <Input
-                id="acc-pub"
-                value={chapaForm.publicKey}
-                onChange={(e) => setChapaForm({ ...chapaForm, publicKey: e.target.value })}
-                placeholder="CHAPUBK_LIVE-... or CHAPUBK_TEST-..."
-                className="h-8 text-xs font-mono"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1">
-                <Label htmlFor="acc-curr">Default Currency</Label>
-                <Input
-                  id="acc-curr"
-                  value={chapaForm.currency}
-                  onChange={(e) => setChapaForm({ ...chapaForm, currency: e.target.value.toUpperCase() })}
-                  placeholder="ETB"
-                  className="h-8 text-xs"
-                />
-              </div>
-              <div className="flex items-center justify-between border rounded-lg px-3 mt-5">
-                <Label htmlFor="acc-act" className="cursor-pointer">Active</Label>
-                <Switch
-                  id="acc-act"
-                  checked={chapaForm.active}
-                  onCheckedChange={(val) => setChapaForm({ ...chapaForm, active: val })}
-                />
+          {form && (
+            <div className="space-y-3">
+              <Field id="acc-name" label="Business name">
+                <Input id="acc-name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Myseed Subscriptions" />
+              </Field>
+              <KeyField id="acc-sec" label="Secret key" value={form.secretKey} onChange={(v) => setForm({ ...form, secretKey: v })} saved={!!form.id} placeholder="CHASECK_TEST-… or CHASECK-…" />
+              <Field id="acc-pub" label="Public key">
+                <Input id="acc-pub" value={form.publicKey} onChange={(e) => setForm({ ...form, publicKey: e.target.value })} placeholder="CHAPUBK_TEST-… or CHAPUBK-…" className="font-mono" />
+              </Field>
+              <KeyField id="acc-hook" label="Webhook secret hash" value={form.webhookSecret} onChange={(v) => setForm({ ...form, webhookSecret: v })} saved={!!form.id && !!accounts?.find((a) => a.id === form.id)?.hasWebhookSecret} placeholder="The secret hash set in Chapa, Webhooks" />
+              <div className="grid grid-cols-2 gap-3">
+                <Field id="acc-curr" label="Currency">
+                  <select id="acc-curr" className={sel} value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value })}>
+                    <option value="ETB">ETB</option>
+                    <option value="USD">USD</option>
+                  </select>
+                </Field>
+                <div className="flex items-end">
+                  <OnSwitch id="acc-act" label="Active" checked={form.active} onChange={(v) => setForm({ ...form, active: v })} />
+                </div>
               </div>
             </div>
-          </div>
-
-          <DialogFooter className="gap-2">
-            <Button variant="outline" size="sm" onClick={() => setChapaModalOpen(false)}>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setForm(null)}>
               Cancel
             </Button>
-            <Button size="sm" onClick={handleSaveChapaAccount} disabled={busy}>
-              Save Business Account
+            <Button onClick={save} disabled={busy === "save"} data-chapa-save>
+              <Busy on={busy === "save"} /> Save
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+
+      <AlertDialog open={!!del} onOpenChange={(o) => !o && setDel(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{del === "all" ? "Remove every Chapa business?" : `Remove ${(del as ChapaAccount | null)?.name ?? ""}?`}</AlertDialogTitle>
+            <AlertDialogDescription>Its keys are deleted from Myseed and payments to it are no longer checked here. Chapa itself is not changed.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={remove} className="bg-destructive text-white hover:bg-destructive/90">
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// SMS: i-Conic (its request shape comes from the i-Conic account) and the older AfroMessage token check
+// ---------------------------------------------------------------------------
+
+type Iconic = PublicExternalApiConfig["iconicSms"];
+
+function SmsPanel({ config, onChange }: { config: PublicExternalApiConfig; onChange: () => void }) {
+  const router = useRouter();
+  const [i, setIState] = React.useState<Iconic>(config.iconicSms);
+  const [am, setAm] = React.useState(config.sms);
+  const [iKey, setIKey] = React.useState("");
+  const [amKey, setAmKey] = React.useState("");
+  const [phone, setPhone] = React.useState("");
+  const [busy, setBusy] = React.useState<string | null>(null);
+  const [iResult, setIResult] = React.useState<Result>(null);
+  const [amResult, setAmResult] = React.useState<Result>(null);
+  const [balance, setBalance] = React.useState<{ balance: number; currency: string } | null>(null);
+  const setI = (p: Partial<Iconic>) => setIState((c) => ({ ...c, ...p }));
+  const saveIconic = async (clear = false) => {
+    setBusy("i-save");
+    const { apiKey: _k, ...rest } = i;
+    const r = await saveExternalApiConfigAction({ iconicSms: { ...rest, ...(iKey ? { apiKey: iKey } : {}) }, ...(clear ? { clearKeys: ["iconicSms"] } : {}) });
+    setBusy(null);
+    if (!r.ok) return toast.error(r.error);
+    setIKey("");
+    toast.success("i-Conic saved");
+    onChange();
+  };
+  const saveAm = async (clear = false) => {
+    setBusy("am-save");
+    const { apiKey: _k, ...rest } = am;
+    const r = await saveExternalApiConfigAction({ sms: { ...rest, ...(amKey ? { apiKey: amKey } : {}) }, ...(clear ? { clearKeys: ["sms"] } : {}) });
+    setBusy(null);
+    if (!r.ok) return toast.error(r.error);
+    setAmKey("");
+    toast.success("AfroMessage saved");
+    onChange();
+  };
+  const test = async (service: "iconicSms" | "sms") => {
+    setBusy(`${service}-test`);
+    const r = await testExternalApiAction(service, service === "iconicSms" ? phone.trim() || null : null);
+    setBusy(null);
+    const res = r.ok && r.data ? { ok: r.data.ok, message: r.data.message, ms: r.data.ms } : { ok: false, message: r.ok ? "No answer" : r.error };
+    (service === "iconicSms" ? setIResult : setAmResult)(res);
+    onChange();
+  };
+  const checkBalance = async () => {
+    setBusy("i-bal");
+    const r = await fetchIconicSmsStatusAction();
+    setBusy(null);
+    if (r.ok && r.data) setBalance({ balance: r.data.balance, currency: r.data.currency });
+    else setIResult({ ok: false, message: r.ok ? "No answer" : r.error });
+    onChange();
+  };
+  const k = config.keys;
+
+  return (
+    <>
+      <Card>
+        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
+          <div className="min-w-0 space-y-1">
+            <CardTitle className="text-base">Sending, history and costs</CardTitle>
+            <CardDescription>Compose, delivery reports, prices and the order of SMS connections (AfroMessage, Africa&apos;s Talking, Twilio, i-Conic) are in Integrations, SMS.</CardDescription>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button asChild size="sm" variant="outline">
+              <Link href="/admin/integrations?tab=sms&sms=history">History</Link>
+            </Button>
+            <Button asChild size="sm" variant="outline">
+              <Link href="/admin/integrations?tab=sms&sms=setup">SMS connections</Link>
+            </Button>
+          </div>
+        </CardHeader>
+      </Card>
+
+      <Card data-iconic-card>
+        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0 space-y-1">
+            <CardTitle className="text-base">i-Conic SMS</CardTitle>
+            <CardDescription>i-Conic does not publish its API, so copy the address, send path, how the key is sent and the field names from your i-Conic account&apos;s API page. Saving makes i-Conic an SMS connection used for routing, retries and fallback.</CardDescription>
+          </div>
+          <div className="flex items-center gap-2">
+            <Label htmlFor="iconic-enable">On</Label>
+            <Switch id="iconic-enable" checked={i.enabled} onCheckedChange={(v) => setI({ enabled: v })} />
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-3">
+            <Field id="iconic-url" label="API address" className="sm:col-span-2">
+              <Input id="iconic-url" value={i.baseUrl} onChange={(e) => setI({ baseUrl: e.target.value })} placeholder="https://… (from your i-Conic account)" className="font-mono" />
+            </Field>
+            <Field id="iconic-sender" label="Sender ID">
+              <Input id="iconic-sender" value={i.senderId} onChange={(e) => setI({ senderId: e.target.value })} placeholder="MYSEED" />
+            </Field>
+            <KeyField id="iconic-key" label="API key or token" className="sm:col-span-3" value={iKey} onChange={setIKey} saved={k.iconicSms.saved} readable={k.iconicSms.readable} onRemove={() => saveIconic(true)} />
+            <Field id="iconic-path" label="Send path">
+              <Input id="iconic-path" value={i.sendPath} onChange={(e) => setI({ sendPath: e.target.value })} placeholder="/send" className="font-mono" />
+            </Field>
+            <Field id="iconic-method" label="Method">
+              <select id="iconic-method" className={sel} value={i.method} onChange={(e) => setI({ method: e.target.value as Iconic["method"] })}>
+                <option value="POST">POST</option>
+                <option value="GET">GET</option>
+              </select>
+            </Field>
+            <Field id="iconic-format" label="Fields sent as">
+              <select id="iconic-format" className={sel} value={i.format} onChange={(e) => setI({ format: e.target.value as Iconic["format"] })}>
+                <option value="json">JSON body</option>
+                <option value="form">Form body</option>
+                <option value="query">In the address (query)</option>
+              </select>
+            </Field>
+            <Field id="iconic-auth" label="Key sent as">
+              <select id="iconic-auth" className={sel} value={i.authStyle} onChange={(e) => setI({ authStyle: e.target.value as Iconic["authStyle"] })}>
+                <option value="bearer">Authorization: Bearer</option>
+                <option value="header">A header</option>
+                <option value="query">In the address</option>
+              </select>
+            </Field>
+            {i.authStyle !== "bearer" && (
+              <Field id="iconic-auth-name" label={i.authStyle === "header" ? "Header name" : "Address field name"}>
+                <Input id="iconic-auth-name" value={i.authName} onChange={(e) => setI({ authName: e.target.value })} placeholder={i.authStyle === "header" ? "KEY" : "token"} className="font-mono" />
+              </Field>
+            )}
+            <Field id="iconic-to" label="Phone field">
+              <Input id="iconic-to" value={i.toField} onChange={(e) => setI({ toField: e.target.value })} placeholder="to" className="font-mono" />
+            </Field>
+            <Field id="iconic-msg" label="Message field">
+              <Input id="iconic-msg" value={i.messageField} onChange={(e) => setI({ messageField: e.target.value })} placeholder="message" className="font-mono" />
+            </Field>
+            <Field id="iconic-from" label="Sender field" hint="Empty: the sender is not sent.">
+              <Input id="iconic-from" value={i.senderField} onChange={(e) => setI({ senderField: e.target.value })} placeholder="from" className="font-mono" />
+            </Field>
+            <Field id="iconic-bal" label="Balance path (optional)" className="sm:col-span-2">
+              <Input id="iconic-bal" value={i.balancePath} onChange={(e) => setI({ balancePath: e.target.value })} placeholder="/balance" className="font-mono" />
+            </Field>
+            <Field id="iconic-bal-field" label="Balance field in the answer">
+              <Input id="iconic-bal-field" value={i.balanceField} onChange={(e) => setI({ balanceField: e.target.value })} placeholder="balance or data.balance" className="font-mono" />
+            </Field>
+          </div>
+          <div className="flex flex-wrap items-end gap-2 border-t pt-4">
+            <Button onClick={() => saveIconic()} disabled={!!busy} data-api-save>
+              <Busy on={busy === "i-save"} /> Save
+            </Button>
+            <Field id="iconic-test-phone" label="Test phone (sends one SMS)">
+              <Input id="iconic-test-phone" inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+2519…" className="w-44" />
+            </Field>
+            <Button variant="outline" disabled={!!busy} onClick={() => test("iconicSms")} data-iconic-test>
+              <Busy on={busy === "iconicSms-test"} /> {phone.trim() ? "Send test SMS" : "Test connection"}
+            </Button>
+            <Button variant="outline" disabled={!!busy} onClick={checkBalance}>
+              <Busy on={busy === "i-bal"} /> Check balance
+            </Button>
+            {balance && (
+              <span className="rounded-full border px-2.5 py-1 text-sm font-medium tabular-nums" data-iconic-balance>
+                {balance.balance.toLocaleString()} {balance.currency}
+              </span>
+            )}
+          </div>
+          <TestResult r={iResult} data="data-iconic-result" />
+          <p className="text-xs text-muted-foreground">Save first, then test. A test SMS goes through i-Conic only (no fallback) and appears in the SMS history.</p>
+        </CardContent>
+      </Card>
+
+      <Card data-afromessage-card>
+        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0 space-y-1">
+            <CardTitle className="text-base">AfroMessage token check</CardTitle>
+            <CardDescription>
+              Checks that an AfroMessage token is accepted, without sending anything. To send through AfroMessage, add it as an SMS connection.{" "}
+              <button type="button" className="underline underline-offset-2" onClick={() => router.push("/admin/integrations?tab=sms&sms=setup")}>
+                Open SMS connections
+              </button>
+            </CardDescription>
+          </div>
+          <div className="flex items-center gap-2">
+            <Label htmlFor="sms-enable">On</Label>
+            <Switch id="sms-enable" checked={am.enabled} onCheckedChange={(v) => setAm({ ...am, enabled: v })} />
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-3">
+            <Field id="sms-url" label="Address" className="sm:col-span-2">
+              <Input id="sms-url" value={am.baseUrl} onChange={(e) => setAm({ ...am, baseUrl: e.target.value })} placeholder="https://api.afromessage.com/api" className="font-mono" />
+            </Field>
+            <Field id="sms-sender" label="Sender name">
+              <Input id="sms-sender" value={am.senderId} onChange={(e) => setAm({ ...am, senderId: e.target.value })} placeholder="MySeed" />
+            </Field>
+            <KeyField id="sms-key" label="Token" className="sm:col-span-3" value={amKey} onChange={setAmKey} saved={k.sms.saved} readable={k.sms.readable} onRemove={() => saveAm(true)} />
+          </div>
+          <div className="flex flex-wrap gap-2 border-t pt-4">
+            <Button onClick={() => saveAm()} disabled={!!busy}>
+              <Busy on={busy === "am-save"} /> Save
+            </Button>
+            <Button variant="outline" onClick={() => test("sms")} disabled={!!busy || !am.baseUrl}>
+              <Busy on={busy === "sms-test"} /> Check token
+            </Button>
+          </div>
+          <TestResult r={amResult} />
+        </CardContent>
+      </Card>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Academy and Finance APIs
+// ---------------------------------------------------------------------------
+
+function ServicePanel({ service, config, onChange }: { service: "academy" | "finance"; config: PublicExternalApiConfig; onChange: () => void }) {
+  const [c, setC] = React.useState(config[service]);
+  const [key, setKey] = React.useState("");
+  const [busy, setBusy] = React.useState<string | null>(null);
+  const [result, setResult] = React.useState<Result>(null);
+  const name = service === "academy" ? "Academy" : "Finance";
+  const save = async (clear = false) => {
+    setBusy("save");
+    const { apiKey: _k, ...rest } = c;
+    const r = await saveExternalApiConfigAction({ [service]: { ...rest, ...(key ? { apiKey: key } : {}) }, ...(clear ? { clearKeys: [service] } : {}) });
+    setBusy(null);
+    if (!r.ok) return toast.error(r.error);
+    setKey("");
+    toast.success(`${name} API saved`);
+    onChange();
+  };
+  const test = async () => {
+    setBusy("test");
+    const r = await testExternalApiAction(service);
+    setBusy(null);
+    setResult(r.ok && r.data ? { ok: r.data.ok, message: r.data.message, ms: r.data.ms } : { ok: false, message: r.ok ? "No answer" : r.error });
+    onChange();
+  };
+  return (
+    <Card data-service-card={service}>
+      <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 space-y-1">
+          <CardTitle className="text-base">Settings</CardTitle>
+          <CardDescription>The test asks {"{address}"}/health with the key as a Bearer token and in X-API-Key.</CardDescription>
+        </div>
+        <div className="flex items-center gap-2">
+          <Label htmlFor={`${service}-enable`}>On</Label>
+          <Switch id={`${service}-enable`} checked={c.enabled} onCheckedChange={(v) => setC({ ...c, enabled: v })} />
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-4 sm:grid-cols-3">
+          <Field id={`${service}-url`} label="Address" className="sm:col-span-2">
+            <Input id={`${service}-url`} value={c.baseUrl} onChange={(e) => setC({ ...c, baseUrl: e.target.value })} placeholder={service === "academy" ? "https://academy.myseed.com.et/api/v1" : "https://academy.myseed.com.et/api/v1/finance"} className="font-mono" />
+          </Field>
+          <Field id={`${service}-timeout`} label="Wait at most (seconds)">
+            <Input id={`${service}-timeout`} type="number" min={1} max={60} value={Math.round(c.timeoutMs / 1000)} onChange={(e) => setC({ ...c, timeoutMs: (Number(e.target.value) || 10) * 1000 })} />
+          </Field>
+          <KeyField id={`${service}-key`} label="API key" className="sm:col-span-3" value={key} onChange={setKey} saved={config.keys[service].saved} readable={config.keys[service].readable} onRemove={() => save(true)} />
+        </div>
+        <div className="flex flex-wrap gap-2 border-t pt-4">
+          <Button onClick={() => save()} disabled={!!busy} data-api-save>
+            <Busy on={busy === "save"} /> Save
+          </Button>
+          <Button variant="outline" onClick={test} disabled={!!busy || !c.baseUrl} data-api-test>
+            <Busy on={busy === "test"} /> Test connection
+          </Button>
+        </div>
+        <TestResult r={result} />
+      </CardContent>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Noor
+// ---------------------------------------------------------------------------
+
+function NoorPanel({ stats, onChange }: { stats: Props["noor"]; onChange: () => void }) {
+  const [busy, setBusy] = React.useState(false);
+  const [result, setResult] = React.useState<Result>(null);
+  const check = async () => {
+    setBusy(true);
+    const r = await checkLegacyCmsAuthAction();
+    setBusy(false);
+    setResult({ ok: r.ok, message: r.ok ? `Signed in to Noor as ${r.username}.` : r.message, ms: r.ms });
+    onChange();
+  };
+  const rows: [string, number][] = [
+    ["Students", stats.students],
+    ["Parents", stats.parents],
+    ["Plans", stats.plans],
+    ["Active subscriptions", stats.subscriptions],
+    ["Invoices", stats.invoices],
+  ];
+  return (
+    <Card data-noor-card>
+      <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0 space-y-1">
+          <CardTitle className="text-base">Stored copy</CardTitle>
+          <CardDescription>{stats.lastSyncedAt ? `Last synced ${when(stats.lastSyncedAt)}.` : "Not synced yet."} The login, sync and who sees which tables are set in Legacy CMS.</CardDescription>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button asChild size="sm" variant="outline">
+            <Link href="/admin?tab=legacy-cms">Noor login and access</Link>
+          </Button>
+          <Button asChild size="sm" variant="outline">
+            <Link href="/legacy-cms">Open Legacy CMS</Link>
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <dl className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+          {rows.map(([l, n]) => (
+            <div key={l} className="rounded-md border p-3">
+              <dt className="text-xs text-muted-foreground">{l}</dt>
+              <dd className="text-lg font-semibold tabular-nums">{n.toLocaleString()}</dd>
+            </div>
+          ))}
+        </dl>
+        <div className="flex flex-wrap gap-2 border-t pt-4">
+          <Button variant="outline" onClick={check} disabled={busy} data-api-test>
+            <Busy on={busy} /> Check the Noor login
+          </Button>
+        </div>
+        <TestResult r={result} />
+      </CardContent>
+    </Card>
   );
 }

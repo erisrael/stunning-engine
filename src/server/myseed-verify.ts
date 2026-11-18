@@ -2,6 +2,8 @@ import crypto from "crypto";
 import { get, run, nowIso } from "./db";
 import { WorkflowError, audit } from "./workflow";
 import { can, type AppUser } from "./users";
+import { seal, unseal } from "./secrets";
+import { trackedFetch } from "./call-monitor";
 
 export type MyseedVerifyConfig = {
   enabled: boolean;
@@ -56,50 +58,85 @@ const DEFAULT_CONFIG: MyseedVerifyConfig = {
   lastError: null,
 };
 
-export async function getMyseedVerifyConfig(): Promise<MyseedVerifyConfig> {
+// Keys are kept sealed (encrypted) in settings. Configs saved before that held them in plain text; reading still
+// accepts those and the next save seals them.
+type StoredVerify = Partial<MyseedVerifyConfig> & { apiKeyEnc?: string; webhookSecretEnc?: string };
+
+async function storedVerify(): Promise<StoredVerify> {
   const row = await get<{ value: string }>("SELECT value FROM settings WHERE key = 'cfg.myseed_verify'");
-  if (!row?.value) return { ...DEFAULT_CONFIG };
+  if (!row?.value) return {};
   try {
-    const parsed = JSON.parse(row.value);
-    return { ...DEFAULT_CONFIG, ...parsed };
+    return JSON.parse(row.value) as StoredVerify;
   } catch {
-    return { ...DEFAULT_CONFIG };
+    return {};
   }
 }
 
-export async function saveMyseedVerifyConfig(
-  user: AppUser,
-  input: Partial<MyseedVerifyConfig>
-): Promise<MyseedVerifyConfig> {
+export async function getMyseedVerifyConfig(): Promise<MyseedVerifyConfig> {
+  const { apiKeyEnc, webhookSecretEnc, ...s } = await storedVerify();
+  return {
+    ...DEFAULT_CONFIG,
+    ...s,
+    apiKey: apiKeyEnc ? ((await unseal(apiKeyEnc)) ?? "") : (s.apiKey ?? ""),
+    webhookSecret: webhookSecretEnc ? ((await unseal(webhookSecretEnc)) ?? "") : (s.webhookSecret ?? ""),
+  };
+}
+
+// What the browser sees: never the key or the secret, only whether they are saved and readable.
+export type PublicVerifyConfig = Omit<MyseedVerifyConfig, "apiKey" | "webhookSecret"> & { hasApiKey: boolean; hasWebhookSecret: boolean; keyUnreadable: boolean };
+export async function publicVerifyConfig(): Promise<PublicVerifyConfig> {
+  const raw = await storedVerify();
+  const { apiKey, webhookSecret, ...c } = await getMyseedVerifyConfig();
+  const hasApiKey = !!(raw.apiKeyEnc || raw.apiKey);
+  const hasWebhookSecret = !!(raw.webhookSecretEnc || raw.webhookSecret);
+  return { ...c, hasApiKey, hasWebhookSecret, keyUnreadable: (hasApiKey && !apiKey) || (hasWebhookSecret && !webhookSecret) };
+}
+
+export type VerifyConfigInput = Partial<Omit<MyseedVerifyConfig, "status" | "lastTestedAt" | "lastError">> & { clearApiKey?: boolean; clearWebhookSecret?: boolean };
+
+export async function saveMyseedVerifyConfig(user: AppUser, input: VerifyConfigInput): Promise<PublicVerifyConfig> {
   if (!can(user, "users.manage") && !can(user, "data.manage")) {
     throw new WorkflowError("FORBIDDEN", "Only administrators can configure verification platforms.");
   }
-
+  const raw = await storedVerify();
   const current = await getMyseedVerifyConfig();
-  const updated: MyseedVerifyConfig = {
-    ...current,
-    ...input,
-    baseUrl: (input.baseUrl ?? current.baseUrl).trim().replace(/\/+$/, ""),
-    apiKey: input.apiKey !== undefined ? input.apiKey.trim() : current.apiKey,
-    webhookSecret: input.webhookSecret !== undefined ? input.webhookSecret.trim() : current.webhookSecret,
+  // A blank (or still masked) key keeps the saved one; clearing is its own choice.
+  const given = (v: unknown) => (typeof v === "string" && v.trim() && !v.includes("•") ? v.trim() : null);
+  const key = given(input.apiKey);
+  const secret = given(input.webhookSecret);
+  const baseUrl = String(input.baseUrl ?? current.baseUrl).trim().replace(/\/+$/, "");
+  if (baseUrl && !/^https?:\/\/[^\s/]+/i.test(baseUrl)) throw new WorkflowError("VALIDATION", "Give the Verify address as https://...");
+  const environment = (["production", "sandbox", "custom"] as const).includes(input.environment as never) ? input.environment! : current.environment;
+  const stored: StoredVerify = {
+    enabled: input.enabled ?? current.enabled,
+    baseUrl,
+    environment,
+    autoFulfill: input.autoFulfill ?? current.autoFulfill,
+    status: key || baseUrl !== current.baseUrl ? "unconfigured" : current.status,
+    lastTestedAt: current.lastTestedAt ?? null,
+    lastError: current.lastError ?? null,
+    apiKeyEnc: key ? await seal(key) : input.clearApiKey ? undefined : raw.apiKeyEnc ?? (raw.apiKey ? await seal(raw.apiKey) : undefined),
+    webhookSecretEnc: secret ? await seal(secret) : input.clearWebhookSecret ? undefined : raw.webhookSecretEnc ?? (raw.webhookSecret ? await seal(raw.webhookSecret) : undefined),
   };
+  if (stored.enabled && !stored.apiKeyEnc) throw new WorkflowError("VALIDATION", "Give the Verify API key before switching it on.");
 
   await run(
     "INSERT INTO settings (key, value, updated_at, updated_by) VALUES ('cfg.myseed_verify', ?, ?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by",
-    JSON.stringify(updated),
+    JSON.stringify(stored),
     nowIso(),
     user.id
   );
 
+  const changed = [key && "API key", secret && "webhook secret", input.clearApiKey && "API key removed", input.clearWebhookSecret && "webhook secret removed"].filter(Boolean).join(", ");
   await audit(
     { actor: user },
     {
       action: "settings.myseed_verify",
-      summary: `${user.name} updated Myseed Verify configuration (${updated.environment}, enabled=${updated.enabled})`,
+      summary: `${user.name} updated Myseed Verify (${environment}, ${stored.enabled ? "on" : "off"}${changed ? `; ${changed}` : ""})`,
     }
   );
 
-  return updated;
+  return publicVerifyConfig();
 }
 
 export async function testMyseedVerifyConnection(): Promise<{
@@ -119,7 +156,7 @@ export async function testMyseedVerifyConnection(): Promise<{
 
   const start = Date.now();
   try {
-    const res = await fetch(`${config.baseUrl}/v1/health`, {
+    const res = await trackedFetch("verify", `${config.baseUrl}/v1/health`, {
       method: "GET",
       headers: {
         Authorization: `Bearer ${config.apiKey}`,
@@ -153,18 +190,8 @@ export async function testMyseedVerifyConnection(): Promise<{
 
 async function patchVerifyStatus(status: "connected" | "error", lastError: string | null) {
   try {
-    const current = await getMyseedVerifyConfig();
-    const updated = {
-      ...current,
-      status,
-      lastTestedAt: nowIso(),
-      lastError,
-    };
-    await run(
-      "UPDATE settings SET value = ?, updated_at = ? WHERE key = 'cfg.myseed_verify'",
-      JSON.stringify(updated),
-      nowIso()
-    );
+    const updated = { ...(await storedVerify()), status, lastTestedAt: nowIso(), lastError };
+    await run("UPDATE settings SET value = ?, updated_at = ? WHERE key = 'cfg.myseed_verify'", JSON.stringify(updated), nowIso());
   } catch {}
 }
 
@@ -194,7 +221,7 @@ export async function createVerifyPaymentRequest(
     expires_in_minutes: input.expiresInMinutes || 120,
   };
 
-  const res = await fetch(`${config.baseUrl}/v1/payment-requests`, {
+  const res = await trackedFetch("verify", `${config.baseUrl}/v1/payment-requests`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -233,7 +260,7 @@ export async function getVerifyPaymentRequest(requestId: string): Promise<any> {
     throw new WorkflowError("REQUIREMENTS_MISSING", "Myseed Verify credentials missing.");
   }
 
-  const res = await fetch(`${config.baseUrl}/v1/payment-requests/${encodeURIComponent(requestId)}`, {
+  const res = await trackedFetch("verify", `${config.baseUrl}/v1/payment-requests/${encodeURIComponent(requestId)}`, {
     method: "GET",
     headers: {
       Authorization: `Bearer ${config.apiKey}`,
@@ -260,7 +287,8 @@ export async function reportVerifyFulfillment(
     throw new WorkflowError("REQUIREMENTS_MISSING", "Myseed Verify credentials missing.");
   }
 
-  const res = await fetch(
+  const res = await trackedFetch(
+    "verify",
     `${config.baseUrl}/v1/payment-requests/${encodeURIComponent(requestId)}/allocations/${encodeURIComponent(
       allocationId
     )}/fulfillment/${encodeURIComponent(action)}`,

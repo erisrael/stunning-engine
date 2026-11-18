@@ -67,7 +67,7 @@ const DEFAULT_CONFIG: ExternalApiConfig = {
   },
   sms: {
     enabled: false,
-    baseUrl: "https://api.afromessage.com/api/v1",
+    baseUrl: "https://api.afromessage.com/api",
     apiKey: "",
     senderId: "MySeed",
     timeoutMs: 10000,
@@ -159,48 +159,85 @@ export async function getExternalApiConfig(): Promise<ExternalApiConfig> {
   };
 }
 
-export async function saveExternalApiConfig(user: AppUser, input: Partial<ExternalApiConfig>) {
+type KeyedService = "academy" | "finance" | "sms" | "iconicSms";
+const KEYED: KeyedService[] = ["academy", "finance", "sms", "iconicSms"];
+
+// What the browser sees: the settings without any key, and for each service whether a key is saved and can still be
+// read (a key sealed under another APP_SECRET cannot, and has to be entered again).
+export type PublicExternalApiConfig = ExternalApiConfig & { keys: Record<KeyedService, { saved: boolean; readable: boolean }> };
+export async function publicExternalApiConfig(): Promise<PublicExternalApiConfig> {
+  const cfg = await getExternalApiConfig();
+  const row = await get<{ value: string }>("SELECT value FROM settings WHERE key = 'cfg.external_apis'");
+  const stored = row?.value ? parseJson<StoredConfig>(row.value, {}) : {};
+  const keys = Object.fromEntries(KEYED.map((k) => [k, { saved: !!stored[k]?.apiKeyEnc, readable: !stored[k]?.apiKeyEnc || !!cfg[k].apiKey }])) as PublicExternalApiConfig["keys"];
+  return {
+    academy: { ...cfg.academy, apiKey: "" },
+    finance: { ...cfg.finance, apiKey: "" },
+    sms: { ...cfg.sms, apiKey: "" },
+    iconicSms: { ...cfg.iconicSms, apiKey: "" },
+    keys,
+  };
+}
+
+export type ExternalApiInput = { [K in keyof ExternalApiConfig]?: Partial<ExternalApiConfig[K]> } & { clearKeys?: KeyedService[] };
+
+const SERVICE_NAME: Record<KeyedService, string> = { academy: "Academy", finance: "Finance", sms: "AfroMessage", iconicSms: "i-Conic" };
+
+// A blank key keeps the saved one (the browser never holds it); clearKeys removes one on purpose.
+export async function saveExternalApiConfig(user: AppUser, input: ExternalApiInput) {
   if (!can(user, "users.manage")) throw new WorkflowError("FORBIDDEN", "Only Admin configures external APIs.");
   const cur = await getExternalApiConfig();
+  const row = await get<{ value: string }>("SELECT value FROM settings WHERE key = 'cfg.external_apis'");
+  const raw = row?.value ? parseJson<StoredConfig>(row.value, {}) : {};
+  const clear = new Set(input.clearKeys ?? []);
+  const typed = (k: KeyedService) => String(input[k]?.apiKey ?? "").trim();
+  const keyOf = (k: KeyedService) => typed(k) || (clear.has(k) ? "" : cur[k].apiKey);
+  const encOf = async (k: KeyedService) => (typed(k) ? await seal(typed(k)) : clear.has(k) ? undefined : raw[k]?.apiKeyEnc);
+  const timeout = (v: unknown, d: number) => Math.min(60000, Math.max(1000, Math.round(Number(v) || d)));
   const next: ExternalApiConfig = {
-    academy: { ...cur.academy, ...(input.academy ?? {}) },
-    finance: { ...cur.finance, ...(input.finance ?? {}) },
-    sms: { ...cur.sms, ...(input.sms ?? {}) },
-    iconicSms: { ...cur.iconicSms, ...(input.iconicSms ?? {}) },
+    academy: { ...cur.academy, ...(input.academy ?? {}), apiKey: keyOf("academy") },
+    finance: { ...cur.finance, ...(input.finance ?? {}), apiKey: keyOf("finance") },
+    sms: { ...cur.sms, ...(input.sms ?? {}), apiKey: keyOf("sms") },
+    iconicSms: { ...cur.iconicSms, ...(input.iconicSms ?? {}), apiKey: keyOf("iconicSms") },
   };
+  for (const k of ["academy", "finance", "sms"] as const) {
+    const u = next[k].baseUrl.trim();
+    if (u && !/^https?:\/\/[^\s/]+/i.test(u)) throw new WorkflowError("VALIDATION", `Give the ${SERVICE_NAME[k]} address as https://...`);
+    if (next[k].enabled && !u) throw new WorkflowError("VALIDATION", `Give the ${SERVICE_NAME[k]} address before switching it on.`);
+  }
 
   const stored: StoredConfig = {
     academy: {
       enabled: next.academy.enabled,
-      baseUrl: next.academy.baseUrl.trim(),
-      apiKeyEnc: next.academy.apiKey ? await seal(next.academy.apiKey) : undefined,
-      timeoutMs: next.academy.timeoutMs,
+      baseUrl: next.academy.baseUrl.trim().replace(/\/+$/, ""),
+      apiKeyEnc: await encOf("academy"),
+      timeoutMs: timeout(next.academy.timeoutMs, 10000),
     },
     finance: {
       enabled: next.finance.enabled,
-      baseUrl: next.finance.baseUrl.trim(),
-      apiKeyEnc: next.finance.apiKey ? await seal(next.finance.apiKey) : undefined,
-      timeoutMs: next.finance.timeoutMs,
+      baseUrl: next.finance.baseUrl.trim().replace(/\/+$/, ""),
+      apiKeyEnc: await encOf("finance"),
+      timeoutMs: timeout(next.finance.timeoutMs, 10000),
     },
     sms: {
       enabled: next.sms.enabled,
-      baseUrl: next.sms.baseUrl.trim(),
-      apiKeyEnc: next.sms.apiKey ? await seal(next.sms.apiKey) : undefined,
+      baseUrl: next.sms.baseUrl.trim().replace(/\/+$/, ""),
+      apiKeyEnc: await encOf("sms"),
       senderId: next.sms.senderId.trim(),
-      timeoutMs: next.sms.timeoutMs,
+      timeoutMs: timeout(next.sms.timeoutMs, 10000),
     },
     iconicSms: {
       enabled: next.iconicSms.enabled,
       baseUrl: next.iconicSms.baseUrl.trim().replace(/\/+$/, ""),
-      apiKeyEnc: next.iconicSms.apiKey ? await seal(next.iconicSms.apiKey) : undefined,
+      apiKeyEnc: await encOf("iconicSms"),
       senderId: next.iconicSms.senderId.trim(),
-      timeoutMs: next.iconicSms.timeoutMs,
+      timeoutMs: timeout(next.iconicSms.timeoutMs, 10000),
       ...iconicShape(next.iconicSms),
     },
   };
   if (next.iconicSms.enabled) {
     if (!/^https?:\/\/[^\s/]+/i.test(stored.iconicSms!.baseUrl ?? "")) throw new WorkflowError("VALIDATION", "Give i-Conic's API address from your i-Conic account (https://...).");
-    if (!next.iconicSms.apiKey) throw new WorkflowError("VALIDATION", "Give the i-Conic API key or token.");
+    if (!stored.iconicSms!.apiKeyEnc) throw new WorkflowError("VALIDATION", "Give the i-Conic API key or token.");
   }
 
   await run(
@@ -210,26 +247,30 @@ export async function saveExternalApiConfig(user: AppUser, input: Partial<Extern
     user.id,
   );
 
-  await audit({ actor: user }, { action: "settings.external_api", summary: `${user.name} updated the external API integration console configuration` });
+  const which = KEYED.filter((k) => input[k] || clear.has(k)).map((k) => SERVICE_NAME[k]).join(", ") || "settings";
+  const keyNote = [...KEYED.filter((k) => typed(k)).map((k) => `${SERVICE_NAME[k]} key changed`), ...[...clear].map((k) => `${SERVICE_NAME[k]} key removed`)].join(", ");
+  await audit({ actor: user }, { action: "settings.external_api", summary: `${user.name} updated external APIs (${which}${keyNote ? `; ${keyNote}` : ""})` });
   await syncIconicConnector(user, { ...next.iconicSms, ...iconicShape(next.iconicSms), baseUrl: stored.iconicSms!.baseUrl ?? "" });
-  return next;
+  return publicExternalApiConfig();
 }
 
 // ---------------------------------------------------------------------------
 // Health check / Connection test
 // ---------------------------------------------------------------------------
 
-export async function testExternalApi(service: "academy" | "finance" | "sms" | "iconicSms", phone?: string | null): Promise<{ ok: boolean; status: number; ms: number; message: string; responseSample?: unknown }> {
+export type ApiTestResult = { ok: boolean; status: number; ms: number; message: string; responseSample?: unknown };
+
+export async function testExternalApi(service: KeyedService, phone?: string | null): Promise<ApiTestResult> {
   const cfg = await getExternalApiConfig();
   if (service === "iconicSms") return testIconic(cfg.iconicSms, phone);
+  if (service === "sms") return testAfroMessage(cfg.sms);
   const svc = cfg[service];
-  if (!svc.baseUrl) {
-    return { ok: false, status: 0, ms: 0, message: "Base URL is not set." };
-  }
-
+  if (!svc.baseUrl) return { ok: false, status: 0, ms: 0, message: "Give the API address first." };
+  const { recordCall } = await import("./call-monitor");
+  const url = `${svc.baseUrl.replace(/\/+$/, "")}/health`;
   const start = Date.now();
+  let out: ApiTestResult;
   try {
-    const url = `${svc.baseUrl.replace(/\/+$/, "")}/health`;
     const res = await fetch(url, {
       method: "GET",
       headers: {
@@ -238,25 +279,63 @@ export async function testExternalApi(service: "academy" | "finance" | "sms" | "
       },
       signal: AbortSignal.timeout(svc.timeoutMs || 8000),
     });
-    const ms = Date.now() - start;
     let json: unknown = null;
     try {
       json = await res.json();
     } catch {
-      // ignore
+      // not JSON
     }
-    return {
+    out = {
       ok: res.ok,
       status: res.status,
-      ms,
-      message: res.ok ? "Connected successfully" : res.status === 404 ? `Not found (404) at ${url}: this service has no /health address; check the API address.` : `HTTP error: ${res.statusText || res.status}`,
+      ms: Date.now() - start,
+      message: res.ok
+        ? "Connected: the health address answered."
+        : res.status === 401 || res.status === 403
+          ? `The key was refused (${res.status}). Check the API key.`
+          : res.status === 404
+            ? `Not found (404) at ${url}: this service has no /health address; check the API address.`
+            : `The service answered ${res.status}${res.statusText ? ` ${res.statusText}` : ""}.`,
       responseSample: json,
     };
   } catch (err: unknown) {
-    const ms = Date.now() - start;
-    const msg = err instanceof Error ? err.message : String(err);
-    return { ok: false, status: 0, ms, message: `Could not reach ${svc.baseUrl} (${msg})` };
+    out = { ok: false, status: 0, ms: Date.now() - start, message: `Could not reach ${svc.baseUrl} (${err instanceof Error ? err.message : String(err)})` };
   }
+  await recordCall({ source: service, ok: out.ok, status: out.status, ms: out.ms, summary: `Test · GET ${url.replace(/^https?:\/\//, "")}`, error: out.ok ? null : out.message, test: true });
+  return out;
+}
+
+// AfroMessage (afromessage.com/developers): GET {base}/send with "Authorization: Bearer <token>", answering
+// {"acknowledge":"success"|"error", "response": {...}}. There is no health or balance address, so the test sends
+// nothing: it asks with an empty recipient, and a refused token is told apart from a refused message.
+async function testAfroMessage(c: ExternalApiConfig["sms"]): Promise<ApiTestResult> {
+  if (!c.baseUrl) return { ok: false, status: 0, ms: 0, message: "Give the AfroMessage address first." };
+  if (!c.apiKey) return { ok: false, status: 0, ms: 0, message: "Give the AfroMessage token first." };
+  const { recordCall } = await import("./call-monitor");
+  const url = `${c.baseUrl.replace(/\/+$/, "").replace(/\/send$/, "")}/send`;
+  const start = Date.now();
+  let out: ApiTestResult;
+  try {
+    const res = await fetch(`${url}?to=&message=`, { headers: { Accept: "application/json", Authorization: `Bearer ${c.apiKey}` }, signal: AbortSignal.timeout(c.timeoutMs || 8000) });
+    const body = (await res.json().catch(() => null)) as { acknowledge?: string; response?: { errors?: string[]; message?: string } } | null;
+    const said = String(body?.response?.errors?.[0] ?? body?.response?.message ?? "").slice(0, 200);
+    const tokenRefused = res.status === 401 || res.status === 403 || /token|unauthori[sz]ed|authenticat/i.test(said);
+    out = {
+      ok: !tokenRefused && !!body && (res.ok || res.status === 400 || res.status === 422),
+      status: res.status,
+      ms: Date.now() - start,
+      message: tokenRefused
+        ? `AfroMessage refused the token${said ? `: ${said}` : ` (${res.status})`}.`
+        : body
+          ? "Connected: AfroMessage accepted the token (nothing was sent)."
+          : `AfroMessage answered ${res.status} without its usual reply. Check the address (https://api.afromessage.com/api).`,
+      responseSample: body,
+    };
+  } catch (err) {
+    out = { ok: false, status: 0, ms: Date.now() - start, message: `Could not reach ${c.baseUrl} (${err instanceof Error ? err.message : String(err)})` };
+  }
+  await recordCall({ source: "sms", ok: out.ok, status: out.status, ms: out.ms, summary: `AfroMessage · Test · GET ${url.replace(/^https?:\/\//, "")}`, error: out.ok ? null : out.message, test: true });
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -556,40 +635,6 @@ export type ExternalSmsStatus = {
   senderId: string;
   lastCheckedAt: string;
 };
-
-export async function fetchSmsStatus(): Promise<ExternalSmsStatus> {
-  const cfg = await getExternalApiConfig();
-  if (cfg.sms.enabled && cfg.sms.baseUrl) {
-    try {
-      const url = `${cfg.sms.baseUrl.replace(/\/+$/, "")}/status`;
-      const res = await fetch(url, {
-        method: "GET",
-        headers: {
-          Accept: "application/json",
-          ...(cfg.sms.apiKey ? { Authorization: `Bearer ${cfg.sms.apiKey}`, "X-API-Key": cfg.sms.apiKey } : {}),
-        },
-        signal: AbortSignal.timeout(cfg.sms.timeoutMs || 8000),
-      });
-
-      if (res.ok) {
-        const d = await res.json();
-        return {
-          connected: true,
-          provider: String(d.provider || "AfroMessage / Ethio Telecom SMS"),
-          balance: Number(d.balance || 0),
-          currency: String(d.currency || "SMS Credits"),
-          senderId: cfg.sms.senderId,
-          lastCheckedAt: nowIso(),
-        };
-      }
-    } catch (e) {
-      console.error("External SMS API status failed:", e);
-    }
-  }
-
-  // No made-up balance: say it could not be read.
-  throw new WorkflowError("INVALID_STATE", cfg.sms.enabled ? "The SMS gateway's status could not be read. Check its address and key." : "The SMS gateway is switched off.");
-}
 
 export async function fetchIconicSmsStatus(): Promise<ExternalSmsStatus> {
   const c = (await getExternalApiConfig()).iconicSms;
