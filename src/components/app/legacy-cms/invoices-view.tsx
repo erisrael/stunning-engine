@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { EmptyState, StatusStrip, Toolbar, ViewSwitcher } from "@/components/app/page-kit";
 import { MetricCard } from "@/components/app/primitives";
-import { cmsPresetRange } from "@/lib/cms-filters";
+import { cmsRangeOrAll } from "@/lib/cms-filters";
 import { INVOICE_STATES, UNABLE_REASON_LABEL, type InvoiceReview, type InvoiceState } from "@/lib/cms-invoices";
 import { invoiceReviewCountsAction, invoiceVerifiersAction, listInvoiceReviewsAction } from "@/app/actions/cms-reports";
 import { financeMembersAction, invoiceFollowupsAction, invoiceOutcomeAction, invoicesToFinanceAction, invoicesToSupportAction } from "@/app/actions/chapa-hub";
@@ -45,7 +45,7 @@ export function CmsInvoicesView() {
 }
 
 function ReviewByDate({ onChanged }: { onChanged: () => void }) {
-  const [period, setPeriod] = React.useState<Period | null>(null);
+  const [period, setPeriod] = React.useState<Period | null>("today");
   const [start, setStart] = React.useState("");
   const [end, setEnd] = React.useState("");
   const [filters, setFilters] = React.useState<Record<string, string>>({});
@@ -54,7 +54,7 @@ function ReviewByDate({ onChanged }: { onChanged: () => void }) {
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
   const [history, setHistory] = React.useState<string | null>(null);
   const cms = useCmsRange();
-  const range = period ? cmsPresetRange(period, start, end) : null;
+  const range = period ? cmsRangeOrAll(period, start, end) : null;
   const key = range ? JSON.stringify([range, filters]) : "";
   React.useEffect(() => {
     if (!range) return;

@@ -1,3 +1,4 @@
+import { datePresetRange, isDatePreset } from "./date-presets";
 // CMS dates without a zone are interpreted in the workspace's Addis Ababa zone.
 export function parseCmsDate(value: unknown, now = new Date()): Date | null {
   // Noor adds a relative hint after the date ("Nov 2, 2026 14:50:35 1 week ago"); the absolute part decides.
@@ -54,14 +55,10 @@ export function cmsDateMatches(record: Record<string, unknown>, period: string, 
   if (period === "all" || (period === "custom" && !start && !end)) return true;
   const date = cmsDate(record);
   if (!date) return false;
-  const local = new Date(+now + 10800000);
-  const today = Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate()) - 10800000;
-  let from = today;
-  let until = today + 86400000;
-  if (period === "yesterday") { from -= 86400000; until = today; }
-  if (period === "week") from -= ((local.getUTCDay() + 6) % 7) * 86400000;
-  if (period === "month") from = Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), 1) - 10800000;
-  if (period === "30days") from -= 29 * 86400000;
+  const r = period !== "custom" ? cmsPresetRange(period, start, end, now) : null;
+  // Addis Ababa days to instants: midnight there is 21:00 UTC the day before.
+  let from = r ? Date.parse(`${r.from}T00:00:00Z`) - 10800000 : -Infinity;
+  let until = r ? Date.parse(`${r.until}T00:00:00Z`) - 10800000 + 86400000 : Infinity;
   if (period === "custom") {
     const parsedStart = start ? parseCmsDate(start) : null;
     const parsedEnd = end ? parseCmsDate(end) : null;
@@ -73,24 +70,32 @@ export function cmsDateMatches(record: Record<string, unknown>, period: string, 
 }
 
 // A date preset as an inclusive Addis Ababa day range (YYYY-MM-DD), for date-first loading from Noor.
+// The spec's date ranges for every Noor page (Update 1.2): Today is the default everywhere. All time has no range
+// (pages then read every page of Noor, or the saved copy). Same Addis Ababa arithmetic as Chapa (date-presets.ts).
 export const CMS_DATE_PRESETS = [
   ["today", "Today"],
   ["yesterday", "Yesterday"],
-  ["week", "This week"],
-  ["month", "This month"],
+  ["3days", "Last 3 days"],
+  ["7days", "Last 7 days"],
+  ["14days", "Last 14 days"],
   ["30days", "Last 30 days"],
+  ["week", "This week"],
+  ["lastweek", "Last week"],
+  ["month", "This month"],
+  ["lastmonth", "Last month"],
+  ["year", "This year"],
+  ["all", "All time"],
   ["custom", "Custom"],
 ] as const;
+export const CMS_DEFAULT_PERIOD = "today" as const;
 export function cmsPresetRange(period: string, start = "", end = "", now = new Date()): { from: string; until: string } | null {
   const day = (t: number) => new Date(t + 10800000).toISOString().slice(0, 10);
-  const local = new Date(+now + 10800000);
   const today = day(+now);
-  const back = (n: number) => day(+now - n * 86400000);
-  if (period === "today") return { from: today, until: today };
-  if (period === "yesterday") return { from: back(1), until: back(1) };
-  if (period === "week") return { from: back((local.getUTCDay() + 6) % 7), until: today };
-  if (period === "month") return { from: `${today.slice(0, 7)}-01`, until: today };
-  if (period === "30days") return { from: back(29), until: today };
+  if (period === "all") return null;
+  if (period !== "custom" && isDatePreset(period)) {
+    const r = datePresetRange(period, null, null, now);
+    return r.from && r.until ? { from: r.from, until: r.until } : null;
+  }
   if (period === "custom") {
     const ok = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s);
     if (!ok(start) && !ok(end)) return null;
@@ -99,4 +104,11 @@ export function cmsPresetRange(period: string, start = "", end = "", now = new D
     return from <= until ? { from, until } : { from: until, until: from };
   }
   return null;
+}
+
+// Pages that always need a date range (growth, revenue, invoices): All time is every day since Noor began.
+export const CMS_ALL_FROM = "2015-01-01";
+export function cmsRangeOrAll(period: string, start = "", end = "", now = new Date()): { from: string; until: string } | null {
+  if (period === "all") return { from: CMS_ALL_FROM, until: new Date(+now + 10800000).toISOString().slice(0, 10) };
+  return cmsPresetRange(period, start, end, now);
 }

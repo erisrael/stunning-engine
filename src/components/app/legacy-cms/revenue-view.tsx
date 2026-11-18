@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { StatusStrip, Toolbar, ViewSwitcher } from "@/components/app/page-kit";
 import { MetricCard } from "@/components/app/primitives";
-import { cmsPresetRange } from "@/lib/cms-filters";
+import { cmsRangeOrAll } from "@/lib/cms-filters";
 import { cmsAmount } from "@/lib/cms-report";
 import { NoorFilters, RangePicker, RowsTable, ExportButtons, useShowEc, type Period } from "./range-controls";
 import { exportHref, METHOD_LABEL, useCmsRange } from "./use-cms-range";
@@ -23,7 +23,7 @@ const method = (r: Record<string, string>) => (r["Payment Method"] ?? r.method ?
 // Revenue from Noor invoices, live and date first (Update 1.0): filters, a dashboard of paid and pending money,
 // pending approvals in their own tab with the slip, and every invoice.
 export function CmsRevenueView({ canReview }: { canReview: boolean }) {
-  const [period, setPeriod] = React.useState<Period | null>("month");
+  const [period, setPeriod] = React.useState<Period | null>("today");
   const [start, setStart] = React.useState("");
   const [end, setEnd] = React.useState("");
   const [filters, setFilters] = React.useState<Record<string, string>>({});
@@ -35,7 +35,7 @@ export function CmsRevenueView({ canReview }: { canReview: boolean }) {
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
   const [history, setHistory] = React.useState<string | null>(null);
   const cms = useCmsRange();
-  const range = period ? cmsPresetRange(period, start, end) : null;
+  const range = period ? cmsRangeOrAll(period, start, end) : null;
   const key = range ? JSON.stringify([range, filters]) : "";
   React.useEffect(() => {
     if (!range) return;

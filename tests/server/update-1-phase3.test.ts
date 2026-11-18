@@ -105,10 +105,23 @@ async function main() {
   check("filters by status, method and type", filtered.rows.length > 0 && filtered.rows.every((r) => r.status === "success" && r.method === "telebirr" && r.type === "payment_link"), filtered.rows.length);
   const allBiz = await H.listChapaTx(admin, { limit: 1000 });
   check("All businesses includes every live business and leaves test out", new Set(allBiz.rows.map((r) => r.accountId)).size === 2 && !allBiz.businesses.some((b) => b.id === T));
-  const ov = await H.chapaOverview(admin, A, NOW);
+  const ov = await H.chapaOverview(admin, A, {}, NOW);
   const etb = ov.currencies.find((c) => c.currency === "ETB")!;
   const todaySuccess = txA.filter((t) => day(Date.parse(t.created_at)) === TODAY && t.status === "success").reduce((a, t) => a + Number(t.amount), 0);
   check("overview: today's paid volume and success rate", etb.windows.today.volume === todaySuccess && etb.windows.d30.rate !== null && etb.daily.length === 30, { got: etb.windows.today.volume, todaySuccess });
+  // Overview filters (Update 1.2): dates, status, method, type, search and sort, on the stored data.
+  const ovToday = await H.chapaOverview(admin, A, { preset: "today" }, NOW);
+  const etbToday = ovToday.currencies.find((c) => c.currency === "ETB")!.range!;
+  const todayTx = txA.filter((t) => day(Date.parse(t.created_at)) === TODAY);
+  check("overview Today: the range totals match today's transactions", etbToday.count === todayTx.length && etbToday.volume === todaySuccess && ovToday.matching === todayTx.length && ovToday.filter.from === TODAY, { count: etbToday.count, want: todayTx.length });
+  const ovTele = await H.chapaOverview(admin, A, { preset: "all", status: ["success"], method: ["telebirr"], sort: "amount_desc" }, NOW);
+  check("overview filters by status and method, and sorts by amount", ovTele.transactions.length > 0 && ovTele.transactions.every((t) => t.status === "success" && t.method === "telebirr") && ovTele.transactions.every((t, i, a) => !i || a[i - 1].amount >= t.amount) && ovTele.filter.from === null);
+  const ovQ = await H.chapaOverview(admin, A, { preset: "all", q: "A-12" }, NOW);
+  check("overview search finds a reference", ovQ.transactions.some((t) => t.txRef === "A-12"));
+  const ovYear = await H.chapaOverview(admin, A, { preset: "custom", start: day(NOW - 200 * 86400e3), end: TODAY }, NOW);
+  check("a long range is charted per month", ovYear.currencies[0].range!.monthly === true && ovYear.currencies[0].range!.series.length >= 7);
+  const ovNone = await H.chapaOverview(admin, A, { preset: "lastmonth", q: "no-such-ref" }, NOW);
+  check("nothing matches: an empty range, no transactions", ovNone.matching === 0 && !ovNone.transactions.length);
   const board = await H.chapaDailyBoard(admin, TODAY, A);
   check("daily board: success, failed and pending with the day before", board.tabs.length === 3 && board.tabs.reduce((a, t) => a + t.n, 0) === txA.filter((t) => day(Date.parse(t.created_at)) === TODAY).length);
   const customers = await H.chapaCustomers(admin, { biz: A });
@@ -145,6 +158,25 @@ async function main() {
   // Detail with events and the CMS link.
   const det = await H.chapaTxDetail(admin, A, txA[3].tx_ref);
   check("transaction detail has history, Chapa events and raw payload", det.history.length >= 1 && det.events.length === 2 && !!det.raw);
+
+  // Webhook settings (Update 1.2): the secret hash, Chapa's chapa-signature header, the self-test and health.
+  const hdr2 = await H.chapaWebhook(A, body, new Headers({ "chapa-signature": crypto.createHmac("sha256", "whsec-A").update("whsec-A").digest("hex") }));
+  check("Chapa's chapa-signature header (HMAC of the secret) is accepted too", hdr2.status === 200, hdr2);
+  check("a member cannot set the webhook secret", !!(await err(() => H.setChapaWebhookSecret(dawit, A, "whsec-new-1234"))));
+  check("an overlong secret hash is refused", /at most 200/.test((await err(() => H.setChapaWebhookSecret(admin, A, "x".repeat(201)))) ?? ""));
+  const keyBefore = await get<{ secret_key_enc: string }>("SELECT secret_key_enc FROM chapa_accounts WHERE id = ?", A);
+  await H.setChapaWebhookSecret(admin, A, "whsec-rotated-5678");
+  const keyAfter = await get<{ secret_key_enc: string }>("SELECT secret_key_enc FROM chapa_accounts WHERE id = ?", A);
+  check("saving the webhook secret leaves the API key alone", keyBefore?.secret_key_enc === keyAfter?.secret_key_enc);
+  const st = await H.chapaWebhookSelfTest(admin, A);
+  check("the self-test signs like Chapa and passes", st.ok, st);
+  const oldSig = await H.chapaWebhook(A, body, new Headers({ "x-chapa-signature": sig }));
+  check("calls signed with the old secret are refused after a rotation", oldSig.status === 401);
+  const stB = await H.chapaWebhookSelfTest(admin, B);
+  check("the self-test says when no secret is saved", !stB.ok && /No webhook secret/.test(stB.message));
+  const bizA = (await H.chapaBusinesses(admin)).find((b) => b.id === A)!;
+  check("webhook health: refused calls in 7 days and the last call", bizA.webhookRefused7d >= 2 && bizA.webhookLast?.signed === false, { r: bizA.webhookRefused7d, last: bizA.webhookLast });
+  await H.setChapaWebhookSecret(admin, A, "whsec-A");
 
   // Money actions: off until Admin turns them on; maker–checker.
   const paid = (await H.listChapaTx(admin, { biz: A, status: ["success"] })).rows[0];

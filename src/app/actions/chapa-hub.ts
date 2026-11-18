@@ -8,7 +8,9 @@ import type { ChapaSettings } from "@/lib/chapa";
 // Chapa for every business, and payment follow-up (Update 1.0, Phase 3).
 const read = { revalidate: false } as const;
 export const chapaBusinessesAction = async () => wrap(async () => h.chapaBusinesses(await requireViewer()), read);
-export const chapaOverviewAction = async (biz: string | null) => wrap(async () => h.chapaOverview(await requireViewer(), biz), read);
+export const chapaWebhookSecretAction = async (id: string, secret: string) => wrap(async () => h.setChapaWebhookSecret(await requireViewer(), id, secret));
+export const chapaWebhookTestAction = async (id: string) => wrap(async () => h.chapaWebhookSelfTest(await requireViewer(), id));
+export const chapaOverviewAction = async (biz: string | null, f: h.OverviewFilter = {}) => wrap(async () => h.chapaOverview(await requireViewer(), biz, f), read);
 export const saveChapaOverviewLayoutAction = async (widgets: string[], scope: "me" | "default" | "reset") => wrap(async () => h.saveChapaOverviewLayout(await requireViewer(), widgets, scope));
 export const chapaTxAction = async (f: h.TxFilter) => wrap(async () => h.listChapaTx(await requireViewer(), f), read);
 export const chapaTxDetailAction = async (accountId: string, txRef: string) => wrap(async () => h.chapaTxDetail(await requireViewer(), accountId, txRef), read);

@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmptyState, StatusStrip, Toolbar, ViewSwitcher } from "@/components/app/page-kit";
-import { cmsPresetRange } from "@/lib/cms-filters";
+import { cmsRangeOrAll } from "@/lib/cms-filters";
 import { buildCmsReport, cmsAmountColumn, CMS_GROUP_BY, type CmsGroupBy, type CmsReportSpec } from "@/lib/cms-report";
 import { LEGACY_CMS_CATEGORIES, type LegacyCmsCategory } from "@/lib/legacy-cms";
 import { waitForCmsTask } from "@/lib/cms-task-client";
@@ -27,7 +27,7 @@ const fmt = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 2 
 export function CmsReportsView({ categories, canSchedule, isAdmin, chatGroups }: { categories: LegacyCmsCategory[]; canSchedule: boolean; isAdmin: boolean; chatGroups: { id: string; name: string }[] }) {
   const params = useSearchParams();
   const [category, setCategory] = React.useState<LegacyCmsCategory>(categories.includes("invoices") ? "invoices" : categories[0]);
-  const [period, setPeriod] = React.useState<Period | null>(null);
+  const [period, setPeriod] = React.useState<Period | null>("today");
   const [start, setStart] = React.useState("");
   const [end, setEnd] = React.useState("");
   const [search, setSearch] = React.useState("");
@@ -39,7 +39,7 @@ export function CmsReportsView({ categories, canSchedule, isAdmin, chatGroups }:
   const [dateField, setDateField] = React.useState("");
   const [showEc, setShowEc] = useShowEc();
   const cms = useCmsRange();
-  const range = period ? cmsPresetRange(period, start, end) : null;
+  const range = period ? cmsRangeOrAll(period, start, end) : null;
 
   // Opened from the Live view with its finished load.
   React.useEffect(() => {

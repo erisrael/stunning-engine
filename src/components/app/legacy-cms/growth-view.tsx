@@ -4,7 +4,7 @@ import { RefreshCwIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StatusStrip, Toolbar } from "@/components/app/page-kit";
 import { MetricCard } from "@/components/app/primitives";
-import { cmsPresetRange } from "@/lib/cms-filters";
+import { cmsRangeOrAll } from "@/lib/cms-filters";
 import type { LegacyCmsCategory } from "@/lib/legacy-cms";
 import { RangePicker, useShowEc, type Period } from "./range-controls";
 import { useCmsRange } from "./use-cms-range";
@@ -13,14 +13,14 @@ import { Breakdown, dayOfRow, daysOf, fmtNum, PeriodBars, tally } from "./cms-ch
 // Growth from Noor, live and date first (Update 1.0): new students and parents by the day their account was
 // made, subscriptions by the day they started, with grade, city, gender and plan breakdowns.
 export function CmsGrowthView({ categories }: { categories: LegacyCmsCategory[] }) {
-  const [period, setPeriod] = React.useState<Period | null>("30days");
+  const [period, setPeriod] = React.useState<Period | null>("today");
   const [start, setStart] = React.useState("");
   const [end, setEnd] = React.useState("");
   const [showEc, setShowEc] = useShowEc();
   const students = useCmsRange();
   const parents = useCmsRange();
   const subs = useCmsRange();
-  const range = period ? cmsPresetRange(period, start, end) : null;
+  const range = period ? cmsRangeOrAll(period, start, end) : null;
   const has = (c: LegacyCmsCategory) => categories.includes(c);
   const load = React.useCallback(
     async (refresh = false) => {

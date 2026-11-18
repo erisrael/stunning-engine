@@ -7,6 +7,7 @@ import { saveLegacyCmsConfig } from "../../src/server/legacy-cms";
 import * as F from "../../src/server/cms-fields";
 import { listRuns } from "../../src/server/sync-runs";
 import * as Q from "../../src/server/cms-query";
+import { CMS_DATE_PRESETS, CMS_DEFAULT_PERIOD, cmsPresetRange, cmsRangeOrAll } from "../../src/lib/cms-filters";
 
 let pass = 0;
 let fail = 0;
@@ -91,6 +92,16 @@ globalThis.fetch = (async (url: string | URL, init?: RequestInit) => {
 }) as typeof fetch;
 
 async function main() {
+  // Live filters (Update 1.2): Today by default, the full preset list, Addis days, weeks from Monday.
+  const at = new Date("2026-11-18T08:00:00Z"); // a Wednesday in Addis Ababa
+  check("Noor's live filters open on Today", CMS_DEFAULT_PERIOD === "today");
+  check("every preset the spec lists is offered", ["today", "yesterday", "3days", "7days", "14days", "30days", "week", "lastweek", "month", "lastmonth", "year", "all", "custom"].every((p) => CMS_DATE_PRESETS.some(([k]) => k === p)));
+  const rg = (p: string) => cmsPresetRange(p, "", "", at);
+  check("Today, Yesterday and Last 3 days", rg("today")?.from === "2026-11-18" && rg("yesterday")?.until === "2026-11-17" && rg("3days")?.from === "2026-11-16", [rg("today"), rg("yesterday"), rg("3days")]);
+  check("This week starts Monday, Last week is the one before", rg("week")?.from === "2026-11-16" && rg("lastweek")?.from === "2026-11-09" && rg("lastweek")?.until === "2026-11-15", [rg("week"), rg("lastweek")]);
+  check("This month, Last month and This year", rg("month")?.from === "2026-11-01" && rg("lastmonth")?.until === "2026-10-31" && rg("year")?.from === "2026-01-01");
+  check("All time has no bounds, but pages that need one start when Noor began", rg("all") === null && cmsRangeOrAll("all", "", "", at)?.until === "2026-11-18");
+  check("a custom range given backwards is put in order", cmsPresetRange("custom", "2026-11-10", "2026-11-01", at)?.from === "2026-11-01");
   const by = async (email: string) => (await loadUser((await get<{ id: string }>("SELECT id FROM users WHERE email = ?", email))!.id))!;
   const admin = await by("admin@demo.local");
   const dawit = await by("dawit@demo.local");

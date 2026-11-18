@@ -162,11 +162,52 @@ try {
   check("an empty range explains itself and offers a sync", (await page.getByRole("link", { name: "Sync and reconcile" }).count()) >= 1);
   await page.screenshot({ path: path.join(shots, "transactions-empty.png"), fullPage: true });
 
+  // Overview filters (Update 1.2).
+  await page.goto(`${base}/finance/chapa?tab=overview`);
+  const ovHead = page.locator("[data-overview-transactions] h2");
+  await ovHead.filter({ hasText: "(160 match" }).waitFor({ timeout: 20000 });
+  check("the overview lists the matching transactions of the range (last 30 days)", (await page.locator("[data-overview-tx]").count()) === 25);
+  const ovPresets = await page.locator("[data-overview-preset] option").allInnerTexts();
+  check("the overview offers Today to All time and Custom", ["Today", "Yesterday", "Last 7 days", "Last 14 days", "Last 30 days", "This month", "Last month", "This year", "All time"].every((p) => ovPresets.includes(p)) && ovPresets.some((p) => /Custom/.test(p)), ovPresets);
+  await page.locator("[data-overview-preset]").selectOption("today");
+  const todays = since(1);
+  await ovHead.filter({ hasText: `(${todays.length} match` }).waitFor({ timeout: 15000 });
+  const todayPaid = todays.filter((t) => t.status === "success").reduce((a, t) => a + Number(t.amount), 0);
+  check("Today: the range card shows today's paid total", (await page.locator("[data-overview-range]").first().innerText()).includes(todayPaid.toLocaleString("en-US", { minimumFractionDigits: 2 })), { todayPaid });
+  await page.locator("[data-overview-preset]").selectOption("all");
+  await page.locator("[data-overview-filters]").getByRole("group", { name: "Method" }).getByRole("button", { name: /telebirr/i }).first().click();
+  const tele = tx.filter((t) => t.payment_method === "telebirr").length;
+  await ovHead.filter({ hasText: `(${tele} match` }).waitFor({ timeout: 15000 });
+  check("the method filter narrows the overview", true);
+  await page.getByLabel("Search transactions").fill("ORD-1003");
+  await ovHead.filter({ hasText: "(1 match" }).waitFor({ timeout: 15000 });
+  check("search finds a reference", (await page.locator("[data-overview-tx='ORD-1003']").count()) === 1);
+  await page.screenshot({ path: path.join(shots, "overview-filtered.png"), fullPage: true });
+  await page.getByRole("button", { name: "Clear filters" }).click();
+  await ovHead.filter({ hasText: "(160 match" }).waitFor({ timeout: 15000 });
+  check("Clear filters goes back to the last 30 days", true);
+
+  // Webhook settings: the secret hash and a self-test signed the way Chapa signs.
+  await page.goto(`${base}/finance/chapa?tab=settings`);
+  const wh = page.locator("[data-chapa-webhook='Subscriptions']");
+  await wh.waitFor({ timeout: 20000 });
+  check("the webhook address and the saved secret are shown", (await wh.locator("[data-webhook-secret-state='set']").count()) === 1 && (await wh.locator("code").innerText()).includes("/api/finance/chapa/webhook/"));
+  await wh.locator("[data-webhook-test]").click();
+  await page.getByText("The signature check passes").first().waitFor({ timeout: 15000 });
+  check("Test passes with the saved secret hash", true);
+  await wh.getByLabel("Subscriptions secret hash").fill("a-new-secret-hash-123");
+  await wh.locator("[data-webhook-save]").click();
+  await page.getByText("Secret hash saved", { exact: true }).first().waitFor({ timeout: 15000 });
+  await wh.locator("[data-webhook-test]").click();
+  await wh.getByText(/Last call .*self-test/).waitFor({ timeout: 15000 });
+  check("a new secret hash is saved and the last call shows", true);
+  await page.screenshot({ path: path.join(shots, "webhooks.png"), fullPage: true });
+
   // Phone width: nothing scrolls sideways.
   const phone = await (await browser.newContext({ viewport: { width: 390, height: 844 }, storageState: await page.context().storageState() })).newPage();
-  for (const tab of ["transactions", "sync"]) {
+  for (const tab of ["transactions", "sync", "overview", "settings"]) {
     await phone.goto(`${base}/finance/chapa?tab=${tab}`);
-    await phone.locator(tab === "sync" ? "[data-sync-business]" : "[data-total]").first().waitFor({ timeout: 20000 });
+    await phone.locator({ sync: "[data-sync-business]", transactions: "[data-total]", overview: "[data-overview-transactions]", settings: "[data-chapa-webhooks]" }[tab]).first().waitFor({ timeout: 20000 });
     await phone.waitForTimeout(800);
     const wide = await phone.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     check(`${tab} fits a phone without sideways scrolling`, wide <= 2, { wide });

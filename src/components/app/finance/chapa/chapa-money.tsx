@@ -244,6 +244,87 @@ export function RefundButton({ tx, onDone }: { tx: ChapaTx; onDone: () => void }
 // Settings (Admin): businesses, rules, and the action matrix per business and role.
 // ---------------------------------------------------------------------------
 
+// Webhooks, following Chapa's documentation: in Chapa's dashboard (Settings, Webhooks) paste this business's address,
+// set a secret hash, and turn on the events; enter the same secret hash here. Chapa signs every call with it.
+function WebhookSettings({ businesses, origin }: { businesses: ChapaBusiness[]; origin: string }) {
+  const router = useRouter();
+  const [secret, setSecret] = React.useState<Record<string, string>>({});
+  const [busy, setBusy] = React.useState<string | null>(null);
+  return (
+    <section className="space-y-2" data-chapa-webhooks>
+      <h2 className="text-sm font-semibold">Webhooks</h2>
+      <ol className="list-decimal space-y-0.5 pl-5 text-xs text-muted-foreground">
+        <li>In Chapa&apos;s dashboard open Settings, then Webhooks, for the business.</li>
+        <li>Paste the business&apos;s webhook address below as the Webhook URL.</li>
+        <li>Set a Secret hash there (a long random text) and enter the same text here.</li>
+        <li>Turn on the payment events (successful and failed payments; payouts if you use them), then save in Chapa.</li>
+        <li>Press Test here: it signs a call the way Chapa does and checks it passes. Real calls then show under Last call.</li>
+      </ol>
+      <div className="grid gap-3 lg:grid-cols-2">
+        {businesses.map((b) => {
+          const url = `${origin}/api/finance/chapa/webhook/${b.id}`;
+          return (
+            <div key={b.id} className="space-y-2 rounded-xl border bg-card p-3 text-xs" data-chapa-webhook={b.name}>
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-medium">{b.name}</span>
+                <span className={b.hasWebhookSecret ? "text-emerald-700 dark:text-emerald-400" : "text-amber-700"} data-webhook-secret-state={b.hasWebhookSecret ? "set" : "missing"}>
+                  {b.hasWebhookSecret ? "Secret hash saved" : "No secret hash yet"}
+                </span>
+              </div>
+              <div className="flex items-center gap-1">
+                <code className="min-w-0 flex-1 truncate rounded bg-muted px-1.5 py-1 text-[10px]">{url}</code>
+                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => void navigator.clipboard.writeText(url).then(() => toast.success("Webhook address copied"))}>Copy</Button>
+              </div>
+              <div className="flex items-center gap-1">
+                <Input type="password" autoComplete="off" aria-label={`${b.name} secret hash`} placeholder={b.hasWebhookSecret ? "Enter a new secret hash to replace it" : "Secret hash from Chapa's dashboard"} className="h-7 text-xs" value={secret[b.id] ?? ""} onChange={(e) => setSecret({ ...secret, [b.id]: e.target.value })} />
+                <Button
+                  size="sm"
+                  className="h-7 text-xs"
+                  disabled={busy === b.id || !(secret[b.id] ?? "").trim()}
+                  onClick={async () => {
+                    setBusy(b.id);
+                    const r = await A.chapaWebhookSecretAction(b.id, secret[b.id] ?? "");
+                    setBusy(null);
+                    if (!r.ok) return void toast.error(r.error);
+                    setSecret({ ...secret, [b.id]: "" });
+                    toast.success("Secret hash saved");
+                    router.refresh();
+                  }}
+                  data-webhook-save
+                >
+                  Save
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs"
+                  disabled={busy === b.id}
+                  onClick={async () => {
+                    setBusy(b.id);
+                    const r = await A.chapaWebhookTestAction(b.id);
+                    setBusy(null);
+                    if (!r.ok) return void toast.error(r.error);
+                    if (r.data!.ok) toast.success(r.data!.message);
+                    else toast.error(r.data!.message);
+                    router.refresh();
+                  }}
+                  data-webhook-test
+                >
+                  Test
+                </Button>
+              </div>
+              <p className="text-muted-foreground" suppressHydrationWarning>
+                {b.webhookLast ? `Last call ${when(b.webhookLast.at)}: ${b.webhookLast.outcome}` : "No call received yet."}
+                {b.webhookRefused7d > 0 && <span className="block text-rose-600">{b.webhookRefused7d} call{b.webhookRefused7d === 1 ? "" : "s"} refused in the last 7 days: the secret hash here and in Chapa differ.</span>}
+              </p>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 export function SettingsView({ businesses, settings }: { businesses: ChapaBusiness[]; settings: ChapaSettings }) {
   const router = useRouter();
   const [s, setS] = React.useState(settings);
@@ -279,7 +360,7 @@ export function SettingsView({ businesses, settings }: { businesses: ChapaBusine
                     </select>
                   </td>
                   <td className="px-2 py-1.5">{b.health === "error" ? <span className="text-rose-600" title={b.lastError ?? ""}>Error: {b.lastError?.slice(0, 50)}</span> : b.lastSyncAt ? `OK, ${when(b.lastSyncAt)} (${b.lastSyncRows} rows)${b.backfilled ? "" : ", history still loading"}` : "Not synced"}</td>
-                  <td className="px-2 py-1.5"><code className="text-[10px]">{origin}/api/finance/chapa/webhook/{b.id}</code>{!b.hasWebhookSecret && <div className="text-[11px] text-amber-700">Add the webhook secret in External APIs</div>}{b.webhookAt && <div className="text-[11px] text-muted-foreground">Last call {when(b.webhookAt)}</div>}</td>
+                  <td className="px-2 py-1.5"><code className="text-[10px]">{origin}/api/finance/chapa/webhook/{b.id}</code>{!b.hasWebhookSecret && <div className="text-[11px] text-amber-700">Set the secret hash under Webhooks below</div>}{b.webhookAt && <div className="text-[11px] text-muted-foreground">Last call {when(b.webhookAt)}</div>}</td>
                   <td className="px-2 py-1.5"><Button size="sm" variant="ghost" className="h-7 text-xs" disabled={probe === b.id} onClick={async () => { setProbe(b.id); const r = await A.chapaProbeAction(b.id); setProbe(null); if (!r.ok) toast.error(r.error); else { toast.success("Checked what Chapa returns"); router.refresh(); } }}><GaugeIcon /> Check API</Button></td>
                 </tr>
               ))}
@@ -293,6 +374,8 @@ export function SettingsView({ businesses, settings }: { businesses: ChapaBusine
           </details>
         )}
       </section>
+
+      <WebhookSettings businesses={businesses} origin={origin} />
 
       <section className="space-y-2">
         <h2 className="text-sm font-semibold">Rules</h2>

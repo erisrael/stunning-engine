@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { CHAPA_STATUSES, CHAPA_STATUS_LABEL, CHAPA_TYPES, CHAPA_METHODS, CHAPA_WIDGETS, chapaMethodLabel, chapaTypeLabel, type ChapaSettings, type ChapaStatus, type ChapaTx, type ChapaWidget } from "@/lib/chapa";
 import type { ChapaBusiness, FollowupRow, TxFilter } from "@/server/chapa-hub";
 import * as A from "@/app/actions/chapa-hub";
+import { DATE_PRESETS } from "@/lib/date-presets";
 import { BalanceView, WithdrawalsView, RefundsView, SettingsView, RefundButton } from "./chapa-money";
 import { SyncView } from "./chapa-sync";
 import { TransactionsView } from "./chapa-transactions";
@@ -286,14 +287,61 @@ function CustomizeOverview({ layout, onClose }: { layout: OverviewLayout; onClos
   );
 }
 
+// The Overview's filters: the same dates, statuses, methods and types as Transactions, on the real stored data.
+const OV_PRESETS = DATE_PRESETS.filter(([p]) => ["today", "yesterday", "7days", "14days", "30days", "month", "lastmonth", "year", "all", "custom"].includes(p));
+type OvFilter = { preset: string; start: string; end: string; status: string[]; method: string[]; type: string[]; q: string; sort: "newest" | "oldest" | "amount_desc" | "amount_asc" };
+const OV_DEFAULT: OvFilter = { preset: "30days", start: "", end: "", status: [], method: [], type: [], q: "", sort: "newest" };
+
 function Overview({ biz, layout }: { biz: string | null; layout: OverviewLayout | null }) {
-  const { data, error } = useLoad(() => A.chapaOverviewAction(biz), [biz]);
+  const [f, setF] = React.useState<OvFilter>(OV_DEFAULT);
+  const [q, setQ] = React.useState("");
+  const { data, error } = useLoad(() => A.chapaOverviewAction(biz, { ...f, start: f.start || null, end: f.end || null, q: f.q || null }), [biz, JSON.stringify(f)]);
   const [custom, setCustom] = React.useState(false);
   const widgets = layout?.widgets ?? CHAPA_WIDGETS.map(([k]) => k);
-  if (error) return <StatusStrip tone="danger">{error}</StatusStrip>;
-  if (!data) return <StatusStrip>Loading…</StatusStrip>;
+  // Search as you type, a moment after the last key.
+  React.useEffect(() => {
+    const t = window.setTimeout(() => setF((x) => (x.q === q ? x : { ...x, q })), 350);
+    return () => window.clearTimeout(t);
+  }, [q]);
+  const filtered = f.status.length + f.method.length + f.type.length > 0 || !!f.q || f.preset !== "30days";
+  const bar = (
+    <div className="space-y-2 rounded-xl border bg-card p-3" data-overview-filters>
+      <div className="flex flex-wrap items-center gap-2">
+        <select aria-label="Dates" className="h-8 rounded-md border bg-background px-2 text-sm" value={f.preset} onChange={(e) => setF({ ...f, preset: e.target.value })} data-overview-preset>
+          {OV_PRESETS.map(([p, l]) => (
+            <option key={p} value={p}>{l}</option>
+          ))}
+        </select>
+        {f.preset === "custom" && (
+          <>
+            <Input aria-label="From" type="date" className="h-8 w-36" value={f.start} onChange={(e) => setF({ ...f, start: e.target.value })} />
+            <Input aria-label="To" type="date" className="h-8 w-36" value={f.end} onChange={(e) => setF({ ...f, end: e.target.value })} />
+          </>
+        )}
+        <Input aria-label="Search transactions" className="h-8 w-56" placeholder="Reference, name, email, phone, amount" value={q} onChange={(e) => setQ(e.target.value)} />
+        <select aria-label="Sort" className="h-8 rounded-md border bg-background px-2 text-sm" value={f.sort} onChange={(e) => setF({ ...f, sort: e.target.value as OvFilter["sort"] })}>
+          <option value="newest">Newest first</option>
+          <option value="oldest">Oldest first</option>
+          <option value="amount_desc">Largest amount</option>
+          <option value="amount_asc">Smallest amount</option>
+        </select>
+        {filtered && (
+          <Button size="sm" variant="ghost" onClick={() => (setF(OV_DEFAULT), setQ(""))}>
+            Clear filters
+          </Button>
+        )}
+      </div>
+      <MultiChips label="Status" options={CHAPA_STATUSES} value={f.status as ChapaStatus[]} onChange={(v) => setF({ ...f, status: v })} />
+      <MultiChips label="Method" options={CHAPA_METHODS.map((m) => [m, chapaMethodLabel(m)] as const)} value={f.method as never[]} onChange={(v) => setF({ ...f, method: v })} />
+      <MultiChips label="Type" options={CHAPA_TYPES} value={f.type as never[]} onChange={(v) => setF({ ...f, type: v })} />
+    </div>
+  );
+  if (error) return <div className="space-y-4">{bar}<StatusStrip tone="danger">{error}</StatusStrip></div>;
+  if (!data) return <div className="space-y-4">{bar}<StatusStrip>Loading…</StatusStrip></div>;
+  const rangeLabel = data.filter.preset === "all" ? "All time" : data.filter.from === data.filter.until ? (data.filter.from ?? "") : `${data.filter.from ?? "start"} to ${data.filter.until ?? "today"}`;
   return (
     <div className="space-y-4" data-overview={widgets.join(",")}>
+      {bar}
       {layout && (
         <div className="flex justify-end">
           <Button size="sm" variant="outline" onClick={() => setCustom(!custom)} aria-expanded={custom}>
@@ -311,13 +359,80 @@ function Overview({ biz, layout }: { biz: string | null; layout: OverviewLayout 
           ))}
         </div>
       )}
-      {!data.currencies.length && <EmptyState title="No transactions in the last 30 days" description="Sync now to read them from Chapa, or wait for the next automatic sync." />}
-      {data.currencies.map((c) => (
-        <section key={c.currency} className="space-y-3 rounded-xl border bg-card p-4">
-          <h2 className="text-sm font-semibold">{c.currency}</h2>
-          <CurrencyWidgets c={c} widgets={widgets} />
+      {!data.currencies.length && !data.rangeOnly.length && <EmptyState title={filtered ? "No transactions match" : "No transactions in the last 30 days"} description={filtered ? "Change the dates or the filters." : "Sync now to read them from Chapa, or wait for the next automatic sync."} />}
+      {[...data.currencies.map((c) => ({ currency: c.currency, range: c.range, c })), ...data.rangeOnly.map((r) => ({ currency: r.currency, range: r.range, c: null }))].map(({ currency, range, c }) => (
+        <section key={currency} className="space-y-3 rounded-xl border bg-card p-4" data-overview-currency={currency}>
+          <h2 className="text-sm font-semibold">{currency}</h2>
+          {range && <RangeWidgets r={range} currency={currency} label={rangeLabel} />}
+          {c && <CurrencyWidgets c={c} widgets={widgets.filter((w) => !["daily", "method", "type", "status"].includes(w) || !range)} />}
         </section>
       ))}
+      <section className="space-y-2 rounded-xl border bg-card p-4" data-overview-transactions>
+        <h2 className="text-sm font-semibold">
+          Transactions in this range <span className="font-normal text-muted-foreground">({data.matching.toLocaleString()} match{data.matching > 25 ? ", showing 25" : ""})</span>
+        </h2>
+        {!data.transactions.length ? (
+          <p className="text-sm text-muted-foreground">None.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="border-b text-left text-xs text-muted-foreground">
+                <tr>
+                  <th className="p-2">When</th>
+                  <th className="p-2">Customer</th>
+                  <th className="p-2">Reference</th>
+                  <th className="p-2">Method</th>
+                  <th className="p-2">Status</th>
+                  <th className="p-2 text-right">Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.transactions.map((t) => (
+                  <tr key={`${t.accountId}-${t.txRef}`} className="border-b last:border-0" data-overview-tx={t.txRef}>
+                    <td className="p-2 whitespace-nowrap" suppressHydrationWarning>{when(t.createdAt)}</td>
+                    <td className="p-2">{t.customer || t.email || t.phone || "—"}</td>
+                    <td className="p-2 font-mono text-xs">{t.txRef}</td>
+                    <td className="p-2">{chapaMethodLabel(t.method)}</td>
+                    <td className="p-2">{CHAPA_STATUS_LABEL[t.status as ChapaStatus] ?? t.status}</td>
+                    <td className="p-2 text-right tabular-nums">{money(t.amount, t.currency)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+type RangeData = NonNullable<OverviewData["currencies"][number]["range"]>;
+// The selected range: total paid, the counts and the success rate, paid per day (or month), and the breakdowns.
+function RangeWidgets({ r, currency, label }: { r: RangeData; currency: string; label: string }) {
+  const max = Math.max(1, ...r.series.map((d) => d.volume));
+  return (
+    <div className="space-y-3" data-overview-range>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <MetricCard label={`Paid · ${label}`} value={money(r.volume, currency)} hint={`${r.success.toLocaleString()} paid`} />
+        <MetricCard label="Transactions" value={r.count.toLocaleString()} hint={`${r.failed} failed · ${r.pending} pending`} />
+        <MetricCard label="Success rate" value={r.rate === null ? "—" : `${Math.round(r.rate * 100)}%`} hint="Paid out of paid and failed" />
+        <MetricCard label="Average payment" value={r.success ? money(r.volume / r.success, currency) : "—"} />
+      </div>
+      <div>
+        <p className="mb-1 text-xs font-medium text-muted-foreground">Paid per {r.monthly ? "month" : "day"}</p>
+        <div className="flex h-32 items-end gap-0.5" role="img" aria-label={`Paid volume per ${r.monthly ? "month" : "day"} in ${currency}`} data-overview-chart={r.series.length}>
+          {r.series.map((d) => (
+            <div key={d.day} className="group relative flex-1" title={`${d.day}: ${money(d.volume, currency)} (${d.count})`}>
+              <div className="rounded-t bg-primary/80 group-hover:bg-primary" style={{ height: `${Math.max(2, (d.volume / max) * 120)}px` }} />
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="grid gap-3 md:grid-cols-3">
+        <Breakdown title="By payment method" list={r.byMethod} cur={currency} isMoney />
+        <Breakdown title="By type" list={r.byType.map(([t, v]) => [chapaTypeLabel(t), v] as [string, number])} cur={currency} isMoney />
+        <Breakdown title="By status (count)" list={r.byStatus.map(([t, v]) => [CHAPA_STATUS_LABEL[t as ChapaStatus] ?? t, v] as [string, number])} cur={currency} isMoney={false} />
+      </div>
     </div>
   );
 }

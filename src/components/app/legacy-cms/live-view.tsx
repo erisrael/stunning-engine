@@ -26,7 +26,7 @@ type Source = "live" | "saved";
 export function CmsLiveView({ categories, canReview, initialCategory, canManageData = false, canResolveFeedback = false }: { categories: LegacyCmsCategory[]; canReview: boolean; initialCategory: LegacyCmsCategory; canManageData?: boolean; canResolveFeedback?: boolean }) {
   const [category, setCategory] = React.useState<LegacyCmsCategory>(categories.includes(initialCategory) ? initialCategory : categories[0]);
   const [source, setSource] = React.useState<Source>("live");
-  const [period, setPeriod] = React.useState<Period | null>(null);
+  const [period, setPeriod] = React.useState<Period | null>("today");
   const [start, setStart] = React.useState("");
   const [end, setEnd] = React.useState("");
   const [search, setSearch] = React.useState("");

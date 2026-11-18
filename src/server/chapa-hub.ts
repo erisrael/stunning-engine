@@ -20,7 +20,7 @@ import {
   type ChapaTx,
 } from "@/lib/chapa";
 import { trackedFetch } from "./call-monitor";
-import { rangeInstants } from "@/lib/date-presets";
+import { datePresetRange, isDatePreset, rangeInstants } from "@/lib/date-presets";
 
 // Chapa for every business (Update 1.0, Phase 3).
 //   - Each Chapa account is a business with its own keys, mode (test/live), sync interval and health.
@@ -154,6 +154,9 @@ export type ChapaBusiness = {
   backfilled: boolean;
   webhookAt: string | null;
   hasWebhookSecret: boolean;
+  // Webhook health (Update 1.2): calls refused in the last 7 days (wrong secret hash) and the last outcome.
+  webhookRefused7d: number;
+  webhookLast: { at: string; outcome: string; signed: boolean } | null;
   probe: unknown;
   rights: Record<ChapaAction, boolean>;
 };
@@ -185,6 +188,8 @@ export async function chapaBusinesses(user: AppUser): Promise<ChapaBusiness[]> {
       backfilled: !!r.backfilled_at,
       webhookAt: r.webhook_at,
       hasWebhookSecret: !!r.webhook_secret_enc,
+      webhookRefused7d: Number((await get<{ n: number }>("SELECT COUNT(*) AS n FROM chapa_webhook_events WHERE account_id = ? AND signature_ok = 0 AND received_at >= ?", r.id, new Date(Date.now() - 7 * DAY).toISOString()))?.n ?? 0),
+      webhookLast: await get<{ received_at: string; outcome: string; signature_ok: number }>("SELECT received_at, outcome, signature_ok FROM chapa_webhook_events WHERE account_id = ? ORDER BY received_at DESC LIMIT 1", r.id).then((w) => (w ? { at: w.received_at, outcome: w.outcome, signed: !!Number(w.signature_ok) } : null)),
       probe: parseJson<unknown>(r.probe_json ?? "null", null),
       rights,
     });
@@ -487,7 +492,32 @@ export async function recheckPending(now = Date.now()) {
 
 // The webhook: signed with the business's webhook secret (x-chapa-signature = HMAC of the body;
 // chapa-signature = HMAC of the secret). The status is then confirmed with Chapa, never taken from the body.
-export async function chapaWebhook(accountId: string, rawBody: string, headers: Headers) {
+// The webhook secret ("Secret hash" in Chapa's dashboard, Settings, Webhooks). Chapa signs each call with it: the
+// x-chapa-signature header is HMAC-SHA256 of the body, chapa-signature is HMAC-SHA256 of the secret itself.
+export async function setChapaWebhookSecret(user: AppUser, accountId: string, secret: string) {
+  if (!can(user, "finance.access") && !can(user, "users.manage") && !can(user, "settings.manage")) throw new WorkflowError("FORBIDDEN", "Only Admin or Finance set the webhook secret.");
+  const r = await accRow(accountId);
+  const v = String(secret ?? "").trim();
+  if (v.length > 200) throw new WorkflowError("VALIDATION", "The secret hash is at most 200 characters. Use the same text as in Chapa's dashboard.");
+  const { seal } = await import("./secrets");
+  await run("UPDATE chapa_accounts SET webhook_secret_enc = ?, updated_at = ? WHERE id = ?", v ? await seal(v) : null, nowIso(), accountId);
+  await audit({ actor: user }, { action: "chapa.webhook_secret", summary: `${user.name} ${v ? "set" : "removed"} the Chapa webhook secret of ${r.name}` });
+}
+
+// A test call signed exactly as Chapa signs, through the same check, without touching any payment.
+export async function chapaWebhookSelfTest(user: AppUser, accountId: string) {
+  await need(user, "view", accountId);
+  const r = await accRow(accountId);
+  if (!r.webhook_secret_enc) return { ok: false, message: "No webhook secret is saved for this business. Set the same secret hash here and in Chapa's dashboard." };
+  const secret = (await unseal(r.webhook_secret_enc))?.trim() ?? "";
+  if (!secret) return { ok: false, message: "The saved webhook secret cannot be read (the app's encryption secret changed). Save it again." };
+  const body = JSON.stringify({ event: "charge.test", tx_ref: `selftest-${Date.now()}`, status: "success" });
+  const h = (v: string) => crypto.createHmac("sha256", secret).update(v).digest("hex");
+  const res = await chapaWebhook(accountId, body, new Headers({ "x-chapa-signature": h(body), "chapa-signature": h(secret) }), { dryRun: true });
+  return { ok: res.ok, message: res.ok ? "The signature check passes. Chapa's calls signed with this secret hash will be accepted." : res.message };
+}
+
+export async function chapaWebhook(accountId: string, rawBody: string, headers: Headers, opts: { dryRun?: boolean } = {}) {
   const r = await get<AccRow>("SELECT * FROM chapa_accounts WHERE id = ?", accountId);
   if (!r?.webhook_secret_enc) return { ok: false, status: 404, message: "Unknown business or no webhook secret" };
   const secret = (await unseal(r.webhook_secret_enc))?.trim() ?? "";
@@ -506,6 +536,10 @@ export async function chapaWebhook(accountId: string, rawBody: string, headers: 
   );
   const outcome = (text: string) => run("UPDATE chapa_webhook_events SET outcome = ? WHERE id = ?", text.slice(0, 300), eventId);
   if (!signed) return { ok: false, status: 401, message: "Bad signature" };
+  if (opts.dryRun) {
+    await outcome("self-test from Settings: signature accepted, nothing changed");
+    return { ok: true, status: 200, message: "ok" };
+  }
   await run("UPDATE chapa_accounts SET webhook_at = ? WHERE id = ?", now, accountId);
   if (!txRef) {
     await outcome("no tx_ref in the body");
@@ -722,11 +756,20 @@ export async function deleteChapaTxView(user: AppUser, id: string) {
 }
 
 // h10: volume, count and success rate for today, 7 and 30 days, by method, type and status, and a daily chart.
-export async function chapaOverview(user: AppUser, biz?: string | null, now = Date.now()) {
+// The Overview's filter (Update 1.2): a date range (Today to All time, or custom), status, method, type and a search.
+// The fixed cards (today, 7 and 30 days) follow the filters except the dates; the "Selected range" card, the chart,
+// the breakdowns and the list of transactions follow all of them.
+export type OverviewFilter = { preset?: string | null; start?: string | null; end?: string | null; status?: string[]; method?: string[]; type?: string[]; q?: string | null; sort?: "newest" | "oldest" | "amount_desc" | "amount_asc" | null };
+
+export async function chapaOverview(user: AppUser, biz?: string | null, f: OverviewFilter = {}, now = Date.now()) {
   const today = addisDay(now);
   const back = (n: number) => addisDay(now - n * DAY);
   const windows = { today: today, d7: back(6), d30: back(29) };
-  const w = await where(user, { biz, from: windows.d30, until: today });
+  const rest = { status: f.status ?? [], method: f.method ?? [], type: f.type ?? [], q: f.q ?? undefined };
+  const preset = isDatePreset(f.preset) ? f.preset : "30days";
+  const sel = datePresetRange(preset, f.start, f.end, now);
+  const range = await chapaRangeSummary(user, biz, { ...rest, from: sel.from ?? undefined, until: sel.until ?? undefined }, f.sort ?? "newest", now);
+  const w = await where(user, { biz, from: windows.d30, until: today, ...rest });
   const rows = await all<{ currency: string; status: string; method: string | null; type: string | null; day: string; n: number; sum: number }>(
     `SELECT t.currency, t.status, t.method, t.type, SUBSTR(t.created_at, 1, 13) AS day, COUNT(*) AS n, SUM(t.amount) AS sum FROM chapa_transactions t WHERE ${w.sql} GROUP BY t.currency, t.status, t.method, t.type, SUBSTR(t.created_at, 1, 13)`,
     ...w.args,
@@ -766,8 +809,80 @@ export async function chapaOverview(user: AppUser, biz?: string | null, now = Da
       byType: Object.entries(c.type).sort((a, b) => b[1] - a[1]),
       byStatus: Object.entries(c.status).sort((a, b) => b[1] - a[1]),
       daily: days.map((d) => ({ day: d, ...(c.daily[d] ?? { volume: 0, count: 0 }) })),
+      range: range.byCur[currency] ?? null,
     })),
+    // Currencies seen only in the selected range (older than 30 days).
+    rangeOnly: Object.entries(range.byCur).filter(([c]) => !byCur[c]).map(([currency, r]) => ({ currency, range: r })),
+    filter: { preset, from: sel.from, until: sel.until, ...rest, sort: f.sort ?? "newest" },
+    transactions: range.list,
+    matching: range.count,
     businesses: w.biz.map((b) => ({ id: b.id, name: b.name, mode: b.mode, health: b.health, lastSyncAt: b.lastSyncAt, lastError: b.lastError })),
+  };
+}
+
+// The selected range: totals by currency with the success rate, paid per day (per month past three months), the
+// breakdowns, and the newest (or largest) matching transactions.
+async function chapaRangeSummary(user: AppUser, biz: string | null | undefined, f: TxFilter, sort: string, now: number) {
+  const w = await where(user, { biz, ...f });
+  const rows = await all<{ currency: string; status: string; method: string | null; type: string | null; day: string; n: number; sum: number }>(
+    `SELECT t.currency, t.status, t.method, t.type, SUBSTR(t.created_at, 1, 13) AS day, COUNT(*) AS n, SUM(t.amount) AS sum FROM chapa_transactions t WHERE ${w.sql} GROUP BY t.currency, t.status, t.method, t.type, SUBSTR(t.created_at, 1, 13)`,
+    ...w.args,
+  );
+  const first = f.from ?? (rows.length ? rows.map((r) => addisDay(`${r.day}:00:00Z`)).sort()[0]! : addisDay(now));
+  const last = f.until ?? addisDay(now);
+  const spanDays = Math.round((Date.parse(`${last}T00:00:00Z`) - Date.parse(`${first}T00:00:00Z`)) / DAY) + 1;
+  const monthly = spanDays > 92;
+  const bucket = (d: string) => (monthly ? d.slice(0, 7) : d);
+  const buckets: string[] = [];
+  if (monthly) {
+    for (let d = new Date(`${first.slice(0, 7)}-01T00:00:00Z`); d.toISOString().slice(0, 7) <= last.slice(0, 7); d.setUTCMonth(d.getUTCMonth() + 1)) buckets.push(d.toISOString().slice(0, 7));
+  } else for (let i = 0; i < Math.max(1, spanDays); i++) buckets.push(addisDay(Date.parse(`${first}T00:00:00Z`) - 3 * 3600e3 + i * DAY + 12 * 3600e3));
+  type R = { volume: number; count: number; success: number; failed: number; pending: number; method: Record<string, number>; type: Record<string, number>; status: Record<string, number>; series: Record<string, { volume: number; count: number }> };
+  const byCur: Record<string, R> = {};
+  for (const r of rows) {
+    const c = (byCur[r.currency] ??= { volume: 0, count: 0, success: 0, failed: 0, pending: 0, method: {}, type: {}, status: {}, series: {} });
+    const n = Number(r.n);
+    const sum = Number(r.sum);
+    c.count += n;
+    c.status[r.status] = (c.status[r.status] ?? 0) + n;
+    if (r.status === "failed") c.failed += n;
+    if (r.status === "pending") c.pending += n;
+    if (r.status === "success") {
+      c.volume += sum;
+      c.success += n;
+      const m = chapaMethodLabel(r.method);
+      c.method[m] = (c.method[m] ?? 0) + sum;
+      c.type[r.type ?? "api"] = (c.type[r.type ?? "api"] ?? 0) + sum;
+      const b = bucket(addisDay(`${r.day}:00:00Z`));
+      const s = (c.series[b] ??= { volume: 0, count: 0 });
+      s.volume += sum;
+      s.count += n;
+    }
+  }
+  const order = { newest: "t.created_at DESC", oldest: "t.created_at ASC", amount_desc: "t.amount DESC, t.created_at DESC", amount_asc: "t.amount ASC, t.created_at DESC" }[sort] ?? "t.created_at DESC";
+  const list = await all<TxRow>(`${TX_SELECT} WHERE ${w.sql} ORDER BY ${order} LIMIT 25`, ...w.args);
+  const count = Number((await get<{ n: number }>(`SELECT COUNT(*) AS n FROM chapa_transactions t WHERE ${w.sql}`, ...w.args))?.n ?? 0);
+  return {
+    byCur: Object.fromEntries(
+      Object.entries(byCur).map(([cur, c]) => [
+        cur,
+        {
+          volume: c.volume,
+          count: c.count,
+          success: c.success,
+          failed: c.failed,
+          pending: c.pending,
+          rate: c.success + c.failed ? c.success / (c.success + c.failed) : null,
+          byMethod: Object.entries(c.method).sort((a, b) => b[1] - a[1]),
+          byType: Object.entries(c.type).sort((a, b) => b[1] - a[1]),
+          byStatus: Object.entries(c.status).sort((a, b) => b[1] - a[1]),
+          series: buckets.map((b) => ({ day: b, ...(c.series[b] ?? { volume: 0, count: 0 }) })),
+          monthly,
+        },
+      ]),
+    ),
+    list: list.map(toTx),
+    count,
   };
 }
 
