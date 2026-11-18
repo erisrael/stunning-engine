@@ -477,31 +477,79 @@ async function withLang(x: TelegramTexts, customerId: string): Promise<TelegramT
 }
 const backRow = async (x: TelegramTexts) => [{ text: await btn(x, "button.menu"), callback_data: "m" }];
 
-// The main menu (Customer support, Content): its entries in order, one a row; then resources, forms, feedback and
-// call-back; the phone and language buttons; the support app.
-async function sendMenu(chat: string, x: TelegramTexts) {
+// The main menu: at most seven buttons, two a row, each opening its own submenu (Get help, My requests, Questions,
+// Resources, Call, Settings) and the support app. The entries of Customer support > Content go into the submenu their
+// action belongs to, in their order; a submenu with one entry is that entry itself.
+type Btn = { text: string; callback_data?: string; web_app?: { url: string }; url?: string };
+const L = (x: TelegramTexts, en: string, am: string) => (x.lang === "am" ? am : x.lang === "en" ? en : `${en} · ${am}`).slice(0, 64);
+const SUBMENUS = {
+  help: ["💬", "Get help", "እርዳታ ያግኙ"],
+  mine: ["📋", "My requests", "የእኔ ጥያቄዎች"],
+  more: ["📚", "Resources", "መረጃዎች"],
+  call: ["📞", "Call us", "ይደውሉልን"],
+  settings: ["⚙️", "Settings", "ቅንብሮች"],
+} as const;
+type Submenu = keyof typeof SUBMENUS;
+async function menuParts(x: TelegramTexts) {
   const c = await import("./support-content");
   const { helpCategories } = await import("./support-help");
   const cats = new Set((await helpCategories({ activeOnly: true })).map((k) => k.key));
-  const rows: { text: string; callback_data?: string; web_app?: { url: string }; url?: string }[][] = [];
+  const parts: Record<Submenu | "faq", Btn[]> = { help: [], mine: [], more: [], call: [], settings: [], faq: [] };
   for (const e of await c.contentEntries("menu", x.lang, currentBot())) {
     const a = e.action;
-    if (a.startsWith("url:")) rows.push([{ text: e.label, url: a.slice(4) }]);
-    // A category entry is the category's own button: its help articles first, then the question.
-    else if (a.startsWith("category:")) rows.push([{ text: e.label, callback_data: cats.has(a.slice(9)) ? `c:${a.slice(9)}` : "mn:start" }]);
-    else rows.push([{ text: e.label, callback_data: a === "language" ? "lang" : `mn:${a}` }]);
+    if (a.startsWith("url:")) parts.more.push({ text: e.label, url: a.slice(4) });
+    else if (a.startsWith("category:")) parts.help.push({ text: e.label, callback_data: cats.has(a.slice(9)) ? `c:${a.slice(9)}` : "mn:start" });
+    else if (a === "language") parts.settings.push({ text: e.label, callback_data: "lang" });
+    else if (a === "requests" || a === "history") parts.mine.push({ text: e.label, callback_data: `mn:${a}` });
+    else if (a === "faq") parts.faq.push({ text: e.label, callback_data: "mn:faq" });
+    else parts.help.push({ text: e.label, callback_data: `mn:${a}` });
   }
-  rows.push(...(await (await import("./bot-manager")).menuRows(currentBot(), x)));
-  rows.push([{ text: PHONE_BUTTON(x), callback_data: "ph" }, { text: await btn(x, "button.language"), callback_data: "lang" }]);
+  if (parts.mine.length) parts.mine.push({ text: L(x, "Reopen a conversation", "ውይይት እንደገና ይክፈቱ"), callback_data: "ro" });
+  for (const b of await (await import("./bot-manager")).menuItems(currentBot(), x)) (b.callback_data === "cb" ? parts.call : b.callback_data === "f" ? parts.settings : parts.more).push(b);
   const origin = await botOrigin();
   const appUrl = supportAppUrl(origin, currentBot());
   if (appUrl && x.miniApp) {
-    rows.push([{ text: await btn(x, "button.open_app"), web_app: { url: appUrl } }]);
     // Telegram bots cannot call; the support app can, in the browser inside Telegram.
     const { channelOn } = await import("./connected-systems");
-    if (await channelOn(currentBot() === "default" ? null : currentBot(), "calls")) rows.push([{ text: x.lang === "am" ? "ወደ ድጋፍ ይደውሉ" : "Call support", web_app: { url: supportAppUrl(origin, currentBot(), "&call=1")! } }]);
+    if (await channelOn(currentBot() === "default" ? null : currentBot(), "calls")) parts.call.unshift({ text: L(x, "Call support now", "አሁን ወደ ድጋፍ ይደውሉ"), web_app: { url: supportAppUrl(origin, currentBot(), "&call=1")! } });
   }
+  parts.settings.unshift({ text: PHONE_BUTTON(x), callback_data: "ph" });
+  if (!parts.settings.some((b) => b.callback_data === "lang")) parts.settings.splice(1, 0, { text: await btn(x, "button.language"), callback_data: "lang" });
+  return { parts, appUrl: appUrl && x.miniApp ? appUrl : null };
+}
+async function sendMenu(chat: string, x: TelegramTexts) {
+  const { parts, appUrl } = await menuParts(x);
+  const top: Btn[] = [];
+  const add = (key: Submenu) => {
+    const list = parts[key];
+    if (list.length === 1) top.push(list[0]!);
+    else if (list.length > 1) top.push({ text: `${SUBMENUS[key][0]} ${L(x, SUBMENUS[key][1], SUBMENUS[key][2])}`, callback_data: `sm:${key}` });
+  };
+  add("help");
+  add("mine");
+  top.push(...parts.faq.slice(0, 1));
+  add("more");
+  add("call");
+  add("settings");
+  const rows: Btn[][] = [];
+  for (let i = 0; i < top.length; i += 2) rows.push(top.slice(i, i + 2));
+  if (appUrl) rows.push([{ text: await btn(x, "button.open_app"), web_app: { url: appUrl } }]);
   await telegramSend(chat, (await sayKey(x, "welcome")) || say(x, x.welcome, x.welcomeAm), { reply_markup: { inline_keyboard: rows } });
+}
+
+// A submenu: its entries one a row, then back to the menu.
+async function sendSubmenu(chat: string, x: TelegramTexts, key: Submenu) {
+  const { parts } = await menuParts(x);
+  const list = parts[key] ?? [];
+  if (!list.length) return sendMenu(chat, x);
+  const intro: Record<Submenu, [string, string]> = {
+    help: ["What do you need help with?", "በምን እንርዳዎ?"],
+    mine: ["Your conversations with us.", "ከእኛ ጋር ያደረጓቸው ውይይቶች።"],
+    more: ["Resources, forms and links.", "መረጃዎች፣ ቅጾች እና ማገናኛዎች።"],
+    call: ["Talk to us.", "ያነጋግሩን።"],
+    settings: ["Your settings.", "ቅንብሮችዎ።"],
+  };
+  await telegramSend(chat, L(x, intro[key][0], intro[key][1]), { reply_markup: { inline_keyboard: [...list.map((b) => [b]), await backRow(x)] } });
 }
 
 const STATUS_WORDS: Record<string, [string, string]> = {
@@ -706,6 +754,7 @@ async function telegramButton(q: NonNullable<TgUpdate["callback_query"]>, x: Tel
   const me = await customerFor({ channel: "telegram", key: chat, name: nameOf(q.from) });
   x = await withLang(x, me);
   if (data === "m") return sendMenu(chat, x);
+  if (data.startsWith("sm:") && data.slice(3) in SUBMENUS) return sendSubmenu(chat, x, data.slice(3) as Submenu);
   if (data === "ph") return askPhone(chat, x);
   // Language: chosen once, kept on the customer.
   if (data === "lang") return telegramSend(chat, await sayKey({ ...x, lang: "both" }, "language.choose"), { reply_markup: { inline_keyboard: [[{ text: "English", callback_data: "l:en" }, { text: "አማርኛ", callback_data: "l:am" }]] } });

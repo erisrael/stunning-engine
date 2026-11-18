@@ -160,6 +160,8 @@ async function main() {
   const secret = (await get<{ tg_secret: string }>("SELECT tg_secret FROM sup_apps WHERE id = ?", app.id))!.tg_secret;
   await ch.telegramUpdate(secret, secret, { message: { message_id: 1, text: "/start", chat: { id: 7001, type: "private" }, from: { id: 7001, first_name: "Meron" } } });
   const kb = (p?: { body: Record<string, unknown> }) => ((p?.body.reply_markup as { inline_keyboard?: { callback_data?: string }[][] } | undefined)?.inline_keyboard ?? []).flat();
+  const top = kb(posts.at(-1));
+  if (top.some((b) => b.callback_data === "sm:call")) await ch.telegramUpdate(secret, secret, { callback_query: { id: "q0", data: "sm:call", from: { id: 7001 }, message: { chat: { id: 7001, type: "private" } } } });
   check("the bot menu has Call me back", kb(posts.at(-1)).some((b) => b.callback_data === "cb"));
   await ch.telegramUpdate(secret, secret, { callback_query: { id: "q1", data: "cb", from: { id: 7001 }, message: { chat: { id: 7001, type: "private" } } } });
   check("without a number it asks to share it", posts.some((p) => String(p.body.text).includes("Share the phone number")));

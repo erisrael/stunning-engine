@@ -113,7 +113,9 @@ async function main() {
   const s1 = sent();
   const ask = s1.find((p) => kb(p)?.keyboard?.[0]?.[0]?.request_contact);
   check("/start offers Share my phone number until it is shared", !!ask && /Share my phone number/.test(kb(ask)!.keyboard![0]![0]!.text));
-  check("the menu stays the last message, with the phone button", !!kb(s1.at(-1)!)?.inline_keyboard?.flat().some((b) => b.callback_data === "ph"), kb(s1.at(-1)!));
+  check("the menu stays the last message, with Settings", !!kb(s1.at(-1)!)?.inline_keyboard?.flat().some((b) => b.callback_data === "sm:settings"), kb(s1.at(-1)!));
+  await press("sm:settings");
+  check("Settings has the phone button", !!kb(sent().at(-1)!)?.inline_keyboard?.flat().some((b) => b.callback_data === "ph"));
   posts.length = 0;
   await press("ph");
   check("the menu button asks for the number at any time", sent().some((p) => kb(p)?.keyboard?.[0]?.[0]?.request_contact));

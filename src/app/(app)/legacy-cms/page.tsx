@@ -27,6 +27,7 @@ import { CmsGrowthView } from "@/components/app/legacy-cms/growth-view";
 import { CmsFieldsView } from "@/components/app/legacy-cms/fields-view";
 import { CmsRecordsView } from "@/components/app/legacy-cms/records-view";
 import { LegacyCmsClient } from "./legacy-cms-client";
+import { NoorTotalsStrip } from "@/components/app/legacy-cms/noor-totals";
 
 export const metadata = { title: "Noor Ethiopia CMS (Legacy)" };
 
@@ -89,6 +90,7 @@ export default async function LegacyCmsPage({ searchParams }: { searchParams: Pr
     <div className="space-y-4">
       <PageHeader title="Legacy CMS" description="Noor Ethiopia CMS: live data by date, invoice verification, revenue and growth, and daily trends stored every night." />
       <PageTabs tabs={tabs} active={view} href={(k) => `/legacy-cms?view=${k}`} label="Legacy CMS views" />
+      {["live", "revenue", "growth", "reports", "invoices"].includes(view) && <NoorTotalsStrip />}
       {body}
     </div>
   );

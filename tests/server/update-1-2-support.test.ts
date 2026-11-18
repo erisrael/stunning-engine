@@ -87,10 +87,15 @@ async function main() {
 
   await msg("/start");
   const menu = last();
-  check("/start shows the welcome and the menu in both languages", String(menu.text).includes("Welcome to MySeed Support") && kb(menu).some((b) => b.callback_data === "mn:requests") && kb(menu).some((b) => b.callback_data === "lang"), menu);
+  check("/start shows the welcome and the menu in both languages", String(menu.text).includes("Welcome to MySeed Support") && kb(menu).some((b) => b.callback_data === "sm:mine") && kb(menu).some((b) => b.callback_data === "sm:settings") && kb(menu).length <= 8, menu);
+  await press("sm:mine");
+  check("My requests opens its submenu", kb(last()).some((b) => b.callback_data === "mn:requests") && kb(last()).some((b) => b.callback_data === "mn:history") && kb(last()).some((b) => b.callback_data === "m"));
+  await press("sm:settings");
+  check("Settings has the language", kb(last()).some((b) => b.callback_data === "lang"));
   await press("lang");
   check("Language offers English and Amharic", kb(last()).map((b) => b.callback_data).join() === "l:en,l:am");
   await press("l:am");
+  await press("sm:help");
   const amMenu = last();
   check("after choosing Amharic the menu is in Amharic only", kb(amMenu).some((b) => b.text === "ውይይት ይጀምሩ") && !kb(amMenu).some((b) => b.text.includes("Start a Conversation")), kb(amMenu).map((b) => b.text));
   await press("l:en");

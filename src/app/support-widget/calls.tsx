@@ -221,7 +221,29 @@ function useCustomerCall(api: Api) {
   // The phone menu (IVR) before the call, and what the queue tells a waiting caller.
   const [ivr, setIvr] = React.useState<IvrScreen | null>(null);
   const [queue, setQueue] = React.useState<{ estimateSec: number | null; announcement: string | null; callbackOffer: boolean } | null>(null);
-  const audio = React.useRef<HTMLAudioElement>(null);
+  // The agent's voice. It can arrive before the call bar (and its player) is on screen: answering a call sets up the
+  // connection while the ringing screen still shows. So the stream is kept and given to the player whenever it
+  // mounts, and played explicitly: a Telegram or phone browser may refuse autoplay, and then a tap turns sound on.
+  const remote = React.useRef<MediaStream | null>(null);
+  const player = React.useRef<HTMLAudioElement | null>(null);
+  const [soundBlocked, setSoundBlocked] = React.useState(false);
+  const playRemote = React.useCallback(() => {
+    const el = player.current;
+    if (!el || !remote.current) return;
+    if (el.srcObject !== remote.current) el.srcObject = remote.current;
+    el.muted = false;
+    void el.play().then(
+      () => setSoundBlocked(false),
+      () => setSoundBlocked(true),
+    );
+  }, []);
+  const audio = React.useCallback(
+    (el: HTMLAudioElement | null) => {
+      player.current = el;
+      if (el) playRemote();
+    },
+    [playRemote],
+  );
   const waiting = useWaitingMessage(state === "ringing");
   useHoldTone(state === "live" && held);
   // In-call controls as in the team's calls: mute, the connection's quality, reconnecting, and a time limit to connect.
@@ -314,7 +336,12 @@ function useCustomerCall(api: Api) {
     const mic = ref.current.mic ?? (await navigator.mediaDevices.getUserMedia({ audio: true }));
     Object.assign(ref.current, { pc, mic });
     mic.getTracks().forEach((t) => ((t.enabled = true), pc.addTrack(t, mic)));
-    pc.ontrack = (e) => audio.current && (audio.current.srcObject = e.streams[0] ?? null);
+    remote.current = null;
+    pc.ontrack = (e) => {
+      const st = (remote.current ??= e.streams[0] ?? new MediaStream());
+      if (!st.getTracks().includes(e.track)) st.addTrack(e.track);
+      playRemote();
+    };
     return pc;
   };
 
@@ -322,6 +349,7 @@ function useCustomerCall(api: Api) {
     setInfo(agent ? `You are talking with ${agent}` : null);
     setState("live");
     haptic("success");
+    window.setTimeout(playRemote, 0);
     if (!ref.current.timer) ref.current.timer = window.setInterval(() => setSecs((x) => x + 1), 1000);
     // Answered but no sound path within 25 seconds (a network that blocks calls): end it and say why.
     const pc = ref.current.pc;
@@ -429,7 +457,7 @@ function useCustomerCall(api: Api) {
     if (ref.current.begin) await begin(ref.current.begin);
   };
 
-  return { state, setState, info, secs, setSecs, held, audio, waiting, call, accept, stop, micBlocked, setMicBlocked, ivr, setIvr, begin, routed, restart, queue, muted, toggleMute, quality, reconnecting };
+  return { state, setState, info, secs, setSecs, held, audio, soundBlocked, playRemote, waiting, call, accept, stop, micBlocked, setMicBlocked, ivr, setIvr, begin, routed, restart, queue, muted, toggleMute, quality, reconnecting };
 }
 
 function CallBar({ c, onOk, onCallback }: { c: ReturnType<typeof useCustomerCall>; onOk: () => void; onCallback: () => void }) {
@@ -458,7 +486,12 @@ function CallBar({ c, onOk, onCallback }: { c: ReturnType<typeof useCustomerCall
       </div>
     )}
     <div className="flex items-center gap-2 rounded-lg border p-2 text-sm" data-call-state={held && state === "live" ? "hold" : state}>
-      <audio ref={c.audio} autoPlay data-call-audio />
+      <audio ref={c.audio} autoPlay playsInline data-call-audio />
+      {state === "live" && c.soundBlocked && (
+        <Button size="xs" onClick={c.playRemote} data-call-sound>
+          Tap to hear the agent
+        </Button>
+      )}
       <ProximityShade near={route.near} />
       {state === "live" && c.quality && (
         <span title="Connection quality" aria-label={`Connection ${c.quality}`} data-call-quality={c.quality}>

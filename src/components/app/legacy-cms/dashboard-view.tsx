@@ -17,7 +17,6 @@ const METRICS = [
   ["paidAmount", "Paid revenue", fmtMoney],
   ["paid", "Paid invoices", fmtNum],
   ["invoices", "All invoices", fmtNum],
-  ["pending", "Waiting for approval", fmtNum],
   ["newStudents", "New students", fmtNum],
   ["newParents", "New parents", fmtNum],
   ["subscriptionsStarted", "Subscriptions started", fmtNum],
@@ -127,7 +126,7 @@ export function CmsDashboardView({ canBuild }: { canBuild: boolean }) {
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             {METRICS.slice(0, 8).map(([k, l, f]) => {
               const c = change(k);
-              return <MetricCard key={k} label={l} value={f(total(inRange, k))} trend={c === null ? undefined : { direction: c > 0 ? "up" : c < 0 ? "down" : "flat", text: `${c > 0 ? "+" : ""}${c}% vs the period before`, good: k === "pending" ? c < 0 : c > 0 }} />;
+              return <MetricCard key={k} label={l} value={f(total(inRange, k))} trend={c === null ? undefined : { direction: c > 0 ? "up" : c < 0 ? "down" : "flat", text: `${c > 0 ? "+" : ""}${c}% vs the period before`, good: c > 0 }} />;
             })}
           </div>
           <div className="rounded-xl border bg-card p-3">

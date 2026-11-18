@@ -60,7 +60,9 @@ async function main() {
   await msg(1003, "/start", "Liya");
   check("subscribers are counted", (await bm.listBots(admin)).find((b) => b.key === app.id)?.subscribers === 3);
   const menu = last("1001")!;
-  check("the menu has Send feedback", kb(menu).some((b) => b.callback_data === "f"));
+  check("the menu keeps to eight buttons, grouped in submenus", kb(menu).length <= 8 && kb(menu).some((b) => b.callback_data === "sm:settings"), kb(menu));
+  await press(1001, "sm:settings");
+  check("the menu has Send feedback", kb(last("1001")!).some((b) => b.callback_data === "f"));
   check("no Resources button while the library is empty", !kb(menu).some((b) => b.callback_data === "r"));
 
   // Content.
@@ -139,6 +141,7 @@ async function main() {
   });
   posts.length = 0;
   await msg(1002, "/menu", "Abel");
+  await press(1002, "sm:more");
   check("the menu shows Forms and surveys", kb(last("1002")!).some((b) => b.callback_data === "s"));
   await press(1002, `s:${form.id}`);
   const q1 = last("1002")!;

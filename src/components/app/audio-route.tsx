@@ -70,7 +70,7 @@ export function useAudioRoute(active: boolean, kind: Kind, deps: unknown[] = [])
       if (canSink && id && el.setSinkId) {
         void el.setSinkId(id).catch(() => {});
         el.volume = 1;
-      } else el.volume = route === "ear" ? 0.25 : 1;
+      } else el.volume = 1;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, route, outputs, canSink, ...deps]);

@@ -9,3 +9,6 @@ export const noorAdminListAction = async (slug: string, q: X.AdminListQuery) => 
 export const noorAdminFormAction = async (slug: string, target: X.FormTarget) => wrap(async () => X.noorAdminForm(await requireViewer(), slug, target), read);
 export const submitNoorAdminFormAction = async (slug: string, target: X.FormTarget, values: Record<string, unknown>) => wrap(async () => X.submitNoorAdminForm(await requireViewer(), slug, target, values), read);
 export const deleteNoorAdminRecordAction = async (slug: string, id: string) => wrap(async () => X.deleteNoorAdminRecord(await requireViewer(), slug, id), read);
+
+// Noor's own totals and dashboard cards, read live (src/server/noor-totals.ts).
+export const noorTotalsAction = async (refresh = false) => wrap(async () => (await import("@/server/noor-totals")).noorTotals(await requireViewer(), { refresh }), read);

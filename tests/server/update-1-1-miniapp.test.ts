@@ -61,7 +61,10 @@ async function main() {
   const menu = posts.filter((p) => p.url.endsWith("/sendMessage")).at(-1)!;
   const rows = ((menu.body.reply_markup as { inline_keyboard: { text: string; web_app?: { url: string } }[][] }).inline_keyboard ?? []).flat();
   check("the menu opens the support app", rows.some((b) => b.text.startsWith("Open the support app") && b.web_app?.url === "https://cm.myseed.et/support-widget?tg=default"));
-  check("and calling support in it", rows.some((b) => b.text === "Call support" && b.web_app?.url === "https://cm.myseed.et/support-widget?tg=default&call=1"));
+  posts.length = 0;
+  await ch.telegramUpdate(secret, secret, { callback_query: { id: "q-call", data: "sm:call", from: { id: 4242 }, message: { chat: { id: 4242, type: "private" } } } });
+  const callRows = ((posts.filter((p) => p.url.endsWith("/sendMessage")).at(-1)?.body.reply_markup as { inline_keyboard?: { text: string; web_app?: { url: string } }[][] } | undefined)?.inline_keyboard ?? []).flat();
+  check("and calling support in it", [...rows, ...callRows].some((b) => /Call support/.test(b.text) && b.web_app?.url === "https://cm.myseed.et/support-widget?tg=default&call=1"), callRows);
   const botCustomer = (await get<{ id: string }>("SELECT id FROM sup_customers WHERE external_id = 'tg:4242' AND app_id IS NULL"))!;
 
   // Signing in to the Mini App.

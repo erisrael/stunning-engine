@@ -420,14 +420,19 @@ async function setMeta(customerId: string, patch: Record<string, string | null>)
 
 // Extra rows for the bot's main menu.
 export async function menuRows(bot: string, x: Texts) {
+  const rows = await menuItems(bot, x);
+  const out: (typeof rows)[] = [];
+  for (let i = 0; i < rows.length; i += 2) out.push(rows.slice(i, i + 2));
+  return out;
+}
+// The same entries one by one (r resources, s forms, f feedback, cb call-back), for the bot's submenus.
+export async function menuItems(bot: string, x: Texts) {
   const rows: { text: string; callback_data: string }[] = [];
   if (x.resources && (await get("SELECT id FROM sup_bot_content WHERE bot = ? AND active = 1 LIMIT 1", bot))) rows.push({ text: am(x) ? "መረጃዎች" : "Resources", callback_data: "r" });
   if (x.surveys && (await get("SELECT id FROM sup_bot_forms WHERE bot = ? AND active = 1 LIMIT 1", bot))) rows.push({ text: am(x) ? "ቅጾች እና ጥናቶች" : "Forms and surveys", callback_data: "s" });
   if (x.feedback) rows.push({ text: am(x) ? "አስተያየት ይስጡ" : "Send feedback", callback_data: "f" });
   if (x.callback && (await callsOn(bot))) rows.push({ text: am(x) ? "መልሰው ይደውሉልኝ" : "Call me back", callback_data: "cb" });
-  const out: (typeof rows)[] = [];
-  for (let i = 0; i < rows.length; i += 2) out.push(rows.slice(i, i + 2));
-  return out;
+  return rows;
 }
 
 const backRow = (x: Texts) => [{ text: am(x) ? "« ማውጫ" : "« Menu", callback_data: "m" }];

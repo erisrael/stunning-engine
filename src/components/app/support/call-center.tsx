@@ -224,8 +224,11 @@ function CallPanel({ call, record, onDone, onEnded }: { call: Exclude<ActiveCall
         Object.assign(p.current, { pc, mic });
         p.current.sender = pc.addTrack(mic.getAudioTracks()[0]!, mic);
         pc.ontrack = (e) => {
-          e.streams[0]?.getTracks().forEach((t) => p.current.remote.addTrack(t));
-          if (audio.current) audio.current.srcObject = p.current.remote;
+          for (const t of e.streams[0]?.getTracks() ?? [e.track]) if (!p.current.remote.getTracks().includes(t)) p.current.remote.addTrack(t);
+          if (audio.current) {
+            audio.current.srcObject = p.current.remote;
+            void audio.current.play().catch(() => {});
+          }
         };
         if (call.mode === "answer") {
           p.current.callId = call.ring.id;
