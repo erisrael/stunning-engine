@@ -1832,7 +1832,7 @@ async function patchCmsState(patch:Partial<StoredCmsConfig>){
 // Admin and Data Managers always manage the stored Noor data; others only when the policy is "granted" and
 // Admin has allowed them (Admin, Noor access).
 export async function canManageCmsData(user: AppUser) {
-  if (can(user, "users.manage") || can(user, "data.manage")) return true;
+  if (can(user, "users.manage") || can(user, "data.manage") || can(user, "cms.manage")) return true;
   const row = await get<{ value: string }>("SELECT value FROM settings WHERE key = 'cfg.legacy_cms'");
   const stored = row?.value ? parseJson<StoredCmsConfig>(row.value, {}) : {};
   return stored.dataPolicy === "granted" && !!stored.userOverrides?.[user.id]?.canManageData;

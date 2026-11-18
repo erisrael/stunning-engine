@@ -40,8 +40,8 @@ export default async function SupportPage({ searchParams }: { searchParams: Prom
         <EmptyState title={cfg.enabled ? "You are not a support agent" : "Customer support is switched off"} description={cfg.enabled ? "A support lead adds agents to the queues." : "Admin switches it on in Support setup."} />
       </div>
     );
-  const tabs = [...(cfg.enabled && agent ? ["desk", "calls", "students", "kb"] : []), ...(lead && cfg.enabled ? ["monitor"] : []), ...(lead ? ["queues", "help", "content", "telegram", "bots", "apps", "systems"] : []), ...(admin || lead ? ["settings"] : [])];
-  const LABELS: Record<string, string> = { desk: "Desk", calls: "Calls", students: "Students & Parents", kb: "Knowledge base", monitor: "Monitor", queues: "Queues and replies", help: "Help menu and routing", content: "Content", telegram: "Telegram", bots: "Bot manager", apps: "Apps and SDK", systems: "Connected systems", settings: "Settings" };
+  const tabs = [...(cfg.enabled && agent ? ["desk", "calls", "students", "kb"] : []), ...(lead && cfg.enabled ? ["monitor", "board"] : []), ...(cfg.enabled && (lead || viewer.perms.includes("support.analytics")) ? ["analytics"] : []), ...(lead ? ["queues", "ivr", "help", "content", "telegram", "bots", "apps", "systems"] : []), ...(admin || lead ? ["settings"] : [])];
+  const LABELS: Record<string, string> = { desk: "Desk", calls: "Calls", students: "Students & Parents", kb: "Knowledge base", monitor: "Monitor", analytics: "Analytics", board: "Live queues", ivr: "Phone menu", queues: "Queues and replies", help: "Help menu and routing", content: "Content", telegram: "Telegram", bots: "Bot manager", apps: "Apps and SDK", systems: "Connected systems", settings: "Settings" };
   const tab = tabs.includes(sp.tab ?? "") ? sp.tab! : tabs[0]!;
   const people = (await userDirectory()).map((u) => ({ id: u.id, name: u.name }));
   const queues = await sd.listQueues();
@@ -93,12 +93,75 @@ export default async function SupportPage({ searchParams }: { searchParams: Prom
       <div className="space-y-4">
         <Monitor m={await sd.monitor(viewer, { from, to })} from={from} to={to} />
         <CategoryReport r={await hp.categoryReport(viewer, { from, to })} />
+        {await (async () => {
+          const { updateReports } = await import("@/server/support-analytics");
+          const { UpdateReports } = await import("@/components/app/support/update-reports");
+          return <UpdateReports r={await updateReports(viewer, { from, to })} />;
+        })()}
       </div>
+    );
+  } else if (tab === "analytics") {
+    const D = await import("@/server/support-dashboard");
+    const { SupportAnalytics } = await import("@/components/app/support/support-analytics");
+    const { datePresetRange, isDatePreset, addisToday } = await import("@/lib/date-presets");
+    const { TICKET_STATUSES, TICKET_STATUS_LABELS } = await import("@/lib/support");
+    const { customDepartments } = await import("@/server/departments");
+    const preset = isDatePreset(sp.range) && sp.range !== "all" ? sp.range : "30days";
+    const r = datePresetRange(preset, sp.from, sp.to);
+    const today = addisToday();
+    const range = { from: r.from ?? today, to: r.until ?? today };
+    const members = [...new Set(queues.flatMap((q) => q.members))];
+    panel = (
+      <SupportAnalytics
+        d={await D.supportDashboard(viewer, { ...range, agentId: sp.agent || null, department: sp.department || null, queueId: sp.queue || null, category: sp.category || null, customer: sp.customer || null, status: sp.status || null })}
+        preset={preset}
+        agents={people.filter((p) => members.includes(p.id))}
+        queues={queues.map((q) => ({ id: q.id, name: q.name }))}
+        departments={[...DEPARTMENTS.map((d) => ({ key: d as string, label: DEPARTMENT_LABELS[d] })), ...(await customDepartments()).map((d) => ({ key: d.key, label: d.title }))]}
+        statuses={TICKET_STATUSES.map((s) => ({ key: s, label: TICKET_STATUS_LABELS[s] }))}
+        canExport={lead || viewer.perms.includes("support.export") || viewer.perms.includes("export.run")}
+      />
+    );
+  } else if (tab === "board") {
+    const Q = await import("@/server/support-queues");
+    const { QueueBoard } = await import("@/components/app/support/queue-calls");
+    panel = <QueueBoard initial={await Q.queueBoard(viewer)} />;
+  } else if (tab === "ivr") {
+    const I = await import("@/server/support-ivr");
+    const { IvrBuilder } = await import("@/components/app/support/ivr-builder");
+    const { customDepartments } = await import("@/server/departments");
+    const flows = await I.listFlows(viewer);
+    const current = flows.find((f) => f.id === sp.flow) ?? flows[0] ?? null;
+    const members = [...new Set(queues.flatMap((q) => q.members))];
+    panel = (
+      <IvrBuilder
+        flows={flows}
+        detail={current ? await I.flowDetail(viewer, current.id) : null}
+        queues={queues.filter((q) => q.active).map((q) => ({ id: q.id, name: q.name }))}
+        departments={[...DEPARTMENTS.map((d) => ({ key: d as string, label: DEPARTMENT_LABELS[d] })), ...(await customDepartments()).map((d) => ({ key: d.key, label: d.title }))]}
+        agents={people.filter((p) => members.includes(p.id))}
+        apps={(await sd.listApps(viewer)).map((a) => ({ id: a.id, name: a.name }))}
+        channels={I.IVR_CHANNELS}
+      />
     );
   } else if (tab === "queues")
     panel = (
       <div className="grid gap-4 xl:grid-cols-2">
         <Queues queues={queues} people={people} />
+        {await (async () => {
+          const Q = await import("@/server/support-queues");
+          const { QueueCallSettings } = await import("@/components/app/support/queue-calls");
+          const { customDepartments } = await import("@/server/departments");
+          const members = [...new Set(queues.flatMap((q) => q.members))];
+          const skills = new Map((await all<{ user_id: string; skills: string }>("SELECT user_id, skills FROM sup_agents")).map((r) => [r.user_id, r.skills]));
+          return (
+            <QueueCallSettings
+              queues={await Q.allQueueSettings()}
+              departments={[...DEPARTMENTS.map((d) => ({ key: d as string, label: DEPARTMENT_LABELS[d] })), ...(await customDepartments()).map((d) => ({ key: d.key, label: d.title }))]}
+              agents={people.filter((p) => members.includes(p.id)).map((p) => ({ ...p, skills: (() => { try { return JSON.parse(skills.get(p.id) ?? "[]") as string[]; } catch { return []; } })() }))}
+            />
+          );
+        })()}
         <Canned list={await sd.cannedReplies()} />
         {await (async () => {
           const F = await import("@/server/support-forward");
@@ -193,7 +256,7 @@ export default async function SupportPage({ searchParams }: { searchParams: Prom
         actions={
           <div className="flex flex-wrap gap-2">
             <Button asChild size="sm" variant="outline"><Link href="/chat"><MessageCircleIcon /> Team chat</Link></Button>
-            {tabs.includes("calls") && <Button asChild size="sm" variant="outline"><Link href="/support?tab=calls"><PhoneCallIcon /> Call records</Link></Button>}
+            {tabs.includes("calls") && <Button asChild size="sm" variant="outline"><Link href="/call-records"><PhoneCallIcon /> Call records</Link></Button>}
             <StudentLookupDialog />
           </div>
         }

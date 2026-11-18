@@ -23,7 +23,11 @@ import { sseResponse } from "@/server/sse";
 //   POST calls/<id>/accept            { answer, consent }
 //   POST calls/<id>/decline
 //   POST calls/<id>/state            { state: connecting | connected | failed }   what this browser sees of the audio
-//   POST callback                     { phone?, ticketId? }                         -> { callId, ticketId }   ask to be called
+//   POST callback                     { phone?, ticketId?, at? }                    -> { callId, ticketId }   ask to be called (at: a later time)
+//   POST ivr                          { lang?, topic? }                             -> IVR screen, or null when no phone menu is on
+//   POST ivr/<session>                { key }                                       -> the next IVR screen ("#timeout" when nothing was pressed)
+//   POST ivr/<session>/leave                                                        the caller left the menu
+//   POST voicemail                    { sessionId?, mime, data (base64) }           -> { ticketId, fileId }
 //   POST customers/sync             server to server, X-App-Secret: <app secret>  { customers: [{ id, name, email?, phone?, meta? }] }
 //   GET  tickets/<id>/live            server-sent events: { stamp, status, typing, read, online } (token may be ?token=)
 //   POST tickets/<id>/typing | read   the customer is typing / has read the conversation
@@ -101,8 +105,12 @@ async function handle(request: Request, ctx: Ctx, method: "GET" | "POST") {
     else if (a === "calls" && id === "incoming" && method === "GET") out = await (await import("@/server/support-calls")).customerIncoming(app, token);
     else if (a === "calls" && id && b === "accept" && method === "POST") out = await (await import("@/server/support-calls")).customerAnswer(app, token, id, { answer: s(body.answer), consent: body.consent === true });
     else if (a === "calls" && id && b === "decline" && method === "POST") out = await (await import("@/server/support-calls")).customerDecline(app, token, id);
-    else if (a === "callback" && !id && method === "POST") out = await (await import("@/server/support-calls")).customerCallback(app, token, { phone: s(body.phone) || null, ticketId: s(body.ticketId) || null });
-    else if (a === "calls" && !id && method === "POST") out = await sd.customerStartCall(app, token, { ticketId: s(body.ticketId) || null, offer: s(body.offer), consent: body.consent === true, transferFrom: s(body.transferFrom) || null });
+    else if (a === "callback" && !id && method === "POST") out = await (await import("@/server/support-calls")).customerCallback(app, token, { phone: s(body.phone) || null, ticketId: s(body.ticketId) || null, at: s(body.at) || null });
+    else if (a === "ivr" && !id && method === "POST") out = await (await import("@/server/support-ivr")).customerStartIvr(app, token, { lang: s(body.lang) || null, topic: s(body.topic) || null });
+    else if (a === "ivr" && id && b === "leave" && method === "POST") out = (await (await import("@/server/support-ivr")).customerLeaveIvr(app, token, id), { ok: true });
+    else if (a === "ivr" && id && !b && method === "POST") out = await (await import("@/server/support-ivr")).customerIvrInput(app, token, id, s(body.key));
+    else if (a === "voicemail" && !id && method === "POST") out = await (await import("@/server/support-ivr")).customerVoicemail(app, token, { sessionId: s(body.sessionId) || null, mime: s(body.mime), data: s(body.data) });
+    else if (a === "calls" && !id && method === "POST") out = await sd.customerStartCall(app, token, { ticketId: s(body.ticketId) || null, offer: s(body.offer), consent: body.consent === true, transferFrom: s(body.transferFrom) || null, ivrSession: s(body.ivrSession) || null });
     else if (a === "calls" && id && !b && method === "GET") out = await sd.customerPollCall(app, token, id);
     else if (a === "calls" && id && b === "ice" && method === "POST") out = (await sd.customerIce(app, token, id, body.candidate), { ok: true });
     else if (a === "calls" && id && b === "state" && method === "POST") out = await (await import("@/server/support-calls")).customerCallState(app, token, id, s(body.state));

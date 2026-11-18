@@ -234,7 +234,7 @@ export async function setMeta(key: string, value: string) {
 }
 
 // Role and team-lead permission matrix (Admin, Roles and permissions). Missing entries fall back to defaults.
-const MATRIX_VERSION = 13;
+const MATRIX_VERSION = 14;
 // Version 2 made managers view-only, moved item creation to Admin and the Recording lead, and added sidebar switches.
 const V2_MANAGER_REMOVED: Capability[] = ["items.create", "items.plan", "items.close", "work.override", "release.emergency", "import.run", "import.stage"];
 const V2_ADMIN_ADDED: Capability[] = ["items.create", "items.plan", "items.close", "import.tracker"];
@@ -346,6 +346,35 @@ function migrateV13(stored: Partial<PermissionMatrix>): Partial<PermissionMatrix
   return out;
 }
 
+// v14 (Update 1.2): the customer support permissions for Admin, and the spec's support roles as presets (Customer
+// Support Head, Customer Support Supervisor, Call Center Supervisor, Auditor; Finance Head and Finance Staff are the
+// existing Finance manager and Accountant roles). Admin can change or remove them in Roles and permissions.
+export const SUPPORT_ROLE_PRESETS: Record<string, { label: string; caps: Capability[] }> = {
+  support_head: {
+    label: "Customer Support Head",
+    caps: ["support.lead", "support.conversations_all", "support.assign", "support.delete_messages", "support.agents", "support.analytics", "support.retention", "support.ivr", "support.queues", "support.content", "support.forwarding", "support.recordings", "support.export", "support.requests_setup", "nav.questions", "chat.channels", "email.send"],
+  },
+  support_supervisor: {
+    label: "Customer Support Supervisor",
+    caps: ["support.conversations_all", "support.assign", "support.delete_messages", "support.agents", "support.analytics", "support.recordings", "support.queues", "nav.questions", "chat.channels", "email.send"],
+  },
+  call_center_supervisor: {
+    label: "Call Center Supervisor",
+    caps: ["support.conversations_all", "support.agents", "support.analytics", "support.recordings", "support.queues", "support.ivr", "nav.questions", "email.send"],
+  },
+  auditor: {
+    label: "Auditor",
+    caps: ["support.conversations_all", "support.recordings", "support.analytics", "support.export", "finance.view", "reports.view", "export.run", "nav.questions"],
+  },
+};
+function migrateV14(stored: Partial<PermissionMatrix>): Partial<PermissionMatrix> {
+  const out: Record<string, Capability[]> = { ...(stored as Record<string, Capability[]>) };
+  const NEW: Capability[] = ["support.lead", "support.conversations_all", "support.assign", "support.delete_messages", "support.agents", "support.analytics", "support.retention", "support.ivr", "support.queues", "support.content", "support.forwarding", "support.recordings", "support.export", "support.requests_setup", "cms.manage", "cms.sensitive", "cms.export"];
+  if (out.admin) out.admin = [...new Set([...out.admin, ...NEW])];
+  for (const [key, p] of Object.entries(SUPPORT_ROLE_PRESETS)) if (!out[key]) out[key] = p.caps;
+  return out as Partial<PermissionMatrix>;
+}
+
 // Read on every request (signed-in user's permissions), so cached briefly; concurrent callers share one query.
 let matrixCache: { at: number; value: Promise<PermissionMatrix> } | null = null;
 
@@ -378,6 +407,7 @@ async function loadPermissionMatrix(): Promise<PermissionMatrix> {
   if (version < 11) stored = migrateV11(stored);
   if (version < 12) stored = migrateV12(stored);
   if (version < 13) stored = migrateV13(stored);
+  if (version < 14) stored = migrateV14(stored);
   const keys = [...new Set([...ROLES, ...STAGES.map(leadKey), ...Object.keys(stored).filter(k => /^[a-z][a-z0-9_]{1,39}$/.test(k) && Array.isArray((stored as Record<string, unknown>)[k]))])] as (keyof PermissionMatrix)[];
   const defaults: PermissionMatrix = { ...DEFAULT_PERMISSIONS, ...DEFAULT_LEAD_PERMISSIONS };
   return Object.fromEntries(keys.map((k) => [k, stored[k] ?? defaults[k]])) as PermissionMatrix;

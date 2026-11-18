@@ -20,7 +20,7 @@ export async function newAppSecretAction(id: string) {
 export async function saveQueueAction(input: Parameters<typeof sd.saveQueue>[1]) {
   return wrap(async () => sd.saveQueue(await requireViewer(), input));
 }
-export async function setAgentStatusAction(status: "online" | "away" | "offline") {
+export async function setAgentStatusAction(status: "online" | "busy" | "away" | "break" | "offline") {
   return wrap(async () => sd.setAgentStatus(await requireViewer(), status));
 }
 export async function setAgentLimitAction(agentId: string, maxOpen: number) {

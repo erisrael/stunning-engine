@@ -24,7 +24,7 @@ async function main() {
   await sd.saveSupportConfig(admin, { enabled: true, leads: [] });
   const q = await sd.saveQueue(admin, { name: "General", members: [abel.id] });
   const posts: { url: string; body: Record<string, unknown> }[] = [];
-  ch.setTelegramPoster(async (url, body) => (posts.push({ url, body: body as Record<string, unknown> }), { ok: true, result: { username: "help_bot" } }));
+  ch.setTelegramPoster(async (url, body) => (posts.push({ url, body: body as Record<string, unknown> }), { ok: true, result: { username: "help_bot", message_id: 77 } }));
   await ch.connectTelegram(admin, "123456:ABCDEFGHIJKLMNOPQRSTUVWXYZ", "https://cm.myseed.et");
   const customer = async (ext: string, appSeen: string | null) => {
     const id = uid("cus_");
@@ -46,7 +46,7 @@ async function main() {
   posts.length = 0;
   const viaBot = await K.dialCustomer(abel, closed.t, OFFER);
   const notice = posts.find((p) => p.url.endsWith("/sendMessage") && String(p.body.chat_id) === "7002");
-  check("and gets the bot's call notice with a button that opens the app on the call", !!notice && String(notice.body.text).includes("is calling you") && JSON.stringify(notice.body.reply_markup).includes("call=1"), notice?.body);
+  check("and gets the bot's call notice with a button that opens the app on the call", !!notice && String(notice.body.text).includes("is calling you") && JSON.stringify(notice.body.reply_markup).includes("call=in"), notice?.body);
   const mail = uid("cus_");
   await run("INSERT INTO sup_customers (id, app_id, external_id, name, created_at) VALUES (?, NULL, 'mail:x@example.et', 'Mail', ?)", mail, nowIso());
   const mt = await sd.createTicketFromChannel({ subject: "By mail", body: "x", customerId: mail, channel: "email", appQueue: q });
@@ -83,6 +83,19 @@ async function main() {
   await sd.ringingFor(abel); // the desk's regular check, which ends calls that rang too long
   check("a call nobody answers is missed", (await phases(missed.callId)).at(-1) === "missed", await phases(missed.callId));
   check("and the Telegram customer is told", posts.some((p) => String(p.body.chat_id) === "7004" && String(p.body.text).startsWith("We tried to call you")));
+  const edits = posts.filter((p) => p.url.endsWith("/editMessageText"));
+  check("the bot's call notice loses its Answer button and says the call was missed", edits.some((e) => e.body.message_id === 77 && String(e.body.text).includes("Missed call") && JSON.stringify(e.body.reply_markup) === '{"inline_keyboard":[]}'), edits.map((e) => e.body));
+  // A call to a customer rings at least a minute (time to open the bot's notice), even with a shorter ring time.
+  await sd.saveSupportConfig(admin, { ringSeconds: 30 });
+  const fourth = await customer("tg:7005", nowIso());
+  const slow = await K.dialCustomer(abel, fourth.t, OFFER);
+  await run("UPDATE sup_calls SET started_at = ? WHERE id = ?", new Date(Date.now() - 45e3).toISOString(), slow.callId);
+  await sd.ringingFor(abel);
+  check("after 45 seconds it still rings", (await get<{ status: string }>("SELECT status FROM sup_calls WHERE id = ?", slow.callId))?.status === "ringing");
+  posts.length = 0;
+  await sd.agentEndCall(abel, slow.callId, null);
+  check("when the agent gives up first, the notice says the call ended before they answered", posts.some((p) => p.url.endsWith("/editMessageText") && String(p.body.text).includes("ended before you answered")));
+  check("the notice link opens the app on the ringing call", JSON.stringify(notice?.body.reply_markup).includes("&call=in"));
   check("an unknown media state is refused", /Unknown call state/.test(await err(() => K.agentCallState(abel, missed.callId, "dancing"))));
 
   console.log(`\n${pass} passed, ${fail} failed`);

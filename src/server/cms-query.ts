@@ -27,7 +27,7 @@ async function access(user: AppUser, resource: string) {
   if (!(await get("SELECT 1 FROM cms_resources WHERE slug = ?", resource)) && !known) throw new WorkflowError("NOT_FOUND", "Unknown Noor resource.");
   const all = await cmsFieldRegistry(resource);
   // Only columns are in the stored rows; a filter-only field cannot be read here.
-  const fields = all.filter((f) => f.source === "column" && (manager || !f.sensitive));
+  const fields = all.filter((f) => f.source === "column" && (manager || !f.sensitive || can(user, "cms.sensitive")));
   return { manager, fields };
 }
 
@@ -238,6 +238,8 @@ const csvCell = (v: unknown) => {
   return /[",\n\r]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
 };
 export async function exportCmsRecords(user: AppUser, input: QueryInput & { columns?: { order: string[]; hidden: string[]; widths: Record<string, number>; pinned: string[] } }) {
+  const { canManageCmsData } = await import("./legacy-cms");
+  if (!(await canManageCmsData(user)) && !can(user, "cms.export") && !can(user, "export.run")) throw new WorkflowError("FORBIDDEN", "Exporting Noor records needs the Noor export permission.");
   const b = await build(user, input);
   const hidden = new Set(input.columns?.hidden ?? []);
   const order = input.columns?.order ?? [];

@@ -54,6 +54,7 @@ const RULES: Rule[] = [
     return canUseLegacy(u) && ((await legacyConfig()).on || can(u, "settings.manage") || can(u, "users.manage"));
   } },
   { prefix: "/support", check: async (u) => !!(await (await import("./support-desk")).supportNav(u)) },
+  { prefix: "/call-records", check: async (u) => (await import("./call-records")).canOpenCallRecords(u) },
   { prefix: "/dev", check: dept("dev") },
   { prefix: "/marketing", check: dept("marketing") },
   { prefix: "/studio", check: (u) => can(u, "studio.access") || can(u, "owners.view") },

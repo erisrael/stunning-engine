@@ -68,7 +68,7 @@ export async function liveRoster(user: AppUser, now = Date.now()) {
       lastActive: p.last_active_at,
       onCallWith: call?.customer ?? null,
       agent: !!ag,
-      agentStatus: (ag?.status as "online" | "away" | "offline" | undefined) ?? null,
+      agentStatus: (ag?.status as "online" | "busy" | "away" | "break" | "offline" | undefined) ?? null,
       openTickets: open,
       maxOpen,
       workItems: items,

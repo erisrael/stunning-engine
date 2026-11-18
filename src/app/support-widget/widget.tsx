@@ -53,7 +53,7 @@ function telegramInitData(bot: string) {
   }
 }
 
-export function SupportWidget({ appKey: givenKey, initialUser, waitForParent, telegram = null, startCall = false }: { appKey: string; initialUser: User | null; waitForParent: boolean; telegram?: string | null; startCall?: boolean }) {
+export function SupportWidget({ appKey: givenKey, initialUser, waitForParent, telegram = null, startCall = false, incomingCall = false }: { appKey: string; initialUser: User | null; waitForParent: boolean; telegram?: string | null; startCall?: boolean; incomingCall?: boolean }) {
   // Inside Telegram the key comes with the sign-in.
   const [appKey, setAppKey] = React.useState(givenKey);
   const [user, setUser] = React.useState<User | null>(initialUser);
@@ -235,7 +235,7 @@ export function SupportWidget({ appKey: givenKey, initialUser, waitForParent, te
           ))}
         </nav>
       )}
-      <CallLayer api={api} s={s}>
+      <CallLayer api={api} s={s} openedForCall={incomingCall}>
       <div className="min-h-0 flex-1 overflow-y-auto">
         {open === null && tab === "home" && (
           <div className="space-y-3 p-4">
@@ -257,7 +257,7 @@ export function SupportWidget({ appKey: givenKey, initialUser, waitForParent, te
                 <PhoneIcon className="size-4 shrink-0" style={{ color }} /> {am ? "ከድጋፍ ቡድናችን ጋር ለመነጋገር ከታች ይደውሉ።" : "Call our support team below. You talk in this app."}
               </p>
             )}
-            <CallButton api={api} s={s} ticketId={null} color={color} onTicket={(id) => (setOpen(id), void reload())} />
+            <CallButton api={api} s={s} ticketId={null} color={color} lang={lang} onTicket={(id) => (setOpen(id), void reload())} />
             <HelpSearch api={api} onOpen={(id) => { setTab("help"); setOpen(`a:${id}`); }} />
             {telegram && <Resources api={api} am={am} />}
             {updates.length > 0 && (
@@ -331,7 +331,7 @@ export function SupportWidget({ appKey: givenKey, initialUser, waitForParent, te
         {open === "new" && <NewQuestion api={api} color={color} topic={s.content?.topics.find((t) => t.key === topic) ?? null} am={am} onDone={(id) => (setTopic(null), setOpen(id), void reload())} onArticle={(id) => setOpen(`a:${id}`)} />}
         {open?.startsWith("a:") && <ArticleView api={api} id={open.slice(2)} onAsk={() => setOpen("new")} />}
         {open && open !== "new" && !open.startsWith("a:") && (
-          <LiveThread key={open} api={api} appKey={appKey} token={s.token} id={open} color={color} lang={lang} online={s.online} callButton={(reload) => <CallButton api={api} s={s} ticketId={open} color={color} onTicket={reload} />} />
+          <LiveThread key={open} api={api} appKey={appKey} token={s.token} id={open} color={color} lang={lang} online={s.online} callButton={(reload) => <CallButton api={api} s={s} ticketId={open} color={color} lang={lang} onTicket={reload} />} />
         )}
       </div>
       </CallLayer>

@@ -65,6 +65,7 @@ import { CompassIcon,
   TrophyIcon,
   TargetIcon,
   HeadsetIcon,
+  PhoneCallIcon,
   TabletIcon,
   ChevronDownIcon,
   CalendarDaysIcon,
@@ -266,6 +267,7 @@ export function AppSidebar({
   brand = {},
   recognition = false,
   support = false,
+  callRecords = false,
   studioBooking = "optional",
   legacy = false,
   sessionsManager = false,
@@ -283,6 +285,8 @@ export function AppSidebar({
   recognition?: boolean;
   // Customer support: the agent desk for agents and leads (Admin, Support).
   support?: boolean;
+  // Call Records (Update 1.2, Phase 9): agents, support leads and the managers Admin allows.
+  callRecords?: boolean;
   // Admin's icons and colours per entry (Admin, Branding).
   brand?: Record<string, { icon?: string | null; tone?: string | null }>;
   home?: HomeDept | null;
@@ -379,6 +383,7 @@ export function AppSidebar({
         { href: "/performance", label: "Performance", icon: TargetIcon },
         { href: "/strategy", label: "Strategy and M&E", icon: CompassIcon, cap: ["perf.library", "perf.view_company", "users.manage", "owners.view"] as Capability[] },
         ...(support ? [{ href: "/support", label: "Customer support", icon: HeadsetIcon }] : []),
+        ...(callRecords ? [{ href: "/call-records", label: "Call records", icon: PhoneCallIcon }] : []),
         ...(approver || counts.approvals > 0 ? [{ href: "/approvals", label: "Approvals", icon: CheckCheckIcon, badge: counts.approvals }] : []),
         ...(!lead && !home ? [{ href: "/team", label: "My effort", icon: UsersIcon, cap: "nav.team" as Capability }] : []),
         { href: "/questions", label: "Questions", icon: MessageCircleQuestionIcon, badge: counts.questions, cap: "nav.questions" },
@@ -510,6 +515,7 @@ export function AppSidebar({
           { href: "/performance", label: "Performance", icon: TargetIcon },
           { href: "/strategy", label: "Strategy and M&E", icon: CompassIcon, cap: ["perf.library", "perf.view_company", "users.manage", "owners.view"] as Capability[] },
           ...(support ? [{ href: "/support", label: "Customer support", icon: HeadsetIcon }] : []),
+        ...(callRecords ? [{ href: "/call-records", label: "Call records", icon: PhoneCallIcon }] : []),
           ...(counts.approvals > 0 ? [{ href: "/approvals", label: "Approvals", icon: CheckCheckIcon, badge: counts.approvals }] : []),
           ...(counts.routines ? [{ href: "/routines", label: "Routines", icon: ZapIcon, badge: counts.routines }] : []),
           ...((counts.mailbox || has("email.manage") || has("email.send")) ? [{ href: "/email", label: "Email", icon: MailIcon, badge: counts.mail ?? 0, sub: emailSub }] : []),

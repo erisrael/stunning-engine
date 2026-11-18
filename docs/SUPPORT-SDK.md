@@ -79,15 +79,23 @@ All requests go to `https://YOUR-WORKSPACE/api/support/v1/...`. They send the he
 | `GET articles/<id>`              |                                         | one article (title, body, category)               |
 | `POST articles/<id>/vote`        | `{ helpful: true or false }`            |                                                   |
 | `GET ice`                        |                                         | STUN and TURN servers for calls                   |
-| `POST calls`                     | `{ ticketId, offer, consent }`          | `{ callId, ticketId }`                            |
-| `GET calls/<id>`                 |                                         | `{ status, answer, agent }`                       |
+| `POST ivr`                       | `{ lang, topic }`                       | the first phone-menu screen, or `null` (no menu)  |
+| `POST ivr/<session>`             | `{ key }`                               | the next screen (`"#timeout"` when nothing was pressed) |
+| `POST ivr/<session>/leave`       |                                         | the caller hung up in the menu                    |
+| `POST voicemail`                 | `{ sessionId, mime, data }`             | `{ ticketId, fileId }` (data is base64 audio)     |
+| `POST calls`                     | `{ ticketId, offer, consent, ivrSession }` | `{ callId, ticketId }`                         |
+| `GET calls/<id>`                 |                                         | `{ status, answer, agent, position, estimateSec, announcement, callbackOffer }` |
 | `POST calls/<id>/end`            |                                         |                                                   |
+| `POST callback`                  | `{ phone, ticketId, at }`               | `{ callId, ticketId }` (`at`: a time within two weeks) |
 
 How a call works:
+0. When Admin has switched on a phone menu, `POST ivr` returns a screen: `say` (texts to speak or recordings to play), `ask` (choices or digits, and how long to wait), or `done` (where the caller goes). Send each key with `POST ivr/<session>`. When `done.action` is `queue` or `agent`, start the call with `ivrSession`. `voicemail` means record and send `POST voicemail`; `callback` means ask for a number and send `POST callback`. When `POST ivr` returns `null`, go straight to step 1.
 1. The app makes a WebRTC offer with the microphone and waits for ICE gathering to finish.
 2. It sends the offer as JSON (`RTCSessionDescription`).
 3. It checks `GET calls/<id>` every one or two seconds until `status` is `answered`, then sets `answer` as the remote description.
-4. `missed` means no agent answered within the ring time. The ticket then says so, and an agent writes back.
+4. While `status` is `ringing`, show `position` (the place in the queue), `estimateSec` (only when the queue has enough history; otherwise `null`), the queue's `announcement`, and a call-back offer when `callbackOffer` is true.
+5. `missed` means no agent answered within the queue's longest wait. The ticket then says so, and an agent writes back.
+6. A caller has one live call: starting a new one (after a refresh) ends the earlier one. A closed or full queue answers 409 with a message that offers a call-back.
 
 When calls are recorded, the app must show the recording notice (`recordingNotice` from `identify`) and send `consent: true`.
 
@@ -101,7 +109,10 @@ Errors come back as `{ error }` with these codes:
 
 - **Assignment**: a new ticket goes to its queue by keywords, else to the app's first queue. It is then given at once to an agent of that queue who is online in the desk and under their limit of open tickets. Admin can also require agents to be checked in at work. The queue decides between "least busy" and "in turn". If nobody is free, the ticket waits and is given out as soon as an agent comes online. Leads are told that it is waiting.
 - **Targets**: each queue has a time to first answer and a time to solve. Urgent tickets get a quarter of that time and high-priority ones half. A missed target marks the ticket late and tells the agent and the leads.
-- **Calls**: the call rings for the ticket's agent, or for every free agent of the queue, for the ring time set by Admin. It is recorded in the agent's browser (both voices) when recording is on. The recording is kept with the ticket for the days Admin sets, and each listen is logged. Agents can also log phone calls made outside the app.
+- **Phone menu (IVR)**: Customer support › Phone menu. Leads build flows on a canvas from 19 kinds of node (welcome, language, menus, keypad input, hours and holiday checks, conditions, customer identification, payment check, queues, departments, agents, transfer, voicemail, call-back, end), test them on screen, publish numbered versions and switch one on. The spec's default flow (welcome, Amharic or English, the five topics and the operator) is there to start from.
+- **Queues for calls**: each queue sets its open hours, how many callers may wait, the longest wait, an overflow queue, an announcement, hold music, a call-back offer, its routing (least busy, round robin, longest idle, skills, agent priority, manual), caller priority rules, wrap-up time and the service-level target. Customer support › Live queues shows waiting callers, agents and today's numbers.
+- **Calls**: the call is offered first to the agent the queue picks (or the conversation's agent), then rings for every free agent of the queue. Agents on a call or wrapping up are not offered another. It is recorded in the agent's browser (both voices) when recording is on; the recording goes up in pieces during the call, so a closed tab loses seconds, not the call. Agents can also log phone calls made outside the app.
+- **Call records**: a page of its own (sidebar › Call records). Admin, support leads and the managers Admin names see every call; agents see their own. Each record has the queue, wait and talk time, outcome, notes, tags, the related conversation and support request, the lifecycle and the recording (play at any speed; download for leads). Recordings are kept for the days Admin sets unless under legal hold, and every listen and download is logged.
 - **Monitoring** (leads): each agent's status, open and solved tickets, replies, average first answer and solve time, calls and minutes, missed calls, customer rating and late tickets, plus the activity log and the recordings.
 - **Recognition**: solved tickets count as finished work in the monthly score (on time when within the target). Ratings of 1 or 2 count as work sent back.
 

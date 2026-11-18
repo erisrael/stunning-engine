@@ -84,7 +84,8 @@ export function SupportSettings({ cfg, people, admin, mailboxes = [], telegram =
           <Textarea id="sc-notice" disabled={!admin} value={c.recordingNotice} onChange={(e) => setC({ ...c, recordingNotice: e.target.value })} />
         </div>
         <div className="grid gap-3 sm:grid-cols-3">
-          {num("recordingDays", "Keep recordings (days)")}
+          {num("recordingDays", "Keep recordings (days, 0 = indefinitely)")}
+          {num("conversationDays", "Delete closed conversations after (days, 0 = never)")}
           {num("autoCloseDays", "Close solved tickets after (days)")}
           {num("inactiveHours", "Solve when the customer is silent (hours, 0 = never)")}
           {num("ringSeconds", "A call rings for (seconds)")}
@@ -101,7 +102,12 @@ export function SupportSettings({ cfg, people, admin, mailboxes = [], telegram =
             </select>
           </div>
         </div>
-        <p className="text-xs text-muted-foreground">A call first rings the agent who has the customer&apos;s ticket, then everyone free in the ticket&apos;s queue, then the overflow queue, until it is missed.</p>
+        <p className="text-xs text-muted-foreground">A call first rings the agent who has the customer&apos;s ticket (or the agent the queue&apos;s strategy picks), then everyone free in the queue, then the overflow queue, until it is missed. Each queue can set its own hours, size, longest wait and overflow in Queues and replies.</p>
+        <div className="space-y-2" data-recording-access>
+          <Label>Managers who may open every call record, listen and download</Label>
+          <People all={people} value={c.recordingViewers ?? []} onChange={(v) => admin && setC({ ...c, recordingViewers: v })} label="Managers who see call records" />
+          {sw("agentsHearOwn", "Agents listen to their own calls", "Agents can play (not download) the recordings of calls they took. Support leads and Admin always can.")}
+        </div>
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-1">
             <Label htmlFor="sc-hours">Opening hours (shown in the app)</Label>
@@ -241,7 +247,7 @@ export function Queues({ queues, people }: { queues: Queue[]; people: Person[] }
           <div key={x.id} className="flex flex-wrap items-center gap-2 rounded-lg border p-2" data-queue={x.name}>
             <span className="font-medium">{x.name}</span>
             <span className="text-xs text-muted-foreground">
-              {x.members.length} agents · {x.strategy === "least_busy" ? "least busy first" : x.strategy === "round_robin" ? "in turn" : "by hand"} · answer in {x.slaFirstMin} min, solve in {Math.round(x.slaResolveMin / 60)} h
+              {x.members.length} agents · {({ least_busy: "least busy first", round_robin: "in turn", longest_idle: "longest idle first", skills: "by skill", priority: "in the order listed", manual: "by hand" } as Record<string, string>)[x.strategy] ?? x.strategy} · answer in {x.slaFirstMin} min, solve in {Math.round(x.slaResolveMin / 60)} h
               {x.keywords.length ? ` · ${x.keywords.join(", ")}` : ""}
               {!x.active && " · off"}
             </span>
@@ -262,7 +268,10 @@ export function Queues({ queues, people }: { queues: Queue[]; people: Person[] }
               <Input aria-label="Keywords" placeholder="Keywords, comma separated: password, login" value={q.keywords} onChange={(e) => setQ({ ...q, keywords: e.target.value })} />
               <select aria-label="How tickets are given out" className={select} value={q.strategy} onChange={(e) => setQ({ ...q, strategy: e.target.value })}>
                 <option value="least_busy">Least busy agent first</option>
-                <option value="round_robin">In turn</option>
+                <option value="round_robin">In turn (round robin)</option>
+                <option value="longest_idle">Longest idle agent first</option>
+                <option value="skills">By skill</option>
+                <option value="priority">Agents in the order listed</option>
                 <option value="manual">By hand (a lead assigns)</option>
               </select>
               <div className="flex gap-2">

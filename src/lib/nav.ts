@@ -28,6 +28,7 @@ export const SIDEBAR_ENTRIES: { key: string; label: string; group: string }[] = 
   { key: "/attendance", label: "Attendance", group: "My space" },
   { key: "/approvals", label: "Approvals", group: "My space" },
   { key: "/support-requests", label: "Customer Support Requests", group: "My space" },
+  { key: "/call-records", label: "Call records", group: "My space" },
   { key: "/team", label: "My effort / Team", group: "My space" },
   { key: "/questions", label: "Questions", group: "My space" },
   { key: "/overview", label: "Overview", group: "Workflow" },

@@ -620,20 +620,43 @@ export async function telegramReachable(appId: string | null) {
 }
 
 // A call to a Telegram customer: the bot says so, with a button that opens the support app to answer.
-export async function notifyTelegramCall(customerId: string | null, kind: "incoming" | "missed" | "ended", agentName?: string | null) {
-  if (!customerId) return;
+export async function notifyTelegramCall(customerId: string | null, kind: "incoming" | "missed" | "ended", agentName?: string | null): Promise<{ chat: string; mid: number; bot: string } | null> {
+  if (!customerId) return null;
   const c = await get<{ external_id: string | null; app_id: string | null }>("SELECT external_id, app_id FROM sup_customers WHERE id = ?", customerId);
-  if (!c?.external_id?.startsWith("tg:")) return;
+  if (!c?.external_id?.startsWith("tg:")) return null;
   const chat = c.external_id.slice(3);
   const go = async () => {
-    if (!(await botToken())) return;
+    if (!(await botToken())) return null;
     const x = await withLang(await telegramTexts(), customerId);
     const text = await sayKey(x, `call.${kind}`, { agent: (agentName ?? "").split(" ")[0] || (x.lang === "am" ? "ወኪል" : "An agent") });
-    if (!text) return;
-    const url = kind === "incoming" ? supportAppUrl(await botOrigin(), currentBot(), "&call=1") : null;
-    await telegramSend(chat, text, url ? { reply_markup: { inline_keyboard: [[{ text: await btn(x, "button.open_app"), web_app: { url } }]] } } : {});
+    if (!text) return null;
+    // call=in: the support app opens straight on the ringing call (call=1 is the customer calling us).
+    const url = kind === "incoming" ? supportAppUrl(await botOrigin(), currentBot(), "&call=in") : null;
+    const r = (await api("sendMessage", { chat_id: chat, text: text.slice(0, 4000), ...(url ? { reply_markup: { inline_keyboard: [[{ text: await btn(x, "button.open_app"), web_app: { url } }]] } } : {}) })) as { ok?: boolean; result?: { message_id?: number } };
+    return r?.result?.message_id ? { chat, mid: r.result.message_id, bot: currentBot() } : null;
   };
   const sys = await systemBot(c.app_id);
+  return sys ? botCtx.run(sys, go) : go();
+}
+
+// The call notice once the call is decided: its Answer button goes, and the text says what happened.
+export async function closeTelegramCallNotice(callId: string, outcome: "answered" | "declined" | "cancelled" | "missed") {
+  const k = await get<{ tg_notice: string | null; customer_id: string | null }>("SELECT tg_notice, customer_id FROM sup_calls WHERE id = ?", callId);
+  const n = k?.tg_notice ? (JSON.parse(k.tg_notice) as { chat: string; mid: number; bot: string }) : null;
+  if (!n) return;
+  await run("UPDATE sup_calls SET tg_notice = NULL WHERE id = ?", callId);
+  const go = async () => {
+    const x = await withLang(await telegramTexts(), k!.customer_id ?? "");
+    const am = x.lang === "am";
+    const text = {
+      answered: am ? "ጥሪውን መልሰዋል።" : "You answered the call.",
+      declined: am ? "ጥሪውን አልተቀበሉም።" : "You declined the call.",
+      cancelled: am ? "ጥሪው ከመመለስዎ በፊት ተቋርጧል።" : "The call ended before you answered.",
+      missed: am ? "ያመለጠ ጥሪ።" : "Missed call.",
+    }[outcome];
+    await api("editMessageText", { chat_id: n.chat, message_id: n.mid, text, reply_markup: { inline_keyboard: [] } });
+  };
+  const sys = n.bot && n.bot !== "default" ? await systemBot(n.bot) : null;
   await (sys ? botCtx.run(sys, go) : go());
 }
 

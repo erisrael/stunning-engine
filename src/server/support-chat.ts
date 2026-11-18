@@ -37,7 +37,7 @@ export async function editSupportMessage(user: AppUser, messageId: string, body:
 export async function deleteSupportMessage(user: AppUser, messageId: string) {
   const { m, t, channel } = await messageFor(user, messageId);
   if (m.deleted_at) return { stillWithCustomer: false };
-  const lead = await sd.isLead(user);
+  const lead = (await sd.isLead(user)) || user.perms.includes("support.delete_messages");
   const own = m.author_kind === "agent" && m.author_id === user.id;
   if (!lead && !(own && Date.now() - Date.parse(m.created_at) <= EDIT_WINDOW)) throw new WorkflowError("FORBIDDEN", "You can delete your own messages for 24 hours; support leads can delete any.");
   await run("UPDATE sup_messages SET deleted_at = ?, deleted_by = ? WHERE id = ?", nowIso(), user.id, m.id);

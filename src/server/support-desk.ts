@@ -93,13 +93,13 @@ export async function supportConfig(): Promise<SupportConfig> {
 
 export const isAdmin = (u: AppUser) => can(u, "users.manage");
 export async function isLead(u: AppUser, cfg?: SupportConfig) {
-  return isAdmin(u) || (cfg ?? (await supportConfig())).leads.includes(u.id);
+  return isAdmin(u) || can(u, "support.lead") || (cfg ?? (await supportConfig())).leads.includes(u.id);
 }
 async function memberQueues(userId: string) {
   return (await all<{ id: string; members: string }>("SELECT id, members FROM sup_queues WHERE active = 1")).filter((q) => parseJson<string[]>(q.members, []).includes(userId)).map((q) => q.id);
 }
 export async function isAgent(u: AppUser) {
-  return (await isLead(u)) || (await memberQueues(u.id)).length > 0;
+  return (await isLead(u)) || can(u, "support.conversations_all") || (await memberQueues(u.id)).length > 0;
 }
 // The sidebar link: support switched on and this person works in it.
 export async function supportNav(u: AppUser) {
@@ -131,7 +131,11 @@ export async function saveSupportConfig(user: AppUser, input: Partial<SupportCon
     requireCheckin: input.requireCheckin ?? cur.requireCheckin,
     recordCalls: input.recordCalls ?? cur.recordCalls,
     recordingNotice: clean(input.recordingNotice ?? cur.recordingNotice, 400) || DEFAULT_SUPPORT.recordingNotice,
-    recordingDays: n(input.recordingDays ?? cur.recordingDays, 90, 1, 3650),
+    // 0 keeps recordings indefinitely (where the law allows); otherwise they go after this many days.
+    recordingDays: n(input.recordingDays ?? cur.recordingDays, 90, 0, 3650),
+    conversationDays: n(input.conversationDays ?? cur.conversationDays ?? 0, 0, 0, 36500),
+    recordingViewers: (input.recordingViewers ?? cur.recordingViewers ?? []).filter((x: string) => users.has(x)).slice(0, 50),
+    agentsHearOwn: input.agentsHearOwn ?? cur.agentsHearOwn ?? true,
     autoCloseDays: n(input.autoCloseDays ?? cur.autoCloseDays, 7, 1, 90),
     inactiveHours: n(input.inactiveHours ?? cur.inactiveHours, 72, 0, 720),
     ringSeconds: n(input.ringSeconds ?? cur.ringSeconds, 45, 15, 180),
@@ -372,14 +376,14 @@ export async function customerByToken(app: AppFull, token: string | null | undef
 // Queues
 // ---------------------------------------------------------------------------
 
-export type QueueRow = { id: string; name: string; description: string | null; keywords: string[]; members: string[]; strategy: "least_busy" | "round_robin" | "manual"; slaFirstMin: number; slaResolveMin: number; active: boolean };
+export type QueueRow = { id: string; name: string; description: string | null; keywords: string[]; members: string[]; strategy: "least_busy" | "round_robin" | "longest_idle" | "skills" | "priority" | "manual"; slaFirstMin: number; slaResolveMin: number; active: boolean };
 const queueRow = (r: { id: string; name: string; description: string | null; keywords: string; members: string; strategy: string; sla_first_min: number; sla_resolve_min: number; active: number }): QueueRow => ({
   id: r.id,
   name: r.name,
   description: r.description,
   keywords: parseJson<string[]>(r.keywords, []),
   members: parseJson<string[]>(r.members, []),
-  strategy: (["least_busy", "round_robin", "manual"].includes(r.strategy) ? r.strategy : "least_busy") as QueueRow["strategy"],
+  strategy: (["least_busy", "round_robin", "longest_idle", "skills", "priority", "manual"].includes(r.strategy) ? r.strategy : "least_busy") as QueueRow["strategy"],
   slaFirstMin: Number(r.sla_first_min),
   slaResolveMin: Number(r.sla_resolve_min),
   active: !!Number(r.active),
@@ -396,7 +400,7 @@ export async function saveQueue(user: AppUser, input: { id?: string | null; name
   const users = new Set((await listUsers()).map((u) => u.id));
   const members = [...new Set(input.members ?? [])].filter((m) => users.has(m));
   const keywords = [...new Set((input.keywords ?? []).map((k) => clean(k, 40).toLowerCase()).filter(Boolean))].slice(0, 40);
-  const strategy = ["least_busy", "round_robin", "manual"].includes(input.strategy ?? "") ? input.strategy! : "least_busy";
+  const strategy = ["least_busy", "round_robin", "longest_idle", "skills", "priority", "manual"].includes(input.strategy ?? "") ? input.strategy! : "least_busy";
   const first = Math.max(5, Math.min(10080, Math.round(Number(input.slaFirstMin) || 60)));
   const resolve = Math.max(first, Math.min(43200, Math.round(Number(input.slaResolveMin) || 1440)));
   let id = input.id ?? null;
@@ -436,9 +440,13 @@ async function routeQueue(text: string, appQueue: string | null) {
 
 const ONLINE_MS = 3 * 60e3;
 
-export async function setAgentStatus(user: AppUser, status: "online" | "away" | "offline") {
+// The spec's statuses (12): Available (online), Busy, Away, Break and Offline are chosen; On call is shown by itself
+// while a call is live. Only Available agents are given conversations and offered queue calls.
+export const AGENT_STATUSES = ["online", "busy", "away", "break", "offline"] as const;
+export type AgentStatus = (typeof AGENT_STATUSES)[number];
+export async function setAgentStatus(user: AppUser, status: AgentStatus) {
   await needAgent(user);
-  if (!["online", "away", "offline"].includes(status)) throw new WorkflowError("VALIDATION", "Choose online, away or offline.");
+  if (!(AGENT_STATUSES as readonly string[]).includes(status)) throw new WorkflowError("VALIDATION", "Choose Available, Busy, Away, Break or Offline.");
   const now = nowIso();
   const cur = await get<{ status: string }>("SELECT status FROM sup_agents WHERE user_id = ?", user.id);
   await run(
@@ -497,27 +505,28 @@ export async function availableAgents(queueId: string | null, cfgIn?: SupportCon
 export async function autoAssign(ticketId: string) {
   const cfg = await supportConfig();
   if (!cfg.autoAssign) return null;
-  const t = await get<{ id: string; number: number; subject: string; queue_id: string | null; assignee_id: string | null; status: string }>("SELECT id, number, subject, queue_id, assignee_id, status FROM sup_tickets WHERE id = ?", ticketId);
+  const t = await get<{ id: string; number: number; subject: string; queue_id: string | null; assignee_id: string | null; status: string; declined_by: string }>("SELECT id, number, subject, queue_id, assignee_id, status, declined_by FROM sup_tickets WHERE id = ?", ticketId);
   if (!t || t.assignee_id || !OPEN_STATUSES.includes(t.status as TicketStatus)) return null;
   const q = t.queue_id ? (await listQueues()).find((x) => x.id === t.queue_id) : null;
   if (q?.strategy === "manual") return null;
-  const avail = await availableAgents(t.queue_id, cfg);
-  if (!avail.length) return null;
-  let pick = avail[0]!.userId;
-  if (q?.strategy === "round_robin") {
-    const last = (await get<{ last_assigned: string | null }>("SELECT last_assigned FROM sup_queues WHERE id = ?", q.id))?.last_assigned;
-    const order = q.members.filter((m) => avail.some((a) => a.userId === m));
-    const i = last ? order.indexOf(last) : -1;
-    pick = order[(i + 1) % order.length] ?? pick;
-  }
+  const Q = await import("./support-queues");
+  if (q && (await Q.queueSettings(q.id))?.autoAssign === false) return null;
+  // The queue's strategy orders the free agents (least busy, in turn, longest idle, by skill or by agent priority).
+  // Agents who declined this conversation are not offered it again.
+  const declined = parseJson<string[]>(t.declined_by, []);
+  const pick = (await Q.pickAgents(t.queue_id)).agents.find((a) => !declined.includes(a));
+  if (!pick) return null;
   const now = nowIso();
+  // Queues set to "agents accept" offer the conversation: the agent accepts or declines (spec 12).
+  const offer = q ? !!(await Q.queueSettings(q.id))?.acceptRequired : false;
   // Only if still unassigned (two assignments at once take one ticket once).
-  await run("UPDATE sup_tickets SET assignee_id = ?, assigned_at = ?, status = CASE WHEN status = 'new' THEN 'open' ELSE status END, updated_at = ? WHERE id = ? AND assignee_id IS NULL", pick, now, now, t.id);
+  await run("UPDATE sup_tickets SET assignee_id = ?, assigned_at = ?, offered_at = ?, status = CASE WHEN status = 'new' THEN 'open' ELSE status END, updated_at = ? WHERE id = ? AND assignee_id IS NULL", pick, now, offer ? now : null, now, t.id);
   const got = await get<{ assignee_id: string | null }>("SELECT assignee_id FROM sup_tickets WHERE id = ?", t.id);
   if (got?.assignee_id !== pick) return null;
   if (q) await run("UPDATE sup_queues SET last_assigned = ? WHERE id = ?", pick, q.id);
-  await activity(null, t.id, "assigned", `To ${(await get<{ name: string }>("SELECT name FROM users WHERE id = ?", pick))?.name} by the system (${q?.strategy === "round_robin" ? "in turn" : "least busy"})`);
-  await notify([pick], { type: "assignment", title: `Ticket #${t.number} is yours`, body: t.subject, link: `/support?ticket=${t.id}` }, now);
+  const how: Record<string, string> = { round_robin: "in turn", longest_idle: "longest idle", skills: "by skill", priority: "by agent priority" };
+  await activity(null, t.id, "assigned", `To ${(await get<{ name: string }>("SELECT name FROM users WHERE id = ?", pick))?.name} by the system (${how[q?.strategy ?? ""] ?? "least busy"})`);
+  await notify([pick], { type: "assignment", title: offer ? `Conversation #${t.number} is offered to you: accept or decline` : `Ticket #${t.number} is yours`, body: t.subject, link: `/support?ticket=${t.id}` }, now);
   return pick;
 }
 
@@ -822,6 +831,7 @@ export async function ticketDetail(user: AppUser, ticketId: string) {
   const q = await quotes(messages.map((m) => m.reply_to), false);
   const names = new Map<string, string>([[`c:${t.customer_id}`, customer?.name ?? "Customer"], ...(await listUsers()).map((u) => [`a:${u.id}`, u.name] as [string, string])]);
   return {
+    retention: await (await import("./support-retention")).canManageRetention(user),
     ticket: full,
     customer: customer ? { ...customer, meta: parseJson<Record<string, string>>(customer.meta, {}), verified: !!Number(customer.verified), telegram: !!customer.external_id?.startsWith("tg:") } : null,
     messages: messages.map(({ reactions, reply_to, saved, ...m }) => ({ ...m, saved: Number(saved) > 0, internal: !!Number(m.internal), mine: m.author_kind === "agent" && m.author_id === user.id, replyTo: reply_to ? (q.get(reply_to) ?? null) : null, reactions: reactionsOf(reactions, `a:${user.id}`, names) })),
@@ -920,7 +930,7 @@ export async function setTicketStatus(user: AppUser, ticketId: string, status: T
 
 export async function assignTicket(user: AppUser, ticketId: string, assigneeId: string | null) {
   const t = await canWork(user, ticketId);
-  const lead = await isLead(user);
+  const lead = (await isLead(user)) || can(user, "support.assign");
   // Agents take a ticket for themselves or give it back; leads give it to anyone in support.
   if (!lead && assigneeId && assigneeId !== user.id) throw new WorkflowError("FORBIDDEN", "Only a lead gives a ticket to someone else.");
   if (!lead && !assigneeId && t.assignee_id !== user.id) throw new WorkflowError("FORBIDDEN", "Only a lead takes a ticket from someone.");
@@ -1000,39 +1010,65 @@ export async function iceConfig() {
 
 // The customer calls from the widget: a ticket is opened (or the open one used) and the call rings for its agent,
 // or for any free agent of the queue.
-export async function customerStartCall(app: AppFull, token: string, input: { ticketId?: string | null; offer: string; consent: boolean; transferFrom?: string | null }) {
+export async function customerStartCall(app: AppFull, token: string, input: { ticketId?: string | null; offer: string; consent: boolean; transferFrom?: string | null; ivrSession?: string | null }) {
   await (await import("./connected-systems")).needChannel(app.id, "calls");
   const cfg = await supportConfig();
   const c = await customerByToken(app, token);
   if (input.transferFrom) return transferredStart(app, c, input);
   if (cfg.recordCalls && !input.consent) throw new WorkflowError("VALIDATION", "Agree to the call being recorded, or write to us instead.");
   if (!input.offer || input.offer.length > 20000) throw new WorkflowError("VALIDATION", "The call could not start.");
+  const Q = await import("./support-queues");
+  // The phone menu (IVR) chose a queue, an agent and a topic for this call.
+  const ivr = input.ivrSession ? await get<{ id: string; queue_id: string | null; agent_id: string | null; category: string | null; status: string; call_id: string | null }>("SELECT id, queue_id, agent_id, category, status, call_id FROM sup_ivr_sessions WHERE id = ? AND customer_id = ?", input.ivrSession, c.id) : null;
+  if (input.ivrSession && (!ivr || ivr.status !== "routed" || ivr.call_id)) throw new WorkflowError("INVALID_STATE", "The phone menu has ended. Call again.");
+  // One live call per caller: a call still ringing or connected from an earlier page (a refresh, a closed Mini App)
+  // has lost its audio, so it ends before the new one starts.
+  for (const old of await all<CallRow>("SELECT * FROM sup_calls WHERE customer_id = ? AND direction = 'inbound' AND kind = 'web' AND status IN ('ringing','answered')", c.id)) await finishCall(old, null);
   let ticketId = input.ticketId ?? null;
   if (ticketId) await customerTicket(app, token, ticketId);
-  else ticketId = await createTicketRow({ subject: "Call from the app", body: `${c.name} called from ${app.name}.`, customerId: c.id, appId: app.id, appQueue: app.queue_id, channel: "call", authorKind: "customer", authorId: c.id });
+  else ticketId = await createTicketRow({ subject: ivr?.category ? `Call: ${ivr.category}` : "Call from the app", body: `${c.name} called from ${app.name}.`, customerId: c.id, appId: app.id, appQueue: ivr?.queue_id ?? app.queue_id, channel: "call", authorKind: "customer", authorId: c.id });
   const t = (await get<{ assignee_id: string | null; queue_id: string | null }>("SELECT assignee_id, queue_id FROM sup_tickets WHERE id = ?", ticketId))!;
-  // A call is not a new ticket: the ticket's own agent takes it even at their limit of open tickets.
-  const avail = await availableAgents(t.queue_id, cfg);
-  const agent = t.assignee_id && (await availableAgents(null, cfg, { ignoreLimit: true })).some((a) => a.userId === t.assignee_id) ? t.assignee_id : null;
-  if (!agent && !avail.length) {
+  // The queue's hours, size and overflow decide where the call waits, or whether it can wait at all.
+  const admitted = await Q.admitCall(ivr?.queue_id ?? t.queue_id);
+  const queueId = admitted.queueId;
+  // A call is not a new ticket: the ticket's own agent (or the agent the menu chose) takes it even at their limit.
+  const online = new Set((await availableAgents(null, cfg, { ignoreLimit: true })).map((a) => a.userId));
+  const wanted = ivr?.agent_id ?? t.assignee_id;
+  const agent = wanted && online.has(wanted) ? wanted : null;
+  if (!agent && admitted.refused) {
     await run("INSERT INTO sup_messages (id, ticket_id, author_kind, author_id, body, internal, created_at) VALUES (?, ?, 'system', NULL, ?, 0, ?)", uid("smg_"), ticketId, "No one could take the call right now. Leave a message here and we will answer as soon as we can.", nowIso());
+    await Q.logQueue(admitted.refused === "nobody" ? "refused" : `refused_${admitted.refused}`, { queueId, ticketId });
     await autoAssign(ticketId);
-    throw new WorkflowError("INVALID_STATE", cfg.awayMessage || "No one can take the call right now. Leave a message and we will answer soon.");
+    throw new WorkflowError("INVALID_STATE", admitted.refused === "nobody" ? cfg.awayMessage || Q.REFUSED_TEXT.nobody : Q.REFUSED_TEXT[admitted.refused]);
   }
+  // Offered first to the agent the queue's strategy picks; after a short wait it rings for every free agent.
+  const free = agent ? [] : (await Q.pickAgents(queueId, { forCall: true })).agents;
+  const picked = free[0] ?? null;
+  const priority = await Q.callerPriority(queueId, { customerId: c.id, category: ivr?.category ?? null, ticketId });
   const id = uid("scl_");
+  const now = nowIso();
   await run(
-    "INSERT INTO sup_calls (id, ticket_id, customer_id, agent_id, direction, kind, status, offer, consent, started_at, app_id) VALUES (?, ?, ?, ?, 'inbound', 'web', 'ringing', ?, ?, ?, ?)",
+    "INSERT INTO sup_calls (id, ticket_id, customer_id, agent_id, direction, kind, status, offer, consent, started_at, app_id, queue_id, queued_at, priority, category, ivr_session, ring_queue) VALUES (?, ?, ?, ?, 'inbound', 'web', 'ringing', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     id,
     ticketId,
     c.id,
-    agent,
+    agent ?? picked,
     input.offer,
     input.consent ? 1 : 0,
-    nowIso(),
+    now,
     app.id,
+    admitted.overflowFrom ?? queueId,
+    now,
+    priority,
+    ivr?.category ?? null,
+    ivr?.id ?? null,
+    admitted.overflowFrom ? queueId : null,
   );
+  if (ivr) await run("UPDATE sup_ivr_sessions SET call_id = ? WHERE id = ?", id, ivr.id);
+  if (picked && queueId) await run("UPDATE sup_queues SET last_assigned = ? WHERE id = ?", picked, queueId);
+  await Q.logQueue("joined", { queueId, callId: id, ticketId, agentId: agent ?? picked, detail: admitted.overflowFrom ? "overflow: the first queue was closed or full" : null });
   await activity(null, ticketId, "call_ringing", `${c.name} is calling`);
-  const ring = agent ? [agent] : avail.map((a) => a.userId);
+  const ring = agent ? [agent] : picked ? [picked] : (await availableAgents(queueId, cfg, { ignoreLimit: true })).map((a) => a.userId);
   await notify(ring, { type: "assignment", title: `${c.name} is calling`, body: "Answer in Customer support.", link: `/support?ticket=${ticketId}`, dedupeKey: `sup-call-${id}` }, nowIso());
   return { callId: id, ticketId };
 }
@@ -1061,6 +1097,9 @@ async function transferredStart(app: AppFull, c: { id: string; name: string }, i
   return { callId: id, ticketId: old.ticket_id };
 }
 
+// A call to a customer rings at least a minute: a Telegram customer may first need to open the bot's notice.
+export const outboundRingSeconds = (cfg: SupportConfig) => Math.max(cfg.ringSeconds, 60);
+
 export async function callFor(id: string) {
   const k = await get<CallRow>("SELECT * FROM sup_calls WHERE id = ?", id);
   if (!k) throw new WorkflowError("NOT_FOUND", "Call not found.");
@@ -1076,13 +1115,27 @@ async function expireRinging() {
   await run("UPDATE sup_calls SET ring_stage = 1 WHERE status = 'ringing' AND ring_stage = 0 AND agent_id IS NULL AND direction = 'inbound' AND kind = 'web'");
   if (cfg.callOverflowQueue)
     await run("UPDATE sup_calls SET ring_queue = ?, ring_stage = 2 WHERE status = 'ringing' AND ring_stage = 1 AND direction = 'inbound' AND kind = 'web' AND started_at < ?", cfg.callOverflowQueue, new Date(Date.now() - 2 * esc).toISOString());
-  const old = await all<{ id: string; ticket_id: string | null; direction: string; kind: string; customer_id: string | null }>("SELECT id, ticket_id, direction, kind, customer_id FROM sup_calls WHERE status = 'ringing' AND started_at < ?", new Date(Date.now() - cfg.ringSeconds * 1000).toISOString());
+  // A queued call waits as long as its queue allows (then overflows once); other calls ring for ringSeconds.
+  const Q = await import("./support-queues");
+  const queued = await Q.overflowWaiting(cfg.ringSeconds);
+  const old = await all<{ id: string; ticket_id: string | null; direction: string; kind: string; customer_id: string | null; started_at: string; queue_id: string | null }>(
+    `SELECT id, ticket_id, direction, kind, customer_id, started_at, COALESCE(ring_queue, queue_id) AS queue_id FROM sup_calls WHERE status = 'ringing' AND (
+       (started_at < ? AND NOT (direction = 'inbound' AND kind = 'web' AND ring_stage <> 9 AND COALESCE(ring_queue, queue_id) IS NOT NULL) AND NOT (direction = 'outbound' AND kind = 'web'))
+       OR (direction = 'outbound' AND kind = 'web' AND started_at < ?)
+       ${queued.length ? `OR id IN (${queued.map(() => "?").join(",")})` : ""})`,
+    new Date(Date.now() - cfg.ringSeconds * 1000).toISOString(),
+    new Date(Date.now() - outboundRingSeconds(cfg) * 1000).toISOString(),
+    ...queued,
+  );
   for (const k of old) {
-    await run("UPDATE sup_calls SET status = 'missed', ended_at = ? WHERE id = ? AND status = 'ringing'", nowIso(), k.id);
+    const gone = await get<{ id: string }>("UPDATE sup_calls SET status = 'missed', ended_at = ?, wait_s = COALESCE(wait_s, ?) WHERE id = ? AND status = 'ringing' RETURNING id", nowIso(), Math.round((Date.now() - Date.parse(k.started_at)) / 1000), k.id);
+    if (!gone) continue;
+    if (k.direction === "inbound" && k.kind === "web") await Q.logQueue("timeout", { queueId: k.queue_id, callId: k.id, ticketId: k.ticket_id });
     if (k.kind === "staff") continue;
     if (k.direction === "outbound" && k.ticket_id) {
       await run("INSERT INTO sup_messages (id, ticket_id, author_kind, author_id, body, internal, created_at) VALUES (?, ?, 'system', NULL, ?, 0, ?)", uid("smg_"), k.ticket_id, "We tried to call you. Reply here or call us when it suits you.", nowIso());
       await activity(null, k.ticket_id, "call_missed", "The customer did not answer");
+      await (await import("./support-channels")).closeTelegramCallNotice(k.id, "missed").catch(() => {});
       await (await import("./support-channels")).notifyTelegramCall(k.customer_id, "missed").catch((e) => console.error("Telegram call notice failed", e));
       continue;
     }
@@ -1103,8 +1156,19 @@ export async function customerPollCall(app: AppFull, token: string, callId: stri
   // While it rings: what the caller hears, and their place in line (calls ringing before theirs).
   if (k.status === "ringing") {
     const cfg = await supportConfig();
-    const ahead = Number((await get<{ n: number }>("SELECT COUNT(*) AS n FROM sup_calls WHERE status = 'ringing' AND started_at < ?", k.started_at))?.n ?? 0);
-    return { status: k.status, answer: k.answer, ice: parseJson<unknown[]>(k.agent_ice, []), agent, position: ahead + 1, ivr: cfg.ivr.on ? { ...cfg.ivr, audio: cfg.ivr.audio ? `/api/support/ivr-audio` : null } : null };
+    const x = k as CallRow & { queue_id: string | null; ring_queue: string | null; priority: number; queued_at: string | null };
+    const info = await (await import("./support-queues")).callerQueueInfo({ id: x.id, queue_id: x.queue_id, ring_queue: x.ring_queue, priority: Number(x.priority ?? 0), started_at: x.started_at, queued_at: x.queued_at });
+    return {
+      status: k.status,
+      answer: k.answer,
+      ice: parseJson<unknown[]>(k.agent_ice, []),
+      agent,
+      position: info.position,
+      estimateSec: info.estimateSec,
+      announcement: info.announcement,
+      callbackOffer: info.callbackOffer,
+      ivr: cfg.ivr.on ? { ...cfg.ivr, music: cfg.ivr.music && info.music, audio: cfg.ivr.audio ? `/api/support/ivr-audio` : null } : null,
+    };
   }
   const to = k.status === "transferred" && k.transfer_to ? (await get<{ name: string }>("SELECT name FROM users WHERE id = ?", k.transfer_to))?.name.split(" ")[0] ?? null : null;
   return { status: k.status, answer: k.answer, ice: parseJson<unknown[]>(k.agent_ice, []), agent, onHold: !!Number(k.on_hold), transferTo: to };
@@ -1169,6 +1233,11 @@ export async function customerEndCall(app: AppFull, token: string, callId: strin
   const c = await customerByToken(app, token);
   const k = await callFor(callId);
   if (k.customer_id !== c.id) throw new WorkflowError("NOT_FOUND", "Call not found.");
+  // Hanging up while waiting in a queue is an abandoned call.
+  if (k.status === "ringing" && k.direction === "inbound" && k.kind === "web") {
+    const x = k as CallRow & { queue_id: string | null; ring_queue: string | null };
+    await (await import("./support-queues")).logQueue("abandoned", { queueId: x.ring_queue ?? x.queue_id, callId: k.id, ticketId: k.ticket_id });
+  }
   await finishCall(k, null);
 }
 
@@ -1178,7 +1247,10 @@ export async function finishCall(k: CallRow, by: AppUser | null) {
   const status = k.status === "ringing" ? (by ? "declined" : "missed") : "ended";
   const dur = k.answered_at ? Math.round((Date.parse(now) - Date.parse(k.answered_at)) / 1000) : null;
   const held = Number(k.on_hold) && k.hold_since ? Math.round((Date.parse(now) - Date.parse(k.hold_since)) / 1000) : 0;
-  await run("UPDATE sup_calls SET status = ?, ended_at = ?, duration_s = ?, on_hold = 0, hold_since = NULL, hold_s = hold_s + ? WHERE id = ?", status, now, dur, held, k.id);
+  const wait = k.status === "ringing" ? Math.round((Date.parse(now) - Date.parse(k.started_at)) / 1000) : null;
+  // The agent hung up before a Telegram customer answered: the bot's notice says so.
+  if (k.status === "ringing" && k.direction === "outbound" && k.kind === "web") await (await import("./support-channels")).closeTelegramCallNotice(k.id, "cancelled").catch(() => {});
+  await run("UPDATE sup_calls SET status = ?, ended_at = ?, duration_s = ?, on_hold = 0, hold_since = NULL, hold_s = hold_s + ?, wait_s = COALESCE(wait_s, ?) WHERE id = ?", status, now, dur, held, wait, k.id);
   for (const leg of await all<CallRow>("SELECT * FROM sup_calls WHERE parent_id = ? AND status IN ('ringing','answered')", k.id)) await finishCall(leg, by);
   if (k.kind === "staff") return;
   if (k.ticket_id) await activity(by?.id ?? null, k.ticket_id, `call_${status}`, dur !== null ? `${Math.floor(dur / 60)} min ${dur % 60} s` : null);
@@ -1189,11 +1261,17 @@ export async function ringingFor(user: AppUser) {
   if (!(await supportConfig()).enabled) return [];
   await heartbeat(user);
   await expireRinging();
-  const qs = await memberQueues(user.id);
+  // Queue calls ring for an agent who is free: not on a call and not wrapping up the last one (calls meant for them
+  // alone, such as a transfer, still ring).
+  const Q = await import("./support-queues");
+  const wrapS = Math.max(0, ...(await Q.allQueueSettings()).map((s) => s.wrapUpS));
+  const { busy, wrap } = await Q.busyAgents(wrapS);
+  const free = !busy.has(user.id) && !wrap.has(user.id);
+  const qs = free ? await memberQueues(user.id) : [];
   return all<{ id: string; ticket_id: string; customer: string | null; number: number; started_at: string; offer: string; consent: number; kind: string; host: string | null; transferred: number }>(
     `SELECT k.id, k.ticket_id, c.name AS customer, t.number, k.started_at, k.offer, k.consent, k.kind, h.name AS host, CASE WHEN k.transfer_from IS NULL THEN 0 ELSE 1 END AS transferred
      FROM sup_calls k JOIN sup_tickets t ON t.id = k.ticket_id LEFT JOIN sup_customers c ON c.id = k.customer_id LEFT JOIN users h ON h.id = k.host_id
-     WHERE k.status = 'ringing' AND k.direction = 'inbound' AND (k.agent_id = ? ${qs.length ? `OR (k.agent_id IS NULL AND COALESCE(k.ring_queue, t.queue_id) IN (${qs.map(() => "?").join(",")}))` : ""}) ORDER BY k.started_at`,
+     WHERE k.status = 'ringing' AND k.direction = 'inbound' AND (k.agent_id = ? ${qs.length ? `OR (k.agent_id IS NULL AND COALESCE(k.ring_queue, k.queue_id, t.queue_id) IN (${qs.map(() => "?").join(",")}))` : ""}) ORDER BY k.priority DESC, COALESCE(k.queued_at, k.started_at)`,
     user.id,
     ...qs,
   );
@@ -1206,9 +1284,15 @@ export async function answerCall(user: AppUser, callId: string, answer: string) 
   if (k.direction === "outbound") throw new WorkflowError("INVALID_STATE", "This call is ringing for the customer.");
   if (k.agent_id && k.agent_id !== user.id) throw new WorkflowError("FORBIDDEN", "This call rings for another agent.");
   const now = nowIso();
-  await run("UPDATE sup_calls SET status = 'answered', agent_id = ?, answer = ?, answered_at = ? WHERE id = ? AND status = 'ringing'", user.id, answer, now, callId);
+  // Only one agent wins: the update applies to a call still ringing, and only one live call per agent.
+  if (k.kind !== "staff" && (await get("SELECT 1 AS x FROM sup_calls WHERE status = 'answered' AND kind = 'web' AND agent_id = ? AND id <> ?", user.id, callId))) throw new WorkflowError("INVALID_STATE", "End your current call first.");
+  await run("UPDATE sup_calls SET status = 'answered', agent_id = ?, answer = ?, answered_at = ?, wait_s = ? WHERE id = ? AND status = 'ringing'", user.id, answer, now, Math.round((Date.parse(now) - Date.parse(k.started_at)) / 1000), callId);
   const got = await callFor(callId);
-  if (got.agent_id !== user.id) throw new WorkflowError("INVALID_STATE", "Someone else answered.");
+  if (got.agent_id !== user.id || got.status !== "answered") throw new WorkflowError("INVALID_STATE", "Someone else answered.");
+  if (k.kind === "web" && k.direction === "inbound") {
+    const x = got as CallRow & { queue_id: string | null; ring_queue: string | null };
+    await (await import("./support-queues")).logQueue("answered", { queueId: x.ring_queue ?? x.queue_id, callId, ticketId: k.ticket_id, agentId: user.id });
+  }
   if (k.kind === "staff") {
     if (k.ticket_id) await activity(user.id, k.ticket_id, "call_joined", "Joined the call");
     return { customerIce: [] };
@@ -1282,17 +1366,23 @@ export async function saveRecording(user: AppUser, callId: string, file: { mime:
     const r = await fetch(url, { method: "PUT", headers: { "Content-Type": file.mime }, body: Buffer.from(file.data) });
     if (!r.ok) throw new WorkflowError("VALIDATION", "Storage refused the recording.");
   } else await run("INSERT INTO sup_blobs (id, data) VALUES (?, ?)", rid, Buffer.from(file.data).toString("base64"));
-  await run("UPDATE sup_calls SET recording_id = ?, recording_storage = ?, recording_mime = ?, recording_size = ? WHERE id = ?", rid, kind, file.mime.split(";")[0], file.data.byteLength, callId);
+  await run("UPDATE sup_calls SET recording_id = ?, recording_storage = ?, recording_mime = ?, recording_size = ?, recording_status = 'saved' WHERE id = ?", rid, kind, file.mime.split(";")[0], file.data.byteLength, callId);
+  await run("DELETE FROM sup_recording_chunks WHERE call_id = ?", callId);
   if (k.ticket_id) await activity(user.id, k.ticket_id, "call_recorded", `${Math.round(file.data.byteLength / 1024)} KB`);
   return rid;
 }
 
 // Listening to a recording: support leads and the agent of the call; each listen is logged.
-export async function readRecording(user: AppUser, callId: string) {
+export async function readRecording(user: AppUser, callId: string, download = false) {
   const k = await get<{ agent_id: string | null; ticket_id: string | null; recording_id: string | null; recording_storage: string | null; recording_mime: string | null }>("SELECT agent_id, ticket_id, recording_id, recording_storage, recording_mime FROM sup_calls WHERE id = ?", callId);
   if (!k?.recording_id) throw new WorkflowError("NOT_FOUND", "No recording.");
-  if (k.agent_id !== user.id && !(await isLead(user))) throw new WorkflowError("FORBIDDEN", "Only the agent of the call and support leads listen to it.");
-  await activity(user.id, k.ticket_id, "recording_played");
+  const R = await import("./call-records");
+  const access = await R.recordAccess(user);
+  const own = k.agent_id === user.id;
+  if (!access.all && !(own && access.hearOwn)) throw new WorkflowError("FORBIDDEN", "Only the agent of the call, support leads and the managers Admin allows listen to it.");
+  if (download && !access.all) throw new WorkflowError("FORBIDDEN", "Only support leads and the managers Admin allows download recordings.");
+  await activity(user.id, k.ticket_id, download ? "recording_downloaded" : "recording_played");
+  await run("INSERT INTO sup_recording_access (id, call_id, user_id, action, at) VALUES (?, ?, ?, ?, ?)", uid("sra_"), callId, user.id, download ? "download" : "play", nowIso());
   if (k.recording_storage === "supabase") return { redirect: await signedReadUrl(`support/${k.recording_id}`, 300), mime: k.recording_mime ?? "audio/webm", data: null };
   const blob = await get<{ data: string }>("SELECT data FROM sup_blobs WHERE id = ?", k.recording_id);
   return { redirect: null, mime: k.recording_mime ?? "audio/webm", data: blob ? Buffer.from(blob.data, "base64") : null };
@@ -1303,7 +1393,7 @@ export async function readRecording(user: AppUser, callId: string) {
 // ---------------------------------------------------------------------------
 
 export async function monitor(user: AppUser, range: { from: string; to: string }) {
-  const cfg = await needLead(user);
+  const cfg = can(user, "support.analytics") ? await supportConfig() : await needLead(user);
   const from = `${range.from}T00:00:00.000Z`;
   const to = new Date(Date.parse(`${range.to}T00:00:00.000Z`) + 864e5).toISOString();
   const qs = await listQueues();
@@ -1421,14 +1511,29 @@ export async function supportChecks(now = nowIso()) {
     await activity(null, c.id, "status", "solved to closed (automatically)");
   }
   const assigned = await assignWaiting();
-  const keep = new Date(Date.parse(now) - cfg.recordingDays * 864e5).toISOString();
-  const expired = await all<{ id: string; recording_id: string; recording_storage: string }>("SELECT id, recording_id, recording_storage FROM sup_calls WHERE recording_id IS NOT NULL AND started_at < ?", keep);
+  // Recording retention 0 means keep indefinitely: nothing is purged.
+  const keep = cfg.recordingDays > 0 ? new Date(Date.parse(now) - cfg.recordingDays * 864e5).toISOString() : "0000";
+  // Recordings under legal hold are kept whatever their age.
+  const expired = await all<{ id: string; recording_id: string; recording_storage: string }>("SELECT id, recording_id, recording_storage FROM sup_calls WHERE recording_id IS NOT NULL AND legal_hold = 0 AND started_at < ?", keep);
   const { deleteStored } = await import("./storage");
   for (const r of expired) {
     if (r.recording_storage === "supabase") await deleteStored({ id: r.recording_id, storage: r.recording_storage, path: `support/${r.recording_id}` }).catch(() => {});
     else await run("DELETE FROM sup_blobs WHERE id = ?", r.recording_id);
-    await run("UPDATE sup_calls SET recording_id = NULL, recording_size = NULL WHERE id = ?", r.id);
+    await run("UPDATE sup_calls SET recording_id = NULL, recording_size = NULL, recording_status = 'purged' WHERE id = ?", r.id);
   }
+  // Calls left ringing or recordings left half-sent when a server restarted or a tab closed are picked up here.
+  await expireRinging();
+  await (await import("./support-retention")).purgeConversations(now).catch((e) => console.error("Conversation retention failed", e));
+  await (await import("./support-queues")).expireOffers().catch((e) => console.error("Conversation offers failed", e));
+  // Call-backs booked for a time: the agents of the queue are told when one falls due.
+  for (const cb of await all<{ id: string; ticket_id: string | null; queue_id: string | null; phone: string | null; number: number | null; assignee_id: string | null }>(
+    "SELECT k.id, k.ticket_id, k.queue_id, k.phone, t.number, t.assignee_id FROM sup_calls k LEFT JOIN sup_tickets t ON t.id = k.ticket_id WHERE k.status = 'callback' AND k.scheduled_for IS NOT NULL AND k.scheduled_for <= ?",
+    now,
+  )) {
+    const who = cb.assignee_id ? [cb.assignee_id] : (await availableAgents(cb.queue_id, cfg, { ignoreLimit: true })).map((a) => a.userId);
+    if (who.length) await notify(who, { type: "assignment", title: `Call-back due now${cb.number ? ` (#${cb.number})` : ""}`, body: cb.phone ?? "", link: "/support?tab=calls", dedupeKey: `sup-cb-due-${cb.id}` }, now);
+  }
+  await (await import("./call-records")).finishStaleRecordings().catch((e) => console.error("Finishing recordings failed", e));
   return { breached: late.length, closed: closed.length, assigned };
 }
 

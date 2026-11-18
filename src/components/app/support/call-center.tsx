@@ -73,6 +73,9 @@ type Parts = {
   ctx?: AudioContext;
   rec?: MediaRecorder;
   chunks: Blob[];
+  // Pieces of the recording already sent to the server (Update 1.2, Phase 9): a closed tab loses seconds, not the call.
+  seq?: number;
+  uploads?: Promise<boolean>[];
   poll?: number;
   timer?: number;
   callId?: string;
@@ -139,9 +142,15 @@ function CallPanel({ call, record, onDone, onEnded }: { call: Exclude<ActiveCall
           x.rec!.stop();
         });
         try {
-          const blob = new Blob(x.chunks, { type: x.rec.mimeType || "audio/webm" });
-          const r = await fetch(`/api/support/recording/${x.callId}`, { method: "POST", headers: { "Content-Type": blob.type }, body: blob });
-          setRecState(r.ok ? "saved" : "failed");
+          // Every piece arrived: the server joins them. Otherwise the whole recording goes up in one file.
+          const sent = await Promise.all(x.uploads ?? []);
+          const done = sent.length > 0 && sent.every(Boolean) ? await fetch(`/api/support/recording/${x.callId}?finish=1`, { method: "POST" }).then((r) => r.ok, () => false) : false;
+          if (done) setRecState("saved");
+          else {
+            const blob = new Blob(x.chunks, { type: x.rec.mimeType || "audio/webm" });
+            const r = await fetch(`/api/support/recording/${x.callId}`, { method: "POST", headers: { "Content-Type": blob.type }, body: blob });
+            setRecState(r.ok ? "saved" : "failed");
+          }
         } catch {
           setRecState("failed");
         }
@@ -163,7 +172,14 @@ function CallPanel({ call, record, onDone, onEnded }: { call: Exclude<ActiveCall
       ctx.createMediaStreamSource(x.mic).connect(dest);
       ctx.createMediaStreamSource(x.remote).connect(dest);
       const rec = new MediaRecorder(dest.stream, MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? { mimeType: "audio/webm;codecs=opus", audioBitsPerSecond: 24000 } : undefined);
-      rec.ondataavailable = (ev) => ev.data.size && x.chunks.push(ev.data);
+      x.seq = 0;
+      x.uploads = [];
+      rec.ondataavailable = (ev) => {
+        if (!ev.data.size) return;
+        x.chunks.push(ev.data);
+        const seq = x.seq!++;
+        x.uploads!.push(fetch(`/api/support/recording/${x.callId}?chunk=${seq}`, { method: "POST", headers: { "Content-Type": ev.data.type || rec.mimeType || "audio/webm" }, body: ev.data }).then((r) => r.ok, () => false));
+      };
       rec.start(5000);
       x.rec = rec;
       setRecState("recording");

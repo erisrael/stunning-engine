@@ -54,7 +54,7 @@ export type Chain = { id: string; destinationId: string | null; type: string | n
 const toChain = (r: ChainRow): Chain => ({ id: r.id, destinationId: r.destination_id, type: r.type, steps: parseJson<ApprovalStep[]>(r.steps_json, []), allowSelf: !!Number(r.allow_self) });
 
 function needAdmin(user: AppUser) {
-  if (!isAdmin(user)) throw new WorkflowError("FORBIDDEN", "Only Admin sets request destinations and approval chains.");
+  if (!isAdmin(user) && !user.perms.includes("support.requests_setup")) throw new WorkflowError("FORBIDDEN", "Only Admin and people allowed to set up support requests set destinations and approval chains.");
 }
 export async function requestSetup(user: AppUser) {
   needAdmin(user);

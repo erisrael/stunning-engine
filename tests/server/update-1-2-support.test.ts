@@ -131,7 +131,7 @@ async function main() {
   // Calls.
   const cust = await get<{ id: string }>("SELECT id FROM sup_customers WHERE external_id = 'tg:888'");
   await ch.notifyTelegramCall(cust!.id, "incoming", "Abel Tesfaye");
-  check("an incoming call is announced with a button that opens the app", String(last().text).startsWith("Abel from MySeed Support is calling you") && JSON.stringify(last().reply_markup).includes("support-widget?tg=default&call=1"), last());
+  check("an incoming call is announced with a button that opens the app", String(last().text).startsWith("Abel from MySeed Support is calling you") && JSON.stringify(last().reply_markup).includes("support-widget?tg=default&call=in"), last());
   await ch.notifyTelegramCall(cust!.id, "missed");
   check("a missed call is said too", String(last().text).startsWith("We tried to call you"));
 

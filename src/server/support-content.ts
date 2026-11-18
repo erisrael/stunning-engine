@@ -220,7 +220,7 @@ export async function contentCommands(lang: "en" | "am", bot = "default") {
 
 async function lead(user: AppUser) {
   const sd = await import("./support-desk");
-  if (!(await sd.isLead(user))) throw new WorkflowError("FORBIDDEN", "Only support leads and Admin manage the bot and Mini App content.");
+  if (!(await sd.isLead(user)) && !(await import("./users")).can(user, "support.content")) throw new WorkflowError("FORBIDDEN", "Only support leads, Admin and people allowed to publish content manage the bot and Mini App content.");
 }
 const clean = (s: unknown, max: number) => String(s ?? "").replace(/\r\n/g, "\n").trim().slice(0, max);
 const KEY_RE = /^[a-z0-9_.-]{1,60}$/;

@@ -524,6 +524,29 @@ export const CHAPTERS: Chapter[] = [
       { title: "On your Home", text: "Recorders see the booked time and studio on each part's card." },
     ],
   },
+  {
+    key: "support-calls",
+    title: "Customer support: menu, queues, calls and requests",
+    audiences: ["department", "manager"],
+    summary: "The phone menu callers go through, call queues and the live board, Call records, Customer Support Requests, the bot's content, and Noor records.",
+    sections: [
+      {
+        title: "Phone menu (IVR)",
+        steps: [
+          "Customer support, Phone menu. The spec's default flow is there to start from.",
+          "Add nodes from the list and drag them by their title. To connect, press an output's link button, then the node it leads to.",
+          "Click a node to change what is said (English and Amharic), its choices, queue, hours or condition. Click the empty canvas for the flow's settings and the emergency announcement.",
+          "Run a test call: press keys as a caller would and see where the call ends. Nothing rings.",
+          "Publish (each publish is a numbered version), then switch the flow on. Callers in Telegram and on the website hear it before the queue.",
+        ],
+      },
+      { title: "Queues and the live board", text: "Queues and replies, Call settings: each queue's open hours (Addis Ababa time), how many may wait and for how long, the overflow queue, the announcement, routing (least busy, round robin, longest idle, skills, agent priority, manual), caller priority and wrap-up. Live queues shows the callers waiting, agents' states and today's answered, abandoned and missed calls with the service level." },
+      { title: "Call records", text: "Sidebar, Call records. Agents see their own calls; leads, Admin and the managers Admin names see all. Open a call to set its outcome, notes and tags, play the recording at any speed, download it (leads), or put it under legal hold so it is kept past the keeping period. Every listen and download is logged." },
+      { title: "Customer Support Requests", text: "From a conversation, ask Dev, Finance, the support head or Administration for help. The request moves through received, acknowledged, in progress, approval and resolved; acknowledging makes a task in that team's workspace, and the answer comes back to the conversation." },
+      { title: "What the bot says", text: "Customer support, Content: every text, menu entry, topic and command of the bot and Mini App, in English and Amharic. Save a draft, preview it, publish it, and restore an earlier version from its history." },
+      { title: "Noor records", text: "Legacy CMS, Records: filter any switched-on Noor table with AND and OR, save views, show, hide, move and pin columns, and export what matches. Resources and fields lists every Noor table and its fields; corrections to a field's type survive the next read." },
+    ],
+  },
 ];
 
 export type Guide = { key: string; title: string; chapter: string; steps: string[] };

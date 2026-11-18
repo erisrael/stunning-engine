@@ -25,6 +25,7 @@ import { StudentLookupDialog } from "./student-lookup-dialog";
 type Res = { ok: boolean; error?: string; data?: unknown };
 type Row = { id: string; number: number; subject: string; status: TicketStatus; priority: Priority; channel: string; queue: string | null; customer: string | null; assignee: string | null; assignee_id: string | null; updated_at: string; sla_first_due: string | null; sla_resolve_due: string | null; first_response_at: string | null; breached: number; unread?: number; escalated_at?: string | null };
 type Detail = {
+  retention?: boolean;
   ticket: Record<string, unknown>;
   customer: { id: string; name: string; email: string | null; phone: string | null; meta: Record<string, string>; verified: boolean; app: string | null; telegram?: boolean; external_id?: string | null } | null;
   messages: { id: string; author_kind: string; author_id?: string | null; author: string | null; body: string; internal: boolean; created_at: string; mine?: boolean; replyTo?: { id: string; author: string; body: string } | null; reactions?: KitReaction[]; edited_at?: string | null; deleted_at?: string | null; delivered_at?: string | null; saved?: boolean }[];
@@ -41,7 +42,9 @@ const ago = (iso: string) => {
   return m < 1 ? "now" : m < 60 ? `${m} min` : m < 1440 ? `${Math.round(m / 60)} h` : `${Math.round(m / 1440)} d`;
 };
 const PRI: Record<Priority, string> = { urgent: "bg-[#D93025] text-white", high: "bg-[#E8710A]/20 text-[#B06000]", normal: "bg-muted", low: "bg-muted text-muted-foreground" };
-const STATUS_DOT: Record<string, string> = { online: "text-[#188038]", away: "text-[#F9AB00]", offline: "text-muted-foreground" };
+const STATUS_DOT: Record<string, string> = { online: "text-[#188038]", busy: "text-[#D93025]", away: "text-[#F9AB00]", break: "text-[#8430CE]", offline: "text-muted-foreground" };
+const STATUS_LABEL: Record<string, string> = { online: "Available", busy: "Busy", away: "Away", break: "Break", offline: "Offline" };
+const STATUS_TOAST: Record<string, string> = { online: "You are available: new conversations and calls come to you", busy: "Busy: no new conversations or queue calls until you are available", away: "Away", break: "On a break", offline: "Offline" };
 const select = "h-8 rounded-md border bg-background px-2 text-sm";
 
 function useAct() {
@@ -98,9 +101,9 @@ export function AgentBar({ status }: { status: string }) {
   return (
     <div className="flex flex-wrap items-center gap-2" data-agent-bar>
       <span className="text-sm text-muted-foreground">My status</span>
-      {(["online", "away", "offline"] as const).map((s) => (
-        <Button key={s} size="sm" variant={status === s ? "default" : "outline"} disabled={busy} onClick={() => act(() => A.setAgentStatusAction(s), s === "online" ? "You are online: new tickets come to you" : `You are ${s}`)} data-status={s}>
-          <CircleIcon className={cn("size-3 fill-current", STATUS_DOT[s])} /> {s[0]!.toUpperCase() + s.slice(1)}
+      {(["online", "busy", "away", "break", "offline"] as const).map((s) => (
+        <Button key={s} size="sm" variant={status === s ? "default" : "outline"} disabled={busy} onClick={() => act(() => A.setAgentStatusAction(s), STATUS_TOAST[s]!)} data-status={s}>
+          <CircleIcon className={cn("size-3 fill-current", STATUS_DOT[s])} /> {STATUS_LABEL[s]}
         </Button>
       ))}
       {ring.map((r) => (
@@ -208,7 +211,7 @@ function CustomerPhone({ customer, ticketId }: { customer: NonNullable<Detail["c
 
 export function TicketView({ d, agents, queues, canned, me, lead, articles = [], origin = "" }: { d: Detail; agents: { id: string; name: string }[]; queues: { id: string; name: string }[]; canned: { id: string; title: string; body: string }[]; me: string; lead: boolean; articles?: { id: string; title: string }[]; origin?: string }) {
   const { act, busy } = useAct();
-  const t = d.ticket as { id: string; number: number; subject: string; status: TicketStatus; priority: Priority; channel: string; queue_id: string | null; assignee_id: string | null; assignee: string | null; created_at: string; rating: number | null; rating_comment: string | null; tags: string; escalated_at?: string | null; escalation_note?: string | null; archived_at?: string | null };
+  const t = d.ticket as { id: string; number: number; subject: string; status: TicketStatus; priority: Priority; channel: string; queue_id: string | null; assignee_id: string | null; assignee: string | null; created_at: string; rating: number | null; rating_comment: string | null; tags: string; escalated_at?: string | null; escalation_note?: string | null; archived_at?: string | null; offered_at?: string | null; legal_hold?: number };
   const [forwardFor, setForwardFor] = React.useState<string | null>(null);
   const [detailsFor, setDetailsFor] = React.useState<string | null>(null);
   const [panel, setPanel] = React.useState(false);
@@ -358,9 +361,50 @@ export function TicketView({ d, agents, queues, canned, me, lead, articles = [],
           <Button size="sm" variant={t.escalated_at ? "default" : "ghost"} disabled={busy} onClick={() => { if (t.escalated_at) void act(() => SC.escalateTicketAction(t.id, null, false), "No longer escalated"); else { const why = window.prompt("Why escalate? The support leads are told."); if (why !== null) void act(() => SC.escalateTicketAction(t.id, why), "Escalated"); } }} data-escalate>
             <AlertTriangleIcon /> {t.escalated_at ? "Escalated" : "Escalate"}
           </Button>
-          <Button size="sm" variant="ghost" disabled={busy} onClick={() => act(() => SC.archiveTicketAction(t.id, !t.archived_at), t.archived_at ? "Back in the lists" : "Archived")} data-archive>
-            <ArchiveIcon /> {t.archived_at ? "Unarchive" : "Archive"}
+          {/* Offered by a queue where agents accept: take it, or pass it to the next agent. */}
+          {t.offered_at && t.assignee_id === me && (
+            <span className="flex items-center gap-1 rounded-md bg-primary/10 px-2 py-1 text-xs" data-offered>
+              Offered to you
+              <Button size="xs" disabled={busy} onClick={() => act(() => SC.acceptConversationAction(t.id), "Accepted: it is yours")} data-offer-accept>Accept</Button>
+              <Button size="xs" variant="outline" disabled={busy} onClick={() => act(() => SC.declineConversationAction(t.id), "Declined: it goes to the next agent")} data-offer-decline>Decline</Button>
+            </span>
+          )}
+          <Button size="sm" variant="ghost" disabled={busy} title={t.archived_at ? "Bring it back to the working lists" : "Hide it from the working lists; nothing is deleted and it can be restored"} onClick={() => act(() => SC.archiveTicketAction(t.id, !t.archived_at), t.archived_at ? "Restored to the lists" : "Archived (restore it from Archived)")} data-archive>
+            <ArchiveIcon /> {t.archived_at ? "Restore" : "Archive"}
           </Button>
+          {d.retention && (
+            <>
+              <Button
+                size="sm"
+                variant={t.legal_hold ? "default" : "ghost"}
+                disabled={busy}
+                title="A conversation under legal hold is never deleted"
+                onClick={() => {
+                  if (t.legal_hold) return void act(() => SC.conversationHoldAction(t.id, false), "Legal hold lifted");
+                  const why = window.prompt("Why must this conversation be kept? (complaint, dispute, investigation)");
+                  if (why) void act(() => SC.conversationHoldAction(t.id, true, why), "Kept under legal hold");
+                }}
+                data-conversation-hold
+              >
+                <LockIcon /> {t.legal_hold ? "Legal hold" : "Hold"}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-destructive"
+                disabled={busy || !!t.legal_hold}
+                title={t.legal_hold ? "Lift the legal hold first" : "Delete permanently: the messages and files go for good; call records stay"}
+                onClick={async () => {
+                  const why = window.prompt(`Delete conversation #${t.number} permanently? Its messages and files cannot be restored (call records stay). Write the reason to confirm.`);
+                  if (!why) return;
+                  if (await act(() => SC.deleteConversationAction(t.id, why), "Conversation deleted")) window.location.assign("/support?view=all");
+                }}
+                data-conversation-delete
+              >
+                <Trash2Icon /> Delete
+              </Button>
+            </>
+          )}
           <Button asChild size="sm" variant="ghost">
             <Link href={`/support-requests?ticket=${t.id}`} data-new-support-request>
               <SendIcon /> Support request

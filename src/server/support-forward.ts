@@ -21,7 +21,7 @@ const toTarget = (r: TargetRow): ForwardTarget => ({
 const clean = (v: unknown, max: number) => String(v ?? "").trim().slice(0, max);
 
 async function manager(user: AppUser) {
-  if (!can(user, "users.manage") && !can(user, "settings.manage") && !(await sd.isLead(user))) throw new WorkflowError("FORBIDDEN", "Only Admin and the support leads set forwarding targets.");
+  if (!can(user, "users.manage") && !can(user, "settings.manage") && !can(user, "support.forwarding") && !(await sd.isLead(user))) throw new WorkflowError("FORBIDDEN", "Only Admin, the support leads and people allowed to set forwarding targets do this.");
 }
 
 export async function listForwardTargets(user: AppUser) {

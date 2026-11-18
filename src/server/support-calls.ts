@@ -160,7 +160,8 @@ export async function dialCustomer(user: AppUser, ticketId: string, offer: strin
   );
   await sd.activity(user.id, t.id, "call_dial", "Called the customer in the app");
   // A Telegram customer also gets the bot's call notice, with a button that opens the support app to answer.
-  await (await import("./support-channels")).notifyTelegramCall(t.customer_id, "incoming", user.name).catch((e) => console.error("Telegram call notice failed", e));
+  const notice = await (await import("./support-channels")).notifyTelegramCall(t.customer_id, "incoming", user.name).catch((e) => (console.error("Telegram call notice failed", e), null));
+  if (notice) await run("UPDATE sup_calls SET tg_notice = ? WHERE id = ?", JSON.stringify(notice), id);
   return { callId: id, record: cfg.recordCalls };
 }
 
@@ -171,9 +172,17 @@ export async function customerIncoming(app: sd.AppFull, token: string) {
     "SELECT k.id, k.offer, u.name AS agent, k.ticket_id, k.started_at FROM sup_calls k LEFT JOIN users u ON u.id = k.agent_id WHERE k.customer_id = ? AND k.direction = 'outbound' AND k.kind = 'web' AND k.status = 'ringing' ORDER BY k.started_at DESC LIMIT 1",
     c.id,
   );
-  if (!k) return { call: null };
   const cfg = await sd.supportConfig();
-  return { call: { id: k.id, offer: k.offer, agent: k.agent?.split(" ")[0] ?? null, ticketId: k.ticket_id, record: cfg.recordCalls, notice: cfg.recordCalls ? cfg.recordingNotice : null, startedAt: k.started_at, ringSeconds: cfg.ringSeconds } };
+  if (!k) {
+    // Opened from the bot's notice after the call stopped ringing: say so, with who called and when, to call back.
+    const m = await get<{ agent: string | null; started_at: string; status: string }>(
+      "SELECT u.name AS agent, k.started_at, k.status FROM sup_calls k LEFT JOIN users u ON u.id = k.agent_id WHERE k.customer_id = ? AND k.direction = 'outbound' AND k.kind = 'web' AND k.answered_at IS NULL AND k.status <> 'ringing' AND k.started_at >= ? ORDER BY k.started_at DESC LIMIT 1",
+      c.id,
+      new Date(Date.now() - 30 * 60e3).toISOString(),
+    );
+    return { call: null, missed: m ? { agent: m.agent?.split(" ")[0] ?? null, at: m.started_at } : null };
+  }
+  return { call: { id: k.id, offer: k.offer, agent: k.agent?.split(" ")[0] ?? null, ticketId: k.ticket_id, record: cfg.recordCalls, notice: cfg.recordCalls ? cfg.recordingNotice : null, startedAt: k.started_at, ringSeconds: sd.outboundRingSeconds(cfg) } };
 }
 
 export async function customerAnswer(app: sd.AppFull, token: string, callId: string, input: { answer: string; consent: boolean }) {
@@ -184,6 +193,7 @@ export async function customerAnswer(app: sd.AppFull, token: string, callId: str
   if (!input.answer || input.answer.length > 20000) throw new WorkflowError("VALIDATION", "The call could not connect.");
   const now = nowIso();
   await run("UPDATE sup_calls SET status = 'answered', answer = ?, answered_at = ?, consent = ? WHERE id = ? AND status = 'ringing'", input.answer, now, input.consent ? 1 : 0, k.id);
+  await (await import("./support-channels")).closeTelegramCallNotice(k.id, "answered").catch(() => {});
   if (k.ticket_id) {
     await run("UPDATE sup_tickets SET first_response_at = COALESCE(first_response_at, ?), last_agent_at = ?, updated_at = ? WHERE id = ?", now, now, now, k.ticket_id);
     await sd.activity(null, k.ticket_id, "call_answered", "The customer answered");
@@ -197,6 +207,7 @@ export async function customerDecline(app: sd.AppFull, token: string, callId: st
   if (k.customer_id !== c.id || k.direction !== "outbound") throw new WorkflowError("NOT_FOUND", "Call not found.");
   if (k.status !== "ringing") return { ok: true };
   await run("UPDATE sup_calls SET status = 'declined', ended_at = ? WHERE id = ? AND status = 'ringing'", nowIso(), k.id);
+  await (await import("./support-channels")).closeTelegramCallNotice(k.id, "declined").catch(() => {});
   if (k.ticket_id) await sd.activity(null, k.ticket_id, "call_declined", "The customer declined the call");
   return { ok: true };
 }
@@ -249,14 +260,19 @@ export async function startPhoneCall(user: AppUser, input: { ticketId?: string |
 }
 
 // A customer asks to be called: a ticket (the open one, or new) and a waiting call-back in the call center.
-export async function requestCallback(input: { customerId: string; phone: string; appId?: string | null; channel: "telegram" | "widget"; ticketId?: string | null; note?: string | null }) {
+export async function requestCallback(input: { customerId: string; phone: string; appId?: string | null; channel: "telegram" | "widget"; ticketId?: string | null; note?: string | null; at?: string | null }) {
   const phone = clean(input.phone, 40).replace(/[^\d+]/g, "");
   if (!/^\+?\d{7,15}$/.test(phone)) throw new WorkflowError("VALIDATION", "Give a phone number to call (7 to 15 digits).");
+  // A call-back at a chosen time (within two weeks); none means as soon as possible.
+  const at = input.at ? Date.parse(input.at) : NaN;
+  if (input.at && (!Number.isFinite(at) || at < Date.now() - 60e3 || at > Date.now() + 14 * 864e5)) throw new WorkflowError("VALIDATION", "Choose a time within the next two weeks.");
+  const scheduled = Number.isFinite(at) && at > Date.now() + 5 * 60e3 ? new Date(at).toISOString() : null;
   const waiting = await get<{ id: string; ticket_id: string | null }>("SELECT id, ticket_id FROM sup_calls WHERE customer_id = ? AND status = 'callback'", input.customerId);
   if (waiting) return { callId: waiting.id, ticketId: waiting.ticket_id, again: true };
   let ticketId = input.ticketId ?? null;
   const now = nowIso();
-  const body = `Please call me back on ${phone}.${input.note ? `\n${clean(input.note, 500)}` : ""}`;
+  const when = scheduled ? ` at ${new Date(Date.parse(scheduled) + 3 * 3600e3).toISOString().slice(0, 16).replace("T", " ")} (Addis Ababa time)` : "";
+  const body = `Please call me back on ${phone}${when}.${input.note ? `\n${clean(input.note, 500)}` : ""}`;
   if (!ticketId) {
     const open = await get<{ id: string }>("SELECT id FROM sup_tickets WHERE customer_id = ? AND status NOT IN ('solved','closed') ORDER BY updated_at DESC LIMIT 1", input.customerId);
     ticketId = open?.id ?? null;
@@ -267,9 +283,11 @@ export async function requestCallback(input: { customerId: string; phone: string
     ticketId = await sd.createTicketFromChannel({ subject: "Call-back request", body, customerId: input.customerId, channel: input.channel === "telegram" ? "telegram" : "web", appQueue: app?.queue_id ?? null, appId: input.appId ?? null });
   }
   const id = uid("scl_");
-  await run("INSERT INTO sup_calls (id, ticket_id, customer_id, agent_id, direction, kind, status, consent, started_at, phone, ring_stage, app_id) VALUES (?, ?, ?, NULL, 'outbound', 'phone', 'callback', 1, ?, ?, 9, ?)", id, ticketId, input.customerId, now, phone, input.appId ?? null);
-  await sd.activity(null, ticketId, "callback_requested", `Asked to be called on ${phone}`);
   const t = await get<{ assignee_id: string | null; queue_id: string | null; number: number }>("SELECT assignee_id, queue_id, number FROM sup_tickets WHERE id = ?", ticketId);
+  await run("INSERT INTO sup_calls (id, ticket_id, customer_id, agent_id, direction, kind, status, consent, started_at, phone, ring_stage, app_id, scheduled_for, queue_id) VALUES (?, ?, ?, NULL, 'outbound', 'phone', 'callback', 1, ?, ?, 9, ?, ?, ?)", id, ticketId, input.customerId, now, phone, input.appId ?? null, scheduled, t?.queue_id ?? null);
+  await sd.activity(null, ticketId, "callback_requested", `Asked to be called on ${phone}${when}`);
+  await (await import("./support-queues")).logQueue("callback", { queueId: t?.queue_id ?? null, callId: id, ticketId, detail: scheduled ? `scheduled ${scheduled}` : null });
+  if (scheduled) return { callId: id, ticketId, again: false, scheduledFor: scheduled };
   const who = t?.assignee_id ? [t.assignee_id] : (await sd.availableAgents(t?.queue_id ?? null, undefined, { ignoreLimit: true })).map((a) => a.userId);
   if (who.length) await notify(who, { type: "assignment", title: `Call-back requested (#${t?.number ?? ""})`, body: phone, link: "/support?tab=calls", dedupeKey: `sup-cb-${id}` }, now);
   return { callId: id, ticketId, again: false };
@@ -391,11 +409,11 @@ export async function callEngineOf(appId: string) {
 }
 
 // The widget's "Ask us to call you" (any engine).
-export async function customerCallback(app: sd.AppFull, token: string, input: { phone?: string | null; ticketId?: string | null }) {
+export async function customerCallback(app: sd.AppFull, token: string, input: { phone?: string | null; ticketId?: string | null; at?: string | null }) {
   await (await import("./connected-systems")).needChannel(app.id, "calls");
   const c = await sd.customerByToken(app, token);
   const phone = clean(input.phone, 40) || (await get<{ phone: string | null }>("SELECT phone FROM sup_customers WHERE id = ?", c.id))?.phone || "";
-  const r = await requestCallback({ customerId: c.id, phone, appId: app.id, channel: "widget", ticketId: input.ticketId ?? null });
+  const r = await requestCallback({ customerId: c.id, phone, appId: app.id, channel: "widget", ticketId: input.ticketId ?? null, at: input.at ?? null });
   if (clean(input.phone, 40)) await run("UPDATE sup_customers SET phone = COALESCE(phone, ?) WHERE id = ?", phone.replace(/[^\d+]/g, ""), c.id);
   return r;
 }

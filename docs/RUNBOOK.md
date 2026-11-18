@@ -309,10 +309,24 @@ Imported recordings are counted as recorded but carry no timing, so they never d
 | `db:` command says the database is in use | Stop `npm run dev` first (embedded database only). |
 | Login fails for a correct password | The account may be deactivated (Admin, People), or the password was reset. Emails are not case sensitive. |
 | Alerts did not arrive overnight | Check the scheduled-checks function log and `CRON_SECRET` (section 3.5). |
+| Callers hear no phone menu | Customer support › Phone menu: the flow must be published and switched on ("Answering callers"). A flow set to one app, language or topic answers only those callers. |
+| "This line is closed now" for every caller | The queue's open hours (Queues and replies › Call settings) are in Addis Ababa time. Check the days and times, or set an overflow queue. |
+| A call recording is missing | The agent's page sends it in pieces; the scheduled checks join pieces that stopped coming after two minutes. If recording is off in Support settings, nothing is kept. |
+| Someone cannot open Call records | Agents see their own calls; leads, Admin, the managers named in Support settings and people with "Open every call record" see all. |
 
 ---
 
-## 14. Data handling
+## 14. Customer support calls (Update 1.2)
+
+- **Phone menu**: Customer support › Phone menu. Build on the canvas, run a test call, then Publish (a new version) and switch it on. Restore any earlier version to the draft from the Versions list. An emergency announcement in Flow settings plays before everything else.
+- **Queues**: Customer support › Queues and replies › Call settings sets each queue's hours, size, longest wait, overflow, announcement, call-back offer, routing, skills, priority rules, wrap-up and service level. Agents' skills are set under Agent skills.
+- **Live queues**: Customer support › Live queues refreshes every five seconds.
+- **Call records**: sidebar › Call records. Filter, open a call, set its outcome, notes and tags, play or download the recording, and put it under legal hold (with a reason) so the purge keeps it. Export gives a CSV of the filtered calls.
+- **Permissions** (Admin › Roles and permissions, Customer support and Legacy CMS groups): phone menu, queues and the live board, bot content, forwarding targets, every call record and recordings, call record export, support request setup, Noor management, Noor sensitive fields and Noor export. Admin and support leads have the support ones already.
+
+---
+
+## 15. Data handling
 
 - History is append-only. Corrections add new events; nothing is rewritten.
 - Deleted comments and chat messages leave a marker. Deactivated users keep their history.

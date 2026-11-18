@@ -2184,3 +2184,82 @@ Customer.
 Status.
 
 Support CSV and Excel exports where authorized.
+
+
+# System Improvements and Feature Updates
+
+### 1. Chapa Integration and Overview
+
+- Add proper webhook key configuration and ensure Chapa settings follow the provider's official documentation.
+- Improve the **Chapa Overview** page with a complete filtering mechanism consistent with the enriched filters used elsewhere in the system.
+- Include date filters: Today, Yesterday, Last 7/14/30 Days, This Month, Last Month, This Year, All Time, and Custom Range.
+- Add relevant transaction filters such as payment status, payment method, and transaction type.
+- Ensure filtering uses actual backend data and updates overview statistics, charts, and transaction lists accordingly.
+- Add searching and sorting where relevant.
+
+### 2. Noor Legacy CMS – Scraped Archives & Storage Management
+
+Improve the Scraped Archives and Storage Management module.
+
+- Add a **Fetch Everything** operation that retrieves all available records and archives in one operation.
+- Display useful statistics about fetched records, storage usage, snapshots, and processing status.
+- Allow users to open each snapshot on a dedicated full-page detail view instead of using a modal.
+- Include organized tabs for records, entities, schemas, logs, storage, and data quality.
+- Add rich filtering, sorting, pagination, column management, searching, exporting, and snapshot comparison.
+
+### 3. Noor Legacy CMS – Live Filters
+
+Improve the date filtering mechanism across Noor Legacy CMS pages.
+
+Include Today, Yesterday, Last 3/7/14/30 Days, This Week, Last Week, This Month, Last Month, This Year, All Time, and Custom Range.
+
+Set **Today** as the default selection while allowing users to switch to any other range. Ensure filters work with actual backend data.
+
+### 4. Noor CMS Admin Pages Migration
+
+Migrate and properly implement all the following Noor CMS admin pages and their existing functionality:
+
+- Users, Parents, Students, Grades
+- Roles and Permissions
+- Subject Templates, Academic Content, Academic Quizzes, Flashcards, National Exams
+- Feedback, FAQs, Send SMS, Send Push Notification, Settings
+- Subscription Plans, Subscriptions, Invoices, Mandates, Subscription History
+
+Preserve existing functionality, backend connections, relationships, and data. Do not create empty pages or placeholder implementations.
+
+### 5. External API Integration Console
+
+Rebuild the entire **External API Integration Console** to match the system's UI, design language, and overall user experience.
+
+- Review each integration individually using its official provider documentation.
+- Update each integration's configuration, settings, supported features, and available operations according to the provider's actual capabilities.
+- Provide properly organized configuration pages, connection status indicators, testing tools, and useful logs.
+- Avoid generic or incomplete integration controls; expose the functionality actually supported by each provider.
+
+For SMS and similar services:
+
+- Provide message composition, recipient selection, and message previews.
+- Show character count and SMS segment count before sending.
+- Calculate and display the estimated sending cost before confirmation, using the provider's actual pricing and applicable message segments.
+- Track delivery statuses, including delivered, pending, failed, and rejected messages where supported.
+- Provide complete sending history with recipients, timestamps, delivery reports, costs, and failure reasons where available.
+- Include usage summaries, account balance, and transaction history where supported.
+
+### 6. Sidebar and Navigation Improvements
+
+Clean up and reorganize the sidebars across the system.
+
+- Group pages into logical categories with consistent icons and navigation labels.
+- Improve active-page indicators and submenu organization.
+- When the sidebar is expanded, show the relevant submenu items.
+- When collapsed, hide submenu labels and items, displaying only the main navigation icons.
+- Optionally provide a flyout submenu when a collapsed navigation item is clicked or hovered over.
+- Ensure navigation works consistently across desktop, tablet, and mobile layouts.
+
+### 7. General UI Improvements
+
+Polish the overall interface across all affected modules.
+
+Improve page layouts, tables, filters, forms, detail views, dropdowns, tabs, buttons, loading states, empty states, and responsive behavior. Maintain consistent styling across light and dark modes.
+
+**Important:** First inspect the existing implementation and understand the current backend, integrations, and data structures. Preserve working functionality and existing data. Implement real, functional features rather than mock data, placeholders, or UI-only demonstrations.

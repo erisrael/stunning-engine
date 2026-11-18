@@ -112,6 +112,13 @@ export async function assistantMenu(user: Viewer, ctx: { flows: Flow[]; home: { 
     await add("support", { id: "guide.transfer", label: "Move a ticket to Finance", labelAm: "ጥያቄን ወደ ፋይናንስ አስተላልፍ", kind: "guide", steps: [{ href: "/support?tab=desk&view=mine", selector: "[data-ticket-row]", note: "Open the ticket, choose the Finance queue in Queue and write a note for them. The customer keeps one conversation." }] });
     await add("support", { id: "go.followup-queue", label: "Payment follow-ups", labelAm: "የክፍያ ክትትሎች", kind: "go", href: "/support?tab=desk&view=all" });
     await add("support", { id: "go.kb", label: "Help articles", labelAm: "የእርዳታ ጽሑፎች", kind: "go", href: "/support?tab=kb" });
+    // Update 1.2: requests to other teams, the calls an agent took, and (leads) the menu and queues.
+    await add("support", { id: "go.support-requests", label: "Ask another team for help", labelAm: "ሌላ ቡድንን እርዳታ ጠይቅ", kind: "go", href: "/support-requests?new=1" });
+    await add("support", { id: "go.call-records", label: "My call records", labelAm: "የጥሪ መዝገቦቼ", kind: "go", href: "/call-records" });
+    if (await (await import("./support-desk")).isLead(user)) {
+      await add("support", { id: "go.live-queues", label: "Live queues", labelAm: "የቀጥታ ወረፋዎች", kind: "go", href: "/support?tab=board" });
+      await add("support", { id: "go.phone-menu", label: "Phone menu (IVR)", labelAm: "የስልክ ምናሌ", kind: "go", href: "/support?tab=ivr" });
+    }
   }
 
   // HR.

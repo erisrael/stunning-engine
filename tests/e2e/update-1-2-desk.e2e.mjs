@@ -103,7 +103,7 @@ try {
   await page.locator("[data-escalate]").filter({ hasText: "Escalated" }).waitFor({ timeout: 15000 });
   await page.locator("[data-archive]").click();
   await seen(page.getByText("Archived", { exact: true }).first());
-  await page.locator("[data-archive]").filter({ hasText: "Unarchive" }).waitFor({ timeout: 15000 });
+  await page.locator("[data-archive]").filter({ hasText: "Restore" }).waitFor({ timeout: 15000 });
   await page.goto(`${base}/support?view=archived`);
   check("archived, it is under Archived only", await seen(page.locator("[data-ticket-row]").filter({ hasText: "Payments and Billing" })) && (await (async () => { await page.goto(`${base}/support?view=all`); return (await page.locator("[data-ticket-row]").filter({ hasText: "Payments and Billing" }).count()) === 0; })()));
 

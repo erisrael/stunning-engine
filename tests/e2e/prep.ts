@@ -487,6 +487,57 @@ PREPS["update-1-2-requests"] = async () => {
   return { ticket, head: "tigist@demo.local" };
 };
 
+// Telegram calls: Hana (tg:501) has a conversation with Admin; calls on, not recorded, so answering needs no consent.
+PREPS["update-1-2-tgcall"] = async () => {
+  const { key, bot } = (await PREPS["update-1-1-bots"]!()) as { key: string; bot: string };
+  const sd = await import("../../src/server/support-desk");
+  const a = await admin();
+  await sd.saveSupportConfig(a, { enabled: true, leads: [], recordCalls: false, ringSeconds: 60 });
+  const hana = (await get<{ id: string }>("SELECT id FROM sup_customers WHERE external_id = 'tg:501'"))!.id;
+  const q = (await get<{ id: string }>("SELECT id FROM sup_queues LIMIT 1"))!.id;
+  const ticket = await sd.createTicketFromChannel({ subject: "Exam hall question", body: "Where is the exam hall?", customerId: hana, channel: "telegram", appQueue: q, appId: bot });
+  await run("UPDATE sup_tickets SET assignee_id = ? WHERE id = ?", a.id, ticket);
+  return { key, bot, ticket, token: "999000:AAe2eBotTokenNotRealAtAll_abc" };
+};
+
+// Update 1.2 Phase 9: the spec's phone menu published and on (without its hours check, so the test runs at any time),
+// a Payment support queue, and one finished call with a recording for Call Records.
+PREPS["update-1-2-ivr"] = async () => {
+  await passwordOnly();
+  const sd = await import("../../src/server/support-desk");
+  const I = await import("../../src/server/support-ivr");
+  const { defaultIvrGraph } = await import("../../src/lib/support-ivr");
+  const a = await admin();
+  await sd.saveSupportConfig(a, { enabled: true, leads: [], recordCalls: false, ringSeconds: 120 });
+  const q = await sd.saveQueue(a, { name: "Academy", keywords: [], members: [a.id], strategy: "least_busy" });
+  await sd.saveQueue(a, { name: "Payment support", keywords: ["payment"], members: [a.id], strategy: "least_busy" });
+  await sd.saveApp(a, { name: "MySeed Academy", origins: [], queueId: q });
+  const flow = (await I.listFlows(a))[0]!;
+  const g = defaultIvrGraph();
+  g.nodes = g.nodes.map((n) => (n.id === "language" ? { ...n, next: { ...n.next, "opt:1": "menu", "opt:2": "menu" } } : n));
+  await I.saveFlowDraft(a, { id: flow.id, name: "Main line", graph: g });
+  await I.publishFlow(a, flow.id, "For the browser test");
+  await I.setFlowActive(a, flow.id, true);
+  const cus = uid("cus_");
+  await run("INSERT INTO sup_customers (id, app_id, external_id, name, phone, created_at) VALUES (?, NULL, 'test:rec', 'Meron Alemu', '0911556677', ?)", cus, nowIso());
+  const ticket = await sd.createTicketFromChannel({ subject: "Refund question", body: "Please call", customerId: cus, channel: "web", appQueue: q });
+  const call = uid("scl_");
+  const t0 = new Date(Date.now() - 3600e3).toISOString();
+  await run(
+    "INSERT INTO sup_calls (id, ticket_id, customer_id, agent_id, direction, kind, status, consent, started_at, answered_at, ended_at, duration_s, wait_s, queue_id, recording_id, recording_storage, recording_mime, recording_size, recording_status) VALUES (?, ?, ?, ?, 'inbound', 'web', 'ended', 1, ?, ?, ?, 184, 12, ?, 'rec_e2e', 'db', 'audio/webm', 4, 'saved')",
+    call,
+    ticket,
+    cus,
+    a.id,
+    t0,
+    t0,
+    new Date(Date.now() - 3400e3).toISOString(),
+    q,
+  );
+  await run("INSERT INTO sup_blobs (id, data) VALUES ('rec_e2e', ?)", Buffer.from([26, 69, 223, 163]).toString("base64"));
+  return { key: (await sd.listApps(a))[0]!.publicKey, call };
+};
+
 // Update 1.1: the support app inside Telegram (Mini App), with a resource and subscriber.
 PREPS["update-1-1-miniapp"] = async () => {
   const { key, bot } = (await PREPS["update-1-1-bots"]!()) as { key: string; bot: string };

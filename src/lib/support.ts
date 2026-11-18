@@ -37,6 +37,12 @@ export type SupportConfig = {
   recordCalls: boolean;
   recordingNotice: string;
   recordingDays: number;
+  // Besides Admin and support leads: managers allowed to open every call record, listen and download (spec 11).
+  recordingViewers: string[];
+  // Agents may listen to the recordings of their own calls (never download).
+  agentsHearOwn: boolean;
+  // Closed conversations are deleted after this many days (0: kept forever, the default). Legal holds always win.
+  conversationDays: number;
   // Solved tickets close by themselves after this many days without a reply.
   autoCloseDays: number;
   // A conversation waiting on the customer is solved after this many hours without their reply (0: never).
@@ -64,6 +70,9 @@ export const DEFAULT_SUPPORT: SupportConfig = {
   recordCalls: true,
   recordingNotice: "Calls are recorded so we can help you better and train our team. By calling you agree to this.",
   recordingDays: 90,
+  recordingViewers: [],
+  agentsHearOwn: true,
+  conversationDays: 0,
   autoCloseDays: 7,
   inactiveHours: 72,
   ringSeconds: 45,

@@ -21,3 +21,10 @@ export const saveForwardTargetAction = async (input: Parameters<typeof F.saveFor
 export const deleteForwardTargetAction = async (id: string) => wrap(async () => F.deleteForwardTarget(await requireViewer(), id));
 export const pendingForwardsAction = async () => wrap(async () => F.pendingForwards(await requireViewer()), read);
 export const decideForwardAction = async (id: string, approve: boolean) => wrap(async () => F.decideForward(await requireViewer(), id, approve));
+
+// Offered conversations, legal holds and permanent deletion (Update 1.2, spec 12 and 13).
+export const acceptConversationAction = async (id: string) => wrap(async () => (await import("@/server/support-queues")).acceptConversation(await requireViewer(), id));
+export const declineConversationAction = async (id: string) => wrap(async () => (await import("@/server/support-queues")).declineConversation(await requireViewer(), id));
+export const conversationHoldAction = async (id: string, on: boolean, reason?: string | null) => wrap(async () => (await import("@/server/support-retention")).setConversationHold(await requireViewer(), id, on, reason));
+export const deleteConversationAction = async (id: string, reason: string) => wrap(async () => (await import("@/server/support-retention")).deleteConversation(await requireViewer(), id, reason));
+export const deleteRecordingAction = async (callId: string, reason: string) => wrap(async () => (await import("@/server/support-retention")).deleteRecording(await requireViewer(), callId, reason));

@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 77;
+export const SCHEMA_VERSION = 80;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -4004,6 +4004,133 @@ CREATE TRIGGER sup_call_track BEFORE INSERT OR UPDATE ON sup_calls FOR EACH ROW 
 ALTER TABLE legacy_cms_records ADD COLUMN IF NOT EXISTS row_hash TEXT;
 CREATE INDEX IF NOT EXISTS idx_legacy_cms_cat_ext ON legacy_cms_records(category, external_id);
 
+-- v78 (Update 1.2, Phase 9): the IVR engine (flows drafted, published as numbered versions, run as sessions with an
+-- event per step), queue settings for calls (hours, size, waiting limit, overflow, routing, wrap-up, service level)
+-- with a queue event log, and call records (queue, wait, category, outcome, tags, recording state, legal hold,
+-- recordings uploaded in pieces during the call, and who listened or downloaded).
+CREATE TABLE IF NOT EXISTS sup_ivr_flows (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  app_id TEXT,
+  lang TEXT,
+  category TEXT,
+  draft TEXT NOT NULL,
+  published_version INTEGER,
+  active INTEGER NOT NULL DEFAULT 0,
+  updated_by TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS sup_ivr_versions (
+  id TEXT PRIMARY KEY,
+  flow_id TEXT NOT NULL REFERENCES sup_ivr_flows(id) ON DELETE CASCADE,
+  version INTEGER NOT NULL,
+  graph TEXT NOT NULL,
+  note TEXT,
+  published_by TEXT,
+  published_at TEXT NOT NULL,
+  UNIQUE (flow_id, version)
+);
+CREATE TABLE IF NOT EXISTS sup_ivr_sessions (
+  id TEXT PRIMARY KEY,
+  flow_id TEXT NOT NULL,
+  version INTEGER NOT NULL,
+  customer_id TEXT,
+  app_id TEXT,
+  channel TEXT NOT NULL DEFAULT 'web',
+  node_id TEXT,
+  lang TEXT NOT NULL DEFAULT 'en',
+  vars TEXT NOT NULL DEFAULT '{}',
+  retries INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'active',
+  outcome TEXT,
+  queue_id TEXT,
+  agent_id TEXT,
+  category TEXT,
+  call_id TEXT,
+  test INTEGER NOT NULL DEFAULT 0,
+  started_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  ended_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_sup_ivr_sessions_flow ON sup_ivr_sessions(flow_id, started_at);
+CREATE TABLE IF NOT EXISTS sup_ivr_events (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  flow_id TEXT NOT NULL,
+  node_id TEXT,
+  kind TEXT NOT NULL,
+  input TEXT,
+  at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sup_ivr_events ON sup_ivr_events(flow_id, at);
+ALTER TABLE sup_queues ADD COLUMN IF NOT EXISTS department TEXT;
+ALTER TABLE sup_queues ADD COLUMN IF NOT EXISTS active_hours TEXT;
+ALTER TABLE sup_queues ADD COLUMN IF NOT EXISTS max_size INTEGER;
+ALTER TABLE sup_queues ADD COLUMN IF NOT EXISTS max_wait_s INTEGER;
+ALTER TABLE sup_queues ADD COLUMN IF NOT EXISTS overflow_queue TEXT;
+ALTER TABLE sup_queues ADD COLUMN IF NOT EXISTS announcement TEXT;
+ALTER TABLE sup_queues ADD COLUMN IF NOT EXISTS music INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE sup_queues ADD COLUMN IF NOT EXISTS callback_offer INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE sup_queues ADD COLUMN IF NOT EXISTS auto_assign INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE sup_queues ADD COLUMN IF NOT EXISTS priority_rules TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE sup_queues ADD COLUMN IF NOT EXISTS wrap_up_s INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE sup_queues ADD COLUMN IF NOT EXISTS skills TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE sup_queues ADD COLUMN IF NOT EXISTS sl_seconds INTEGER NOT NULL DEFAULT 20;
+ALTER TABLE sup_calls ADD COLUMN IF NOT EXISTS queue_id TEXT;
+ALTER TABLE sup_calls ADD COLUMN IF NOT EXISTS queued_at TEXT;
+ALTER TABLE sup_calls ADD COLUMN IF NOT EXISTS wait_s INTEGER;
+ALTER TABLE sup_calls ADD COLUMN IF NOT EXISTS priority INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE sup_calls ADD COLUMN IF NOT EXISTS category TEXT;
+ALTER TABLE sup_calls ADD COLUMN IF NOT EXISTS outcome TEXT;
+ALTER TABLE sup_calls ADD COLUMN IF NOT EXISTS tags TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE sup_calls ADD COLUMN IF NOT EXISTS request_id TEXT;
+ALTER TABLE sup_calls ADD COLUMN IF NOT EXISTS recording_status TEXT;
+ALTER TABLE sup_calls ADD COLUMN IF NOT EXISTS legal_hold INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE sup_calls ADD COLUMN IF NOT EXISTS ivr_session TEXT;
+ALTER TABLE sup_calls ADD COLUMN IF NOT EXISTS scheduled_for TEXT;
+CREATE INDEX IF NOT EXISTS idx_sup_calls_queue ON sup_calls(queue_id, started_at);
+CREATE INDEX IF NOT EXISTS idx_sup_calls_customer ON sup_calls(customer_id, status);
+CREATE TABLE IF NOT EXISTS sup_queue_events (
+  id TEXT PRIMARY KEY,
+  queue_id TEXT,
+  call_id TEXT,
+  ticket_id TEXT,
+  agent_id TEXT,
+  kind TEXT NOT NULL,
+  detail TEXT,
+  at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sup_queue_events ON sup_queue_events(queue_id, at);
+CREATE TABLE IF NOT EXISTS sup_recording_chunks (
+  recording_id TEXT NOT NULL,
+  call_id TEXT NOT NULL,
+  seq INTEGER NOT NULL,
+  data TEXT NOT NULL,
+  at TEXT NOT NULL,
+  PRIMARY KEY (recording_id, seq)
+);
+CREATE TABLE IF NOT EXISTS sup_recording_access (
+  id TEXT PRIMARY KEY,
+  call_id TEXT NOT NULL,
+  user_id TEXT,
+  action TEXT NOT NULL,
+  at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sup_recording_access ON sup_recording_access(call_id, at);
+
+-- v79: the bot's message telling a Telegram customer about a call (chat, message id, bot), so it can be updated when
+-- the call is answered, declined, cancelled or missed and its Answer button does not linger.
+ALTER TABLE sup_calls ADD COLUMN IF NOT EXISTS tg_notice TEXT;
+
+-- v80 (spec 12 and 13): a conversation under legal hold is never deleted; conversations offered to an agent who must
+-- accept them (queues set to "agents accept"), with who declined.
+ALTER TABLE sup_tickets ADD COLUMN IF NOT EXISTS legal_hold INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE sup_tickets ADD COLUMN IF NOT EXISTS legal_hold_reason TEXT;
+ALTER TABLE sup_tickets ADD COLUMN IF NOT EXISTS offered_at TEXT;
+ALTER TABLE sup_tickets ADD COLUMN IF NOT EXISTS declined_by TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE sup_queues ADD COLUMN IF NOT EXISTS accept_required INTEGER NOT NULL DEFAULT 0;
+
 `;
 
 // Tables in dependency order; used to empty the workspace and to export or restore backups.
@@ -4267,4 +4394,11 @@ export const TABLES = [
   "sup_request_approvals",
   "sup_request_files",
   "sup_call_events",
+  "sup_ivr_flows",
+  "sup_ivr_versions",
+  "sup_ivr_sessions",
+  "sup_ivr_events",
+  "sup_queue_events",
+  "sup_recording_chunks",
+  "sup_recording_access",
 ] as const;
