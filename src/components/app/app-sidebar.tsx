@@ -71,6 +71,9 @@ import { CompassIcon,
   CalendarDaysIcon,
   LaptopIcon,
   AlertTriangleIcon,
+  GraduationCapIcon,
+  LifeBuoyIcon,
+  PackageIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { HomeDept } from "@/server/nav";
@@ -92,6 +95,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -194,7 +198,7 @@ function homeGroups(h: HomeDept, viewerId: string): { label: string; items: NavI
             },
           ]
         : []),
-      { label: "Tools", items: [{ href: "/requests", label: "Requests", icon: InboxIcon }, { href: "/support-requests", label: "Support requests", icon: InboxIcon }] },
+      { label: "Tools", items: [{ href: "/requests", label: "Requests", icon: InboxIcon }, { href: "/support-requests", label: "Support requests", icon: LifeBuoyIcon }] },
     ];
   return [
     {
@@ -307,7 +311,9 @@ export function AppSidebar({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const search = searchParams.toString();
-  const { setOpenMobile, isMobile } = useSidebar();
+  const { setOpenMobile, isMobile, state } = useSidebar();
+  // Collapsed to icons on a desktop or tablet: group labels hide, and an entry's pages open in a flyout menu.
+  const iconOnly = state === "collapsed" && !isMobile;
   const [customizing, setCustomizing] = React.useState(false);
   const [roleHidden,setRoleHidden]=React.useState(initialRoleHidden);
   const [cmsAccess,setCmsAccess]=React.useState(initialCmsAccess);
@@ -474,7 +480,7 @@ export function AppSidebar({
         },
         { href: "/people", label: "People", icon: UsersRoundIcon },
         { href: "/requests", label: "Requests", icon: InboxIcon },
-        { href: "/support-requests", label: "Support requests", icon: InboxIcon },
+        { href: "/support-requests", label: "Support requests", icon: LifeBuoyIcon },
         { href: "/owners", label: "Owners", icon: CrownIcon, cap: "owners.view", sub: [{ label: "Overview", href: "/owners" }, { label: "Department reports", href: "/owners?tab=reports" }] },
         ...(reportsLink ? [{ href: "/owners?tab=reports", label: "Department reports", icon: FileTextIcon }] : []),
       ],
@@ -549,12 +555,12 @@ export function AppSidebar({
               { label: "Calls", href: "/settings?tab=calls" },
             ],
           },
+          { href: "/kiosk", label: "Kiosk station", icon: TabletIcon, cap: ["attendance.manage", "attendance.capture"] },
         ],
       },
       {
-        label: "Other Tools",
+        label: "Data & records",
         items: [
-          { href: "/kiosk", label: "Kiosk station", icon: TabletIcon, cap: ["attendance.manage", "attendance.capture"] },
           { href: "/admin/data", label: "Data manager", icon: DatabaseIcon, cap: "data.manage" },
           { href: "/import-export", label: "Import and export", icon: ArrowLeftRightIcon, cap: ["import.run", "import.stage", "import.tracker", "export.run", "export.report", "export.tracker", "export.audit"] },
           { href: "/audit", label: "Audit log", icon: ShieldCheckIcon, cap: ["users.manage", "items.plan"] },
@@ -647,16 +653,21 @@ export function AppSidebar({
       ...(dept ? [{ ...dept, items: dept.items.filter((i) => !["/people", "/requests"].includes(i.href)) }] : []),
     );
   }
-  const resourceGroup = groups.find(g => g.label === "Other Tools") ?? groups.find(g => g.label === "Tools");
-  const resourceItem: NavItem = { href: "/resources", label: "Finance requests & equipment", icon: InboxIcon };
-  if (resourceGroup) resourceGroup.items.push(resourceItem);
-  else groups.push({ label: "Resources", items: [resourceItem] });
+  // Finance requests and equipment sit with Requests (Departments), or in the department's Tools; HR has it already.
+  if (!groups.some((g) => g.items.some((i) => i.href === "/resources"))) {
+    const resourceGroup = groups.find((g) => g.label === "Departments") ?? groups.find((g) => g.label === "Tools");
+    const resourceItem: NavItem = { href: "/resources", label: "Finance requests & equipment", icon: PackageIcon };
+    if (resourceGroup) resourceGroup.items.push(resourceItem);
+    else groups.push({ label: "Resources", items: [resourceItem] });
+  }
+  // Payments and Noor data get a group of their own, after the departments (before Manage and Data & records).
+  const payments: NavItem[] = [];
   // Payments and Noor data (Update 1.0): every page listed, so they are found without opening Finance.
   if (has("finance.access") || has("finance.view") || has("users.manage")) {
     const chapaItem: NavItem = {
       href: "/finance/chapa",
       label: "Chapa payments",
-      icon: LandmarkIcon,
+      icon: WalletIcon,
       sub: [
         { label: "Overview", href: "/finance/chapa" },
         { label: "Transactions", href: "/finance/chapa?tab=transactions" },
@@ -671,11 +682,13 @@ export function AppSidebar({
         ...(has("users.manage") || has("settings.manage") ? [{ label: "Chapa settings", href: "/finance/chapa?tab=settings" }] : []),
       ],
     };
-    const target = groups.find((g) => g.label === "Other Tools") ?? groups.find((g) => g.label === "Tools");
-    if (target) target.items.push(chapaItem);
-    else groups.push({ label: "Tools", items: [chapaItem] });
+    payments.push(chapaItem);
   }
-  if(cmsAccess){const cmsItem:NavItem={href:"/legacy-cms",label:"Legacy CMS (Noor)",icon:ArrowLeftRightIcon,sub:[{label:"Live",href:"/legacy-cms?view=live"},{label:"Invoices",href:"/legacy-cms?view=invoices"},{label:"Revenue",href:"/legacy-cms?view=revenue"},{label:"Growth",href:"/legacy-cms?view=growth"},{label:"Reports & dashboard",href:"/legacy-cms?view=reports"},{label:"Contacts",href:"/legacy-cms?view=contacts"},{label:"Storage & snapshots",href:"/legacy-cms?view=storage"},...(has("users.manage")?[{label:"User access & credentials",href:"/admin?tab=legacy-cms"}]:[])]};const target=groups.find(g=>g.label==="Other Tools")??groups.find(g=>g.label==="Tools");if(target)target.items.push(cmsItem);else groups.push({label:"Tools",items:[cmsItem]});}
+  if(cmsAccess){const cmsItem:NavItem={href:"/legacy-cms",label:"Legacy CMS (Noor)",icon:GraduationCapIcon,sub:[{label:"Live",href:"/legacy-cms?view=live"},{label:"Invoices",href:"/legacy-cms?view=invoices"},{label:"Revenue",href:"/legacy-cms?view=revenue"},{label:"Growth",href:"/legacy-cms?view=growth"},{label:"Reports & dashboard",href:"/legacy-cms?view=reports"},{label:"Contacts",href:"/legacy-cms?view=contacts"},{label:"Storage & snapshots",href:"/legacy-cms?view=storage"},...(has("users.manage")?[{label:"User access & credentials",href:"/admin?tab=legacy-cms"}]:[])]};payments.push(cmsItem);}
+  if (payments.length) {
+    const before = groups.findIndex((g) => ["Manage", "Data & records"].includes(g.label));
+    groups.splice(before < 0 ? groups.length : before, 0, { label: "Payments & Noor", items: payments });
+  }
 
   const keyOf = (i: NavItem) => i.id ?? i.href;
   const hidden = [...roleHidden, ...userHidden];
@@ -700,6 +713,11 @@ export function AppSidebar({
     return pathname === item.href || (item.href !== "/dashboard" && item.href !== "/items/new" && item.href !== "/admin" && pathname.startsWith(item.href + "/"));
   };
   const close = () => isMobile && setOpenMobile(false);
+  const subActive = (href: string) => {
+    const [p, q] = href.split("?");
+    const t = q ? new URLSearchParams(q).get("tab") : null;
+    return pathname === p && (t ? tabParam === t || (!tabParam && t === "dashboard") : !tabParam);
+  };
   const [openGroups, setOpenGroups] = React.useState<string[]>([]);
 
   return (
@@ -728,10 +746,11 @@ export function AppSidebar({
             if (!items.length) return null;
             // On phones, fewer choices at once: the first group and the one you are in are open; the others fold.
             const here = items.some((i) => isActive(i));
-            const folded = openGroups.includes(`fold:${g.label}`) || (isMobile && !here && g !== groups[0] && !openGroups.includes(`open:${g.label}`));
+            const folded = !iconOnly && (openGroups.includes(`fold:${g.label}`) || (isMobile && !here && g !== groups[0] && !openGroups.includes(`open:${g.label}`)));
             const toggleGroup=()=>setOpenGroups(o=>[...o.filter(k=>k!==`fold:${g.label}`&&k!==`open:${g.label}`),`${folded?"open":"fold"}:${g.label}`]);
             return (
               <SidebarGroup key={g.label} className="py-1" data-nav-group={g.label} data-folded={folded ? "1" : undefined}>
+                {iconOnly && g !== groups.find((x) => pruneSidebar(x.items.filter((i) => allowed(i.cap)), hidden).length) && <div role="separator" aria-hidden className="mx-2 mb-1 h-px bg-sidebar-border" />}
                 {isMobile ? (
                   <button
                     type="button"
@@ -764,6 +783,35 @@ export function AppSidebar({
                       const tip = NAV_TIPS[keyOf(item)] ?? NAV_TIPS[item.href.split("?")[0]!];
                       return (
                         <SidebarMenuItem key={keyOf(item)}>
+                          {iconOnly && item.sub ? (
+                            <DropdownMenu modal={false}>
+                              <DropdownMenuTrigger asChild>
+                                <SidebarMenuButton
+                                  isActive={active || (inSection && !!item.sub)}
+                                  aria-label={`${item.label}: open its pages`}
+                                  data-nav-flyout={item.label}
+                                  className="h-8 font-medium text-sidebar-foreground/85 data-[active=true]:bg-sidebar-accent data-[active=true]:text-sidebar-accent-foreground data-[state=open]:bg-sidebar-accent"
+                                >
+                                  <AppIcon icon={item.icon} name={brand[keyOf(item)]?.icon} tone={(brand[keyOf(item)]?.tone as Tone | null | undefined) ?? null} />
+                                  <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                                </SidebarMenuButton>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent side="right" align="start" sideOffset={10} className="max-h-[70vh] min-w-52 overflow-y-auto" data-nav-flyout-menu={item.label}>
+                                <DropdownMenuLabel className="flex items-center justify-between gap-3">
+                                  {item.label}
+                                  {!!item.badge && item.badge > 0 && <span className="rounded-full bg-primary/15 px-1.5 text-[10px] font-semibold text-primary tabular-nums">{item.badge > 99 ? "99+" : item.badge}</span>}
+                                </DropdownMenuLabel>
+                                <DropdownMenuSeparator />
+                                {[...(item.sub.some((s) => s.href.split("?")[0] === item.href.split("?")[0]) ? [] : [{ label: item.label, href: item.href, keepFilters: item.keepFilters }]), ...item.sub].map((s) => (
+                                  <DropdownMenuItem key={s.href} asChild className={cn(subActive(s.href) && "bg-accent font-medium")}>
+                                    <Link href={s.keepFilters ? s.href + scopeQueryString(search) : s.href} aria-current={subActive(s.href) ? "page" : undefined}>
+                                      {s.label}
+                                    </Link>
+                                  </DropdownMenuItem>
+                                ))}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          ) : (
                           <div className="flex min-w-0 items-center gap-1" data-nav-row>
                           <SidebarMenuButton
                             asChild
@@ -791,12 +839,11 @@ export function AppSidebar({
                           {item.sub && <button type="button" aria-label={`${expanded?"Collapse":"Expand"} ${item.label}`} aria-expanded={expanded} className="flex size-7 shrink-0 items-center justify-center rounded-md hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-sidebar-ring" onClick={()=>setOpenGroups(o=>[...o.filter(k=>k!==`item:${item.href}`&&k!==`closed:${item.href}`),`${expanded?"closed":"item"}:${item.href}`])}><ChevronDownIcon className={cn("size-4 transition-transform",!expanded&&"-rotate-90")}/></button>}
                           </div>
                           </div>
-                          {item.sub && expanded && (
+                          )}
+                          {item.sub && expanded && !iconOnly && (
                             <SidebarMenuSub>
                               {item.sub.map((s) => {
-                                const [p, q] = s.href.split("?");
-                                const t = q ? new URLSearchParams(q).get("tab") : null;
-                                const on = pathname === p && (t ? tabParam === t || (!tabParam && t === "dashboard") : !tabParam);
+                                const on = subActive(s.href);
                                 return (
                                   <SidebarMenuSubItem key={s.href}>
                                     <SidebarMenuSubButton asChild isActive={on}>

@@ -102,6 +102,21 @@ try {
   await y.locator('[data-sidebar="trigger"]').click();
   await y.waitForTimeout(250);
   check("Collapsed sidebar hides counters and dropdown controls",await side(y).locator('[data-nav-controls]:visible').count()===0);
+  // Collapsed: icons only, a line between groups, and an entry's pages in a flyout menu beside it.
+  check("Collapsed sidebar separates groups with a line", await side(y).locator('[data-nav-group] [role=separator]').count() >= 1);
+  check("Collapsed sidebar keeps every group's icons", await side(y).locator('[data-nav-group][data-folded]').count() === 0);
+  await side(y).locator('[data-nav-flyout="Handovers"]').click();
+  const fly = y.locator('[data-nav-flyout-menu="Handovers"]');
+  await fly.waitFor({ timeout: 5000 });
+  check("Collapsed sidebar opens an entry's pages in a flyout", await fly.getByRole("menuitem", { name: "Rejected", exact: true }).isVisible());
+  const flyBox = await fly.boundingBox(), sideBox = await side(y).boundingBox();
+  check("The flyout sits beside the collapsed sidebar", !!flyBox && !!sideBox && flyBox.x >= sideBox.x + sideBox.width - 2, { flyBox, sideBox });
+  await y.screenshot({ path: path.join(shots, "5b-collapsed-flyout.png") });
+  await fly.getByRole("menuitem", { name: "Rejected", exact: true }).click();
+  await y.waitForURL(/\/handovers\/rejected/);
+  check("A flyout link opens its page", true);
+  await y.goBack();
+  await y.waitForURL((u) => !u.pathname.includes("/handovers/rejected"));
   await y.locator('[data-sidebar="trigger"]').click();
   await y.setViewportSize({width:390,height:844});
   await y.locator('[data-sidebar="trigger"]').click();
