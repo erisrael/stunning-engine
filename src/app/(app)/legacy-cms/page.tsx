@@ -76,6 +76,9 @@ export default async function LegacyCmsPage({ searchParams }: { searchParams: Pr
     const { listGroups } = await import("@/server/chat");
     const groups = canSchedule ? (await listGroups(viewer).catch(() => [])).filter((g) => g.kind !== "direct" && g.canPost).map((g) => ({ id: g.id, name: g.name })) : [];
     body = <CmsReportsHome categories={allowedCategories} canSchedule={canSchedule} isAdmin={can(viewer, "data.manage") || can(viewer, "users.manage")} chatGroups={groups} canBuild={flags.canManageData} />;
+  } else if (view === "storage") {
+    const { CmsArchivesView } = await import("@/components/app/legacy-cms/archives-view");
+    body = <CmsArchivesView data={await (await import("@/server/cms-archives")).archiveOverview(viewer)} />;
   } else body = await oldView(view, viewer, allowedCategories, initialCategory, isAdmin);
 
   return (

@@ -320,7 +320,22 @@ export async function act(user: AppUser, id: string, action: RequestAction, inpu
   // The result goes back to the support conversation as a note for the agents.
   if ((action === "resolve" || action === "reject") && r.ticket_id)
     await run("INSERT INTO sup_messages (id, ticket_id, author_kind, author_id, body, internal, created_at) VALUES (?, ?, 'system', NULL, ?, 1, ?)", uid("smg_"), r.ticket_id, `Request ${r.reference} ${action === "resolve" ? "resolved" : "rejected"} by ${user.name}: ${text}`, now);
+  // The customer is told too, in plain words, when Support's configuration center says so (Notifications).
+  if (r.ticket_id && ["submit", "acknowledge", "resolve", "reject"].includes(action)) await tellCustomer(r.ticket_id, r.reference, action, text).catch((e) => console.error("request update to customer", e));
   return detail(user, r.id);
+}
+
+async function tellCustomer(ticketId: string, reference: string, action: string, text: string | null) {
+  if (!(await (await import("./support-center")).centerConfig()).notifications.requestUpdatesToCustomer) return;
+  const words: Record<string, string> = {
+    submit: `We have passed your request ${reference} to the team that handles it.`,
+    acknowledge: `Your request ${reference} is being worked on.`,
+    resolve: `Your request ${reference} is resolved.${text ? ` ${text}` : ""}`,
+    reject: `Your request ${reference} could not be approved.${text ? ` ${text}` : ""}`,
+  };
+  const body = words[action]!;
+  await run("INSERT INTO sup_messages (id, ticket_id, author_kind, author_id, body, internal, created_at) VALUES (?, ?, 'system', NULL, ?, 0, ?)", uid("smg_"), ticketId, body, nowIso());
+  await (await import("./support-channels")).deliverReply(ticketId, body, "Support").catch(() => null);
 }
 
 // The department's own task for the work, once acknowledged (when the department takes requests).

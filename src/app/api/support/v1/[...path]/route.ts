@@ -33,6 +33,10 @@ import { sseResponse } from "@/server/sse";
 //   POST tickets/<id>/typing | read   the customer is typing / has read the conversation
 //   GET  tickets/<id>/files           the conversation's files; POST { name, mime, data (base64) } sends one (10 MB)
 //   GET  files/<id>                   one file (token may be ?token=)
+//   GET  requests                     requests support raised for the customer       -> [{ id, reference, title, type, status, conversation }]
+//   GET  requests/<id or reference>   one request: its plain status steps and, once finished, the resolution
+//   GET  profile | POST profile       { name?, lang? }                               the customer's name (not app accounts) and language
+//   GET  faq                          the most read help articles
 //   GET  ping                         checks the key and the setup                 -> { ok, app, checks, time }
 // Browsers may call it from the app's allowed web addresses (Admin, Support setup, Apps); apps' servers and mobile
 // apps send no Origin and are not limited by it.
@@ -97,6 +101,11 @@ async function handle(request: Request, ctx: Ctx, method: "GET" | "POST") {
     else if (a === "tickets" && id && b === "files" && method === "GET") out = await sd.customerFiles(app, token, id);
     else if (a === "tickets" && id && b === "files" && method === "POST") out = await sd.customerUpload(app, token, id, { name: s(body.name), mime: s(body.mime), data: s(body.data), caption: s(body.caption), replyTo: s(body.replyTo) || null });
     else if (a === "tickets" && id && b === "rating" && method === "POST") out = (await sd.customerRate(app, token, id, Number(body.rating), s(body.comment)), { ok: true });
+    else if (a === "requests" && !id && method === "GET") out = await (await import("@/server/support-customer")).customerRequests(app, token);
+    else if (a === "requests" && id && method === "GET") out = await (await import("@/server/support-customer")).customerRequest(app, token, id);
+    else if (a === "profile" && !id && method === "GET") out = await (await import("@/server/support-customer")).customerProfile(app, token);
+    else if (a === "profile" && !id && method === "POST") out = await (await import("@/server/support-customer")).customerSaveProfile(app, token, { name: typeof body.name === "string" ? body.name : undefined, lang: typeof body.lang === "string" ? body.lang : undefined });
+    else if (a === "faq" && !id && method === "GET") out = await (await import("@/server/support-customer")).customerFaq(app, token);
     else if (a === "resources" && !id && method === "GET") out = await (await import("@/server/bot-manager")).customerResources(app, token);
     else if (a === "articles" && !id && method === "GET") out = await (await import("@/server/support-channels")).searchArticles(new URL(request.url).searchParams.get("q") ?? "");
     else if (a === "articles" && id && !b && method === "GET") out = await (await import("@/server/support-channels")).readArticle(id);

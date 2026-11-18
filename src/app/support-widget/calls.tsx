@@ -815,9 +815,12 @@ const openInBrowser = () => {
 // The widget's one call, shown at the top whichever page is open (so it carries on when the conversation opens),
 // and an agent calling the customer: it rings here while the panel is open; answer (agreeing to the recording when
 // calls are recorded) or decline.
-export function CallLayer({ api, s, children, openedForCall = false }: { api: Api; s: Session; children: React.ReactNode; openedForCall?: boolean }) {
+export function CallLayer({ api, s, children, openedForCall = false, onBusy }: { api: Api; s: Session; children: React.ReactNode; openedForCall?: boolean; onBusy?: (busy: boolean) => void }) {
   const c = useCustomerCall(api);
   const [ring, setRing] = React.useState<Incoming | null>(null);
+  // Tells the page when a call rings, runs or plays the phone menu (Telegram's main button steps aside then).
+  const busy = c.state !== "idle" || !!ring || !!c.ivr;
+  React.useEffect(() => onBusy?.(busy), [busy, onBusy]);
   const [askBack, setAskBack] = React.useState(false);
   // Opened from the bot's "is calling you" notice: show that the call is being found, or that it was missed.
   const [finding, setFinding] = React.useState(openedForCall);

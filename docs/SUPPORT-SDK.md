@@ -87,6 +87,13 @@ All requests go to `https://YOUR-WORKSPACE/api/support/v1/...`. They send the he
 | `GET calls/<id>`                 |                                         | `{ status, answer, agent, position, estimateSec, announcement, callbackOffer }` |
 | `POST calls/<id>/end`            |                                         |                                                   |
 | `POST callback`                  | `{ phone, ticketId, at }`               | `{ callId, ticketId }` (`at`: a time within two weeks) |
+| `GET requests`                   |                                         | requests support raised for the customer: reference, title, plain type and status, linked conversation |
+| `GET requests/<id or reference>` |                                         | one request: its plain status steps and, once finished, the outcome. Never the team's notes, people or approvals |
+| `GET profile`                    |                                         | name, email, phone, where the name comes from, language, counts |
+| `POST profile`                   | `{ name, lang }`                        | `lang` is `en` or `am` (the Telegram bot uses it too). Names from the app's own accounts cannot be changed here |
+| `GET faq`                        |                                         | the most read published help articles             |
+
+`identify` also returns `schedule` when business hours are set in Support, Configuration: the week (`days.mon` to `days.sun`, each `{ open, close }` or `null`), the coming `holidays`, `status` (`open`, `holiday`, `nextOpen`) and the `closedMessage`. A conversation started while support is closed is answered with that message at once.
 
 How a call works:
 0. When Admin has switched on a phone menu, `POST ivr` returns a screen: `say` (texts to speak or recordings to play), `ask` (choices or digits, and how long to wait), or `done` (where the caller goes). Send each key with `POST ivr/<session>`. When `done.action` is `queue` or `agent`, start the call with `ivrSession`. `voicemail` means record and send `POST voicemail`; `callback` means ask for a number and send `POST callback`. When `POST ivr` returns `null`, go straight to step 1.
@@ -127,6 +134,8 @@ Customers who do not use the app can still reach support in two other ways.
 
 **Telegram.** Admin creates a bot with @BotFather and pastes its token in Support setup. The app then tells Telegram to send the bot's messages to it. This needs a public https address.
 - Customers write to the bot. They get their ticket number, and agents' replies arrive in the same chat.
+- **The support app (Mini App).** With the Mini App on, the bot's menu button opens the support app inside Telegram. It signs the customer in with Telegram's signed data (checked on the server; nothing the page claims is trusted). It has Home, Chats (active and history), Requests, Calls (calling, an incoming call, call history) and More (Notifications, FAQ, Profile, Language, Support information). Telegram's own Back and Main buttons, haptics and theme are used. Each agent reply in the chat carries an "Open conversation" button.
+- **Deep links.** `/support-widget?tg=<bot>&page=<page>` (or Telegram's `startapp=<page>`) opens a page: `new`, `chats`, `requests`, `calls`, `faq`, `notifications`, `profile`, `language`, `info`, `t_<conversation id>`, `r_<request id>`, `a_<article id>`.
 
 ## 8. The knowledge base
 

@@ -91,6 +91,40 @@ async function main() {
   check("support's replies are the customer's updates", ups.some((u) => u.ticket_id === tid && u.body === "We activated it"), ups);
   check("the agent's reply shows in the app", (await sd.customerMessages(A, mini.session.token, tid)).messages.some((m) => m.body === "We activated it"));
   check("and reaches the chat as a message", posts.some((p) => p.url.endsWith("/sendMessage") && String(p.body.chat_id) === "4242" && /We activated it/.test(String(p.body.text))));
+  // Update 1.2, spec 15: the reply's button opens that conversation in the support app (a deep link).
+  const replyMsg = posts.find((p) => p.url.endsWith("/sendMessage") && /We activated it/.test(String(p.body.text)));
+  const deep = ((replyMsg?.body.reply_markup as { inline_keyboard?: { text: string; web_app?: { url: string } }[][] } | undefined)?.inline_keyboard ?? []).flat();
+  check("the reply's button opens its conversation in the support app", deep.some((b) => b.web_app?.url === `https://cm.myseed.et/support-widget?tg=default&page=t_${tid}`), deep);
+
+  // The customer's own pages: requests, profile and language, FAQ.
+  const C = await import("../../src/server/support-customer");
+  const R = await import("../../src/server/support-requests");
+  const dest = (await R.saveDestination(admin, { label: "Administration", kind: "admin" })).destinations.find((d) => d.label === "Administration")!;
+  const rq = await R.createSupportRequest(admin, { type: "refund", title: "Refund the double charge", description: "Internal: card ending 4242, charged twice", destinationId: dest.id, ticketId: tid2 });
+  const draft = await R.createSupportRequest(admin, { type: "other", title: "A draft only the team sees", destinationId: dest.id, ticketId: tid2 });
+  check("a draft request is not shown to the customer", !(await C.customerRequests(A, mini.session.token)).some((r) => r.id === draft.id || r.id === rq.id));
+  await R.act(admin, rq.id, "submit");
+  await R.act(admin, rq.id, "acknowledge");
+  let mine = await C.customerRequests(A, mini.session.token);
+  check("a submitted request from their conversation is listed, in plain words", mine.length === 1 && mine[0]!.status.en === "In progress" && mine[0]!.type.en === "Refund" && mine[0]!.conversation?.id === tid2, mine);
+  check("its details hide the team's notes until it is finished", (await C.customerRequest(A, mini.session.token, rq.id)).resolution === null && !JSON.stringify(await C.customerRequest(A, mini.session.token, rq.id)).includes("card ending"));
+  await R.act(admin, rq.id, "resolve", { text: "Refunded 300 ETB to your card." });
+  const rd = await C.customerRequest(A, mini.session.token, mine[0]!.reference);
+  check("finished, it shows the outcome and the steps it went through", rd.resolution === "Refunded 300 ETB to your card." && rd.steps.map((x) => x.status.key).join() === "received,progress,resolved" && !rd.status.open, rd);
+  const db = await import("../../src/server/db");
+  const other = db.uid("cus_");
+  await db.run("INSERT INTO sup_customers (id, app_id, external_id, name, created_at) VALUES (?, NULL, 'tg:5555', 'Someone Else', ?)", other, new Date().toISOString());
+  const otherTok = (await sd.sessionFor(A, other)).token;
+  check("another customer cannot open it", /not found/.test((await err(() => C.customerRequest(A, otherTok, rq.id))) ?? "") && !(await C.customerRequests(A, otherTok)).length);
+  let prof = await C.customerProfile(A, mini.session.token);
+  check("the profile shows who they are and their numbers", prof.source === "telegram" && prof.canRename && prof.counts.conversations === 2 && prof.counts.requests === 1, prof);
+  prof = await C.customerSaveProfile(A, mini.session.token, { name: "Selam Tesfaye", lang: "am" });
+  const meta = JSON.parse((await get<{ meta: string }>("SELECT meta FROM sup_customers WHERE id = ?", botCustomer.id))!.meta);
+  check("they correct their name and choose Amharic, which the bot uses too", prof.name === "Selam Tesfaye" && prof.lang === "am" && meta.lang === "am");
+  check("a language other than English or Amharic is refused", /English or Amharic/.test((await err(() => C.customerSaveProfile(A, mini.session.token, { lang: "fr" }))) ?? ""));
+  await ch.saveArticle(admin, { title: "How do I renew my subscription?", body: "Open Payments and choose Renew.", published: true });
+  check("the FAQ lists the published help articles", (await C.customerFaq(A, mini.session.token)).some((a) => a.title === "How do I renew my subscription?"));
+
   await sd.customerReply(A, mini.session.token, tid, "Thank you");
   check("they can answer from the app", (await sd.customerMessages(A, mini.session.token, tid)).messages.some((m) => m.body === "Thank you"));
 

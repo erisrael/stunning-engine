@@ -118,6 +118,33 @@ try {
   check("the preview shows it in the Telegram frame", await seen(page.locator("[data-preview=telegram]").getByText("Start a new conversation")));
   await page.screenshot({ path: path.join(shots, "content.png"), fullPage: true });
 
+  // Configuration center (spec 14.2).
+  await page.goto(`${base}/support?tab=config`);
+  await page.locator("[data-config-center]").waitFor({ timeout: 20000 });
+  check("the configuration center lists every area", (await page.locator("[data-config-area]").count()) === 19);
+  check("each area links to where it is managed", (await page.locator("[data-config-area=ivr]").getAttribute("href")) === "/support?tab=ivr" && (await page.locator("[data-config-area=permissions]").getAttribute("href")) === "/admin?tab=permissions");
+  const hours = page.locator("[data-config-hours]");
+  await hours.getByRole("switch", { name: "Use business hours" }).click();
+  await hours.getByRole("switch", { name: "Open on Saturday" }).click();
+  await hours.getByLabel("Saturday closes").fill("12:30");
+  await hours.getByLabel("Holiday date").fill("2026-12-25");
+  await hours.getByLabel("Holiday name").fill("Support day off");
+  await hours.locator("[data-holiday-add]").click();
+  await hours.locator("[data-save-hours]").click();
+  await page.locator("[data-config-area=hours]").filter({ hasText: "6 days a week" }).waitFor({ timeout: 15000 });
+  check("business hours and a holiday are saved and the center shows them", (await page.locator("[data-config-area=holidays]").innerText()).includes("1 support holidays") && (await seen(hours.locator("[data-holiday='2026-12-25']"))));
+  const esc = page.locator("[data-config-escalation]");
+  await esc.getByLabel("When the customer writes one of these words").fill("fraud, lawyer");
+  await esc.getByRole("switch", { name: "When a target is missed" }).click();
+  await esc.locator("[data-save-escalation]").click();
+  await page.locator("[data-config-area=escalation]").filter({ hasText: "2 keywords" }).waitFor({ timeout: 15000 });
+  check("escalation rules are saved", (await page.locator("[data-config-area=escalation]").innerText()).includes("missed targets"));
+  const chatCard = page.locator("[data-config-chat]");
+  await chatCard.getByLabel("Largest file (MB, up to 10)").fill("50");
+  await chatCard.locator("[data-save-chat]").click();
+  check("an impossible file limit is refused with a reason", await seen(page.getByText("Files from customers may be 1 to 10 MB.")));
+  await page.screenshot({ path: path.join(shots, "config-center.png"), fullPage: true });
+
   // Phone width: the customer panel is a sheet.
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${base}/support?view=archived`);

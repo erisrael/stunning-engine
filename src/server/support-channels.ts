@@ -59,6 +59,7 @@ async function incoming(input: { channel: "email" | "telegram"; customerId: stri
       await run("UPDATE sup_tickets SET status = CASE WHEN status IN ('pending','solved') THEN 'open' ELSE status END, solved_at = CASE WHEN status = 'solved' THEN NULL ELSE solved_at END, archived_at = NULL, last_customer_at = ?, updated_at = ? WHERE id = ?", now, now, t.id);
       if (t.assignee_id) await (await import("./notifications")).notify([t.assignee_id], { type: "assignment", title: `#${t.number}: the customer replied (${input.channel === "email" ? "email" : "Telegram"})`, body: body.slice(0, 200), link: `/support?ticket=${t.id}`, dedupeKey: `sup-in-${t.id}-${now}` }, now);
       else await sd.autoAssign(t.id);
+      await (await import("./support-center")).escalateByWords(t.id, body).catch((e) => console.error("escalation rule", e));
       return t.id;
     }
   }
@@ -153,7 +154,11 @@ export async function deliverReply(ticketId: string, body: string, agentName: st
   const sd = await import("./support-desk");
   const cfg = await sd.supportConfig();
   if (t.channel === "telegram" && c?.external_id?.startsWith("tg:")) {
-    const send = () => telegramSend(c.external_id!.slice(3), `${body}\n\n- ${agentName.split(" ")[0]}, support (#${t.number})`);
+    // With a button that opens this conversation in the support app (a deep link), when the app is on.
+    const send = async () => {
+      const url = (await telegramTexts()).miniApp ? supportAppUrl(await botOrigin(), currentBot(), `&page=t_${ticketId}`) : null;
+      return telegramSend(c.external_id!.slice(3), `${body}\n\n- ${agentName.split(" ")[0]}, support (#${t.number})`, url ? { reply_markup: { inline_keyboard: [[{ text: "Open conversation", web_app: { url } }]] } } : {});
+    };
     const sys = await systemBot(c.app_id);
     if (sys) await botCtx.run(sys, send);
     else await send();

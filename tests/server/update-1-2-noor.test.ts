@@ -195,6 +195,55 @@ async function main() {
   const resRuns = await F.cmsRuns(admin, "teachers");
   check("every Noor run is in the run log", resRuns.some((r) => r.kind === "incremental") && resRuns.filter((r) => r.kind === "full").length >= 3);
 
+  // 7b. Archives and storage (Update 1.2, System improvements 2).
+  const X = await import("../../src/server/cms-archives");
+  for (const s of ["students", "invoices"]) await F.setCmsResourceEnabled(admin, s, false);
+  teachers.push({ ...teachers[0], id: 241, name: "Teacher 241" });
+  const fe1 = await X.fetchEverything(admin, 0);
+  check("fetch everything with no time left says what comes next", !fe1.done && fe1.resources.length === 2 && fe1.resources.every((r) => r.status === "waiting"), fe1);
+  const fe2 = await X.fetchEverything(admin);
+  check("fetch everything reads every switched-on resource in full", fe2.done && fe2.resources.every((r) => r.status === "done"), fe2);
+  const fe3 = await X.fetchEverything(admin);
+  check("a finished round starts a new one when asked again", fe3.done && fe3.startedAt > fe2.startedAt);
+  const ov = await X.archiveOverview(admin);
+  const tr = ov.resources.find((r) => r.slug === "teachers")!;
+  check("storage shows stored rows against Noor's totals, and their size", tr.stored === teachers.length && tr.noorTotal === teachers.length && tr.bytes > 0 && tr.coverage === 1 && ov.totals.records === teachers.length + 30, { tr, totals: ov.totals });
+  check("someone without Noor access cannot see it", !!(await err(() => X.archiveOverview(dawit))));
+  check("only managers fetch", /manage Noor data/.test(await err(() => X.fetchEverything(dawit))));
+  check("a snapshot needs a name", /Name the snapshot/.test(await err(() => X.createSnapshot(admin, { name: " ", category: "teachers" }))));
+  const snap = await X.createSnapshot(admin, { name: "Before changes", category: "teachers", description: "Test" });
+  check("a snapshot copies the stored records", snap.records === teachers.length);
+  // Noor changes: one renamed, one gone, one new; the mirror reads them.
+  teachers[0] = { ...teachers[0], name: "Renamed Teacher" };
+  teachers.splice(1, 1);
+  teachers.push({ ...teachers[2], id: 300, name: "Teacher 300" });
+  await F.mirrorCmsResource(admin, "teachers");
+  const cmp = await X.compareSnapshot(admin, snap.id, "current");
+  check("compared with the data now: changed, added and gone records", cmp.counts.changed === 1 && cmp.counts.added === 1 && cmp.counts.removed === 1 && cmp.changed[0]!.fields.some((f) => f.after === "Renamed Teacher") && cmp.added[0]!.externalId === "300", cmp.counts);
+  const snap2 = await X.createSnapshot(admin, { name: "Everything after", category: "all" });
+  const cmp2 = await X.compareSnapshot(admin, snap.id, snap2.id);
+  check("two snapshots compare too, per resource", cmp2.counts.added === 31 && cmp2.perResource.some((r) => r.category === "sales/coupons" && r.added === 30), cmp2.perResource);
+  const sdet = await X.snapshotDetail(admin, snap.id);
+  check("its page has entities, schemas and storage", sdet.entities.length === 1 && sdet.entities[0]!.records === snap.records && sdet.schemas[0]!.fields.length >= 4 && sdet.storage.bytes > 0);
+  check("data quality: fill rates and a score", sdet.quality[0]!.duplicateCount === 0 && sdet.quality[0]!.score > 50 && sdet.schemas[0]!.fields.every((f) => f.fillRate >= 0 && f.fillRate <= 1));
+  check("logs: the snapshot's creation and the Noor reads before it", sdet.logs.some((l) => l.kind === "audit" && /Before changes/.test(l.text)) && sdet.logs.some((l) => l.kind === "read"));
+  const found17 = await X.snapshotRecords(admin, snap.id, { q: "Teacher 17", size: 10 });
+  check("records search every field", found17.total >= 1 && found17.rows.every((r) => JSON.stringify(r).includes("Teacher 17")));
+  const pg2 = await X.snapshotRecords(admin, snap.id, { page: 2, size: 25 });
+  check("records come in pages", pg2.page === 2 && pg2.rows.length === 25 && pg2.pages === Math.ceil(snap.records / 25));
+  const salaryCol = pg2.columns.find((c) => /salary/i.test(c))!;
+  const bySalary = await X.snapshotRecords(admin, snap.id, { sort: salaryCol, dir: "desc", size: 10 });
+  const sal = bySalary.rows.map((r) => Number(r.data[salaryCol]!.replace(/[^\d.]/g, "")));
+  check("records sort by a money column as numbers", !!salaryCol && sal.every((v, i) => !i || v <= sal[i - 1]!), sal);
+  const statusCol = pg2.columns.find((c) => /status/i.test(c));
+  if (statusCol) check("records filter by a field", (await X.snapshotRecords(admin, snap.id, { field: statusCol, value: "left" })).rows.every((r) => r.data[statusCol] === "left"));
+  const ex = await X.exportSnapshotRecords(admin, snap.id, { q: "Teacher 17" }, [salaryCol]);
+  check("export holds what is shown, with the chosen columns", ex.csv.split("\r\n").length === ex.rows + 1 && ex.csv.split("\r\n")[0]!.endsWith(salaryCol) && ex.rows === found17.total);
+  check("only managers delete a snapshot", !!(await err(() => X.deleteSnapshot(dawit, snap2.id))));
+  await X.deleteSnapshot(admin, snap2.id);
+  check("a snapshot is deleted, the stored records stay", !(await X.listSnapshots(admin)).some((s) => s.id === snap2.id) && (await X.archiveOverview(admin)).totals.records > 0);
+  for (const s of ["students", "invoices"]) await F.setCmsResourceEnabled(admin, s, true);
+
   // 8. Filtering the mirror (Phase 4): answered by the database for every stored row.
   const T = "teachers";
   const money = (r: Row) => Number(r.salary.replace(/[^0-9.-]/g, ""));

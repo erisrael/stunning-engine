@@ -343,6 +343,8 @@ export async function sessionFor(app: AppFull, customerId: string) {
     recordCalls: cfg.recordCalls,
     recordingNotice: cfg.recordingNotice,
     callEngine: await (await import("./support-calls")).callEngineOf(app.id),
+    // Configuration center: the week's hours, coming holidays and whether support is open now (null: not set).
+    schedule: await (await import("./support-center")).scheduleForCustomers(),
     content: await widgetContent(app.id ? (await get("SELECT id FROM sup_apps WHERE id = ? AND tg_token IS NOT NULL", app.id)) ? app.id : "default" : "default"),
   };
 }
@@ -586,6 +588,12 @@ async function createTicketRow(input: { subject: string; body: string; customerI
   });
   await activity(input.authorKind === "agent" ? input.authorId : null, id, "created", `${input.channel}${q ? `, queue ${q.name}` : ""}`);
   await ticketEvent(id, "ticket.created", { body: body.slice(0, 2000) });
+  // Configuration center: escalation keywords, and the closed-hours answer.
+  if (input.authorKind === "customer") {
+    const center = await import("./support-center");
+    await center.escalateByWords(id, `${subject} ${body}`).catch((e) => console.error("escalation rule", e));
+    await center.answerWhenClosed(id).catch((e) => console.error("closed answer", e));
+  }
   return id;
 }
 
@@ -612,7 +620,7 @@ export async function customerCreateTicket(app: AppFull, token: string, input: {
   // From the Telegram Mini App the ticket is a Telegram one, so replies also reach the chat.
   const id = await createTicketRow({ subject, body: input.message, customerId: c.id, appId: app.id, appQueue: app.queue_id, channel: chatChannel(c.external_id) === "telegram" ? "telegram" : "widget", priority: input.priority === "urgent" ? "high" : input.priority, authorKind: "customer", authorId: c.id, category });
   const who = await autoAssign(id);
-  if (!who) {
+  if (!who && (await (await import("./support-center")).centerConfig()).notifications.waitingToLeads) {
     const leads = (await supportConfig()).leads;
     const t = await get<{ number: number; subject: string }>("SELECT number, subject FROM sup_tickets WHERE id = ?", id);
     await notify(leads, { type: "assignment", title: `Ticket #${t?.number} waits: no agent is free`, body: t?.subject ?? "", link: `/support?ticket=${id}`, dedupeKey: `sup-wait-${id}` }, nowIso());
@@ -623,7 +631,7 @@ export async function customerCreateTicket(app: AppFull, token: string, input: {
 // A ticket from email or Telegram (src/server/support-channels.ts), given out as any other.
 export async function createTicketFromChannel(input: { subject: string; body: string; customerId: string; channel: "email" | "telegram" | "web"; emailId?: string | null; appQueue: string | null; appId?: string | null; category?: string | null }) {
   const id = await createTicketRow({ subject: input.subject, body: input.body, customerId: input.customerId, appId: input.appId ?? null, appQueue: input.appQueue, channel: input.channel, authorKind: "customer", authorId: input.customerId, emailId: input.emailId ?? null, category: input.category ?? null });
-  if (!(await autoAssign(id))) {
+  if (!(await autoAssign(id)) && (await (await import("./support-center")).centerConfig()).notifications.waitingToLeads) {
     const t = await get<{ number: number; subject: string }>("SELECT number, subject FROM sup_tickets WHERE id = ?", id);
     await notify((await supportConfig()).leads, { type: "assignment", title: `Ticket #${t?.number} waits: no agent is free`, body: t?.subject ?? "", link: `/support?ticket=${id}`, dedupeKey: `sup-wait-${id}` }, nowIso());
   }
@@ -699,6 +707,7 @@ export async function customerReply(app: AppFull, token: string, ticketId: strin
   await run("UPDATE sup_tickets SET status = CASE WHEN status IN ('pending','solved') THEN 'open' ELSE status END, solved_at = CASE WHEN status = 'solved' THEN NULL ELSE solved_at END, close_reason = CASE WHEN status = 'solved' THEN NULL ELSE close_reason END, archived_at = NULL, customer_typing_at = NULL, last_customer_at = ?, updated_at = ? WHERE id = ?", now, now, t.id);
   if (t.assignee_id) await notify([t.assignee_id], { type: "assignment", title: `#${t.number}: ${c.name} replied`, body: text.slice(0, 200), link: `/support?ticket=${t.id}`, dedupeKey: `sup-reply-${t.id}-${now}` }, now);
   else await autoAssign(t.id);
+  await (await import("./support-center")).escalateByWords(t.id, text).catch((e) => console.error("escalation rule", e));
   return msgId;
 }
 
@@ -725,6 +734,8 @@ export async function customerRate(app: AppFull, token: string, ticketId: string
   await run("UPDATE sup_tickets SET rating = ?, rating_comment = ? WHERE id = ?", r, clean(comment, 500) || null, t.id);
   await activity(null, t.id, "rated", `${r} of 5${comment ? `: ${clean(comment, 200)}` : ""}`);
   if (t.assignee_id && r <= 2) await notify([...(await supportConfig()).leads, t.assignee_id], { type: "assignment", title: `#${t.number} was rated ${r} of 5`, body: clean(comment, 200) || "No comment.", link: `/support?ticket=${t.id}` }, nowIso());
+  const center = await import("./support-center");
+  if (r <= 2 && (await center.centerConfig()).escalation.lowRating) await center.escalateByRule(t.id, `rated ${r} of 5`);
 }
 
 // --- Agent side --------------------------------------------------------------
@@ -1487,10 +1498,13 @@ export async function supportChecks(now = nowIso()) {
     now,
     now,
   );
+  const center = await import("./support-center");
+  const cc = await center.centerConfig();
   for (const t of late) {
     await run("UPDATE sup_tickets SET breached = 1 WHERE id = ?", t.id);
     await activity(null, t.id, "breached", t.first_response_at ? "Resolution target missed" : "First response target missed");
-    await notify([t.assignee_id, ...cfg.leads], { type: "deadline", title: `#${t.number} missed its target`, body: t.subject, link: `/support?ticket=${t.id}`, dedupeKey: `sup-breach-${t.id}` }, now);
+    await notify([t.assignee_id, ...(cc.notifications.breachToLeads ? cfg.leads : [])], { type: "deadline", title: `#${t.number} missed its target`, body: t.subject, link: `/support?ticket=${t.id}`, dedupeKey: `sup-breach-${t.id}` }, now);
+    if (cc.escalation.onBreach) await center.escalateByRule(t.id, t.first_response_at ? "the resolution target was missed" : "the first answer target was missed");
   }
   const old = new Date(Date.parse(now) - cfg.autoCloseDays * 864e5).toISOString();
   // Waiting on the customer too long: solved, with a note to them (they can still reply until it closes).
@@ -1754,6 +1768,8 @@ export async function customerUpload(app: AppFull, token: string, ticketId: stri
   const mime = clean(input.mime, 100) || "application/octet-stream";
   const h = await import("./support-help");
   if (data.length > h.TICKET_FILE_MAX) throw new WorkflowError("VALIDATION", "The file is larger than 10 MB.");
+  // Configuration center, Chat: files and voice notes from customers, and their size.
+  await (await import("./support-center")).checkCustomerFile(mime, data.length);
   const msgId = await customerReply(app, token, t.id, clean(input.caption, 4000) || (VOICE.test(mime) ? "(a voice note)" : `(a file: ${name})`), input.replyTo);
   return { id: await h.attachTicketFile(t.id, { name, mime, data }, msgId) };
 }

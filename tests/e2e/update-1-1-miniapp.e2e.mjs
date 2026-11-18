@@ -56,6 +56,78 @@ try {
   // Back to list shows the conversation
   await page.getByRole("button", { name: "Back", exact: true }).click();
   check("the conversation is listed", await seen(page.locator("[data-conversation-item]").filter({ hasText: "Exam schedule" })));
+  const ticketId = await page.locator("[data-conversation-item]").filter({ hasText: "Exam schedule" }).first().getAttribute("data-ticket");
+
+  // Update 1.2, spec 15: every page of the support app.
+  const tabs = page.getByRole("navigation", { name: "Support sections" });
+  check("the tab bar has Home, Chats, Requests, Calls and More", (await tabs.locator("[data-tab]").evaluateAll((els) => els.map((e) => e.getAttribute("data-tab")))).join("|") === "home|chats|requests|calls|more" && (await tabs.locator("[data-tab=chats]").innerText()).startsWith("Chats"));
+  await tabs.locator("[data-tab=chats]").click();
+  check("Chats lists active conversations", await seen(page.locator("[data-page-chats] [data-requests=open] [data-conversation-item]").filter({ hasText: "Exam schedule" })));
+  await tabs.locator("[data-tab=requests]").click();
+  check("Requests explains itself when empty", await seen(page.locator("[data-page-requests]").getByText("No requests yet.")));
+  await tabs.locator("[data-tab=calls]").click();
+  check("Calls has the call interface and the call history", (await seen(page.locator("[data-call-interface]"))) && (await seen(page.locator("[data-call-history]"))));
+  await tabs.locator("[data-tab=more]").click();
+  await page.locator("[data-more=faq]").click();
+  check("FAQ opens with search", await seen(page.locator("[data-page-faq] [data-help-search]")));
+  await page.getByRole("button", { name: "Back", exact: true }).click();
+  await page.locator("[data-more=profile]").click();
+  await page.locator("[data-page-profile]").waitFor();
+  await page.getByLabel("Name", { exact: true }).fill("Hana G. Girma");
+  await page.locator("[data-profile-save-name]").click();
+  check("the profile saves a corrected name", await seen(page.locator("[data-page-profile]").getByText("Saved")));
+  await page.screenshot({ path: path.join(shots, "3b-profile.png"), fullPage: true });
+  await page.getByRole("button", { name: "Back", exact: true }).click();
+  await page.locator("[data-more=language]").click();
+  await page.locator("[data-language=am]").click();
+  check("Language switches the app to Amharic", await seen(page.getByText("ቋንቋ", { exact: true })));
+  await page.locator("[data-language=en]").click();
+  await page.getByRole("button", { name: "Back", exact: true }).click();
+  await page.locator("[data-more=info]").click();
+  check("Support information shows the hours", await seen(page.locator("[data-support-hours]")));
+  await page.screenshot({ path: path.join(shots, "3c-info.png"), fullPage: true });
+  await page.goto(`${base}/support-widget?tg=${encodeURIComponent(prep.bot)}&page=t_${ticketId}#tgWebAppData=${encodeURIComponent(hanaData)}`);
+  check("a deep link opens the conversation", await seen(page.locator("[data-page^='t:']")) && (await seen(page.getByText("Exam schedule"))));
+  await page.goto(`${base}/support-widget?tg=${encodeURIComponent(prep.bot)}&page=faq#tgWebAppData=${encodeURIComponent(hanaData)}`);
+  check("and a deep link opens the FAQ", await seen(page.locator("[data-page-faq]")));
+  const wide = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  check("the app fits a phone without sideways scrolling", wide <= 1, { wide });
+
+  // Inside Telegram itself: Telegram's Back and Main buttons and haptics (a stand-in for Telegram's WebApp object).
+  const tgCtx = await browser.newContext({ viewport: { width: 390, height: 800 } });
+  await tgCtx.route("**/telegram-web-app.js", (r) => r.fulfill({ body: "", contentType: "application/javascript" }));
+  await tgCtx.addInitScript(() => {
+    const log = (window.__tg = { main: { text: null, visible: false, clicks: [] }, back: { visible: false, clicks: [] }, haptics: 0 });
+    const btn = (o) => ({ show: () => (o.visible = true), hide: () => (o.visible = false), onClick: (f) => o.clicks.push(f), offClick: (f) => (o.clicks = o.clicks.filter((x) => x !== f)) });
+    window.Telegram = {
+      WebApp: {
+        platform: "android", version: "8.0", initData: "", initDataUnsafe: {}, themeParams: {}, colorScheme: "light", ready() {}, expand() {}, onEvent() {}, offEvent() {},
+        BackButton: btn(log.back),
+        MainButton: { ...btn(log.main), setParams: (p) => { if (p.text) log.main.text = p.text; log.main.active = p.is_active; }, showProgress() {}, hideProgress() {} },
+        HapticFeedback: { impactOccurred: () => log.haptics++, selectionChanged: () => log.haptics++, notificationOccurred: () => log.haptics++ },
+      },
+    };
+  });
+  const tgp = await tgCtx.newPage();
+  tgp.on("pageerror", (e) => errors.push(e.message));
+  await tgp.goto(`${base}/support-widget?tg=${encodeURIComponent(prep.bot)}#tgWebAppData=${encodeURIComponent(hanaData)}`);
+  await tgp.locator("[data-page-home]").waitFor({ timeout: 15000 });
+  await tgp.waitForFunction(() => window.__tg.main.visible && window.__tg.main.text === "Ask a question", null, { timeout: 5000 }).catch(() => {});
+  const st1 = await tgp.evaluate(() => ({ main: window.__tg.main.visible, text: window.__tg.main.text, back: window.__tg.back.visible }));
+  check("in Telegram, Home's main action is Telegram's Main button", st1.main && st1.text === "Ask a question" && !st1.back && (await tgp.locator("[data-new-question]").count()) === 0, st1);
+  await tgp.evaluate(() => window.__tg.main.clicks.at(-1)());
+  await tgp.locator("[data-page-new]").waitFor();
+  await tgp.waitForFunction(() => window.__tg.main.text === "Send" && window.__tg.back.visible, null, { timeout: 5000 }).catch(() => {});
+  const st2 = await tgp.evaluate(() => ({ text: window.__tg.main.text, back: window.__tg.back.visible }));
+  check("writing a question, Send is the Main button and Telegram's Back button shows", st2.text === "Send" && st2.back && (await tgp.locator("[data-page-new]").getByRole("button", { name: "Send" }).count()) === 0, st2);
+  await tgp.getByLabel("Your question").fill("Sent with Telegram's button");
+  await tgp.evaluate(() => window.__tg.main.clicks.at(-1)());
+  check("the Main button sends it", await seen(tgp.getByText("Sent with Telegram's button")));
+  await tgp.evaluate(() => window.__tg.back.clicks.at(-1)());
+  check("Telegram's Back button goes back", await seen(tgp.locator("[data-page-home]")));
+  check("presses give haptic feedback", (await tgp.evaluate(() => window.__tg.haptics)) >= 2);
+  await tgp.screenshot({ path: path.join(shots, "3d-telegram-buttons.png"), fullPage: true });
+  await tgCtx.close();
 
   // 4. Admin edits the bot resource in Bot Manager.
   const adminContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });

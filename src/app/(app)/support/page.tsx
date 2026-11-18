@@ -40,8 +40,8 @@ export default async function SupportPage({ searchParams }: { searchParams: Prom
         <EmptyState title={cfg.enabled ? "You are not a support agent" : "Customer support is switched off"} description={cfg.enabled ? "A support lead adds agents to the queues." : "Admin switches it on in Support setup."} />
       </div>
     );
-  const tabs = [...(cfg.enabled && agent ? ["desk", "calls", "students", "kb"] : []), ...(lead && cfg.enabled ? ["monitor", "board"] : []), ...(cfg.enabled && (lead || viewer.perms.includes("support.analytics")) ? ["analytics"] : []), ...(lead ? ["queues", "ivr", "help", "content", "telegram", "bots", "apps", "systems"] : []), ...(admin || lead ? ["settings"] : [])];
-  const LABELS: Record<string, string> = { desk: "Desk", calls: "Calls", students: "Students & Parents", kb: "Knowledge base", monitor: "Monitor", analytics: "Analytics", board: "Live queues", ivr: "Phone menu", queues: "Queues and replies", help: "Help menu and routing", content: "Content", telegram: "Telegram", bots: "Bot manager", apps: "Apps and SDK", systems: "Connected systems", settings: "Settings" };
+  const tabs = [...(cfg.enabled && agent ? ["desk", "calls", "students", "kb"] : []), ...(lead && cfg.enabled ? ["monitor", "board"] : []), ...(cfg.enabled && (lead || viewer.perms.includes("support.analytics")) ? ["analytics"] : []), ...(lead ? ["queues", "ivr", "help", "content", "telegram", "bots", "apps", "systems"] : []), ...(admin || lead ? ["config", "settings"] : [])];
+  const LABELS: Record<string, string> = { desk: "Desk", calls: "Calls", students: "Students & Parents", kb: "Knowledge base", monitor: "Monitor", analytics: "Analytics", board: "Live queues", ivr: "Phone menu", queues: "Queues and replies", help: "Help menu and routing", content: "Content", telegram: "Telegram", bots: "Bot manager", apps: "Apps and SDK", systems: "Connected systems", config: "Configuration", settings: "Settings" };
   const tab = tabs.includes(sp.tab ?? "") ? sp.tab! : tabs[0]!;
   const people = (await userDirectory()).map((u) => ({ id: u.id, name: u.name }));
   const queues = await sd.listQueues();
@@ -226,6 +226,11 @@ export default async function SupportPage({ searchParams }: { searchParams: Prom
     const { listSystems } = await import("@/server/connected-systems");
     const data = await listSystems(viewer);
     panel = <Systems systems={data.systems} unattached={data.unattached} admin={admin} origin={await appOrigin()} />;
+  }
+  else if (tab === "config" && lead) {
+    const C = await import("@/server/support-center");
+    const { ConfigCenter } = await import("@/components/app/support/config-center");
+    panel = <ConfigCenter areas={await C.configurationCenter(viewer)} config={await C.centerConfig()} status={await C.supportOpen()} />;
   }
   else if (tab === "settings")
     panel = <SupportSettings cfg={cfg} people={people} admin={admin} mailboxes={(await all<{ address: string }>("SELECT address FROM email_senders WHERE mailbox = 1 AND active = 1 ORDER BY address")).map((m) => m.address)} telegram={await ch.telegramInfo()} queues={queues.filter((q) => q.active).map((q) => ({ id: q.id, name: q.name }))} />;
