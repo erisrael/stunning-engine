@@ -27,6 +27,11 @@ async function load(viewer: Awaited<ReturnType<typeof requireViewer>>, sp: Recor
       const { report, meta } = await chapaCustomersReport(viewer, { biz: sp.biz || null, q: sp.q, from: sp.from, until: sp.until, method: l("method"), outcome: l("outcome") as never, sort: sp.sort as never });
       return { report, meta };
     }
+    if (sp.list === "noor-content") {
+      const { contentReport } = await import("@/server/noor-content");
+      const { report, meta } = await contentReport(viewer);
+      return { report, meta };
+    }
     if (sp.list === "unable") return await unableReport(viewer, { search: sp.q, verifier: sp.verifier, ids: sp.ids ? sp.ids.split(",").slice(0, 2000) : undefined });
     const source = sp.run ? await reportRun(viewer, sp.run) : null;
     const range = source ? source.result : (await completedRangeTask(viewer, sp.task ?? "")).result;

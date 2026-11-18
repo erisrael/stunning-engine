@@ -189,7 +189,7 @@ export function AppearancePage({ look, setLook, am, brand }: { look: Look; setLo
       <div className="space-y-2 rounded-[calc(var(--radius)+6px)] border bg-card p-3 shadow-xs" aria-label={w.preview}>
         <p className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">{w.preview}</p>
         <div className="max-w-[80%] rounded-2xl rounded-bl-md bg-muted px-3 py-2 text-sm">{w.previewText}</div>
-        <div className="ml-auto max-w-[80%] rounded-2xl rounded-br-md bg-primary px-3 py-2 text-sm text-primary-foreground">👍</div>
+        <div className="ml-auto max-w-[80%] rounded-2xl rounded-br-md bg-primary px-3 py-2 text-sm text-primary-foreground">{am ? "እሺ፣ አመሰግናለሁ" : "Thanks, that helps"}</div>
       </div>
       <section className="space-y-2">
         <p className="px-1 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">{w.theme}</p>

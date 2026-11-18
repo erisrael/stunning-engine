@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 81;
+export const SCHEMA_VERSION = 82;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -4159,6 +4159,34 @@ ALTER TABLE sup_tickets ADD COLUMN IF NOT EXISTS offered_at TEXT;
 ALTER TABLE sup_tickets ADD COLUMN IF NOT EXISTS declined_by TEXT NOT NULL DEFAULT '[]';
 ALTER TABLE sup_queues ADD COLUMN IF NOT EXISTS accept_required INTEGER NOT NULL DEFAULT 0;
 
+-- Noor's academic content in ops (Legacy CMS, Content): each subject as read from Noor's edit page, kept for
+-- browsing and the content report; and the batch jobs that add units, lessons, quizzes and notes to Noor through
+-- Noor's own forms, a few at a time, with what each step did.
+CREATE TABLE IF NOT EXISTS noor_content (
+  subject_id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  grades TEXT NOT NULL DEFAULT '[]',
+  data_json TEXT NOT NULL,
+  stats_json TEXT NOT NULL DEFAULT '{}',
+  fetched_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS noor_content_jobs (
+  id TEXT PRIMARY KEY,
+  actor_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+  kind TEXT NOT NULL,
+  subject_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  input_json TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'queued',
+  done INTEGER NOT NULL DEFAULT 0,
+  total INTEGER NOT NULL DEFAULT 0,
+  progress TEXT NOT NULL DEFAULT '',
+  log_json TEXT NOT NULL DEFAULT '[]',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_noor_content_jobs ON noor_content_jobs(subject_id, created_at);
+
 `;
 
 // Tables in dependency order; used to empty the workspace and to export or restore backups.
@@ -4429,4 +4457,6 @@ export const TABLES = [
   "sup_queue_events",
   "sup_recording_chunks",
   "sup_recording_access",
+  "noor_content",
+  "noor_content_jobs",
 ] as const;

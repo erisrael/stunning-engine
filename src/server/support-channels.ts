@@ -483,11 +483,11 @@ const backRow = async (x: TelegramTexts) => [{ text: await btn(x, "button.menu")
 type Btn = { text: string; callback_data?: string; web_app?: { url: string }; url?: string };
 const L = (x: TelegramTexts, en: string, am: string) => (x.lang === "am" ? am : x.lang === "en" ? en : `${en} · ${am}`).slice(0, 64);
 const SUBMENUS = {
-  help: ["💬", "Get help", "እርዳታ ያግኙ"],
-  mine: ["📋", "My requests", "የእኔ ጥያቄዎች"],
-  more: ["📚", "Resources", "መረጃዎች"],
-  call: ["📞", "Call us", "ይደውሉልን"],
-  settings: ["⚙️", "Settings", "ቅንብሮች"],
+  help: ["Get help", "እርዳታ ያግኙ"],
+  mine: ["My requests", "የእኔ ጥያቄዎች"],
+  more: ["Resources", "መረጃዎች"],
+  call: ["Call us", "ይደውሉልን"],
+  settings: ["Settings", "ቅንብሮች"],
 } as const;
 type Submenu = keyof typeof SUBMENUS;
 async function menuParts(x: TelegramTexts) {
@@ -523,7 +523,7 @@ async function sendMenu(chat: string, x: TelegramTexts) {
   const add = (key: Submenu) => {
     const list = parts[key];
     if (list.length === 1) top.push(list[0]!);
-    else if (list.length > 1) top.push({ text: `${SUBMENUS[key][0]} ${L(x, SUBMENUS[key][1], SUBMENUS[key][2])}`, callback_data: `sm:${key}` });
+    else if (list.length > 1) top.push({ text: L(x, SUBMENUS[key][0], SUBMENUS[key][1]), callback_data: `sm:${key}` });
   };
   add("help");
   add("mine");

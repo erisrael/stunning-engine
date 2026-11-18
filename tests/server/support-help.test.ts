@@ -76,8 +76,13 @@ async function main() {
   const press = (data: string) => ({ callback_query: { id: `cb${Math.random()}`, data, from: { id: 777, first_name: "Selam" }, message: { chat: { id: 777, type: "private" } } } });
 
   await ch.telegramUpdate(secret, secret, msg("/start"));
-  const menu = JSON.stringify(last().reply_markup);
-  check("/start shows the spec's menu as buttons, in both languages", menu.includes("c:payments") && menu.includes("Payment Assistance · የክፍያ እርዳታ") && menu.includes("mn:start") && menu.includes("mn:requests") && String(last().text).includes("Welcome to MySeed Support") && String(last().text).includes("እንኳን") && menu.includes("web_app"), last());
+  const top = JSON.stringify(last().reply_markup);
+  const welcome = String(last().text);
+  await ch.telegramUpdate(secret, secret, press("sm:help"));
+  const help = JSON.stringify(last().reply_markup);
+  await ch.telegramUpdate(secret, secret, press("sm:mine"));
+  const menu = top + help + JSON.stringify(last().reply_markup);
+  check("/start shows the spec's menu as buttons in submenus, in both languages", top.includes("sm:help") && menu.includes("c:payments") && menu.includes("Payment Assistance · የክፍያ እርዳታ") && menu.includes("mn:start") && menu.includes("mn:requests") && welcome.includes("Welcome to MySeed Support") && welcome.includes("እንኳን") && top.includes("web_app"), menu);
   await ch.saveArticle(liya, { title: "Paid but not active", body: "Send the receipt from telebirr and we activate it within a day.", category: "Payments", published: true });
   await ch.telegramUpdate(secret, secret, press("c:payments"));
   check("a topic shows its articles, then Still need help?", String(last().text).includes("Paid but not active") && JSON.stringify(last().reply_markup).includes("a:payments"), last());

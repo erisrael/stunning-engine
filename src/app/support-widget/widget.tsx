@@ -338,6 +338,8 @@ export function SupportWidget({ appKey: givenKey, initialUser, waitForParent, te
     </Button>
   );
   const first = s.customer.name.split(" ")[0];
+  // The built-in Telegram app is named after its channel; customers see the product's name.
+  const brandName = s.app.name === "Telegram" ? "MySeed" : s.app.name;
   const lw = LOOK_WORDS[lang];
   const langButton = (
     <button type="button" className="rounded-full border px-2.5 py-1 text-xs font-medium" onClick={() => setLang(am ? "en" : "am")} aria-label={am ? "English" : "Amharic"} data-lang-toggle>
@@ -351,13 +353,13 @@ export function SupportWidget({ appKey: givenKey, initialUser, waitForParent, te
         <header className="px-4 pt-4 pb-2" data-header="home">
           <div className="flex items-center gap-3">
             <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary text-base font-semibold text-primary-foreground" aria-hidden>
-              {s.app.name.slice(0, 1).toUpperCase()}
+              {brandName.slice(0, 1).toUpperCase()}
             </span>
             <div className="min-w-0 flex-1">
               <p className="truncate text-xs text-muted-foreground">
-                {s.app.name} {w.support}
+                {brandName} {w.support}
               </p>
-              <p className="truncate text-xl leading-tight font-bold">{am ? `ሰላም ${first}` : `Hi ${first}`} 👋</p>
+              <p className="truncate text-xl leading-tight font-bold">{am ? `ሰላም ${first}` : `Hi ${first}`}</p>
             </div>
             {langButton}
           </div>

@@ -118,7 +118,7 @@ function resolve(def: Def, nav: NavRow[]) {
   return { path, found: nav.length ? !!hit : null, noorTotal: hit?.noor_total ?? null, stored: hit?.slug ?? def.slug };
 }
 
-async function access(user: AppUser) {
+export async function access(user: AppUser) {
   const cats = new Set<string>((await Promise.all(user.roles.map((r) => allowedCategoriesForUser(r, user.id)))).flat());
   const manager = await canManageCmsData(user);
   if (!cats.size && !manager) throw new WorkflowError("FORBIDDEN", "Your access does not include Noor.");
@@ -168,7 +168,7 @@ async function connection(user: AppUser) {
   return { config, baseUrl: config.baseUrl.replace(/\/+$/, "") };
 }
 
-async function openNoor(user: AppUser, path: string) {
+export async function openNoor(user: AppUser, path: string) {
   if (!SAFE_PATH.test(path)) throw new WorkflowError("VALIDATION", "That is not a Noor admin page.");
   const { config, baseUrl } = await connection(user);
   for (let attempt = 0; attempt < 2; attempt++) {

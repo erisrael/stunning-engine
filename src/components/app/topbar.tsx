@@ -97,6 +97,21 @@ const TITLES: Record<string, string> = {
   checklists: "Checklists",
 };
 
+// A page's place in the address as words: "legacy-cms" is Legacy CMS, "chapa" is Chapa; record ids stay as they are.
+const ACRONYMS: Record<string, string> = { cms: "CMS", api: "API", apis: "APIs", sms: "SMS", ivr: "IVR", kb: "KB", hr: "HR", pdf: "PDF" };
+function crumb(p: string) {
+  let s = p;
+  try {
+    s = decodeURIComponent(p);
+  } catch {}
+  if (/^[a-z]{2,5}_[A-Za-z0-9]{6,}$/.test(s) || (/\d/.test(s) && s.length > 14)) return s;
+  return s
+    .split(/[-_]+/)
+    .filter(Boolean)
+    .map((w, i) => ACRONYMS[w.toLowerCase()] ?? (i === 0 ? w.charAt(0).toUpperCase() + w.slice(1) : w))
+    .join(" ");
+}
+
 export function Topbar({ user, activeRole, unread, chatUnread, qrScan }: { user: { name: string; email: string; roles: Role[]; avatar?: string | null }; activeRole: Role; unread: number; chatUnread: number; qrScan?: boolean }) {
   const pathname = usePathname();
   const parts = pathname.split("/").filter(Boolean);
@@ -154,7 +169,7 @@ export function Topbar({ user, activeRole, unread, chatUnread, qrScan }: { user:
         <BreadcrumbList>
           {parts.map((p, i) => {
             const href = "/" + parts.slice(0, i + 1).join("/");
-            const label = TITLES[p] ?? (parts[i - 1] === "items" ? "Item detail" : parts[i - 1] === "routines" ? "Routine" : parts[i - 1] === "handovers" && /^ho_/.test(p) ? "Handover" : (DEPT_VIEW_LABELS as Record<string, string>)[p] ?? p);
+            const label = TITLES[p] ?? (parts[i - 1] === "items" ? "Item detail" : parts[i - 1] === "routines" ? "Routine" : parts[i - 1] === "handovers" && /^ho_/.test(p) ? "Handover" : (DEPT_VIEW_LABELS as Record<string, string>)[p] ?? crumb(p));
             const last = i === parts.length - 1;
             return (
               <React.Fragment key={href}>

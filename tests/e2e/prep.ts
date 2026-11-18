@@ -698,6 +698,29 @@ PREPS["update-1-2-external-apis"] = async () => {
   return { port: 47395 };
 };
 
+// Update 1.2: Legacy CMS > Content (Noor's academic content) against the fake Noor the browser test starts on
+// this port; Chemistry is read once already. And the support app on the web, with the Telegram bot connected.
+PREPS["update-1-2-content"] = async () => {
+  await passwordOnly();
+  const a = await admin();
+  const { saveLegacyCmsConfig } = await import("../../src/server/legacy-cms");
+  await saveLegacyCmsConfig(a, { baseUrl: "http://127.0.0.1:47396", username: "fixture", password: "fixture", sessionCookie: "session=fixture", autoSync: false });
+  const C = await import("../../src/server/noor-content");
+  const { createNoorContent } = await import("../fixtures/noor-content-fixture.mjs");
+  const subject = C.subjectFrom("7", createNoorContent().formData());
+  await run("INSERT INTO noor_content (subject_id, name, grades, data_json, stats_json, fetched_at) VALUES ('7', 'Chemistry', '[\"Grade 10\"]', ?, ?, ?)", JSON.stringify(subject), JSON.stringify(C.subjectStats(subject)), nowIso());
+  const sd = await import("../../src/server/support-desk");
+  await sd.saveSupportConfig(a, { enabled: true, leads: [] });
+  await run("INSERT INTO settings (key, value, updated_at) VALUES ('sup.telegram', ?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value", JSON.stringify({ tokenEnc: await seal("999111:AAe2eWebSupportBotToken_xyz"), secret: "websecret", bot: "myseed_help_bot", origin: "https://cm.example" }), nowIso());
+  await run("INSERT INTO legacy_cms_records (id, category, external_id, title, data_json, synced_at) VALUES (?, 'parents', 'p88', 'Almaz Bekele', ?, ?)", uid(), JSON.stringify({ Name: "Almaz Bekele", "Phone Number": "0911223344" }), nowIso());
+  return { port: 47396 };
+};
+
+// The interface tour: the demo workspace, signed in with a password only.
+PREPS["ui-tour"] = async () => {
+  await passwordOnly();
+};
+
 async function main() {
   const name = process.argv[2]!;
   const prep = PREPS[name];

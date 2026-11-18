@@ -1,6 +1,6 @@
 import { eligibleQuestionRecipients } from "@/server/question-routing";
 import { redirect } from "next/navigation";
-import { BarChart3Icon, BlocksIcon, DatabaseIcon, DollarSignIcon, FileCheck2Icon, ListTreeIcon, RadioIcon, TableIcon, TrendingUpIcon, UsersIcon } from "lucide-react";
+import { BarChart3Icon, BlocksIcon, BookOpenIcon, DatabaseIcon, DollarSignIcon, FileCheck2Icon, ListTreeIcon, RadioIcon, TableIcon, TrendingUpIcon, UsersIcon } from "lucide-react";
 import { requireViewer } from "@/server/auth";
 import {
   getLegacyCmsConfigForUser,
@@ -35,7 +35,7 @@ export const metadata = { title: "Noor Ethiopia CMS (Legacy)" };
 // date-first; Contacts and Storage & snapshots are views of the earlier client, which loads only when shown.
 // Tables & sync was folded into Live (Saved copy, Sync, slips, feedback) and the connection into Admin.
 const OLD = { contacts: "relations", storage: "storage" } as const;
-type View = "live" | "invoices" | "revenue" | "growth" | "reports" | "records" | "admin" | "fields" | keyof typeof OLD;
+type View = "live" | "invoices" | "revenue" | "growth" | "reports" | "records" | "admin" | "content" | "fields" | keyof typeof OLD;
 
 export default async function LegacyCmsPage({ searchParams }: { searchParams: Promise<{ category?: string; view?: string }> }) {
   const viewer = await requireViewer();
@@ -53,6 +53,7 @@ export default async function LegacyCmsPage({ searchParams }: { searchParams: Pr
     { key: "live", label: "Live", icon: <RadioIcon /> },
     { key: "records", label: "Records", icon: <TableIcon /> },
     { key: "admin", label: "Noor admin", icon: <BlocksIcon /> },
+    { key: "content", label: "Content", icon: <BookOpenIcon /> },
     { key: "invoices", label: "Invoices", icon: <FileCheck2Icon />, hidden: !canReview },
     { key: "revenue", label: "Revenue", icon: <DollarSignIcon />, hidden: !has("invoices") },
     { key: "growth", label: "Growth", icon: <TrendingUpIcon />, hidden: !allowedCategories.some((c) => ["students", "parents", "subscriptions"].includes(c)) },
@@ -73,7 +74,10 @@ export default async function LegacyCmsPage({ searchParams }: { searchParams: Pr
   else if (view === "revenue") body = <CmsRevenueView canReview={canReview} />;
   else if (view === "fields") body = <CmsFieldsView />;
   else if (view === "records") body = <CmsRecordsView resources={await (await import("@/server/cms-query")).cmsRecordResources(viewer)} />;
-  else if (view === "admin") {
+  else if (view === "content") {
+    const { CmsContentView } = await import("@/components/app/legacy-cms/content-view");
+    body = <CmsContentView />;
+  } else if (view === "admin") {
     const { NoorAdminCatalog } = await import("@/components/app/legacy-cms/noor-admin");
     body = <NoorAdminCatalog data={await (await import("@/server/cms-admin")).noorAdminCatalog(viewer)} />;
   } else if (view === "growth") body = <CmsGrowthView categories={allowedCategories} />;
