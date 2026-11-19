@@ -45,6 +45,8 @@ try {
   check("Alt+A opens the assistant", await panel.waitFor({ timeout: 5000 }).then(() => true, () => false));
   check("Chat starts without bulky suggestion lists", (await dev.locator("[data-assistant-suggest]").count()) === 0);
   check("Capability help is available on demand", await dev.getByRole("button",{name:"What can you do?",exact:true}).isVisible());
+  // This suite checks Ask mode (actions prepared and confirmed); Agent mode is the default where it is allowed.
+  if (await dev.getByRole("radio", { name: "Ask" }).isVisible().catch(() => false)) await dev.getByRole("radio", { name: "Ask" }).click();
 
   // An AI answer with a page to open.
   await dev.getByLabel("Ask the assistant").fill("where is attendance");

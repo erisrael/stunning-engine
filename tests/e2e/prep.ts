@@ -86,6 +86,7 @@ async function production() {
 }
 
 const PREPS: Record<string, () => Promise<unknown>> = {
+  "assistant-autopilot": () => passwordOnly(),
   production,
   // A site with a location, leaving it only tells the person (reports every 15 s), Dawit checked in, and a chat.
   async phone() {

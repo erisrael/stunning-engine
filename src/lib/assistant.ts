@@ -9,7 +9,8 @@ export type Audience = "everyone" | "member" | "lead" | "department" | "producti
 
 // act: "click" presses a navigation-only control itself (a tab, "go online"); "hover" points at it as if hovered.
 // Forms, imports and Save are always left to the person.
-export type ShowStep = { href?: string; selector?: string; text?: string; note: string; act?: "click" | "hover" };
+// inDialog: only inside an open dialog, and skipped when none opened (an export that asks for options).
+export type ShowStep = { href?: string; selector?: string; text?: string; note: string; act?: "click" | "hover"; inDialog?: boolean };
 
 // Creating a task is done on the page: the department's task form opens filled in (from the assistant's questions or
 // what the person told the AI), and the steps point at each field and Save. Nothing is saved until they press it.

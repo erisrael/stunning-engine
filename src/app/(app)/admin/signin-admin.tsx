@@ -107,7 +107,6 @@ export function SignInAdmin({
             <li>Add to <strong>Authorized JavaScript origins</strong>:
               <div className="mt-1 flex flex-wrap gap-1 font-mono text-[11px] text-foreground">
                 <span className="rounded bg-muted px-1.5 py-0.5">https://ops.myseed.com.et</span>
-                <span className="rounded bg-muted px-1.5 py-0.5">https://myseedops.tech</span>
               </div>
             </li>
             <li>Add all required callback paths to <strong>Authorized redirect URIs</strong> below:</li>

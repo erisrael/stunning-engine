@@ -1252,3 +1252,17 @@ Built: `src/server/identity.ts`, `src/app/manifest.ts`, `src/app/api/branding/[k
 - [x] **Data between this computer and the VPS**: copy either way; each side being replaced is backed up first.
 - [x] **Domain setup**: shows where the domain and www point; when the DNS is at Hostinger, one button sets the A records to the VPS (mail and other records untouched). Caddy serves www too.
 - [x] Fixed: the app kept TLS on for the Postgres next to it on the VPS (a stray control character in the check), so the first deploy never passed its health check. The panel now adds the VPS key through Hostinger's current per-VPS endpoint and confirms it.
+
+## Phase 38: The assistant does the task itself (done)
+
+From the Update 1.0 spec (AI Assistant): "when a button is selected it should do tasks on its own: browse pages, hover and press buttons; forms and imports are done by the user; exports can be done by the AI if requested and allowed to that role only and exist in that role page."
+
+- [x] **Agent mode is back in the panel**: the Ask / Agent switch had been removed, so the agent could not be chosen. It is shown again and starts in Agent where the role has it (Admin, Assistant); the person can pick Ask.
+- [x] **Do it for me**: a task chosen in the assistant (menu buttons, "show me" flows, the 22 tutorials, hand-offs from the AI) is carried out on the pages: it opens each page, moves a pointer to the control, hovers and presses it.
+  - Typing into fields, choosing files, imports, saving a form, and anything that deletes, rejects, approves, sends or moves money stay with the person ("Your turn"); it carries on once they have done it.
+  - Pause and Stop at any time; "Show me" still only points.
+  - Links and tabs are always safe to press; a control that is not on the page is reported instead of waited for.
+- [x] **Exports on request**: "export call records" opens that page (only pages the person can open) and presses Export, and the export dialog's confirm, when Admin allows exports by the assistant for the role; otherwise it points at the button.
+- [x] Admin, Assistant, per role: *Do it for me* (on by default) and *Exports by the assistant* (off by default).
+
+Built: `src/lib/assistant-auto.ts` (what it presses and what it hands over; tutorials read as steps), `src/components/app/assistant.tsx`, `src/server/assistant.ts` (role options), `src/app/(app)/admin/assistant/roles-admin.tsx`. Tests: `tests/server/assistant-autopilot.test.ts`, `tests/e2e/assistant-autopilot.e2e.mjs`; `tests/e2e/agent.e2e.mjs` passes again.

@@ -15,7 +15,7 @@ import type { RoleOptions } from "@/server/assistant";
 import type { RoutinesConfig } from "@/server/routines";
 import { cn } from "@/lib/utils";
 
-const DEFAULT: RoleOptions = { ai: true, voice: true, routines: true, agent: true, shown: true, actions: null, suggestions: [], dailyLimit: null };
+const DEFAULT: RoleOptions = { ai: true, voice: true, routines: true, agent: true, autopilot: true, autoExport: false, shown: true, actions: null, suggestions: [], dailyLimit: null };
 
 // Admin, Assistant, per role: AI answers, voice, routines, which actions the AI may prepare, the suggestions shown
 // first, and a daily limit. And how routine runs are approved.
@@ -66,10 +66,10 @@ export function RolesAdmin({ roles, ops, options, routines }: { roles: { key: st
             ))}
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
-            {(["shown", "ai", "voice", "routines", "agent"] as const).map((k) => (
+            {(["shown", "ai", "voice", "routines", "agent", "autopilot", "autoExport"] as const).map((k) => (
               <div key={k} className="flex items-center gap-2">
                 <Switch id={`ro-${k}`} checked={o[k]} onCheckedChange={(v) => set({ [k]: v })} />
-                <Label htmlFor={`ro-${k}`}>{k === "shown" ? "Show the assistant by default (people can change it in Settings)" : k === "ai" ? "AI answers" : k === "voice" ? "Voice (microphone)" : k === "agent" ? "Agent mode (does the allowed actions itself)" : "Routines"}</Label>
+                <Label htmlFor={`ro-${k}`}>{k === "shown" ? "Show the assistant by default (people can change it in Settings)" : k === "ai" ? "AI answers" : k === "voice" ? "Voice (microphone)" : k === "agent" ? "Agent mode (does the allowed actions itself)" : k === "autopilot" ? "Do it for me (opens the pages and presses the buttons itself; forms, imports and risky buttons stay with the person)" : k === "autoExport" ? "Exports by the assistant (presses Export and Download where the role has them)" : "Routines"}</Label>
               </div>
             ))}
           </div>

@@ -102,20 +102,26 @@ try {
   await y.locator('[data-sidebar="trigger"]').click();
   await y.waitForTimeout(250);
   check("Collapsed sidebar hides counters and dropdown controls",await side(y).locator('[data-nav-controls]:visible').count()===0);
-  // Collapsed: icons only, a line between groups, and an entry's pages in a flyout menu beside it.
+  // Collapsed: icons only, with a line between groups.
   check("Collapsed sidebar separates groups with a line", await side(y).locator('[data-nav-group] [role=separator]').count() >= 1);
   check("Collapsed sidebar keeps every group's icons", await side(y).locator('[data-nav-group][data-folded]').count() === 0);
-  await side(y).locator('[data-nav-flyout="Handovers"]').click();
-  const fly = y.locator('[data-nav-flyout-menu="Handovers"]');
-  await fly.waitFor({ timeout: 5000 });
-  check("Collapsed sidebar opens an entry's pages in a flyout", await fly.getByRole("menuitem", { name: "Rejected", exact: true }).isVisible());
-  const flyBox = await fly.boundingBox(), sideBox = await side(y).boundingBox();
-  check("The flyout sits beside the collapsed sidebar", !!flyBox && !!sideBox && flyBox.x >= sideBox.x + sideBox.width - 2, { flyBox, sideBox });
-  await y.screenshot({ path: path.join(shots, "5b-collapsed-flyout.png") });
-  await fly.getByRole("menuitem", { name: "Rejected", exact: true }).click();
+  // Collapsed: no flyout menus in the rail; an entry's pages show as tabs at the top of the page instead
+  // (the section bar, or the page's own tab bar when it has one, never both).
+  check("Collapsed sidebar has no flyout menus", await side(y).locator('[data-nav-flyout]').count() === 0);
+  await sideLink(y, "Handovers").click();
+  await y.waitForURL(/\/handovers(\?|$)/);
+  await y.waitForTimeout(300);
+  const main = y.locator("main");
+  const tabLink = main.getByRole("link", { name: /^Rejected/ }).first();
+  check("Collapsed sidebar shows the entry's pages as tabs at the top", await tabLink.isVisible());
+  check("Section tabs never show twice", (await main.locator("[data-section-tabs]").count()) === 0 || (await main.locator("[data-page-tabs]").count()) === 0);
+  await y.screenshot({ path: path.join(shots, "5b-collapsed-tabs.png") });
+  await tabLink.click();
   await y.waitForURL(/\/handovers\/rejected/);
-  check("A flyout link opens its page", true);
+  check("A top tab opens its page", true);
   await y.goBack();
+  await y.waitForURL((u) => !u.pathname.includes("/handovers/rejected"));
+  await y.goBack(); // back to the start page, outside the Workflow group
   await y.waitForURL((u) => !u.pathname.includes("/handovers/rejected"));
   await y.locator('[data-sidebar="trigger"]').click();
   await y.setViewportSize({width:390,height:844});

@@ -2,7 +2,7 @@
 
 1. Sign in as HR or Admin and open **Attendance → Capture** (`/attendance?tab=capture`). Configure each site separately, including its attendance checks and working hours. Add each entrance device under Kiosks and select its site.
 2. Configure the permitted capture methods and QR refresh interval. Printed QR badges/posters remain available as a fallback; this update does not remove them.
-3. Generate the kiosk's pairing PIN or setup link. On the entrance tablet, phone or laptop, open `https://myseedops.tech/kiosk` and pair that device. Use a separate kiosk record for every device, including devices at the same site.
+3. Generate the kiosk's pairing PIN or setup link. On the entrance tablet, phone or laptop, open `https://ops.myseed.com.et/kiosk` and pair that device. Use a separate kiosk record for every device, including devices at the same site.
 4. Choose **Install Kiosk App**. On Android/desktop Chrome or Edge, accept the browser's installation prompt. On iPhone/iPad, use Safari → Share → Add to Home Screen. This is a separately installed web app, with its own kiosk identity and start page; it is not an Android APK.
 5. Allow camera access when using face capture. Enroll staff through the existing attendance face enrollment flow, with consent. QR display mode can be used without face enrollment.
 6. Test an actual check-in and check-out, QR rotation, camera permissions, the correct site and timezone, and the printed fallback before leaving a device unattended. Keep the device powered and prevent its screen from sleeping during working hours.

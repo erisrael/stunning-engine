@@ -1,5 +1,5 @@
 # HTTPS for the Content Manager. Caddy gets and renews the certificates by itself; point the domain at the
-# VPS first. SITE_ADDRESSES is the domain(s), space- or comma-separated (e.g. "myseedops.tech, ops.myseed.com.et").
+# VPS first. SITE_ADDRESSES is the domain(s), space- or comma-separated (e.g. "ops.myseed.com.et").
 {$SITE_ADDRESSES} {
 	encode zstd gzip
 	reverse_proxy app:3000 {

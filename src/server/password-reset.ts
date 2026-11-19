@@ -132,7 +132,6 @@ export async function googleSettings() {
     new Set([
       origin,
       "https://ops.myseed.com.et",
-      "https://myseedops.tech",
     ])
   );
   const redirectUris = knownOrigins.flatMap((o) => [

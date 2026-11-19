@@ -25,6 +25,7 @@ import { saveTaskAction } from "@/app/actions/departments";
 import { requestLeaveAction } from "@/app/actions/leave";
 import { flowAssignAction, flowStartAction } from "@/app/actions/departments";
 import { matchText, PLACES, score, taskHandoff, type Flow, type Match, type ShowStep } from "@/lib/assistant";
+import { autoKind, guideSteps } from "@/lib/assistant-auto";
 import { amharicToKeywords, detectAmharic } from "@/lib/amharic-intent";
 import { deptPath } from "@/lib/work";
 import type { MenuGroup, MenuItem } from "@/server/assistant-menu";
@@ -81,6 +82,7 @@ const KEY = "myseed.assistant.show";
 
 const fill = (href: string, base: string | null) => href.replace("{home}", base ?? "/dashboard");
 
+
 function findTarget(step: ShowStep): HTMLElement | null {
   const visible = (el: Element | null): el is HTMLElement => !!el && el instanceof HTMLElement && el.offsetParent !== null;
   if (step.selector)
@@ -89,14 +91,40 @@ function findTarget(step: ShowStep): HTMLElement | null {
       if (visible(el)) return el;
     }
   if (step.text) {
-    const want = step.text.toLowerCase();
-    for (const el of document.querySelectorAll("button, a, [role=button]")) if (visible(el) && (el.textContent ?? "").trim().toLowerCase().startsWith(want)) return el as HTMLElement;
+    // "Export|Download": the first name found on the page, in that order; a dialog's buttons come first.
+    const dialog = [...document.querySelectorAll("[role=dialog]")].filter((d) => !(d as HTMLElement).closest("[data-assistant-show]")).at(-1);
+    if (step.inDialog && !dialog) return null;
+    const scope = dialog ?? document;
+    for (const want of step.text.toLowerCase().split("|").map((w) => w.trim()).filter(Boolean))
+      for (const root of scope === document ? [document] : [scope, document])
+        for (const el of (step.inDialog && root === document ? [] : root.querySelectorAll("button, a, [role=button], [role=tab], [role=menuitem]")))
+          if (visible(el) && !el.closest("[data-assistant], [data-assistant-show]") && `${el.textContent ?? ""} ${el.getAttribute("aria-label") ?? ""}`.trim().toLowerCase().startsWith(want)) return el as HTMLElement;
+    // Wording drifts ("Set up with an app" for "Set up an authenticator app"): the control sharing most of the
+    // name's words, when it shares most of them.
+    const words = (w: string) => w.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((x) => x.length > 2 && !["the", "and", "with", "for", "your"].includes(x));
+    let best: { el: HTMLElement; s: number } | null = null;
+    for (const want of step.text.split("|")) {
+      const ws = words(want);
+      if (!ws.length) continue;
+      for (const el of (step.inDialog ? scope : document).querySelectorAll("button, a, [role=button], [role=tab], [role=menuitem]")) {
+        // Only the page itself: the sidebar and top bar carry many similar words ("Import and export").
+        if (!visible(el) || el.closest("[data-assistant], [data-assistant-show], [data-sidebar], header, [data-slot=sidebar]")) continue;
+        const have = new Set(words(`${el.textContent ?? ""} ${el.getAttribute("aria-label") ?? ""}`));
+        const s = ws.filter((w) => have.has(w)).length / ws.length;
+        if (s >= 0.6 && (!best || s > best.s)) best = { el: el as HTMLElement, s };
+      }
+    }
+    if (best) return best.el;
   }
   return null;
 }
 
-// Rings the element to press and dims the rest; the next step comes when it is pressed (or Next).
-function ShowMe({ flow, base, onEnd }: { flow: Extract<Flow, { kind: "show" }>; base: string | null; onEnd: (finished: boolean, step: number) => void }) {
+// Rings the element to press and dims the rest; the next step comes when it is pressed (or Next). With auto on,
+// the assistant moves its pointer there, hovers and presses it itself, and hands over only the person's steps.
+function ShowMe({ flow, base, onEnd, auto: autoStart = false, autoExport = false, canAuto = false }: { flow: Extract<Flow, { kind: "show" }>; base: string | null; onEnd: (finished: boolean, step: number) => void; auto?: boolean; autoExport?: boolean; canAuto?: boolean }) {
+  const [auto, setAuto] = React.useState(autoStart);
+  const [turn, setTurn] = React.useState<"agent" | "user" | null>(null);
+  const [missing, setMissing] = React.useState(false);
   const router = useRouter();
   const pathname = usePathname();
   const [i, setI] = React.useState(() => {
@@ -110,7 +138,7 @@ function ShowMe({ flow, base, onEnd }: { flow: Extract<Flow, { kind: "show" }>; 
   const step = flow.steps[i];
   React.useEffect(() => {
     try {
-      sessionStorage.setItem(KEY, JSON.stringify({ flow: flow.key, step: i, guide: flow.key.startsWith("guide.") || flow.key.startsWith("handoff.") ? flow : undefined }));
+      sessionStorage.setItem(KEY, JSON.stringify({ flow: flow.key, step: i, auto, guide: flow.key.startsWith("guide.") || flow.key.startsWith("handoff.") || flow.key.startsWith("export.") ? flow : undefined }));
     } catch {}
     if (!step) return;
     const href = step.href ? fill(step.href, base) : null;
@@ -123,7 +151,16 @@ function ShowMe({ flow, base, onEnd }: { flow: Extract<Flow, { kind: "show" }>; 
     }
     let el: HTMLElement | null = null;
     let tries = 0;
+    const timers: number[] = [];
     const next = () => setI((n: number) => n + 1);
+    setTurn(null);
+    setMissing(false);
+    // A step that only says something (no control to find): read, then on (by itself in Do it for me).
+    if (!step.selector && !step.text) {
+      setBox(null);
+      if (auto) timers.push(window.setTimeout(next, 2600));
+      return () => timers.forEach((t) => window.clearTimeout(t));
+    }
     const timer = window.setInterval(() => {
       el = findTarget(step);
       tries++;
@@ -132,12 +169,27 @@ function ShowMe({ flow, base, onEnd }: { flow: Extract<Flow, { kind: "show" }>; 
         el.scrollIntoView({ block: "center", behavior: "smooth" });
         setTimeout(() => setBox(el!.getBoundingClientRect()), 350);
         el.addEventListener("click", next, { once: true });
-        // Navigation-only controls are pressed for the person, after they have seen where it is.
-        if (step.act === "click") setTimeout(() => el?.click(), 1100);
-        else if (step.act === "hover") for (const t of ["pointerover", "mouseover", "mouseenter", "focus"]) el.dispatchEvent(new Event(t, { bubbles: t !== "mouseenter" && t !== "focus" }));
+        const hover = (x: HTMLElement) => { for (const t of ["pointerover", "mouseover", "mouseenter", "focus"]) x.dispatchEvent(new Event(t, { bubbles: t !== "mouseenter" && t !== "focus" })); };
+        const kind = auto ? autoKind(el, step, autoExport) : step.act === "click" ? "click" : step.act === "hover" ? "hover" : "user";
+        if (kind === "user") {
+          setTurn(auto ? "user" : null);
+          // A field gets the cursor so the person can type at once.
+          if (auto && ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName)) timers.push(window.setTimeout(() => el?.focus(), 500));
+        } else {
+          setTurn(auto ? "agent" : null);
+          timers.push(window.setTimeout(() => el && hover(el), auto ? 650 : 0));
+          if (kind === "click") timers.push(window.setTimeout(() => el?.click(), auto ? 1300 : 1100));
+          // A hover step has nothing to press: it moves on by itself.
+          else if (auto) timers.push(window.setTimeout(next, 1500));
+        }
+      } else if (step.inDialog && tries > 12) {
+        // Nothing asked for options: the step is not needed.
+        window.clearInterval(timer);
+        next();
       } else if (tries > 40) {
         window.clearInterval(timer);
         setBox(null);
+        setMissing(true);
       }
     }, 200);
     const onScroll = () => el && setBox(el.getBoundingClientRect());
@@ -145,11 +197,12 @@ function ShowMe({ flow, base, onEnd }: { flow: Extract<Flow, { kind: "show" }>; 
     window.addEventListener("resize", onScroll);
     return () => {
       window.clearInterval(timer);
+      timers.forEach((t) => window.clearTimeout(t));
       el?.removeEventListener("click", next);
       window.removeEventListener("scroll", onScroll, true);
       window.removeEventListener("resize", onScroll);
     };
-  }, [i, step, base, pathname, router, flow.key]);
+  }, [i, step, base, pathname, router, flow.key, auto, autoExport]);
   React.useEffect(() => {
     if (!step) {
       try {
@@ -163,6 +216,11 @@ function ShowMe({ flow, base, onEnd }: { flow: Extract<Flow, { kind: "show" }>; 
   const pad = 6;
   return (
     <div className="pointer-events-none fixed inset-0 z-[60]" data-assistant-show={flow.key}>
+      {box && auto && turn === "agent" && (
+        <div aria-hidden className="absolute z-[1] size-5 transition-all duration-500 motion-reduce:transition-none" style={{ left: box.left + Math.min(box.width / 2, 40), top: box.top + box.height / 2 }} data-assistant-pointer>
+          <svg viewBox="0 0 24 24" className="size-5 drop-shadow"><path d="M3 2l7 19 2.5-7.5L20 11z" fill="#1A73E8" stroke="white" strokeWidth="1.5" /></svg>
+        </div>
+      )}
       {box ? (
         <div
           className="absolute rounded-lg outline-2 outline-primary outline-solid transition-all motion-reduce:transition-none"
@@ -179,9 +237,17 @@ function ShowMe({ flow, base, onEnd }: { flow: Extract<Flow, { kind: "show" }>; 
       >
         <p className="text-xs text-muted-foreground">
           {flow.title} · step {i + 1} of {flow.steps.length}
+          {auto && <span className="ml-1 font-medium text-[#1A73E8]">· doing it for you</span>}
         </p>
-        <p className="mt-1">{box ? step.note : "Looking for it on this page…"}</p>
+        <p className="mt-1">{box || (!step.selector && !step.text) ? step.note : missing ? `I could not find ${step.text ? `“${step.text.split("|")[0]}”` : "it"} on this page${flow.key.startsWith("export.") ? ": it has no export for your role" : ""}. Press Next to go on, or Stop.` : "Looking for it on this page…"}</p>
+        
+        {auto && turn === "user" && <p className="mt-1 text-xs font-medium text-amber-700 dark:text-amber-400" data-assistant-your-turn>Your turn: fill this in or press it yourself; I carry on after.</p>}
         <div className="mt-2 flex justify-end gap-2">
+          {canAuto && (
+            <Button size="sm" variant="ghost" onClick={() => setAuto(!auto)} data-assistant-autopilot={auto ? "on" : "off"}>
+              {auto ? "Pause" : "Do it for me"}
+            </Button>
+          )}
           <Button size="sm" variant="ghost" onClick={() => { try { sessionStorage.removeItem(KEY); for (const k of Object.keys(sessionStorage)) if (k.startsWith(`${KEY}.opened.`)) sessionStorage.removeItem(k); } catch {} onEnd(false, i); }}>
             Stop
           </Button>
@@ -541,7 +607,9 @@ export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantCo
     const d = readLocal(DOCK_KEY) === "1";
     setDock(d);
     if (d && readLocal(DOCK_KEY + ".open") === "1") setOpen(true);
-    if (agent && readLocal(MODE_KEY) === "agent") setMode("agent");
+    // Agent mode (does the allowed actions itself) is where it starts when the role has it, unless the person
+    // chose Ask last time.
+    if (agent && readLocal(MODE_KEY) !== "ask") setMode("agent");
   }, [agent]);
   React.useEffect(() => {
     const on = dock && open;
@@ -576,6 +644,8 @@ export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantCo
   const [thinking, setThinking] = React.useState(false);
   const [doing, setDoing] = React.useState<Extract<Flow, { kind: "do" }> | null>(null);
   const [showing, setShowing] = React.useState<Extract<Flow, { kind: "show" }> | null>(null);
+  // Do it for me: the shown flow is carried out by the assistant (Admin, Assistant, per role).
+  const [autoRun, setAutoRun] = React.useState(false);
   const [voice, setVoice] = React.useState<{ lang: string; speak: boolean }>({ lang: "en-US", speak: false });
   const [guide, setGuide] = React.useState<{ flow: Extract<Flow, { kind: "guide" }>; step: number } | null>(null);
   const [routines, setRoutines] = React.useState<Routine[] | null>(null);
@@ -628,35 +698,42 @@ export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantCo
     try {
       const s = JSON.parse(sessionStorage.getItem(KEY) ?? "null");
       const f = s && (s.guide ?? ctx.flows.find((x) => x.key === s.flow && x.kind === "show"));
-      if (f) setShowing(f as ShowFlow);
+      if (f) (setAutoRun(!!s.auto && ctx.options.autopilot !== false), setShowing(f as ShowFlow));
     } catch {}
   }, [ctx.flows]);
   const say = (m: Msg) => {
     setMsgs((x) => [...x, m]);
     if (m.from === "bot" && viaVoice.current && voice.speak) speak(m.text, voice.lang);
   };
-  const startFlow = (f: Flow) => {
+  const canAuto = ctx.options.autopilot !== false;
+  const autoExport = !!ctx.options.autoExport;
+  // A button in the menu does the task (Do it for me) where Admin allows it; "Show me" only points.
+  const startFlow = (f: Flow, auto = canAuto) => {
     log({ flow: f.key, event: f.kind === "show" ? "show" : "start" });
     if (f.kind === "do") {
       setOpen(true);
       setDoing(f);
       say({ from: "bot", text: `${f.title}. ${f.hint}.` });
     } else if (f.kind === "guide") {
+      // Do it for me: the tutorial is carried out on the pages instead of read in the panel.
+      if (auto) return startGuide(guideFlow(`guide.${f.key}`, f.title, guideSteps(f)), true);
       setOpen(true);
       setGuide({ flow: f, step: 0 });
     } else if (f.kind === "show") {
       try {
-        sessionStorage.setItem(KEY, JSON.stringify({ flow: f.key, step: 0 }));
+        sessionStorage.setItem(KEY, JSON.stringify({ flow: f.key, step: 0, auto }));
       } catch {}
+      setAutoRun(auto);
       setOpen(false);
       setShowing(f);
     }
   };
-  const startGuide = (f: ShowFlow) => {
+  const startGuide = (f: ShowFlow, auto = canAuto) => {
     log({ flow: f.key.slice(0, 40), event: "show" });
     try {
-      sessionStorage.setItem(KEY, JSON.stringify({ flow: f.key, step: 0, guide: f }));
+      sessionStorage.setItem(KEY, JSON.stringify({ flow: f.key, step: 0, guide: f, auto }));
     } catch {}
+    setAutoRun(auto);
     setOpen(false);
     setShowing(f);
   };
@@ -668,7 +745,15 @@ export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantCo
     else if (it.kind === "guide" && it.steps) startGuide(guideFlow(it.id, it.label, it.steps));
   };
   const reply = (m: Match): Msg => {
-    if (m.type === "flow") return { from: "bot", text: `${m.flow.title}: ${m.flow.hint}.`, actions: [{ label: m.flow.kind === "do" ? "Do it with me" : m.flow.kind === "guide" ? "Show the steps" : "Show me", run: () => startFlow(m.flow) }] };
+    if (m.type === "flow")
+      return {
+        from: "bot",
+        text: `${m.flow.title}: ${m.flow.hint}.`,
+        actions: [
+          ...(canAuto && (m.flow.kind === "show" || m.flow.kind === "guide") ? [{ label: "Do it for me", run: () => startFlow(m.flow, true) }] : []),
+          { label: m.flow.kind === "do" ? "Do it with me" : m.flow.kind === "guide" ? "Show the steps" : "Show me", run: () => startFlow(m.flow, false) },
+        ],
+      };
     if (m.type === "place") return { from: "bot", text: `${m.place.name} is here.`, actions: [{ label: `Open ${m.place.name}`, run: () => router.push(fill(m.place.href, base)) }] };
     if (m.type === "term") return { from: "bot", text: `${m.term.term}: ${m.term.meaning}` };
     return { from: "bot", text: m.answer.a };
@@ -703,6 +788,31 @@ export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantCo
         from: "bot",
         text: isAm ? "ምንም አይደል! ሁልጊዜ እዚህ ነኝ። መልካም የሥራ ቀን ይሁንልዎ!" : "You're very welcome! I'm always here to help. Have a productive day!",
       });
+      return;
+    }
+
+    // Exports on request (Update 1.0 spec): the assistant presses Export on the page, only where the role may
+    // export (Admin, Assistant: Exports by the assistant) and only on pages the person can open.
+    if (/\b(export|download)\b/i.test(lower) && !/\bhow\b/i.test(lower)) {
+      const q = lower.replace(/\b(please|can you|could you|export|download|to excel|to csv|as excel|as csv|excel|csv|the|my|all|data|list|page)\b/gi, " ").replace(/\s+/g, " ").trim();
+      const own = PLACES.filter((p) => ctx.places.includes(p.name));
+      const best = q ? own.map((p) => ({ p, s: Math.max(score(q, p.words), score(q, [p.name.toLowerCase()])) })).sort((a, b) => b.s - a.s)[0] : null;
+      const place = best && best.s > 0 ? best.p : null;
+      const outside = !place && q.length > 2 ? PLACES.find((p) => !ctx.places.includes(p.name) && score(q, p.words) > 0) : null;
+      if (outside) {
+        log({ event: "refused", text: t });
+        say({ from: "bot", text: `${outside.name} is not open to your role, so I cannot export it.` });
+        return;
+      }
+      const steps: ShowStep[] = [
+        { ...(place ? { href: fill(place.href, base) } : {}), text: "Export|Download|Excel|CSV", note: autoExport ? `Exporting ${place?.name ?? "this page"} for you.` : `Press Export here to download ${place?.name ?? "this page"}.` },
+        { text: "Export|Download|Excel", inDialog: true, note: autoExport ? "Confirming the export." : "Choose the rows and columns, then press Export." },
+      ];
+      say({
+        from: "bot",
+        text: autoExport ? `Exporting ${place?.name ?? "this page"}. The file downloads when it is ready; exports are recorded.` : `Exports are done by you for your role. I will point at the Export button${place ? ` on ${place.name}` : ""}.`,
+      });
+      startGuide(guideFlow(`export.${place?.name ?? "page"}`, `Export ${place?.name ?? "this page"}`, steps), autoExport);
       return;
     }
 
@@ -1000,7 +1110,7 @@ export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantCo
   const voiceOn = speech.supported && opts.voice;
   return (
     <>
-      {showing && <ShowMe flow={showing} base={base} onEnd={endShow} />}
+      {showing && <ShowMe key={showing.key} flow={showing} base={base} onEnd={endShow} auto={autoRun} autoExport={autoExport} canAuto={canAuto} />}
       <RoutineRunner />
       {rec.recording && <RecordBar count={rec.steps.length} onStop={() => setToSave(rec.stop())} onCancel={() => rec.stop()} />}
       {toSave && <SaveRoutineDialog steps={toSave} sharing onClose={() => setToSave(null)} onSaved={() => (setToSave(null), loadRoutines())} />}
@@ -1102,6 +1212,24 @@ export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantCo
                 <XIcon />
               </Button>
             </header>
+            {agent && (
+              <div className="flex items-center gap-1 border-b px-3 py-1.5 text-xs" role="radiogroup" aria-label="Assistant mode" data-assistant-mode={mode}>
+                {(["agent", "ask"] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    role="radio"
+                    aria-checked={mode === m}
+                    onClick={() => pickMode(m)}
+                    className={cn("flex items-center gap-1 rounded-full border px-2.5 py-0.5", mode === m ? (m === "agent" ? "border-[#188038] bg-[#188038] text-white" : "border-primary bg-primary text-primary-foreground") : "hover:bg-muted")}
+                  >
+                    {m === "agent" ? <BotIcon className="size-3" /> : <MessageSquareIcon className="size-3" />}
+                    {m === "agent" ? "Agent" : "Ask"}
+                  </button>
+                ))}
+                <span className="ml-1 truncate text-muted-foreground">{mode === "agent" ? "Does the allowed actions itself, as you" : "Answers and prepares actions to confirm"}</span>
+              </div>
+            )}
 
             {showConvos && (
               <div className="max-h-64 overflow-y-auto border-b p-2 text-xs" data-assistant-convos>
