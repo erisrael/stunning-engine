@@ -376,7 +376,7 @@ export function SupportWidget({ appKey: givenKey, initialUser, waitForParent, te
             </button>
           )}
           <p className="min-w-0 flex-1 truncate text-[17px] font-semibold">{title ?? `${s.app.name} ${w.support}`}</p>
-          {stack.length === 1 && langButton}
+          {langButton}
         </header>
       )}
       <CallLayer api={api} s={s} openedForCall={incomingCall} onBusy={setCallBusy}>

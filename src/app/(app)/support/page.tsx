@@ -5,7 +5,7 @@ import { userDirectory } from "@/server/users";
 import { appOrigin } from "@/server/password-reset";
 import * as sd from "@/server/support-desk";
 import { EmptyState, PageHeader } from "@/components/app/primitives";
-import { Desk, Inbox, NewTicket, TicketView } from "@/components/app/support/desk";
+import { AgentBar, Desk, Inbox, NewTicket, TicketView } from "@/components/app/support/desk";
 import { Apps, Canned, DeveloperApi, Monitor, Queues, SupportSettings } from "@/components/app/support/setup";
 import { KnowledgeBaseScreen } from "@/components/app/support/knowledge-base";
 import { StudentLookupDialog } from "@/components/app/support/student-lookup-dialog";
@@ -21,7 +21,7 @@ import { cn } from "@/lib/utils";
 import { CHANNEL_LABELS } from "@/lib/support";
 import { DEPARTMENTS, DEPARTMENT_LABELS } from "@/lib/domain";
 import { Button } from "@/components/ui/button";
-import { MessageCircleIcon, PhoneCallIcon } from "lucide-react";
+import { MessageCircleIcon, MessagesSquareIcon, PhoneCallIcon, SearchIcon } from "lucide-react";
 
 export const metadata = { title: "Customer support" };
 
@@ -61,27 +61,52 @@ export default async function SupportPage({ searchParams }: { searchParams: Prom
     ];
     const detail = sp.ticket ? await sd.ticketDetail(viewer, sp.ticket).catch(() => null) : null;
     const agents = people.filter((p) => queues.some((q) => q.members.includes(p.id)) || cfg.leads.includes(p.id));
-    panel = (
-      <>
-        <div className="flex justify-end">
-          <NewTicket queues={queues.filter((q) => q.active).map((q) => ({ id: q.id, name: q.name }))} />
-        </div>
-        <div className="grid gap-4 lg:grid-cols-[22rem_1fr]">
-          <div className={cn(detail && "hidden lg:block")}>
-            <Inbox rows={rows} view={view} views={views} q={sp.q ?? ""} openId={sp.ticket ?? null} pri={sp.pri ?? ""} ch={sp.ch ?? ""} channels={Object.entries(CHANNEL_LABELS).map(([key, label]) => ({ key, label }))} />
+    // Laid out like Team chat: the page fills the screen under the top bar, with the conversation list on the left,
+    // the conversation in the middle and the customer on the right (a sheet on narrower screens).
+    const myStatus = (await get<{ status: string }>("SELECT status FROM sup_agents WHERE user_id = ?", viewer.id))?.status ?? "offline";
+    const backHref = `/support?view=${encodeURIComponent(view)}${sp.q ? `&q=${encodeURIComponent(sp.q)}` : ""}${sp.pri ? `&pri=${sp.pri}` : ""}${sp.ch ? `&ch=${sp.ch}` : ""}`;
+    return (
+      <Desk bar={false} status={myStatus} record={cfg.recordCalls}>
+        <div data-support-shell className="-mx-3 -my-4 flex h-[calc(100dvh-3.5rem)] flex-col overflow-hidden border-t bg-card sm:-mx-6 sm:-my-6">
+          <div className="flex items-center gap-2 border-b px-3">
+            <h1 className="shrink-0 py-2 text-sm font-semibold">Customer support</h1>
+            <nav className="flex min-w-0 flex-1 gap-0.5 overflow-x-auto [scrollbar-width:none]" aria-label="Support">
+              {tabs.map((t) => (
+                <Link key={t} href={`/support?tab=${t}`} aria-current={tab === t ? "page" : undefined} className={cn("shrink-0 border-b-2 px-2.5 py-2.5 text-xs whitespace-nowrap", tab === t ? "border-primary font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}>
+                  {LABELS[t]}
+                </Link>
+              ))}
+            </nav>
+            <span className="hidden shrink-0 items-center gap-0.5 md:flex">
+              <Button asChild size="icon" variant="ghost" title="Team chat" aria-label="Team chat"><Link href="/chat"><MessageCircleIcon /></Link></Button>
+              <Button asChild size="icon" variant="ghost" title="Call records" aria-label="Call records"><Link href="/call-records"><PhoneCallIcon /></Link></Button>
+            </span>
           </div>
-          {detail ? (
-            <div className="min-w-0 space-y-2">
-            <Link href={`/support?view=${encodeURIComponent(view)}`} className="text-sm text-primary hover:underline lg:hidden">
-              ← Tickets
-            </Link>
-            <TicketView d={detail as Parameters<typeof TicketView>[0]["d"]} agents={agents} queues={queues.map((q) => ({ id: q.id, name: q.name }))} canned={await sd.cannedReplies()} me={viewer.id} lead={lead} articles={(await ch.listArticles(viewer)).filter((x) => x.published).map((x) => ({ id: x.id, title: x.title }))} origin={await appOrigin()} />
-            </div>
-          ) : (
-            <div className="hidden lg:block"><EmptyState title="Choose a ticket" description="Go online to be given new tickets and calls. Tickets that wait because nobody is free are given out as agents come online." /></div>
-          )}
+          <div className="flex min-h-0 flex-1">
+            <aside className={cn("flex w-full shrink-0 flex-col border-r md:w-80 lg:w-96", detail && "hidden md:flex")} aria-label="Conversations">
+              <div className="flex items-center gap-1.5 border-b px-3 py-2">
+                <AgentBar compact status={myStatus} />
+                <span className="ml-auto flex shrink-0 items-center gap-1">
+                  <StudentLookupDialog trigger={<Button size="icon" variant="outline" className="size-8" title="Look up a parent's phone" aria-label="Look up a parent's phone"><SearchIcon /></Button>} />
+                  <NewTicket compact queues={queues.filter((q) => q.active).map((q) => ({ id: q.id, name: q.name }))} />
+                </span>
+              </div>
+              <Inbox rows={rows} view={view} views={views} q={sp.q ?? ""} openId={sp.ticket ?? null} pri={sp.pri ?? ""} ch={sp.ch ?? ""} channels={Object.entries(CHANNEL_LABELS).map(([key, label]) => ({ key, label }))} />
+            </aside>
+            <section className={cn("min-w-0 flex-1 flex-col", detail ? "flex" : "hidden md:flex")} aria-label="Conversation">
+              {detail ? (
+                <TicketView backHref={backHref} d={detail as Parameters<typeof TicketView>[0]["d"]} agents={agents} queues={queues.map((q) => ({ id: q.id, name: q.name }))} canned={await sd.cannedReplies()} me={viewer.id} lead={lead} articles={(await ch.listArticles(viewer)).filter((x) => x.published).map((x) => ({ id: x.id, title: x.title }))} origin={await appOrigin()} />
+              ) : (
+                <div className="chat-wallpaper flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center text-muted-foreground">
+                  <MessagesSquareIcon className="size-10 opacity-40" />
+                  <p className="text-sm font-medium text-foreground/80">Choose a conversation</p>
+                  <p className="max-w-sm text-xs">Go online to be given new conversations and calls. Conversations that wait because nobody is free are given out as agents come online.</p>
+                </div>
+              )}
+            </section>
+          </div>
         </div>
-      </>
+      </Desk>
     );
   } else if (tab === "students") {
     panel = <StudentsTable />;

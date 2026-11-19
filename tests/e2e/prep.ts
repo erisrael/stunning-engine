@@ -670,6 +670,12 @@ PREPS["update-1-2-noor"] = async () => {
 // Admin, Noor access, the new sidebar entries and Finance requests for Admin.
 PREPS["noor-access"] = async () => {
   await passwordOnly();
+  // A person given Chapa whose role's sidebar hides Finance (hiding /finance also covers /finance/chapa).
+  const { saveChapaAccount } = await import("../../src/server/chapa");
+  await saveChapaAccount(await admin(), { name: "Subscriptions", secretKey: "CHASECK-AAA", webhookSecret: "whsec-A", currency: "ETB" });
+  const grantee = (await loadUser((await get<{ id: string }>("SELECT id FROM users WHERE email = 'dawit@demo.local'"))!.id))!;
+  await (await import("../../src/server/chapa-access")).grantChapaAccess(await admin(), { userIds: [grantee.id], actions: ["view"], businesses: "*" });
+  for (const role of grantee.roles) await (await import("../../src/server/ui-prefs")).saveSidebarDefaults(await admin(), role, ["/finance"]);
   return {};
 };
 

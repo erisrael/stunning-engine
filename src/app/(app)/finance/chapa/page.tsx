@@ -14,7 +14,19 @@ export default async function ChapaPage({ searchParams }: { searchParams: Promis
   const viewer = await requireViewer();
   const admin = can(viewer, "users.manage") || can(viewer, "settings.manage");
   const businesses = await chapaBusinesses(viewer);
-  if (!businesses.length && !admin) redirect("/finance?denied=chapa");
+  if (!businesses.length && !admin) {
+    // Given Chapa without Finance: /finance would turn them away, so say why the page is empty instead.
+    const { hasChapaGrant } = await import("@/server/chapa-access");
+    if (!(await hasChapaGrant(viewer))) redirect("/finance?denied=chapa");
+    return (
+      <div className="space-y-4">
+        <PageHeader title="Chapa" description="Payments for the businesses Admin gave you on Chapa." />
+        <p className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground" data-chapa-empty>
+          You have Chapa access, but no business is open to you yet. Admin connects businesses in Chapa settings and chooses which ones you see in Admin, Chapa user access.
+        </p>
+      </div>
+    );
+  }
   const sp = await searchParams;
   const any = (a: keyof (typeof businesses)[number]["rights"]) => businesses.some((b) => b.rights[a]);
   const tabs: PageTab[] = [

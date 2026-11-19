@@ -7,11 +7,11 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { AlertTriangleIcon, ArchiveIcon, BookmarkIcon, CircleIcon, FlagIcon, ForwardIcon, HeadphonesIcon, InfoIcon, Loader2Icon, LockIcon, MessageSquareTextIcon, MicIcon, PaperclipIcon, PencilIcon, PhoneCallIcon, PhoneIcon, PhoneOffIcon, PlusIcon, SendIcon, Trash2Icon, UserIcon } from "lucide-react";
+import { AlertTriangleIcon, ArrowLeftIcon, ArchiveIcon, BookmarkIcon, CircleIcon, FlagIcon, ForwardIcon, InfoIcon, Loader2Icon, LockIcon, MessageSquareTextIcon, PencilIcon, PhoneCallIcon, PhoneIcon, PlusIcon, SearchIcon, SendIcon, Trash2Icon } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import * as SC from "@/app/actions/support-chat";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import * as A from "@/app/actions/support-desk";
@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils";
 import { CustomerPresence, DeskLive, TranscriptLink, seenBy, useAgentTyping, useTicketLive } from "./desk-live";
 import { ChatTimeline, Composer, type ComposerHandle, type KitCall, type KitMenuItem, type KitMsg, type KitQuote, type KitReaction } from "@/components/support-chat/kit";
 import { StudentLookupDialog } from "./student-lookup-dialog";
+import { UserAvatar } from "@/components/app/primitives";
 
 type Res = { ok: boolean; error?: string; data?: unknown };
 type Row = { id: string; number: number; subject: string; status: TicketStatus; priority: Priority; channel: string; queue: string | null; customer: string | null; assignee: string | null; assignee_id: string | null; updated_at: string; sla_first_due: string | null; sla_resolve_due: string | null; first_response_at: string | null; breached: number; unread?: number; escalated_at?: string | null };
@@ -80,7 +81,7 @@ function Sla({ r }: { r: Row }) {
 // Agent status, heartbeat and incoming calls
 // ---------------------------------------------------------------------------
 
-export function AgentBar({ status }: { status: string }) {
+export function AgentBar({ status, compact = false }: { status: string; compact?: boolean }) {
   const { start } = useCallCenter();
   const onCall = (r: Ring) => start({ mode: "answer", ring: r });
   const { act, busy } = useAct();
@@ -99,13 +100,34 @@ export function AgentBar({ status }: { status: string }) {
     };
   }, []);
   return (
-    <div className="flex flex-wrap items-center gap-2" data-agent-bar>
-      <span className="text-sm text-muted-foreground">My status</span>
-      {(["online", "busy", "away", "break", "offline"] as const).map((s) => (
-        <Button key={s} size="sm" variant={status === s ? "default" : "outline"} disabled={busy} onClick={() => act(() => A.setAgentStatusAction(s), STATUS_TOAST[s]!)} data-status={s}>
-          <CircleIcon className={cn("size-3 fill-current", STATUS_DOT[s])} /> {STATUS_LABEL[s]}
-        </Button>
-      ))}
+    <div className={cn("flex items-center gap-2", compact ? "min-w-0 flex-nowrap" : "flex-wrap")} data-agent-bar>
+      <span className={cn("text-sm text-muted-foreground", compact && "sr-only")}>My status</span>
+      {compact ? (
+        // In the desk's list header: one segmented control; only your current status is spelled out.
+        <span role="group" aria-label="My status" className="inline-flex shrink-0 items-center rounded-full border bg-background p-0.5">
+          {(["online", "busy", "away", "break", "offline"] as const).map((s) => (
+            <button
+              key={s}
+              type="button"
+              disabled={busy}
+              aria-pressed={status === s}
+              title={STATUS_LABEL[s]}
+              onClick={() => act(() => A.setAgentStatusAction(s), STATUS_TOAST[s]!)}
+              className={cn("inline-flex h-7 items-center gap-1.5 rounded-full px-2 text-xs transition-colors [&>svg]:shrink-0 disabled:opacity-60", status === s ? "bg-muted font-medium text-foreground ring-1 ring-border" : "text-muted-foreground hover:bg-muted hover:text-foreground")}
+              data-status={s}
+            >
+              <CircleIcon className={cn("size-2.5 fill-current", STATUS_DOT[s])} />
+              {status === s && <span>{STATUS_LABEL[s]}</span>}
+            </button>
+          ))}
+        </span>
+      ) : (
+        (["online", "busy", "away", "break", "offline"] as const).map((s) => (
+          <Button key={s} size="sm" variant={status === s ? "default" : "outline"} disabled={busy} onClick={() => act(() => A.setAgentStatusAction(s), STATUS_TOAST[s]!)} data-status={s}>
+            <CircleIcon className={cn("size-3 fill-current", STATUS_DOT[s])} /> {STATUS_LABEL[s]}
+          </Button>
+        ))
+      )}
       {ring.map((r) => (
         <Button key={r.id} size="sm" className="animate-pulse bg-[#188038] text-white hover:bg-[#188038]/90" onClick={() => onCall(r)} data-ringing={r.id}>
           <PhoneCallIcon /> {r.kind === "staff" ? `${r.host ?? "A colleague"} asks you to join a call (#${r.number})` : r.transferred ? `Transferred to you: ${r.customer ?? "Customer"} (#${r.number})` : `${r.customer ?? "Customer"} is calling (#${r.number})`}
@@ -125,51 +147,66 @@ export function Inbox({ rows, view, views, q, openId, base = "/support?", pri = 
   const join = base.includes("?") ? (base.endsWith("?") ? base : `${base}&`) : `${base}?`;
   const keep = (p: string, c: string) => `${p ? `&pri=${p}` : ""}${c ? `&ch=${c}` : ""}`;
   const href = (v: string, extra = "") => `${join}view=${encodeURIComponent(v)}${search ? `&q=${encodeURIComponent(search)}` : ""}${keep(pri, ch)}${extra}`;
+  // The list of conversations, laid out like Team chat: search, the lists as chips, then one row per conversation.
   return (
-    <div className="space-y-2" data-inbox>
-      <div className="flex flex-wrap gap-1">
-        {views.map((v) => (
-          <Link key={v.key} href={href(v.key)} className={cn("rounded-full border px-2.5 py-1 text-xs", view === v.key ? "border-primary bg-primary/10 font-medium" : "text-muted-foreground hover:bg-muted")} data-view={v.key}>
-            {v.label}
-            {v.count ? ` ${v.count}` : ""}
-          </Link>
-        ))}
-      </div>
-      <form onSubmit={(e) => (e.preventDefault(), router.push(href(view)))}>
-        <Input aria-label="Search tickets" placeholder="Search: number, customer, phone or words in messages" value={search} onChange={(e) => setSearch(e.target.value)} className="h-8" />
-      </form>
-      <div className="flex gap-1" aria-label="Filters">
-        <select aria-label="Priority filter" className={cn(select, "h-7 flex-1 text-xs")} value={pri} onChange={(e) => router.push(`${join}view=${encodeURIComponent(view)}${search ? `&q=${encodeURIComponent(search)}` : ""}${keep(e.target.value, ch)}`)}>
-          <option value="">Any priority</option>
-          {PRIORITIES.map((p) => <option key={p} value={p}>{PRIORITY_LABELS[p]}</option>)}
-        </select>
-        <select aria-label="Channel filter" className={cn(select, "h-7 flex-1 text-xs")} value={ch} onChange={(e) => router.push(`${join}view=${encodeURIComponent(view)}${search ? `&q=${encodeURIComponent(search)}` : ""}${keep(pri, e.target.value)}`)}>
-          <option value="">Any channel</option>
-          {channels.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
-        </select>
-      </div>
-      <ul className="divide-y rounded-lg border">
-        {rows.map((r) => (
-          <li key={r.id}>
-            <Link href={`${join}view=${encodeURIComponent(view)}${keep(pri, ch)}&ticket=${r.id}`} className={cn("block space-y-0.5 px-3 py-2 hover:bg-muted/50", r.id === openId && "bg-primary/5")} data-ticket-row={r.number}>
-              <div className="flex items-center gap-2">
-                <span className="font-mono text-xs text-muted-foreground">#{r.number}</span>
-                <span className={cn("min-w-0 flex-1 truncate text-sm", Number(r.unread) > 0 ? "font-semibold" : "font-medium")}>{r.subject}</span>
-                {r.escalated_at && <AlertTriangleIcon className="size-3.5 shrink-0 text-[#D93025]" aria-label="Escalated" />}
-                {Number(r.unread) > 0 && <span className="rounded-full bg-primary px-1.5 text-[10px] font-semibold text-primary-foreground" aria-label={`${r.unread} unread`} data-unread>{r.unread}</span>}
-                {r.priority !== "normal" && <span className={cn("rounded px-1.5 text-[10px] uppercase", PRI[r.priority])}>{PRIORITY_LABELS[r.priority]}</span>}
-              </div>
-              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                <span>{r.customer ?? "Customer"}</span>
-                <span>· {TICKET_STATUS_LABELS[r.status]}</span>
-                <span>· {r.assignee ?? "Unassigned"}</span>
-                <span>· {ago(r.updated_at)}</span>
-                <Sla r={r} />
-              </div>
+    <div className="flex min-h-0 flex-1 flex-col" data-inbox>
+      <div className="space-y-2 border-b p-3">
+        <form className="relative" onSubmit={(e) => (e.preventDefault(), router.push(href(view)))}>
+          <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input aria-label="Search tickets" placeholder="Search number, customer, phone or words" value={search} onChange={(e) => setSearch(e.target.value)} className="h-9 rounded-full bg-muted/60 pl-8" />
+        </form>
+        <nav aria-label="Conversation lists" className="-mx-3 flex gap-1 overflow-x-auto px-3 pb-0.5 [scrollbar-width:none]">
+          {views.map((v) => (
+            <Link key={v.key} href={href(v.key)} aria-current={view === v.key ? "page" : undefined} className={cn("shrink-0 rounded-full border px-2.5 py-1 text-xs whitespace-nowrap", view === v.key ? "border-primary bg-primary/10 font-medium text-foreground" : "text-muted-foreground hover:bg-muted")} data-view={v.key}>
+              {v.label}
+              {v.count ? <span className="ml-1 rounded-full bg-primary px-1.5 text-[10px] font-semibold text-primary-foreground">{v.count}</span> : null}
             </Link>
-          </li>
-        ))}
-        {rows.length === 0 && <li className="px-3 py-6 text-center text-sm text-muted-foreground">Nothing here.</li>}
+          ))}
+        </nav>
+        <div className="flex gap-1" aria-label="Filters">
+          <select aria-label="Priority filter" className={cn(select, "h-7 min-w-0 flex-1 rounded-full text-xs")} value={pri} onChange={(e) => router.push(`${join}view=${encodeURIComponent(view)}${search ? `&q=${encodeURIComponent(search)}` : ""}${keep(e.target.value, ch)}`)}>
+            <option value="">Any priority</option>
+            {PRIORITIES.map((p) => <option key={p} value={p}>{PRIORITY_LABELS[p]}</option>)}
+          </select>
+          <select aria-label="Channel filter" className={cn(select, "h-7 min-w-0 flex-1 rounded-full text-xs")} value={ch} onChange={(e) => router.push(`${join}view=${encodeURIComponent(view)}${search ? `&q=${encodeURIComponent(search)}` : ""}${keep(pri, e.target.value)}`)}>
+            <option value="">Any channel</option>
+            {channels.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
+          </select>
+        </div>
+      </div>
+      <ul className="min-h-0 flex-1 overflow-y-auto">
+        {rows.map((r) => {
+          const unread = Number(r.unread) > 0;
+          return (
+            <li key={r.id}>
+              <Link href={`${join}view=${encodeURIComponent(view)}${keep(pri, ch)}&ticket=${r.id}`} aria-current={r.id === openId ? "true" : undefined} className={cn("flex items-center gap-3 px-3 py-2.5 hover:bg-muted/60", r.id === openId && "bg-primary/10 hover:bg-primary/10")} data-ticket-row={r.number}>
+                <span className="relative shrink-0">
+                  <UserAvatar name={r.customer ?? "Customer"} size="md" className="size-11 text-sm" />
+                  {r.escalated_at && <AlertTriangleIcon className="absolute -right-0.5 -bottom-0.5 size-4 rounded-full bg-card p-0.5 text-[#D93025]" aria-label="Escalated" />}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-1">
+                    <span className={cn("truncate", unread ? "font-semibold" : "font-medium")}>{r.customer ?? "Customer"}</span>
+                    <span className="ml-auto shrink-0 text-[11px] text-muted-foreground">{ago(r.updated_at)}</span>
+                  </span>
+                  <span className="flex items-center gap-2">
+                    <span className={cn("truncate text-sm", unread ? "text-foreground" : "text-muted-foreground")}>
+                      <span className="font-mono text-xs">#{r.number}</span> {r.subject}
+                    </span>
+                    {unread && <span className="ml-auto flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-semibold text-primary-foreground" aria-label={`${r.unread} unread`} data-unread>{r.unread}</span>}
+                  </span>
+                  <span className="flex flex-wrap items-center gap-x-1.5 text-[11px] text-muted-foreground">
+                    <span>{TICKET_STATUS_LABELS[r.status]}</span>
+                    <span>· {r.assignee ?? "Unassigned"}</span>
+                    {r.priority !== "normal" && <span className={cn("rounded px-1 text-[10px] uppercase", PRI[r.priority])}>{PRIORITY_LABELS[r.priority]}</span>}
+                    <Sla r={r} />
+                  </span>
+                </span>
+              </Link>
+            </li>
+          );
+        })}
+        {rows.length === 0 && <li className="p-6 text-center text-sm text-muted-foreground">Nothing here.</li>}
       </ul>
     </div>
   );
@@ -209,12 +246,15 @@ function CustomerPhone({ customer, ticketId }: { customer: NonNullable<Detail["c
   );
 }
 
-export function TicketView({ d, agents, queues, canned, me, lead, articles = [], origin = "" }: { d: Detail; agents: { id: string; name: string }[]; queues: { id: string; name: string }[]; canned: { id: string; title: string; body: string }[]; me: string; lead: boolean; articles?: { id: string; title: string }[]; origin?: string }) {
+export function TicketView({ d, agents, queues, canned, me, lead, articles = [], origin = "", backHref }: { d: Detail; agents: { id: string; name: string }[]; queues: { id: string; name: string }[]; canned: { id: string; title: string; body: string }[]; me: string; lead: boolean; articles?: { id: string; title: string }[]; origin?: string; backHref?: string }) {
   const { act, busy } = useAct();
   const t = d.ticket as { id: string; number: number; subject: string; status: TicketStatus; priority: Priority; channel: string; queue_id: string | null; assignee_id: string | null; assignee: string | null; created_at: string; rating: number | null; rating_comment: string | null; tags: string; escalated_at?: string | null; escalation_note?: string | null; archived_at?: string | null; offered_at?: string | null; legal_hold?: number };
   const [forwardFor, setForwardFor] = React.useState<string | null>(null);
   const [detailsFor, setDetailsFor] = React.useState<string | null>(null);
   const [panel, setPanel] = React.useState(false);
+  // The customer panel: a column on wide screens (shown until closed), a sheet on narrower ones.
+  const [info, setInfo] = React.useState(true);
+  const openInfo = () => (window.matchMedia("(min-width: 1280px)").matches ? setInfo((v) => !v) : setPanel(true));
   const [body, setBody] = React.useState("");
   const [internal, setInternal] = React.useState(false);
   const [after, setAfter] = React.useState<TicketStatus | "">("");
@@ -297,38 +337,56 @@ export function TicketView({ d, agents, queues, canned, me, lead, articles = [],
     const r = await fetch(`/api/support/upload?${qs}`, { method: "POST", headers: { "Content-Type": blob.type || "application/octet-stream" }, body: blob });
     if (!r.ok) throw new Error(((await r.json().catch(() => ({}))) as { error?: string }).error ?? "Could not send the file.");
   };
+  const sel = cn(select, "h-7 max-w-40 shrink-0 text-xs");
   return (
-    <div className="space-y-3" data-ticket={t.number}>
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="flex flex-wrap items-center gap-2 text-base">
-            <span className="font-mono text-sm text-muted-foreground">#{t.number}</span> {t.subject}
-            <span className="ml-auto flex items-center gap-3">
-              <CustomerPresence />
-              <TranscriptLink ticketId={t.id} />
+    <div className="flex h-full min-h-0" data-ticket={t.number}>
+      <div className="flex min-w-0 flex-1 flex-col">
+        {/* Like a Team chat conversation: who it is with, their presence, calls and the details button. */}
+        <header className="flex items-center gap-2 border-b px-3 py-2 sm:gap-3" data-ticket-header>
+          {backHref && (
+            <Button size="icon" variant="ghost" className="shrink-0 md:hidden" asChild aria-label="Back to conversations">
+              <Link href={backHref}>
+                <ArrowLeftIcon />
+              </Link>
+            </Button>
+          )}
+          <button type="button" className="flex min-w-0 flex-1 items-center gap-3 text-left" onClick={openInfo}>
+            <UserAvatar name={d.customer?.name ?? "Customer"} size="md" className="size-10 shrink-0 text-sm" />
+            <span className="min-w-0">
+              <span className="flex items-center gap-2">
+                <span className="truncate font-semibold">{d.customer?.name ?? "Customer"}</span>
+                <CustomerPresence />
+              </span>
+              <span className="block truncate text-xs text-muted-foreground">
+                <span className="font-mono">#{t.number}</span> {t.subject} · {CHANNEL_LABELS[t.channel] ?? t.channel} · opened {when(t.created_at)}
+                {t.rating !== null && ` · rated ${t.rating} of 5${t.rating_comment ? `: "${t.rating_comment}"` : ""}`}
+              </span>
             </span>
-          </CardTitle>
-          <CardDescription>
-            {CHANNEL_LABELS[t.channel] ?? t.channel} · opened {when(t.created_at)}
-            {t.rating !== null && ` · rated ${t.rating} of 5${t.rating_comment ? `: "${t.rating_comment}"` : ""}`}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-wrap items-center gap-2 text-sm">
-          <select aria-label="Status" className={select} value={t.status} disabled={busy} onChange={(e) => act(() => A.setTicketStatusAction(t.id, e.target.value as TicketStatus), "Status changed")}>
+          </button>
+          <span className="hidden shrink-0 sm:inline-flex">
+            <TranscriptLink ticketId={t.id} />
+          </span>
+          <Button size="icon" variant={info ? "secondary" : "ghost"} className="shrink-0" aria-label="Customer details" title="Customer details" aria-pressed={info} onClick={openInfo} data-customer-panel-open>
+            <InfoIcon />
+          </Button>
+        </header>
+        {/* The conversation's state and actions in one slim row that scrolls sideways on small screens. */}
+        <div className="flex items-center gap-1.5 overflow-x-auto border-b bg-muted/20 px-3 py-1.5 text-sm [scrollbar-width:thin]" data-ticket-tools>
+          <select aria-label="Status" className={sel} value={t.status} disabled={busy} onChange={(e) => act(() => A.setTicketStatusAction(t.id, e.target.value as TicketStatus), "Status changed")}>
             {TICKET_STATUSES.map((s) => (
               <option key={s} value={s}>
                 {TICKET_STATUS_LABELS[s]}
               </option>
             ))}
           </select>
-          <select aria-label="Priority" className={select} value={t.priority} disabled={busy} onChange={(e) => act(() => A.updateTicketAction(t.id, { priority: e.target.value as Priority }), "Priority changed")}>
+          <select aria-label="Priority" className={sel} value={t.priority} disabled={busy} onChange={(e) => act(() => A.updateTicketAction(t.id, { priority: e.target.value as Priority }), "Priority changed")}>
             {PRIORITIES.map((p) => (
               <option key={p} value={p}>
                 {PRIORITY_LABELS[p]}
               </option>
             ))}
           </select>
-          <select aria-label="Queue" className={select} value={move?.queueId ?? t.queue_id ?? ""} disabled={busy} onChange={(e) => (e.target.value && e.target.value !== t.queue_id ? setMove({ queueId: e.target.value, note: move?.note ?? "" }) : setMove(null))}>
+          <select aria-label="Queue" className={sel} value={move?.queueId ?? t.queue_id ?? ""} disabled={busy} onChange={(e) => (e.target.value && e.target.value !== t.queue_id ? setMove({ queueId: e.target.value, note: move?.note ?? "" }) : setMove(null))}>
             <option value="" disabled={!!t.queue_id}>
               No queue
             </option>
@@ -339,7 +397,7 @@ export function TicketView({ d, agents, queues, canned, me, lead, articles = [],
             ))}
           </select>
           {lead ? (
-            <select aria-label="Assignee" className={select} value={t.assignee_id ?? ""} disabled={busy} onChange={(e) => act(() => A.assignTicketAction(t.id, e.target.value || null), "Assigned")}>
+            <select aria-label="Assignee" className={sel} value={t.assignee_id ?? ""} disabled={busy} onChange={(e) => act(() => A.assignTicketAction(t.id, e.target.value || null), "Assigned")}>
               <option value="">Unassigned</option>
               {agents.map((a) => (
                 <option key={a.id} value={a.id}>
@@ -348,35 +406,52 @@ export function TicketView({ d, agents, queues, canned, me, lead, articles = [],
               ))}
             </select>
           ) : t.assignee_id === me ? (
-            <Button size="sm" variant="outline" disabled={busy} onClick={() => act(() => A.assignTicketAction(t.id, null), "Back to the queue")}>
+            <Button size="xs" variant="outline" className="shrink-0" disabled={busy} onClick={() => act(() => A.assignTicketAction(t.id, null), "Back to the queue")}>
               Give back
             </Button>
           ) : (
-            <Button size="sm" disabled={busy} onClick={() => act(() => A.assignTicketAction(t.id, me), "It is yours")}>
+            <Button size="xs" className="shrink-0" disabled={busy} onClick={() => act(() => A.assignTicketAction(t.id, me), "It is yours")}>
               Take it
             </Button>
           )}
-          <span className="text-xs text-muted-foreground">{t.assignee ? `With ${t.assignee}` : "Nobody has it yet"}</span>
-          <span className="ml-auto" />
-          <Button size="sm" variant={t.escalated_at ? "default" : "ghost"} disabled={busy} onClick={() => { if (t.escalated_at) void act(() => SC.escalateTicketAction(t.id, null, false), "No longer escalated"); else { const why = window.prompt("Why escalate? The support leads are told."); if (why !== null) void act(() => SC.escalateTicketAction(t.id, why), "Escalated"); } }} data-escalate>
-            <AlertTriangleIcon /> {t.escalated_at ? "Escalated" : "Escalate"}
-          </Button>
+          <span className="shrink-0 text-xs whitespace-nowrap text-muted-foreground">{t.assignee ? `With ${t.assignee}` : "Nobody has it yet"}</span>
           {/* Offered by a queue where agents accept: take it, or pass it to the next agent. */}
           {t.offered_at && t.assignee_id === me && (
-            <span className="flex items-center gap-1 rounded-md bg-primary/10 px-2 py-1 text-xs" data-offered>
+            <span className="flex shrink-0 items-center gap-1 rounded-md bg-primary/10 px-2 py-0.5 text-xs" data-offered>
               Offered to you
               <Button size="xs" disabled={busy} onClick={() => act(() => SC.acceptConversationAction(t.id), "Accepted: it is yours")} data-offer-accept>Accept</Button>
               <Button size="xs" variant="outline" disabled={busy} onClick={() => act(() => SC.declineConversationAction(t.id), "Declined: it goes to the next agent")} data-offer-decline>Decline</Button>
             </span>
           )}
-          <Button size="sm" variant="ghost" disabled={busy} title={t.archived_at ? "Bring it back to the working lists" : "Hide it from the working lists; nothing is deleted and it can be restored"} onClick={() => act(() => SC.archiveTicketAction(t.id, !t.archived_at), t.archived_at ? "Restored to the lists" : "Archived (restore it from Archived)")} data-archive>
+          <span className="ml-auto" />
+          <span className="flex shrink-0 items-center [&_button]:h-7 [&_button]:px-2 [&_button]:text-xs">
+            <DialButtons ticketId={t.id} customer={d.customer?.name ?? null} number={t.number} phone={d.customer?.phone ?? null} />
+          </span>
+          <Button size="xs" variant="ghost" className="shrink-0" onClick={() => setPhone(phone ? null : { direction: "outbound", minutes: 5, notes: "" })}>
+            <PhoneIcon /> Log a phone call
+          </Button>
+          {d.customer?.phone && (
+            <Button size="xs" variant="ghost" className="shrink-0" onClick={() => setSms(sms === null ? "" : null)} data-sms-open>
+              <MessageSquareTextIcon /> Send SMS
+            </Button>
+          )}
+          <Button size="xs" variant={t.escalated_at ? "default" : "ghost"} className="shrink-0" disabled={busy} onClick={() => { if (t.escalated_at) void act(() => SC.escalateTicketAction(t.id, null, false), "No longer escalated"); else { const why = window.prompt("Why escalate? The support leads are told."); if (why !== null) void act(() => SC.escalateTicketAction(t.id, why), "Escalated"); } }} data-escalate>
+            <AlertTriangleIcon /> {t.escalated_at ? "Escalated" : "Escalate"}
+          </Button>
+          <Button asChild size="xs" variant="ghost" className="shrink-0">
+            <Link href={`/support-requests?ticket=${t.id}`} data-new-support-request>
+              <SendIcon /> Support request
+            </Link>
+          </Button>
+          <Button size="xs" variant="ghost" className="shrink-0" disabled={busy} title={t.archived_at ? "Bring it back to the working lists" : "Hide it from the working lists; nothing is deleted and it can be restored"} onClick={() => act(() => SC.archiveTicketAction(t.id, !t.archived_at), t.archived_at ? "Restored to the lists" : "Archived (restore it from Archived)")} data-archive>
             <ArchiveIcon /> {t.archived_at ? "Restore" : "Archive"}
           </Button>
           {d.retention && (
             <>
               <Button
-                size="sm"
+                size="xs"
                 variant={t.legal_hold ? "default" : "ghost"}
+                className="shrink-0"
                 disabled={busy}
                 title="A conversation under legal hold is never deleted"
                 onClick={() => {
@@ -389,9 +464,9 @@ export function TicketView({ d, agents, queues, canned, me, lead, articles = [],
                 <LockIcon /> {t.legal_hold ? "Legal hold" : "Hold"}
               </Button>
               <Button
-                size="sm"
+                size="xs"
                 variant="ghost"
-                className="text-destructive"
+                className="shrink-0 text-destructive"
                 disabled={busy || !!t.legal_hold}
                 title={t.legal_hold ? "Lift the legal hold first" : "Delete permanently: the messages and files go for good; call records stay"}
                 onClick={async () => {
@@ -405,63 +480,43 @@ export function TicketView({ d, agents, queues, canned, me, lead, articles = [],
               </Button>
             </>
           )}
-          <Button asChild size="sm" variant="ghost">
-            <Link href={`/support-requests?ticket=${t.id}`} data-new-support-request>
-              <SendIcon /> Support request
-            </Link>
-          </Button>
-          <Button size="sm" variant="ghost" className="xl:hidden" onClick={() => setPanel(true)} data-customer-panel-open>
-            <UserIcon /> Customer
-          </Button>
-          <DialButtons ticketId={t.id} customer={d.customer?.name ?? null} number={t.number} phone={d.customer?.phone ?? null} />
-          <Button size="sm" variant="ghost" onClick={() => setPhone(phone ? null : { direction: "outbound", minutes: 5, notes: "" })}>
-            <PhoneIcon /> Log a phone call
-          </Button>
-          {d.customer?.phone && (
-            <Button size="sm" variant="ghost" onClick={() => setSms(sms === null ? "" : null)} data-sms-open>
-              <MessageSquareTextIcon /> Send SMS
-            </Button>
-          )}
-        </CardContent>
+        </div>
         {move && (
-          <CardContent className="flex flex-wrap items-end gap-2 border-t pt-3 text-sm" data-transfer>
+          <div className="flex flex-wrap items-end gap-2 border-b bg-muted/30 px-3 py-2 text-sm" data-transfer>
             <span className="text-xs text-muted-foreground">Move to {queues.find((q) => q.id === move.queueId)?.name}. The customer keeps the same conversation.</span>
-            <Input aria-label="Note for the next team" placeholder="Note for the next team, e.g. paid by telebirr on 3 Nov, not showing" className="h-8 min-w-72 flex-1" value={move.note} onChange={(e) => setMove({ ...move, note: e.target.value })} />
+            <Input aria-label="Note for the next team" placeholder="Note for the next team, e.g. paid by telebirr on 3 Nov, not showing" className="h-8 min-w-60 flex-1" value={move.note} onChange={(e) => setMove({ ...move, note: e.target.value })} />
             <Button size="sm" disabled={busy || !move.note.trim()} onClick={async () => (await act(() => transferTicketAction(t.id, move.queueId, move.note), "Moved with your note")) && setMove(null)}>
               Move
             </Button>
             <Button size="sm" variant="ghost" onClick={() => setMove(null)}>
               Cancel
             </Button>
-          </CardContent>
+          </div>
         )}
         {sms !== null && (
-          <CardContent className="flex flex-wrap items-end gap-2 border-t pt-3 text-sm" data-send-sms>
+          <div className="flex flex-wrap items-end gap-2 border-b bg-muted/30 px-3 py-2 text-sm" data-send-sms>
             <span className="text-xs text-muted-foreground">To {d.customer?.phone}. Kept on the ticket.</span>
-            <Input aria-label="SMS text" maxLength={600} placeholder="Short message" className="h-8 min-w-72 flex-1" value={sms} onChange={(e) => setSms(e.target.value)} />
+            <Input aria-label="SMS text" maxLength={600} placeholder="Short message" className="h-8 min-w-60 flex-1" value={sms} onChange={(e) => setSms(e.target.value)} />
             <Button size="sm" disabled={busy || !sms.trim()} onClick={async () => (await act(() => A.agentSmsAction(t.id, sms), "SMS sent")) && setSms(null)}>
               Send
             </Button>
-          </CardContent>
+          </div>
         )}
         {phone && (
-          <CardContent className="flex flex-wrap items-end gap-2 border-t pt-3 text-sm" data-log-call>
+          <div className="flex flex-wrap items-end gap-2 border-b bg-muted/30 px-3 py-2 text-sm" data-log-call>
             <select aria-label="Direction" className={select} value={phone.direction} onChange={(e) => setPhone({ ...phone, direction: e.target.value as "inbound" })}>
               <option value="outbound">I called the customer</option>
               <option value="inbound">The customer called</option>
             </select>
             <Input aria-label="Minutes" type="number" min={0} className="h-8 w-24" value={phone.minutes} onChange={(e) => setPhone({ ...phone, minutes: Number(e.target.value) })} />
-            <Input aria-label="What was said" placeholder="What was said" className="h-8 w-80" value={phone.notes} onChange={(e) => setPhone({ ...phone, notes: e.target.value })} />
+            <Input aria-label="What was said" placeholder="What was said" className="h-8 min-w-60 flex-1" value={phone.notes} onChange={(e) => setPhone({ ...phone, notes: e.target.value })} />
             <Button size="sm" disabled={busy || !phone.notes.trim()} onClick={async () => (await act(() => A.logPhoneCallAction(t.id, phone), "Call logged")) && setPhone(null)}>
               Save
             </Button>
-          </CardContent>
+          </div>
         )}
-      </Card>
 
-      <div className="grid gap-3 xl:grid-cols-[1fr_18rem]">
-        <Card>
-          <CardContent className="flex h-[34rem] flex-col p-0" data-desk-chat>
+        <div className="flex min-h-0 flex-1 flex-col" data-desk-chat>
             <ChatTimeline
               messages={kitMsgs}
               calls={kitCalls}
@@ -512,7 +567,7 @@ export function TicketView({ d, agents, queues, canned, me, lead, articles = [],
                   {articles.length > 0 && !internal && (
                     <select
                       aria-label="Help article"
-                      className={cn(select, "h-7 text-xs")}
+                      className={cn(select, "h-7 max-w-44 text-xs")}
                       value=""
                       onChange={(e) => {
                         const x = articles.find((y) => y.id === e.target.value);
@@ -528,7 +583,7 @@ export function TicketView({ d, agents, queues, canned, me, lead, articles = [],
                     </select>
                   )}
                   {canned.length > 0 && (
-                    <select aria-label="Saved reply" className={cn(select, "h-7 text-xs")} value="" onChange={(e) => setBody((b) => `${b}${b ? "\n" : ""}${canned.find((c) => c.id === e.target.value)?.body ?? ""}`)}>
+                    <select aria-label="Saved reply" className={cn(select, "h-7 max-w-44 text-xs")} value="" onChange={(e) => setBody((b) => `${b}${b ? "\n" : ""}${canned.find((c) => c.id === e.target.value)?.body ?? ""}`)}>
                       <option value="">Saved replies…</option>
                       {canned.map((c) => (
                         <option key={c.id} value={c.id}>
@@ -538,7 +593,7 @@ export function TicketView({ d, agents, queues, canned, me, lead, articles = [],
                     </select>
                   )}
                   {!internal && (
-                    <select aria-label="Then" className={cn(select, "h-7 text-xs")} value={after} onChange={(e) => setAfter(e.target.value as TicketStatus | "")}>
+                    <select aria-label="Then" className={cn(select, "h-7 max-w-48 text-xs")} value={after} onChange={(e) => setAfter(e.target.value as TicketStatus | "")}>
                       <option value="">and keep the status</option>
                       <option value="pending">and wait for the customer</option>
                       <option value="solved">and mark it solved</option>
@@ -547,27 +602,30 @@ export function TicketView({ d, agents, queues, canned, me, lead, articles = [],
                 </div>
               }
             />
-          </CardContent>
-        </Card>
-
-        <div className="hidden space-y-3 text-sm xl:block" data-customer-panel>{side()}</div>
-        <Sheet open={panel} onOpenChange={setPanel}>
-          <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-md">
-            <SheetHeader>
-              <SheetTitle>{d.customer?.name ?? "Customer"}</SheetTitle>
-              <SheetDescription>#{t.number} · {t.subject}</SheetDescription>
-            </SheetHeader>
-            <div className="space-y-3 px-4 pb-6 text-sm">{side()}</div>
-          </SheetContent>
-        </Sheet>
+        </div>
       </div>
+
+      {info && (
+        <aside className="hidden w-80 shrink-0 flex-col overflow-y-auto border-l bg-card text-sm xl:flex 2xl:w-96" data-customer-panel>
+          {side()}
+        </aside>
+      )}
+      <Sheet open={panel} onOpenChange={setPanel}>
+        <SheetContent side="right" className="w-full overflow-y-auto p-0 sm:max-w-md">
+          <SheetHeader className="sr-only">
+            <SheetTitle>{d.customer?.name ?? "Customer"}</SheetTitle>
+            <SheetDescription>#{t.number} · {t.subject}</SheetDescription>
+          </SheetHeader>
+          <div className="text-sm">{side()}</div>
+        </SheetContent>
+      </Sheet>
       <ForwardSheet messageId={forwardFor} onClose={() => setForwardFor(null)} />
       <DetailsSheet messageId={detailsFor} onClose={() => setDetailsFor(null)} />
     </div>
   );
 
-  // The customer and the conversation: identity, Telegram, contacts, records, agent, priority, tags, other
-  // conversations, calls and the activity.
+  // The customer and the conversation, like Team chat's contact panel: who they are, Telegram, contacts, records,
+  // agent, priority, tags, other conversations, calls and the activity.
   function side() {
     const tags = (() => {
       try {
@@ -578,98 +636,109 @@ export function TicketView({ d, agents, queues, canned, me, lead, articles = [],
     })();
     return (
       <>
-        <Card>
-          <CardContent className="space-y-1 pt-3 text-xs" data-conversation-facts>
-            <p><span className="text-muted-foreground">Agent:</span> {t.assignee ?? "Nobody yet"}</p>
-            <p><span className="text-muted-foreground">Priority:</span> {PRIORITY_LABELS[t.priority]}</p>
-            {t.escalated_at && <p className="text-[#D93025]"><span className="text-muted-foreground">Escalated:</span> {when(t.escalated_at)}{t.escalation_note ? `, ${t.escalation_note}` : ""}</p>}
-            <form className="flex gap-1 pt-1" onSubmit={(e) => { e.preventDefault(); const v = String(new FormData(e.currentTarget).get("tags") ?? ""); void act(() => A.updateTicketAction(t.id, { tags: v.split(",").map((x) => x.trim()).filter(Boolean) }), "Tags saved"); }}>
-              <Input name="tags" aria-label="Tags" defaultValue={tags.join(", ")} placeholder="Tags, separated by commas" className="h-7 text-xs" />
-              <Button size="xs" type="submit" disabled={busy}>Save</Button>
-            </form>
-          </CardContent>
-        </Card>
-        {d.customer && (
-          <Card>
-            <CardHeader className="pb-1">
-              <CardTitle className="text-sm">{d.customer.name}</CardTitle>
-                <CardDescription>
-                  {[d.customer.email, d.customer.phone, d.customer.app].filter(Boolean).join(" · ")}
-                  {d.customer.verified && " · signed in"}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-1 text-xs">
-                <CustomerPhone customer={d.customer} ticketId={t.id} />
-                {d.customer.telegram && d.customer.external_id && <p data-telegram-id><span className="text-muted-foreground">Telegram ID:</span> <span className="tabular-nums">{d.customer.external_id.replace(/^tg:/, "")}</span></p>}
-                {Object.entries(d.customer.meta).filter(([k]) => !k.startsWith("tg")).map(([k, v]) => (
-                  <p key={k}>
-                    <span className="text-muted-foreground">{k}:</span> {v}
-                  </p>
-                ))}
-                {d.history.length > 0 && <p className="pt-1 font-medium">Other tickets</p>}
-                {d.history.map((h) => (
-                  <Link key={h.id} href={`/support?ticket=${h.id}`} className="block truncate hover:underline">
-                    #{h.number} {h.subject} ({TICKET_STATUS_LABELS[h.status as TicketStatus] ?? h.status})
-                  </Link>
-                ))}
-              </CardContent>
-            </Card>
+        <div className="flex flex-col items-center gap-1 border-b px-4 py-5 text-center">
+          <UserAvatar name={d.customer?.name ?? "Customer"} size="md" className="size-16 text-lg" />
+          <p className="mt-1 font-semibold">{d.customer?.name ?? "Customer"}</p>
+          {d.customer && (
+            <p className="text-xs text-muted-foreground">
+              {[d.customer.app, d.customer.verified ? "signed in" : null].filter(Boolean).join(" · ") || (CHANNEL_LABELS[t.channel] ?? t.channel)}
+            </p>
           )}
-          <Card>
-            <CardHeader className="pb-1">
-              <CardTitle className="text-sm">Calls</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2 text-xs" data-calls>
-              {d.calls.length === 0 && <p className="text-muted-foreground">No calls.</p>}
-              {d.calls.map((c) => (
-                <div key={c.id} className="space-y-1 rounded border p-1.5">
-                  <p>
-                    {c.kind === "phone" ? "Phone" : "App call"}, {c.direction === "outbound" ? "out" : "in"} · {c.status}
-                    {c.duration_s !== null && ` · ${Math.floor(c.duration_s / 60)}:${String(c.duration_s % 60).padStart(2, "0")}`} · {c.agent ?? ""}
-                  </p>
-                  <p className="text-muted-foreground">{when(c.started_at)}</p>
-                  {c.notes && <p>{c.notes}</p>}
-                  {c.recording_id && <audio controls preload="none" src={`/api/support/recording/${c.id}`} className="h-8 w-full" data-recording-player />}
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-1">
-              <CardTitle className="text-sm">Activity</CardTitle>
-            </CardHeader>
-            <CardContent className="max-h-60 space-y-1 overflow-y-auto text-xs">
-              {d.log.map((l, i) => (
-                <p key={i}>
-                  <span className="text-muted-foreground">{ago(l.at)}</span> {l.who ?? "System"}: {l.kind.replace(/_/g, " ")}
-                  {l.detail ? `, ${l.detail}` : ""}
-                </p>
-              ))}
-            </CardContent>
-          </Card>
+          <CustomerPresence />
+        </div>
+        <PanelSection title="Conversation" data-conversation-facts>
+          <p><span className="text-muted-foreground">Agent:</span> {t.assignee ?? "Nobody yet"}</p>
+          <p><span className="text-muted-foreground">Priority:</span> {PRIORITY_LABELS[t.priority]}</p>
+          <p><span className="text-muted-foreground">Status:</span> {TICKET_STATUS_LABELS[t.status]}</p>
+          {t.escalated_at && <p className="text-[#D93025]"><span className="text-muted-foreground">Escalated:</span> {when(t.escalated_at)}{t.escalation_note ? `, ${t.escalation_note}` : ""}</p>}
+          <form className="flex gap-1 pt-1" onSubmit={(e) => { e.preventDefault(); const v = String(new FormData(e.currentTarget).get("tags") ?? ""); void act(() => A.updateTicketAction(t.id, { tags: v.split(",").map((x) => x.trim()).filter(Boolean) }), "Tags saved"); }}>
+            <Input name="tags" aria-label="Tags" defaultValue={tags.join(", ")} placeholder="Tags, separated by commas" className="h-7 text-xs" />
+            <Button size="xs" type="submit" disabled={busy}>Save</Button>
+          </form>
+        </PanelSection>
+        {d.customer && (
+          <PanelSection title="Contact">
+            {d.customer.email && <p>{d.customer.email}</p>}
+            <CustomerPhone customer={d.customer} ticketId={t.id} />
+            {d.customer.telegram && d.customer.external_id && <p data-telegram-id><span className="text-muted-foreground">Telegram ID:</span> <span className="tabular-nums">{d.customer.external_id.replace(/^tg:/, "")}</span></p>}
+            {Object.entries(d.customer.meta).filter(([k]) => !k.startsWith("tg")).map(([k, v]) => (
+              <p key={k}>
+                <span className="text-muted-foreground">{k}:</span> {v}
+              </p>
+            ))}
+          </PanelSection>
+        )}
+        {d.history.length > 0 && (
+          <PanelSection title="Other conversations">
+            {d.history.map((h) => (
+              <Link key={h.id} href={`/support?ticket=${h.id}`} className="block truncate hover:underline">
+                #{h.number} {h.subject} ({TICKET_STATUS_LABELS[h.status as TicketStatus] ?? h.status})
+              </Link>
+            ))}
+          </PanelSection>
+        )}
+        <PanelSection title="Calls" data-calls>
+          {d.calls.length === 0 && <p className="text-muted-foreground">No calls.</p>}
+          {d.calls.map((c) => (
+            <div key={c.id} className="space-y-1 rounded-md border p-1.5">
+              <p>
+                {c.kind === "phone" ? "Phone" : "App call"}, {c.direction === "outbound" ? "out" : "in"} · {c.status}
+                {c.duration_s !== null && ` · ${Math.floor(c.duration_s / 60)}:${String(c.duration_s % 60).padStart(2, "0")}`} · {c.agent ?? ""}
+              </p>
+              <p className="text-muted-foreground">{when(c.started_at)}</p>
+              {c.notes && <p>{c.notes}</p>}
+              {c.recording_id && <audio controls preload="none" src={`/api/support/recording/${c.id}`} className="h-8 w-full" data-recording-player />}
+            </div>
+          ))}
+        </PanelSection>
+        <PanelSection title="Activity">
+          <div className="max-h-60 space-y-1 overflow-y-auto">
+            {d.log.map((l, i) => (
+              <p key={i}>
+                <span className="text-muted-foreground">{ago(l.at)}</span> {l.who ?? "System"}: {l.kind.replace(/_/g, " ")}
+                {l.detail ? `, ${l.detail}` : ""}
+              </p>
+            ))}
+          </div>
+        </PanelSection>
       </>
     );
   }
+}
+
+// A section of the customer panel: a small uppercase heading over its facts.
+function PanelSection({ title, children, ...rest }: { title: string; children: React.ReactNode } & { [k: `data-${string}`]: unknown }) {
+  return (
+    <section className="space-y-1.5 border-b px-4 py-3 text-xs" {...rest}>
+      <h3 className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">{title}</h3>
+      {children}
+    </section>
+  );
 }
 
 // ---------------------------------------------------------------------------
 // New ticket (phone, email, walk-in)
 // ---------------------------------------------------------------------------
 
-export function NewTicket({ queues }: { queues: { id: string; name: string }[] }) {
+export function NewTicket({ queues, compact = false }: { queues: { id: string; name: string }[]; compact?: boolean }) {
   const router = useRouter();
   const { act, busy } = useAct();
   const [open, setOpen] = React.useState(false);
   const [f, setF] = React.useState({ customerName: "", email: "", phone: "", subject: "", body: "", channel: "phone", priority: "normal" as Priority, queueId: "" });
-  if (!open)
-    return (
-      <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
-        <PlusIcon /> New ticket
-      </Button>
-    );
+  // A dialog, so it opens the same from the desk's narrow list header and from the support home.
   return (
-    <Card className="w-full" data-new-ticket>
-      <CardContent className="grid gap-2 py-3 sm:grid-cols-3">
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm" variant="outline" title="New ticket for a phone call, email or visit">
+          <PlusIcon /> <span className={compact ? "sr-only" : undefined}>New ticket</span>
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>New ticket</DialogTitle>
+          <DialogDescription>For a customer who called, wrote an email or came in.</DialogDescription>
+        </DialogHeader>
+      <div className="grid gap-2 sm:grid-cols-3" data-new-ticket>
         <Input aria-label="Customer name" placeholder="Customer name" value={f.customerName} onChange={(e) => setF({ ...f, customerName: e.target.value })} />
         <Input aria-label="Customer email" placeholder="Email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} />
         <Input aria-label="Customer phone" placeholder="Phone" value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} />
@@ -712,20 +781,26 @@ export function NewTicket({ queues }: { queues: { id: string; name: string }[] }
             Cancel
           </Button>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
 // The desk around the inbox and the open ticket, holding the call in progress.
-export function Desk({ status, record, children }: { status: string; record: boolean; children: React.ReactNode }) {
+// With bar={false} the page places <AgentBar compact /> itself (the full-height desk puts it in its header).
+export function Desk({ status, record, children, bar = true }: { status: string; record: boolean; children: React.ReactNode; bar?: boolean }) {
   return (
     <DeskLive>
       <CallProvider record={record}>
-        <div className="space-y-3">
-          <AgentBar status={status} />
-          {children}
-        </div>
+        {bar ? (
+          <div className="space-y-3">
+            <AgentBar status={status} />
+            {children}
+          </div>
+        ) : (
+          children
+        )}
       </CallProvider>
     </DeskLive>
   );

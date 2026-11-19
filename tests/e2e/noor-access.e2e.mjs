@@ -69,6 +69,21 @@ try {
   check("the data policy can let chosen people manage stored data", true);
   await page.screenshot({ path: path.join(shots, "data.png") });
 
+  // Chapa given to one person shows in their sidebar even though their role's sidebar hides Finance.
+  const g = await (await browser.newContext({ viewport: { width: 1440, height: 900 } })).newPage();
+  await g.goto(`${base}/login`);
+  await g.fill("input[name=email]", "dawit@demo.local");
+  await g.fill("input[name=password]", "Demo-Workflow-2026");
+  await g.getByRole("button", { name: /log in/i }).click();
+  await g.waitForURL((u) => !u.pathname.includes("/login"));
+  const gside = g.locator("[data-sidebar=sidebar]");
+  check("a person given Chapa sees it in their sidebar", (await gside.locator('a[href="/finance/chapa"]').count()) > 0);
+  await gside.locator('a[href="/finance/chapa"]').first().click();
+  await g.waitForURL(/\/finance\/chapa/);
+  await g.getByRole("heading", { name: "Chapa" }).first().waitFor({ timeout: 15000 });
+  check("and the Chapa page opens for them", g.url().includes("/finance/chapa"));
+  await g.screenshot({ path: path.join(shots, "chapa-grantee.png") });
+
   check("no browser errors", errors.length === 0, errors.slice(0, 5));
 } catch (e) {
   console.error(e);

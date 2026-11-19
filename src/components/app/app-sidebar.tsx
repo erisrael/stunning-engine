@@ -132,6 +132,8 @@ type NavItem = {
   // The sub links open while you are on any of their pages (entries that gather pages from several paths).
   gather?: boolean;
   locked?: boolean;
+  // Given to this person by Admin (a Chapa grant): the role's sidebar choices do not hide it, only their own.
+  granted?: boolean;
   // Matched on the whole address (path and query), for department views that share a path prefix.
   exact?: boolean;
 };
@@ -660,6 +662,7 @@ export function AppSidebar({
       href: "/finance/chapa",
       label: "Chapa payments",
       icon: WalletIcon,
+      granted: chapaAccess,
       sub: [
         { label: "Overview", href: "/finance/chapa" },
         { label: "Transactions", href: "/finance/chapa?tab=transactions" },
@@ -717,7 +720,9 @@ export function AppSidebar({
     item.exact && item.sub
       ? item.sub.some((s) => { const [p, q] = s.href.split("?"); return pathname === p && new URLSearchParams(q).get("tab") === tabParam; })
       : pathname === item.href.split("?")[0] || pathname.startsWith(item.href.split("?")[0] + "/") || (!!item.gather && !!item.sub?.some((s) => pathname === s.href.split("?")[0]));
-  const visibleItems = groups.flatMap((g) => pruneSidebar(g.items.filter((i) => allowed(i.cap)), hidden));
+  // Hiding Finance for a role also hides /finance/chapa; a person's own grant still shows it.
+  const prune = (items: NavItem[]) => items.flatMap((i) => pruneSidebar([i], i.granted ? userHidden : hidden));
+  const visibleItems = groups.flatMap((g) => prune(g.items.filter((i) => allowed(i.cap))));
   const sectionItem = visibleItems.find((i) => i.sub && i.sub.some((s) => subActive(s.href))) ?? visibleItems.find((i) => i.sub && inSectionOf(i));
   const sectionKey = sectionItem ? JSON.stringify([sectionItem.label, sectionItem.sub, search]) : "";
   React.useEffect(() => {
@@ -750,7 +755,7 @@ export function AppSidebar({
         </SidebarHeader>
         <SidebarContent className="gap-0 py-1">
           {groups.map((g) => {
-            const items = pruneSidebar(g.items.filter(i=>allowed(i.cap)),hidden);
+            const items = prune(g.items.filter(i=>allowed(i.cap)));
             if (!items.length) return null;
             // On phones, fewer choices at once: the first group and the one you are in are open; the others fold.
             const here = items.some((i) => isActive(i));
@@ -758,7 +763,7 @@ export function AppSidebar({
             const toggleGroup=()=>setOpenGroups(o=>[...o.filter(k=>k!==`fold:${g.label}`&&k!==`open:${g.label}`),`${folded?"open":"fold"}:${g.label}`]);
             return (
               <SidebarGroup key={g.label} className="py-1" data-nav-group={g.label} data-folded={folded ? "1" : undefined}>
-                {iconOnly && g !== groups.find((x) => pruneSidebar(x.items.filter((i) => allowed(i.cap)), hidden).length) && <div role="separator" aria-hidden className="mx-2 mb-1 h-px bg-sidebar-border" />}
+                {iconOnly && g !== groups.find((x) => prune(x.items.filter((i) => allowed(i.cap))).length) && <div role="separator" aria-hidden className="mx-2 mb-1 h-px bg-sidebar-border" />}
                 {isMobile ? (
                   <button
                     type="button"
@@ -868,7 +873,7 @@ export function AppSidebar({
       <SidebarRail />
       {customizing && (
         <CustomizeSidebar
-          groups={groups.map((g) => ({ label: g.label, items: g.items.filter((i) => allowed(i.cap)).map((i) => ({ key: keyOf(i), label: i.label, locked: !!i.locked, byAdmin: sidebarHidden(i.href,roleHidden,i.id) })) }))}
+          groups={groups.map((g) => ({ label: g.label, items: g.items.filter((i) => allowed(i.cap)).map((i) => ({ key: keyOf(i), label: i.label, locked: !!i.locked, byAdmin: !i.granted && sidebarHidden(i.href,roleHidden,i.id) })) }))}
           hidden={userHidden}
           onClose={() => setCustomizing(false)}
         />
