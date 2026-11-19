@@ -151,7 +151,14 @@ type Page = { baseUrl: string; cookie: string; csrf: string; endpoint: URL; snap
 
 async function openSubject(user: AppUser, id: string): Promise<Page> {
   if (!SUBJECT_ID.test(id)) throw new WorkflowError("VALIDATION", "Unknown subject.");
-  const { html, cookie, baseUrl } = await openNoor(user, editPath(id));
+  // Noor's server sometimes answers its largest pages with a gateway error (502, 503, 504): wait, try once more.
+  const { html, cookie, baseUrl } = await openNoor(user, editPath(id)).catch(async (e: Error) => {
+    if (!/HTTP 50[234]/.test(e.message)) throw e;
+    await new Promise((r) => setTimeout(r, 4000));
+    return openNoor(user, editPath(id)).catch((e2: Error) => {
+      throw /HTTP 50[234]/.test(e2.message) ? new WorkflowError("VALIDATION", "Noor is busy and did not open this subject. Try again in a minute.") : e2;
+    });
+  });
   const csrf = html.match(/<meta name="csrf-token" content="([^"]+)"/)?.[1] ?? "";
   const uri = decode(html.match(/data-update-uri="([^"]+)"/)?.[1] ?? "/livewire/update");
   const endpoint = new URL(uri, baseUrl);
@@ -303,14 +310,44 @@ export async function noorSubjectList(user: AppUser) {
   return out;
 }
 
-export async function contentOverview(user: AppUser) {
+// Noor's subject list, read live (one request per 50 subjects) and kept for a few minutes, so moving between
+// subjects is quick. Units and lessons come from Noor's own list; the detail of a subject is read only when it is
+// opened (and the last copy opened is shown at once while Noor's current one loads).
+const LIST_MS = 5 * 60e3;
+let listCache: { at: number; value: Promise<Awaited<ReturnType<typeof noorSubjectList>>> } | null = null;
+export function forgetSubjectList() {
+  listCache = null;
+}
+export async function contentOverview(user: AppUser, opts: { refresh?: boolean } = {}) {
   await reader(user);
-  const rows = await all<Row>("SELECT subject_id, name, grades, stats_json, fetched_at, '' AS data_json FROM noor_content ORDER BY name");
+  if (opts.refresh || !listCache || Date.now() - listCache.at > LIST_MS) {
+    const value = noorSubjectList(user);
+    listCache = { at: Date.now(), value };
+    value.catch(() => {
+      if (listCache?.value === value) listCache = null;
+    });
+  }
+  const opened = new Map((await all<Row>("SELECT subject_id, name, grades, stats_json, fetched_at, '' AS data_json FROM noor_content")).map((r) => [r.subject_id, r]));
+  // Noor down or busy: the subjects opened before, said plainly.
+  let listError: string | null = null;
+  const list = await listCache.value.catch((e: Error) => {
+    listError = `Noor's subject list could not be read (${e.message}). Showing the subjects opened before.`;
+    return [...opened.values()].map((r) => {
+      const st = parseJson<Partial<ContentStats>>(r.stats_json, {});
+      return { id: r.subject_id, name: r.name, grades: parseJson<string[]>(r.grades, []), cells: { Units: String(st.units ?? 0), Lessons: String(st.lessons ?? 0) } as Record<string, string> };
+    });
+  });
   const jobs = await all<{ id: string; kind: string; subject_id: string; title: string; status: string; done: number; total: number; progress: string; updated_at: string; created_at: string }>(
-    "SELECT id, kind, subject_id, title, status, done, total, progress, updated_at, created_at FROM noor_content_jobs ORDER BY created_at DESC LIMIT 30",
+    "SELECT id, kind, subject_id, title, status, done, total, progress, updated_at, created_at FROM noor_content_jobs WHERE kind <> 'refresh' ORDER BY created_at DESC LIMIT 30",
   );
+  const cell = (cells: Record<string, string>, re: RegExp) => Number(String(Object.entries(cells).find(([k]) => re.test(k))?.[1] ?? "").replace(/\D/g, "")) || 0;
   return {
-    subjects: rows.map((r) => ({ id: r.subject_id, name: r.name, grades: parseJson<string[]>(r.grades, []), stats: parseJson<ContentStats>(r.stats_json, {} as ContentStats), fetchedAt: r.fetched_at })),
+    subjects: list.map((x) => {
+      const o = opened.get(x.id);
+      return { id: x.id, name: x.name, grades: x.grades, code: Object.entries(x.cells).find(([k]) => /^code$/i.test(k))?.[1] ?? null, units: cell(x.cells, /^units?$/i), lessons: cell(x.cells, /^lessons?$/i), stats: o ? parseJson<ContentStats | null>(o.stats_json, null) : null, fetchedAt: o?.fetched_at ?? null };
+    }),
+    listedAt: new Date(listCache?.at ?? Date.now()).toISOString(),
+    listError,
     jobs: jobs.map((j) => ({ ...j, status: staleStatus(j.status, j.updated_at) })),
     canEdit: await canManageCmsData(user),
     noorBase: (await getLegacyCmsConfigForUser(user)).baseUrl.replace(/\/+$/, ""),
@@ -326,35 +363,37 @@ export async function contentReport(user: AppUser) {
   const { fmtDateTime } = await import("@/lib/format");
   const s = await getSettings();
   const headers = ["Grade", "Subject", "Units", "Lessons", "With video", "Video minutes", "Free previews", "With notes", "PDF notes", "Quizzes", "Questions", "Flashcard decks", "Lessons without video", "Lessons without notes", "Units without quiz", "Read from Noor"];
-  const data = o.subjects.map((x) => ({
+  const blank = (v: unknown) => (v === undefined || v === null ? "" : String(v));
+  const data = o.subjects.map((y) => ({ ...y, stats: (y.stats ?? {}) as Partial<ContentStats> })).map((x) => ({
     Grade: x.grades.join(", "),
     Subject: x.name,
-    Units: String(x.stats.units ?? 0),
-    Lessons: String(x.stats.lessons ?? 0),
-    "With video": String(x.stats.videos ?? 0),
-    "Video minutes": String(x.stats.minutes ?? 0),
-    "Free previews": String(x.stats.freePreviews ?? 0),
-    "With notes": String(x.stats.lessonsWithNotes ?? 0),
-    "PDF notes": String(x.stats.pdfs ?? 0),
-    Quizzes: String(x.stats.quizzes ?? 0),
-    Questions: String(x.stats.questions ?? 0),
-    "Flashcard decks": String(x.stats.flashcards ?? 0),
-    "Lessons without video": String(x.stats.lessonsWithoutVideo ?? 0),
-    "Lessons without notes": String(x.stats.lessonsWithoutNotes ?? 0),
-    "Units without quiz": String(x.stats.unitsWithoutQuiz ?? 0),
-    "Read from Noor": fmtDateTime(x.fetchedAt, s.workspace.timezone),
+    Units: String(x.units),
+    Lessons: String(x.lessons),
+    "With video": blank(x.stats.videos),
+    "Video minutes": blank(x.stats.minutes),
+    "Free previews": blank(x.stats.freePreviews),
+    "With notes": blank(x.stats.lessonsWithNotes),
+    "PDF notes": blank(x.stats.pdfs),
+    Quizzes: blank(x.stats.quizzes),
+    Questions: blank(x.stats.questions),
+    "Flashcard decks": blank(x.stats.flashcards),
+    "Lessons without video": blank(x.stats.lessonsWithoutVideo),
+    "Lessons without notes": blank(x.stats.lessonsWithoutNotes),
+    "Units without quiz": blank(x.stats.unitsWithoutQuiz),
+    "Read from Noor": x.fetchedAt ? fmtDateTime(x.fetchedAt, s.workspace.timezone) : "Not opened yet",
   }));
   const day = nowIso().slice(0, 10);
   const report = buildCmsReport(data, headers, { category: "noor-content", from: day, until: day, columns: headers, groupBy: "none" as const, sumColumn: "Lessons", title: "Academic content" });
-  const t = totals(o.subjects.map((x) => x.stats));
+  const opened = o.subjects.filter((x) => x.stats);
+  const t = { ...totals(opened.map((x) => x.stats!)), units: o.subjects.reduce((n, x) => n + x.units, 0), lessons: o.subjects.reduce((n, x) => n + x.lessons, 0) };
   const meta = {
     table: "Academic content in Noor",
     from: day,
     until: day,
-    filters: `${o.subjects.length} subjects: ${t.units} units, ${t.lessons} lessons (${t.videos} with video, ${t.minutes} minutes), ${t.quizzes} quizzes with ${t.questions} questions, ${t.notes} notes, ${t.flashcards} flashcard decks`,
+    filters: `${o.subjects.length} subjects: ${t.units} units, ${t.lessons} lessons. In the ${opened.length} subjects opened: ${t.videos} lessons with video (${t.minutes} minutes), ${t.quizzes} quizzes with ${t.questions} questions, ${t.notes} notes`,
     exportedAt: fmtDateTime(nowIso(), s.workspace.timezone),
     exportedBy: user.name,
-    method: "Each subject's edit page in Noor, as last read",
+    method: "Noor's subject list; the detail of each subject as last opened",
     workspace: s.workspace.name,
   };
   return { report, meta, totals: t, subjects: o.subjects };
@@ -650,7 +689,8 @@ export async function runContentJob(id: string) {
       return;
     }
   }
-  // Read again: what Noor now has.
+  // Read again: what Noor now has (and Noor's list, whose counts changed).
+  forgetSubjectList();
   const after = await readSubject(user, String(input.subjectId)).catch(() => null);
   log.push({ at: nowIso(), step: "Check", ok: !!after, message: after ? `Noor now has ${after.stats.lessons} lessons and ${after.stats.questions} questions in this subject` : "Could not read the subject again" });
   await save("done", done, `Done: ${done} of ${steps.length}`);

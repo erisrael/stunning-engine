@@ -37,7 +37,8 @@ import { cn } from "@/lib/utils";
 import { cancelContentJobAction, contentJobAction, contentOverviewAction, contentSubjectAction, parseImportFileAction, parseQuestionsAction, startContentJobAction } from "@/app/actions/noor-content";
 import type { ContentJobInput, ContentLesson, ContentQuestion, ContentQuiz, ContentStats, ContentSubject, ContentUnit, LessonInput } from "@/server/noor-content";
 
-type Overview = { subjects: { id: string; name: string; grades: string[]; stats: ContentStats; fetchedAt: string }[]; jobs: Job[]; canEdit: boolean; noorBase: string };
+type ListedSubject = { id: string; name: string; grades: string[]; code: string | null; units: number; lessons: number; stats: ContentStats | null; fetchedAt: string | null };
+type Overview = { subjects: ListedSubject[]; listedAt: string; listError: string | null; jobs: Job[]; canEdit: boolean; noorBase: string };
 type Job = { id: string; kind: string; subject_id: string; title: string; status: string; done: number; total: number; progress: string; updated_at: string; created_at: string; log?: { at: string; step: string; ok: boolean; message: string }[] };
 type Loaded = { subject: ContentSubject; stats: ContentStats; grades: string[]; fetchedAt: string };
 const fmt = (n: number | undefined) => (n ?? 0).toLocaleString("en-US");
@@ -58,8 +59,11 @@ export function CmsContentView() {
   const [view, setView] = React.useState<"subjects" | "report" | "jobs">("subjects");
   const [open, setOpen] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
-  const load = React.useCallback(async () => {
-    const r = await contentOverviewAction();
+  const [listing, setListing] = React.useState(false);
+  const load = React.useCallback(async (refresh = false) => {
+    if (refresh) setListing(true);
+    const r = await contentOverviewAction(refresh);
+    setListing(false);
     if (r.ok) setO(r.data as Overview);
     else setError(r.error ?? "Could not load.");
   }, []);
@@ -68,38 +72,44 @@ export function CmsContentView() {
   const running = o?.jobs.some((j) => j.status === "running" || j.status === "queued");
   React.useEffect(() => {
     if (!running) return;
-    const t = window.setInterval(load, 3000);
+    const t = window.setInterval(() => void load(), 3000);
     return () => window.clearInterval(t);
   }, [running, load]);
 
   const startJob = async (input: ContentJobInput) => {
     const r = await startContentJobAction(input);
     if (!r.ok) return void toast.error(r.error);
-    toast.success(input.kind === "refresh" ? "Reading every subject from Noor…" : "Sent to Noor. Follow it under Jobs.");
+    toast.success("Sent to Noor. Follow it under Jobs.");
     await load();
     return (r.data as { id: string }).id;
   };
 
   if (error && !o) return <StatusStrip tone="danger">{error}</StatusStrip>;
-  if (!o) return <div className="h-40 animate-pulse rounded-xl bg-muted/50" />;
-  const t = sum(o.subjects.map((s) => s.stats));
-  const refreshing = o.jobs.find((j) => j.kind === "refresh" && (j.status === "running" || j.status === "queued"));
+  if (!o)
+    return (
+      <div className="space-y-3" data-content-loading>
+        <div className="grid grid-cols-3 gap-2">{[0, 1, 2].map((i) => <div key={i} className="h-20 animate-pulse rounded-xl bg-muted/50" />)}</div>
+        <p className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2Icon className="size-3.5 animate-spin" /> Reading Noor&apos;s subject list…</p>
+      </div>
+    );
+  const units = o.subjects.reduce((k, s) => k + s.units, 0);
+  const lessons = o.subjects.reduce((k, s) => k + s.lessons, 0);
+  const grades = new Set(o.subjects.flatMap((s) => s.grades)).size;
   return (
     <div className="space-y-4" data-content-view>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-        <MetricCard label="Subjects" value={fmt(o.subjects.length)} hint={n(t.units, "unit")} />
-        <MetricCard label="Lessons" value={fmt(t.lessons)} hint={`${fmt(t.videos)} with video · ${t.minutes >= 60 ? `${fmt(Math.round(t.minutes / 60))} h` : `${t.minutes} min`}`} />
-        <MetricCard label="Quizzes" value={fmt(t.quizzes)} hint={n(t.questions, "question")} />
-        <MetricCard label="Notes" value={fmt(t.notes)} hint={n(t.pdfs, "PDF")} />
-        <MetricCard label="Lessons without notes" value={fmt(t.lessonsWithoutNotes)} tone={t.lessonsWithoutNotes ? "warning" : "default"} />
-        <MetricCard label="Units without a quiz" value={fmt(t.unitsWithoutQuiz)} tone={t.unitsWithoutQuiz ? "warning" : "default"} />
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <MetricCard label="Subjects" value={fmt(o.subjects.length)} hint={n(grades, "grade")} />
+        <MetricCard label="Units" value={fmt(units)} hint="In Noor's list" />
+        <MetricCard label="Lessons" value={fmt(lessons)} hint="In Noor's list" />
+        <MetricCard label="Changes sent" value={fmt(o.jobs.filter((j) => j.status === "done").length)} hint={running ? "One running now" : "Through Noor's forms"} />
       </div>
       <Toolbar
         label="Content"
         end={
           <div className="flex flex-wrap items-center gap-2">
-            <Button size="sm" variant="outline" disabled={!!refreshing} onClick={() => void startJob({ kind: "refresh", subjectId: "all" })} data-content-refresh-all>
-              <RefreshCwIcon className={refreshing ? "animate-spin" : ""} /> {refreshing ? refreshing.progress || "Reading…" : "Read all from Noor"}
+            <span className="text-xs text-muted-foreground">List from Noor {ago(o.listedAt)}</span>
+            <Button size="sm" variant="outline" disabled={listing} onClick={() => void load(true)} data-content-refresh-list>
+              <RefreshCwIcon className={listing ? "animate-spin" : ""} /> Refresh list
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -118,11 +128,12 @@ export function CmsContentView() {
       >
         <ViewSwitcher label="Content views" value={view} onChange={setView} options={[["subjects", "Subjects"], ["report", "Report"], ["jobs", `Jobs${running ? " ·" : ""}`]]} />
       </Toolbar>
-      {!o.subjects.length && <EmptyState icon={<BookOpenIcon className="size-5" />} title="Nothing read from Noor yet" description="Read all from Noor brings every subject here: units, lessons, notes and quizzes." action={<Button size="sm" onClick={() => void startJob({ kind: "refresh", subjectId: "all" })}><RefreshCwIcon /> Read all from Noor</Button>} />}
+      {o.listError && <StatusStrip tone="warning">{o.listError}</StatusStrip>}
+      {!o.subjects.length && <EmptyState icon={<BookOpenIcon className="size-5" />} title="Noor lists no subjects" description="Noor's Academic Content list is empty, or this Noor login cannot see it." />}
       {view === "subjects" && o.subjects.length > 0 && (
         <div className="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
           <SubjectList subjects={o.subjects} open={open} onOpen={setOpen} />
-          {open ? <SubjectPane key={open} id={open} canEdit={o.canEdit} noorBase={o.noorBase} jobs={o.jobs.filter((j) => j.subject_id === open)} startJob={startJob} /> : <EmptyState icon={<LayersIcon className="size-5" />} title="Choose a subject" description="Its units, lessons, notes and quizzes show here." />}
+          {open ? <SubjectPane key={open} id={open} listed={o.subjects.find((s) => s.id === open) ?? null} canEdit={o.canEdit} noorBase={o.noorBase} jobs={o.jobs.filter((j) => j.subject_id === open)} startJob={startJob} /> : <EmptyState icon={<LayersIcon className="size-5" />} title="Choose a subject" description="Its units, lessons, notes and quizzes show here." />}
         </div>
       )}
       {view === "report" && <ContentReport subjects={o.subjects} onOpen={(id) => (setOpen(id), setView("subjects"))} />}
@@ -181,14 +192,17 @@ function SubjectList({ subjects, open, onOpen }: { subjects: Overview["subjects"
                 <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><GraduationCapIcon className="size-4" /></span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-semibold">{s.name}</span>
-                  <span className="block text-xs text-muted-foreground">{s.grades.join(", ") || "No grade"} · {fmt(s.stats.units)} units · {fmt(s.stats.lessons)} lessons</span>
+                  <span className="block text-xs text-muted-foreground">{s.grades.join(", ") || "No grade"} · {n(s.units, "unit")} · {n(s.lessons, "lesson")}</span>
                 </span>
+                {s.code && <span className="rounded bg-muted px-1.5 text-[10px] font-medium text-muted-foreground">{s.code}</span>}
               </span>
-              <span className="grid grid-cols-3 gap-2">
-                <Coverage label="Video" value={s.stats.videos ?? 0} of={s.stats.lessons ?? 0} />
-                <Coverage label="Notes" value={s.stats.lessonsWithNotes ?? 0} of={s.stats.lessons ?? 0} tone="bg-sky-500" />
-                <Coverage label="Quizzes" value={(s.stats.units ?? 0) - (s.stats.unitsWithoutQuiz ?? 0)} of={s.stats.units ?? 0} tone="bg-emerald-500" />
-              </span>
+              {s.stats && (
+                <span className="grid grid-cols-3 gap-2">
+                  <Coverage label="Video" value={s.stats.videos ?? 0} of={s.stats.lessons ?? 0} />
+                  <Coverage label="Notes" value={s.stats.lessonsWithNotes ?? 0} of={s.stats.lessons ?? 0} tone="bg-sky-500" />
+                  <Coverage label="Quizzes" value={(s.stats.units ?? 0) - (s.stats.unitsWithoutQuiz ?? 0)} of={s.stats.units ?? 0} tone="bg-emerald-500" />
+                </span>
+              )}
             </button>
           </li>
         ))}
@@ -207,9 +221,10 @@ type Dialogs =
   | { kind: "edit-unit"; unit: ContentUnit }
   | { kind: "questions"; quiz: ContentQuiz };
 
-function SubjectPane({ id, canEdit, noorBase, jobs, startJob }: { id: string; canEdit: boolean; noorBase: string; jobs: Job[]; startJob: (i: ContentJobInput) => Promise<string | undefined> }) {
+function SubjectPane({ id, listed, canEdit, noorBase, jobs, startJob }: { id: string; listed: ListedSubject | null; canEdit: boolean; noorBase: string; jobs: Job[]; startJob: (i: ContentJobInput) => Promise<string | undefined> }) {
   const [d, setD] = React.useState<Loaded | null>(null);
   const [busy, setBusy] = React.useState(false);
+  const [failed, setFailed] = React.useState<string | null>(null);
   const [dialog, setDialog] = React.useState<Dialogs | null>(null);
   const [expanded, setExpanded] = React.useState<number[]>([]);
   const load = React.useCallback(
@@ -217,12 +232,29 @@ function SubjectPane({ id, canEdit, noorBase, jobs, startJob }: { id: string; ca
       setBusy(true);
       const r = await contentSubjectAction(id, refresh);
       setBusy(false);
-      if (r.ok) setD(r.data as Loaded);
-      else toast.error(r.error);
+      if (r.ok) (setD(r.data as Loaded), setFailed(null));
+      else (setFailed(r.error ?? "Noor did not open this subject."), refresh && toast.error(r.error));
+      return r.ok ? (r.data as Loaded) : null;
     },
     [id],
   );
-  React.useEffect(() => void load(false), [load]);
+  // Opening: the copy from the last time it was opened shows at once, and Noor's current one replaces it. Never
+  // opened: it is read from Noor now.
+  React.useEffect(() => {
+    let stop = false;
+    (async () => {
+      if (listed?.fetchedAt) {
+        const cached = await load(false);
+        if (stop || !cached) return;
+        if (Date.now() - Date.parse(cached.fetchedAt) > 60e3) await load(true);
+      } else await load(true);
+    })();
+    return () => {
+      stop = true;
+    };
+    // Once per subject opened.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
   // When a job on this subject finishes, read it again.
   const lastDone = jobs.find((j) => j.status === "done" || j.status === "failed")?.updated_at;
   const seen = React.useRef(lastDone);
@@ -232,7 +264,24 @@ function SubjectPane({ id, canEdit, noorBase, jobs, startJob }: { id: string; ca
       void load(false);
     }
   }, [lastDone, load]);
-  if (!d) return <div className="flex h-60 items-center justify-center rounded-xl border"><Loader2Icon className="size-5 animate-spin text-muted-foreground" /></div>;
+  if (!d)
+    return (
+      <section className="min-w-0 space-y-3" aria-busy={!failed} data-subject-loading>
+        <div className="rounded-2xl border bg-card p-4 shadow-xs">
+          <p className="text-xs text-muted-foreground">{listed?.grades.join(", ")}{listed?.code ? ` · ${listed.code}` : ""}</p>
+          <h2 className="text-xl font-bold">{listed?.name ?? "Subject"}</h2>
+          {failed ? (
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-destructive" data-subject-failed>
+              <CircleAlertIcon className="size-4" /> {failed}
+              <Button size="sm" variant="outline" onClick={() => void load(true)}><RefreshCwIcon /> Try again</Button>
+            </div>
+          ) : (
+            <p className="mt-1 flex items-center gap-2 text-xs text-muted-foreground"><Loader2Icon className="size-3.5 animate-spin" /> Opening it in Noor{listed ? ` · ${n(listed.units, "unit")}, ${n(listed.lessons, "lesson")}` : ""}…</p>
+          )}
+        </div>
+        {!failed && Array.from({ length: Math.min(6, Math.max(2, listed?.units ?? 3)) }, (_, i) => <div key={i} className="h-14 animate-pulse rounded-2xl border bg-muted/40" />)}
+      </section>
+    );
   const s = d.subject;
   const st = d.stats;
   const runningHere = jobs.find((j) => j.status === "running" || j.status === "queued");
@@ -245,7 +294,15 @@ function SubjectPane({ id, canEdit, noorBase, jobs, startJob }: { id: string; ca
           <div className="min-w-0 flex-1">
             <p className="text-xs text-muted-foreground">{d.grades.join(", ") || "Grade not read"} {s.code ? `· ${s.code}` : ""} {s.stem ? "· STEM" : ""}</p>
             <h2 className="truncate text-xl font-bold">{s.name}</h2>
-            <p className="text-xs text-muted-foreground">Read from Noor {ago(d.fetchedAt)}</p>
+            <p className="flex items-center gap-1.5 text-xs text-muted-foreground" data-subject-fresh={busy ? "updating" : "current"}>
+              {busy ? (
+                <>
+                  <Loader2Icon className="size-3 animate-spin" /> Updating from Noor (showing the copy from {ago(d.fetchedAt)})
+                </>
+              ) : (
+                <>Live from Noor, read {ago(d.fetchedAt)}</>
+              )}
+            </p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button size="sm" variant="outline" disabled={busy} onClick={() => void load(true)} data-subject-refresh>
@@ -758,16 +815,17 @@ function ContentReport({ subjects, onOpen }: { subjects: Overview["subjects"]; o
   const byGrade = new Map<string, Overview["subjects"]>();
   for (const s of subjects) for (const g of s.grades.length ? s.grades : ["No grade"]) byGrade.set(g, [...(byGrade.get(g) ?? []), s]);
   const grades = [...byGrade.keys()].sort((a, b) => (parseInt(a.replace(/\D/g, "")) || 99) - (parseInt(b.replace(/\D/g, "")) || 99) || a.localeCompare(b));
+  const opened = subjects.filter((s) => s.stats).length;
   return (
     <div className="space-y-4" data-content-report>
+      <p className="text-xs text-muted-foreground">Units and lessons are Noor&apos;s own counts. Video, notes and quizzes show for the {opened} of {subjects.length} subjects opened here; open a subject to count it.</p>
       {grades.map((g) => {
         const list = byGrade.get(g)!;
-        const t = sum(list.map((s) => s.stats));
         return (
           <section key={g} className="overflow-hidden rounded-2xl border bg-card">
             <div className="flex flex-wrap items-center gap-3 border-b bg-muted/30 px-4 py-2">
               <h3 className="font-semibold">{g}</h3>
-              <span className="text-xs text-muted-foreground">{list.length} subjects · {fmt(t.lessons)} lessons · {fmt(t.quizzes)} quizzes ({fmt(t.questions)} questions) · {fmt(t.notes)} notes</span>
+              <span className="text-xs text-muted-foreground">{n(list.length, "subject")} · {n(list.reduce((k, s) => k + s.units, 0), "unit")} · {n(list.reduce((k, s) => k + s.lessons, 0), "lesson")}</span>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -780,20 +838,26 @@ function ContentReport({ subjects, onOpen }: { subjects: Overview["subjects"]; o
                     <th className="px-2 py-2 font-medium">Notes</th>
                     <th className="px-2 py-2 font-medium">Quiz per unit</th>
                     <th className="px-2 py-2 text-right font-medium">Questions</th>
-                    <th className="px-4 py-2 text-right font-medium">Read</th>
+                    <th className="px-4 py-2 text-right font-medium">Opened</th>
                   </tr>
                 </thead>
                 <tbody>
                   {list.map((s) => (
                     <tr key={s.id} className="border-t hover:bg-muted/30">
                       <td className="px-4 py-2"><button type="button" className="font-medium hover:underline" onClick={() => onOpen(s.id)}>{s.name}</button></td>
-                      <td className="px-2 py-2 text-right tabular-nums">{fmt(s.stats.units)}</td>
-                      <td className="px-2 py-2 text-right tabular-nums">{fmt(s.stats.lessons)}</td>
-                      <td className="w-28 px-2 py-2"><Coverage label={`${s.stats.videos ?? 0}`} value={s.stats.videos ?? 0} of={s.stats.lessons ?? 0} /></td>
-                      <td className="w-28 px-2 py-2"><Coverage label={`${s.stats.lessonsWithNotes ?? 0}`} value={s.stats.lessonsWithNotes ?? 0} of={s.stats.lessons ?? 0} tone="bg-sky-500" /></td>
-                      <td className="w-28 px-2 py-2"><Coverage label={`${(s.stats.units ?? 0) - (s.stats.unitsWithoutQuiz ?? 0)}`} value={(s.stats.units ?? 0) - (s.stats.unitsWithoutQuiz ?? 0)} of={s.stats.units ?? 0} tone="bg-emerald-500" /></td>
-                      <td className="px-2 py-2 text-right tabular-nums">{fmt(s.stats.questions)}</td>
-                      <td className="px-4 py-2 text-right text-xs text-muted-foreground">{ago(s.fetchedAt)}</td>
+                      <td className="px-2 py-2 text-right tabular-nums">{fmt(s.units)}</td>
+                      <td className="px-2 py-2 text-right tabular-nums">{fmt(s.lessons)}</td>
+                      {s.stats ? (
+                        <>
+                          <td className="w-28 px-2 py-2"><Coverage label={`${s.stats.videos ?? 0}`} value={s.stats.videos ?? 0} of={s.stats.lessons ?? 0} /></td>
+                          <td className="w-28 px-2 py-2"><Coverage label={`${s.stats.lessonsWithNotes ?? 0}`} value={s.stats.lessonsWithNotes ?? 0} of={s.stats.lessons ?? 0} tone="bg-sky-500" /></td>
+                          <td className="w-28 px-2 py-2"><Coverage label={`${(s.stats.units ?? 0) - (s.stats.unitsWithoutQuiz ?? 0)}`} value={(s.stats.units ?? 0) - (s.stats.unitsWithoutQuiz ?? 0)} of={s.stats.units ?? 0} tone="bg-emerald-500" /></td>
+                          <td className="px-2 py-2 text-right tabular-nums">{fmt(s.stats.questions)}</td>
+                        </>
+                      ) : (
+                        <td colSpan={4} className="px-2 py-2 text-xs text-muted-foreground"><button type="button" className="text-primary hover:underline" onClick={() => onOpen(s.id)}>Open to count</button></td>
+                      )}
+                      <td className="px-4 py-2 text-right text-xs text-muted-foreground">{s.fetchedAt ? ago(s.fetchedAt) : "Not yet"}</td>
                     </tr>
                   ))}
                 </tbody>

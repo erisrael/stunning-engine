@@ -5,7 +5,7 @@ import * as C from "@/server/noor-content";
 
 // Noor's academic content (Legacy CMS, Content): read, report, and changes through Noor's own forms.
 const read = { revalidate: false } as const;
-export const contentOverviewAction = async () => wrap(async () => C.contentOverview(await requireViewer()), read);
+export const contentOverviewAction = async (refresh = false) => wrap(async () => C.contentOverview(await requireViewer(), { refresh }), read);
 export const contentSubjectAction = async (id: string, refresh = false) => wrap(async () => C.contentSubject(await requireViewer(), id, { refresh }), read);
 export const contentJobAction = async (id: string) => wrap(async () => C.contentJob(await requireViewer(), id), read);
 export const startContentJobAction = async (input: C.ContentJobInput) => wrap(async () => C.startContentJob(await requireViewer(), input), read);
