@@ -27,11 +27,22 @@ services:
       postgres:
         condition: service_healthy
         required: false
+    # Answering, not only running: a stuck app shows as unhealthy, and deploy/vps/watchdog.sh restarts it.
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+    # A runaway app is stopped and restarted on its own before it can push the database out of memory.
+    mem_limit: 3g
 
   postgres:
     image: postgres:17-alpine
     profiles: ["localdb"]
     restart: unless-stopped
+    # The last thing the system stops when memory runs short.
+    oom_score_adj: -500
     environment:
       POSTGRES_USER: myseed
       POSTGRES_DB: myseed
