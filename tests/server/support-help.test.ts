@@ -85,7 +85,10 @@ async function main() {
   check("/start shows the spec's menu as buttons in submenus, in both languages", top.includes("sm:help") && menu.includes("c:payments") && menu.includes("Payment Assistance · የክፍያ እርዳታ") && menu.includes("mn:start") && menu.includes("mn:requests") && welcome.includes("Welcome to MySeed Support") && welcome.includes("እንኳን") && top.includes("web_app"), menu);
   await ch.saveArticle(liya, { title: "Paid but not active", body: "Send the receipt from telebirr and we activate it within a day.", category: "Payments", published: true });
   await ch.telegramUpdate(secret, secret, press("c:payments"));
-  check("a topic shows its articles, then Still need help?", String(last().text).includes("Paid but not active") && JSON.stringify(last().reply_markup).includes("a:payments"), last());
+  check("a topic shows its answers as buttons, then Still need help?", JSON.stringify(last().reply_markup).includes("Paid but not active") && JSON.stringify(last().reply_markup).includes("a:payments"), last());
+  const answer = ((last().reply_markup as { inline_keyboard: { text: string; callback_data: string }[][] }).inline_keyboard.flat().find((b) => b.text === "Paid but not active"))!.callback_data;
+  await ch.telegramUpdate(secret, secret, press(answer));
+  check("an answer is read in the chat, with That helped and Still need help", String(last().text).includes("Send the receipt from telebirr") && JSON.stringify(last().reply_markup).includes("gv:") && JSON.stringify(last().reply_markup).includes("a:payments"), last());
   check("button presses are answered (no spinner left)", posts.some((p) => p.url.endsWith("/answerCallbackQuery")));
   await ch.telegramUpdate(secret, secret, press("a:payments"));
   check("then it asks for the question and offers to share the phone", String(last().text).includes("Write your question") && JSON.stringify(last().reply_markup).includes("request_contact"), last());

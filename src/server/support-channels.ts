@@ -743,6 +743,25 @@ async function setCustomerMeta(id: string, patch: Record<string, string | null>)
   await run("UPDATE sup_customers SET meta = ? WHERE id = ?", JSON.stringify(m), id);
 }
 
+// One answer, read in the chat: the title and text, then "That helped", "Still need help?" (asks in the answer's
+// topic) and back to the topic's answers.
+async function sendAnswer(chat: string, x: TelegramTexts, id: string) {
+  const a = await get<{ id: string; title: string; body: string; category: string | null; kind: string }>("SELECT id, title, body, category, kind FROM sup_articles WHERE id = ? AND published = 1", id);
+  if (!a) return telegramSend(chat, x.lang === "am" ? "ይህ መረጃ ከእንግዲህ የለም።" : "This is no longer available.", { reply_markup: { inline_keyboard: [await backRow(x)] } });
+  await run("UPDATE sup_articles SET views = views + 1 WHERE id = ?", a.id);
+  // A guide: its steps one message each, then the question below.
+  const steps = a.kind === "guide" ? await (await import("./kb-guides")).guideMessages(a.id).catch(() => null) : null;
+  if (steps) for (const m of steps) await telegramSend(chat, m);
+  const h = await import("./support-help");
+  const cat = (await h.helpCategories({ activeOnly: true })).find((c) => c.kbCategory && a.category && c.kbCategory.toLowerCase() === a.category.toLowerCase());
+  const text = `${a.title}\n\n${a.body.replace(/\*\*(.+?)\*\*/g, "$1").replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, "$1 ($2)")}`;
+  const rows: { text: string; callback_data: string }[][] = [
+    [{ text: x.lang === "am" ? "ረድቶኛል" : "That helped", callback_data: `gv:${a.id}`.slice(0, 64) }, { text: x.lang === "am" ? "አሁንም እርዳታ ይፈልጋሉ?" : "Still need help?", callback_data: `a:${cat && !["faq", "quick", "howto"].includes(cat.key) ? cat.key : "person"}` }],
+    [{ text: x.lang === "am" ? "« ተመለስ" : "« Back", callback_data: cat ? (cat.key === "faq" ? "mn:faq" : `c:${cat.key}`) : "m" }],
+  ];
+  await telegramSend(chat, steps ? (x.lang === "am" ? "ይህ መልስ ሰጥቶዎታል?" : "Did that answer it?") : text.slice(0, 4000), { reply_markup: { inline_keyboard: rows } });
+}
+
 // A button press: a category shows its help articles; "Still need help?" asks for the question, which then opens a
 // request in that category's queue.
 async function telegramButton(q: NonNullable<TgUpdate["callback_query"]>, x: TelegramTexts) {
@@ -772,6 +791,15 @@ async function telegramButton(q: NonNullable<TgUpdate["callback_query"]>, x: Tel
     if (a === "requests") return sendRequests(chat, x, me, false);
     if (a === "history") return sendRequests(chat, x, me, true);
     if (a === "faq") {
+      // The common questions as buttons; typing a search is still there.
+      const faq = (await h.helpCategory("faq"))?.active ? await h.categoryArticles("faq", 10, x.lang) : [];
+      if (faq.length) {
+        const rows: { text: string; callback_data: string }[][] = faq.map((f) => [{ text: f.title.slice(0, 60), callback_data: `ga:${f.id}`.slice(0, 64) }]);
+        rows.push([{ text: x.lang === "am" ? "በመጻፍ ይፈልጉ" : "Search by typing", callback_data: "mn:faqsearch" }], await backRow(x));
+        return telegramSend(chat, x.lang === "am" ? "በብዛት የሚጠየቁ ጥያቄዎች፦" : "Frequently asked questions:", { reply_markup: { inline_keyboard: rows } });
+      }
+    }
+    if (a === "faq" || a === "faqsearch") {
       await setCustomerMeta(me, { tgAwait: "faq", tgAwaitAt: nowIso() });
       return telegramSend(chat, await sayKey(x, "faq.prompt"), { reply_markup: { inline_keyboard: [await backRow(x)] } });
     }
@@ -790,6 +818,11 @@ async function telegramButton(q: NonNullable<TgUpdate["callback_query"]>, x: Tel
       return telegramSend(chat, `${topic.label}\n${await sayKey(x, "ask")}`);
     }
     data = `a:${topic.action.slice(9)}`;
+  }
+  if (data.startsWith("ga:")) return sendAnswer(chat, x, data.slice(3));
+  if (data.startsWith("gv:")) {
+    await voteArticle(data.slice(3), true).catch(() => null);
+    return telegramSend(chat, x.lang === "am" ? "ስለነገሩን እናመሰግናለን።" : "Thank you, glad it helped.", { reply_markup: { inline_keyboard: [await backRow(x)] } });
   }
   if (data === "tr") return sendTopics(chat, x, "tt", "transfer.choose");
   if (data.startsWith("tt:")) return transferConversation(chat, x, me, data.slice(3));
@@ -810,16 +843,11 @@ async function telegramButton(q: NonNullable<TgUpdate["callback_query"]>, x: Tel
   if (!c || !c.active) return sendMenu(chat, x);
   const customerId = await customerFor({ channel: "telegram", key: chat, name: nameOf(q.from) });
   if (kind === "c" && c.selfHelp) {
-    const arts = await h.categoryArticles(c.key, 5);
+    const arts = await h.categoryArticles(c.key, 8, x.lang);
     if (arts.length) {
-      const origin = (await telegramState()).origin;
-      const https = !!helpUrl(origin);
-      const list = arts.map((a, i) => `${i + 1}. ${a.title}${https ? "" : origin ? `\n${origin}/help/${a.id}` : ""}`).join("\n");
-      const rows: { text: string; url?: string; callback_data?: string }[][] = https ? arts.map((a) => [{ text: a.title.slice(0, 60), url: `${origin}/help/${a.id}` }]) : [];
-      // Guides and video answers can also be read here in the chat.
-      for (const a of arts.filter((x) => x.kind === "guide" || x.video)) rows.push([{ text: `${x.lang === "am" ? "እዚህ ያንብቡ" : "Read here"}: ${a.title}`.slice(0, 60), callback_data: `g:${a.id}` }]);
-      rows.push([{ text: x.lang === "am" ? "አሁንም እርዳታ ይፈልጋሉ?" : "Still need help?", callback_data: `a:${c.key}` }], [{ text: x.lang === "am" ? "« ማውጫ" : "« Menu", callback_data: "m" }]);
-      await telegramSend(chat, `${label(x, c)}\n\n${list}`, { reply_markup: { inline_keyboard: rows } });
+      const rows: { text: string; callback_data: string }[][] = arts.map((a) => [{ text: a.title.slice(0, 60), callback_data: `ga:${a.id}`.slice(0, 64) }]);
+      rows.push([{ text: x.lang === "am" ? "አሁንም እርዳታ ይፈልጋሉ? ይጠይቁን" : "Still need help? Ask us", callback_data: `a:${c.key}` }], [{ text: x.lang === "am" ? "« ተመለስ" : "« Back", callback_data: "sm:help" }]);
+      await telegramSend(chat, `${label(x, c)}\n\n${x.lang === "am" ? "መልስዎን ይምረጡ፦" : "Choose your question:"}`, { reply_markup: { inline_keyboard: rows } });
       return;
     }
   }
@@ -994,9 +1022,14 @@ export async function saveArticle(user: AppUser, input: { id?: string | null; ti
 }
 
 // Customers' search: published articles whose title, keywords or text have the words, best first.
-export async function searchArticles(q: string, limit = 8) {
+// lang: only articles in that language (or in none); the starter answers are one per language.
+export async function searchArticles(q: string, limit = 8, lang: "en" | "am" | null = null) {
   const words = [...new Set(q.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length > 2))].slice(0, 8);
-  const rows = await all<{ id: string; title: string; body: string; category: string | null; keywords: string; helpful: number; views: number }>("SELECT id, title, body, category, keywords, helpful, views FROM sup_articles WHERE published = 1");
+  const { articleLang } = await import("./support-starter");
+  const rows = (await all<{ id: string; title: string; body: string; category: string | null; keywords: string; helpful: number; views: number }>("SELECT id, title, body, category, keywords, helpful, views FROM sup_articles WHERE published = 1")).filter((r) => {
+    const l = articleLang(r.keywords);
+    return !lang || !l || l === lang;
+  });
   if (!words.length) return rows.sort((a, b) => Number(b.views) - Number(a.views)).slice(0, limit).map((r) => ({ id: r.id, title: r.title, category: r.category, snippet: r.body.slice(0, 160) }));
   return rows
     .map((r) => {

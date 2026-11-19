@@ -127,7 +127,9 @@ async function main() {
   // FAQ search.
   await ch.saveArticle(liya, { title: "Why is my plan not active after paying?", body: "Plans start within 10 minutes of a payment.", keywords: "plan payment active", published: true });
   await press("mn:faq");
-  check("FAQ asks for the question", String(last().text).startsWith("Type your question"));
+  check("FAQ lists the common questions as buttons", String(last().text).startsWith("Frequently asked") && kb(last()).some((b) => String(b.callback_data).startsWith("ga:")) && kb(last()).some((b) => b.callback_data === "mn:faqsearch"), last());
+  await press("mn:faqsearch");
+  check("and can be searched by typing", String(last().text).startsWith("Type your question"));
   await msg("plan not active", 5);
   check("the answer lists matching articles", String(last().text).startsWith("These answers may help") && kb(last()).some((b) => b.text.startsWith("Why is my plan")), last());
   const tickets = Number((await get<{ n: number }>("SELECT COUNT(*) AS n FROM sup_tickets t JOIN sup_customers c ON c.id = t.customer_id WHERE c.external_id = 'tg:888'"))?.n);

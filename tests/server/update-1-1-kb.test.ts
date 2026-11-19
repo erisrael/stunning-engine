@@ -114,11 +114,11 @@ async function main() {
   await press("c:payments");
   const list = posts.find((p) => p.url.endsWith("/sendMessage") && String(p.body.chat_id) === "777");
   const buttons = ((list?.body.reply_markup as { inline_keyboard?: { text: string; callback_data?: string }[][] } | undefined)?.inline_keyboard ?? []).flat();
-  check("the help topic offers to read guides and video answers here", buttons.some((b) => b.callback_data === `g:${gid}` && b.text.startsWith("Read here")) && buttons.some((b) => b.callback_data === `g:${aid}`) && !buttons.some((b) => b.callback_data === `g:${old}`), buttons);
+  check("the help topic lists every answer, plain ones, guides and video answers, to read here", buttons.some((b) => b.callback_data === `ga:${gid}`) && buttons.some((b) => b.callback_data === `ga:${aid}`) && buttons.some((b) => b.callback_data === `ga:${old}`), buttons);
   posts.length = 0;
-  await press(`g:${gid}`);
+  await press(`ga:${gid}`);
   const sent = posts.filter((p) => p.url.endsWith("/sendMessage")).map((p) => String(p.body.text));
-  check("pressing it sends the guide step by step", sent.length === 4 && sent[1]!.startsWith("1. Open Payments"), sent);
+  check("pressing it sends the guide step by step, then asks if it answered", sent.length === 5 && sent[1]!.startsWith("1. Open Payments") && sent[4] === "Did that answer it?", sent);
   posts.length = 0;
   await press("g:art_nope");
   check("a removed guide says so", posts.some((p) => String(p.body.text ?? "").includes("no longer available")));

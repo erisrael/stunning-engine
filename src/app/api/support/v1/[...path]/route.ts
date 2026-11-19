@@ -54,6 +54,12 @@ function cors(origin: string | null) {
   };
 }
 
+// The customer's language for help articles (?lang=en|am), or any.
+const langOf = (request: Request) => {
+  const l = new URL(request.url).searchParams.get("lang");
+  return l === "am" || l === "en" ? l : null;
+};
+
 export async function OPTIONS(request: Request) {
   return new Response(null, { status: 204, headers: cors(request.headers.get("origin")) });
 }
@@ -106,9 +112,9 @@ async function handle(request: Request, ctx: Ctx, method: "GET" | "POST") {
     else if (a === "requests" && id && method === "GET") out = await (await import("@/server/support-customer")).customerRequest(app, token, id);
     else if (a === "profile" && !id && method === "GET") out = await (await import("@/server/support-customer")).customerProfile(app, token);
     else if (a === "profile" && !id && method === "POST") out = await (await import("@/server/support-customer")).customerSaveProfile(app, token, { name: typeof body.name === "string" ? body.name : undefined, lang: typeof body.lang === "string" ? body.lang : undefined });
-    else if (a === "faq" && !id && method === "GET") out = await (await import("@/server/support-customer")).customerFaq(app, token);
+    else if (a === "faq" && !id && method === "GET") out = await (await import("@/server/support-customer")).customerFaq(app, token, langOf(request));
     else if (a === "resources" && !id && method === "GET") out = await (await import("@/server/bot-manager")).customerResources(app, token);
-    else if (a === "articles" && !id && method === "GET") out = await (await import("@/server/support-channels")).searchArticles(new URL(request.url).searchParams.get("q") ?? "");
+    else if (a === "articles" && !id && method === "GET") out = await (await import("@/server/support-channels")).searchArticles(new URL(request.url).searchParams.get("q") ?? "", 8, langOf(request));
     else if (a === "articles" && id && !b && method === "GET") out = await (await import("@/server/support-channels")).readArticle(id);
     else if (a === "articles" && id && b === "vote" && method === "POST") out = (await (await import("@/server/support-channels")).voteArticle(id, body.helpful === true), { ok: true });
     else if (a === "ice" && method === "GET") out = (await sd.customerByToken(app, token), await sd.iceConfig());

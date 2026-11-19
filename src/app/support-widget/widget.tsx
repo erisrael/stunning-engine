@@ -722,7 +722,7 @@ function RequestPage({ api, id, am, w, onConversation }: { api: Api; id: string;
 }
 
 function FaqPage({ api, w, onOpen }: { api: Api; w: Words; onOpen: (id: string) => void }) {
-  const { data, error } = useLoad(() => api<Found[]>("faq"), [api]);
+  const { data, error } = useLoad(() => api<Found[]>(`faq?lang=${document.documentElement.lang === "am" ? "am" : "en"}`), [api]);
   return (
     <div className="space-y-3 p-4" data-page-faq>
       <p className="text-xs text-muted-foreground">{w.faqIntro}</p>
@@ -974,7 +974,7 @@ function useArticles(api: Api, q: string) {
   const [found, setFound] = React.useState<Found[]>([]);
   React.useEffect(() => {
     if (q.trim().length < 4) return void setFound([]);
-    const t = window.setTimeout(() => void api<Found[]>(`articles?q=${encodeURIComponent(q)}`).then(setFound).catch(() => setFound([])), 400);
+    const t = window.setTimeout(() => void api<Found[]>(`articles?q=${encodeURIComponent(q)}&lang=${document.documentElement.lang === "am" ? "am" : "en"}`).then(setFound).catch(() => setFound([])), 400);
     return () => window.clearTimeout(t);
   }, [api, q]);
   return found;

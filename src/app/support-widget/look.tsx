@@ -21,7 +21,8 @@ export const ACCENTS: { key: string; label: string; swatch: string }[] = [
   { key: "slate", label: "Slate", swatch: "#3d4350" },
 ];
 const KEY = "myseed-support-look";
-const DEFAULT: Look = { mode: "auto", accent: "brand", text: "normal", radius: "round" };
+// Light unless the customer chooses otherwise (Appearance).
+const DEFAULT: Look = { mode: "light", accent: "brand", text: "normal", radius: "round" };
 const INLINE = ["--background", "--card", "--foreground", "--card-foreground", "--muted-foreground", "--primary", "--primary-foreground", "--ring"];
 
 function read(): Look {

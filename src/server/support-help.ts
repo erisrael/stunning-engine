@@ -67,6 +67,7 @@ const catOf = (r: CatRow): HelpCategory => ({
 
 // The menu, made with its defaults on first use (Payments to the Payment follow-up queue).
 export async function helpCategories(opts: { activeOnly?: boolean } = {}): Promise<HelpCategory[]> {
+  await (await import("./support-starter")).ensureStarterHelp();
   let rows = await all<CatRow>("SELECT * FROM sup_categories ORDER BY sort, key");
   if (!rows.length) {
     const pay = await sd.paymentFollowupQueue();
@@ -133,16 +134,26 @@ export async function saveCategories(user: AppUser, input: (Partial<HelpCategory
   return helpCategories();
 }
 
-// The published articles of a category (Quick help: the most read of all).
-export async function categoryArticles(key: string, limit = 6) {
+// The published articles of a category (Quick help: the most read of all), in the customer's language when the
+// article says which (lang:en, lang:am); an article without one is for everyone. "both": English.
+export async function categoryArticles(key: string, limit = 6, lang: "en" | "am" | "both" = "both") {
   const c = await helpCategory(key);
   if (!c) return [];
+  type R = { id: string; title: string; body: string; kind: string; video: string | null; keywords: string; category: string | null };
   const rows = c.kbCategory
-    ? await all<{ id: string; title: string; body: string; kind: string; video: string | null }>("SELECT id, title, body, kind, video FROM sup_articles WHERE published = 1 AND LOWER(COALESCE(category, '')) = LOWER(?) ORDER BY helpful DESC, views DESC, title LIMIT ?", c.kbCategory, limit)
+    ? await all<R>("SELECT id, title, body, kind, video, keywords, category FROM sup_articles WHERE published = 1 AND LOWER(COALESCE(category, '')) = LOWER(?) ORDER BY helpful DESC, views DESC, created_at, title LIMIT 200", c.kbCategory)
     : c.selfHelp
-      ? await all<{ id: string; title: string; body: string; kind: string; video: string | null }>("SELECT id, title, body, kind, video FROM sup_articles WHERE published = 1 ORDER BY views DESC, helpful DESC, title LIMIT ?", limit)
+      ? await all<R>("SELECT id, title, body, kind, video, keywords, category FROM sup_articles WHERE published = 1 ORDER BY views DESC, helpful DESC, created_at, title LIMIT 200")
       : [];
-  return rows.map((r) => ({ id: r.id, title: r.title, snippet: r.body.slice(0, 160), kind: r.kind === "guide" ? "guide" : "article", video: !!r.video }));
+  const { articleLang } = await import("./support-starter");
+  const want = lang === "am" ? "am" : "en";
+  return rows
+    .filter((r) => {
+      const l = articleLang(r.keywords);
+      return !l || l === want;
+    })
+    .slice(0, limit)
+    .map((r) => ({ id: r.id, title: r.title, snippet: r.body.slice(0, 160), kind: r.kind === "guide" ? "guide" : "article", video: !!r.video, category: r.category }));
 }
 
 // ---------------------------------------------------------------------------

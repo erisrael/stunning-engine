@@ -125,7 +125,7 @@ export async function customerSaveProfile(app: AppFull, token: string, input: { 
 }
 
 // The FAQ: the most read published help articles (Admin writes them in Support, Knowledge base).
-export async function customerFaq(app: AppFull, token: string) {
+export async function customerFaq(app: AppFull, token: string, lang: "en" | "am" | null = null) {
   await customerByToken(app, token);
-  return (await import("./support-channels")).searchArticles("", 20);
+  return (await import("./support-channels")).searchArticles("", 50, lang);
 }
