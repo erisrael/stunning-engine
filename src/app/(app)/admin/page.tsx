@@ -35,6 +35,7 @@ import { DATASETS, listTokens, type Dataset } from "@/server/feeds";
 import { IntegrationsAdmin } from "@/components/app/integrations";
 import { sidebarDefaults } from "@/server/ui-prefs";
 import { LegacyCmsAdmin } from "./legacy-cms-admin";
+import { ChapaAccessAdmin } from "./chapa-access-admin";
 import { SidebarAdmin } from "./sidebar-admin";
 import { listBlocked, listSessions } from "@/server/devices";
 import { SessionsTable } from "@/components/app/security";
@@ -186,6 +187,8 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
             tabs: [
               { id: "external-apis", label: "External APIs" },
               { id: "integrations", label: "Integrations" },
+              { id: "legacy-cms", label: "Noor access" },
+              { id: "chapa-access", label: "Chapa access" },
             ],
           },
           {
@@ -403,6 +406,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
                 </>
               )}
             </TabsContent>
+            <TabsContent value="chapa-access">{tab === "chapa-access" && <ChapaAccessAdmin />}</TabsContent>
             <TabsContent value="legacy-cms">
               {tab === "legacy-cms" && (
                 <LegacyCmsAdmin

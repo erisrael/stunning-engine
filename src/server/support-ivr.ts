@@ -436,6 +436,10 @@ const logger = (sessionId: string, flowId: string) => async (kind: string, nodeI
 // A caller taps Call: the active flow starts, or null when there is none (the call then goes straight to the queue).
 export async function customerStartIvr(app: sd.AppFull, token: string, input: { lang?: string | null; topic?: string | null }) {
   const c = await sd.customerByToken(app, token);
+  // Nobody online: say so before the menu, not after it (Admin, Support: check for an online agent first).
+  const cfg = await sd.supportConfig();
+  if (cfg.callsEnabled === false) throw new WorkflowError("INVALID_STATE", "Calls are switched off right now. Write to us here and we will answer.");
+  if (cfg.checkAgentsFirst !== false && !(await sd.availableAgents(null, cfg, { ignoreLimit: true })).length) throw new WorkflowError("INVALID_STATE", cfg.awayMessage || "No agent is online right now. Leave a message or ask us to call you back.");
   const lang: IvrLang = input.lang === "am" ? "am" : "en";
   const topic = clean(input.topic, 40).toLowerCase() || null;
   const f = await activeFlowFor(app.id, lang, topic);

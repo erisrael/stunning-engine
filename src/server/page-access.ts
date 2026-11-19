@@ -20,6 +20,8 @@ const dept = (key: string, view?: string) => async (u: AppUser) => {
 // Longest prefix first.
 const RULES: Rule[] = [
   { prefix: "/legacy-cms", check: async u => (await Promise.all(u.roles.map(r => import("./legacy-cms").then(c=>c.allowedCategoriesForUser(r,u.id))))).some(a=>a.length>0) },
+  // Chapa: Finance, Admin, or a person Admin gave Chapa (Admin, Chapa access).
+  { prefix: "/finance/chapa", check: async (u) => ["finance.access", "finance.view", "users.manage"].some((c) => can(u, c as Capability)) || (await (await import("./chapa-access")).hasChapaGrant(u)) },
   { prefix: "/admin/data", any: ["data.manage"] },
   { prefix: "/admin", any: ["users.manage", "data.manage"] },
   { prefix: "/audit", any: ["users.manage"] },
@@ -58,6 +60,8 @@ const RULES: Rule[] = [
   { prefix: "/dev", check: dept("dev") },
   { prefix: "/marketing", check: dept("marketing") },
   { prefix: "/studio", check: (u) => can(u, "studio.access") || can(u, "owners.view") },
+  { prefix: "/kiosk", any: ["attendance.manage", "attendance.capture"] },
+  { prefix: "/presenters", check: (u) => ["items.plan", "hr.access", "finance.access", "team.view"].some((c) => can(u, c as Capability)) },
   { prefix: "/recognition", check: async () => (await (await import("./recognition")).recognitionConfig()).enabled },
 ];
 
@@ -67,6 +71,12 @@ export async function canOpenPath(u: AppUser, href: string): Promise<boolean> {
   if (!path.startsWith("/") || path.startsWith("//")) return false;
   const d = path.match(/^\/d\/([a-z0-9-]+)(?:\/(\w+))?/) ?? path.match(/^\/(dev|marketing)(?:\/(\w+))?$/);
   if (d) return dept(d[1]!, d[2])(u);
+  // Support's lead tabs (phone menu, queues, setup…) are for support leads and Admin; agents get the desk.
+  if (path === "/support") {
+    const tab = new URLSearchParams(href.split("?")[1] ?? "").get("tab");
+    if (tab && ["ivr", "queues", "board", "monitor", "help", "content", "telegram", "bots", "apps", "systems", "config", "settings"].includes(tab))
+      return can(u, "users.manage") || can(u, "support.lead") || (tab === "ivr" && can(u, "support.ivr")) || (tab === "queues" && can(u, "support.queues")) || (tab === "content" && can(u, "support.content"));
+  }
   const rule = RULES.filter((r) => path === r.prefix || path.startsWith(`${r.prefix}/`)).sort((a, b) => b.prefix.length - a.prefix.length)[0];
   if (!rule) return true;
   if (rule.any && rule.any.some((c) => can(u, c))) return true;

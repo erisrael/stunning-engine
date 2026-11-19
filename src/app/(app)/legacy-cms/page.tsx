@@ -35,7 +35,7 @@ export const metadata = { title: "Noor Ethiopia CMS (Legacy)" };
 // date-first; Contacts and Storage & snapshots are views of the earlier client, which loads only when shown.
 // Tables & sync was folded into Live (Saved copy, Sync, slips, feedback) and the connection into Admin.
 const OLD = { contacts: "relations", storage: "storage" } as const;
-type View = "live" | "invoices" | "revenue" | "growth" | "reports" | "records" | "admin" | "content" | "fields" | keyof typeof OLD;
+type View = "live" | "invoices" | "revenue" | "growth" | "reports" | "records" | "admin" | "content" | "fields" | "families" | keyof typeof OLD;
 
 export default async function LegacyCmsPage({ searchParams }: { searchParams: Promise<{ category?: string; view?: string }> }) {
   const viewer = await requireViewer();
@@ -49,6 +49,7 @@ export default async function LegacyCmsPage({ searchParams }: { searchParams: Pr
   const canSchedule = can(viewer, "finance.access") || can(viewer, "users.manage");
 
   const flags = await cmsViewerFlags(viewer);
+  const tools = await (await import("@/server/cms-data-tools")).cmsDataTools();
   const tabs: PageTab[] = [
     { key: "live", label: "Live", icon: <RadioIcon /> },
     { key: "records", label: "Records", icon: <TableIcon /> },
@@ -59,6 +60,7 @@ export default async function LegacyCmsPage({ searchParams }: { searchParams: Pr
     { key: "growth", label: "Growth", icon: <TrendingUpIcon />, hidden: !allowedCategories.some((c) => ["students", "parents", "subscriptions"].includes(c)) },
     { key: "reports", label: "Reports", icon: <BarChart3Icon /> },
     { key: "contacts", label: "Contacts", icon: <UsersIcon />, hidden: !has("students", "parents") },
+    { key: "families", label: "Families", icon: <UsersIcon />, hidden: !has("students", "parents") || !tools.families },
     { key: "storage", label: "Storage & snapshots", icon: <DatabaseIcon /> },
     { key: "fields", label: "Resources & fields", icon: <ListTreeIcon />, hidden: !flags.canManageData },
   ];
@@ -73,6 +75,10 @@ export default async function LegacyCmsPage({ searchParams }: { searchParams: Pr
   else if (view === "invoices") body = <CmsInvoicesView />;
   else if (view === "revenue") body = <CmsRevenueView canReview={canReview} />;
   else if (view === "fields") body = <CmsFieldsView />;
+  else if (view === "families") {
+    const { CmsFamiliesView } = await import("@/components/app/legacy-cms/families-view");
+    body = <CmsFamiliesView />;
+  }
   else if (view === "records") body = <CmsRecordsView resources={await (await import("@/server/cms-query")).cmsRecordResources(viewer)} />;
   else if (view === "content") {
     const { CmsContentView } = await import("@/components/app/legacy-cms/content-view");

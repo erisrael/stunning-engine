@@ -19,7 +19,6 @@ import { CompassIcon,
   CrownIcon,
   DatabaseIcon,
   EyeIcon,
-  MonitorSmartphoneIcon,
   FilePlus2Icon,
   FileTextIcon,
   GridIcon,
@@ -66,7 +65,6 @@ import { CompassIcon,
   TargetIcon,
   HeadsetIcon,
   PhoneCallIcon,
-  TabletIcon,
   ChevronDownIcon,
   CalendarDaysIcon,
   LaptopIcon,
@@ -95,7 +93,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { publishSection } from "@/components/app/section-tabs";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -265,6 +263,7 @@ export function AppSidebar({
   userHidden = [],
   roleHidden: initialRoleHidden = [],
   cmsAccess: initialCmsAccess = false,
+  chapaAccess = false,
   home = null,
   viewerId = "",
   approver = false,
@@ -307,12 +306,14 @@ export function AppSidebar({
   userHidden?: string[];
   roleHidden?: string[];
   cmsAccess?: boolean;
+  // Given Chapa by Admin (Admin, Chapa access) without a Finance role.
+  chapaAccess?: boolean;
 }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const search = searchParams.toString();
   const { setOpenMobile, isMobile, state } = useSidebar();
-  // Collapsed to icons on a desktop or tablet: group labels hide, and an entry's pages open in a flyout menu.
+  // Collapsed to icons on a desktop or tablet: group labels and sub-pages hide; the sub-pages show as tabs on top of the page.
   const iconOnly = state === "collapsed" && !isMobile;
   const [customizing, setCustomizing] = React.useState(false);
   const [roleHidden,setRoleHidden]=React.useState(initialRoleHidden);
@@ -339,6 +340,7 @@ export function AppSidebar({
           { label: "Departments", href: "/admin?tab=departments" },
           { label: "Roles & permissions", href: "/admin?tab=permissions" },
           { label: "Sign-in & security", href: "/admin?tab=signin" },
+          { label: "Sessions & devices", href: "/admin?tab=sessions" },
           { label: "External APIs & Chapa", href: "/admin?tab=external-apis" },
           { label: "Customer support", href: "/admin?tab=customer-support" },
           { label: "Clean data", href: "/admin?tab=clean-data" },
@@ -346,7 +348,7 @@ export function AppSidebar({
           { label: "Platform & health", href: "/admin/platform?tab=status" },
         ]
       : []),
-    ...(has("data.manage") ? [{ label: "Data manager", href: "/admin/data" }] : []),
+    ...(has("data.manage") && has("users.manage") ? [{ label: "Data manager", href: "/admin/data" }] : []),
     ...(has("users.manage") ? [{ label: "Assistant AI", href: "/admin/assistant" }] : []),
   ];
   // Attendance's parts for leads, HR and Admin (the page has no tab bar for them).
@@ -374,6 +376,8 @@ export function AppSidebar({
           ...(has("email.manage") ? [{ label: "Settings", href: "/email?tab=settings" }] : []),
         ]
       : undefined;
+  // Settings' pages, one list for every role (it was written out twice).
+  const settingsSub = [{ label: "Curriculum", href: "/settings" }, { label: "Workflow", href: "/settings?tab=workflow" }, { label: "Teams", href: "/settings?tab=teams" }, { label: "Destinations", href: "/settings?tab=destinations" }, { label: "Calendar and alerts", href: "/settings?tab=calendar" }, { label: "Lists", href: "/settings?tab=lists" }, { label: "Workspace", href: "/settings?tab=workspace" }, { label: "Calls", href: "/settings?tab=calls" }];
   const groups: { label: string; items: NavItem[] }[] = [
     {
       label: "My space",
@@ -435,7 +439,6 @@ export function AppSidebar({
             { label: "People", href: "/hr" },
             { label: "Data Manager", href: "/hr/data" },
             { label: "Leave", href: "/hr?tab=leave" },
-            { label: "Attendance", href: "/attendance?tab=team" },
             { label: "Hiring", href: "/hr?tab=hiring" },
             { label: "Joiners and leavers", href: "/hr?tab=lifecycle" },
             { label: "Performance", href: "/hr?tab=performance" },
@@ -461,7 +464,6 @@ export function AppSidebar({
                   { label: "Bills", href: "/finance?tab=bills" },
                   { label: "Invoices", href: "/finance?tab=invoices" },
                   { label: "External receipts", href: "/finance?tab=receipts" },
-                  { label: "Chapa", href: "/finance/chapa" },
                   { label: "Expense claims", href: "/finance?tab=claims" },
                   { label: "Purchasing", href: "/finance?tab=purchasing" },
                   { label: "Budgets", href: "/finance?tab=budgets" },
@@ -492,11 +494,11 @@ export function AppSidebar({
         { href: "/assign", label: "Assign work", icon: UserPlusIcon, cap: "assign.bulk" },
         { href: "/checklists", label: "Checklists", icon: ListChecksIcon, cap: "checklists.manage" },
         { href: "/import-export", label: "Import and export", icon: ArrowLeftRightIcon, cap: ["import.run", "import.stage", "import.tracker", "export.run", "export.report", "export.tracker", "export.audit"] },
-        { href: "/settings", label: "Settings", icon: SettingsIcon, cap: "settings.manage", sub: [{ label: "Curriculum", href: "/settings" }, { label: "Workflow", href: "/settings?tab=workflow" }, { label: "Teams", href: "/settings?tab=teams" }, { label: "Destinations", href: "/settings?tab=destinations" }, { label: "Calendar and alerts", href: "/settings?tab=calendar" }, { label: "Lists", href: "/settings?tab=lists" }, { label: "Workspace", href: "/settings?tab=workspace" }, { label: "Calls", href: "/settings?tab=calls" }] },
-        { href: "/admin", label: "Admin", icon: UserCogIcon, cap: ["users.manage", "data.manage"], sub: adminSub },
+        { href: "/settings", label: "Settings", icon: SettingsIcon, cap: "settings.manage", sub: settingsSub },
+        { href: "/admin", label: "Admin", icon: UserCogIcon, cap: "users.manage", sub: adminSub },
         { href: "/admin/preview", label: "View as", icon: EyeIcon, cap: "users.manage" },
-        { href: "/admin?tab=sessions", label: "Sessions and devices", icon: MonitorSmartphoneIcon, cap: "users.manage" },
-        { href: "/admin/data", label: "Data manager", icon: DatabaseIcon, cap: "data.manage" },
+        // Data manager and Sessions are under Admin for Admin; a data manager without Admin keeps their own entry.
+        ...(!has("users.manage") ? [{ href: "/admin/data", label: "Data manager", icon: DatabaseIcon, cap: "data.manage" as Capability }] : []),
         { href: "/audit", label: "Audit log", icon: ShieldCheckIcon, cap: ["users.manage", "items.plan"] },
       ],
     },
@@ -544,18 +546,8 @@ export function AppSidebar({
             label: "Settings",
             icon: SettingsIcon,
             cap: "settings.manage",
-            sub: [
-              { label: "Curriculum", href: "/settings" },
-              { label: "Workflow", href: "/settings?tab=workflow" },
-              { label: "Teams", href: "/settings?tab=teams" },
-              { label: "Destinations", href: "/settings?tab=destinations" },
-              { label: "Calendar and alerts", href: "/settings?tab=calendar" },
-              { label: "Lists", href: "/settings?tab=lists" },
-              { label: "Workspace", href: "/settings?tab=workspace" },
-              { label: "Calls", href: "/settings?tab=calls" },
-            ],
+            sub: settingsSub,
           },
-          { href: "/kiosk", label: "Kiosk station", icon: TabletIcon, cap: ["attendance.manage", "attendance.capture"] },
         ],
       },
       {
@@ -663,7 +655,7 @@ export function AppSidebar({
   // Payments and Noor data get a group of their own, after the departments (before Manage and Data & records).
   const payments: NavItem[] = [];
   // Payments and Noor data (Update 1.0): every page listed, so they are found without opening Finance.
-  if (has("finance.access") || has("finance.view") || has("users.manage")) {
+  if (has("finance.access") || has("finance.view") || has("users.manage") || chapaAccess) {
     const chapaItem: NavItem = {
       href: "/finance/chapa",
       label: "Chapa payments",
@@ -680,11 +672,12 @@ export function AppSidebar({
         { label: "Account funds", href: "/finance/chapa?tab=funds" },
         { label: "Match to Noor", href: "/finance/chapa?tab=match" },
         ...(has("users.manage") || has("settings.manage") ? [{ label: "Chapa settings", href: "/finance/chapa?tab=settings" }] : []),
+        ...(has("users.manage") ? [{ label: "User access", href: "/admin?tab=chapa-access" }] : []),
       ],
     };
     payments.push(chapaItem);
   }
-  if(cmsAccess){const cmsItem:NavItem={href:"/legacy-cms",label:"Legacy CMS (Noor)",icon:GraduationCapIcon,sub:[{label:"Live",href:"/legacy-cms?view=live"},{label:"Invoices",href:"/legacy-cms?view=invoices"},{label:"Revenue",href:"/legacy-cms?view=revenue"},{label:"Growth",href:"/legacy-cms?view=growth"},{label:"Records",href:"/legacy-cms?view=records"},{label:"Noor admin",href:"/legacy-cms?view=admin"},{label:"Reports & dashboard",href:"/legacy-cms?view=reports"},{label:"Contacts",href:"/legacy-cms?view=contacts"},{label:"Storage & snapshots",href:"/legacy-cms?view=storage"},...(has("users.manage")?[{label:"User access & credentials",href:"/admin?tab=legacy-cms"}]:[])]};payments.push(cmsItem);}
+  if(cmsAccess){const cmsItem:NavItem={href:"/legacy-cms",label:"Legacy CMS (Noor)",icon:GraduationCapIcon,sub:[{label:"Live",href:"/legacy-cms?view=live"},{label:"Invoices",href:"/legacy-cms?view=invoices"},{label:"Revenue",href:"/legacy-cms?view=revenue"},{label:"Growth",href:"/legacy-cms?view=growth"},{label:"Records",href:"/legacy-cms?view=records"},{label:"Noor admin",href:"/legacy-cms?view=admin"},{label:"Reports & dashboard",href:"/legacy-cms?view=reports"},{label:"Contacts",href:"/legacy-cms?view=contacts"},{label:"Families",href:"/legacy-cms?view=families"},{label:"Storage & snapshots",href:"/legacy-cms?view=storage"},...(has("users.manage")?[{label:"User access & credentials",href:"/admin?tab=legacy-cms"}]:[])]};payments.push(cmsItem);}
   if (payments.length) {
     const before = groups.findIndex((g) => ["Manage", "Data & records"].includes(g.label));
     groups.splice(before < 0 ? groups.length : before, 0, { label: "Payments & Noor", items: payments });
@@ -719,6 +712,21 @@ export function AppSidebar({
     return pathname === p && (t ? tabParam === t || (!tabParam && t === "dashboard") : !tabParam);
   };
   const [openGroups, setOpenGroups] = React.useState<string[]>([]);
+  // The entry you are in, for the tab bar shown on top of the page while the sidebar is collapsed to icons.
+  const inSectionOf = (item: NavItem) =>
+    item.exact && item.sub
+      ? item.sub.some((s) => { const [p, q] = s.href.split("?"); return pathname === p && new URLSearchParams(q).get("tab") === tabParam; })
+      : pathname === item.href.split("?")[0] || pathname.startsWith(item.href.split("?")[0] + "/") || (!!item.gather && !!item.sub?.some((s) => pathname === s.href.split("?")[0]));
+  const visibleItems = groups.flatMap((g) => pruneSidebar(g.items.filter((i) => allowed(i.cap)), hidden));
+  const sectionItem = visibleItems.find((i) => i.sub && i.sub.some((s) => subActive(s.href))) ?? visibleItems.find((i) => i.sub && inSectionOf(i));
+  const sectionKey = sectionItem ? JSON.stringify([sectionItem.label, sectionItem.sub, search]) : "";
+  React.useEffect(() => {
+    if (!sectionItem?.sub) return publishSection(null);
+    const tabs = sectionItem.sub.map((s) => ({ label: s.label, href: s.keepFilters ? s.href + scopeQueryString(search) : s.href }));
+    const on = sectionItem.sub.find((s) => subActive(s.href));
+    publishSection({ label: sectionItem.label, tabs, active: on ? (on.keepFilters ? on.href + scopeQueryString(search) : on.href) : null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sectionKey, pathname, tabParam]);
 
   return (
     <Sidebar collapsible="icon" variant="sidebar">
@@ -776,42 +784,13 @@ export function AppSidebar({
                   <SidebarMenu className="gap-0.5">
                     {items.map((item) => {
                       const active = isActive(item);
-                      const inSection =
-                        (item.exact && item.sub ? item.sub.some(s => { const [p,q] = s.href.split("?"); return pathname === p && new URLSearchParams(q).get("tab") === tabParam; }) : pathname === item.href.split("?")[0] || pathname.startsWith(item.href.split("?")[0] + "/") || (!!item.gather && !!item.sub?.some((s) => pathname === s.href.split("?")[0])));
+                      const inSection = inSectionOf(item);
                       const expanded = openGroups.includes(`item:${item.href}`) || (inSection && !openGroups.includes(`closed:${item.href}`));
                       const href = item.keepFilters ? item.href + scopeQueryString(search) : item.href;
                       const tip = NAV_TIPS[keyOf(item)] ?? NAV_TIPS[item.href.split("?")[0]!];
                       return (
                         <SidebarMenuItem key={keyOf(item)}>
-                          {iconOnly && item.sub ? (
-                            <DropdownMenu modal={false}>
-                              <DropdownMenuTrigger asChild>
-                                <SidebarMenuButton
-                                  isActive={active || (inSection && !!item.sub)}
-                                  aria-label={`${item.label}: open its pages`}
-                                  data-nav-flyout={item.label}
-                                  className="h-8 font-medium text-sidebar-foreground/85 data-[active=true]:bg-sidebar-accent data-[active=true]:text-sidebar-accent-foreground data-[state=open]:bg-sidebar-accent"
-                                >
-                                  <AppIcon icon={item.icon} name={brand[keyOf(item)]?.icon} tone={(brand[keyOf(item)]?.tone as Tone | null | undefined) ?? null} />
-                                  <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                                </SidebarMenuButton>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent side="right" align="start" sideOffset={10} className="max-h-[70vh] min-w-52 overflow-y-auto" data-nav-flyout-menu={item.label}>
-                                <DropdownMenuLabel className="flex items-center justify-between gap-3">
-                                  {item.label}
-                                  {!!item.badge && item.badge > 0 && <span className="rounded-full bg-primary/15 px-1.5 text-[10px] font-semibold text-primary tabular-nums">{item.badge > 99 ? "99+" : item.badge}</span>}
-                                </DropdownMenuLabel>
-                                <DropdownMenuSeparator />
-                                {[...(item.sub.some((s) => s.href.split("?")[0] === item.href.split("?")[0]) ? [] : [{ label: item.label, href: item.href, keepFilters: item.keepFilters }]), ...item.sub].map((s) => (
-                                  <DropdownMenuItem key={s.href} asChild className={cn(subActive(s.href) && "bg-accent font-medium")}>
-                                    <Link href={s.keepFilters ? s.href + scopeQueryString(search) : s.href} aria-current={subActive(s.href) ? "page" : undefined}>
-                                      {s.label}
-                                    </Link>
-                                  </DropdownMenuItem>
-                                ))}
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          ) : (
+                          {(
                           <div className="flex min-w-0 items-center gap-1" data-nav-row>
                           <SidebarMenuButton
                             asChild

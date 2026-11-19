@@ -249,7 +249,21 @@ export async function callerQueueInfo(k: { id: string; queue_id: string | null; 
       estimateSec = Math.max(10, Math.round(Math.max(median(past.map((r) => Number(r.w))), (ahead * handle) / agents)));
     }
   }
-  return { position: ahead + 1, estimateSec, announcement: s?.announcement ?? null, music: s ? s.music : true, callbackOffer: s ? s.callbackOffer : true, queue: s?.name ?? null };
+  // Too little history: the calls ahead (and the calls agents are on now) at Admin's usual call length,
+  // shared among the agents online. Marked as approximate.
+  let approx = false;
+  if (estimateSec === null) {
+    const cfg = await sd.supportConfig();
+    const handle = cfg.defaultHandleSec || 240;
+    const online = (await sd.availableAgents(q, undefined, { ignoreLimit: true })).length;
+    if (online > 0) {
+      const busy = Number((await get<{ n: number }>("SELECT COUNT(*) AS n FROM sup_calls WHERE status = 'answered' AND ended_at IS NULL"))?.n ?? 0);
+      const freeNow = Math.max(0, online - busy);
+      estimateSec = ahead < freeNow ? 15 : Math.max(30, Math.round(((ahead + 1 - freeNow) * handle) / online / (busy >= online ? 2 : 1)));
+      approx = true;
+    }
+  }
+  return { position: ahead + 1, estimateSec, estimateApprox: approx, announcement: s?.announcement ?? null, music: s ? s.music : true, callbackOffer: s ? s.callbackOffer : true, queue: s?.name ?? null };
 }
 
 // Calls past their queue's maximum wait move once to the overflow queue; calls past it with nowhere to go are

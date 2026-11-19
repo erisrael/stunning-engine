@@ -80,6 +80,9 @@ export function SupportSettings({ cfg, people, admin, mailboxes = [], telegram =
         {sw("enabled", "Customer support on", "Off: the desk is hidden and connected apps show that support is not available.")}
         {sw("autoAssign", "Give out tickets automatically", "Each new ticket goes to an online agent of its queue at once (least busy, or in turn, as the queue says).")}
         {sw("requireCheckin", "Only agents checked in at work", "An agent must be checked in (Attendance) to be given tickets and calls.")}
+        {sw("callsEnabled", "Customers can call", "Off: the call buttons in Telegram and the widget tell customers calls are off; chat keeps working.")}
+        {sw("checkAgentsFirst", "Check for an online agent first", "Before a call starts, the customer is told at once when no agent is online (with a call-back offer), instead of waiting.")}
+        {sw("announceWait", "Tell callers the expected wait", "While in line, the phone menu says their place and about how long until an agent is free.")}
         {sw("recordCalls", "Record calls", "Calls from the app are recorded after the customer agrees; agents' recordings are kept with the ticket.")}
         <div className="space-y-1">
           <Label htmlFor="sc-notice">What the customer is told before a recorded call</Label>
@@ -92,6 +95,7 @@ export function SupportSettings({ cfg, people, admin, mailboxes = [], telegram =
           {num("inactiveHours", "Solve when the customer is silent (hours, 0 = never)")}
           {num("ringSeconds", "A call rings for (seconds)")}
           {num("callEscalateSec", "Ring the whole queue after (seconds)")}
+          {num("defaultHandleSec", "Usual call length for the wait estimate (seconds)")}
           <div className="space-y-1">
             <Label htmlFor="sc-overflow">Then also ring (overflow queue)</Label>
             <select id="sc-overflow" disabled={!admin} className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={c.callOverflowQueue ?? ""} onChange={(e) => setC({ ...c, callOverflowQueue: e.target.value || null })}>
@@ -182,7 +186,7 @@ export function SupportSettings({ cfg, people, admin, mailboxes = [], telegram =
               type="button"
               onClick={() => {
                 if (c.ivr.audio) return void new Audio(c.ivr.audio).play();
-                const u = new SpeechSynthesisUtterance(`${c.ivr.message} You are number 2 in line.`);
+                const u = new SpeechSynthesisUtterance(`${c.ivr.message} You are number 2 in line. The expected wait is about 4 minutes.`);
                 u.lang = c.ivr.lang;
                 window.speechSynthesis?.speak(u);
               }}

@@ -14,7 +14,7 @@ import { LEGACY_CMS_CATEGORIES, type LegacyCmsCategory } from "@/lib/legacy-cms"
 import { cn } from "@/lib/utils";
 import type { CmsAccessPerson } from "@/server/cms-access";
 import * as A from "@/app/actions/cms-access";
-import { deleteLegacyCmsCategoryDataAction } from "@/app/actions/legacy-cms";
+import { cmsToolRightsAction, deleteLegacyCmsCategoryDataAction, saveCmsDataToolsAction } from "@/app/actions/legacy-cms";
 
 type Overview = Awaited<ReturnType<typeof import("@/server/cms-access").cmsAccessOverview>>;
 import { NoorProtection } from "./noor-protection";
@@ -27,6 +27,7 @@ const SECTIONS = [
   ["logins", "Noor logins"],
   ["roles", "Role defaults"],
   ["data", "Stored data"],
+  ["tools", "Data tools"],
 ] as const;
 
 // Admin, Noor access: who sees which Noor tables, with which Noor login, and who manages the stored data.
@@ -62,6 +63,7 @@ export function LegacyCmsAdmin(_: { users?: unknown }) {
       {section === "logins" && <Logins o={o} onChanged={load} />}
       {section === "roles" && <Roles o={o} onChanged={load} />}
       {section === "data" && <Data o={o} onChanged={load} />}
+      {section === "tools" && <DataTools />}
       <span className="hidden"><PageTabs tabs={[]} active="" href={() => ""} /></span>
     </div>
   );
@@ -379,6 +381,37 @@ function Data({ o, onChanged }: { o: Overview; onChanged: () => void }) {
       </div>
       <p className="text-xs text-muted-foreground">Invoice verifications ({o.stored.invoiceReviews}) are kept separately and are never cleared here.</p>
       <Badge variant="outline" className="hidden" />
+    </div>
+  );
+}
+
+// Admin, Noor access, Data tools: what people may do with the saved Noor rows.
+function DataTools() {
+  const [t, setT] = React.useState<Record<string, boolean> | null>(null);
+  React.useEffect(() => void cmsToolRightsAction().then((r) => r.ok && r.data && setT(r.data as unknown as Record<string, boolean>)), []);
+  if (!t) return <StatusStrip>Loading…</StatusStrip>;
+  const ITEMS: [string, string, string][] = [
+    ["snapshotLive", "Keep what Noor sends", "Rows read live from Noor also update the saved copy, so the next visit shows them without asking Noor again. A new request (Sync, Fetch all) still reads Noor."],
+    ["columnFilters", "Filter by column values", "Every column of the saved tables gets a filter: pick values, contains, empty or not empty."],
+    ["export", "Export chosen rows and columns", "Export the shown rows, the chosen rows or a row range, with the columns picked, to Excel or CSV. People also need the Noor export permission."],
+    ["families", "Families table", "Students merged with their parents, students on their own and parents without a student, from the saved copy."],
+    ["copyPhone", "Copy phone numbers", "A copy button beside every phone number, and Copy phones for the chosen or shown rows."],
+  ];
+  const save = async (key: string, v: boolean) => {
+    const r = await saveCmsDataToolsAction({ [key]: v });
+    if (!r.ok) return void toast.error(r.error);
+    setT({ ...t, [key]: v });
+    toast.success("Saved");
+  };
+  return (
+    <div className="space-y-2 rounded-xl border p-4">
+      <p className="text-sm text-muted-foreground">These work on the saved copy only; none of them sends a request to Noor.</p>
+      {ITEMS.map(([k, l, d]) => (
+        <label key={k} className="flex items-start gap-3 rounded-md p-2 hover:bg-muted/40">
+          <Checkbox className="mt-0.5" checked={!!t[k]} onCheckedChange={(v) => save(k, v === true)} />
+          <span><span className="text-sm font-medium">{l}</span><span className="block text-xs text-muted-foreground">{d}</span></span>
+        </label>
+      ))}
     </div>
   );
 }

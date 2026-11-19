@@ -12,7 +12,7 @@ export type PageTab = { key: string; label: string; icon?: React.ReactNode; coun
 // Underlined link tabs kept in the URL (?view=…), so a tab can be linked to, reloaded and opened in a new tab.
 export function PageTabs({ tabs, active, href, label = "Sections", className }: { tabs: PageTab[]; active: string; href: (key: string) => string; label?: string; className?: string }) {
   return (
-    <nav aria-label={label} className={cn("-mx-1 flex gap-0.5 overflow-x-auto border-b px-1 [scrollbar-width:none]", className)}>
+    <nav aria-label={label} data-page-tabs className={cn("-mx-1 flex gap-0.5 overflow-x-auto border-b px-1 [scrollbar-width:none]", className)}>
       {tabs
         .filter((t) => !t.hidden)
         .map((t) => {

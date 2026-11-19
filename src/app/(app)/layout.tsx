@@ -7,6 +7,7 @@ import { shellCounts } from "@/server/shell";
 import { getSettings } from "@/server/settings";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app/app-sidebar";
+import { CollapsedSectionTabs } from "@/components/app/section-tabs";
 import { Topbar } from "@/components/app/topbar";
 import { ActionCenter } from "@/components/app/action-center";
 import { isManager, userDirectory } from "@/server/users";
@@ -59,6 +60,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <SidebarProvider defaultOpen={sidebarCookie !== "false"}>
       <AppSidebar
         cmsAccess={await canOpenPath(viewer, "/legacy-cms")}
+        chapaAccess={await (await import("@/server/chapa-access")).hasChapaGrant(viewer).catch(() => false)}
         home={await homeDepartment(viewer)}
         studioBooking={(await (await import("@/server/handover-config")).handoverConfig()).studioBooking}
         legacy={(await (await import("@/server/legacy")).legacyConfig()).on}
@@ -84,6 +86,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <main className="mx-auto w-full max-w-[1600px] min-w-0 flex-1 px-3 pt-4 pb-24 sm:px-6 sm:py-6 md:pb-6">
           {!viewer.mustChangePassword && <AnnouncementStrip pending={await pendingAnnouncements(viewer)} />}
           <SectionBanner banners={await bannerMap()} />
+          <CollapsedSectionTabs />
           {children}
         </main>
         {await (async () => {

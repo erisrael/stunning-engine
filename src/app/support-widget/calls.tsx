@@ -96,6 +96,8 @@ function useWaitingMessage(active: boolean) {
   const cfg = React.useRef<Ivr | null>(null);
   const [position, setPosition] = React.useState<number | null>(null);
   const said = React.useRef(0);
+  // The latest wait estimate, read when the menu speaks (Admin, Support: tell callers the expected wait).
+  const waitRef = React.useRef<number | null>(null);
   const ctx = React.useRef<AudioContext | null>(null);
   const tune = React.useRef<number | null>(null);
   const player = React.useRef<HTMLAudioElement | null>(null);
@@ -150,7 +152,10 @@ function useWaitingMessage(active: boolean) {
       }
       const synth = window.speechSynthesis;
       if (!synth) return music();
-      const text = `${c.message}${c.position && pos && pos > 1 ? ` You are number ${pos} in line.` : ""}`;
+      const est = waitRef.current;
+      const am = c.lang?.startsWith("am");
+      const waitText = est ? (am ? ` ወኪል ለማግኘት በግምት ${Math.max(1, Math.round(est / 60))} ደቂቃ ይጠብቁ።` : ` The expected wait is about ${est < 90 ? "one minute" : `${Math.round(est / 60)} minutes`}.`) : "";
+      const text = `${c.message}${c.position && pos && pos > 1 ? (am ? ` በመስመሩ ${pos}ኛ ነዎት።` : ` You are number ${pos} in line.`) : ""}${waitText}`;
       const u = new SpeechSynthesisUtterance(text);
       u.lang = c.lang;
       u.rate = 0.95;
@@ -165,8 +170,9 @@ function useWaitingMessage(active: boolean) {
     if (!active) stopAll();
     return () => stopAll();
   }, [active, stopAll]);
-  const update = (ivr: Ivr | null, pos: number | null) => {
+  const update = (ivr: Ivr | null, pos: number | null, estimateSec: number | null = null) => {
     cfg.current = ivr;
+    waitRef.current = estimateSec;
     setPosition(pos);
     if (!ivr?.on || !active) return;
     if (!said.current || Date.now() - said.current > ivr.repeatSec * 1000) speak(pos);
@@ -371,7 +377,7 @@ function useCustomerCall(api: Api) {
       const k = await api<Poll>(`calls/${callId}`).catch(() => null);
       if (!k || ref.current.callId !== callId) return;
       if (k.status === "ringing") {
-        waiting.update(k.ivr ?? null, k.position ?? null);
+        waiting.update(k.ivr ?? null, k.position ?? null, k.estimateSec ?? null);
         setQueue({ estimateSec: k.estimateSec ?? null, announcement: k.announcement ?? null, callbackOffer: k.callbackOffer !== false });
       } else setQueue(null);
       if (outgoing && k.status === "answered" && k.answer && pc.signalingState === "have-local-offer") {

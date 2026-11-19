@@ -56,3 +56,9 @@ export const chapaTxPageAction = async (f: h.TxPageInput) => wrap(async () => h.
 export const chapaTxViewsAction = async () => wrap(async () => h.chapaTxViews(await requireViewer()), read);
 export const chapaSaveTxViewAction = async (input: { name: string; filter: Record<string, unknown>; shared?: boolean }) => wrap(async () => h.saveChapaTxView(await requireViewer(), input));
 export const chapaDeleteTxViewAction = async (id: string) => wrap(async () => h.deleteChapaTxView(await requireViewer(), id));
+
+// Admin, Chapa access: per-person grants, like Noor access.
+export const chapaAccessOverviewAction = async () => wrap(async () => (await import("@/server/chapa-access")).chapaAccessOverview(await requireViewer()), read);
+export const grantChapaAccessAction = async (input: Parameters<typeof import("@/server/chapa-access").grantChapaAccess>[1]) => wrap(async () => (await import("@/server/chapa-access")).grantChapaAccess(await requireViewer(), input));
+export const revokeChapaAccessAction = async (ids: string[]) => wrap(async () => (await import("@/server/chapa-access")).revokeChapaAccess(await requireViewer(), ids));
+export const resetChapaAccessAction = async (ids: string[]) => wrap(async () => (await import("@/server/chapa-access")).resetChapaAccess(await requireViewer(), ids));

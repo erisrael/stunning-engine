@@ -168,7 +168,12 @@ async function main() {
   check("only leads see the board", /support leads/.test(await err(() => Q.queueBoard(dawit))));
   const fresh = await sd.customerStartCall(A, (await sd.identify(A, { id: "c-e1", name: "E1" })).token, { offer: OFFER, consent: true });
   const p0 = await sd.customerPollCall(A, (await sd.identify(A, { id: "c-e1", name: "E1" })).token, fresh.callId);
-  check("no wait estimate before ten answered calls", p0.status === "ringing" && (p0 as { estimateSec: number | null }).estimateSec === null && (p0 as { position: number }).position >= 1);
+  // Before ten answered calls the estimate comes from Admin's usual call length and is marked approximate.
+  check("an approximate wait estimate before ten answered calls", p0.status === "ringing" && (p0 as { estimateSec: number | null }).estimateSec !== null && (p0 as { estimateApprox?: boolean }).estimateApprox === true && (p0 as { position: number }).position >= 1, p0);
+  await sd.saveSupportConfig(admin, { announceWait: false });
+  const pOff = (await sd.customerPollCall(A, (await sd.identify(A, { id: "c-e1", name: "E1" })).token, fresh.callId)) as { estimateSec: number | null };
+  check("no estimate when Admin turns the spoken wait off", pOff.estimateSec === null, pOff);
+  await sd.saveSupportConfig(admin, { announceWait: true });
   for (let i = 0; i < 10; i++) await run("INSERT INTO sup_calls (id, ticket_id, customer_id, agent_id, direction, kind, status, consent, started_at, answered_at, ended_at, duration_s, wait_s, queue_id) VALUES (?, NULL, NULL, ?, 'inbound', 'web', 'ended', 1, ?, ?, ?, 120, ?, ?)", `scl_est${i}`, sara.id, ago(3600), ago(3500), ago(3400), 30 + i, general);
   const p1 = (await sd.customerPollCall(A, (await sd.identify(A, { id: "c-e1", name: "E1" })).token, fresh.callId)) as { estimateSec: number | null };
   check("with ten answered calls the caller sees an estimate", (p1.estimateSec ?? 0) >= 30, p1);

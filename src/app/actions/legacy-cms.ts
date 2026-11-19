@@ -1,6 +1,7 @@
 "use server";
 
 import { requireViewer } from "@/server/auth";
+import { wrap } from "@/server/action-result";
 import * as cms from "@/server/legacy-cms";
 import type { LegacyCmsCategory, CmsRoleVisibility } from "@/server/legacy-cms";
 
@@ -429,4 +430,18 @@ export async function deleteUserCmsOverrideAction(userId: string) {
   } catch (err: any) {
     return { ok: false, message: String(err?.message || err) };
   }
+}
+
+// Noor stored-data tools: Families, export record, and Admin's switches.
+export async function cmsFamiliesAction() {
+  return wrap(async () => (await import("@/server/cms-data-tools")).cmsFamilies(await requireViewer()));
+}
+export async function cmsToolRightsAction() {
+  return wrap(async () => (await import("@/server/cms-data-tools")).cmsToolRights(await requireViewer()));
+}
+export async function saveCmsDataToolsAction(input: Partial<import("@/server/cms-data-tools").CmsDataTools>) {
+  return wrap(async () => (await import("@/server/cms-data-tools")).saveCmsDataTools(await requireViewer(), input));
+}
+export async function auditCmsExportAction(input: { table: string; rows: number; columns: number }) {
+  return wrap(async () => (await import("@/server/cms-data-tools")).auditCmsExport(await requireViewer(), input));
 }

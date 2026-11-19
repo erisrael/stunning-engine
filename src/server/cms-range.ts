@@ -596,6 +596,8 @@ export async function fetchCmsRange(user: AppUser, input: CmsRangeInput, progres
     requests = t.requests;
   }
 
+  // What Noor just sent is kept in the saved copy (Admin, Noor data tools), so it opens without asking Noor again.
+  if (fetched.length) await (await import("./cms-data-tools")).snapshotLiveRows(input.category, fetched).catch(() => 0);
   const records = [...[...cached.values()].flatMap((c) => c.rows), ...fetched];
   records.sort((a, b) => (rowTime(b) ?? 0) - (rowTime(a) ?? 0));
   const headers = [...new Set([...[...cached.values()].flatMap((c) => c.headers), ...(fetched[0] ? Object.keys(fetched[0]).filter((k) => !k.startsWith("_")) : [])])];

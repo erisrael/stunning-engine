@@ -141,6 +141,10 @@ export async function saveSupportConfig(user: AppUser, input: Partial<SupportCon
     ringSeconds: n(input.ringSeconds ?? cur.ringSeconds, 45, 15, 180),
     callEscalateSec: n(input.callEscalateSec ?? cur.callEscalateSec, 15, 5, 120),
     callOverflowQueue: input.callOverflowQueue === undefined ? cur.callOverflowQueue : input.callOverflowQueue || null,
+    callsEnabled: input.callsEnabled ?? cur.callsEnabled ?? true,
+    checkAgentsFirst: input.checkAgentsFirst ?? cur.checkAgentsFirst ?? true,
+    defaultHandleSec: n(input.defaultHandleSec ?? cur.defaultHandleSec ?? 240, 240, 30, 3600),
+    announceWait: input.announceWait ?? cur.announceWait ?? true,
     hours: clean(input.hours ?? cur.hours, 200),
     awayMessage: clean(input.awayMessage ?? cur.awayMessage, 400),
     mailbox: input.mailbox === undefined ? cur.mailbox : input.mailbox ? clean(input.mailbox, 200).toLowerCase() : null,
@@ -1073,6 +1077,7 @@ export async function iceConfig() {
 export async function customerStartCall(app: AppFull, token: string, input: { ticketId?: string | null; offer: string; consent: boolean; transferFrom?: string | null; ivrSession?: string | null }) {
   await (await import("./connected-systems")).needChannel(app.id, "calls");
   const cfg = await supportConfig();
+  if (cfg.callsEnabled === false) throw new WorkflowError("INVALID_STATE", "Calls are switched off right now. Write to us here and we will answer.");
   const c = await customerByToken(app, token);
   if (input.transferFrom) return transferredStart(app, c, input);
   if (cfg.recordCalls && !input.consent) throw new WorkflowError("VALIDATION", "Agree to the call being recorded, or write to us instead.");
@@ -1224,7 +1229,8 @@ export async function customerPollCall(app: AppFull, token: string, callId: stri
       ice: parseJson<unknown[]>(k.agent_ice, []),
       agent,
       position: info.position,
-      estimateSec: info.estimateSec,
+      estimateSec: cfg.announceWait === false ? null : info.estimateSec,
+      estimateApprox: info.estimateApprox,
       announcement: info.announcement,
       callbackOffer: info.callbackOffer,
       ivr: cfg.ivr.on ? { ...cfg.ivr, music: cfg.ivr.music && info.music, audio: cfg.ivr.audio ? `/api/support/ivr-audio` : null } : null,

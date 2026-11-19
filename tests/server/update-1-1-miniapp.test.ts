@@ -64,7 +64,18 @@ async function main() {
   posts.length = 0;
   await ch.telegramUpdate(secret, secret, { callback_query: { id: "q-call", data: "sm:call", from: { id: 4242 }, message: { chat: { id: 4242, type: "private" } } } });
   const callRows = ((posts.filter((p) => p.url.endsWith("/sendMessage")).at(-1)?.body.reply_markup as { inline_keyboard?: { text: string; web_app?: { url: string } }[][] } | undefined)?.inline_keyboard ?? []).flat();
-  check("and calling support in it", [...rows, ...callRows].some((b) => /Call support/.test(b.text) && b.web_app?.url === "https://cm.myseed.et/support-widget?tg=default&call=1"), callRows);
+  // "Call support now" first checks for an online agent (Admin, Support: check for an online agent first).
+  check("and calling support in it", [...rows, ...callRows].some((b) => /Call support/.test(b.text) && (b as { callback_data?: string }).callback_data === "cn"), callRows);
+  const lastText = () => String(posts.filter((p) => p.url.endsWith("/sendMessage")).at(-1)?.body.text ?? "");
+  const lastRows = () => ((posts.filter((p) => p.url.endsWith("/sendMessage")).at(-1)?.body.reply_markup as { inline_keyboard?: { text: string; callback_data?: string; web_app?: { url: string } }[][] } | undefined)?.inline_keyboard ?? []).flat();
+  posts.length = 0;
+  await ch.telegramUpdate(secret, secret, { callback_query: { id: "q-cn", data: "cn", from: { id: 4242 }, message: { chat: { id: 4242, type: "private" } } } });
+  const online = (await (await import("../../src/server/support-desk")).availableAgents(null, undefined, { ignoreLimit: true })).length;
+  check(
+    "pressing it says nobody is online, or gives the call button",
+    online ? lastRows().some((b) => b.web_app?.url === "https://cm.myseed.et/support-widget?tg=default&call=1") : /No agent is online/.test(lastText()) && lastRows().some((b) => b.callback_data === "cb"),
+    { online, text: lastText(), rows: lastRows() },
+  );
   const botCustomer = (await get<{ id: string }>("SELECT id FROM sup_customers WHERE external_id = 'tg:4242' AND app_id IS NULL"))!;
 
   // Signing in to the Mini App.

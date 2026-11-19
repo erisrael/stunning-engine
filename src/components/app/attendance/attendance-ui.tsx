@@ -90,7 +90,7 @@ function Flags({ d }: { d: DayResult }) {
 
 export function AttTabs({ tab, tabs }: { tab: string; tabs: { key: string; label: string; badge?: number }[] }) {
   return (
-    <nav className="flex flex-wrap gap-1 rounded-lg bg-muted p-1 sm:w-fit" aria-label="Attendance sections">
+    <nav className="flex flex-wrap gap-1 rounded-lg bg-muted p-1 sm:w-fit" aria-label="Attendance sections" data-page-tabs>
       {tabs.map((t) => (
         <Link
           key={t.key}

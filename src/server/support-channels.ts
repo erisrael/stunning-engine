@@ -448,6 +448,34 @@ export async function telegramHealth() {
   };
 }
 
+// "Call support now" from Telegram: with an agent online, the button that opens the call; with none (or calls
+// off, or the line closed), the customer is told so at once and offered a call-back or a message.
+async function callNow(chat: string, x: TelegramTexts) {
+  const sd = await import("./support-desk");
+  const cfg = await sd.supportConfig();
+  const { channelOn } = await import("./connected-systems");
+  const bot = currentBot();
+  const back = { text: L(x, "Main menu", "ዋና ምናሌ"), callback_data: "m" };
+  const callback = { text: L(x, "Call me back", "መልሰው ይደውሉልኝ"), callback_data: "cb" };
+  if (cfg.callsEnabled === false || !(await channelOn(bot === "default" ? null : bot, "calls")))
+    return telegramSend(chat, L2(x, "Calls are switched off right now. Write your question here and an agent will answer.", "ጥሪዎች አሁን ተዘግተዋል። ጥያቄዎን እዚህ ይጻፉ፤ ወኪል ይመልሳል።"), { reply_markup: { inline_keyboard: [[back]] } });
+  const online = (await sd.availableAgents(null, cfg, { ignoreLimit: true })).length;
+  if (!online)
+    return telegramSend(chat, L2(x, `No agent is online right now. ${cfg.hours ? `We answer calls ${cfg.hours}. ` : ""}Ask us to call you back, or write your question here.`, `አሁን በመስመር ላይ ያለ ወኪል የለም። ${cfg.hours ? `የስራ ሰዓት፦ ${cfg.hours}። ` : ""}መልሰን እንድንደውል ይጠይቁ ወይም ጥያቄዎን እዚህ ይጻፉ።`), { reply_markup: { inline_keyboard: [[callback], [back]] } });
+  const busy = Number((await get<{ n: number }>("SELECT COUNT(*) AS n FROM sup_calls WHERE status = 'answered' AND ended_at IS NULL AND kind = 'web'"))?.n ?? 0);
+  const waiting = Number((await get<{ n: number }>("SELECT COUNT(*) AS n FROM sup_calls WHERE status = 'ringing' AND direction = 'inbound' AND kind = 'web'"))?.n ?? 0);
+  const free = Math.max(0, online - busy);
+  const mins = free > waiting ? 0 : Math.max(1, Math.round(((waiting + 1 - free) * (cfg.defaultHandleSec || 240)) / online / 60));
+  const url = supportAppUrl(await botOrigin(), bot, "&call=1");
+  if (!url) return telegramSend(chat, L2(x, "Calling needs the support app, which is not set up yet. Write your question here.", "መደወል የድጋፍ መተግበሪያውን ይፈልጋል። ጥያቄዎን እዚህ ይጻፉ።"), { reply_markup: { inline_keyboard: [[back]] } });
+  const note = mins ? L2(x, `All agents are busy. About ${mins} minute${mins === 1 ? "" : "s"} wait; you will hear your place in line.`, `ሁሉም ወኪሎች ተይዘዋል። በግምት ${mins} ደቂቃ ይጠብቃሉ።`) : L2(x, "An agent is free now.", "አሁን ነጻ ወኪል አለ።");
+  return telegramSend(chat, `${note}
+${L2(x, "Tap to call. Allow the microphone when asked.", "ለመደወል ይጫኑ። ማይክሮፎን ሲጠየቁ ይፍቀዱ።")}`, { reply_markup: { inline_keyboard: [[{ text: L(x, "Call now", "አሁን ይደውሉ"), web_app: { url } }], [callback], [back]] } });
+}
+// A full sentence in the customer's language (L cuts to button length).
+const L2 = (x: TelegramTexts, en: string, am: string) => (x.lang === "am" ? am : x.lang === "en" ? en : `${en}
+${am}`);
+
 async function telegramSend(chatId: string, text: string, extra: Record<string, unknown> = {}) {
   await api("sendMessage", { chat_id: chatId, text: text.slice(0, 4000), ...extra });
 }
@@ -511,7 +539,11 @@ async function menuParts(x: TelegramTexts) {
   if (appUrl && x.miniApp) {
     // Telegram bots cannot call; the support app can, in the browser inside Telegram.
     const { channelOn } = await import("./connected-systems");
-    if (await channelOn(currentBot() === "default" ? null : currentBot(), "calls")) parts.call.unshift({ text: L(x, "Call support now", "አሁን ወደ ድጋፍ ይደውሉ"), web_app: { url: supportAppUrl(origin, currentBot(), "&call=1")! } });
+    // The button first checks for an online agent (Admin, Support: check for an online agent first), so the
+    // customer hears at once when nobody can answer instead of waiting in an empty line.
+    const sc = await (await import("./support-desk")).supportConfig();
+    if (sc.callsEnabled !== false && (await channelOn(currentBot() === "default" ? null : currentBot(), "calls")))
+      parts.call.unshift(sc.checkAgentsFirst === false ? { text: L(x, "Call support now", "አሁን ወደ ድጋፍ ይደውሉ"), web_app: { url: supportAppUrl(origin, currentBot(), "&call=1")! } } : { text: L(x, "Call support now", "አሁን ወደ ድጋፍ ይደውሉ"), callback_data: "cn" });
   }
   parts.settings.unshift({ text: PHONE_BUTTON(x), callback_data: "ph" });
   if (!parts.settings.some((b) => b.callback_data === "lang")) parts.settings.splice(1, 0, { text: await btn(x, "button.language"), callback_data: "lang" });
@@ -833,6 +865,7 @@ async function telegramButton(q: NonNullable<TgUpdate["callback_query"]>, x: Tel
   if (data === "m") return sendMenu(chat, x);
   if (data.startsWith("sm:") && data.slice(3) in SUBMENUS) return sendSubmenu(chat, x, data.slice(3) as Submenu);
   if (data === "ph") return askPhone(chat, x);
+  if (data === "cn") return callNow(chat, x);
   // Language: chosen once, kept on the customer.
   if (data === "lang") return telegramSend(chat, await sayKey({ ...x, lang: "both" }, "language.choose"), { reply_markup: { inline_keyboard: [[{ text: "English", callback_data: "l:en" }, { text: "አማርኛ", callback_data: "l:am" }]] } });
   if (data === "l:en" || data === "l:am") {

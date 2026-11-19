@@ -52,6 +52,14 @@ export type SupportConfig = {
   // A call for one agent rings the whole queue after this many seconds, then the overflow queue (when set).
   callEscalateSec: number;
   callOverflowQueue: string | null;
+  // Customers may call (Telegram support app and widget). Off: the call buttons say calls are off.
+  callsEnabled: boolean;
+  // Before the call starts, check that an agent is online; with nobody, the caller is told so at once.
+  checkAgentsFirst: boolean;
+  // The usual length of a call, used for the waiting estimate until a queue has enough answered calls.
+  defaultHandleSec: number;
+  // The phone menu says the expected wait while the caller is in line.
+  announceWait: boolean;
   // Shown in the widget, for example "Monday to Friday, 8:30 to 17:30".
   hours: string;
   awayMessage: string;
@@ -78,6 +86,10 @@ export const DEFAULT_SUPPORT: SupportConfig = {
   ringSeconds: 45,
   callEscalateSec: 15,
   callOverflowQueue: null,
+  callsEnabled: true,
+  checkAgentsFirst: true,
+  defaultHandleSec: 240,
+  announceWait: true,
   hours: "Monday to Friday, 8:30 to 17:30",
   awayMessage: "No one can take your call right now. Leave a message and we will answer as soon as we can.",
   mailbox: null,

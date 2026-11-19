@@ -89,3 +89,8 @@ export async function movePayrollAction(runId: string, input: Parameters<typeof 
 export async function payslipsOfAction(runId: string) {
   return wrap(async () => f.payslipsOf(await requireViewer(), runId), { revalidate: false });
 }
+
+// Chapa and Noor on the Company overview: what is shown (Admin or Finance).
+export async function saveCompanyIncomeConfigAction(input: Partial<import("@/server/company-income").CompanyIncomeConfig>) {
+  return wrap(async () => (await import("@/server/company-income")).saveCompanyIncomeConfig(await requireViewer(), input));
+}

@@ -15,6 +15,8 @@ import { waitForCmsTask } from "@/lib/cms-task-client";
 import { listLegacyCmsRecordsAction, resolveLegacyCmsFeedbackAction } from "@/app/actions/legacy-cms";
 import { ExportButtons, NoorFilters, RangePicker, RowsTable, TableTabs, useShowEc, type Period } from "./range-controls";
 import { exportHref, METHOD_LABEL, useCmsRange } from "./use-cms-range";
+import { DataGrid, type GridTools } from "./data-grid";
+import { cmsToolRightsAction } from "@/app/actions/legacy-cms";
 import { HistoryDialog, invoiceKey, ReviewBar, StateBadge, useReviewStates } from "./invoice-review";
 import { SlipButton } from "./slip-viewer";
 
@@ -41,6 +43,9 @@ export function CmsLiveView({ categories, canReview, initialCategory, canManageD
   const [history, setHistory] = React.useState<string | null>(null);
   const [resolve, setResolve] = React.useState<Record<string, string> | null>(null);
   const cms = useCmsRange();
+  // Admin's Noor data tools (column filters, export, phone copy) for the saved copy.
+  const [tools, setTools] = React.useState<GridTools>({ columnFilters: true, export: false, copyPhone: true });
+  React.useEffect(() => void cmsToolRightsAction().then((t) => t.ok && t.data && setTools(t.data)), []);
   const range = period ? cmsPresetRange(period, start, end) : null;
   const key = JSON.stringify([category, range, sent, filters, dateField]);
 
@@ -244,7 +249,20 @@ export function CmsLiveView({ categories, canReview, initialCategory, canManageD
             </StatusStrip>
           )}
           {reviewing && selected.size > 0 && <ReviewBar ids={[...selected]} invoices={byId} onDone={() => (setSelected(new Set()), void refresh())} />}
-          {(source === "saved" ? !!saved : !!r) && (
+          {source === "saved" && saved && (
+            <DataGrid
+              table={category}
+              headers={headers}
+              rows={rows}
+              rowKey={(x, i) => invoiceKey(x) || String(x._recordId || i)}
+              tools={tools}
+              selected={selected}
+              onSelect={setSelected}
+              lead={lead}
+              empty={`No ${label.toLowerCase()} ${range ? "in this range" : "saved"}.`}
+            />
+          )}
+          {source === "live" && !!r && (
             <RowsTable
               headers={headers}
               rows={rows}

@@ -318,6 +318,7 @@ Imported recordings are counted as recorded but carry no timing, so they never d
 
 ## 14. Customer support calls (Update 1.2)
 
+- **Full setup guide**: [CALL-CENTER-SETUP.md](CALL-CENTER-SETUP.md).
 - **Phone menu**: Customer support › Phone menu. Build on the canvas, run a test call, then Publish (a new version) and switch it on. Restore any earlier version to the draft from the Versions list. An emergency announcement in Flow settings plays before everything else.
 - **Queues**: Customer support › Queues and replies › Call settings sets each queue's hours, size, longest wait, overflow, announcement, call-back offer, routing, skills, priority rules, wrap-up and service level. Agents' skills are set under Agent skills.
 - **Live queues**: Customer support › Live queues refreshes every five seconds.

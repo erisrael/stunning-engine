@@ -100,6 +100,15 @@ export async function chapaCan(user: AppUser, action: ChapaAction, accountId?: s
   const r = ruleFor(settings, action, accountId);
   const admin = can(user, "users.manage");
   if (admin && action === "view") return true;
+  // A person Admin granted Chapa (Admin, Chapa access) gets exactly what was granted, on the businesses granted.
+  // Money actions still need the action switched on for the business (limits and second approver keep applying).
+  const grant = (await (await import("./chapa-access")).chapaGrants())[user.id];
+  if (grant) {
+    if (grant.revoked) return false;
+    const onBiz = !accountId || grant.businesses === "*" || grant.businesses.includes(accountId);
+    if (onBiz && grant.actions.includes(action) && (!MONEY_ACTIONS.includes(action) || r.enabled)) return true;
+    if (!grant.alsoRole) return false;
+  }
   if (!r.enabled) return false;
   if (admin && r.roles.includes("admin")) return true;
   return user.roles.some((role) => r.roles.includes(role));
