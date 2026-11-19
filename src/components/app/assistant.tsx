@@ -12,7 +12,7 @@ import { translate } from "@/lib/amharic";
 import * as React from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { BotIcon, CheckIcon, EyeOffIcon, CircleDotIcon, ExternalLinkIcon, GripVerticalIcon, HistoryIcon, Loader2Icon, MessageSquareIcon, MicIcon, MicOffIcon, PanelRightCloseIcon, PanelRightOpenIcon, PlayIcon, RotateCcwIcon, SendIcon, SparklesIcon, Trash2Icon, TriangleAlertIcon, Volume2Icon, VolumeXIcon, XIcon } from "lucide-react";
+import { BotIcon, CheckIcon, EarIcon, EarOffIcon, EyeOffIcon, CircleDotIcon, ExternalLinkIcon, GripVerticalIcon, HistoryIcon, Loader2Icon, MessageSquareIcon, MicIcon, MicOffIcon, PanelRightCloseIcon, PanelRightOpenIcon, PlayIcon, RotateCcwIcon, SendIcon, SparklesIcon, Trash2Icon, TriangleAlertIcon, Volume2Icon, VolumeXIcon, XIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -26,6 +26,10 @@ import { requestLeaveAction } from "@/app/actions/leave";
 import { flowAssignAction, flowStartAction } from "@/app/actions/departments";
 import { matchText, PLACES, score, taskHandoff, type Flow, type Match, type ShowStep } from "@/lib/assistant";
 import { autoKind, guideSteps } from "@/lib/assistant-auto";
+import { VOICE_HELP, WAKE_WORDS, voiceAction, type VoiceAction } from "@/lib/assistant-voice";
+import { patchAppearance } from "@/components/app/appearance";
+import { UI_STYLES } from "@/lib/ui-styles";
+import { useTheme } from "next-themes";
 import { amharicToKeywords, detectAmharic } from "@/lib/amharic-intent";
 import { deptPath } from "@/lib/work";
 import type { MenuGroup, MenuItem } from "@/server/assistant-menu";
@@ -417,9 +421,9 @@ const LANGS = [
 ];
 function readVoice(): { lang: string; speak: boolean } {
   try {
-    return { lang: "en-US", speak: false, ...JSON.parse(localStorage.getItem(VOICE_KEY) ?? "{}") };
+    return { lang: "en-US", speak: true, ...JSON.parse(localStorage.getItem(VOICE_KEY) ?? "{}") };
   } catch {
-    return { lang: "en-US", speak: false };
+    return { lang: "en-US", speak: true };
   }
 }
 function useSpeech(lang: string, onFinal: (text: string) => void) {
@@ -482,6 +486,102 @@ function speak(text: string, lang: string) {
     window.speechSynthesis.speak(u);
   } catch {}
 }
+
+// Read the page aloud: its headings, text, lists and table cells as shown, in sentence-sized pieces.
+function readPage(lang: string) {
+  try {
+    if (!("speechSynthesis" in window)) return false;
+    const main = document.querySelector("[data-app-main]") ?? document.body;
+    const parts = [...main.querySelectorAll<HTMLElement>("h1, h2, h3, p, li, [data-slot='card-title'], [data-slot='card-description'], th, td")]
+      .filter((el) => el.offsetParent !== null && !el.closest("[data-assistant], [data-fun-window], nav, [aria-hidden='true']"))
+      .map((el) => (el.innerText || "").replace(/\s+/g, " ").trim())
+      .filter((x) => x.length > 1);
+    const text = [...new Set(parts)].join(". ").slice(0, 5000);
+    if (!text) return false;
+    window.speechSynthesis.cancel();
+    const chunks = text.match(/[^.!?]{1,220}[.!?]?/g) ?? [text];
+    const v = window.speechSynthesis.getVoices().find((x) => x.lang.toLowerCase().startsWith(lang.slice(0, 2).toLowerCase()));
+    for (const c of chunks) {
+      const u = new SpeechSynthesisUtterance(c.trim());
+      u.lang = lang;
+      if (v) u.voice = v;
+      window.speechSynthesis.speak(u);
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Hands-free: keeps listening (while the tab is open) and acts on what follows "Hey Seed". "Hey Seed" alone waits
+// eight seconds for the request. Stops while push-to-talk listens, so two microphones never compete.
+function useWakeWord(on: boolean, lang: string, paused: boolean, onCommand: (text: string) => void, onWake: () => void) {
+  const cb = React.useRef({ onCommand, onWake });
+  cb.current = { onCommand, onWake };
+  React.useEffect(() => {
+    if (!on || paused) return;
+    const w = window as unknown as { SpeechRecognition?: new () => Rec; webkitSpeechRecognition?: new () => Rec };
+    const C = w.SpeechRecognition || w.webkitSpeechRecognition;
+    if (!C) return;
+    let stopped = false;
+    let armed = false;
+    let armTimer = 0;
+    let r: Rec | null = null;
+    const begin = () => {
+      if (stopped || document.visibilityState !== "visible") return;
+      r = new C();
+      r.lang = lang;
+      r.continuous = true;
+      r.interimResults = false;
+      r.onresult = (e) => {
+        const res = e.results[e.results.length - 1];
+        if (!res || !res.isFinal) return;
+        const said = (res[0]?.transcript ?? "").toLowerCase().replace(/[,.!?]/g, " ").replace(/\s+/g, " ").trim();
+        const wake = WAKE_WORDS.find((x) => said === x || said.startsWith(`${x} `) || said.includes(` ${x} `));
+        if (wake) {
+          const rest = said.slice(said.indexOf(wake) + wake.length).trim();
+          if (rest) cb.current.onCommand(rest);
+          else {
+            armed = true;
+            cb.current.onWake();
+            window.clearTimeout(armTimer);
+            armTimer = window.setTimeout(() => (armed = false), 8000);
+          }
+        } else if (armed) {
+          armed = false;
+          cb.current.onCommand(said);
+        }
+      };
+      r.onerror = (e) => {
+        if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+          stopped = true;
+          toast.error("Hands-free needs the microphone. Allow it in the browser's address bar.");
+        }
+      };
+      r.onend = () => {
+        r = null;
+        if (!stopped) window.setTimeout(begin, 400);
+      };
+      try {
+        r.start();
+      } catch {}
+    };
+    const vis = () => {
+      if (document.visibilityState === "visible" && !r) begin();
+    };
+    begin();
+    document.addEventListener("visibilitychange", vis);
+    return () => {
+      stopped = true;
+      window.clearTimeout(armTimer);
+      document.removeEventListener("visibilitychange", vis);
+      try {
+        r?.abort();
+      } catch {}
+    };
+  }, [on, lang, paused]);
+}
+const HANDSFREE_KEY = "myseed.assistant.handsfree";
 
 type Command = { kind: "go"; href: string; name: string } | { kind: "back" | "forward" | "up" | "down" | "top" | "close" | "clear" };
 
@@ -1030,6 +1130,13 @@ export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantCo
       setMsgs(m=>[...m,{from:"me",text:t}]);setThinking(true);
       void equipmentReportAction().then(r=>{if(!r.ok || !r.data) say({from:"bot",text:!r.ok?r.error:"Unable to load equipment."});else say({from:"bot",text:`Checked ${r.data.total} equipment records available to your role.\n`+(r.data.items.length?r.data.items.map(e=>`${e.tag} — ${e.name}: ${e.advice.join(" ")}`).join("\n"):"No maintenance, replacement or stock alerts found."),actions:[{label:"Equipment & maintenance",run:()=>router.push("/resources?tab=insights")}]});}).catch(()=>say({from:"bot",text:"Could not load equipment. Please try again."})).finally(()=>setThinking(false));return;
     }
+    const va = voiceAction(t);
+    if (va) {
+      if (spoken) log({ event: "voice", text: t });
+      setMsgs((m) => [...m, { from: "me", text: t }]);
+      runVoice(va);
+      return;
+    }
     const cmd = localCommand(t, base, ctx.places);
     if (cmd) {
       if (spoken) log({ event: "voice", text: t });
@@ -1060,6 +1167,77 @@ export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantCo
     else keywordAnswer(t);
   };
   const speech = useSpeech(voice.lang, (t) => ask(t, true));
+  const { setTheme } = useTheme();
+  // Commands for Fun mode, the look of the app, reading aloud, reminders and hands-free (lib/assistant-voice.ts).
+  const runVoice = (va: VoiceAction) => {
+    const reply = (text: string) => {
+      if (text) say({ from: "bot", text });
+    };
+    const root = document.documentElement;
+    if (va.kind === "fun") {
+      if (!document.querySelector("[data-fun-launcher]") && !document.querySelector("[data-fun-window]")) return reply("Fun mode is switched off for you. Admin turns it on in Admin, Fun mode.");
+      window.dispatchEvent(new CustomEvent("myseed-fun", { detail: va.cmd }));
+      if ((va.cmd.open || va.cmd.game) && !dock) setOpen(false);
+      return reply(va.say);
+    }
+    if (va.kind === "style") {
+      const allowed = (root.dataset.styleAllowed ?? "").split(",").filter(Boolean);
+      if (allowed.length && !allowed.includes(va.style)) return reply(`Admin has not made the ${UI_STYLES.find((x) => x.key === va.style)?.label} style available. You can pick from: ${UI_STYLES.filter((x) => allowed.includes(x.key)).map((x) => x.label).join(", ")}.`);
+      patchAppearance({ style: va.style });
+      return reply(va.say);
+    }
+    if (va.kind === "mode") {
+      if (root.dataset.preset) patchAppearance({ preset: "none" });
+      setTheme(va.mode);
+      return reply(va.say);
+    }
+    if (va.kind === "accent") {
+      if (root.dataset.preset) patchAppearance({ preset: "none" });
+      patchAppearance({ accent: va.accent });
+      return reply(va.say);
+    }
+    if (va.kind === "read") {
+      if (!readPage(voice.lang)) reply("There is nothing to read on this page.");
+      return;
+    }
+    if (va.kind === "quiet") return void window.speechSynthesis?.cancel();
+    if (va.kind === "timer") {
+      window.setTimeout(() => {
+        toast("Reminder", { description: va.what, duration: 30000 });
+        speak(`Reminder: ${va.what}`, voice.lang);
+        try {
+          if ("Notification" in window && Notification.permission === "granted") new Notification("Reminder", { body: va.what });
+        } catch {}
+      }, va.minutes * 60e3);
+      return reply(va.say);
+    }
+    if (va.kind === "handsfree") {
+      if (va.on && !speech.supported) return reply("This browser cannot listen. Use Chrome or Edge.");
+      setHandsFree(va.on);
+      try {
+        localStorage.setItem(HANDSFREE_KEY, va.on ? "1" : "0");
+      } catch {}
+      return reply(va.say);
+    }
+    reply(`You can say:\n- ${VOICE_HELP.join("\n- ")}`);
+  };
+  const [handsFree, setHandsFree] = React.useState(false);
+  React.useEffect(() => {
+    try {
+      setHandsFree(localStorage.getItem(HANDSFREE_KEY) === "1");
+    } catch {}
+  }, []);
+  // A hands-free request: commands run without opening the panel; questions open it for the answer.
+  useWakeWord(
+    handsFree && opts.voice && speech.supported,
+    voice.lang,
+    speech.listening,
+    (t) => {
+      if (!voiceAction(t) && !localCommand(t, base, ctx.places)) setOpen(true);
+      ask(t, true);
+    },
+    () => speak(voice.lang.startsWith("am") ? "አቤት" : "Yes?", voice.lang),
+  );
   const listen = () => {
     setOpen(true);
     if (speech.listening) speech.stop();
@@ -1184,6 +1362,20 @@ export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantCo
               >
                 {voice.speak ? <Volume2Icon className="text-[#1E8E3E] dark:text-[#81C995]" /> : <VolumeXIcon />}
               </Button>
+              {speech.supported && opts.voice && (
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="size-7"
+                  aria-label={handsFree ? "Stop hands-free listening" : 'Hands-free: listen for "Hey Seed"'}
+                  aria-pressed={handsFree}
+                  title={handsFree ? 'Hands-free is on: say "Hey Seed", then what you need' : 'Hands-free: say "Hey Seed" instead of pressing the microphone'}
+                  onClick={() => runVoice({ kind: "handsfree", on: !handsFree, say: handsFree ? "Hands-free is off." : 'Hands-free is on. Say "Hey Seed" and then what you need.' })}
+                  data-assistant-handsfree
+                >
+                  {handsFree ? <EarIcon className="text-[#1E8E3E] dark:text-[#81C995]" /> : <EarOffIcon />}
+                </Button>
+              )}
               <select aria-label="Voice language" className="h-7 rounded-md border bg-background px-1 text-xs" value={voice.lang} onChange={(e) => saveVoice({ ...voice, lang: e.target.value })}>
                 {LANGS.map((l) => (
                   <option key={l.id} value={l.id}>
@@ -1495,13 +1687,14 @@ export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantCo
           )}
           <Button
             size="icon"
-            className="size-11 rounded-full bg-gradient-to-br from-[#4285F4] via-[#9334E6] to-[#EA4335] text-white shadow-md hover:opacity-95"
+            className="relative size-11 rounded-full bg-gradient-to-br from-[#4285F4] via-[#9334E6] to-[#EA4335] text-white shadow-md hover:opacity-95"
             aria-label={open ? "Close the assistant" : "Open the assistant"}
             aria-expanded={open}
-            title="Assistant (Alt+A)"
+            title={handsFree ? 'Assistant (Alt+A). Hands-free is on: say "Hey Seed"' : "Assistant (Alt+A)"}
             onClick={() => setOpen(!open)}
           >
             <SparklesIcon />
+            {handsFree && <span className="absolute -top-0.5 -right-0.5 size-3 animate-pulse rounded-full border-2 border-background bg-[#1E8E3E]" aria-hidden data-assistant-listening />}
           </Button>
         </div>
       </div>

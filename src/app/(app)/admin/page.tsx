@@ -36,6 +36,7 @@ import { IntegrationsAdmin } from "@/components/app/integrations";
 import { sidebarDefaults } from "@/server/ui-prefs";
 import { LegacyCmsAdmin } from "./legacy-cms-admin";
 import { ChapaAccessAdmin } from "./chapa-access-admin";
+import { FunAdmin } from "./fun-admin";
 import { SidebarAdmin } from "./sidebar-admin";
 import { listBlocked, listSessions } from "@/server/devices";
 import { SessionsTable } from "@/components/app/security";
@@ -201,6 +202,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
               { id: "usage", label: "Usage" },
               { id: "clean-data", label: "Clean data" },
               { id: "presentations", label: "Presentation templates" },
+              { id: "fun", label: "Fun mode" },
               ...(manageData ? [{ id: "data", label: "Data" }] : []),
             ],
           },
@@ -404,6 +406,15 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
                 <>
                   <SidebarAdmin defaults={await sidebarDefaults()} roles={await roleCatalog()} departments={await customDepartments()} />
                 </>
+              )}
+            </TabsContent>
+            <TabsContent value="fun">
+              {tab === "fun" && (
+                <FunAdmin
+                  initial={await (await import("@/server/fun")).funConfig()}
+                  games={(await import("@/server/fun")).FUN_GAMES.map((g) => ({ ...g }))}
+                  roles={(await roleCatalog()).map((r) => ({ key: r.key, label: r.label }))}
+                />
               )}
             </TabsContent>
             <TabsContent value="chapa-access">{tab === "chapa-access" && <ChapaAccessAdmin />}</TabsContent>

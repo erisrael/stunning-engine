@@ -1,0 +1,15 @@
+{
+  "name": "Myseed Fun",
+  "short_name": "Myseed Fun",
+  "description": "Focus timer, music, games, Seed Town 3D and your pet. Sign in with your Myseed account.",
+  "id": "/fun",
+  "start_url": "/fun",
+  "scope": "/fun",
+  "display": "standalone",
+  "background_color": "#1a1424",
+  "theme_color": "#7b68ee",
+  "icons": [
+    { "src": "/api/branding/favicon", "sizes": "any", "purpose": "any" },
+    { "src": "/api/branding/favicon", "sizes": "192x192", "purpose": "maskable" }
+  ]
+}

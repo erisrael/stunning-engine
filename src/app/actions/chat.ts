@@ -692,3 +692,23 @@ export async function searchGifsAction(q: string) {
     };
   }, NO_REVALIDATE);
 }
+
+// ---------------------------------------------------------------------------
+// Games in a chat (src/server/chat-games.ts)
+// ---------------------------------------------------------------------------
+
+export async function startChatGameAction(input: { groupId: string; game: string; opponent: string; level?: number }) {
+  return wrap(async () => (await import("@/server/chat-games")).startGame(await requireViewer(), input), NO_REVALIDATE);
+}
+export async function joinChatGameAction(messageId: string) {
+  return wrap(async () => (await import("@/server/chat-games")).joinGame(await requireViewer(), messageId), NO_REVALIDATE);
+}
+export async function chatGameMoveAction(messageId: string, move: import("@/lib/chat-games").Move) {
+  return wrap(async () => (await import("@/server/chat-games")).playMove(await requireViewer(), messageId, move), NO_REVALIDATE);
+}
+export async function resignChatGameAction(messageId: string) {
+  return wrap(async () => (await import("@/server/chat-games")).resignGame(await requireViewer(), messageId), NO_REVALIDATE);
+}
+export async function rematchChatGameAction(messageId: string) {
+  return wrap(async () => (await import("@/server/chat-games")).rematch(await requireViewer(), messageId), NO_REVALIDATE);
+}

@@ -26,6 +26,8 @@ import {
 } from "@/app/actions/admin";
 import type { Settings } from "@/server/settings";
 import { THEME_PRESETS } from "@/lib/themes";
+import { UI_STYLES } from "@/lib/ui-styles";
+import { UiStylePicker } from "@/components/app/ui-style-picker";
 import { NEXT_STAGE, PREV_STAGE, STAGE_LABELS, STAGES, type Stage } from "@/lib/domain";
 import { DEFAULT_TEAM_RULES, teamRules, type TeamRules } from "@/lib/team-rules";
 import { Textarea } from "@/components/ui/textarea";
@@ -109,6 +111,27 @@ export function WorkspaceSettings({ settings }: { settings: Settings }) {
                 ))}
               </SelectContent>
             </Select>
+          </Row>
+          <Row label="UI style" hint="The look for everyone who has not chosen one for themselves (shapes, fonts, icons and motion; each has Light and Dark and keeps the accent colour).">
+            <UiStylePicker value={w.uiStyle || "studio"} onChange={(v) => setW({ ...w, uiStyle: v })} allowed={[]} showWorkspaceOption={false} />
+          </Row>
+          <Row label="Styles people may pick" hint="Untick styles you do not want offered. None ticked: all are offered.">
+            <div className="flex flex-wrap gap-x-4 gap-y-1.5" data-ui-styles-allowed>
+              {UI_STYLES.map((st) => (
+                <label key={st.key} className="flex items-center gap-1.5 text-sm">
+                  <Checkbox
+                    checked={!(w.uiStyles ?? []).length || (w.uiStyles ?? []).includes(st.key)}
+                    onCheckedChange={(v) => {
+                      const cur = (w.uiStyles ?? []).length ? (w.uiStyles ?? []) : UI_STYLES.map((x) => x.key as string);
+                      const next = v === true ? [...new Set([...cur, st.key])] : cur.filter((k) => k !== st.key);
+                      setW({ ...w, uiStyles: next.length === UI_STYLES.length ? [] : next });
+                    }}
+                    aria-label={`Offer ${st.label}`}
+                  />
+                  {st.label}
+                </label>
+              ))}
+            </div>
           </Row>
           <div className="pt-3">
             <Button

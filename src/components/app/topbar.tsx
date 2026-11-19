@@ -9,9 +9,11 @@ import { useTheme } from "next-themes";
 import { toast } from "sonner";
 import { BellIcon, CheckCheckIcon, ClockIcon, FlagIcon, HelpCircleIcon, IdCardIcon, LogOutIcon, MessageSquareHeartIcon, MessageCircleIcon, MonitorIcon, MoonIcon, PaletteIcon,
   TypeIcon,
-  LanguagesIcon, SearchIcon, SettingsIcon, SquareIcon, SunIcon, UserIcon } from "lucide-react";
-import { ACCENTS, FONTS, useAppearance } from "@/components/app/appearance";
+  LanguagesIcon, SearchIcon, SettingsIcon, SparklesIcon, SquareIcon, SunIcon, UserIcon } from "lucide-react";
+import { ACCENTS, FONTS, allowedStyles, useAppearance } from "@/components/app/appearance";
 import { THEME_PRESETS } from "@/lib/themes";
+import { UI_STYLES } from "@/lib/ui-styles";
+import { FunLauncher } from "@/components/app/fun/fun-mode";
 import { Button } from "@/components/ui/button";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
@@ -112,7 +114,7 @@ function crumb(p: string) {
     .join(" ");
 }
 
-export function Topbar({ user, activeRole, unread, chatUnread, qrScan }: { user: { name: string; email: string; roles: Role[]; avatar?: string | null }; activeRole: Role; unread: number; chatUnread: number; qrScan?: boolean }) {
+export function Topbar({ user, activeRole, unread, chatUnread, qrScan, fun = false }: { user: { name: string; email: string; roles: Role[]; avatar?: string | null }; activeRole: Role; unread: number; chatUnread: number; qrScan?: boolean; fun?: boolean }) {
   const pathname = usePathname();
   const parts = pathname.split("/").filter(Boolean);
   const [searchOpen, setSearchOpen] = React.useState(false);
@@ -193,6 +195,7 @@ export function Topbar({ user, activeRole, unread, chatUnread, qrScan }: { user:
         <MobileDetails />
         <RoleSwitcher roles={user.roles} active={activeRole} />
         {qrScan && <QrScanButton compact />}
+        {fun && <FunLauncher />}
         <Hint title="Chat" tip={NAV_TIPS["top.chat"]}>
         <Button variant="ghost" size="icon" className={cn("relative hidden md:inline-flex", pathname === "/chat" && "bg-accent")} aria-label={`Chat, ${chat} unread`} asChild>
           <Link href="/chat">
@@ -321,6 +324,23 @@ function UserMenu({ user }: { user: { name: string; email: string; avatar?: stri
             <FlagIcon /> Safety and reporting
           </Link>
         </DropdownMenuItem>
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger className="hidden md:flex" data-ui-style-menu>
+            <SparklesIcon /> UI style
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent>
+            <DropdownMenuRadioGroup value={look.style || ""} onValueChange={(v) => setLook({ style: v })}>
+              <DropdownMenuRadioItem value="">As set for the workspace</DropdownMenuRadioItem>
+              <DropdownMenuSeparator />
+              {UI_STYLES.filter((s) => !allowedStyles().length || allowedStyles().includes(s.key)).map((s) => (
+                <DropdownMenuRadioItem key={s.key} value={s.key}>
+                  <span className="flex overflow-hidden rounded-sm border">{s.swatch.map((c) => <span key={c} className="size-2.5" style={{ background: c }} />)}</span> {s.label}
+                  <span className="ml-auto pl-3 text-[11px] text-muted-foreground">{s.vibe}</span>
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
         <DropdownMenuSub>
           <DropdownMenuSubTrigger className="hidden md:flex">
             {theme === "dark" ? <MoonIcon /> : theme === "system" ? <MonitorIcon /> : <SunIcon />} Theme

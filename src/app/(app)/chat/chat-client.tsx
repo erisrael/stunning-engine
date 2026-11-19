@@ -85,10 +85,11 @@ import {
 } from "./chat-extras";
 import { SecureGate, useSecureChat } from "./secure";
 import { cn, pollMs } from "@/lib/utils";
+import { GameCard, GameDialog } from "./chat-games";
 import { ContactSheet, ForwardDialog, JumpToDate, MediaSheet, MentionPicker, OnlineDot, ReadersDialog, ReportDialog, SearchSheet, Ticks, presenceLabel } from "./chat-plus";
 import { deleteConversationAction, messagesFromAction, newerMessagesAction, presenceAction } from "@/app/actions/chat-plus";
 import { useSearchParams } from "next/navigation";
-import { FlagIcon, ForwardIcon, ImageIcon as MediaIcon, MoreVerticalIcon, EyeIcon } from "lucide-react";
+import { Gamepad2Icon, FlagIcon, ForwardIcon, ImageIcon as MediaIcon, MoreVerticalIcon, EyeIcon } from "lucide-react";
 
 type Person = { id: string; name: string; handle: string; roles: Role[] };
 
@@ -358,6 +359,9 @@ function Conversation({
   const router = useRouter();
   const [messages, setMessages] = React.useState(initialMessages);
   const [pollOpen, setPollOpen] = React.useState(false);
+  // Games in the chat (chat-games.tsx): the dialog and who can be challenged.
+  const [gameOpen, setGameOpen] = React.useState(false);
+  const [gameMembers, setGameMembers] = React.useState<{ id: string; name: string }[]>([]);
   const [recording, setRecording] = React.useState(false);
   const [text, setText] = React.useState("");
   const [replyTo, setReplyTo] = React.useState<ChatMessage | null>(null);
@@ -561,10 +565,19 @@ function Conversation({
     const t = setInterval(tick, 30000);
     return () => clearInterval(t);
   }, [group.peer]);
+  // Who can be challenged, when the game dialog opens.
+  React.useEffect(() => {
+    if (!gameOpen || gameMembers.length || group.kind === "direct") return;
+    void groupInfoAction(group.id).then((r) => r.ok && r.data && setGameMembers(r.data.members.map((m) => ({ id: m.userId, name: m.name }))));
+  }, [gameOpen, gameMembers.length, group.id, group.kind]);
   // People to @mention (groups and channels).
   React.useEffect(() => {
     if (group.kind === "direct" || mentionables.length || !/(?:^|\s)@[a-z0-9._-]*$/i.test(text)) return;
-    void groupInfoAction(group.id).then((r) => r.ok && r.data && setMentionables(r.data.members.filter((m) => m.userId !== viewer.id).map((m) => ({ handle: m.handle, name: m.name }))));
+    void groupInfoAction(group.id).then((r) => {
+      if (!r.ok || !r.data) return;
+      setMentionables(r.data.members.filter((m) => m.userId !== viewer.id).map((m) => ({ handle: m.handle, name: m.name })));
+      setGameMembers(r.data.members.map((m) => ({ id: m.userId, name: m.name })));
+    });
   }, [text, group.kind, group.id, mentionables.length, viewer.id]);
   const others = Math.max(0, group.kind === "direct" ? 1 : group.memberCount - 1);
   const seenCount = (m: ChatMessage) => reads.filter((r) => r.seq >= m.seq).length;
@@ -846,6 +859,9 @@ function Conversation({
                     <BarChart3Icon />
                   </Button>
                 )}
+                <Button size="icon" variant="ghost" className="size-10 shrink-0 rounded-full" onClick={() => setGameOpen(true)} aria-label="Play a game" title="Play a game: chess, tic-tac-toe, Connect Four, Reversi, rock paper scissors, trivia" data-chat-games>
+                  <Gamepad2Icon />
+                </Button>
               </>
             )}
             {!recording && (
@@ -896,6 +912,16 @@ function Conversation({
         </footer>
       )}
 
+      {gameOpen && (
+        <GameDialog
+          groupId={group.id}
+          members={gameMembers.length ? gameMembers : group.peer ? [{ id: group.peer.id, name: group.peer.name }] : []}
+          viewerId={viewer.id}
+          direct={group.kind === "direct"}
+          onClose={() => setGameOpen(false)}
+          onSent={sent}
+        />
+      )}
       {pollOpen && <PollDialog groupId={group.id} onClose={() => setPollOpen(false)} onSent={sent} />}
       <SearchSheet open={searchOpen} onOpenChange={setSearchOpen} group={group} loaded={readable} initialQuery={searchQ} onJump={(seq) => void jump({ seq })} timezone={timezone} />
       <MediaSheet open={mediaOpen} onOpenChange={setMediaOpen} group={group} cryptoKey={secure.key} viewerId={viewer.id} onJump={(seq) => void jump({ seq })} />
@@ -1014,6 +1040,8 @@ function Bubble({
             ) : null}
             {m.deletedAt ? (
               <span className={cn("italic", mine ? "text-white/70" : "text-muted-foreground")}>Message deleted</span>
+            ) : m.kind === "game" && m.meta ? (
+              <GameCard m={m} viewerId={viewerId} names={names} onChanged={onChanged} />
             ) : m.kind === "poll" && m.poll ? (
               <PollCard m={m} mine={mine} names={names} canClose={mine || canManage} onChanged={onChanged} />
             ) : m.kind === "call" ? (

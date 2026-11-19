@@ -667,6 +667,24 @@ PREPS["update-1-2-noor"] = async () => {
   return {};
 };
 
+// UI styles and Fun mode: Admin with sign-in by password only.
+PREPS["fun-and-styles"] = async () => {
+  await passwordOnly();
+  return {};
+};
+
+// Chat games, Seed Town, focus mode and the Fun app: a chat with Admin and Dawit.
+PREPS["fun-more"] = async () => {
+  await passwordOnly();
+  const a = await admin();
+  const d = (await get<{ id: string; name: string }>("SELECT id, name FROM users WHERE email = 'dawit@demo.local'"))!;
+  const group = uid("grp_");
+  const now = nowIso();
+  await run("INSERT INTO chat_groups (id, name, kind, created_by, created_at) VALUES (?, 'Game room', 'group', ?, ?)", group, a.id, now);
+  for (const id of [a.id, d.id]) await run("INSERT INTO chat_members (group_id, user_id, member_role, joined_at) VALUES (?, ?, 'member', ?)", group, id, now);
+  return { group, dawitName: d.name };
+};
+
 // Admin, Noor access, the new sidebar entries and Finance requests for Admin.
 PREPS["noor-access"] = async () => {
   await passwordOnly();

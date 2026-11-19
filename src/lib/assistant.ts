@@ -242,6 +242,8 @@ export const PLACES: { name: string; href: string; words: string[] }[] = [
   { name: "Support content", href: "/support?tab=content", words: ["support content", "faq", "help articles", "bot answers", "starter answers"] },
   { name: "Call records", href: "/call-records", words: ["call records", "recordings", "call history", "call log", "listen to call", "የጥሪ መዝገብ"] },
   { name: "Support requests", href: "/support-requests", words: ["support requests", "customer support requests", "escalate to department", "refund request", "developer request"] },
+  { name: "Fun mode settings", href: "/admin?tab=fun", words: ["fun mode settings", "fun admin", "points rules", "game hours", "music settings"] },
+  { name: "Appearance and UI style", href: "/preferences#ui-style", words: ["ui style", "appearance", "theme", "look", "styles", "dark mode settings"] },
   { name: "Chapa payments", href: "/finance/chapa", words: ["chapa", "payments", "online payments", "transactions", "chapa overview", "ቻፓ", "ክፍያዎች"] },
   { name: "Chapa transactions", href: "/finance/chapa?tab=transactions", words: ["chapa transactions", "payment list", "failed payments", "pending payments", "tx ref"] },
   { name: "Chapa sync and reconcile", href: "/finance/chapa?tab=sync", words: ["chapa sync", "reconcile", "reconciliation", "missing payments", "full sync"] },

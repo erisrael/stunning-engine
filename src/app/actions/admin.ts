@@ -52,6 +52,11 @@ export async function saveSettingsAction<K extends keyof Settings>(key: K, value
       const { isPreset } = await import("@/lib/themes");
       if (w.themePreset && !isPreset(w.themePreset)) throw new WorkflowError("VALIDATION", "Choose one of the colour themes.");
       w.themePreset = w.themePreset || "";
+      const { isUiStyle } = await import("@/lib/ui-styles");
+      if (w.uiStyle && !isUiStyle(w.uiStyle)) throw new WorkflowError("VALIDATION", "Choose one of the UI styles.");
+      w.uiStyle = w.uiStyle || "studio";
+      w.uiStyles = Array.isArray(w.uiStyles) ? [...new Set(w.uiStyles.filter((k) => isUiStyle(k)))] : [];
+      if (w.uiStyles.length && !w.uiStyles.includes(w.uiStyle)) w.uiStyles.push(w.uiStyle);
     }
     if (key === "calendar") {
       const cal = value as Settings["calendar"];

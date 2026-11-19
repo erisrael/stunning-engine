@@ -30,7 +30,8 @@ async function main() {
   const admin = await by("admin@demo.local");
   const dawit = await by("dawit@demo.local");
   const fin = (await loadUser((await upsertAccount({ name: "Fin", email: "fin@t13.local", title: "Finance", roles: ["finance_manager"] as never, password: "Finance-2026-ok!", mustChangePassword: false })).id))!;
-  const t0 = nowIso();
+  // Midday, so the UTC day and the Addis Ababa day are the same whenever the test runs.
+  const t0 = `${nowIso().slice(0, 10)}T09:00:00.000Z`;
   const a1 = uid(), a2 = uid();
   await run("INSERT INTO chapa_accounts (id, name, secret_key_enc, currency, mode, active, created_at, updated_at) VALUES (?, 'Subs', 'x', 'ETB', 'live', 1, ?, ?), (?, 'Test', 'x', 'ETB', 'test', 1, ?, ?)", a1, t0, t0, a2, t0, t0);
   const tx = (acct: string, status: string, amount: number) => run("INSERT INTO chapa_transactions (account_id, tx_ref, amount, currency, method, status, created_at, updated_at) VALUES (?, ?, ?, 'ETB', 'telebirr', ?, ?, ?)", acct, uid(), amount, status, t0, t0);

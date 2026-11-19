@@ -23,6 +23,8 @@ export type ChatGroupSummary = {
   lastMessage: { body: string; author: string; at: string } | null;
 };
 
+import { viewFor, type GameMeta } from "@/lib/chat-games";
+
 export type ChatMessage = {
   seq: number;
   id: string;
@@ -46,7 +48,7 @@ export type ChatMessage = {
   createdAt: string;
 };
 
-export const MESSAGE_KINDS = ["text", "request", "question", "system", "file", "voice", "poll", "call"] as const;
+export const MESSAGE_KINDS = ["text", "request", "question", "system", "file", "voice", "poll", "call", "game"] as const;
 export type MessageKind = (typeof MESSAGE_KINDS)[number];
 
 export type ChatPoll = {
@@ -92,7 +94,7 @@ export async function canManageGroup(user: AppUser, groupId: string) {
   return (await membership(groupId, user.id))?.member_role === "admin";
 }
 
-const PREVIEW: Record<string, string> = { file: "File", voice: "Voice message", poll: "Poll", call: "Call" };
+const PREVIEW: Record<string, string> = { file: "File", voice: "Voice message", poll: "Poll", call: "Call", game: "Game" };
 
 export async function listGroups(user: AppUser, opts: { includeArchived?: boolean } = {}): Promise<ChatGroupSummary[]> {
   // Chat managers also see groups they are not in, so they can manage membership.
@@ -248,6 +250,8 @@ async function hydrate(rows: MessageRow[], viewerId?: string): Promise<ChatMessa
       item: items.find((i) => i.id === r.item_id) ?? null,
       kind: ((MESSAGE_KINDS as readonly string[]).includes(r.kind) ? r.kind : "text") as MessageKind,
       meta: (() => {
+        // A game hides what the viewer may not see yet (the other side's pick, quiz answers).
+        if (r.kind === "game" && r.meta) return viewFor(JSON.parse(r.meta) as GameMeta, viewerId ?? "") as unknown as Record<string, unknown>;
         const meta = r.meta ? (JSON.parse(r.meta) as Record<string, unknown>) : null;
         const q = meta?.questionId ? questions.find((x) => x.id === meta.questionId) : undefined;
         return q ? { ...meta, questionStatus: q.status, questionOwnerId: q.owner_id, questionAnswer: q.answer } : meta;

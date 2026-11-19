@@ -153,8 +153,14 @@ export function Row({ icon: Icon, tint, label, sub, value, badge, onClick, chevr
 // A big square action: tinted icon above its label.
 export function Tile({ icon: Icon, label, sub, onClick, tint, ...rest }: { icon: React.ComponentType<{ className?: string }>; label: string; sub?: string; onClick: () => void; tint?: string } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
-    <button type="button" onClick={onClick} className="flex flex-col items-start gap-2 rounded-[calc(var(--radius)+6px)] border bg-card p-3 text-left shadow-xs transition active:scale-[0.98]" {...rest}>
-      <span className="flex size-9 items-center justify-center rounded-full" style={{ background: `color-mix(in oklab, ${tint ?? "var(--primary)"} 14%, transparent)`, color: tint ?? "var(--primary)" }}>
+    <button
+      type="button"
+      onClick={onClick}
+      className="group relative flex flex-col items-start gap-2 overflow-hidden rounded-[calc(var(--radius)+8px)] border bg-card p-3 text-left shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-md active:scale-[0.97] motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2"
+      style={{ backgroundImage: `linear-gradient(135deg, color-mix(in oklab, ${tint ?? "var(--primary)"} 9%, transparent), transparent 60%)` }}
+      {...rest}
+    >
+      <span className="flex size-10 items-center justify-center rounded-2xl text-white shadow-sm transition-transform group-hover:scale-110 group-active:rotate-6" style={{ background: `linear-gradient(135deg, ${tint ?? "var(--primary)"}, color-mix(in oklab, ${tint ?? "var(--primary)"} 65%, #fff))` }}>
         <Icon className="size-5" />
       </span>
       <span>

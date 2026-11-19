@@ -252,6 +252,8 @@ export async function audit(
         e.sourceOccurredAt ?? null,
         e.correctsEventId ?? null,
       );
+  // Fun mode: work earns points by Admin's rules (never for imports or the system).
+  if (ctx.actor && ctx.source !== "import" && ctx.source !== "seed") await (await import("./fun")).awardForAction(actorId(ctx), e.action, e.summary, e.itemId ?? null);
 }
 
 async function closeInterval(attemptId: string, now: string) {

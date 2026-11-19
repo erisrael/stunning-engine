@@ -29,6 +29,9 @@ export type Settings = {
     calendarDisplay: "gregorian" | "ethiopian" | "both";
     // The colour theme preset for everyone who has not chosen one ("" = plain Light or Dark); src/lib/themes.ts.
     themePreset?: string;
+    // The UI style for everyone who has not chosen one, and the styles people may pick (empty: all); src/lib/ui-styles.ts.
+    uiStyle?: string;
+    uiStyles?: string[];
   };
   calendar: {
     workdays: number[];
@@ -84,6 +87,8 @@ export const DEFAULT_SETTINGS: Settings = {
     codePrefix: "MY",
     calendarDisplay: "gregorian",
     themePreset: "",
+    uiStyle: "studio",
+    uiStyles: [],
   },
   calendar: {
     workdays: [1, 2, 3, 4, 5],

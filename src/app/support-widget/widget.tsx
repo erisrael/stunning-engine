@@ -350,21 +350,34 @@ export function SupportWidget({ appKey: givenKey, initialUser, waitForParent, te
   return (
     <div className="flex h-full flex-col bg-background text-foreground" data-widget data-page={page}>
       {page === "home" ? (
-        <header className="px-4 pt-4 pb-2" data-header="home">
-          <div className="flex items-center gap-3">
-            <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary text-base font-semibold text-primary-foreground" aria-hidden>
+        // A welcoming banner in the app's colour, with a greeting for the time of day and who is online.
+        <header className="relative mx-3 mt-3 mb-1 overflow-hidden rounded-[calc(var(--radius)+12px)] px-4 pt-4 pb-5 text-white shadow-md" style={{ background: `linear-gradient(135deg, ${color}, color-mix(in oklab, ${color} 55%, #7c3aed))` }} data-header="home">
+          <span aria-hidden className="pointer-events-none absolute -top-10 -right-8 size-36 rounded-full bg-white/15" />
+          <span aria-hidden className="pointer-events-none absolute -bottom-12 -left-6 size-28 rounded-full bg-white/10" />
+          <span aria-hidden className="pointer-events-none absolute top-3 right-24 text-lg opacity-70 motion-safe:animate-bounce">✨</span>
+          <div className="relative flex items-center gap-3">
+            <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-white/20 text-lg font-bold backdrop-blur" aria-hidden>
               {brandName.slice(0, 1).toUpperCase()}
             </span>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-xs text-muted-foreground">
+              <p className="truncate text-xs text-white/80">
                 {brandName} {w.support}
               </p>
-              <p className="truncate text-xl leading-tight font-bold">{am ? `ሰላም ${first}` : `Hi ${first}`}</p>
+              <p className="truncate text-xl leading-tight font-bold" suppressHydrationWarning>
+                {(() => {
+                  const h = new Date().getHours();
+                  const g = am ? (h < 12 ? "እንደምን አደሩ" : h < 18 ? "እንደምን ዋሉ" : "እንደምን አመሹ") : h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
+                  return `${g}${first ? `, ${first}` : ""} 👋`;
+                })()}
+              </p>
             </div>
-            {langButton}
+            <span className="[&_button]:border-white/40 [&_button]:bg-white/15 [&_button]:text-white">{langButton}</span>
           </div>
-          <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 text-xs" data-online={s.online ? "yes" : "no"}>
-            <span className={cn("size-2 rounded-full", s.online ? "bg-emerald-500" : "bg-amber-500")} />
+          <p className="relative mt-3 inline-flex items-center gap-1.5 rounded-full bg-white/20 px-2.5 py-1 text-xs backdrop-blur" data-online={s.online ? "yes" : "no"}>
+            <span className="relative flex size-2">
+              {s.online && <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-300 opacity-75" />}
+              <span className={cn("relative inline-flex size-2 rounded-full", s.online ? "bg-emerald-400" : "bg-amber-300")} />
+            </span>
             {s.online ? w.online : `${w.usually}: ${s.hours}`}
           </p>
         </header>

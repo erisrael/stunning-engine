@@ -36,6 +36,8 @@ import { PrivacyGate } from "@/components/app/privacy-gate";
 import { Localizer } from "@/components/app/localizer";
 import { EthiopianDatePicker } from "@/components/app/ethiopian-picker";
 import { Assistant } from "@/components/app/assistant";
+import { FunMode } from "@/components/app/fun/fun-mode";
+import { StyleEffects } from "@/components/app/style-effects";
 import { OfflineCheckinSync } from "@/components/app/attendance/offline-sync";
 import { MobileNav } from "@/components/app/mobile-nav";
 import { GeofenceWatch } from "@/components/app/attendance/geofence-watch";
@@ -71,7 +73,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         reportsLink={!can(viewer, "owners.view") && (await reportDepartments(viewer)).length > 0} customDepts={await myCustomDepartments(viewer)} userHidden={viewer.prefs.sidebarHidden ?? []} roleHidden={(await sidebarDefaults())[viewer.activeRole] ?? []} perms={viewer.perms} activeRole={viewer.activeRole} counts={counts} workspaceName={settings.workspace.name} brand={await navBrand()} recognition={(await (await import("@/server/recognition")).recognitionConfig()).enabled} support={await (await import("@/server/support-desk")).supportNav(viewer)} callRecords={await (await import("@/server/call-records")).canOpenCallRecords(viewer).catch(() => false)} />
       <SidebarInset className="min-w-0">
         {viewer.previewBy && <PreviewBanner name={viewer.name} role={ROLE_LABELS[viewer.activeRole]} />}
-        <Topbar user={{ name: viewer.name, email: viewer.email, roles: viewer.roles, avatar: (await avatarsFor([viewer.id]))[viewer.id] ?? null }} activeRole={viewer.activeRole} unread={counts.notifications} chatUnread={counts.chat} qrScan={await (async () => { const c = await (await import("@/server/attendance-capture")).captureConfig(); return c.methods.qr && !!c.methods.scanner; })()} />
+        <Topbar user={{ name: viewer.name, email: viewer.email, roles: viewer.roles, avatar: (await avatarsFor([viewer.id]))[viewer.id] ?? null }} activeRole={viewer.activeRole} unread={counts.notifications} chatUnread={counts.chat} fun={!viewer.previewBy && !viewer.mustChangePassword && !!(await (await import("@/server/fun")).funFor(viewer).catch(() => null))} qrScan={await (async () => { const c = await (await import("@/server/attendance-capture")).captureConfig(); return c.methods.qr && !!c.methods.scanner; })()} />
         <OfflineCheckinSync />
         <GeofenceWatch />
         {viewer.mustChangePassword && (
@@ -83,7 +85,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             .
           </div>
         )}
-        <main className="mx-auto w-full max-w-[1600px] min-w-0 flex-1 px-3 pt-4 pb-24 sm:px-6 sm:py-6 md:pb-6">
+        <main data-app-main className="mx-auto w-full max-w-[1600px] min-w-0 flex-1 px-3 pt-4 pb-24 sm:px-6 sm:py-6 md:pb-6">
           {!viewer.mustChangePassword && <AnnouncementStrip pending={await pendingAnnouncements(viewer)} />}
           <SectionBanner banners={await bannerMap()} />
           <CollapsedSectionTabs />
@@ -94,10 +96,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           return <MobileNav work={h ? { href: h.base, label: h.kind === "studio" ? "Studio" : "Work" } : (viewer.leads.length || viewer.roles.some((r) => ["recording", "editing", "uploading", "publication"].includes(r))) ? { href: "/my-work", label: "My work" } : null} chat={counts.chat} alerts={counts.notifications} approvals={counts.approvals} />;
         })()}
         <ChatKeyBootstrap viewerId={viewer.id} />
+        <StyleEffects />
         {!viewer.previewBy && <PresencePing />}
         <Localizer defaultCalendar={settings.workspace.calendarDisplay} />
         <EthiopianDatePicker defaultCalendar={settings.workspace.calendarDisplay} />
         {!viewer.mustChangePassword && !viewer.previewBy && (viewer.prefs.assistantShown ?? (await (await import("@/server/assistant")).roleOptions(viewer.activeRole)).shown) && <Assistant ctx={await assistantContext(viewer)} ai={await aiAvailable(viewer)} agent={await agentAvailable(viewer)} />}
+        {!viewer.previewBy && !viewer.mustChangePassword && (await (await import("@/server/fun")).funFor(viewer).catch(() => null)) && <FunMode />}
         {!viewer.previewBy && await privacyToAccept(viewer).then((p) => (p ? <PrivacyGate notice={p.notice} version={p.version} updatedAt={p.updatedAt} /> : null))}
         {!viewer.mustChangePassword && <GetStarted audience={audienceFor(viewer.activeRole, viewer.leads)} tour={viewer.prefs.tour ?? {}} />}
       </SidebarInset>

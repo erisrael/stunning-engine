@@ -1,10 +1,11 @@
 import type { Metadata, Viewport } from "next";
-import { Abyssinica_SIL, Atkinson_Hyperlegible, Geist_Mono, IBM_Plex_Sans, Inter, Lora, Manrope, Noto_Sans_Ethiopic, Nunito, Plus_Jakarta_Sans, Roboto, Source_Sans_3 } from "next/font/google";
+import { Abyssinica_SIL, Atkinson_Hyperlegible, Bangers, Bebas_Neue, Comic_Neue, Fredoka, Geist_Mono, Rajdhani, VT323, IBM_Plex_Sans, Inter, Lora, Manrope, Noto_Sans_Ethiopic, Nunito, Plus_Jakarta_Sans, Roboto, Source_Sans_3 } from "next/font/google";
 import { ThemeProvider } from "next-themes";
 import { Toaster } from "@/components/ui/sonner";
 import { VersionWatch } from "@/components/app/version-watch";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import "./globals.css";
+import "./ui-styles.css";
 import { appearanceScript } from "@/lib/appearance-script";
 import { ErrorReporter } from "@/components/app/error-reporter";
 
@@ -22,7 +23,14 @@ const plex = IBM_Plex_Sans({ variable: "--font-plex", subsets: ["latin"], preloa
 const source = Source_Sans_3({ variable: "--font-source", subsets: ["latin"], preload: false });
 const roboto = Roboto({ variable: "--font-roboto", subsets: ["latin"], preload: false });
 const abyssinica = Abyssinica_SIL({ variable: "--font-abyssinica", subsets: ["ethiopic", "latin"], weight: "400", preload: false });
-const FONT_VARS = [sans, mono, ethiopic, inter, readable, rounded, serif, manrope, plex, source, roboto, abyssinica].map((f) => f.variable).join(" ");
+// The UI styles' own fonts (src/app/ui-styles.css); downloaded only when a style uses them.
+const vt323 = VT323({ variable: "--font-vt323", subsets: ["latin"], weight: "400", preload: false });
+const bangers = Bangers({ variable: "--font-bangers", subsets: ["latin"], weight: "400", preload: false });
+const comic = Comic_Neue({ variable: "--font-comic", subsets: ["latin"], weight: ["400", "700"], preload: false });
+const rajdhani = Rajdhani({ variable: "--font-rajdhani", subsets: ["latin"], weight: ["500", "600", "700"], preload: false });
+const fredoka = Fredoka({ variable: "--font-fredoka", subsets: ["latin"], preload: false });
+const bebas = Bebas_Neue({ variable: "--font-bebas", subsets: ["latin"], weight: "400", preload: false });
+const FONT_VARS = [sans, mono, ethiopic, inter, readable, rounded, serif, manrope, plex, source, roboto, abyssinica, vt323, bangers, comic, rajdhani, fredoka, bebas].map((f) => f.variable).join(" ");
 
 // The name, tagline and favicon Admin set (Branding, Name and logo).
 export async function generateMetadata(): Promise<Metadata> {
@@ -55,11 +63,12 @@ export const viewport: Viewport = {
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   // The colour theme Admin set for everyone who has not chosen one (Settings, Workspace).
-  const preset = await import("@/server/settings").then((m) => m.getSettings()).then((s) => s.workspace.themePreset ?? "").catch(() => "");
+  const ws = await import("@/server/settings").then((m) => m.getSettings()).then((s) => s.workspace).catch(() => null);
+  const preset = ws?.themePreset ?? "";
   return (
     <html lang="en" suppressHydrationWarning className={`${FONT_VARS} h-full antialiased`}>
       <head>
-        <script dangerouslySetInnerHTML={{ __html: appearanceScript(preset) }} />
+        <script dangerouslySetInnerHTML={{ __html: appearanceScript(preset, { style: ws?.uiStyle ?? "", allowed: ws?.uiStyles ?? [] }) }} />
       </head>
       <body className="min-h-full">
         <ErrorReporter />

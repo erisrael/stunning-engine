@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 83;
+export const SCHEMA_VERSION = 84;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -4205,6 +4205,72 @@ CREATE TABLE IF NOT EXISTS sup_ratings (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_sup_ratings_session ON sup_ratings(ticket_id, session_at);
 CREATE INDEX IF NOT EXISTS idx_sup_ratings_agent ON sup_ratings(agent_id, created_at);
+
+-- Fun mode (src/server/fun.ts): points earned by work (and spent on the pet), the pet, best game scores,
+-- playlists of free music and the day's mood (the team sees only the spread).
+CREATE TABLE IF NOT EXISTS fun_points (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  points INTEGER NOT NULL,
+  reason TEXT NOT NULL,
+  source TEXT NOT NULL,
+  ref TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_fun_points_user ON fun_points(user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_fun_points_when ON fun_points(created_at);
+CREATE TABLE IF NOT EXISTS fun_pets (
+  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,
+  name TEXT NOT NULL,
+  outfit TEXT NOT NULL DEFAULT 'none',
+  fed_at TEXT,
+  played_at TEXT,
+  petted_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS fun_scores (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  game TEXT NOT NULL,
+  score INTEGER NOT NULL,
+  meta TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_fun_scores_game ON fun_scores(game, score);
+CREATE INDEX IF NOT EXISTS idx_fun_scores_user ON fun_scores(user_id, game);
+CREATE TABLE IF NOT EXISTS fun_playlists (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  tracks_json TEXT NOT NULL,
+  shared INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_fun_playlists_user ON fun_playlists(user_id, updated_at);
+CREATE TABLE IF NOT EXISTS fun_avatars (
+  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  look TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS fun_focus (
+  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  persona TEXT,
+  prefs TEXT NOT NULL DEFAULT '{}',
+  sessions INTEGER NOT NULL DEFAULT 0,
+  minutes INTEGER NOT NULL DEFAULT 0,
+  last_at TEXT,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS fun_moods (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  day TEXT NOT NULL,
+  mood INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (user_id, day)
+);
 ALTER TABLE sup_tickets ADD COLUMN IF NOT EXISTS rated_agent_id TEXT;
 
 `;
@@ -4480,4 +4546,11 @@ export const TABLES = [
   "noor_content",
   "noor_content_jobs",
   "sup_ratings",
+  "fun_points",
+  "fun_pets",
+  "fun_scores",
+  "fun_playlists",
+  "fun_moods",
+  "fun_focus",
+  "fun_avatars",
 ] as const;

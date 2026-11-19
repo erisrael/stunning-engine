@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { ACCENTS, FONTS, useAppearance } from "@/components/app/appearance";
 import { THEME_PRESETS } from "@/lib/themes";
+import { UiStylePicker } from "@/components/app/ui-style-picker";
 import { PushToggle } from "@/components/app/push-toggle";
 import { Preferences } from "@/app/(app)/notifications/notifications-client";
 import { readConsent, writeConsent } from "@/components/app/attendance/geofence-watch";
@@ -87,8 +88,10 @@ export function PersonalSettings({ muted, emailed, geofence, assistant }: { mute
   // The workspace's theme (Admin) and the one in effect, read from the page.
   const [wsPreset, setWsPreset] = React.useState("");
   const [preset, setPreset] = React.useState("");
+  const [wsStyle, setWsStyle] = React.useState("");
   React.useEffect(() => {
     const read = () => {
+      setWsStyle(document.documentElement.dataset.styleDefault ?? "");
       setWsPreset(document.documentElement.dataset.presetDefault ?? "");
       setPreset(document.documentElement.dataset.preset ?? "");
     };
@@ -129,6 +132,11 @@ export function PersonalSettings({ muted, emailed, geofence, assistant }: { mute
       </nav>
 
       <Section id="look" icon={<PaletteIcon className="size-4" />} title="Appearance" description="On this device.">
+        <div className="space-y-1.5" id="ui-style">
+          <p className="text-sm font-medium">UI style</p>
+          <p className="text-xs text-muted-foreground">The whole look: shapes, fonts, icons, backgrounds and motion. Every style has Light and Dark and uses your accent colour.</p>
+          <UiStylePicker value={look.style} onChange={(v) => setLook({ style: v })} workspaceStyle={wsStyle} />
+        </div>
         <Choice
           id="preset"
           label="Colour theme"

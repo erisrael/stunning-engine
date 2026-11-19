@@ -77,7 +77,7 @@ try {
   await dev.getByLabel("Ask the assistant").fill("open leave");
   await dev.getByRole("button", { name: "Ask", exact: true }).click();
   check("'open leave' opens Leave", await dev.waitForURL(/profile\?tab=leave/, { timeout: 15000 }).then(() => true, () => false));
-  check("voice controls are there (read aloud, language)", (await dev.getByLabel("Voice language").count()) === 1 && (await dev.getByRole("button", { name: "Read answers aloud" }).count()) === 1);
+  check("voice controls are there (read aloud, language)", (await dev.getByLabel("Voice language").count()) === 1 && (await dev.getByRole("button", { name: /^(Stop reading answers aloud|Read answers aloud)$/ }).count()) === 1);
   await dev.getByRole("button", { name: "Close the assistant" }).first().click();
 
   // Capabilities are requested in chat, and routines live on their own page.

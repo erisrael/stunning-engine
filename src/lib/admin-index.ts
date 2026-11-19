@@ -20,6 +20,7 @@ export const ADMIN_INDEX: AdminEntry[] = [
   { tab: "feedback", group: "Communication & support", label: "Feedback", description: "Feedback people sent about the app.", keywords: "feedback suggestion bug idea", need: "users" },
   { tab: "reports", group: "Communication & support", label: "Safety reports", description: "Safety and conduct reports and their status.", keywords: "safety report harassment conduct incident", need: "users" },
   // Integrations
+  { tab: "fun", group: "System & workspace", label: "Fun mode", description: "Music, lyrics, playlists, games, the pet, points for work, the weekly board and mood check-ins.", keywords: "fun music games chess sudoku pet points leaderboard morale playlist lyrics", need: "users" },
   { tab: "chapa-access", group: "Integrations", label: "Chapa access", description: "Give named people Chapa: which businesses and which actions.", keywords: "chapa access grant permission user people payments", need: "users" },
   { tab: "external-apis", group: "Integrations", label: "External APIs", description: "Chapa businesses and other outside services with their keys.", keywords: "chapa payment api key secret business noor external", need: "users" },
   { href: "/admin/integrations?tab=connections", group: "Integrations", label: "Integrations", description: "API tokens, connectors (SMS, email, payments), Notion and the call log.", keywords: "token connector sms africa talking iconic notion webhook api dataset", need: "users" },

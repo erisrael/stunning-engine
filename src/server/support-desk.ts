@@ -986,6 +986,8 @@ export async function setTicketStatus(user: AppUser, ticketId: string, status: T
   );
   await activity(user.id, t.id, "status", `${t.status} to ${status}`);
   if (status === "solved") await ticketEvent(t.id, "ticket.solved");
+  // Fun mode: solving a customer's question earns points (Admin, Fun mode, Points rules).
+  if (status === "solved") await (await import("./fun")).awardForAction(user.id, "support.solved", `${user.name} solved #${t.number}`, `ticket:${t.id}`);
   if (status === "solved" && t.customer_id)
     await run("INSERT INTO sup_messages (id, ticket_id, author_kind, author_id, body, internal, created_at) VALUES (?, ?, 'system', NULL, ?, 0, ?)", uid("smg_"), t.id, "This conversation is marked solved. Reply if you still need help, or rate the help you got.", now);
   // The customer rates the help at the end: in Telegram the bot asks (the support app asks on its own).

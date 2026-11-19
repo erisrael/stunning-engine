@@ -3,10 +3,11 @@
 import * as React from "react";
 import { PRESET_FREE_PATHS, THEME_PRESETS, isPreset } from "@/lib/themes";
 import { APPEARANCE_KEY } from "@/lib/appearance-script";
+import { effectiveStyle } from "@/lib/ui-styles";
 
 // Colour theme preset, accent colour, corner style, text size and colourful or plain icons. Stored per browser; applied
 // to <html> before paint. preset: "" follows the workspace's (Admin), "none" is plain Light or Dark.
-export type Appearance = { preset: string; accent: string; radius: string; text: string; icons: string; iconPack: string; iconWeight: string; font: string; contrast: string; lite: string; lang: string; calendar: string; helpLinks: string; tips: string };
+export type Appearance = { style: string; preset: string; accent: string; radius: string; text: string; icons: string; iconPack: string; iconWeight: string; font: string; contrast: string; lite: string; lang: string; calendar: string; helpLinks: string; tips: string };
 
 export const FONTS = [
   { key: "app", label: "Jakarta (default)" },
@@ -33,7 +34,7 @@ export const ACCENTS = [
 ];
 
 const KEY = APPEARANCE_KEY;
-const DEFAULTS: Appearance = { preset: "", accent: "violet", radius: "default", text: "normal", icons: "colour", iconPack: "lucide", iconWeight: "regular", font: "app", contrast: "normal", lite: "off", lang: "en", calendar: "", helpLinks: "on", tips: "on" };
+const DEFAULTS: Appearance = { style: "", preset: "", accent: "violet", radius: "default", text: "normal", icons: "colour", iconPack: "lucide", iconWeight: "regular", font: "app", contrast: "normal", lite: "off", lang: "en", calendar: "", helpLinks: "on", tips: "on" };
 
 export function readAppearance(): Appearance {
   try {
@@ -56,9 +57,23 @@ function applyPreset(el: HTMLElement, chosen: string) {
   }
 }
 
+// The UI style in effect: the person's when Admin allows it, else the workspace's (data-style-default).
+function applyStyle(el: HTMLElement, chosen: string) {
+  if (PRESET_FREE_PATHS.some((x) => location.pathname.startsWith(x))) return void delete el.dataset.style;
+  const allowed = (el.dataset.styleAllowed ?? "").split(",").filter(Boolean);
+  el.dataset.style = effectiveStyle(chosen, el.dataset.styleDefault, allowed);
+}
+
+// The styles this person may pick (Admin, Settings, Workspace), read from <html>.
+export function allowedStyles(): string[] {
+  if (typeof document === "undefined") return [];
+  return (document.documentElement.dataset.styleAllowed ?? "").split(",").filter(Boolean);
+}
+
 function apply(a: Appearance) {
   const el = document.documentElement;
   applyPreset(el, a.preset);
+  applyStyle(el, a.style);
   el.dataset.accent = a.accent;
   el.dataset.radius = a.radius;
   el.dataset.text = a.text;
@@ -101,4 +116,17 @@ export function useAppearance() {
     }
   };
   return [a, update] as const;
+}
+
+// Change part of the look from anywhere (the assistant: "switch to comic style", "make it green"), merged with
+// what is saved on this device.
+export function patchAppearance(patch: Partial<Appearance>) {
+  const next = { ...readAppearance(), ...patch };
+  apply(next);
+  try {
+    localStorage.setItem(KEY, JSON.stringify(next));
+  } catch {
+    /* storage blocked: applies for this visit only */
+  }
+  return next;
 }

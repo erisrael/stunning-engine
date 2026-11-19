@@ -301,6 +301,132 @@ export async function companySlides(user: AppUser): Promise<{ title: string; sli
   // Scorecards and objectives (Phase 17).
   slides.push(...(await (await import("./performance")).companyPerformanceSlides(user).catch(() => [])));
 
+  // Income from Chapa and Noor this month (Company overview's income, from stored data).
+  if (whole || can(user, "finance.view")) {
+    const inc = await (await import("./company-income")).companyIncome(user, { from: `${month}-01`, to: today }).catch(() => null);
+    if (inc && (inc.chapa || inc.noor)) {
+      const etb = inc.chapa?.success.find((m) => m.currency === "ETB")?.amount ?? 0;
+      const items = [
+        ...(inc.chapa ? [{ label: "Chapa received (ETB)", value: Math.round(etb), tone: "good" as const }, { label: "Chapa pending", value: inc.chapa.pending }, { label: "Chapa failed", value: inc.chapa.failed, tone: "bad" as const }] : []),
+        ...(inc.noor ? [{ label: "Noor paid (ETB)", value: Math.round(inc.noor.paidAmount), tone: "good" as const }, { label: "Noor payments", value: inc.noor.paid }, { label: "Noor pending (ETB)", value: Math.round(inc.noor.pendingAmount) }] : []),
+      ];
+      slides.push({
+        key: "income",
+        group: "Money",
+        title: "Income this month: Chapa and Noor",
+        body: { kind: "numbers", items },
+        say: `${inc.chapa ? `${Math.round(etb).toLocaleString()} birr came in through Chapa` : ""}${inc.chapa && inc.noor ? " and " : ""}${inc.noor ? `${Math.round(inc.noor.paidAmount).toLocaleString()} birr was paid in Noor` : ""} this month.`,
+        why: inc.chapa?.failed ? `${plural(inc.chapa.failed, "payment")} failed on Chapa; Finance can follow them up.` : undefined,
+        next: inc.chapa?.failed ? "Next: Chapa, Follow-up for the failed payments." : undefined,
+        note: "From the stored Chapa transactions and Noor's daily figures.",
+      });
+      if (inc.chapa?.byBusiness.length)
+        slides.push({
+          key: "income-business",
+          group: "Money",
+          title: "Chapa income by business",
+          body: { kind: "bars", data: inc.chapa.byBusiness.filter((b) => b.currency === "ETB").slice(0, 8).map((b) => ({ business: b.name, amount: Math.round(b.amount) })), x: "business", series: [{ key: "amount", label: "ETB" }] },
+          say: `${inc.chapa.byBusiness[0]!.name} brought in the most this month.`,
+          note: "Successful Chapa payments this month, by business.",
+        });
+    }
+  }
+
+  // Support channels and calls this week.
+  if (sup.enabled && whole) {
+    const ch = await all<{ channel: string; c: number }>("SELECT channel, COUNT(*) AS c FROM sup_tickets WHERE created_at >= ? GROUP BY channel ORDER BY c DESC", weekAgo);
+    const calls = await get<{ total: number; answered: number; missed: number }>(
+      "SELECT COUNT(*) AS total, SUM(CASE WHEN answered_at IS NOT NULL THEN 1 ELSE 0 END) AS answered, SUM(CASE WHEN answered_at IS NULL AND status IN ('missed','ended','abandoned','declined') THEN 1 ELSE 0 END) AS missed FROM sup_calls WHERE started_at >= ?",
+      weekAgo,
+    ).catch(() => null);
+    if (ch.length || n(calls?.total)) {
+      const { CHANNEL_LABELS } = await import("@/lib/support");
+      slides.push({
+        key: "support-channels",
+        group: "Customers",
+        title: "Where customers reach us",
+        body: { kind: "bars", data: ch.slice(0, 8).map((x) => ({ channel: CHANNEL_LABELS[x.channel] ?? x.channel, questions: n(x.c) })), x: "channel", series: [{ key: "questions", label: "Questions this week" }] },
+        say: ch[0] ? `Most questions came by ${CHANNEL_LABELS[ch[0].channel] ?? ch[0].channel} this week.` : "No questions this week.",
+        why: n(calls?.total) ? `${plural(n(calls?.total), "call")}: ${n(calls?.answered)} answered, ${n(calls?.missed)} missed.` : undefined,
+        next: n(calls?.missed) > n(calls?.answered) / 3 ? "Next: more agents available for calls at busy hours." : undefined,
+        note: "From the help desk: questions by channel and calls.",
+      });
+    }
+  }
+
+  // Who is away today.
+  if (whole || can(user, "hr.access")) {
+    const away = await all<{ name: string; type_key: string; end_date: string }>(
+      "SELECT e.full_name AS name, l.type_key, l.end_date FROM leave_requests l JOIN employees e ON e.id = l.employee_id WHERE l.status = 'approved' AND l.start_date <= ? AND l.end_date >= ? ORDER BY l.end_date LIMIT 12",
+      today,
+      today,
+    ).catch(() => []);
+    if (away.length)
+      slides.push({
+        key: "away",
+        group: "People",
+        title: "On leave today",
+        body: { kind: "list", items: away.map((a) => ({ text: a.name, meta: `${a.type_key.replace(/_/g, " ")} · back after ${a.end_date}` })) },
+        say: `${plural(away.length, "person", "people")} on leave today.`,
+        note: "Approved leave covering today.",
+      });
+  }
+
+  // Team energy: focus time, the day's mood and the week's top contributors (Fun mode, when on).
+  const fun = await (await import("./fun")).funConfig().catch(() => null);
+  if (fun?.enabled && whole) {
+    const focus = await get<{ m: number; p: number }>("SELECT COALESCE(SUM(minutes), 0) AS m, COUNT(*) AS p FROM fun_focus WHERE updated_at >= ?", weekAgo).catch(() => null);
+    const mood = await get<{ a: number | null; c: number }>("SELECT AVG(mood) AS a, COUNT(*) AS c FROM fun_moods WHERE day >= ?", weekAgo.slice(0, 10)).catch(() => null);
+    const top = fun.points ? await all<{ name: string; pts: number }>("SELECT u.name AS name, SUM(f.points) AS pts FROM fun_points f JOIN users u ON u.id = f.user_id WHERE f.source = 'work' AND f.created_at >= ? GROUP BY u.id, u.name ORDER BY pts DESC LIMIT 5", weekAgo).catch(() => []) : [];
+    const moodAvg = mood?.a === null || mood?.a === undefined ? null : Math.round(Number(mood.a) * 10) / 10;
+    if (n(focus?.m) || n(mood?.c) || top.length) {
+      slides.push({
+        key: "energy",
+        group: "People",
+        title: "Team energy this week",
+        body: { kind: "numbers", items: [{ label: "Hours focused", value: Math.round(n(focus?.m) / 6) / 10, tone: "good" }, { label: "People using focus mode", value: n(focus?.p) }, { label: "Team mood", value: moodAvg ?? 0, unit: "/5", tone: moodAvg !== null && moodAvg < 3 ? "bad" : "good" }, { label: "Mood check-ins", value: n(mood?.c) }] },
+        say: `${Math.round(n(focus?.m) / 60)} hours of focused work this week${moodAvg !== null ? `; the team rates its mood ${moodAvg} of 5` : ""}.`,
+        why: moodAvg !== null && moodAvg < 3 ? "The mood is low: worth asking teams what is in the way." : undefined,
+        note: "From Fun mode: focus sessions and the anonymous mood check-in.",
+      });
+      if (top.length)
+        slides.push({
+          key: "contributors",
+          group: "People",
+          title: "Top contributors this week",
+          body: { kind: "progress", items: top.map((t) => ({ label: t.name, value: n(t.pts), tone: "good" as const })) },
+          say: `${top[0]!.name} earned the most work points this week: ${n(top[0]!.pts)}.`,
+          note: "Points from finished work by Admin's rules (Fun mode).",
+        });
+    }
+  }
+
+  // An opening slide with the headline numbers, and a closing one with what to celebrate and watch.
+  if (slides.length) {
+    const open = n((await get<{ c: number }>("SELECT COUNT(*) AS c FROM items WHERE lifecycle = 'in_production'").catch(() => null))?.c);
+    const people = n((await get<{ c: number }>("SELECT COUNT(*) AS c FROM employees WHERE status <> 'left'").catch(() => null))?.c);
+    const solved = n((await get<{ c: number }>("SELECT COUNT(*) AS c FROM sup_tickets WHERE solved_at >= ?", weekAgo).catch(() => null))?.c);
+    const tasks = n((await get<{ c: number }>("SELECT COUNT(*) AS c FROM dept_tasks WHERE status_category = 'done' AND completed_at >= ?", weekAgo).catch(() => null))?.c);
+    slides.unshift({
+      key: "glance",
+      group: "Company",
+      title: `${ws.name} at a glance`,
+      body: { kind: "numbers", items: [{ label: "People", value: people }, { label: "Parts in production", value: open }, { label: "Tasks finished this week", value: tasks, tone: "good" }, { label: "Customer questions solved", value: solved, tone: "good" }] },
+      say: `This week: ${plural(tasks, "task")} finished and ${plural(solved, "customer question")} solved, with ${plural(people, "person", "people")} on the team.`,
+      note: `Week to ${today}.`,
+    });
+    const wins = slides.filter((x) => x.key !== "glance").map((x) => x.say).filter(Boolean).slice(0, 4);
+    const watch = slides.map((x) => x.next).filter((x): x is string => !!x).map((x) => x.replace(/^Next: /, "")).slice(0, 4);
+    slides.push({
+      key: "highlights",
+      group: "Company",
+      title: "Highlights and watch-outs",
+      body: { kind: "columns", left: { title: "Highlights", text: wins.map((w) => `• ${w}`).join("\n") || "• A steady week." }, right: { title: "Watch-outs", text: watch.map((w) => `• ${w}`).join("\n") || "• Nothing needs attention." } },
+      say: watch.length ? `${plural(watch.length, "thing")} to watch: ${watch[0]}` : "Nothing needs attention this week.",
+      note: "Gathered from the slides before.",
+    });
+  }
+
   if (!slides.length) slides.push({ key: "empty", group: "Company", title: ws.name, body: { kind: "text", text: "Nothing to show yet." }, say: "There are no numbers to show yet." });
   return { title: ws.name, slides };
 }
