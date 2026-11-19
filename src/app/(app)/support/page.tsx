@@ -40,8 +40,8 @@ export default async function SupportPage({ searchParams }: { searchParams: Prom
         <EmptyState title={cfg.enabled ? "You are not a support agent" : "Customer support is switched off"} description={cfg.enabled ? "A support lead adds agents to the queues." : "Admin switches it on in Support setup."} />
       </div>
     );
-  const tabs = [...(cfg.enabled && agent ? ["desk", "calls", "students", "kb"] : []), ...(lead && cfg.enabled ? ["monitor", "board"] : []), ...(cfg.enabled && (lead || viewer.perms.includes("support.analytics")) ? ["analytics"] : []), ...(lead ? ["queues", "ivr", "help", "content", "telegram", "bots", "apps", "systems"] : []), ...(admin || lead ? ["config", "settings"] : [])];
-  const LABELS: Record<string, string> = { desk: "Desk", calls: "Calls", students: "Students & Parents", kb: "Knowledge base", monitor: "Monitor", analytics: "Analytics", board: "Live queues", ivr: "Phone menu", queues: "Queues and replies", help: "Help menu and routing", content: "Content", telegram: "Telegram", bots: "Bot manager", apps: "Apps and SDK", systems: "Connected systems", config: "Configuration", settings: "Settings" };
+  const tabs = [...(cfg.enabled && agent ? ["desk", "calls", "students", "kb"] : []), ...(cfg.enabled && (agent || lead) ? ["ratings"] : []), ...(lead && cfg.enabled ? ["monitor", "board"] : []), ...(cfg.enabled && (lead || viewer.perms.includes("support.analytics")) ? ["analytics"] : []), ...(lead ? ["queues", "ivr", "help", "content", "telegram", "bots", "apps", "systems"] : []), ...(admin || lead ? ["config", "settings"] : [])];
+  const LABELS: Record<string, string> = { desk: "Desk", calls: "Calls", students: "Students & Parents", kb: "Knowledge base", ratings: "Ratings", monitor: "Monitor", analytics: "Analytics", board: "Live queues", ivr: "Phone menu", queues: "Queues and replies", help: "Help menu and routing", content: "Content", telegram: "Telegram", bots: "Bot manager", apps: "Apps and SDK", systems: "Connected systems", config: "Configuration", settings: "Settings" };
   const tab = tabs.includes(sp.tab ?? "") ? sp.tab! : tabs[0]!;
   const people = (await userDirectory()).map((u) => ({ id: u.id, name: u.name }));
   const queues = await sd.listQueues();
@@ -85,6 +85,11 @@ export default async function SupportPage({ searchParams }: { searchParams: Prom
     );
   } else if (tab === "students") {
     panel = <StudentsTable />;
+  } else if (tab === "ratings") {
+    const { AgentRatings } = await import("@/components/app/support/agent-ratings");
+    const agents = lead ? (await sd.listQueues()).flatMap((q) => q.members).filter((v, i, a) => a.indexOf(v) === i).map((id) => people.find((p) => p.id === id)).filter((p): p is { id: string; name: string } => !!p) : null;
+    const first = sp.agent && lead ? sp.agent : agent ? viewer.id : (agents?.[0]?.id ?? viewer.id);
+    panel = <AgentRatings initial={await sd.agentRatings(viewer, first)} agents={agents && agents.length ? agents : null} />;
   } else if (tab === "monitor") {
     const today = new Date().toISOString().slice(0, 10);
     const from = /^\d{4}-\d{2}-\d{2}$/.test(sp.from ?? "") ? sp.from! : new Date(Date.now() - 6 * 864e5).toISOString().slice(0, 10);

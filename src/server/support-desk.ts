@@ -728,14 +728,61 @@ export async function customerSharePhone(app: AppFull, token: string, phone: str
 
 export async function customerRate(app: AppFull, token: string, ticketId: string, rating: number, comment?: string | null) {
   const { t } = await customerTicket(app, token, ticketId);
+  await recordRating(t.id, rating, comment, /^tg:/.test((await get<{ external_id: string | null }>("SELECT external_id FROM sup_customers WHERE id = ?", t.customer_id))?.external_id ?? "") ? "telegram" : "app");
+}
+
+// The agent a rating is for: the one the conversation is assigned to, else the last agent who answered it.
+export async function ratedAgent(ticketId: string) {
+  const t = await get<{ assignee_id: string | null }>("SELECT assignee_id FROM sup_tickets WHERE id = ?", ticketId);
+  if (t?.assignee_id) return t.assignee_id;
+  return (await get<{ author_id: string | null }>("SELECT author_id FROM sup_messages WHERE ticket_id = ? AND author_kind = 'agent' AND author_id IS NOT NULL ORDER BY created_at DESC LIMIT 1", ticketId))?.author_id ?? null;
+}
+
+// A customer's rating at the end of a conversation (1 to 5, an optional comment): kept on the conversation and,
+// one per session, on the agent who handled it. Rating again in the same session changes it; a comment added
+// later keeps the stars. Low ratings tell the lead and the agent, and escalate when the rules say so.
+export async function recordRating(ticketId: string, rating: number, comment: string | null | undefined, channel: "telegram" | "app" | "web") {
+  const t = await get<{ id: string; number: number; status: string; customer_id: string | null; solved_at: string | null; closed_at: string | null; rating: number | null }>("SELECT id, number, status, customer_id, solved_at, closed_at, rating FROM sup_tickets WHERE id = ?", ticketId);
+  if (!t) throw new WorkflowError("NOT_FOUND", "Conversation not found.");
   if (!["solved", "closed"].includes(t.status)) throw new WorkflowError("INVALID_STATE", "Rate the help once your question is solved.");
   const r = Math.round(Number(rating));
   if (!(r >= 1 && r <= 5)) throw new WorkflowError("VALIDATION", "Rate from 1 to 5.");
-  await run("UPDATE sup_tickets SET rating = ?, rating_comment = ? WHERE id = ?", r, clean(comment, 500) || null, t.id);
-  await activity(null, t.id, "rated", `${r} of 5${comment ? `: ${clean(comment, 200)}` : ""}`);
-  if (t.assignee_id && r <= 2) await notify([...(await supportConfig()).leads, t.assignee_id], { type: "assignment", title: `#${t.number} was rated ${r} of 5`, body: clean(comment, 200) || "No comment.", link: `/support?ticket=${t.id}` }, nowIso());
-  const center = await import("./support-center");
-  if (r <= 2 && (await center.centerConfig()).escalation.lowRating) await center.escalateByRule(t.id, `rated ${r} of 5`);
+  const note = clean(comment, 500) || null;
+  const session = t.solved_at ?? t.closed_at ?? nowIso();
+  const agent = await ratedAgent(t.id);
+  const now = nowIso();
+  const was = await get<{ id: string; rating: number; comment: string | null }>("SELECT id, rating, comment FROM sup_ratings WHERE ticket_id = ? AND session_at = ?", t.id, session);
+  const name = t.customer_id ? ((await get<{ name: string }>("SELECT name FROM sup_customers WHERE id = ?", t.customer_id))?.name ?? null) : null;
+  if (was) await run("UPDATE sup_ratings SET rating = ?, comment = COALESCE(?, comment), agent_id = COALESCE(agent_id, ?), updated_at = ? WHERE id = ?", r, note, agent, now, was.id);
+  else await run("INSERT INTO sup_ratings (id, ticket_id, ticket_number, session_at, agent_id, customer_id, customer_name, rating, comment, channel, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", uid("srt_"), t.id, t.number, session, agent, t.customer_id, name, r, note, channel, now, now);
+  await run("UPDATE sup_tickets SET rating = ?, rating_comment = COALESCE(?, rating_comment), rated_agent_id = ? WHERE id = ?", r, note, agent, t.id);
+  const changed = !was || was.rating !== r;
+  if (changed) await activity(null, t.id, "rated", `${r} of 5${note ? `: ${clean(note, 200)}` : ""}`);
+  else if (note && note !== was?.comment) await activity(null, t.id, "rated", `Comment: ${clean(note, 200)}`);
+  if (changed && r <= 2) {
+    if (agent) await notify([...(await supportConfig()).leads, agent], { type: "assignment", title: `#${t.number} was rated ${r} of 5`, body: note || "No comment.", link: `/support?ticket=${t.id}` }, now);
+    const center = await import("./support-center");
+    if ((await center.centerConfig()).escalation.lowRating) await center.escalateByRule(t.id, `rated ${r} of 5`);
+  }
+  return { rating: r, agentId: agent };
+}
+
+// An agent's ratings: the average, how many, each star count, and the latest with their comments. An agent sees
+// their own; leads and Admin see anyone's.
+export async function agentRatings(user: AppUser, agentId?: string | null, days = 90) {
+  const id = agentId || user.id;
+  if (id !== user.id && !(await isLead(user))) throw new WorkflowError("FORBIDDEN", "Only support leads and Admin see other agents' ratings.");
+  const since = new Date(Date.now() - Math.max(1, Math.min(3650, days)) * 86400e3).toISOString();
+  const rows = await all<{ id: string; ticket_id: string | null; ticket_number: number | null; customer_name: string | null; rating: number; comment: string | null; channel: string; created_at: string }>(
+    "SELECT id, ticket_id, ticket_number, customer_name, rating, comment, channel, created_at FROM sup_ratings WHERE agent_id = ? AND created_at >= ? ORDER BY created_at DESC",
+    id,
+    since,
+  );
+  const n = rows.length;
+  const avg = n ? Math.round((rows.reduce((a, r) => a + Number(r.rating), 0) / n) * 10) / 10 : null;
+  const stars = [1, 2, 3, 4, 5].map((k) => rows.filter((r) => Number(r.rating) === k).length);
+  const agent = await get<{ name: string }>("SELECT name FROM users WHERE id = ?", id);
+  return { agentId: id, name: agent?.name ?? "Agent", days, count: n, average: avg, stars, satisfied: n ? Math.round((rows.filter((r) => Number(r.rating) >= 4).length / n) * 100) : null, recent: rows.slice(0, 50).map((r) => ({ ...r, rating: Number(r.rating) })) };
 }
 
 // --- Agent side --------------------------------------------------------------
@@ -937,6 +984,8 @@ export async function setTicketStatus(user: AppUser, ticketId: string, status: T
   if (status === "solved") await ticketEvent(t.id, "ticket.solved");
   if (status === "solved" && t.customer_id)
     await run("INSERT INTO sup_messages (id, ticket_id, author_kind, author_id, body, internal, created_at) VALUES (?, ?, 'system', NULL, ?, 0, ?)", uid("smg_"), t.id, "This conversation is marked solved. Reply if you still need help, or rate the help you got.", now);
+  // The customer rates the help at the end: in Telegram the bot asks (the support app asks on its own).
+  if ((status === "solved" || status === "closed") && t.customer_id) await (await import("./support-channels")).askTelegramRating(t.id).catch((e) => console.error("Rating question failed", e));
 }
 
 export async function assignTicket(user: AppUser, ticketId: string, assigneeId: string | null) {
@@ -1423,7 +1472,7 @@ export async function monitor(user: AppUser, range: { from: string; to: string }
     const resolves = await all<{ c: string; s: string }>("SELECT created_at AS c, solved_at AS s FROM sup_tickets WHERE assignee_id = ? AND solved_at >= ? AND solved_at < ?", u.id, from, to);
     const calls = await get<{ n: number; s: number | null }>("SELECT COUNT(*) AS n, SUM(duration_s) AS s FROM sup_calls WHERE agent_id = ? AND status = 'ended' AND started_at >= ? AND started_at < ?", u.id, from, to);
     const missed = await n("SELECT COUNT(*) AS n FROM sup_calls k JOIN sup_tickets t ON t.id = k.ticket_id WHERE k.status = 'missed' AND (k.agent_id = ? OR t.assignee_id = ?) AND k.started_at >= ? AND k.started_at < ?", u.id, u.id, from, to);
-    const rating = await get<{ a: number | null; n: number }>("SELECT AVG(rating) AS a, COUNT(rating) AS n FROM sup_tickets WHERE assignee_id = ? AND rating IS NOT NULL AND solved_at >= ? AND solved_at < ?", u.id, from, to);
+    const rating = await get<{ a: number | null; n: number }>("SELECT AVG(rating) AS a, COUNT(rating) AS n FROM sup_ratings WHERE agent_id = ? AND created_at >= ? AND created_at < ?", u.id, from, to);
     const breached = await n("SELECT COUNT(*) AS n FROM sup_tickets WHERE assignee_id = ? AND breached = 1 AND created_at >= ? AND created_at < ?", u.id, from, to);
     const last = await get<{ at: string; kind: string }>("SELECT at, kind FROM sup_activity WHERE user_id = ? ORDER BY at DESC LIMIT 1", u.id);
     const avgMin = (xs: { a: string; b: string }[]) => (xs.length ? Math.round(xs.reduce((t, x) => t + (Date.parse(x.b) - Date.parse(x.a)) / 60e3, 0) / xs.length) : null);
@@ -1679,7 +1728,7 @@ export async function agentHome(user: AppUser): Promise<AgentHome> {
   ]);
   const fr = await all<{ created_at: string; first_response_at: string }>("SELECT created_at, first_response_at FROM sup_tickets WHERE assignee_id = ? AND first_response_at IS NOT NULL AND created_at >= ?", user.id, week);
   const firstResponseMin = fr.length ? Math.round(fr.reduce((s, r) => s + Math.max(0, Date.parse(r.first_response_at) - Date.parse(r.created_at)), 0) / fr.length / 60e3) : null;
-  const rt = await get<{ avg: number | string | null; n: number | string }>("SELECT AVG(rating) AS avg, COUNT(rating) AS n FROM sup_tickets WHERE assignee_id = ? AND rating IS NOT NULL AND solved_at >= ?", user.id, month);
+  const rt = await get<{ avg: number | string | null; n: number | string }>("SELECT AVG(rating) AS avg, COUNT(rating) AS n FROM sup_ratings WHERE agent_id = ? AND created_at >= ?", user.id, month);
   const calls = await all<AgentHome["calls"][number]>(
     `SELECT k.id, k.ticket_id, t.number, c.name AS customer, k.direction, k.kind, k.status, k.started_at, k.duration_s, CASE WHEN k.recording_id IS NULL THEN 0 ELSE 1 END AS recorded
      FROM sup_calls k LEFT JOIN sup_tickets t ON t.id = k.ticket_id LEFT JOIN sup_customers c ON c.id = k.customer_id

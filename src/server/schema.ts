@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 82;
+export const SCHEMA_VERSION = 83;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -4187,6 +4187,26 @@ CREATE TABLE IF NOT EXISTS noor_content_jobs (
 );
 CREATE INDEX IF NOT EXISTS idx_noor_content_jobs ON noor_content_jobs(subject_id, created_at);
 
+-- Customer ratings at the end of a conversation, one per conversation session (a reopened conversation solved
+-- again is a new one), kept on the agent who handled it: the agent's record stays when conversations are cleared.
+CREATE TABLE IF NOT EXISTS sup_ratings (
+  id TEXT PRIMARY KEY,
+  ticket_id TEXT REFERENCES sup_tickets(id) ON DELETE SET NULL,
+  ticket_number INTEGER,
+  session_at TEXT NOT NULL,
+  agent_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+  customer_id TEXT,
+  customer_name TEXT,
+  rating INTEGER NOT NULL,
+  comment TEXT,
+  channel TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_sup_ratings_session ON sup_ratings(ticket_id, session_at);
+CREATE INDEX IF NOT EXISTS idx_sup_ratings_agent ON sup_ratings(agent_id, created_at);
+ALTER TABLE sup_tickets ADD COLUMN IF NOT EXISTS rated_agent_id TEXT;
+
 `;
 
 // Tables in dependency order; used to empty the workspace and to export or restore backups.
@@ -4459,4 +4479,5 @@ export const TABLES = [
   "sup_recording_access",
   "noor_content",
   "noor_content_jobs",
+  "sup_ratings",
 ] as const;

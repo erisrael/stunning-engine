@@ -85,6 +85,9 @@ async function main() {
   check("/start shows the spec's menu as buttons in submenus, in both languages", top.includes("sm:help") && menu.includes("c:payments") && menu.includes("Payment Assistance · የክፍያ እርዳታ") && menu.includes("mn:start") && menu.includes("mn:requests") && welcome.includes("Welcome to MySeed Support") && welcome.includes("እንኳን") && top.includes("web_app"), menu);
   await ch.saveArticle(liya, { title: "Paid but not active", body: "Send the receipt from telebirr and we activate it within a day.", category: "Payments", published: true });
   await ch.telegramUpdate(secret, secret, press("c:payments"));
+  const sectionsKb = (last().reply_markup as { inline_keyboard: { text: string; callback_data: string }[][] }).inline_keyboard.flat();
+  check("a topic with sections shows them, the team's own answers last", sectionsKb.at(-3)?.text === "Other answers (1)" && sectionsKb.some((b) => b.text === "Paying (3)"), sectionsKb);
+  await ch.telegramUpdate(secret, secret, press(sectionsKb.find((b) => b.text.startsWith("Other answers"))!.callback_data));
   check("a topic shows its answers as buttons, then Still need help?", JSON.stringify(last().reply_markup).includes("Paid but not active") && JSON.stringify(last().reply_markup).includes("a:payments"), last());
   const answer = ((last().reply_markup as { inline_keyboard: { text: string; callback_data: string }[][] }).inline_keyboard.flat().find((b) => b.text === "Paid but not active"))!.callback_data;
   await ch.telegramUpdate(secret, secret, press(answer));

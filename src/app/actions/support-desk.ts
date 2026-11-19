@@ -184,3 +184,8 @@ export async function cancelCallbackAction(callId: string) {
 export async function saveCallEngineAction(appId: string, input: { engine: "browser" | "phone"; phone?: string | null }) {
   return wrap(async () => (await import("@/server/support-calls")).saveCallEngine(await requireViewer(), appId, input));
 }
+
+// An agent's customer ratings (Customer support > Ratings): their own, or any agent's for leads.
+export async function agentRatingsAction(agentId: string | null, days = 90) {
+  return wrap(async () => sd.agentRatings(await requireViewer(), agentId, days), { revalidate: false });
+}

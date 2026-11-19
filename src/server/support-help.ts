@@ -145,7 +145,7 @@ export async function categoryArticles(key: string, limit = 6, lang: "en" | "am"
     : c.selfHelp
       ? await all<R>("SELECT id, title, body, kind, video, keywords, category FROM sup_articles WHERE published = 1 ORDER BY views DESC, helpful DESC, created_at, title LIMIT 200")
       : [];
-  const { articleLang } = await import("./support-starter");
+  const { articleLang, articleSection } = await import("./support-starter");
   const want = lang === "am" ? "am" : "en";
   return rows
     .filter((r) => {
@@ -153,7 +153,7 @@ export async function categoryArticles(key: string, limit = 6, lang: "en" | "am"
       return !l || l === want;
     })
     .slice(0, limit)
-    .map((r) => ({ id: r.id, title: r.title, snippet: r.body.slice(0, 160), kind: r.kind === "guide" ? "guide" : "article", video: !!r.video, category: r.category }));
+    .map((r) => ({ id: r.id, title: r.title, snippet: r.body.slice(0, 160), kind: r.kind === "guide" ? "guide" : "article", video: !!r.video, category: r.category, section: articleSection(r.keywords) }));
 }
 
 // ---------------------------------------------------------------------------

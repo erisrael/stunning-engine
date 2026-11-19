@@ -703,7 +703,11 @@ export function Monitor({ m, from, to }: { m: Mon; from: string; to: string }) {
                     {a.calls} ({a.callMin} min)
                   </td>
                   <td className="pr-2">{a.missed}</td>
-                  <td className="pr-2">{a.rating === null ? "-" : `${a.rating} (${a.ratings})`}</td>
+                  <td className="pr-2">
+                    <a href={`/support?tab=ratings&agent=${a.userId}`} className="text-primary hover:underline" data-agent-rating={a.userId}>
+                      {a.rating === null ? "-" : `${a.rating} (${a.ratings})`}
+                    </a>
+                  </td>
                   <td className={cn("pr-2", a.breached && "text-[#D93025]")}>{a.breached}</td>
                   <td className="pr-2 text-muted-foreground">{a.lastActivity ? `${a.lastActivity.kind.replace(/_/g, " ")}, ${new Date(a.lastActivity.at).toLocaleString([], { dateStyle: "short", timeStyle: "short" })}` : "-"}</td>
                 </tr>

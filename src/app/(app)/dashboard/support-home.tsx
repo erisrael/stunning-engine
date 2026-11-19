@@ -102,7 +102,7 @@ export async function SupportHome({ viewer, timezone, greeting }: { viewer: AppU
           <MetricCard label="Waiting for someone" value={h.waitingCount} href="/support?tab=desk&view=unassigned" tone={h.waitingCount ? "warning" : "default"} />
           <MetricCard label="Solved today" value={s.solvedToday} hint={`${s.solved7} in 7 days`} />
           <MetricCard label="First response" value={s.firstResponseMin === null ? "–" : s.firstResponseMin < 60 ? `${s.firstResponseMin} min` : `${Math.round(s.firstResponseMin / 6) / 10} h`} hint="average, 7 days" />
-          <MetricCard label="Customer rating" value={s.rating === null ? "–" : `${s.rating} / 5`} hint={`${s.ratings} ratings, 30 days`} />
+          <MetricCard label="Customer rating" value={s.rating === null ? "–" : `${s.rating} / 5`} hint={`${s.ratings} ratings, 30 days`} href="/support?tab=ratings" />
           <MetricCard label="Late" value={s.late} href="/support?tab=desk&view=breached" tone={s.late ? "danger" : "default"} />
         </div>
 

@@ -730,20 +730,15 @@ function FaqPage({ api, w, onOpen }: { api: Api; w: Words; onOpen: (id: string) 
       {error && <p className="text-sm text-destructive">{error}</p>}
       {!data && !error && <Loading />}
       {data && !data.length && <Empty icon={BookOpenIcon} text={w.noFaq} />}
-      <ul className="space-y-2">
-        {data?.map((a) => (
-          <li key={a.id}>
-            <button type="button" className="w-full rounded-xl border bg-card p-3 text-left hover:bg-muted" onClick={() => onOpen(a.id)} data-faq-item>
-              <span className="flex items-center gap-2">
-                <MessageCircleQuestionIcon className="size-4 shrink-0 text-primary" />
-                <span className="min-w-0 flex-1 font-medium">{a.title}</span>
-                <ChevronRightIcon className="size-4 text-muted-foreground" />
-              </span>
-              {a.category && <span className="mt-0.5 block pl-6 text-xs text-muted-foreground">{a.category}</span>}
-            </button>
-          </li>
-        ))}
-      </ul>
+      {[...new Set((data ?? []).map((a) => a.category ?? ""))].map((cat) => (
+        <Group key={cat || "other"} title={cat || w.faq}>
+          {(data ?? [])
+            .filter((a) => (a.category ?? "") === cat)
+            .map((a) => (
+              <Row key={a.id} icon={MessageCircleQuestionIcon} label={a.title} sub={a.section ?? undefined} onClick={() => onOpen(a.id)} data-faq-item />
+            ))}
+        </Group>
+      ))}
     </div>
   );
 }
@@ -967,7 +962,7 @@ function Resources({ api, title }: { api: Api; title: string }) {
   );
 }
 
-type Found = { id: string; title: string; category: string | null; snippet: string };
+type Found = { id: string; title: string; category: string | null; snippet: string; section?: string | null };
 
 // Help articles matching what the customer types (the knowledge base), so many questions answer themselves.
 function useArticles(api: Api, q: string) {

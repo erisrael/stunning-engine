@@ -112,6 +112,10 @@ async function main() {
   await ch.telegramUpdate(secret, secret, { message: { message_id: 1, text: "/start", chat: { id: 777, type: "private" }, from: { id: 777, first_name: "Selam" } } });
   posts.length = 0;
   await press("c:payments");
+  // The team's own answers are under Other answers, after the starter sections.
+  const sec = ((posts.find((p) => p.url.endsWith("/sendMessage") && String(p.body.chat_id) === "777")?.body.reply_markup as { inline_keyboard?: { text: string; callback_data?: string }[][] } | undefined)?.inline_keyboard ?? []).flat();
+  posts.length = 0;
+  await press(sec.find((b) => b.text.startsWith("Other answers"))!.callback_data!);
   const list = posts.find((p) => p.url.endsWith("/sendMessage") && String(p.body.chat_id) === "777");
   const buttons = ((list?.body.reply_markup as { inline_keyboard?: { text: string; callback_data?: string }[][] } | undefined)?.inline_keyboard ?? []).flat();
   check("the help topic lists every answer, plain ones, guides and video answers, to read here", buttons.some((b) => b.callback_data === `ga:${gid}`) && buttons.some((b) => b.callback_data === `ga:${aid}`) && buttons.some((b) => b.callback_data === `ga:${old}`), buttons);

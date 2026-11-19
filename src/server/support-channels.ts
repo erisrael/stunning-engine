@@ -601,6 +601,8 @@ async function closeConversation(chat: string, x: TelegramTexts, customerId: str
   await run("INSERT INTO sup_messages (id, ticket_id, author_kind, author_id, body, internal, created_at) VALUES (?, ?, 'system', NULL, ?, 1, ?)", uid("smg_"), t.id, "The customer closed the conversation in Telegram.", now);
   await (await import("./support-desk")).activity(null, t.id, "closed", "Closed by the customer");
   await telegramSend(chat, await sayKey(x, "close.done", { number: t.number }), { reply_markup: { inline_keyboard: [await backRow(x)] } });
+  // Asked only when an agent took part.
+  if (await (await import("./support-desk")).ratedAgent(t.id)) await askTelegramRating(t.id).catch(() => null);
 }
 async function reopenConversation(chat: string, x: TelegramTexts, customerId: string) {
   if (await openTicketOf(customerId)) return sendRequests(chat, x, customerId, false);
@@ -743,6 +745,62 @@ async function setCustomerMeta(id: string, patch: Record<string, string | null>)
   await run("UPDATE sup_customers SET meta = ? WHERE id = ?", JSON.stringify(m), id);
 }
 
+// The end of a conversation in Telegram: "How was the help from Sara?" with one to five stars, then an optional
+// comment (the next message within ten minutes, or Skip). Asked once a session; the rating goes on the agent.
+const STAR_WORDS: [string, string][] = [["Bad", "መጥፎ"], ["Poor", "ደካማ"], ["OK", "መካከለኛ"], ["Good", "ጥሩ"], ["Excellent", "በጣም ጥሩ"]];
+export async function askTelegramRating(ticketId: string) {
+  const t = await get<{ id: string; number: number; customer_id: string | null; solved_at: string | null; closed_at: string | null }>("SELECT id, number, customer_id, solved_at, closed_at FROM sup_tickets WHERE id = ?", ticketId);
+  if (!t?.customer_id) return false;
+  const c = await get<{ external_id: string | null; app_id: string | null }>("SELECT external_id, app_id FROM sup_customers WHERE id = ?", t.customer_id);
+  if (!c?.external_id?.startsWith("tg:")) return false;
+  const session = t.solved_at ?? t.closed_at;
+  if (session && (await get("SELECT id FROM sup_ratings WHERE ticket_id = ? AND session_at = ?", t.id, session))) return false;
+  const meta = await customerMeta(t.customer_id);
+  if (meta.tgRated === `${t.id}:${session}`) return false;
+  await setCustomerMeta(t.customer_id, { tgRated: `${t.id}:${session}` });
+  const agentId = await (await import("./support-desk")).ratedAgent(t.id);
+  const agent = agentId ? ((await get<{ name: string }>("SELECT name FROM users WHERE id = ?", agentId))?.name ?? "").split(" ")[0] : "";
+  const chat = c.external_id.slice(3);
+  const go = async () => {
+    const x = await withLang(await telegramTexts(), t.customer_id!);
+    const am = x.lang === "am";
+    const q = am ? `${agent ? `${agent} የሰጠዎት` : "የተሰጠዎት"} እርዳታ እንዴት ነበር? (ውይይት #${t.number})` : `How was the help${agent ? ` from ${agent}` : ""}? (conversation #${t.number})`;
+    const rows = [5, 4, 3, 2, 1].map((k) => [{ text: `${"★".repeat(k)}${"☆".repeat(5 - k)}  ${am ? STAR_WORDS[k - 1]![1] : STAR_WORDS[k - 1]![0]}`, callback_data: `rt:${t.id}:${k}`.slice(0, 64) }]);
+    await telegramSend(chat, q, { reply_markup: { inline_keyboard: rows } });
+  };
+  const sys = await systemBot(c.app_id);
+  await (sys ? botCtx.run(sys, go) : go());
+  return true;
+}
+async function rateFromTelegram(chat: string, x: TelegramTexts, customerId: string, data: string) {
+  const [, ticketId, n] = data.split(":");
+  const t = await get<{ id: string; customer_id: string | null }>("SELECT id, customer_id FROM sup_tickets WHERE id = ?", ticketId ?? "");
+  if (!t || t.customer_id !== customerId) return telegramSend(chat, x.lang === "am" ? "ይህ ውይይት አልተገኘም።" : "That conversation was not found.");
+  try {
+    await (await import("./support-desk")).recordRating(t.id, Number(n), null, "telegram");
+  } catch (e) {
+    return telegramSend(chat, e instanceof Error ? e.message : "Could not save the rating.");
+  }
+  await setCustomerMeta(customerId, { tgAwait: `rating:${t.id}:${n}`, tgAwaitAt: nowIso() });
+  await telegramSend(chat, x.lang === "am" ? "እናመሰግናለን! ሌላ የሚሉት ነገር አለ? አሁን ይጻፉት፣ ወይም «ዝለል» ይጫኑ።" : "Thank you! Anything you want to add? Write it now, or press Skip.", { reply_markup: { inline_keyboard: [[{ text: x.lang === "am" ? "ዝለል" : "Skip", callback_data: "rs" }]] } });
+}
+
+// A topic's sections in the order its answers come, the answers without a section last ("Other answers").
+function sectionsOf(list: { section: string | null }[], x: TelegramTexts) {
+  const other = x.lang === "am" ? "ሌሎች መልሶች" : "Other answers";
+  const named = [...new Set(list.map((a) => a.section).filter((s): s is string => !!s))];
+  return list.some((a) => !a.section) ? [...named, other] : named;
+}
+
+// Back from an answer: to its section when its topic is grouped, else to the topic.
+async function sectionBack(topic: string, articleId: string, x: TelegramTexts) {
+  const list = await (await import("./support-help")).categoryArticles(topic, 60, x.lang);
+  const other = x.lang === "am" ? "ሌሎች መልሶች" : "Other answers";
+  const sections = sectionsOf(list, x);
+  const mine = list.find((a) => a.id === articleId);
+  return sections.length > 1 && mine ? `cs:${topic}:${sections.indexOf(mine.section ?? other)}`.slice(0, 64) : `c:${topic}`;
+}
+
 // One answer, read in the chat: the title and text, then "That helped", "Still need help?" (asks in the answer's
 // topic) and back to the topic's answers.
 async function sendAnswer(chat: string, x: TelegramTexts, id: string) {
@@ -757,7 +815,7 @@ async function sendAnswer(chat: string, x: TelegramTexts, id: string) {
   const text = `${a.title}\n\n${a.body.replace(/\*\*(.+?)\*\*/g, "$1").replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, "$1 ($2)")}`;
   const rows: { text: string; callback_data: string }[][] = [
     [{ text: x.lang === "am" ? "ረድቶኛል" : "That helped", callback_data: `gv:${a.id}`.slice(0, 64) }, { text: x.lang === "am" ? "አሁንም እርዳታ ይፈልጋሉ?" : "Still need help?", callback_data: `a:${cat && !["faq", "quick", "howto"].includes(cat.key) ? cat.key : "person"}` }],
-    [{ text: x.lang === "am" ? "« ተመለስ" : "« Back", callback_data: cat ? (cat.key === "faq" ? "mn:faq" : `c:${cat.key}`) : "m" }],
+    [{ text: x.lang === "am" ? "« ተመለስ" : "« Back", callback_data: cat ? (cat.key === "faq" ? "mn:faq" : await sectionBack(cat.key, a.id, x)) : "m" }],
   ];
   await telegramSend(chat, steps ? (x.lang === "am" ? "ይህ መልስ ሰጥቶዎታል?" : "Did that answer it?") : text.slice(0, 4000), { reply_markup: { inline_keyboard: rows } });
 }
@@ -819,6 +877,11 @@ async function telegramButton(q: NonNullable<TgUpdate["callback_query"]>, x: Tel
     }
     data = `a:${topic.action.slice(9)}`;
   }
+  if (data.startsWith("rt:")) return rateFromTelegram(chat, x, me, data);
+  if (data === "rs") {
+    await setCustomerMeta(me, { tgAwait: null, tgAwaitAt: null });
+    return telegramSend(chat, x.lang === "am" ? "እናመሰግናለን።" : "Thank you.", { reply_markup: { inline_keyboard: [await backRow(x)] } });
+  }
   if (data.startsWith("ga:")) return sendAnswer(chat, x, data.slice(3));
   if (data.startsWith("gv:")) {
     await voteArticle(data.slice(3), true).catch(() => null);
@@ -838,16 +901,29 @@ async function telegramButton(q: NonNullable<TgUpdate["callback_query"]>, x: Tel
     const who = await customerFor({ channel: "telegram", key: chat, name: nameOf(q.from) });
     if (await (await import("./bot-manager")).button(currentBot(), chat, who, data, x)) return;
   }
-  const [kind, key] = [data.slice(0, 1), data.slice(2)];
+  // A section of a topic (cs:<topic>:<n>) is the topic's own handler.
+  const [kind, key] = data.startsWith("cs:") ? ["c", data.split(":")[1] ?? ""] : [data.slice(0, 1), data.slice(2)];
   const c = await h.helpCategory(key);
   if (!c || !c.active) return sendMenu(chat, x);
   const customerId = await customerFor({ channel: "telegram", key: chat, name: nameOf(q.from) });
   if (kind === "c" && c.selfHelp) {
-    const arts = await h.categoryArticles(c.key, 8, x.lang);
+    const all = await h.categoryArticles(c.key, 60, x.lang);
+    // Grouped: a topic with answers in two sections or more shows its sections first (cs:<topic>:<n>).
+    const sections = sectionsOf(all, x);
+    const pick = data.startsWith("cs:") ? sections[Number(data.split(":")[2])] : null;
+    if (sections.length > 1 && !pick) {
+      const { SECTION_AM } = await import("./support-starter");
+      const rows: { text: string; callback_data: string }[][] = sections.map((s, i) => [{ text: `${x.lang === "am" ? (SECTION_AM[s] ?? s) : s} (${all.filter((a) => (a.section ?? (x.lang === "am" ? "ሌሎች መልሶች" : "Other answers")) === s).length})`.slice(0, 60), callback_data: `cs:${c.key}:${i}`.slice(0, 64) }]);
+      rows.push([{ text: x.lang === "am" ? "አሁንም እርዳታ ይፈልጋሉ? ይጠይቁን" : "Still need help? Ask us", callback_data: `a:${c.key}` }], [{ text: x.lang === "am" ? "« ተመለስ" : "« Back", callback_data: "sm:help" }]);
+      await telegramSend(chat, `${label(x, c)}\n\n${x.lang === "am" ? "ክፍል ይምረጡ፦" : "Choose a section:"}`, { reply_markup: { inline_keyboard: rows } });
+      return;
+    }
+    const arts = (pick ? all.filter((a) => (a.section ?? (x.lang === "am" ? "ሌሎች መልሶች" : "Other answers")) === pick) : all).slice(0, 12);
     if (arts.length) {
       const rows: { text: string; callback_data: string }[][] = arts.map((a) => [{ text: a.title.slice(0, 60), callback_data: `ga:${a.id}`.slice(0, 64) }]);
-      rows.push([{ text: x.lang === "am" ? "አሁንም እርዳታ ይፈልጋሉ? ይጠይቁን" : "Still need help? Ask us", callback_data: `a:${c.key}` }], [{ text: x.lang === "am" ? "« ተመለስ" : "« Back", callback_data: "sm:help" }]);
-      await telegramSend(chat, `${label(x, c)}\n\n${x.lang === "am" ? "መልስዎን ይምረጡ፦" : "Choose your question:"}`, { reply_markup: { inline_keyboard: rows } });
+      rows.push([{ text: x.lang === "am" ? "አሁንም እርዳታ ይፈልጋሉ? ይጠይቁን" : "Still need help? Ask us", callback_data: `a:${c.key}` }], [{ text: x.lang === "am" ? "« ተመለስ" : "« Back", callback_data: pick ? `c:${c.key}` : "sm:help" }]);
+      const { SECTION_AM } = await import("./support-starter");
+      await telegramSend(chat, `${label(x, c)}${pick ? ` › ${x.lang === "am" ? (SECTION_AM[pick] ?? pick) : pick}` : ""}\n\n${x.lang === "am" ? "መልስዎን ይምረጡ፦" : "Choose your question:"}`, { reply_markup: { inline_keyboard: rows } });
       return;
     }
   }
@@ -918,6 +994,16 @@ async function handleUpdate(update: TgUpdate) {
   }
   // The answer to "Frequently Asked Questions": searched in the help articles (asked within ten minutes).
   const waiting = await customerMeta(customerId);
+  // A comment on the rating just given (within ten minutes).
+  if (waiting.tgAwait?.startsWith("rating:") && text && !text.startsWith("/") && !m.contact) {
+    await setCustomerMeta(customerId, { tgAwait: null, tgAwaitAt: null });
+    if (Date.now() - Date.parse(waiting.tgAwaitAt ?? "") < 10 * 60e3) {
+      const [, ticketId, n] = waiting.tgAwait.split(":");
+      await (await import("./support-desk")).recordRating(ticketId!, Number(n), text, "telegram").catch(() => null);
+      await telegramSend(chat, x.lang === "am" ? "አስተያየትዎ ደርሶናል። እናመሰግናለን።" : "Thank you, we have your comment.", { reply_markup: { inline_keyboard: [await backRow(x)] } });
+      return { ok: true };
+    }
+  }
   if (waiting.tgAwait === "faq" && text && !text.startsWith("/") && !m.contact) {
     await setCustomerMeta(customerId, { tgAwait: null, tgAwaitAt: null });
     if (Date.now() - Date.parse(waiting.tgAwaitAt ?? "") < 10 * 60e3) {
@@ -1030,7 +1116,13 @@ export async function searchArticles(q: string, limit = 8, lang: "en" | "am" | n
     const l = articleLang(r.keywords);
     return !lang || !l || l === lang;
   });
-  if (!words.length) return rows.sort((a, b) => Number(b.views) - Number(a.views)).slice(0, limit).map((r) => ({ id: r.id, title: r.title, category: r.category, snippet: r.body.slice(0, 160) }));
+  const { articleSection } = await import("./support-starter");
+  if (!words.length)
+    return rows
+      .sort((a, b) => Number(b.views) - Number(a.views))
+      .slice(0, limit)
+      .map((r) => ({ id: r.id, title: r.title, category: r.category, snippet: r.body.slice(0, 160), section: articleSection(r.keywords) }))
+      .sort((a, b) => (a.category ?? "~").localeCompare(b.category ?? "~") || (a.section ?? "~").localeCompare(b.section ?? "~"));
   return rows
     .map((r) => {
       const t = r.title.toLowerCase();

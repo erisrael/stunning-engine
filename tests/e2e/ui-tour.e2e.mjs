@@ -22,6 +22,7 @@ const PAGES = [
   ["support", "/support"],
   ["support-settings", "/support?tab=settings"],
   ["support-content", "/support?tab=content"],
+  ["support-ratings", "/support?tab=ratings"],
   ["admin", "/admin"],
   ["work", "/my-work"],
   ["chat", "/chat"],

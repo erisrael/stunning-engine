@@ -719,6 +719,13 @@ PREPS["update-1-2-content"] = async () => {
 // The interface tour: the demo workspace, signed in with a password only.
 PREPS["ui-tour"] = async () => {
   await passwordOnly();
+  // Support on, Admin a lead with two ratings, so Customer support > Ratings has something to show.
+  const a = await admin();
+  const sd = await import("../../src/server/support-desk");
+  await sd.saveSupportConfig(a, { enabled: true, leads: [a.id] });
+  await sd.saveQueue(a, { name: "Help", keywords: [], members: [a.id], strategy: "least_busy" });
+  for (const [r, c, n] of [[5, "Very helpful, thank you", 101], [3, null, 102]] as const)
+    await run("INSERT INTO sup_ratings (id, ticket_id, ticket_number, session_at, agent_id, customer_name, rating, comment, channel, created_at, updated_at) VALUES (?, NULL, ?, ?, ?, 'Meron', ?, ?, 'telegram', ?, ?)", uid("srt_"), n, nowIso(), a.id, r, c, nowIso(), nowIso());
 };
 
 async function main() {

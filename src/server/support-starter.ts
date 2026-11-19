@@ -106,6 +106,10 @@ const STARTERS: Starter[] = [
 ];
 
 export async function ensureStarterHelp() {
+  await ensureStarterHelpV1();
+  await ensureStarterHelpV2();
+}
+async function ensureStarterHelpV1() {
   if (await getMeta("help.starter.v1")) return;
   // Workspaces that already wrote their own answers keep only those.
   const own = Number((await get<{ n: number }>("SELECT COUNT(*) AS n FROM sup_articles"))?.n ?? 0);
@@ -128,6 +132,186 @@ export async function ensureStarterHelp() {
       );
     }
 }
+
+// The second set (v2): more answers, and every starter answer in a section of its topic, so the bot shows
+// Payments > Paying / Problems / Refunds before the answers.
+const SECTIONS: Record<string, string> = {
+  "How can I pay for a subscription?": "Paying",
+  "I paid but my subscription is not active": "Problems",
+  "My payment failed or money was taken twice": "Problems",
+  "Which subscription plan should I choose?": "Choosing a plan",
+  "My subscription ended. How do I renew?": "Renewing",
+  "I chose the wrong grade": "Changes",
+  "I cannot sign in": "Signing in",
+  "How do I link my child's account?": "Profile and family",
+  "How do I change my phone number or name?": "Profile and family",
+  "Videos do not play or keep loading": "Lessons and videos",
+  "What is in the app?": "Lessons and videos",
+  "The app closes or does not open": "App problems",
+  "How long does a bank receipt check take?": "General",
+  "Can I use my account on two phones?": "General",
+  "When can I reach support?": "General",
+};
+const AM_TITLE: Record<string, string> = {
+  "ለደንበኝነት እንዴት መክፈል እችላለሁ?": "Paying",
+  "ከፍያለሁ ግን ደንበኝነቴ አልጀመረም": "Problems",
+  "ክፍያዬ አልተሳካም ወይም ሁለት ጊዜ ተቆርጧል": "Problems",
+  "የትኛውን የደንበኝነት ዕቅድ ልምረጥ?": "Choosing a plan",
+  "ደንበኝነቴ አልቋል። እንዴት ላድሰው?": "Renewing",
+  "የተሳሳተ ክፍል መርጫለሁ": "Changes",
+  "መግባት አልቻልኩም": "Signing in",
+  "የልጄን መለያ እንዴት ላገናኘው?": "Profile and family",
+  "ስልክ ቁጥሬን ወይም ስሜን እንዴት እቀይራለሁ?": "Profile and family",
+  "ቪዲዮዎች አይጫወቱም ወይም ይቆማሉ": "Lessons and videos",
+  "በመተግበሪያው ውስጥ ምን አለ?": "Lessons and videos",
+  "መተግበሪያው ይዘጋል ወይም አይከፈትም": "App problems",
+  "የባንክ ደረሰኝ ማረጋገጥ ምን ያህል ጊዜ ይወስዳል?": "General",
+  "መለያዬን በሁለት ስልኮች መጠቀም እችላለሁ?": "General",
+  "ድጋፍን መቼ ማግኘት እችላለሁ?": "General",
+};
+// Section names in Amharic, for the bot's buttons.
+export const SECTION_AM: Record<string, string> = {
+  Paying: "ክፍያ መፈጸም",
+  Problems: "ችግሮች",
+  Refunds: "ተመላሽ ክፍያ",
+  "Choosing a plan": "ዕቅድ መምረጥ",
+  Renewing: "ማደስ",
+  Changes: "ለውጦች",
+  "Signing in": "መግባት",
+  "Profile and family": "መገለጫ እና ቤተሰብ",
+  "Privacy and safety": "ግላዊነት እና ደህንነት",
+  "Lessons and videos": "ትምህርቶች እና ቪዲዮዎች",
+  "Quizzes and notes": "ፈተናዎች እና ማስታወሻዎች",
+  "App problems": "የመተግበሪያ ችግሮች",
+  General: "አጠቃላይ",
+  "About MySeed": "ስለ ማይሲድ",
+};
+type Starter2 = Starter & { section: string };
+const MORE: Starter2[] = [
+  {
+    category: "Payments",
+    section: "Paying",
+    keywords: "telebirr pay steps how",
+    en: ["How do I pay with Telebirr?", "1. In the app, open Subscription and choose your plan.\n2. Choose Telebirr as the payment method.\n3. Confirm the payment in Telebirr with your PIN.\n4. Go back to the app: the subscription starts once Telebirr confirms it.\n\nKeep the Telebirr confirmation SMS until the subscription shows as active."],
+    am: ["በቴሌብር እንዴት እከፍላለሁ?", "1. በመተግበሪያው «ደንበኝነት» ከፍተው ዕቅድዎን ይምረጡ።\n2. የክፍያ ዘዴ ቴሌብርን ይምረጡ።\n3. ክፍያውን በቴሌብር በፒንዎ ያረጋግጡ።\n4. ወደ መተግበሪያው ይመለሱ፦ ቴሌብር እንዳረጋገጠ ደንበኝነቱ ይጀምራል።\n\nደንበኝነቱ «ንቁ» እስኪሆን የቴሌብር ማረጋገጫ መልዕክቱን ያስቀምጡ።"],
+  },
+  {
+    category: "Payments",
+    section: "Paying",
+    keywords: "bank transfer receipt upload photo steps",
+    en: ["How do I pay by bank transfer?", "1. In the app, open Subscription, choose your plan and choose bank transfer.\n2. Pay the amount shown to the bank account the app shows.\n3. Take a clear photo or screenshot of the receipt: the amount, date and reference must be readable.\n4. Upload it in the app.\n\nOur finance team checks the receipt and starts the subscription. A blurry or cut receipt has to be sent again, so check the photo before you send it."],
+    am: ["በባንክ ዝውውር እንዴት እከፍላለሁ?", "1. በመተግበሪያው «ደንበኝነት» ከፍተው ዕቅድዎን ይምረጡና የባንክ ዝውውርን ይምረጡ።\n2. የሚታየውን መጠን መተግበሪያው ወደሚያሳየው የባንክ ሂሳብ ይክፈሉ።\n3. የደረሰኙን ግልጽ ፎቶ ወይም ስክሪንሾት ያንሱ፦ መጠኑ፣ ቀኑ እና ማጣቀሻው መነበብ አለባቸው።\n4. በመተግበሪያው ውስጥ ይጫኑት።\n\nየፋይናንስ ቡድናችን ደረሰኙን አረጋግጦ ደንበኝነቱን ያስጀምራል። የደበዘዘ ወይም የተቆረጠ ደረሰኝ እንደገና መላክ ስለሚኖርበት ከመላክዎ በፊት ፎቶውን ያረጋግጡ።"],
+  },
+  {
+    category: "Payments",
+    section: "Problems",
+    keywords: "receipt rejected declined unclear wrong amount",
+    en: ["My bank receipt was not accepted", "A receipt is sent back when it cannot be read, the amount does not match the plan, or it was already used for another payment. Send a new, clear photo of the original receipt from the app. If you think it was a mistake, press \"Still need help\" with the phone number of the account and the receipt."],
+    am: ["የባንክ ደረሰኜ ተቀባይነት አላገኘም", "ደረሰኝ የሚመለሰው መነበብ ሳይችል፣ መጠኑ ከዕቅዱ ጋር ሳይስማማ፣ ወይም ቀደም ሲል ለሌላ ክፍያ ጥቅም ላይ ውሎ ሲሆን ነው። የዋናውን ደረሰኝ አዲስና ግልጽ ፎቶ ከመተግበሪያው ይላኩ። ስህተት ነው ብለው ካሰቡ በመለያው ስልክ ቁጥር እና በደረሰኙ «አሁንም እርዳታ ይፈልጋሉ?» ይጫኑ።"],
+  },
+  {
+    category: "Payments",
+    section: "Refunds",
+    keywords: "refund money back cancel",
+    en: ["Can I get a refund?", "Press \"Still need help\" and tell us why you are asking for a refund, with the phone number of the account and the payment reference. Our finance team looks at each request and replies to you here."],
+    am: ["ገንዘቤ ሊመለስልኝ ይችላል?", "«አሁንም እርዳታ ይፈልጋሉ?» ተጭነው ተመላሽ ክፍያ የሚጠይቁበትን ምክንያት ከመለያው ስልክ ቁጥር እና ከክፍያ ማጣቀሻው ጋር ይንገሩን። የፋይናንስ ቡድናችን እያንዳንዱን ጥያቄ አይቶ እዚህ ይመልስልዎታል።"],
+  },
+  {
+    category: "Plans",
+    section: "Renewing",
+    keywords: "grace period expired pending meaning status",
+    en: ["What do the subscription states mean?", "Active: you can use everything for your grade.\nGrace: the subscription has ended but you can still study for a short time; renew to keep going.\nExpired: renew to open the lessons again.\nPending review: we are checking your bank receipt.\nSuspended: press \"Still need help\" and we tell you why."],
+    am: ["የደንበኝነት ሁኔታዎች ምን ማለት ናቸው?", "ንቁ፦ ለክፍልዎ ያለውን ሁሉ መጠቀም ይችላሉ።\nየእፎይታ ጊዜ፦ ደንበኝነቱ አልቋል ግን ለአጭር ጊዜ መማር ይችላሉ፤ ለመቀጠል ያድሱ።\nጊዜው ያለፈበት፦ ትምህርቶቹን እንደገና ለመክፈት ያድሱ።\nበግምገማ ላይ፦ የባንክ ደረሰኝዎን እያረጋገጥን ነው።\nየታገደ፦ «አሁንም እርዳታ ይፈልጋሉ?» ይጫኑ፣ ምክንያቱን እንነግርዎታለን።"],
+  },
+  {
+    category: "Plans",
+    section: "Choosing a plan",
+    keywords: "children siblings two students family",
+    en: ["I have more than one child", "Each child needs their own student account and subscription, because lessons and progress follow the student's grade. A parent account can follow all of them."],
+    am: ["ከአንድ በላይ ልጅ አለኝ", "ትምህርቶቹና እድገቱ የተማሪውን ክፍል ስለሚከተሉ እያንዳንዱ ልጅ የራሱ የተማሪ መለያ እና ደንበኝነት ያስፈልገዋል። አንድ የወላጅ መለያ ሁሉንም መከታተል ይችላል።"],
+  },
+  {
+    category: "Account",
+    section: "Signing in",
+    keywords: "new phone lost phone sign in again",
+    en: ["I changed or lost my phone", "Install the app on the new phone and sign in with the same phone number (or email) you registered with. Your subscription and progress stay with your account. If you no longer have that phone number, press \"Still need help\" and we help you move the account."],
+    am: ["ስልኬን ቀይሬያለሁ ወይም ጠፍቶብኛል", "መተግበሪያውን በአዲሱ ስልክ ጭነው በተመዘገቡበት ተመሳሳይ ስልክ ቁጥር (ወይም ኢሜይል) ይግቡ። ደንበኝነትዎና እድገትዎ ከመለያዎ ጋር ይቀራሉ። ያንን ስልክ ቁጥር ከእንግዲህ ከሌለዎት «አሁንም እርዳታ ይፈልጋሉ?» ይጫኑ፣ መለያውን እንዲያዛውሩ እንረዳዎታለን።"],
+  },
+  {
+    category: "Account",
+    section: "Privacy and safety",
+    keywords: "delete account remove data privacy",
+    en: ["How do I delete my account?", "Press \"Still need help\" and ask us to delete the account, from the phone number it is registered with. We confirm it is you, then delete it. A deleted account and its progress cannot be brought back."],
+    am: ["መለያዬን እንዴት እሰርዛለሁ?", "መለያው በተመዘገበበት ስልክ ቁጥር «አሁንም እርዳታ ይፈልጋሉ?» ተጭነው እንድንሰርዘው ይጠይቁን። እርስዎ መሆንዎን አረጋግጠን እንሰርዘዋለን። የተሰረዘ መለያ እና እድገቱ ተመልሰው አይመጡም።"],
+  },
+  {
+    category: "Account",
+    section: "Privacy and safety",
+    keywords: "scam password code share safe",
+    en: ["Keeping your account safe", "We never ask for your password or the code we send you by SMS. Do not share them with anyone, including people who say they are from MySeed. If someone asks, tell us here."],
+    am: ["መለያዎን ደህንነቱ የተጠበቀ ማድረግ", "የይለፍ ቃልዎን ወይም በኤስኤምኤስ የምንልክልዎትን ኮድ በፍጹም አንጠይቅም። ከማይሲድ ነን ለሚሉትም ጭምር ለማንም አያጋሩ። የሚጠይቅዎት ካለ እዚህ ይንገሩን።"],
+  },
+  {
+    category: "App help",
+    section: "Lessons and videos",
+    keywords: "free preview lesson try before",
+    en: ["Can I try lessons before paying?", "Yes. Some lessons in each subject are marked as free previews: open them without a subscription to see how the lessons work."],
+    am: ["ከመክፈሌ በፊት ትምህርቶችን መሞከር እችላለሁ?", "አዎ። በእያንዳንዱ የትምህርት ዓይነት አንዳንድ ትምህርቶች «ነጻ ቅድመ እይታ» ተብለው ተለይተዋል፦ ትምህርቶቹ እንዴት እንደሚሰሩ ለማየት ያለ ደንበኝነት ይክፈቷቸው።"],
+  },
+  {
+    category: "App help",
+    section: "Quizzes and notes",
+    keywords: "quiz score result retake answers",
+    en: ["How do quizzes work?", "Each unit has a quiz with a time limit. Choose one answer for each question; when you finish you see your score and which answers were right. You can take a quiz again to improve."],
+    am: ["ፈተናዎች እንዴት ይሰራሉ?", "እያንዳንዱ ምዕራፍ የጊዜ ገደብ ያለው ፈተና አለው። ለእያንዳንዱ ጥያቄ አንድ መልስ ይምረጡ፤ ሲጨርሱ ውጤትዎን እና የትኞቹ መልሶች ትክክል እንደነበሩ ያያሉ። ለማሻሻል ፈተናውን እንደገና መውሰድ ይችላሉ።"],
+  },
+  {
+    category: "App help",
+    section: "Quizzes and notes",
+    keywords: "notes pdf open download read",
+    en: ["Notes or PDFs do not open", "Notes need an internet connection to open the first time. If a PDF does not open, update the app and try again on Wi-Fi. If one note still does not open, press \"Still need help\" and tell us the grade, subject and lesson."],
+    am: ["ማስታወሻዎች ወይም ፒዲኤፎች አይከፈቱም", "ማስታወሻዎች ለመጀመሪያ ጊዜ ለመክፈት ኢንተርኔት ያስፈልጋቸዋል። ፒዲኤፍ ካልተከፈተ መተግበሪያውን አዘምነው በዋይፋይ እንደገና ይሞክሩ። አንድ ማስታወሻ አሁንም ካልተከፈተ «አሁንም እርዳታ ይፈልጋሉ?» ተጭነው ክፍሉን፣ የትምህርት ዓይነቱን እና ትምህርቱን ይንገሩን።"],
+  },
+  {
+    category: "App help",
+    section: "App problems",
+    keywords: "data usage mobile data internet cost",
+    en: ["The app uses a lot of mobile data", "Videos use the most data. Watch on Wi-Fi when you can, and close videos you are not watching. Notes and quizzes use little data."],
+    am: ["መተግበሪያው ብዙ የሞባይል ዳታ ይጠቀማል", "ብዙ ዳታ የሚጠቀሙት ቪዲዮዎች ናቸው። በሚችሉበት ጊዜ በዋይፋይ ይመልከቱ፣ የማይመለከቷቸውን ቪዲዮዎች ይዝጉ። ማስታወሻዎችና ፈተናዎች ትንሽ ዳታ ይጠቀማሉ።"],
+  },
+  {
+    category: "FAQ",
+    section: "About MySeed",
+    keywords: "grades curriculum which grades",
+    en: ["Which grades does MySeed cover?", "MySeed has lessons for grades 5 to 12, following the school curriculum, with Natural and Social streams for grades 11 and 12, and national exam practice for the exam grades."],
+    am: ["ማይሲድ የትኞቹን ክፍሎች ይሸፍናል?", "ማይሲድ ከ5ኛ እስከ 12ኛ ክፍል ድረስ የትምህርት ሥርዓቱን የሚከተሉ ትምህርቶች አሉት፤ ለ11ኛ እና ለ12ኛ ክፍል የተፈጥሮ እና የማኅበራዊ ሳይንስ ዘርፎች፣ ለብሔራዊ ፈተና ክፍሎችም የብሔራዊ ፈተና ልምምድ አለው።"],
+  },
+  {
+    category: "FAQ",
+    section: "About MySeed",
+    keywords: "offline without internet download",
+    en: ["Can I study without internet?", "Lessons and videos need an internet connection. Use Wi-Fi where you can to save mobile data."],
+    am: ["ያለ ኢንተርኔት መማር እችላለሁ?", "ትምህርቶቹና ቪዲዮዎቹ የኢንተርኔት ግንኙነት ያስፈልጋቸዋል። የሞባይል ዳታ ለመቆጠብ በሚችሉበት ቦታ ዋይፋይ ይጠቀሙ።"],
+  },
+];
+
+// Adds the second set once: the new answers, and a section on the starter answers that have none.
+async function ensureStarterHelpV2() {
+  if (await getMeta("help.starter.v2")) return;
+  await setMeta("help.starter.v2", nowIso());
+  const now = nowIso();
+  for (const s of MORE)
+    for (const lang of ["en", "am"] as const) {
+      const [title, body] = s[lang];
+      if (await get("SELECT id FROM sup_articles WHERE title = ?", title)) continue;
+      await run("INSERT INTO sup_articles (id, title, body, category, keywords, published, kind, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, 'article', ?, ?)", uid("art_"), title, body, s.category, `${s.keywords} lang:${lang} section:${s.section.replace(/ /g, "_")} starter`, now, now);
+    }
+  for (const [title, section] of [...Object.entries(SECTIONS), ...Object.entries(AM_TITLE)])
+    await run("UPDATE sup_articles SET keywords = keywords || ? WHERE title = ? AND keywords LIKE '%starter%' AND keywords NOT LIKE '%section:%'", ` section:${section.replace(/ /g, "_")}`, title);
+}
+
+// An article's section from its keywords (section:Profile_and_family), or null.
+export const articleSection = (keywords: string | null | undefined) => (keywords ?? "").match(/\bsection:([\w-]+)/)?.[1]?.replace(/_/g, " ") ?? null;
 
 // An article's language from its keywords: en, am, or null (any).
 export const articleLang = (keywords: string | null | undefined) => (/\blang:am\b/.test(keywords ?? "") ? "am" : /\blang:en\b/.test(keywords ?? "") ? "en" : null);
