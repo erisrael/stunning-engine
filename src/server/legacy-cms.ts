@@ -462,6 +462,7 @@ export async function loginLegacyCms(
 
 export async function checkLegacyCmsAuth(user:AppUser):Promise<{ok:boolean;status:"connected"|"disconnected"|"error";username:string;message:string;ms:number}> {
  const start=Date.now();const config=await getLegacyCmsConfigForUser(user);
+ if(!(await (await import("./noor-gate")).noorLiveAllowed(user))) return {ok:true,status:config.sessionCookie||config.password?"connected":"disconnected",username:config.username,message:"The saved copy is used; Admin checks the live connection.",ms:0};
  try{
   const allowed=[...new Set((await Promise.all(user.roles.map(r=>allowedCategoriesForUser(r,user.id)))).flat())];
   if(!allowed.length) throw new WorkflowError("FORBIDDEN","No CMS tables are enabled for your account.");
@@ -1300,6 +1301,8 @@ export async function fetchLegacyCmsLivePage(
   opts: { category: LegacyCmsCategory; page?: number; pageSize?: number; search?: string; filters?: Record<string, string> }
 ): Promise<LiveCmsPageResult> {
   await requireCmsCategories(user, [opts.category]);
+  const { noorLiveAllowed } = await import("./noor-gate");
+  if (!(await noorLiveAllowed(user))) return { ok: false, message: "Live from Noor is for Admin and the people Admin grants live access to. Use the saved copy.", category: opts.category, currentPage: 1, totalPages: 1, totalResults: 0, from: 0, to: 0, headers: [], records: [] } as LiveCmsPageResult;
   const page = Math.max(1, opts.page || 1);
   const pageSize = opts.pageSize && opts.pageSize > 0 ? opts.pageSize : 10;
   const search = (opts.search || "").trim();
@@ -1380,6 +1383,7 @@ export async function fetchLegacyCmsInvoiceReceipt(
   rawDetails?: Record<string, string>;
 }> {
   await requireCmsCategories(user, ["invoices"]);
+  if (!(await (await import("./noor-gate")).noorLiveAllowed(user))) return { ok: false, invoiceId, message: "The slip is read live from Noor, which is for Admin and the people Admin grants live access to." };
   const config = await getLegacyCmsConfigForUser(user);
   const baseUrl = config.baseUrl.replace(/\/+$/, "");
   let cookieHeader = config.username ? await cmsSession(config, authenticateFilament) : config.sessionCookie || "";
@@ -1842,5 +1846,5 @@ export async function canManageCmsData(user: AppUser) {
 export async function cmsViewerFlags(user: AppUser) {
   const row = await get<{ value: string }>("SELECT value FROM settings WHERE key = 'cfg.legacy_cms'");
   const stored = row?.value ? parseJson<StoredCmsConfig>(row.value, {}) : {};
-  return { canManageData: await canManageCmsData(user), canResolveFeedback: can(user, "users.manage") || !!stored.userOverrides?.[user.id]?.canResolveFeedback };
+  return { canManageData: await canManageCmsData(user), canResolveFeedback: can(user, "users.manage") || !!stored.userOverrides?.[user.id]?.canResolveFeedback, live: await (await import("./noor-gate")).noorLiveAllowed(user) };
 }

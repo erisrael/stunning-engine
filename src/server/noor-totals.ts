@@ -19,9 +19,11 @@ export type NoorTotals = {
   cards: NoorCard[];
   badges: Record<string, number>;
   errors: string[];
+  // Where the figures come from: Noor itself (read by Admin or a granted person), or the saved copy of Noor's tables.
+  source?: "noor" | "saved";
+  canRefresh?: boolean;
 };
 
-const KEEP_MS = 5 * 60e3;
 const decode = (s: string) => s.replace(/&quot;/g, '"').replace(/&#0?39;|&apos;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&");
 const plain = (s: string) => decode(s.replace(/<!--[\s\S]*?-->/g, "").replace(/<svg[\s\S]*?<\/svg>/g, "").replace(/<[^>]*>/g, " ")).replace(/\s+/g, " ").trim();
 export const noorNumber = (v: string) => {
@@ -112,6 +114,25 @@ const LISTS: NoorTotals["lists"] = [
   { key: "paidInvoices", label: "Paid invoices", total: null, category: "invoices", filters: { "status.value": "paid" } },
 ];
 
+// The totals from the saved copy of Noor's tables (collected by Admin's sync), with the same filters as Noor's lists.
+async function savedTotals(): Promise<NoorTotals> {
+  const { all, get } = await import("./db");
+  const count = async (category: string, status?: string) => {
+    if (!status) return Number((await get<{ n: number }>("SELECT COUNT(*) AS n FROM legacy_cms_records WHERE category = ?", category))?.n ?? 0);
+    const rows = await all<{ data_json: string }>("SELECT data_json FROM legacy_cms_records WHERE category = ?", category);
+    const want = status.replace(/_/g, " ");
+    return rows.filter((r) => {
+      const d = JSON.parse(r.data_json) as Record<string, string>;
+      const st = String(Object.entries(d).find(([k]) => /^status$/i.test(k))?.[1] ?? "").toLowerCase().replace(/_/g, " ");
+      return st === want || (want === "pending review" && /pending bank review/.test(st));
+    }).length;
+  };
+  const lists = [];
+  for (const l of LISTS) lists.push({ ...l, total: await count(l.category, l.filters?.["status.value"]) });
+  const at = (await get<{ at: string | null }>("SELECT MAX(synced_at) AS at FROM legacy_cms_records"))?.at ?? new Date(0).toISOString();
+  return { at, lists, cards: [], badges: {}, errors: [], source: "saved" };
+}
+
 export async function noorTotals(user: AppUser, opts: { refresh?: boolean } = {}): Promise<NoorTotals> {
   const allowed = new Set((await Promise.all(user.roles.map((r) => allowedCategoriesForUser(r, user.id)))).flat());
   if (!allowed.size) throw new WorkflowError("FORBIDDEN", "No Noor tables are open to you.");
@@ -119,7 +140,13 @@ export async function noorTotals(user: AppUser, opts: { refresh?: boolean } = {}
   try {
     t = JSON.parse((await getMeta("noorTotals")) ?? "null");
   } catch {}
-  if (!t || opts.refresh || Date.now() - Date.parse(t.at) > KEEP_MS) {
+  // Read from Noor only when someone with live access presses Refresh; otherwise the last reading, or the saved
+  // copy of Noor's tables when there has been none.
+  const { noorLiveAllowed, requireNoorLive } = await import("./noor-gate");
+  const live = await noorLiveAllowed(user);
+  if (opts.refresh) await requireNoorLive(user, "Reading Noor's totals live");
+  if (!t && !opts.refresh) t = await savedTotals();
+  if (opts.refresh) {
     const errors: string[] = [];
     const lists = [];
     for (const l of LISTS) {
@@ -142,13 +169,16 @@ export async function noorTotals(user: AppUser, opts: { refresh?: boolean } = {}
     } catch (e) {
       errors.push(`Dashboard: ${e instanceof Error ? e.message : String(e)}`);
     }
-    t = { at: new Date().toISOString(), lists, cards, badges, errors };
+    t = { at: new Date().toISOString(), lists, cards, badges, errors, source: "noor" };
     // Kept only when something was read, so a failed read does not hide the last good one.
     if (lists.some((l) => l.total !== null) || cards.length) await setMeta("noorTotals", JSON.stringify(t));
   }
+  if (!t) t = await savedTotals();
   // Each person sees the figures of the tables open to them; revenue only with invoices.
   return {
     ...t,
+    source: t.source ?? "noor",
+    canRefresh: live,
     lists: t.lists.filter((l) => allowed.has(l.category)),
     cards: allowed.has("invoices") ? t.cards : t.cards.filter((c) => !/revenue|invoice|payment/i.test(c.label)),
     badges: Object.fromEntries(Object.entries(t.badges).filter(([k]) => allowed.has("invoices") || !/invoice/i.test(k))),

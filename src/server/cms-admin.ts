@@ -170,6 +170,7 @@ async function connection(user: AppUser) {
 
 export async function openNoor(user: AppUser, path: string) {
   if (!SAFE_PATH.test(path)) throw new WorkflowError("VALIDATION", "That is not a Noor admin page.");
+  await (await import("./noor-gate")).requireNoorLive(user, "Opening Noor's pages live");
   const { config, baseUrl } = await connection(user);
   for (let attempt = 0; attempt < 2; attempt++) {
     const cookie = await cmsSession(config, authenticateFilament, attempt > 0);

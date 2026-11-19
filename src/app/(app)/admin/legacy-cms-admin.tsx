@@ -17,10 +17,12 @@ import * as A from "@/app/actions/cms-access";
 import { deleteLegacyCmsCategoryDataAction } from "@/app/actions/legacy-cms";
 
 type Overview = Awaited<ReturnType<typeof import("@/server/cms-access").cmsAccessOverview>>;
+import { NoorProtection } from "./noor-protection";
 type Login = { kind: "shared" } | { kind: "account"; accountId: string } | { kind: "own"; username: string; password?: string };
 const SHORT: Record<LegacyCmsCategory, string> = { students: "Students", parents: "Parents", "subscription-plans": "Plans", "subscription-histories": "Histories", invoices: "Invoices", subscriptions: "Subscriptions", feedback: "Feedback" };
 const when = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Africa/Addis_Ababa" }) : "Never");
 const SECTIONS = [
+  ["protection", "Noor protection"],
   ["people", "People & access"],
   ["logins", "Noor logins"],
   ["roles", "Role defaults"],
@@ -31,7 +33,7 @@ const SECTIONS = [
 export function LegacyCmsAdmin(_: { users?: unknown }) {
   const [o, setO] = React.useState<Overview | null>(null);
   const [error, setError] = React.useState("");
-  const [section, setSection] = React.useState<(typeof SECTIONS)[number][0]>("people");
+  const [section, setSection] = React.useState<(typeof SECTIONS)[number][0]>("protection");
   const load = React.useCallback(async () => {
     const r = await A.cmsAccessOverviewAction();
     if (r.ok && r.data) (setO(r.data), setError(""));
@@ -55,6 +57,7 @@ export function LegacyCmsAdmin(_: { users?: unknown }) {
         <MetricCard label="Days in the day cache" value={o.stored.cacheDays} />
       </div>
       <ViewSwitcher label="Noor access sections" options={SECTIONS} value={section} onChange={setSection} />
+      {section === "protection" && <NoorProtection people={o.people.map((p) => ({ id: p.id, name: p.name }))} />}
       {section === "people" && <People o={o} onChanged={load} />}
       {section === "logins" && <Logins o={o} onChanged={load} />}
       {section === "roles" && <Roles o={o} onChanged={load} />}

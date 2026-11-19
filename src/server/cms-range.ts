@@ -65,7 +65,9 @@ export type CmsTableCapability = {
 // about 4 s against 20 s for 250. Bulk loads use 100-row pages 8 at a time; recent ranges start with 50.
 const SIZE_TRIES = [100, 50];
 const sizeKnown = new Map<string, number>();
-const CONCURRENCY = 8;
+// One page at a time: Noor is fragile (several pages at once helped take it down). Noor protection
+// (src/server/noor-gate.ts) paces the requests on top of this.
+const CONCURRENCY = 1;
 const MAX_DAYS = 366;
 const MAX_ROWS = 50_000;
 const MAX_PAGES = 2_000;
@@ -438,9 +440,50 @@ const filterKey = (username: string, input: CmsRangeInput) =>
     .digest("hex")
     .slice(0, 24);
 
+// A range from the saved copy (the tables collected by Admin's sync), for people without live Noor access: the rows
+// whose date falls in the range, the search applied, Noor's filters matched on their columns.
+async function rangeFromSaved(input: CmsRangeInput): Promise<CmsRangeResult> {
+  const { cmsDate, cmsDateMatches } = await import("@/lib/cms-filters");
+  const saved = await all<{ data_json: string; synced_at: string }>("SELECT data_json, synced_at FROM legacy_cms_records WHERE category = ?", input.category);
+  const q = (input.search || "").trim().toLowerCase();
+  const filters = Object.entries(input.filters || {}).filter(([, v]) => v);
+  const records = saved
+    .map((r) => JSON.parse(r.data_json) as Record<string, string>)
+    .filter((r) => cmsDateMatches(r, "custom", input.from, input.until))
+    .filter((r) => !q || JSON.stringify(r).toLowerCase().includes(q))
+    .filter((r) =>
+      filters.every(([k, v]) => {
+        const col = k.replace(/\.value$/, "").replace(/_/g, " ").toLowerCase();
+        const cell = Object.entries(r).find(([h]) => h.toLowerCase() === col || h.toLowerCase().replace(/_/g, " ") === col)?.[1];
+        return cell === undefined || String(cell).toLowerCase().replace(/\s+/g, "_") === String(v).toLowerCase() || String(cell).toLowerCase() === String(v).toLowerCase();
+      }),
+    )
+    .map((r) => {
+      const d = cmsDate(r);
+      return d ? { ...r, _date: d.toISOString() } : r;
+    });
+  return {
+    ok: true,
+    category: input.category,
+    from: input.from,
+    until: input.until,
+    method: "mirror",
+    headers: records[0] ? Object.keys(records[0]).filter((k) => !k.startsWith("_")) : [],
+    records,
+    total: records.length,
+    requests: 0,
+    cachedDays: 0,
+    fetchedDays: 0,
+    undated: 0,
+    filters: parseJsonSafe(await getMeta(`cmsFilters.${input.category}`)),
+    fetchedAt: saved.map((r) => r.synced_at).sort().at(-1) ?? nowIso(),
+  };
+}
+
 export async function fetchCmsRange(user: AppUser, input: CmsRangeInput, progress: (m: string) => Promise<void> = async () => {}, now = Date.now()): Promise<CmsRangeResult> {
   validate(input);
   await requireCmsCategories(user, [input.category]);
+  if (!(await (await import("./noor-gate")).noorLiveAllowed(user))) return rangeFromSaved(input);
   const startedAt = Date.now();
   const check = async () => {
     if (cmsStoppedSince(startedAt)) throw new Error("Noor CMS loading stopped by user.");

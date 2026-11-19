@@ -79,6 +79,7 @@ export async function recordCall(c: CallInput) {
 }
 
 // fetch with the call recorded. The response is returned untouched.
+// (Requests to Noor's address also pass Noor's protection, src/server/noor-gate.ts, installed on fetch.)
 export async function trackedFetch(source: Source | string, input: string | URL, init?: RequestInit, opts: { summary?: string; ref?: string | null; okIf?: (r: Response) => boolean } = {}) {
   const t0 = Date.now();
   const label = `${init?.method ?? "GET"} ${safeUrl(input)}`;

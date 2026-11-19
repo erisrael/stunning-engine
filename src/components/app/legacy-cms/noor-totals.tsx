@@ -40,11 +40,15 @@ export function NoorTotalsStrip() {
   return (
     <section className="space-y-2" aria-label="Noor totals" data-noor-totals>
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-        <span className="font-medium text-foreground">Noor now</span>
-        <span>Read from Noor at {new Date(t.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
-        <Button size="xs" variant="ghost" disabled={busy} onClick={() => void load(true)} data-noor-totals-refresh>
-          <RefreshCwIcon className={busy ? "animate-spin" : ""} /> Refresh
-        </Button>
+        <span className="font-medium text-foreground">Noor</span>
+        <span data-noor-totals-source={t.source}>
+          {t.source === "saved" ? "From the saved copy, collected" : "Read from Noor"} {new Date(t.at).toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+        </span>
+        {t.canRefresh && (
+          <Button size="xs" variant="ghost" disabled={busy} onClick={() => void load(true)} data-noor-totals-refresh>
+            <RefreshCwIcon className={busy ? "animate-spin" : ""} /> Read Noor now
+          </Button>
+        )}
         {t.errors.length > 0 && <span className="text-amber-600">Some figures could not be read: {t.errors.join("; ")}</span>}
       </div>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">

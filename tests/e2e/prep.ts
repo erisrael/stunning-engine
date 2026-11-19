@@ -731,6 +731,8 @@ PREPS["ui-tour"] = async () => {
 async function main() {
   const name = process.argv[2]!;
   const prep = PREPS[name];
+  // Noor protection still on, at a test pace (the fakes answer at once): one at a time, half a second apart.
+  await run("INSERT INTO settings (key, value, updated_at) VALUES ('meta.noor.gate', ?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value", JSON.stringify({ gapSeconds: 0.5, heavyGapSeconds: 0.5, maxPerMinute: 60, queueLimit: 40, waitSeconds: 120, errorsToPause: 10, pauseMinutes: 1 }), nowIso());
   if (prep) out((await prep()) ?? {});
   await closeDb();
 }

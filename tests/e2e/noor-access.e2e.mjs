@@ -33,6 +33,10 @@ try {
   await page.getByText("Noor Legacy CMS: user access & credentials").waitFor({ timeout: 20000 });
   await page.getByRole("button", { name: "Sign in" }).waitFor();
   check("the connection card has Check, Sign in, Sign out", (await page.getByRole("button", { name: "Sign out" }).count()) === 1 && (await page.getByRole("button", { name: "Check" }).count()) === 1);
+  // Noor protection opens first; People & access is the next section.
+  check("Noor protection is the first section", await page.locator("[data-noor-protection]").first().waitFor({ timeout: 15000 }).then(() => true, () => false));
+  await page.getByRole("radio", { name: "People & access" }).click();
+  await page.getByRole("combobox", { name: "Department" }).waitFor({ timeout: 15000 }).catch(() => {});
   check("people are filtered by department and role", (await page.getByRole("combobox", { name: "Department" }).count()) === 1 && (await page.getByRole("combobox", { name: "Role" }).count()) === 1);
 
   // Saved login, then give it with a table to two people in bulk.

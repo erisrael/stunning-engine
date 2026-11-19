@@ -100,6 +100,11 @@ async function main(){
  const pending=await cms.getLegacyCmsRevenueAnalytics({status:"needs_approval"});assert.equal(pending.invoices.length,1);assert.equal(pending.summary.totalRevenue,0);
  console.log("PASS Finance date filters and totals use real payment status rather than local verification");
  const {scheduledCmsSync}=await import("../../src/server/cms-schedule");
+ // Scheduled syncs run only when Admin turns automatic Noor reads on (Noor protection).
+ const gate=await import("../../src/server/noor-gate");await gate.saveNoorGate(admin,{automatic:false});
+ {const calls0=0;await saveLegacyCmsConfig(admin,{autoSync:true,syncIntervalMinutes:30,username:"scheduler@example.test",password:"test-only-password"});await scheduledCmsSync("2026-11-07T11:00:00Z");assert.equal(calls0,0);await saveLegacyCmsConfig(admin,{autoSync:false});}
+ console.log("PASS With automatic Noor reads off, the scheduled sync does not run");
+ await gate.saveNoorGate(admin,{automatic:true});
  const {setMeta}=await import("../../src/server/settings");
  const originalFetch=globalThis.fetch;let refreshCalls=0;
  globalThis.fetch=async()=>{refreshCalls++;return new Response("Unavailable",{status:503});};

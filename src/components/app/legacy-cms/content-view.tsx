@@ -38,7 +38,7 @@ import { cancelContentJobAction, contentJobAction, contentOverviewAction, conten
 import type { ContentJobInput, ContentLesson, ContentQuestion, ContentQuiz, ContentStats, ContentSubject, ContentUnit, LessonInput } from "@/server/noor-content";
 
 type ListedSubject = { id: string; name: string; grades: string[]; code: string | null; units: number; lessons: number; stats: ContentStats | null; fetchedAt: string | null };
-type Overview = { subjects: ListedSubject[]; listedAt: string; listError: string | null; jobs: Job[]; canEdit: boolean; noorBase: string };
+type Overview = { subjects: ListedSubject[]; listedAt: string; listError: string | null; live: boolean; jobs: Job[]; canEdit: boolean; noorBase: string };
 type Job = { id: string; kind: string; subject_id: string; title: string; status: string; done: number; total: number; progress: string; updated_at: string; created_at: string; log?: { at: string; step: string; ok: boolean; message: string }[] };
 type Loaded = { subject: ContentSubject; stats: ContentStats; grades: string[]; fetchedAt: string };
 const fmt = (n: number | undefined) => (n ?? 0).toLocaleString("en-US");
@@ -107,10 +107,19 @@ export function CmsContentView() {
         label="Content"
         end={
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs text-muted-foreground">List from Noor {ago(o.listedAt)}</span>
-            <Button size="sm" variant="outline" disabled={listing} onClick={() => void load(true)} data-content-refresh-list>
-              <RefreshCwIcon className={listing ? "animate-spin" : ""} /> Refresh list
-            </Button>
+            {o.live ? (
+              <>
+                <span className="text-xs text-muted-foreground">List from Noor {ago(o.listedAt)}</span>
+                <Button size="sm" variant="outline" disabled={listing} onClick={() => void load(true)} data-content-refresh-list>
+                  <RefreshCwIcon className={listing ? "animate-spin" : ""} /> Refresh list
+                </Button>
+                <Button size="sm" variant="outline" disabled={!!o.jobs.find((j) => j.kind === "refresh" && (j.status === "running" || j.status === "queued"))} onClick={() => void startJob({ kind: "refresh", subjectId: "all" })} title="Reads every subject, one at a time, at Noor protection's pace" data-content-collect>
+                  <DownloadIcon /> Collect from Noor (slow)
+                </Button>
+              </>
+            ) : (
+              <span className="text-xs text-muted-foreground">Saved copy: the subjects collected from Noor</span>
+            )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button size="sm" variant="outline" data-content-export>
@@ -133,7 +142,7 @@ export function CmsContentView() {
       {view === "subjects" && o.subjects.length > 0 && (
         <div className="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
           <SubjectList subjects={o.subjects} open={open} onOpen={setOpen} />
-          {open ? <SubjectPane key={open} id={open} listed={o.subjects.find((s) => s.id === open) ?? null} canEdit={o.canEdit} noorBase={o.noorBase} jobs={o.jobs.filter((j) => j.subject_id === open)} startJob={startJob} /> : <EmptyState icon={<LayersIcon className="size-5" />} title="Choose a subject" description="Its units, lessons, notes and quizzes show here." />}
+          {open ? <SubjectPane key={open} id={open} live={o.live} listed={o.subjects.find((s) => s.id === open) ?? null} canEdit={o.canEdit && o.live} noorBase={o.noorBase} jobs={o.jobs.filter((j) => j.subject_id === open)} startJob={startJob} /> : <EmptyState icon={<LayersIcon className="size-5" />} title="Choose a subject" description="Its units, lessons, notes and quizzes show here." />}
         </div>
       )}
       {view === "report" && <ContentReport subjects={o.subjects} onOpen={(id) => (setOpen(id), setView("subjects"))} />}
@@ -221,7 +230,7 @@ type Dialogs =
   | { kind: "edit-unit"; unit: ContentUnit }
   | { kind: "questions"; quiz: ContentQuiz };
 
-function SubjectPane({ id, listed, canEdit, noorBase, jobs, startJob }: { id: string; listed: ListedSubject | null; canEdit: boolean; noorBase: string; jobs: Job[]; startJob: (i: ContentJobInput) => Promise<string | undefined> }) {
+function SubjectPane({ id, live, listed, canEdit, noorBase, jobs, startJob }: { id: string; live: boolean; listed: ListedSubject | null; canEdit: boolean; noorBase: string; jobs: Job[]; startJob: (i: ContentJobInput) => Promise<string | undefined> }) {
   const [d, setD] = React.useState<Loaded | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [failed, setFailed] = React.useState<string | null>(null);
@@ -243,10 +252,12 @@ function SubjectPane({ id, listed, canEdit, noorBase, jobs, startJob }: { id: st
   React.useEffect(() => {
     let stop = false;
     (async () => {
-      if (listed?.fetchedAt) {
+      // Without live access only the collected copy is shown; with it, the copy at once and Noor's when older than
+      // ten minutes (one heavy page, through Noor protection).
+      if (listed?.fetchedAt || !live) {
         const cached = await load(false);
-        if (stop || !cached) return;
-        if (Date.now() - Date.parse(cached.fetchedAt) > 60e3) await load(true);
+        if (stop || !cached || !live) return;
+        if (Date.now() - Date.parse(cached.fetchedAt) > 10 * 60e3) await load(true);
       } else await load(true);
     })();
     return () => {
@@ -300,14 +311,16 @@ function SubjectPane({ id, listed, canEdit, noorBase, jobs, startJob }: { id: st
                   <Loader2Icon className="size-3 animate-spin" /> Updating from Noor (showing the copy from {ago(d.fetchedAt)})
                 </>
               ) : (
-                <>Live from Noor, read {ago(d.fetchedAt)}</>
+                <>{live ? "From Noor" : "Saved copy"}, read {ago(d.fetchedAt)}</>
               )}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button size="sm" variant="outline" disabled={busy} onClick={() => void load(true)} data-subject-refresh>
-              <RefreshCwIcon className={busy ? "animate-spin" : ""} /> Read again
-            </Button>
+            {live && (
+              <Button size="sm" variant="outline" disabled={busy} onClick={() => void load(true)} data-subject-refresh>
+                <RefreshCwIcon className={busy ? "animate-spin" : ""} /> Read again
+              </Button>
+            )}
             <Button size="sm" variant="outline" asChild>
               <a href={editUrl} target="_blank" rel="noreferrer"><ExternalLinkIcon /> Open in Noor</a>
             </Button>

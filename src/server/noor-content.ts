@@ -282,7 +282,10 @@ export async function readSubject(user: AppUser, id: string, grades?: string[]) 
 export async function contentSubject(user: AppUser, id: string, opts: { refresh?: boolean } = {}) {
   await reader(user);
   const r = await get<Row>("SELECT * FROM noor_content WHERE subject_id = ?", id);
-  if (r && !opts.refresh) return { subject: parseJson<ContentSubject>(r.data_json, null as never), stats: parseJson<ContentStats>(r.stats_json, null as never), grades: parseJson<string[]>(r.grades, []), fetchedAt: r.fetched_at };
+  const { noorLiveAllowed } = await import("./noor-gate");
+  // Without live Noor access: the copy collected before, or a plain word that it has not been collected yet.
+  if (!r && !(await noorLiveAllowed(user))) throw new WorkflowError("NOT_FOUND", "This subject has not been collected from Noor yet. Admin collects it (Content, Collect from Noor).");
+  if (r && (!opts.refresh || !(await noorLiveAllowed(user)))) return { subject: parseJson<ContentSubject>(r.data_json, null as never), stats: parseJson<ContentStats>(r.stats_json, null as never), grades: parseJson<string[]>(r.grades, []), fetchedAt: r.fetched_at };
   return readSubject(user, id);
 }
 
@@ -320,7 +323,10 @@ export function forgetSubjectList() {
 }
 export async function contentOverview(user: AppUser, opts: { refresh?: boolean } = {}) {
   await reader(user);
-  if (opts.refresh || !listCache || Date.now() - listCache.at > LIST_MS) {
+  const { noorLiveAllowed } = await import("./noor-gate");
+  const live = await noorLiveAllowed(user);
+  // Without live access, Noor's list is never asked for: the subjects collected before are the list.
+  if (live && (opts.refresh || !listCache || Date.now() - listCache.at > LIST_MS)) {
     const value = noorSubjectList(user);
     listCache = { at: Date.now(), value };
     value.catch(() => {
@@ -330,8 +336,9 @@ export async function contentOverview(user: AppUser, opts: { refresh?: boolean }
   const opened = new Map((await all<Row>("SELECT subject_id, name, grades, stats_json, fetched_at, '' AS data_json FROM noor_content")).map((r) => [r.subject_id, r]));
   // Noor down or busy: the subjects opened before, said plainly.
   let listError: string | null = null;
-  const list = await listCache.value.catch((e: Error) => {
-    listError = `Noor's subject list could not be read (${e.message}). Showing the subjects opened before.`;
+  const listed = live && listCache ? listCache.value : Promise.reject(new Error("live Noor is off for you"));
+  const list = await listed.catch((e: Error) => {
+    listError = live ? `Noor's subject list could not be read (${e.message}). Showing the subjects collected before.` : null;
     return [...opened.values()].map((r) => {
       const st = parseJson<Partial<ContentStats>>(r.stats_json, {});
       return { id: r.subject_id, name: r.name, grades: parseJson<string[]>(r.grades, []), cells: { Units: String(st.units ?? 0), Lessons: String(st.lessons ?? 0) } as Record<string, string> };
@@ -348,6 +355,7 @@ export async function contentOverview(user: AppUser, opts: { refresh?: boolean }
     }),
     listedAt: new Date(listCache?.at ?? Date.now()).toISOString(),
     listError,
+    live,
     jobs: jobs.map((j) => ({ ...j, status: staleStatus(j.status, j.updated_at) })),
     canEdit: await canManageCmsData(user),
     noorBase: (await getLegacyCmsConfigForUser(user)).baseUrl.replace(/\/+$/, ""),
@@ -533,8 +541,8 @@ function validate(i: ContentJobInput) {
 }
 
 export async function startContentJob(user: AppUser, input: ContentJobInput) {
-  if (input.kind === "refresh") await reader(user);
-  else await manager(user);
+  if (input.kind !== "refresh") await manager(user);
+  await (await import("./noor-gate")).requireNoorLive(user, input.kind === "refresh" ? "Collecting content from Noor" : "Changing Noor's content");
   validate(input);
   if (JSON.stringify(input).length > 2_000_000) throw new WorkflowError("VALIDATION", "Too much at once: split it.");
   const running = await get<{ id: string; updated_at: string }>("SELECT id, updated_at FROM noor_content_jobs WHERE subject_id IN (?, 'all') AND status IN ('queued','running') ORDER BY created_at DESC LIMIT 1", String(input.subjectId));
@@ -719,6 +727,12 @@ export async function refreshAllContent(user: AppUser, progress: (m: string) => 
       await readSubject(user, s.id, s.grades);
     } catch (e) {
       errors.push(`${s.name}: ${e instanceof Error ? e.message : String(e)}`);
+      // Noor paused (errors, or Admin stopped it): stop collecting, do not keep knocking.
+      const { NoorBusyError } = await import("./noor-gate");
+      if (e instanceof NoorBusyError || /paused|busy here/i.test(e instanceof Error ? e.message : "")) {
+        errors.push(`Stopped after ${n} of ${list.length}: Noor protection paused the calls. Collect again later; subjects already read are kept.`);
+        break;
+      }
     }
   }
   const ids = new Set(list.map((s) => s.id));

@@ -8,6 +8,7 @@ import { loadUser } from "./users";
 // interval to the nearest minute, and a database lease prevents duplicate workers.
 export async function scheduledCmsSync(now = nowIso(), recordJob = false) {
   if (!await get("SELECT key FROM settings WHERE key = 'cfg.legacy_cms'")) return;
+  if (!(await (await import("./noor-gate")).noorAutomaticAllowed())) return;
   const config = await getLegacyCmsConfig();
   if (!config.autoSync || !config.username || !config.password) return;
   const last = await getMeta("cmsAutoSyncAttempt");

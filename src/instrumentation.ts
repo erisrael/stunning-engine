@@ -4,7 +4,10 @@ import type { Instrumentation } from "next";
 // scheduled jobs every 10 minutes, so nothing outside is needed. Set MYSEED_TIMER=0 to switch it off (for example
 // when several copies of the app run and an outside schedule calls /api/cron/checks instead).
 export async function register() {
-  if (process.env.NEXT_RUNTIME !== "nodejs" || process.env.MYSEED_TIMER === "0") return;
+  if (process.env.NEXT_RUNTIME !== "nodejs") return;
+  // Every request to Noor's address goes through Noor's protection (src/server/noor-gate.ts).
+  (await import("./server/noor-gate")).installNoorGate();
+  if (process.env.MYSEED_TIMER === "0") return;
   const tick = async () => {
     try {
       const { runScheduledChecks } = await import("./server/jobs");

@@ -514,6 +514,7 @@ export async function checkCmsTotals(user: AppUser | null) {
 // The schedule: an unfinished mirror goes on; a resource never mirrored starts; the newest rows every hour; and
 // once a night Noor's totals are compared with what is stored, with Admin told of a gap.
 export async function scheduledCmsMirror(now = Date.now()) {
+  if (!(await (await import("./noor-gate")).noorAutomaticAllowed())) return;
   const resources = await all<ResRow>("SELECT * FROM cms_resources WHERE enabled = 1");
   if (!resources.length) return;
   const config = await getLegacyCmsConfig();

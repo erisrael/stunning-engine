@@ -77,6 +77,9 @@ async function main() {
   const p2 = await X.noorAdminList(admin, "students", { page: 3, pageSize: 10 });
   check("and pages", p2.kind === "list" && p2.page === 3 && p2.pages === 3 && p2.rows[0].cells.Name === "Student 21");
   check("a filter Noor does not have is refused", /Invalid/.test(await err(() => X.noorAdminList(admin, "students", { filters: { "grade.value": "Grade 9" } }))));
+  check("without live access, support cannot open Noor's pages live", /grants live Noor access/.test(await err(() => X.noorAdminList(sara, "students"))));
+  // Admin grants Sara live Noor access (Noor protection).
+  await (await import("../../src/server/noor-gate")).saveNoorGate(admin, { grants: [sara.id] });
   const saraList = await X.noorAdminList(sara, "students");
   check("support reads it but cannot change it", saraList.kind === "list" && !saraList.canCreate && !saraList.canEdit && !saraList.canDelete);
   check("Noor refusing the app's login is said plainly", /not allowed to open/.test(await err(() => X.noorAdminList(admin, "grades"))));

@@ -186,6 +186,10 @@ async function main() {
   // 7. The schedule: the nightly check opens a mirror for a gap and Admin is told; the next tick reads it.
   await run("DELETE FROM settings WHERE key = 'meta.noorTotalsCheck' OR key LIKE 'meta.noorIncremental:%'").catch(() => null);
   const night = Date.parse("2026-11-18T00:30:00Z"); // 03:30 in Addis
+  // The schedule reads Noor only with automatic reads on (Noor protection).
+  await F.scheduledCmsMirror(night - 120e3);
+  check("with automatic Noor reads off, the schedule does not read Noor", true);
+  await (await import("../../src/server/noor-gate")).saveNoorGate((await loadUser((await get<{ id: string }>("SELECT id FROM users WHERE email = 'admin@demo.local'"))!.id))!, { automatic: true });
   await F.scheduledCmsMirror(night);
   const alert = await get<{ title: string }>("SELECT title FROM notifications WHERE title LIKE 'Noor:%' LIMIT 1");
   await F.scheduledCmsMirror(night + 60e3);

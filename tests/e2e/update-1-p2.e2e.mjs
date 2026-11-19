@@ -72,7 +72,8 @@ try {
   await nav.getByRole("link", { name: /Reports/ }).waitFor({ timeout: 20000 });
   const views = (await nav.getByRole("link").allInnerTexts()).join("|");
   check("the page kit tab bar lists the views", views.includes("Live") && (await nav.getByRole("link", { name: /Invoices/ }).count()) === 1 && (await nav.getByRole("link", { name: /Reports/ }).count()) === 1, views);
-  // Live opens on Today and loads it by itself.
+  // Noor protection: the saved copy first; Admin switches to Live from Noor, which opens on Today and loads it.
+  await admin.getByRole("radiogroup", { name: "Source" }).getByRole("radio", { name: "Live from Noor" }).click();
   const total = admin.getByTestId("live-total");
   await total.waitFor({ timeout: 30000 });
   check("Live opens on Today", (await admin.getByRole("radiogroup", { name: "Date range" }).getByRole("radio", { name: "Today" }).getAttribute("aria-checked")) === "true");
@@ -87,13 +88,16 @@ try {
   // Live updates: Today refreshes on its own and a new invoice appears highlighted.
   await admin.getByRole("radiogroup", { name: "Date range" }).getByRole("radio", { name: "Today" }).click();
   await admin.getByRole("switch", { name: "Live updates" }).waitFor({ timeout: 20000 });
-  await admin.getByRole("combobox", { name: "Update every" }).selectOption("10");
+  // Off until chosen, and at most once a minute (Noor protection).
+  check("live updates are off until chosen", (await admin.getByRole("switch", { name: "Live updates" }).getAttribute("aria-checked")) === "false");
+  await admin.getByRole("switch", { name: "Live updates" }).click();
+  await admin.getByRole("combobox", { name: "Update every" }).selectOption("60");
   const todayDay = new Date(Date.now() + 3 * 3600e3).toISOString().slice(0, 10);
   await admin.getByRole("status").filter({ hasText: todayDay }).filter({ hasText: "invoices" }).waitFor({ timeout: 20000 });
   const before = await admin.getByTestId("live-total").innerText();
   const l = new Date(Date.now() + 3 * 3600e3);
   data.push({ id: 99999, t: Date.now(), day: l.toISOString().slice(0, 10), created: l.toISOString().slice(0, 19).replace("T", " "), amount: 999, method: "Chapa", status: "paid", student: "Live Student" });
-  await admin.getByTestId("live-new").waitFor({ timeout: 30000 });
+  await admin.getByTestId("live-new").waitFor({ timeout: 100000 });
   check("Live mode picks up a new invoice by itself", (await admin.getByTestId("live-new").innerText()) === "+1 new" && (await admin.getByText("Live Student").count()) === 1, { before, after: await admin.getByTestId("live-total").innerText() });
   await admin.screenshot({ path: path.join(shots, "live-update.png") });
   await admin.getByRole("radiogroup", { name: "Date range" }).getByRole("radio", { name: "Yesterday" }).click();

@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+// Noor's protection on every request to Noor's address (one at a time, paced, paused after errors).
+import "./noor-gate";
 
 type Connection = { baseUrl: string; username: string; password?: string; sessionCookie?: string };
 // One Noor session per account: Noor allows a single session per login and ends the older one whenever the

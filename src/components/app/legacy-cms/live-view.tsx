@@ -23,9 +23,10 @@ type Source = "live" | "saved";
 // Noor data, one tab per table (Update 1.0). Live: date first from Noor itself, updating while the range includes
 // today. Saved copy: the synchronized mirror kept in Myseed (instant, works when Noor is slow), with Sync for the
 // people allowed to refresh it. Invoices show their slip and verification; feedback can be resolved in Noor.
-export function CmsLiveView({ categories, canReview, initialCategory, canManageData = false, canResolveFeedback = false }: { categories: LegacyCmsCategory[]; canReview: boolean; initialCategory: LegacyCmsCategory; canManageData?: boolean; canResolveFeedback?: boolean }) {
+export function CmsLiveView({ categories, canReview, initialCategory, canManageData = false, canResolveFeedback = false, live = false }: { categories: LegacyCmsCategory[]; canReview: boolean; initialCategory: LegacyCmsCategory; canManageData?: boolean; canResolveFeedback?: boolean; live?: boolean }) {
   const [category, setCategory] = React.useState<LegacyCmsCategory>(categories.includes(initialCategory) ? initialCategory : categories[0]);
-  const [source, setSource] = React.useState<Source>("live");
+  // Noor is fragile: the saved copy first; reading Noor live is for Admin and the people Admin grants it to.
+  const [source, setSource] = React.useState<Source>("saved");
   const [period, setPeriod] = React.useState<Period | null>("today");
   const [start, setStart] = React.useState("");
   const [end, setEnd] = React.useState("");
@@ -86,8 +87,8 @@ export function CmsLiveView({ categories, canReview, initialCategory, canManageD
 
   // Live updates: while the range includes today, today's rows are fetched again every few seconds (past days
   // come from the cache, so a refresh is usually one request to Noor). New rows are highlighted.
-  const [liveOn, setLiveOn] = React.useState(true);
-  const [every, setEvery] = React.useState(20);
+  const [liveOn, setLiveOn] = React.useState(false);
+  const [every, setEvery] = React.useState(60);
   const [fresh, setFresh] = React.useState<{ ids: Set<string>; at: number } | null>(null);
   const today = new Date(Date.now() + 3 * 3600_000).toISOString().slice(0, 10);
   const liveRange = source === "live" && !!range && range.until >= today && !(r && r.total > 0 && r.undated === r.total);
@@ -145,7 +146,7 @@ export function CmsLiveView({ categories, canReview, initialCategory, canManageD
     <div className="space-y-3">
       <TableTabs categories={categories} value={category} onChange={setCategory} />
       <Toolbar label="Live CMS data">
-        <ViewSwitcher label="Source" value={source} onChange={setSource} options={[["live", "Live from Noor"], ["saved", "Saved copy"]]} />
+        {live ? <ViewSwitcher label="Source" value={source} onChange={setSource} options={[["saved", "Saved copy"], ["live", "Live from Noor"]]} /> : <span className="rounded-md border bg-muted/40 px-2 py-1 text-xs text-muted-foreground" title="Admin grants live Noor access">Saved copy</span>}
         <RangePicker period={period} start={start} end={end} showEc={showEc} onShowEc={setShowEc} onChange={(v) => (setPeriod(v.period), setStart(v.start), setEnd(v.end))} />
         {source === "saved" && period && <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => setPeriod(null)}>All dates</Button>}
       </Toolbar>
@@ -218,7 +219,7 @@ export function CmsLiveView({ categories, canReview, initialCategory, canManageD
               </label>
               {liveOn && (
                 <select aria-label="Update every" value={every} onChange={(e) => setEvery(Number(e.target.value))} className="h-7 rounded-md border bg-background px-1">
-                  {[10, 20, 30, 60].map((n) => <option key={n} value={n}>every {n} s</option>)}
+                  {[60, 120, 300].map((n) => <option key={n} value={n}>every {n / 60} min</option>)}
                 </select>
               )}
               <span>Today&apos;s rows are fetched again; earlier days come from the cache.</span>

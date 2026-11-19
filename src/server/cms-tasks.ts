@@ -27,14 +27,17 @@ async function authorize(user:AppUser, input:CmsTaskInput) {
   }
   if (input.kind === "metrics") {
     if(!(await cms.canManageCmsData(user))) throw new WorkflowError("FORBIDDEN","Building the daily figures is for Admin, or the people Admin allows.");
+    await (await import("./noor-gate")).requireNoorLive(user, "Building the daily figures from Noor");
     const DAY=/^\d{4}-\d{2}-\d{2}$/;
     if(!DAY.test(input.from) || !DAY.test(input.until) || input.from>input.until) throw new WorkflowError("VALIDATION","Choose a valid date range.");
     return;
   }
   if (input.kind === "probe") {
     if(!can(user,"data.manage") && !can(user,"users.manage")) throw new WorkflowError("FORBIDDEN","Only Admin or Data Managers can measure the Noor tables.");
+    await (await import("./noor-gate")).requireNoorLive(user, "Measuring Noor's tables");
     return;
   }
+  if (input.kind === "live" || input.kind === "sync" || input.kind === "all") await (await import("./noor-gate")).requireNoorLive(user, input.kind === "sync" ? "Syncing from Noor" : "Reading Noor live");
   const categories = input.kind === "contacts" ? ["students","parents","subscriptions"] as const
     : input.category === "all" ? cms.LEGACY_CMS_CATEGORIES.map(c=>c.key) : [input.category];
   if (categories.some(key=>!cms.LEGACY_CMS_CATEGORIES.some(c=>c.key===key))) throw new WorkflowError("VALIDATION","Unknown CMS table.");

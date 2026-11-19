@@ -130,6 +130,7 @@ export async function cmsMetrics(user: AppUser, from?: string, until?: string) {
 // Every night after 01:00 Addis time: yesterday (now closed) and today so far, as the first active admin.
 export async function scheduledCmsMetrics(now = Date.now()) {
   if (!(await get("SELECT key FROM settings WHERE key = 'cfg.legacy_cms'"))) return;
+  if (!(await (await import("./noor-gate")).noorAutomaticAllowed())) return;
   const local = new Date(now + 3 * 3600e3);
   if (local.getUTCHours() < 1) return;
   const today = addisDay(now);

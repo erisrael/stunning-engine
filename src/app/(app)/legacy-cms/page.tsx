@@ -69,7 +69,7 @@ export default async function LegacyCmsPage({ searchParams }: { searchParams: Pr
   const initialCategory: LegacyCmsCategory = allowedCategories.includes(requestedCategory) ? requestedCategory : allowedCategories.includes("invoices") ? "invoices" : allowedCategories[0];
 
   let body: React.ReactNode;
-  if (view === "live") body = <CmsLiveView categories={allowedCategories} canReview={canReview} initialCategory={initialCategory} canManageData={flags.canManageData} canResolveFeedback={flags.canResolveFeedback} />;
+  if (view === "live") body = <CmsLiveView categories={allowedCategories} canReview={canReview} initialCategory={initialCategory} canManageData={flags.canManageData} canResolveFeedback={flags.canResolveFeedback} live={flags.live} />;
   else if (view === "invoices") body = <CmsInvoicesView />;
   else if (view === "revenue") body = <CmsRevenueView canReview={canReview} />;
   else if (view === "fields") body = <CmsFieldsView />;
@@ -79,7 +79,13 @@ export default async function LegacyCmsPage({ searchParams }: { searchParams: Pr
     body = <CmsContentView />;
   } else if (view === "admin") {
     const { NoorAdminCatalog } = await import("@/components/app/legacy-cms/noor-admin");
-    body = <NoorAdminCatalog data={await (await import("@/server/cms-admin")).noorAdminCatalog(viewer)} />;
+    body = flags.live ? (
+      <NoorAdminCatalog data={await (await import("@/server/cms-admin")).noorAdminCatalog(viewer)} />
+    ) : (
+      <div className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground" data-noor-live-off>
+        Noor&apos;s admin pages are read live from Noor, which is for Admin and the people Admin grants live access to (Admin, Legacy CMS, Noor protection). Noor is fragile, so everyone else works from the saved copy.
+      </div>
+    );
   } else if (view === "growth") body = <CmsGrowthView categories={allowedCategories} />;
   else if (view === "reports") {
     const { listGroups } = await import("@/server/chat");

@@ -311,6 +311,7 @@ export async function runSchedule(s: CmsSchedule, now = Date.now()) {
 
 // Called every minute with the CMS timer; each schedule runs at most once per Addis day.
 export async function scheduledCmsReports(now = Date.now()) {
+  if (!(await (await import("./noor-gate")).noorAutomaticAllowed())) return;
   const list = await readSchedules();
   if (!list.some((s) => due(s, now))) return;
   const { acquireLease, releaseLease } = await import("./ops");

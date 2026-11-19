@@ -24,6 +24,7 @@ const PAGES = [
   ["support-content", "/support?tab=content"],
   ["support-ratings", "/support?tab=ratings"],
   ["admin", "/admin"],
+  ["admin-noor", "/admin?tab=legacy-cms"],
   ["work", "/my-work"],
   ["chat", "/chat"],
 ];
