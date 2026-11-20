@@ -27,6 +27,28 @@ function load(key: string) {
   return cache.get(key)!;
 }
 
+// Props are drawn only within a distance of the camera that depends on the graphics level (Town calls this a few
+// times a second); a street of shops has hundreds of them.
+const PLACED = new Set<THREE.Object3D>();
+const _w = new THREE.Vector3();
+export function updatePropDetail(camera: THREE.Vector3, range: number) {
+  for (const h of PLACED) {
+    if (!h.parent) {
+      PLACED.delete(h);
+      continue;
+    }
+    h.getWorldPosition(_w);
+    h.visible = _w.distanceToSquared(camera) < range * range;
+  }
+}
+export function forgetPropDetail(root: THREE.Object3D) {
+  for (const h of PLACED) {
+    let top: THREE.Object3D = h;
+    while (top.parent) top = top.parent;
+    if (top === root) PLACED.delete(h);
+  }
+}
+
 // A copy of a prop on the floor at (x, z), turned ry; fit: the size to fit into (width, depth) when given.
 export async function placeProp(parent: THREE.Object3D, key: string, x: number, z: number, ry: number, fit?: { w: number; d: number; y?: number }) {
   if (!(PROP_KEYS as readonly string[]).includes(key)) return null;
@@ -46,6 +68,7 @@ export async function placeProp(parent: THREE.Object3D, key: string, x: number, 
   holder.position.set(x, 0, z);
   holder.rotation.y = ry;
   parent.add(holder);
+  PLACED.add(holder);
   return holder;
 }
 

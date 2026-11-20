@@ -40,3 +40,25 @@ Props and surface textures (models/props, textures/pbr)
 
 Characters not included: copyrighted cartoon and comic characters (for example SpongeBob SquarePants, Tom and Jerry,
 Rick and Morty) are not in the game: models of them shared online are not licensed by their owners.
+
+Cars from Sketchfab (downloaded by the site's own download, licences checked: CC BY 4.0, https://creativecommons.org/licenses/by/4.0/).
+Changes to all of them: textures 1024 px WebP, meshopt compression; in the game they are scaled, turned, wheels split
+out so they spin, parts merged by material, and the body colour replaced by the chosen paint (not the taxi, police car or bus).
+- p930.glb: "FREE 1975 Porsche 911 (930) Turbo" by Lionsharp Studios, CC Attribution. https://sketchfab.com/3d-models/free-1975-porsche-911-930-turbo-8568d9d14a994b9cae59499f0dbed21e
+  Porsche and the car's name are trademarks of their owner; their use here is not endorsed by them.
+- m3e30.glb: "[FREE] BMW M3 E30" by Martin Trafas, CC Attribution. https://sketchfab.com/3d-models/free-bmw-m3-e30-ac3c7013434e403e8faff87948caf422
+  BMW and the car's name are trademarks of their owner; their use here is not endorsed by them.
+- gclass.glb: "Mercedes Benz G-class W263" by Lexyc16, CC Attribution. https://sketchfab.com/3d-models/mercedes-benz-g-class-w263-1a2a52b16cad4e618af347461817895c
+  Mercedes-Benz and the car's name are trademarks of their owner; their use here is not endorsed by them.
+- punto.glb: "(FREE) 1995 Fiat Punto GT" by Lionsharp Studios, CC Attribution. https://sketchfab.com/3d-models/free-1995-fiat-punto-gt-48db6facb4b64e99b60f36b8c01185e1
+  Fiat and the car's name are trademarks of their owner; their use here is not endorsed by them.
+- fairheaven.glb: "Fairheaven LT '80 - Low poly model" by Daniel Zhabotinsky, CC Attribution. https://sketchfab.com/3d-models/fairheaven-lt-80-low-poly-model-e2678da920cc4be68dbc193727919ffb
+- taxi.glb: "Fairheaven LT '80 Taxi - Low poly model" by Daniel Zhabotinsky, CC Attribution. https://sketchfab.com/3d-models/fairheaven-lt-80-taxi-low-poly-model-7da68ec2677f4abd8e31e9998b497a67
+- police.glb: "Fairheaven LT '80 Cop Cruiser - Low poly model" by Daniel Zhabotinsky, CC Attribution. https://sketchfab.com/3d-models/fairheaven-lt-80-cop-cruiser-low-poly-model-61766c1e6e1e4b2b803c174f33433a74
+- ace.glb: "Ace '11 - Low Poly model" by Daniel Zhabotinsky, CC Attribution. https://sketchfab.com/3d-models/ace-11-low-poly-model-055ff8a21b8d4d279debca089e2fafcd
+- asti.glb: "Asti Stradale '89 - Low poly model" by Daniel Zhabotinsky, CC Attribution. https://sketchfab.com/3d-models/asti-stradale-89-low-poly-model-97b15b067111443ebe05840137b49c65
+- conquer.glb: "Conquer '89 Pickup - Low poly model" by Daniel Zhabotinsky, CC Attribution. https://sketchfab.com/3d-models/conquer-89-pickup-low-poly-model-6c48c94be8974dc7a5932f697c0ba68f
+- negotiator.glb: "Negotiator '80 - Low poly model" by Daniel Zhabotinsky, CC Attribution. https://sketchfab.com/3d-models/negotiator-80-low-poly-model-892b2684fb37442299bfad9222cf331c
+- bokaroo.glb: "Bokaroo '67 - Low poly model" by Daniel Zhabotinsky, CC Attribution. https://sketchfab.com/3d-models/bokaroo-67-low-poly-model-22015d1863d6455aa31cfd738b972c50
+- townbus.glb: "Generic Town Bus" by own.guest, CC Attribution. https://sketchfab.com/3d-models/generic-town-bus-14fe03d792914d51b6c6250b393c44fd
+- formula.glb: "( FREE ) Formula One LP-830 SDC" by SDC PERFORMANCE, CC Attribution. https://sketchfab.com/3d-models/free-formula-one-lp-830-sdc-aeebdfa53e294e0390f3c2e8bbfe31b6

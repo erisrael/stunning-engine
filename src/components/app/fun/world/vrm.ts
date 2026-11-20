@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { VRMLoaderPlugin, VRMUtils, type VRM, type VRMHumanBoneName } from "@pixiv/three-vrm";
 import { ACCESSORIES, VRM_BASES, type Look } from "@/lib/fun-catalog";
 import { accessoryMeshes } from "./avatar";
@@ -50,6 +51,34 @@ export type VrmAvatar = {
   dispose: () => void;
 };
 
+// VRoid hair (and some clothes) comes as dozens of pieces, one per glTF primitive: with a dozen characters in view
+// that was most of the town's draw calls. Pieces with the same material, skeleton, bind pose and place, and no face
+// shapes (morph targets), are merged into one skinned mesh.
+function mergePieces(root: THREE.Object3D) {
+  const groups = new Map<string, THREE.SkinnedMesh[]>();
+  root.traverse((o) => {
+    const m = o as THREE.SkinnedMesh;
+    if (!m.isSkinnedMesh || Array.isArray(m.material) || Object.keys(m.geometry.morphAttributes).length || !m.parent) return;
+    const attrs = Object.keys(m.geometry.attributes).sort().join(",");
+    const key = [m.parent.uuid, (m.material as THREE.Material).uuid, m.skeleton.uuid, attrs, !!m.geometry.index, m.bindMatrix.elements.map((v) => v.toFixed(4)).join(","), m.matrix.elements.map((v) => v.toFixed(4)).join(",")].join("|");
+    (groups.get(key) ?? groups.set(key, []).get(key)!).push(m);
+  });
+  for (const list of groups.values()) {
+    if (list.length < 2) continue;
+    const merged = mergeGeometries(list.map((m) => m.geometry), false);
+    if (!merged) continue;
+    const first = list[0]!;
+    const mesh = new THREE.SkinnedMesh(merged, first.material);
+    mesh.name = first.name;
+    mesh.position.copy(first.position);
+    mesh.quaternion.copy(first.quaternion);
+    mesh.scale.copy(first.scale);
+    mesh.bind(first.skeleton, first.bindMatrix);
+    first.parent!.add(mesh);
+    for (const m of list) (m.parent!.remove(m), m.geometry.dispose());
+  }
+}
+
 const tmpQ = new THREE.Quaternion();
 const E = (x: number, y: number, z: number) => tmpQ.clone().setFromEuler(new THREE.Euler(x, y, z, "XYZ"));
 
@@ -87,9 +116,20 @@ export async function createVrmAvatar(look: Look, opts: { shareKey?: string } = 
   VRMUtils.combineSkeletons(gltf.scene);
   const v0 = vrm.meta?.metaVersion === "0";
   if (v0) VRMUtils.rotateVRM0(vrm);
+  mergePieces(vrm.scene);
+  // Culled when out of view, with bounds half again as big as the standing pose (arms and legs move); the face
+  // (inside the head and hair) casts no shadow.
   vrm.scene.traverse((o) => {
-    o.frustumCulled = false;
-    if ((o as THREE.Mesh).isMesh) o.castShadow = true;
+    const m = o as THREE.SkinnedMesh;
+    if (!m.isMesh) return;
+    m.castShadow = !/face/i.test(m.name);
+    if (m.isSkinnedMesh) {
+      // From the rest pose in the geometry (the bones have not moved yet, so the skinned bounds would be empty).
+      if (!m.geometry.boundingSphere) m.geometry.computeBoundingSphere();
+      m.boundingSphere = m.geometry.boundingSphere!.clone();
+      m.boundingSphere.radius = m.boundingSphere.radius * 1.5 + 0.3;
+      m.frustumCulled = true;
+    } else m.frustumCulled = false;
   });
   // Share textures and geometries with the first copy of this model.
   const key = opts.shareKey ?? base;

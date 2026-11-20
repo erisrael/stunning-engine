@@ -88,7 +88,10 @@ try {
   });
   check("the city has its streets, districts, the Grand Prix and a sky", world.streets && world.districts && world.gp && world.sky, world);
   check("town folk live in town", world.folk >= 6, world.folk);
-  check("the town has a time and weather", /\d\d:\d\d · Clear/.test(world.label), world.label);
+  // The pinned time and weather apply on the next frame.
+  await page.waitForFunction(() => /Clear/.test(window.__seedTown.atmosphere.label()), null, { timeout: 20000 }).catch(() => {});
+  const label = await page.evaluate(() => window.__seedTown.atmosphere.label());
+  check("the town has a time and weather", /^13:\d\d · Clear/.test(label), label);
   await page.evaluate(() => { const t = window.__seedTown; t.atmosphere.pinWeather = "rain"; t.atmosphere.wet = 1; });
   await page.waitForTimeout(1500);
   check("rain makes the roads slippery", await page.evaluate(() => window.__seedTown.atmosphere.grip < 0.85));

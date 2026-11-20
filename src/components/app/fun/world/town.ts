@@ -21,6 +21,7 @@ import type { Quest } from "./npc-talk";
 import { cleanLook } from "@/lib/fun-catalog";
 import { lamp } from "./pbr";
 import { anyVehicle, forgetCarDetail, updateCarDetail, type CarRig } from "./cars";
+import { forgetPropDetail, updatePropDetail } from "./props";
 import { newCarState, speedOf, stepCar, type CarState } from "./vehicle-physics";
 import { ROADS } from "./streets";
 import { Traffic } from "./traffic";
@@ -1369,6 +1370,7 @@ export class Town {
     }
     // The licensed car models only up close (the dealer's, parked ones, mine); farther away their drawn bodies.
     updateCarDetail(this.camera.position, { low: 0, medium: 30, high: 55, ultra: 90 }[this.gfx.quality]);
+    updatePropDetail(this.camera.position, { low: 30, medium: 45, high: 65, ultra: 100 }[this.gfx.quality]);
     // Detailed anime models for me and the nearest characters, as many as the graphics level allows.
     // Realistic people share their model and draw in a few calls, so more of them can be detailed.
     const budget = { low: 0, medium: 6, high: 14, ultra: 22 }[this.gfx.quality];
@@ -1516,7 +1518,7 @@ export class Town {
       car.g.rotation.y = car.c.heading;
       if (!car.st) for (const w of car.wheels) w.rotation.x += (car.c.speed * dt) / 0.35;
       const night = !!this.scene.userData.night;
-      for (const l of car.lights) l.visible = l.userData.front ? night || car.driving : car.driving && (car.c.speed < 0.3 || fz > 0);
+      for (const l of car.lights) l.visible = !l.userData.off && (l.userData.front ? night || car.driving : car.driving && (car.c.speed < 0.3 || fz > 0));
     }
 
     // Everyone else glides to where they are.
@@ -1889,6 +1891,7 @@ export class Town {
   dispose() {
     this.stop = true;
     forgetCarDetail(this.scene);
+    forgetPropDetail(this.scene);
     this.soccer?.dispose();
     this.me.dispose();
     for (const n of this.npcs) n.av.dispose();

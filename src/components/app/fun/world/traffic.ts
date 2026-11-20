@@ -24,7 +24,7 @@ type Mover = {
 };
 
 const PALETTE = ["#1f2937", "#e5e7eb", "#9ca3af", "#1e3a8a", "#7f1d1d", "#064e3b", "#f8fafc", "#78350f", "#334155", "#a16207", "#0f766e", "#111827"];
-const MODELS = ["hatch", "sedan", "sedan", "suv", "hatch", "van", "pickup", "sedan"];
+const MODELS = ["fairheaven", "ace", "negotiator", "taxi", "asti", "conquer", "bokaroo", "fairheaven", "ace", "police", "negotiator", "van"];
 
 const laneOff = (r: Road, dir: 1 | -1) => (r.axis === "x" ? dir : -dir) * (r.lanes === 2 ? r.w * 0.375 : r.w / 4);
 const pos = (r: Road, t: number, off: number) => (r.axis === "x" ? new THREE.Vector3(t, 0, r.c + off) : new THREE.Vector3(r.c + off, 0, t));
@@ -50,8 +50,8 @@ export class Traffic {
   private spawn(i: number) {
     const road = this.roads[Math.floor(this.rnd() * this.roads.length)]!;
     const dir = (this.rnd() < 0.5 ? 1 : -1) as 1 | -1;
-    const model = i === 0 ? "bus" : MODELS[i % MODELS.length]!;
-    const v = anyVehicle(model, PALETTE[Math.floor(this.rnd() * PALETTE.length)]!, undefined, false);
+    const model = i === 0 ? "townbus" : MODELS[i % MODELS.length]!;
+    const v = anyVehicle(model, PALETTE[Math.floor(this.rnd() * PALETTE.length)]!, undefined, true);
     const t = road.from + 10 + this.rnd() * (road.to - road.from - 20);
     const off = laneOff(road, dir);
     const p = pos(road, t, off);

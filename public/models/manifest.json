@@ -620,7 +620,7 @@
    "category": "furniture",
    "file": "/models/props/tv.glb",
    "source": "https://polyhaven.com/a/Television_01",
-   "author": "Gabriel Radi\u0107",
+   "author": "Gabriel Radić",
    "license": "CC0",
    "sizeKb": 86,
    "polycount": 1918,
@@ -1422,6 +1422,66 @@
    "updated": "2026-11-20"
   },
   {
+   "id": "car.ace",
+   "name": "Ace '11 - Low Poly model",
+   "category": "vehicle",
+   "file": "/models/cars/ace.glb",
+   "source": "https://sketchfab.com/3d-models/ace-11-low-poly-model-055ff8a21b8d4d279debca089e2fafcd",
+   "author": "Daniel Zhabotinsky",
+   "license": "CC Attribution 4.0",
+   "note": "Sketchfab, downloadable, CC BY.",
+   "sizeKb": 1399,
+   "steps": [
+    "textures 1024px WebP",
+    "meshopt",
+    "wheels found at load (by name, or by material and place; merged wheels split)",
+    "parts merged by material"
+   ],
+   "status": "integrated",
+   "usedIn": "Vehicles (dealer, garage, traffic)",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "car.asti",
+   "name": "Asti Stradale '89 - Low poly model",
+   "category": "vehicle",
+   "file": "/models/cars/asti.glb",
+   "source": "https://sketchfab.com/3d-models/asti-stradale-89-low-poly-model-97b15b067111443ebe05840137b49c65",
+   "author": "Daniel Zhabotinsky",
+   "license": "CC Attribution 4.0",
+   "note": "Sketchfab, downloadable, CC BY.",
+   "sizeKb": 1419,
+   "steps": [
+    "textures 1024px WebP",
+    "meshopt",
+    "wheels found at load (by name, or by material and place; merged wheels split)",
+    "parts merged by material"
+   ],
+   "status": "integrated",
+   "usedIn": "Vehicles (dealer, garage, traffic)",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "car.bokaroo",
+   "name": "Bokaroo '67 - Low poly model",
+   "category": "vehicle",
+   "file": "/models/cars/bokaroo.glb",
+   "source": "https://sketchfab.com/3d-models/bokaroo-67-low-poly-model-22015d1863d6455aa31cfd738b972c50",
+   "author": "Daniel Zhabotinsky",
+   "license": "CC Attribution 4.0",
+   "note": "Sketchfab, downloadable, CC BY.",
+   "sizeKb": 1594,
+   "steps": [
+    "textures 1024px WebP",
+    "meshopt",
+    "wheels found at load (by name, or by material and place; merged wheels split)",
+    "parts merged by material"
+   ],
+   "status": "integrated",
+   "usedIn": "Vehicles (dealer, garage, traffic)",
+   "updated": "2026-11-20"
+  },
+  {
    "id": "car.concept",
    "name": "Car Concept",
    "category": "vehicle",
@@ -1434,6 +1494,166 @@
     "textures 1024px WebP",
     "meshopt",
     "wheels found by name at load"
+   ],
+   "status": "integrated",
+   "usedIn": "Vehicles (dealer, garage, traffic)",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "car.conquer",
+   "name": "Conquer '89 Pickup - Low poly model",
+   "category": "vehicle",
+   "file": "/models/cars/conquer.glb",
+   "source": "https://sketchfab.com/3d-models/conquer-89-pickup-low-poly-model-6c48c94be8974dc7a5932f697c0ba68f",
+   "author": "Daniel Zhabotinsky",
+   "license": "CC Attribution 4.0",
+   "note": "Sketchfab, downloadable, CC BY.",
+   "sizeKb": 1713,
+   "steps": [
+    "textures 1024px WebP",
+    "meshopt",
+    "wheels found at load (by name, or by material and place; merged wheels split)",
+    "parts merged by material"
+   ],
+   "status": "integrated",
+   "usedIn": "Vehicles (dealer, garage, traffic)",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "car.fairheaven",
+   "name": "Fairheaven LT '80 - Low poly model",
+   "category": "vehicle",
+   "file": "/models/cars/fairheaven.glb",
+   "source": "https://sketchfab.com/3d-models/fairheaven-lt-80-low-poly-model-e2678da920cc4be68dbc193727919ffb",
+   "author": "Daniel Zhabotinsky",
+   "license": "CC Attribution 4.0",
+   "note": "Sketchfab, downloadable, CC BY.",
+   "sizeKb": 1442,
+   "steps": [
+    "textures 1024px WebP",
+    "meshopt",
+    "wheels found at load (by name, or by material and place; merged wheels split)",
+    "parts merged by material"
+   ],
+   "status": "integrated",
+   "usedIn": "Vehicles (dealer, garage, traffic)",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "car.formula",
+   "name": "( FREE ) Formula One LP-830 SDC",
+   "category": "vehicle",
+   "file": "/models/cars/formula.glb",
+   "source": "https://sketchfab.com/3d-models/free-formula-one-lp-830-sdc-aeebdfa53e294e0390f3c2e8bbfe31b6",
+   "author": "SDC PERFORMANCE",
+   "license": "CC Attribution 4.0",
+   "note": "Sketchfab, downloadable, CC BY.",
+   "sizeKb": 401,
+   "steps": [
+    "textures 1024px WebP",
+    "meshopt",
+    "wheels found at load (by name, or by material and place; merged wheels split)",
+    "parts merged by material"
+   ],
+   "status": "integrated",
+   "usedIn": "The Seed F2 car (Grand Prix)",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "car.gclass",
+   "name": "Mercedes Benz G-class W263",
+   "category": "vehicle",
+   "file": "/models/cars/gclass.glb",
+   "source": "https://sketchfab.com/3d-models/mercedes-benz-g-class-w263-1a2a52b16cad4e618af347461817895c",
+   "author": "Lexyc16",
+   "license": "CC Attribution 4.0",
+   "note": "Mercedes-Benz and the car's name are trademarks of their owner; their use here is not endorsed by them.",
+   "sizeKb": 107,
+   "steps": [
+    "textures 1024px WebP",
+    "meshopt",
+    "wheels found at load (by name, or by material and place; merged wheels split)",
+    "parts merged by material"
+   ],
+   "status": "integrated",
+   "usedIn": "Vehicles (dealer, garage, traffic)",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "car.m3e30",
+   "name": "[FREE] BMW M3 E30",
+   "category": "vehicle",
+   "file": "/models/cars/m3e30.glb",
+   "source": "https://sketchfab.com/3d-models/free-bmw-m3-e30-ac3c7013434e403e8faff87948caf422",
+   "author": "Martin Trafas",
+   "license": "CC Attribution 4.0",
+   "note": "BMW and the car's name are trademarks of their owner; their use here is not endorsed by them.",
+   "sizeKb": 1759,
+   "steps": [
+    "textures 1024px WebP",
+    "meshopt",
+    "wheels found at load (by name, or by material and place; merged wheels split)",
+    "parts merged by material"
+   ],
+   "status": "integrated",
+   "usedIn": "Vehicles (dealer, garage, traffic)",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "car.negotiator",
+   "name": "Negotiator '80 - Low poly model",
+   "category": "vehicle",
+   "file": "/models/cars/negotiator.glb",
+   "source": "https://sketchfab.com/3d-models/negotiator-80-low-poly-model-892b2684fb37442299bfad9222cf331c",
+   "author": "Daniel Zhabotinsky",
+   "license": "CC Attribution 4.0",
+   "note": "Sketchfab, downloadable, CC BY.",
+   "sizeKb": 1704,
+   "steps": [
+    "textures 1024px WebP",
+    "meshopt",
+    "wheels found at load (by name, or by material and place; merged wheels split)",
+    "parts merged by material"
+   ],
+   "status": "integrated",
+   "usedIn": "Vehicles (dealer, garage, traffic)",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "car.p930",
+   "name": "FREE 1975 Porsche 911 (930) Turbo",
+   "category": "vehicle",
+   "file": "/models/cars/p930.glb",
+   "source": "https://sketchfab.com/3d-models/free-1975-porsche-911-930-turbo-8568d9d14a994b9cae59499f0dbed21e",
+   "author": "Lionsharp Studios",
+   "license": "CC Attribution 4.0",
+   "note": "Porsche and the car's name are trademarks of their owner; their use here is not endorsed by them.",
+   "sizeKb": 3054,
+   "steps": [
+    "textures 1024px WebP",
+    "meshopt",
+    "wheels found at load (by name, or by material and place; merged wheels split)",
+    "parts merged by material"
+   ],
+   "status": "integrated",
+   "usedIn": "Vehicles (dealer, garage, traffic)",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "car.police",
+   "name": "Fairheaven LT '80 Cop Cruiser - Low poly model",
+   "category": "vehicle",
+   "file": "/models/cars/police.glb",
+   "source": "https://sketchfab.com/3d-models/fairheaven-lt-80-cop-cruiser-low-poly-model-61766c1e6e1e4b2b803c174f33433a74",
+   "author": "Daniel Zhabotinsky",
+   "license": "CC Attribution 4.0",
+   "note": "Sketchfab, downloadable, CC BY.",
+   "sizeKb": 1480,
+   "steps": [
+    "textures 1024px WebP",
+    "meshopt",
+    "wheels found at load (by name, or by material and place; merged wheels split)",
+    "parts merged by material"
    ],
    "status": "integrated",
    "usedIn": "Vehicles (dealer, garage, traffic)",
@@ -1456,6 +1676,66 @@
    ],
    "status": "integrated",
    "usedIn": "Vehicles (dealer, garage, traffic)",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "car.punto",
+   "name": "(FREE) 1995 Fiat Punto GT",
+   "category": "vehicle",
+   "file": "/models/cars/punto.glb",
+   "source": "https://sketchfab.com/3d-models/free-1995-fiat-punto-gt-48db6facb4b64e99b60f36b8c01185e1",
+   "author": "Lionsharp Studios",
+   "license": "CC Attribution 4.0",
+   "note": "Fiat and the car's name are trademarks of their owner; their use here is not endorsed by them.",
+   "sizeKb": 3634,
+   "steps": [
+    "textures 1024px WebP",
+    "meshopt",
+    "wheels found at load (by name, or by material and place; merged wheels split)",
+    "parts merged by material"
+   ],
+   "status": "integrated",
+   "usedIn": "Vehicles (dealer, garage, traffic)",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "car.taxi",
+   "name": "Fairheaven LT '80 Taxi - Low poly model",
+   "category": "vehicle",
+   "file": "/models/cars/taxi.glb",
+   "source": "https://sketchfab.com/3d-models/fairheaven-lt-80-taxi-low-poly-model-7da68ec2677f4abd8e31e9998b497a67",
+   "author": "Daniel Zhabotinsky",
+   "license": "CC Attribution 4.0",
+   "note": "Sketchfab, downloadable, CC BY.",
+   "sizeKb": 1781,
+   "steps": [
+    "textures 1024px WebP",
+    "meshopt",
+    "wheels found at load (by name, or by material and place; merged wheels split)",
+    "parts merged by material"
+   ],
+   "status": "integrated",
+   "usedIn": "Vehicles (dealer, garage, traffic)",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "car.townbus",
+   "name": "Generic Town Bus",
+   "category": "vehicle",
+   "file": "/models/cars/townbus.glb",
+   "source": "https://sketchfab.com/3d-models/generic-town-bus-14fe03d792914d51b6c6250b393c44fd",
+   "author": "own.guest",
+   "license": "CC Attribution 4.0",
+   "note": "Sketchfab, downloadable, CC BY.",
+   "sizeKb": 889,
+   "steps": [
+    "textures 1024px WebP",
+    "meshopt",
+    "wheels found at load (by name, or by material and place; merged wheels split)",
+    "parts merged by material"
+   ],
+   "status": "integrated",
+   "usedIn": "Traffic (the town bus)",
    "updated": "2026-11-20"
   }
  ]

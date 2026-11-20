@@ -3,6 +3,15 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import { carPaint, glass, lamp, plain } from "./pbr";
 import { vehicle } from "./models";
+import { mergeModel, optimizeStatic } from "./merge";
+
+// A drawn car is dozens of small parts; merged by material (lights kept apart: they switch on and off) it draws in
+// a handful of calls, which matters with a street full of traffic.
+function compact(body: THREE.Group, wheels: CarRig["wheels"], lights: THREE.Mesh[]) {
+  for (const l of lights) l.userData.keep = true;
+  optimizeStatic(body);
+  for (const w of wheels) optimizeStatic(w.spin);
+}
 
 // Cars as they look in the street: bodies drawn from real proportions (a side profile with rounded edges, glass
 // cabin, roof, bumpers, grille, lights, mirrors, wheel arches, an interior with seats, dashboard and steering wheel,
@@ -41,6 +50,18 @@ export const SPECS: Record<string, CarSpec> = {
   concept: { label: "Darmstadt Concept", mass: 1300, power: 260, torque: 450, redline: 8000, gears: [3.2, 2.2, 1.65, 1.3, 1.05, 0.86], final: 3.6, drive: "rwd", grip: 1.12, wheelbase: 2.6, cg: 0.45, drag: 0.29, downforce: 0.9, brake: 12000, steer: 0.56, wheelR: 0.36, topKmh: 290 },
   supercar: { label: "Vortex V12", mass: 1450, power: 560, torque: 720, redline: 8700, gears: [3.1, 2.15, 1.65, 1.32, 1.08, 0.9, 0.76], final: 3.4, drive: "rwd", grip: 1.2, wheelbase: 2.65, cg: 0.42, drag: 0.29, downforce: 1.6, brake: 14000, steer: 0.52, wheelR: 0.35, topKmh: 340 },
   f2: { label: "Seed F2 (Formula 2 style)", mass: 795, power: 455, torque: 520, redline: 10000, gears: [3.2, 2.45, 1.95, 1.6, 1.35, 1.15], final: 3.0, drive: "rwd", grip: 1.5, wheelbase: 3.1, cg: 0.28, drag: 0.55, downforce: 3.6, brake: 22000, steer: 0.4, wheelR: 0.34, topKmh: 320 },
+  p930: { label: "Porsche 911 Turbo (930)", real: "Porsche 911 Turbo 3.0 (930, 1975): 191 kW (260 PS), 343 N·m, 4-speed manual, rear-wheel drive, 1,140 kg, 250 km/h (manufacturer data)", mass: 1140, power: 191, torque: 343, redline: 6500, gears: [3.18, 1.83, 1.26, 0.89], final: 4.0, drive: "rwd", grip: 1.05, wheelbase: 2.27, cg: 0.48, drag: 0.36, downforce: 0.4, brake: 11000, steer: 0.56, wheelR: 0.31, topKmh: 250 },
+  m3e30: { label: "BMW M3 (E30)", real: "BMW M3 (E30, 1986): 143 kW (195 PS), 230 N·m, 5-speed manual, rear-wheel drive, 1,200 kg, 235 km/h (manufacturer data)", mass: 1200, power: 143, torque: 230, redline: 7250, gears: [3.72, 2.4, 1.77, 1.26, 1.0], final: 3.25, drive: "rwd", grip: 1.06, wheelbase: 2.56, cg: 0.48, drag: 0.33, downforce: 0.3, brake: 10500, steer: 0.58, wheelR: 0.31, topKmh: 235 },
+  gclass: { label: "Mercedes-Benz G-Class", real: "Mercedes-Benz G 500 (2018): 310 kW (422 PS), 610 N·m, 9-speed automatic, all-wheel drive, 2,429 kg, 210 km/h (manufacturer data)", mass: 2429, power: 310, torque: 610, redline: 6000, gears: [5.35, 3.24, 2.25, 1.64, 1.21, 1.0, 0.87, 0.72, 0.6], final: 3.27, drive: "awd", grip: 0.97, wheelbase: 2.89, cg: 0.85, drag: 0.62, downforce: 0, brake: 9500, steer: 0.56, wheelR: 0.4, topKmh: 210 },
+  punto: { label: "Fiat Punto GT", real: "Fiat Punto GT (1995): 98 kW (133 PS), 207 N·m, 5-speed manual, front-wheel drive, 1,040 kg, 200 km/h (manufacturer data)", mass: 1040, power: 98, torque: 207, redline: 6500, gears: [3.36, 1.95, 1.32, 1.0, 0.79], final: 3.35, drive: "fwd", grip: 1.0, wheelbase: 2.45, cg: 0.52, drag: 0.33, downforce: 0, brake: 9500, steer: 0.62, wheelR: 0.29, topKmh: 200 },
+  fairheaven: { label: "Fairheaven LT '80", mass: 1750, power: 105, torque: 350, redline: 4800, gears: [2.46, 1.46, 1.0], final: 2.73, drive: "rwd", grip: 0.92, wheelbase: 2.9, cg: 0.6, drag: 0.45, downforce: 0, brake: 8000, steer: 0.55, wheelR: 0.33, topKmh: 175 },
+  taxi: { label: "Fairheaven LT '80 taxi", mass: 1780, power: 105, torque: 350, redline: 4800, gears: [2.46, 1.46, 1.0], final: 2.73, drive: "rwd", grip: 0.92, wheelbase: 2.9, cg: 0.6, drag: 0.46, downforce: 0, brake: 8000, steer: 0.55, wheelR: 0.33, topKmh: 170 },
+  police: { label: "Fairheaven Cop Cruiser", mass: 1800, power: 160, torque: 420, redline: 5200, gears: [2.46, 1.46, 1.0], final: 3.08, drive: "rwd", grip: 0.97, wheelbase: 2.9, cg: 0.58, drag: 0.45, downforce: 0, brake: 9000, steer: 0.55, wheelR: 0.33, topKmh: 200 },
+  ace: { label: "Ace '11", mass: 1250, power: 103, torque: 200, redline: 6500, gears: [3.9, 2.14, 1.45, 1.03, 0.81, 0.66], final: 3.5, drive: "fwd", grip: 1.0, wheelbase: 2.53, cg: 0.55, drag: 0.34, downforce: 0, brake: 9000, steer: 0.62, wheelR: 0.3, topKmh: 190 },
+  asti: { label: "Asti Stradale '89", mass: 1200, power: 136, torque: 300, redline: 6500, gears: [3.5, 2.17, 1.52, 1.13, 0.89], final: 3.11, drive: "awd", grip: 1.08, wheelbase: 2.48, cg: 0.5, drag: 0.36, downforce: 0.3, brake: 10500, steer: 0.6, wheelR: 0.3, topKmh: 215 },
+  conquer: { label: "Conquer '89 pickup", mass: 1450, power: 85, torque: 190, redline: 5200, gears: [3.95, 2.2, 1.4, 1.0, 0.85], final: 4.1, drive: "rwd", grip: 0.93, wheelbase: 2.85, cg: 0.75, drag: 0.46, downforce: 0, brake: 8000, steer: 0.58, wheelR: 0.35, topKmh: 160 },
+  negotiator: { label: "Negotiator '80", mass: 1600, power: 110, torque: 330, redline: 4800, gears: [2.45, 1.45, 1.0], final: 2.9, drive: "rwd", grip: 0.93, wheelbase: 2.8, cg: 0.58, drag: 0.42, downforce: 0, brake: 8200, steer: 0.55, wheelR: 0.33, topKmh: 180 },
+  bokaroo: { label: "Bokaroo '67", mass: 1500, power: 120, torque: 380, redline: 4600, gears: [3.0, 1.7, 1.0], final: 3.5, drive: "awd", grip: 0.92, wheelbase: 2.3, cg: 0.8, drag: 0.52, downforce: 0, brake: 8000, steer: 0.6, wheelR: 0.39, topKmh: 160 },
   van: { label: "Seed Courier van", mass: 2300, power: 120, torque: 340, redline: 4800, gears: [4.0, 2.3, 1.5, 1.0, 0.8], final: 4.2, drive: "fwd", grip: 0.92, wheelbase: 3.4, cg: 0.95, drag: 0.6, downforce: 0, brake: 8000, steer: 0.55, wheelR: 0.36, topKmh: 160 },
   bus: { label: "Seed City bus", mass: 12000, power: 220, torque: 1200, redline: 2600, gears: [3.4, 1.9, 1.4, 1.0, 0.75], final: 5.5, drive: "rwd", grip: 0.9, wheelbase: 6.0, cg: 1.2, drag: 2.2, downforce: 0, brake: 7000, steer: 0.5, wheelR: 0.5, topKmh: 90 },
 };
@@ -60,7 +81,7 @@ const BODIES: Record<string, Body> = {
 };
 
 // Which body each catalog model draws (models not listed keep their old shape: bikes, scooters, the cart).
-export const CAR_BODY: Record<string, string> = { hatch: "hatch", sedan: "sedan", suv: "suv", jeep: "jeep", pickup: "pickup", sports: "sports", supercar: "supercar", van: "van", bus: "bus", gt911: "sports", concept: "sports", f2: "f2" };
+export const CAR_BODY: Record<string, string> = { hatch: "hatch", sedan: "sedan", suv: "suv", jeep: "jeep", pickup: "pickup", sports: "sports", supercar: "supercar", van: "van", bus: "bus", gt911: "sports", concept: "sports", f2: "f2", p930: "sports", m3e30: "sedan", gclass: "jeep", punto: "hatch", fairheaven: "sedan", taxi: "sedan", police: "sedan", ace: "hatch", asti: "hatch", conquer: "pickup", negotiator: "sedan", bokaroo: "jeep", townbus: "bus" };
 
 export type CarRig = {
   group: THREE.Group;
@@ -260,6 +281,7 @@ function drawnCar(style: string, paintColor: string, rimColor: string): CarRig {
     for (const s of [-1, 1]) add(trim, s * B.W * 0.36, B.belt + 0.1, zR + 0.3, 0.04, 0.22, 0.12);
   }
   body.traverse((o) => ((o as THREE.Mesh).isMesh ? (((o as THREE.Mesh).castShadow = true), ((o as THREE.Mesh).receiveShadow = true)) : 0));
+  compact(body, wheels, lights);
   const paint = (c: string, finish: "gloss" | "metallic" | "matte" | "pearl" = "metallic") => {
     const next = carPaint(c, finish);
     body.traverse((o) => {
@@ -342,6 +364,7 @@ function formulaCar(paintColor: string, second = "#111318"): CarRig {
   const rain = lamp("#ff2020", 0.3, 2.5);
   const rl = add(rain, new THREE.BoxGeometry(0.12, 0.05, 0.02), 0, 0.42, -2.46);
   lights.push(rl);
+  compact(body, wheels, lights);
   const paint = (c: string, finish: "gloss" | "metallic" | "matte" | "pearl" = "gloss") => {
     const next = carPaint(c, finish);
     body.traverse((o) => {
@@ -355,10 +378,34 @@ function formulaCar(paintColor: string, second = "#111318"): CarRig {
 
 // ------------------------------------------------------------------------------------------------- licensed models
 
-type GlbCfg = { file: string; length: number; flip?: boolean; paint: RegExp; spinNames: [RegExp, boolean][]; steerNames?: RegExp[] };
+type GlbCfg = {
+  file: string;
+  length: number; // real length (m); the model is scaled to it
+  flip?: boolean | "auto"; // turn it around; auto: from wheels named ..._FL / ..._RL
+  paint: RegExp | null; // the body colour material, replaced by the car paint; null keeps the model's own (liveries)
+  spinNames?: [RegExp, boolean][]; // wheel nodes by name (and whether they are at the front)
+  wheelMat?: RegExp; // or wheel materials, found by place; a mesh holding several wheels is split into four
+  drop?: RegExp; // materials left out (baked shadow planes)
+  lite?: boolean; // game-ready (about 20k triangles): shown up close and two and a half times farther
+};
+// Third-party models: see public/models/manifest.json and CREDITS.txt (author, licence, source, changes).
 const GLB: Record<string, GlbCfg> = {
   gt911: { file: "/models/cars/porsche911.glb", length: 4.52, paint: /^paint$/i, spinNames: [[/^Cylinder\.000$/, false], [/^Cylinder\.001$/, true]] },
   concept: { file: "/models/cars/concept.glb", length: 4.3, flip: true, paint: /^Paint 1/i, spinNames: [[/^WheelFrontL$/, true], [/^WheelFrontR$/, true], [/^WheelRearL$/, false], [/^WheelRearR$/, false]] },
+  p930: { file: "/models/cars/p930.glb", length: 4.29, paint: /^paint$/, wheelMat: /^930_(rim|tire)$/ },
+  m3e30: { file: "/models/cars/m3e30.glb", length: 4.35, paint: /^BMW_E30_M3_PAINT$/, wheelMat: /^(BMW_E30_M3_(RIM|TIRE)|Brake_Disc)$/ },
+  gclass: { file: "/models/cars/gclass.glb", length: 4.82, paint: /^Material\.001$/, wheelMat: /^Material\.00[678]$/ },
+  punto: { file: "/models/cars/punto.glb", length: 3.76, flip: true, paint: /^gt_body$/, wheelMat: /^gt_(tire|rim)$/, drop: /^gt_shadow$/ },
+  fairheaven: { file: "/models/cars/fairheaven.glb", length: 5.0, flip: "auto", paint: /_Bodymat$/, lite: true },
+  taxi: { file: "/models/cars/taxi.glb", length: 5.07, flip: "auto", paint: null, lite: true },
+  police: { file: "/models/cars/police.glb", length: 5.07, flip: "auto", paint: null, lite: true },
+  ace: { file: "/models/cars/ace.glb", length: 3.84, flip: "auto", paint: /_Bodymat$/, lite: true },
+  asti: { file: "/models/cars/asti.glb", length: 3.9, flip: "auto", paint: /_Bodymat$/, lite: true },
+  conquer: { file: "/models/cars/conquer.glb", length: 5.22, flip: "auto", paint: /_Bodymat$/, lite: true },
+  negotiator: { file: "/models/cars/negotiator.glb", length: 4.94, flip: "auto", paint: /_Bodymat$/, lite: true },
+  bokaroo: { file: "/models/cars/bokaroo.glb", length: 4.59, flip: "auto", paint: /_Bodymat$/, lite: true },
+  townbus: { file: "/models/cars/townbus.glb", length: 11.8, flip: true, paint: null, wheelMat: /^material(_4)?$/, lite: true },
+  f2: { file: "/models/cars/formula.glb", length: 5.2, paint: /^Material\.001$/, wheelMat: /^Material\.00[46789]$/, lite: true },
 };
 const glbCache = new Map<string, Promise<THREE.Object3D>>();
 function loadGlb(key: string) {
@@ -370,9 +417,9 @@ function loadGlb(key: string) {
   return glbCache.get(key)!;
 }
 
-// Cars showing a licensed model: within `range` of the camera they show it, farther away their drawn body.
-// Town calls this a few times a second; cars taken out of the scene drop off the list.
-const DETAILED = new Set<{ group: THREE.Group; setNear: (n: boolean) => void; orphan: number }>();
+// Cars showing a licensed model: within `range` of the camera (times their own factor) they show it, farther away
+// their drawn body. Town calls this a few times a second; cars taken out of the scene drop off the list.
+const DETAILED = new Set<{ group: THREE.Group; setNear: (n: boolean) => void; orphan: number; k: number }>();
 const _p = new THREE.Vector3();
 export function updateCarDetail(camera: THREE.Vector3, range: number) {
   for (const d of DETAILED) {
@@ -382,7 +429,7 @@ export function updateCarDetail(camera: THREE.Vector3, range: number) {
     }
     d.orphan = 0;
     d.group.getWorldPosition(_p);
-    d.setNear(_p.distanceTo(camera) < range);
+    d.setNear(_p.distanceTo(camera) < range * d.k);
   }
 }
 export function forgetCarDetail(root: THREE.Object3D) {
@@ -393,12 +440,58 @@ export function forgetCarDetail(root: THREE.Object3D) {
   }
 }
 
+const WHEEL_NAME = /wheel[a-z]*_?([FR])([LR])$/i;
+const _v = new THREE.Vector3();
+// A mesh holding several wheels (both sides of an axle, or all four): split by side and axle around the car's
+// centre (x = 0, z = 0 in `space`), one mesh per quarter, sharing the vertex data.
+function splitWheels(m: THREE.Mesh, space: THREE.Object3D) {
+  const src = m.geometry;
+  const pos = src.getAttribute("position");
+  m.updateMatrixWorld(true);
+  const toSpace = new THREE.Matrix4().copy(space.matrixWorld).invert().multiply(m.matrixWorld);
+  const idx = src.index ? Array.from(src.index.array as ArrayLike<number>) : Array.from({ length: pos.count }, (_, i) => i);
+  const lists: number[][] = [[], [], [], []];
+  for (let i = 0; i + 2 < idx.length; i += 3) {
+    let x = 0;
+    let z = 0;
+    for (let c = 0; c < 3; c++) {
+      _v.fromBufferAttribute(pos, idx[i + c]!).applyMatrix4(toSpace);
+      x += _v.x;
+      z += _v.z;
+    }
+    lists[(x > 0 ? 1 : 0) + (z > 0 ? 2 : 0)]!.push(idx[i]!, idx[i + 1]!, idx[i + 2]!);
+  }
+  const out: THREE.Mesh[] = [];
+  for (const l of lists) {
+    if (!l.length) continue;
+    const g = new THREE.BufferGeometry();
+    for (const [k, a] of Object.entries(src.attributes)) g.setAttribute(k, a);
+    g.setIndex(l);
+    const piece = new THREE.Mesh(g, m.material);
+    piece.position.copy(m.position);
+    piece.quaternion.copy(m.quaternion);
+    piece.scale.copy(m.scale);
+    piece.castShadow = true;
+    m.parent!.add(piece);
+    out.push(piece);
+  }
+  m.parent!.remove(m);
+  return out;
+}
+
 // Swap the drawn body of a rig for the licensed model, keeping the rig (physics, lights) as it is.
 async function upgradeToGlb(rig: CarRig, key: string, color: string) {
   const cfg = GLB[key];
   if (!cfg) return;
   const src = await loadGlb(key);
   const model = src.clone(true);
+  // Files sometimes carry their own lights and baked shadow planes: out.
+  const drop: THREE.Object3D[] = [];
+  model.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if ((o as THREE.Light).isLight || (cfg.drop && m.isMesh && !Array.isArray(m.material) && cfg.drop.test(m.material.name))) drop.push(o);
+  });
+  drop.forEach((o) => o.parent?.remove(o));
   // Lie it along +z, on the ground, at its real length.
   const box = new THREE.Box3().setFromObject(model);
   const size = box.getSize(new THREE.Vector3());
@@ -407,11 +500,26 @@ async function upgradeToGlb(rig: CarRig, key: string, color: string) {
   if (size.y > size.z && size.y > size.x) model.rotation.x = -Math.PI / 2;
   else if (size.x > size.z) model.rotation.y = Math.PI / 2;
   holder.updateMatrixWorld(true);
+  // Wheels named front-left ... rear-right also say which way the car faces.
+  const named: { node: THREE.Object3D; front: boolean }[] = [];
+  if (!cfg.spinNames && !cfg.wheelMat)
+    model.traverse((o) => {
+      const m = WHEEL_NAME.exec(o.name);
+      if (m && !(o as THREE.Mesh).isMesh) named.push({ node: o, front: m[1]!.toUpperCase() === "F" });
+    });
+  let flip = cfg.flip === true;
+  if (cfg.flip === "auto" && named.length) {
+    const zOf = (front: boolean) => {
+      const l = named.filter((n) => n.front === front);
+      return l.reduce((sum, n) => sum + new THREE.Box3().setFromObject(n.node).getCenter(_v).z, 0) / Math.max(1, l.length);
+    };
+    flip = zOf(true) < zOf(false);
+  }
   const b2 = new THREE.Box3().setFromObject(holder);
   const s2 = b2.getSize(new THREE.Vector3());
   const k = cfg.length / Math.max(s2.x, s2.z);
   holder.scale.setScalar(k);
-  if (cfg.flip) holder.rotation.y = Math.PI;
+  if (flip) holder.rotation.y = Math.PI;
   holder.updateMatrixWorld(true);
   const b3 = new THREE.Box3().setFromObject(holder);
   holder.position.set(-(b3.min.x + b3.max.x) / 2, -b3.min.y, -(b3.min.z + b3.max.z) / 2);
@@ -422,29 +530,59 @@ async function upgradeToGlb(rig: CarRig, key: string, color: string) {
     if (!m.isMesh) return;
     m.castShadow = true;
     m.receiveShadow = true;
-    if (!Array.isArray(m.material) && cfg.paint.test(m.material.name)) m.material = paintM;
+    if (cfg.paint && !Array.isArray(m.material) && cfg.paint.test(m.material.name)) m.material = paintM;
   });
-  // Wheels: pivot each named wheel node at its own centre so it can spin (and steer).
   rig.group.add(holder);
   rig.group.updateMatrixWorld(true);
+  // Wheels: each pivots at its own centre (in the car's space) so it can spin (and steer).
   const wheels: CarRig["wheels"] = [];
-  for (const [re, front] of cfg.spinNames) {
-    let node: THREE.Object3D | null = null;
-    model.traverse((o) => !node && re.test(o.name) && (node = o));
-    if (!node) continue;
-    const n = node as THREE.Object3D;
-    const c = new THREE.Box3().setFromObject(n).getCenter(new THREE.Vector3());
+  const pivotFor = (parts: THREE.Object3D[], front: boolean) => {
+    const bb = new THREE.Box3();
+    for (const n of parts) bb.expandByObject(n);
+    const c = rig.group.worldToLocal(bb.getCenter(new THREE.Vector3()));
     const pivot = new THREE.Group();
-    rig.group.worldToLocal(c);
     pivot.position.copy(c);
     rig.group.add(pivot);
     const spin = new THREE.Group();
     pivot.add(spin);
     rig.group.updateMatrixWorld(true);
-    spin.attach(n);
+    for (const n of parts) spin.attach(n);
     wheels.push({ obj: pivot, front, spin });
+  };
+  if (cfg.spinNames)
+    for (const [re, front] of cfg.spinNames) {
+      let node: THREE.Object3D | null = null;
+      model.traverse((o) => {
+        if (!node && re.test(o.name)) node = o;
+      });
+      if (node) pivotFor([node], front);
+    }
+  else if (named.length) for (const n of named) pivotFor([n.node], n.front);
+  else if (cfg.wheelMat) {
+    const found: THREE.Mesh[] = [];
+    model.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (m.isMesh && !Array.isArray(m.material) && cfg.wheelMat!.test(m.material.name)) found.push(m);
+    });
+    const quarters: THREE.Mesh[][] = [[], [], [], []];
+    const centre = (o: THREE.Object3D) => rig.group.worldToLocal(new THREE.Box3().setFromObject(o).getCenter(new THREE.Vector3()));
+    for (const m of found) {
+      const bb = new THREE.Box3().setFromObject(m);
+      const a = rig.group.worldToLocal(bb.min.clone());
+      const b = rig.group.worldToLocal(bb.max.clone());
+      const spans = (Math.min(a.x, b.x) < -0.3 && Math.max(a.x, b.x) > 0.3) || (Math.min(a.z, b.z) < -0.6 && Math.max(a.z, b.z) > 0.6);
+      for (const piece of spans ? splitWheels(m, rig.group) : [m]) {
+        const c = centre(piece);
+        quarters[(c.x > 0 ? 1 : 0) + (c.z > 0 ? 2 : 0)]!.push(piece);
+      }
+    }
+    quarters.forEach((q, i) => {
+      if (q.length) pivotFor(q, i >= 2);
+    });
   }
-  // Hide the drawn body and wheels; the lights stay (they are useful at night). Far away the drawn body comes back
+  // The rest of the model (the body, glass, interior) merged by material: a few draw calls instead of dozens.
+  mergeModel(holder);
+  // Hide the drawn body, its wheels and lamps. Far away the drawn body comes back
   // (the licensed models have hundreds of thousands of triangles; see updateCarDetail).
   const drawn: THREE.Object3D[] = [];
   rig.body.traverse((o) => (o as THREE.Mesh).isMesh && !rig.lights.includes(o as THREE.Mesh) && drawn.push(o));
@@ -458,13 +596,15 @@ async function upgradeToGlb(rig: CarRig, key: string, color: string) {
     for (const o of glbWheels) o.visible = n;
     for (const o of drawn) o.visible = !n;
     for (const o of drawnWheels) o.visible = !n || !glbWheels.length;
+    // The drawn body's lamps would float outside the model: off while it shows (the model has its own).
+    for (const l of rig.lights) (l.userData.off = n), (l.visible = !n);
   };
   setNear(true);
-  DETAILED.add({ group: rig.group, setNear, orphan: 0 });
+  DETAILED.add({ group: rig.group, setNear, orphan: 0, k: cfg.lite ? 2.5 : 1 });
   rig.wheels = wheels.length ? wheels : rig.wheels;
   rig.paint = (c, finish = "metallic") => {
     const next = carPaint(c, finish);
-    model.traverse((o) => {
+    rig.group.traverse((o) => {
       const m = o as THREE.Mesh;
       if (m.isMesh && m.material === paintM) m.material = next;
     });
@@ -478,6 +618,8 @@ export function carRig(model: string, paintColor: string, rims = "#c0c4c8", opts
   if (!style) return null;
   const rig = style === "f2" ? formulaCar(paintColor) : drawnCar(style, paintColor, rims);
   rig.spec = SPECS[model] ?? SPECS[style] ?? SPECS.sedan!;
+  // Scenery merging leaves cars alone (their drawn body and model swap with distance, their wheels spin).
+  rig.group.userData.keep = true;
   if (GLB[model] && opts.detailed !== false) void upgradeToGlb(rig, model, paintColor).catch(() => {});
   return rig;
 }
