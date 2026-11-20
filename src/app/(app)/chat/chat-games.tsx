@@ -8,6 +8,7 @@ import { BotIcon, FlagIcon, Gamepad2Icon, RotateCcwIcon, UsersIcon } from "lucid
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { GAME_ICONS, Place, RPS_ICONS } from "@/components/app/fun/icons";
 import { BOT, CHAT_GAMES, c4Drop, reversiMoves, triviaScores, type GameMeta, type Move, type TriviaQ } from "@/lib/chat-games";
 import { chatGameMoveAction, joinChatGameAction, rematchChatGameAction, resignChatGameAction, startChatGameAction } from "@/app/actions/chat";
 import type { ChatMessage } from "@/server/chat";
@@ -32,7 +33,7 @@ export function GameDialog({ groupId, members, viewerId, direct, onClose, onSent
         <div className="grid grid-cols-3 gap-1.5" role="radiogroup" aria-label="Game">
           {CHAT_GAMES.map((g) => (
             <button key={g.key} type="button" role="radio" aria-checked={game === g.key} onClick={() => (setGame(g.key), !g.bot && opp === BOT && setOpp("open"))} className={cn("flex flex-col items-center gap-1 rounded-lg border p-2 text-center text-xs", game === g.key && "border-primary bg-primary/10")} data-chat-game={g.key}>
-              <span className="text-2xl">{g.emoji}</span>
+              {React.createElement(GAME_ICONS[g.key]!, { className: "size-7" })}
               {g.label}
             </button>
           ))}
@@ -114,7 +115,7 @@ export function GameCard({ m, viewerId, names, onChanged }: { m: ChatMessage; vi
           ? "Draw"
           : g.winner === null
             ? "Finished"
-            : `${nameOf(g.players[g.winner], names, viewerId)} won${g.players[g.winner] === viewerId ? "! 🎉" : ""}`
+            : `${nameOf(g.players[g.winner], names, viewerId)} won${g.players[g.winner] === viewerId ? "!" : ""}`
         : g.game === "trivia" || g.game === "rps"
           ? "Playing"
           : myTurn
@@ -123,7 +124,7 @@ export function GameCard({ m, viewerId, names, onChanged }: { m: ChatMessage; vi
   return (
     <div className="mb-1 w-[19rem] max-w-full space-y-2 rounded-xl bg-background p-2 text-foreground [&_*]:[text-shadow:none]" style={{ color: "var(--foreground)" }} data-game-card={g.game} data-game-status={g.status}>
       <div className="flex items-center gap-1.5 text-xs">
-        <span className="text-base">{def.emoji}</span>
+        {React.createElement(GAME_ICONS[def.key]!, { className: "size-4" })}
         <span className="font-semibold">{def.label}</span>
         {g.game !== "trivia" && g.players.length === 2 && <span className="truncate text-muted-foreground">· {p0} vs {p1}</span>}
       </div>
@@ -223,13 +224,13 @@ function ReversiCard({ g, me, myTurn, onMove }: { g: GameMeta; me: number; myTur
           </button>
         ))}
       </div>
-      <p className="text-[11px] text-muted-foreground">⚫ {n.B} · ⚪ {n.W}{myTurn && !legal.length ? " · no move: you pass" : ""}</p>
+      <p className="text-[11px] text-muted-foreground">Black {n.B} · White {n.W}{myTurn && !legal.length ? " · no move: you pass" : ""}</p>
       {myTurn && !legal.length && <Button size="xs" onClick={() => onMove({ pass: true })}>Pass</Button>}
     </div>
   );
 }
 
-const RPS = { rock: "✊", paper: "✋", scissors: "✌️" } as const;
+const RPS = { rock: "Rock", paper: "Paper", scissors: "Scissors" } as const;
 function RpsCard({ g, me, busy, names, viewerId, onMove }: { g: GameMeta; me: number; busy: boolean; names: Record<string, string>; viewerId: string; onMove: (m: Move) => void }) {
   const picks = g.state.picks as (string | null)[];
   const rounds = g.state.rounds as [string, string][];
@@ -284,7 +285,7 @@ function TriviaCard({ g, viewerId, names, busy, onMove }: { g: GameMeta; viewerI
         <ol className="space-y-0.5 text-xs">
           {scores.slice(0, 6).map((s, k) => (
             <li key={s.id} className={cn("flex justify-between rounded px-1.5", s.id === viewerId && "bg-primary/10 font-medium")}>
-              <span>{["🥇", "🥈", "🥉"][k] ?? `${k + 1}.`} {nameOf(s.id, names, viewerId)}</span>
+              <span><Place n={k + 1} /> {nameOf(s.id, names, viewerId)}</span>
               <span className="tabular-nums">{s.score}/{qs.length}</span>
             </li>
           ))}

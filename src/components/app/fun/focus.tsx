@@ -12,6 +12,7 @@ import * as F from "@/app/actions/fun";
 import { PERSONAS, QUIZ, parseYouTube, personaFrom, ytEmbed } from "@/lib/focus";
 import type { FocusPrefs } from "@/server/fun";
 import { usePlayer } from "./player";
+import { PERSONA_ICONS } from "./icons";
 
 // Focus mode: a timer (focus, then a break), music for the person's persona (free music, or YouTube: their own
 // playlists after signing in when Admin set it up, or any playlist link), and the page quietens while focusing
@@ -199,7 +200,7 @@ export function FocusTab({ initial, youtubeOn, clientId }: { initial: { persona:
     const found = personaFrom(quiz);
     return (
       <div className="space-y-3 text-center" data-focus-result>
-        <p className="text-5xl">{found.emoji}</p>
+        <p className="flex justify-center">{React.createElement(PERSONA_ICONS[found.key]!, { className: "size-14 text-primary" })}</p>
         <p className="text-lg font-semibold">You are a {found.label}</p>
         <p className="text-sm text-muted-foreground">{found.about}</p>
         <div className="flex justify-center gap-2">
@@ -256,7 +257,7 @@ export function FocusTab({ initial, youtubeOn, clientId }: { initial: { persona:
       {p && (
         <section className="space-y-2">
           <div className="flex items-center gap-2">
-            <span className="text-2xl">{p.emoji}</span>
+            <span className="text-primary">{React.createElement(PERSONA_ICONS[p.key]!, { className: "size-7" })}</span>
             <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold">{p.label}</p>
               <p className="text-xs text-muted-foreground">{p.about}</p>

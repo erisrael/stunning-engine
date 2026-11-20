@@ -411,7 +411,7 @@ export async function connectSystemBot(user: AppUser, appId: string, token: stri
   if (!hook.ok) throw new WorkflowError("VALIDATION", "Telegram could not reach this site. It needs a public https address.");
   const bot = (me.result as { username?: string } | undefined)?.username ?? null;
   await run("UPDATE sup_apps SET tg_token = ?, tg_secret = ?, tg_bot = ?, tg_origin = ? WHERE id = ?", await seal(t), secret, bot, origin, appId);
-  await poster(`https://api.telegram.org/bot${t}/setMyCommands`, { commands: [...BOT_COMMANDS, { command: "feedback", description: "💬 Send feedback" }] }).catch(() => null);
+  await poster(`https://api.telegram.org/bot${t}/setMyCommands`, { commands: [...BOT_COMMANDS, { command: "feedback", description: "Send feedback" }] }).catch(() => null);
   await poster(`https://api.telegram.org/bot${t}/setMyShortDescription`, { short_description: BOT_ABOUT }).catch(() => null);
   await poster(`https://api.telegram.org/bot${t}/setMyDescription`, { description: BOT_DESCRIPTION }).catch(() => null);
   await audit({ actor: user }, { action: "support.telegram", summary: `${user.name} connected the bot @${bot} to ${a.name}` });
@@ -482,15 +482,15 @@ ${am}`);
 
 // The bot's command list and its profile texts (what people see before pressing Start).
 const BOT_COMMANDS = [
-  { command: "start", description: "🏠 Main menu" },
-  { command: "menu", description: "🏠 Main menu" },
-  { command: "requests", description: "📋 My open requests" },
-  { command: "history", description: "🕘 Earlier conversations" },
-  { command: "language", description: "🌐 English or Amharic" },
-  { command: "phone", description: "📲 Share my phone number" },
+  { command: "start", description: "Main menu" },
+  { command: "menu", description: "Main menu" },
+  { command: "requests", description: "My open requests" },
+  { command: "history", description: "Earlier conversations" },
+  { command: "language", description: "English or Amharic" },
+  { command: "phone", description: "Share my phone number" },
 ];
-const BOT_ABOUT = "🌱 Myseed support: answers, help articles, live chat and calls with our team. Press Start to begin.";
-const BOT_DESCRIPTION = "👋 Welcome to Myseed support!\n\n💬 Chat with our team\n📞 Call us from Telegram\n💡 Quick answers to common questions\n📋 Follow your requests\n🌐 English and አማርኛ\n\nPress Start below.";
+const BOT_ABOUT = "Myseed support: answers, help articles, live chat and calls with our team. Press Start to begin.";
+const BOT_DESCRIPTION = "Welcome to Myseed support!\n\nChat with our team\nCall us from Telegram\nQuick answers to common questions\nFollow your requests\nEnglish and አማርኛ\n\nPress Start below.";
 
 async function telegramSend(chatId: string, text: string, extra: Record<string, unknown> = {}) {
   await api("sendMessage", { chat_id: chatId, text: text.slice(0, 4000), ...extra });
@@ -527,32 +527,27 @@ const backRow = async (x: TelegramTexts) => [deco({ text: await btn(x, "button.m
 type Btn = { text: string; callback_data?: string; web_app?: { url: string }; url?: string };
 const L = (x: TelegramTexts, en: string, am: string) => (x.lang === "am" ? am : x.lang === "en" ? en : `${en} · ${am}`).slice(0, 64);
 const SUBMENUS = {
-  help: ["🆘 Get help", "🆘 እርዳታ ያግኙ"],
-  mine: ["📋 My requests", "📋 የእኔ ጥያቄዎች"],
-  more: ["📚 Resources", "📚 መረጃዎች"],
-  call: ["📞 Call us", "📞 ይደውሉልን"],
-  settings: ["⚙️ Settings", "⚙️ ቅንብሮች"],
+  help: ["Get help", "እርዳታ ያግኙ"],
+  mine: ["My requests", "የእኔ ጥያቄዎች"],
+  more: ["Resources", "መረጃዎች"],
+  call: ["Call us", "ይደውሉልን"],
+  settings: ["Settings", "ቅንብሮች"],
 } as const;
 
-// Buttons look friendlier with a picture: one by what the button does, unless its label already starts with one.
-const STARTS_WITH_EMOJI = /^\p{Extended_Pictographic}/u;
 function deco<T extends Btn>(b: T): T {
-  const t = b.text.trim();
-  if (STARTS_WITH_EMOJI.test(t)) return b;
-  const d = (b as { callback_data?: string }).callback_data ?? "";
-  const icon = "web_app" in b ? (d === "cn" || /call|ደውሉ/i.test(t) ? "📞" : "📱") : "url" in b ? "🔗" : d === "lang" ? "🌐" : d === "ph" ? "📲" : d === "cn" || d === "cb" ? "📞" : d === "f" ? "💬" : d === "ro" ? "🔄" : d === "mn:faq" ? "❓" : d === "mn:requests" ? "📋" : d === "mn:history" ? "🕘" : d === "mn:contact" ? "✉️" : d.startsWith("c:") ? "💡" : d === "m" ? "🏠" : "✨";
-  return { ...b, text: `${icon} ${t}` };
+  // Plain labels: the product uses no emojis (monochrome icons only, tests/server/no-emoji.test.ts).
+  return b;
 }
 
-// "Good morning, Almaz 👋" and whether someone can answer now, above the menu.
+// "Good morning, Almaz " and whether someone can answer now, above the menu.
 async function greeting(x: TelegramTexts, name?: string | null) {
   const h = Number(new Intl.DateTimeFormat("en-GB", { hour: "numeric", hour12: false, timeZone: "Africa/Addis_Ababa" }).format(new Date()));
   const part = h < 12 ? ["Good morning", "እንደምን አደሩ"] : h < 18 ? ["Good afternoon", "እንደምን ዋሉ"] : ["Good evening", "እንደምን አመሹ"];
   const first = (name ?? "").trim().split(/\s+/)[0];
   const online = await get<{ n: number }>("SELECT COUNT(*) AS n FROM sup_agents WHERE status = 'online' AND last_seen_at >= ?", new Date(Date.now() - 5 * 60e3).toISOString()).catch(() => null);
   const live = Number(online?.n ?? 0) > 0;
-  const hello = `${L(x, part[0]!, part[1]!)}${first ? `, ${first}` : ""} 👋`;
-  const status = live ? L(x, "🟢 Our team is online now and answers quickly.", "🟢 ቡድናችን አሁን በመስመር ላይ ነው፤ በፍጥነት ይመልሳል።") : L(x, "🌙 We are away right now; write to us and we answer as soon as we are back.", "🌙 አሁን ከመስመር ውጭ ነን፤ ይጻፉልን፣ እንደተመለስን እንመልሳለን።");
+  const hello = `${L(x, part[0]!, part[1]!)}${first ? `, ${first}` : ""}!`;
+  const status = live ? L(x, "Our team is online now and answers quickly.", "ቡድናችን አሁን በመስመር ላይ ነው፤ በፍጥነት ይመልሳል።") : L(x, "We are away right now; write to us and we answer as soon as we are back.", "አሁን ከመስመር ውጭ ነን፤ ይጻፉልን፣ እንደተመለስን እንመልሳለን።");
   return `${hello}\n${status}`;
 }
 type Submenu = keyof typeof SUBMENUS;
@@ -603,7 +598,7 @@ async function sendMenu(chat: string, x: TelegramTexts, name?: string | null) {
   add("settings");
   const rows: Btn[][] = [];
   // The support app first and full width: it is the richest way in (chat, calls, help articles).
-  if (appUrl) rows.push([{ text: `✨ ${await btn(x, "button.open_app")}`, web_app: { url: appUrl } }]);
+  if (appUrl) rows.push([{ text: `${await btn(x, "button.open_app")}`, web_app: { url: appUrl } }]);
   const dec = top.map(deco);
   for (let i = 0; i < dec.length; i += 2) rows.push(dec.slice(i, i + 2));
   const welcome = (await sayKey(x, "welcome")) || say(x, x.welcome, x.welcomeAm);
@@ -616,22 +611,22 @@ async function sendSubmenu(chat: string, x: TelegramTexts, key: Submenu) {
   const list = parts[key] ?? [];
   if (!list.length) return sendMenu(chat, x);
   const intro: Record<Submenu, [string, string]> = {
-    help: ["🆘 What do you need help with? Pick a topic:", "🆘 በምን እንርዳዎ? ርዕስ ይምረጡ፦"],
-    mine: ["📋 Your conversations with us:", "📋 ከእኛ ጋር ያደረጓቸው ውይይቶች፦"],
-    more: ["📚 Resources, forms and links:", "📚 መረጃዎች፣ ቅጾች እና ማገናኛዎች፦"],
-    call: ["📞 Talk to us:", "📞 ያነጋግሩን፦"],
-    settings: ["⚙️ Your settings:", "⚙️ ቅንብሮችዎ፦"],
+    help: ["What do you need help with? Pick a topic:", "በምን እንርዳዎ? ርዕስ ይምረጡ፦"],
+    mine: ["Your conversations with us:", "ከእኛ ጋር ያደረጓቸው ውይይቶች፦"],
+    more: ["Resources, forms and links:", "መረጃዎች፣ ቅጾች እና ማገናኛዎች፦"],
+    call: ["Talk to us:", "ያነጋግሩን፦"],
+    settings: ["Your settings:", "ቅንብሮችዎ፦"],
   };
   await telegramSend(chat, L(x, intro[key][0], intro[key][1]), { reply_markup: { inline_keyboard: [...list.map((b) => [deco(b)]), await backRow(x)] } });
 }
 
 const STATUS_WORDS: Record<string, [string, string]> = {
-  new: ["📨 Received", "📨 ደርሷል"],
-  open: ["⏳ In progress", "⏳ በሂደት ላይ"],
-  pending: ["💬 Waiting for your answer", "💬 መልስዎን እየጠበቅን ነው"],
-  on_hold: ["⏸️ On hold", "⏸️ ተይዟል"],
-  solved: ["✅ Solved", "✅ ተፈቷል"],
-  closed: ["📁 Closed", "📁 ተዘግቷል"],
+  new: ["Received", "ደርሷል"],
+  open: ["In progress", "በሂደት ላይ"],
+  pending: ["Waiting for your answer", "መልስዎን እየጠበቅን ነው"],
+  on_hold: ["On hold", "ተይዟል"],
+  solved: ["Solved", "ተፈቷል"],
+  closed: ["Closed", "ተዘግቷል"],
 };
 const statusWord = (x: TelegramTexts, s: string) => {
   const [en, am] = STATUS_WORDS[s] ?? [s, s];
@@ -651,7 +646,7 @@ async function sendRequests(chat: string, x: TelegramTexts, customerId: string, 
   );
   if (!list.length) return telegramSend(chat, await sayKey(x, earlier ? "history.none" : "requests.none"), { reply_markup: { inline_keyboard: [await backRow(x)] } });
   const day = (iso: string) => new Date(iso).toLocaleDateString("en-GB", { day: "2-digit", month: "short", timeZone: "Africa/Addis_Ababa" });
-  const lines = list.map((t) => `🎫 #${t.number} · ${t.subject.slice(0, 60)}\n      ${statusWord(x, t.status)} · 📅 ${day(t.updated_at)}`);
+  const lines = list.map((t) => `#${t.number} · ${t.subject.slice(0, 60)}\n   ${statusWord(x, t.status)} · ${day(t.updated_at)}`);
   const rows: { text: string; callback_data: string }[][] = [];
   if (!earlier) rows.push([{ text: await btn(x, "button.transfer"), callback_data: "tr" }, { text: await btn(x, "button.close"), callback_data: "cl" }]);
   else if (await reopenableOf(customerId)) rows.push([{ text: await btn(x, "button.reopen"), callback_data: "ro" }]);
@@ -838,7 +833,7 @@ export async function askTelegramRating(ticketId: string) {
     const x = await withLang(await telegramTexts(), t.customer_id!);
     const am = x.lang === "am";
     const q = am ? `${agent ? `${agent} የሰጠዎት` : "የተሰጠዎት"} እርዳታ እንዴት ነበር? (ውይይት #${t.number})` : `How was the help${agent ? ` from ${agent}` : ""}? (conversation #${t.number})`;
-    const rows = [5, 4, 3, 2, 1].map((k) => [{ text: `${"★".repeat(k)}${"☆".repeat(5 - k)}  ${am ? STAR_WORDS[k - 1]![1] : STAR_WORDS[k - 1]![0]}`, callback_data: `rt:${t.id}:${k}`.slice(0, 64) }]);
+    const rows = [5, 4, 3, 2, 1].map((k) => [{ text: `${"".repeat(k)}${"".repeat(5 - k)}  ${am ? STAR_WORDS[k - 1]![1] : STAR_WORDS[k - 1]![0]}`, callback_data: `rt:${t.id}:${k}`.slice(0, 64) }]);
     await telegramSend(chat, q, { reply_markup: { inline_keyboard: rows } });
   };
   const sys = await systemBot(c.app_id);

@@ -237,24 +237,24 @@ export function levelOf(earned: number) {
 // ------------------------------------------------------------------------------------------------- pet
 
 export const PET_KINDS = [
-  { key: "cat", label: "Cat", emoji: "🐱" },
-  { key: "dog", label: "Puppy", emoji: "🐶" },
-  { key: "fox", label: "Fox", emoji: "🦊" },
-  { key: "panda", label: "Panda", emoji: "🐼" },
-  { key: "dragon", label: "Dragon", emoji: "🐲" },
-  { key: "robot", label: "Robot", emoji: "🤖" },
-  { key: "owl", label: "Owl", emoji: "🦉" },
-  { key: "bunny", label: "Bunny", emoji: "🐰" },
+  { key: "cat", label: "Cat" },
+  { key: "dog", label: "Puppy" },
+  { key: "fox", label: "Fox" },
+  { key: "panda", label: "Panda" },
+  { key: "dragon", label: "Dragon" },
+  { key: "robot", label: "Robot" },
+  { key: "owl", label: "Owl" },
+  { key: "bunny", label: "Bunny" },
 ] as const;
 // Things the pet wears, unlocked by level.
 export const PET_ITEMS = [
-  { key: "none", label: "Nothing", emoji: "", level: 1 },
-  { key: "bow", label: "Bow", emoji: "🎀", level: 2 },
-  { key: "cap", label: "Cap", emoji: "🧢", level: 3 },
-  { key: "glasses", label: "Sunglasses", emoji: "🕶️", level: 4 },
-  { key: "crown", label: "Crown", emoji: "👑", level: 6 },
-  { key: "headphones", label: "Headphones", emoji: "🎧", level: 8 },
-  { key: "wizard", label: "Wizard hat", emoji: "🧙", level: 10 },
+  { key: "none", label: "Nothing", level: 1 },
+  { key: "bow", label: "Bow", level: 2 },
+  { key: "cap", label: "Cap", level: 3 },
+  { key: "glasses", label: "Sunglasses", level: 4 },
+  { key: "crown", label: "Crown", level: 6 },
+  { key: "headphones", label: "Headphones", level: 8 },
+  { key: "wizard", label: "Wizard hat", level: 10 },
 ] as const;
 
 type PetRow = { user_id: string; kind: string; name: string; outfit: string; fed_at: string | null; played_at: string | null; petted_at: string | null; created_at: string };

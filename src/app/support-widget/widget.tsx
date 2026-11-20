@@ -354,7 +354,6 @@ export function SupportWidget({ appKey: givenKey, initialUser, waitForParent, te
         <header className="relative mx-3 mt-3 mb-1 overflow-hidden rounded-[calc(var(--radius)+12px)] px-4 pt-4 pb-5 text-white shadow-md" style={{ background: `linear-gradient(135deg, ${color}, color-mix(in oklab, ${color} 55%, #7c3aed))` }} data-header="home">
           <span aria-hidden className="pointer-events-none absolute -top-10 -right-8 size-36 rounded-full bg-white/15" />
           <span aria-hidden className="pointer-events-none absolute -bottom-12 -left-6 size-28 rounded-full bg-white/10" />
-          <span aria-hidden className="pointer-events-none absolute top-3 right-24 text-lg opacity-70 motion-safe:animate-bounce">✨</span>
           <div className="relative flex items-center gap-3">
             <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-white/20 text-lg font-bold backdrop-blur" aria-hidden>
               {brandName.slice(0, 1).toUpperCase()}
@@ -367,7 +366,7 @@ export function SupportWidget({ appKey: givenKey, initialUser, waitForParent, te
                 {(() => {
                   const h = new Date().getHours();
                   const g = am ? (h < 12 ? "እንደምን አደሩ" : h < 18 ? "እንደምን ዋሉ" : "እንደምን አመሹ") : h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
-                  return `${g}${first ? `, ${first}` : ""} 👋`;
+                  return `${g}${first ? `, ${first}` : ""}!`;
                 })()}
               </p>
             </div>

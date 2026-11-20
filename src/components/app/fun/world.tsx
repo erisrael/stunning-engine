@@ -10,21 +10,22 @@ import { cn } from "@/lib/utils";
 import * as F from "@/app/actions/fun";
 import type { Look, Resident, Status } from "@/server/fun-world";
 import { useScores } from "./shell";
+import { EMOTE_ICONS } from "./icons";
 
 // Seed Town: a small 3D world (three.js). Department workspaces with a desk for each colleague, a row of homes, a
 // plaza with gems to collect. Colleagues stand at their desk while working and at home when away, with their status
 // and the day's progress over their head. People in the world walk, chat and wave together. Keyboard (WASD or
 // arrows, Space to jump), mouse drag to look around, and on phones a joystick, a jump button and drag to look.
 
-const STATUS: Record<Status, { label: string; color: string; emoji: string }> = {
-  working: { label: "Working", color: "#22c55e", emoji: "💻" },
-  idle: { label: "Idle", color: "#eab308", emoji: "💤" },
-  break: { label: "On a break", color: "#38bdf8", emoji: "☕" },
-  online: { label: "Online", color: "#22c55e", emoji: "🟢" },
-  left: { label: "Gone home", color: "#94a3b8", emoji: "🏠" },
-  leave: { label: "On leave", color: "#a855f7", emoji: "🧳" },
-  absent: { label: "Absent", color: "#ef4444", emoji: "❗" },
-  away: { label: "Away", color: "#94a3b8", emoji: "🌙" },
+const STATUS: Record<Status, { label: string; color: string }> = {
+  working: { label: "Working", color: "#22c55e" },
+  idle: { label: "Idle", color: "#eab308" },
+  break: { label: "On a break", color: "#38bdf8" },
+  online: { label: "Online", color: "#22c55e" },
+  left: { label: "Gone home", color: "#94a3b8" },
+  leave: { label: "On leave", color: "#a855f7" },
+  absent: { label: "Absent", color: "#ef4444" },
+  away: { label: "Away", color: "#94a3b8" },
 };
 const AT_DESK: Status[] = ["working", "idle", "online"];
 const DEPT_COLORS = ["#60a5fa", "#f472b6", "#34d399", "#fbbf24", "#a78bfa", "#fb923c", "#22d3ee", "#f87171", "#84cc16", "#e879f9", "#2dd4bf", "#facc15"];
@@ -301,7 +302,7 @@ export function SeedTown({ big = false }: { big?: boolean }) {
     // Colleagues where they are now.
     type Avatar = { id: string; obj: THREE.Group; tag: THREE.Sprite; bubble: THREE.Sprite | null; bubbleText: string; target: THREE.Vector3; ry: number; moving: boolean; emote: string; resident?: Resident; live: boolean };
     const avatars = new Map<string, Avatar>();
-    const tagFor = (r: Resident | null, name: string) => (r ? label([name, `${STATUS[r.status].emoji} ${STATUS[r.status].label}`], { bar: r.progress, color: STATUS[r.status].color }) : label([name, "In town"], { color: "#86efac" }));
+    const tagFor = (r: Resident | null, name: string) => (r ? label([name, STATUS[r.status].label], { bar: r.progress, color: STATUS[r.status].color }) : label([name, "In town"], { color: "#86efac" }));
     const addAvatar = (id: string, name: string, look: Look, at: THREE.Vector3, r: Resident | null, live: boolean) => {
       const obj = character(look);
       obj.position.copy(at);
@@ -591,7 +592,7 @@ export function SeedTown({ big = false }: { big?: boolean }) {
         <div ref={box} className="absolute inset-0" aria-label="Seed Town: walk with WASD or the arrow keys, Space to jump, drag to look around" data-world-canvas />
         {/* Top bar: who is here, gems, people, dress up, full screen. */}
         <div className="pointer-events-none absolute top-2 right-2 left-2 flex items-start justify-between gap-2 text-xs">
-          <span className="pointer-events-auto rounded-full bg-black/55 px-2.5 py-1 font-medium text-white">🟢 {online} in town · 💎 {gems}</span>
+          <span className="pointer-events-auto rounded-full bg-black/55 px-2.5 py-1 font-medium text-white">{online} in town · {gems} gems</span>
           <span className="pointer-events-auto flex gap-1">
             <Button size="icon" variant="secondary" className="size-8 rounded-full bg-white/85" aria-label="People" title="Who is where" onClick={() => setPeople(!people)} data-world-people>
               <UsersIcon />
@@ -612,9 +613,9 @@ export function SeedTown({ big = false }: { big?: boolean }) {
         </div>
         {/* Emotes. */}
         <div className="absolute right-2 bottom-24 flex flex-col gap-1 sm:bottom-2">
-          {[["wave", "👋"], ["cheer", "🙌"], ["dance", "💃"], ["jump", "⬆️"]].map(([k, e]) => (
-            <button key={k} type="button" onClick={() => api.current?.emote(k!)} className="size-9 rounded-full bg-white/85 text-lg shadow" aria-label={k} data-emote={k}>
-              {e}
+          {["wave", "cheer", "dance", "jump"].map((k) => (
+            <button key={k} type="button" onClick={() => api.current?.emote(k)} className="flex size-9 items-center justify-center rounded-full bg-white/85 shadow" aria-label={k} title={k} data-emote={k}>
+              {React.createElement(EMOTE_ICONS[k]!, { className: "size-4" })}
             </button>
           ))}
         </div>
@@ -625,13 +626,13 @@ export function SeedTown({ big = false }: { big?: boolean }) {
               <p className="font-semibold">Who is where</p>
               <button type="button" aria-label="Close" onClick={() => setPeople(false)}><XIcon className="size-4" /></button>
             </div>
-            <p className="mb-2 text-muted-foreground">{Object.entries(counts).map(([k, n]) => `${STATUS[k as Status].emoji} ${n} ${STATUS[k as Status].label.toLowerCase()}`).join(" · ")}</p>
+            <p className="mb-2 text-muted-foreground">{Object.entries(counts).map(([k, n]) => `${n} ${STATUS[k as Status].label.toLowerCase()}`).join(" · ")}</p>
             {(["working", "online", "idle", "break", ...(home.seesAbsence ? (["absent", "leave"] as Status[]) : []), "left", "away"] as Status[]).map((st) => {
               const list = home.residents.filter((r) => r.status === st);
               if (!list.length) return null;
               return (
                 <div key={st} className="mb-2">
-                  <p className="font-medium" style={{ color: STATUS[st].color }}>{STATUS[st].emoji} {STATUS[st].label} ({list.length})</p>
+                  <p className="font-medium" style={{ color: STATUS[st].color }}>{STATUS[st].label} ({list.length})</p>
                   {list.map((r) => (
                     <button key={r.id} type="button" className="flex w-full items-center gap-1 rounded px-1 py-0.5 text-left hover:bg-muted" onClick={() => (api.current?.goTo(r.id), setCard(r))}>
                       <span className="flex-1 truncate">{r.name}</span>
@@ -652,7 +653,7 @@ export function SeedTown({ big = false }: { big?: boolean }) {
               </div>
               <button type="button" aria-label="Close" onClick={() => setCard(null)}><XIcon className="size-4" /></button>
             </div>
-            <p className="mt-1 text-xs" style={{ color: STATUS[card.status].color }}>{STATUS[card.status].emoji} {STATUS[card.status].label}</p>
+            <p className="mt-1 text-xs" style={{ color: STATUS[card.status].color }}>{STATUS[card.status].label}</p>
             <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-[#22c55e]" style={{ width: `${card.progress}%` }} /></div>
             <p className="mt-0.5 text-[11px] text-muted-foreground">Today&apos;s progress {card.progress}%</p>
             <div className="mt-2 flex gap-1">
@@ -670,7 +671,7 @@ export function SeedTown({ big = false }: { big?: boolean }) {
         </form>
       )}
       <p className="text-[11px] text-muted-foreground">
-        Walk: WASD or arrows (joystick on phones) · Jump: Space · Look: drag · Tap someone to see them · Collect 💎 in the plaza. Workspaces are north, homes south.
+        Walk: WASD or arrows (joystick on phones) · Jump: Space · Look: drag · Tap someone to see them · Collect the purple gems in the plaza. Workspaces are north, homes south.
       </p>
       {best?.mine ? <p className="text-[11px] text-muted-foreground">Your best: {best.mine} gems in one visit.</p> : null}
     </div>
@@ -712,8 +713,8 @@ function TouchControls({ api }: { api: React.RefObject<{ joy: (x: number, y: num
   );
 }
 
-const HATS: [Look["hat"], string][] = [["none", "Hair"], ["cap", "🧢 Cap"], ["beanie", "🧶 Beanie"], ["crown", "👑 Crown"], ["halo", "😇 Halo"], ["horns", "😈 Horns"]];
-const FACES: [Look["face"], string][] = [["smile", "🙂"], ["cool", "😎"], ["wink", "😉"], ["calm", "😐"]];
+const HATS: [Look["hat"], string][] = [["none", "Hair"], ["cap", "Cap"], ["beanie", "Beanie"], ["crown", "Crown"], ["halo", "Halo"], ["horns", "Horns"]];
+const FACES: [Look["face"], string][] = [["smile", "Smile"], ["cool", "Cool"], ["wink", "Wink"], ["calm", "Calm"]];
 const SKINS = ["#f9d7b5", "#f2c9a0", "#d9a07a", "#b97d55", "#8d5a3b", "#5c3a26"];
 
 function DressUp({ look, onClose, onSaved }: { look: Look; onClose: () => void; onSaved: (l: Look) => void }) {

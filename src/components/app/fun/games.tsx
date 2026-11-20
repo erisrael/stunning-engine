@@ -4,6 +4,8 @@ import * as React from "react";
 import { ArrowDownIcon, ArrowLeftIcon, ArrowRightIcon, ArrowUpIcon, FlagIcon, RotateCcwIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { BombIcon } from "lucide-react";
+import { MEMORY_ICONS } from "./icons";
 import { ScoreBoard, cellGrid, useScores } from "./shell";
 
 // Small games for breaks. Each keeps the person's best score (shell.tsx); none earns points.
@@ -187,10 +189,10 @@ export function Snake() {
 }
 
 // ------------------------------------------------------------------------------------------------- Memory
-const FACES = ["🍎", "🚀", "🎧", "🦊", "🌵", "⚽", "🎲", "🍩", "🐳", "🌻"];
+const FACES = [0, 1, 2, 3, 4, 5, 6, 7];
 export function Memory() {
   const deal = () => [...FACES.slice(0, 8), ...FACES.slice(0, 8)].sort(() => Math.random() - 0.5);
-  const [cards, setCards] = React.useState<string[]>(deal);
+  const [cards, setCards] = React.useState<number[]>(deal);
   const [open, setOpen] = React.useState<number[]>([]);
   const [done, setDone] = React.useState<Set<number>>(new Set());
   const [moves, setMoves] = React.useState(0);
@@ -230,8 +232,8 @@ export function Memory() {
         {cards.map((c, i) => {
           const up = open.includes(i) || done.has(i);
           return (
-            <button key={i} type="button" onClick={() => flip(i)} aria-label={up ? c : "Hidden card"} className={cn("flex aspect-square items-center justify-center rounded-lg border text-2xl transition-all duration-300", up ? "bg-card [transform:rotateY(0)]" : "bg-primary/80 [transform:rotateY(180deg)]", done.has(i) && "opacity-60")}>
-              {up ? c : ""}
+            <button key={i} type="button" onClick={() => flip(i)} aria-label={up ? `Card ${c + 1}` : "Hidden card"} className={cn("flex aspect-square items-center justify-center rounded-lg border text-2xl transition-all duration-300", up ? "bg-card [transform:rotateY(0)]" : "bg-primary/80 [transform:rotateY(180deg)]", done.has(i) && "opacity-60")}>
+              {up ? React.createElement(MEMORY_ICONS[c]!, { className: "size-6" }) : ""}
             </button>
           );
         })}
@@ -319,7 +321,7 @@ export function Minesweeper() {
             className={cn("flex aspect-square items-center justify-center rounded-sm text-sm font-bold", c.open ? (c.mine ? "bg-[#ea4335] text-white" : "bg-background") : "bg-primary/25 hover:bg-primary/35", COL[c.n])}
             aria-label={c.open ? (c.mine ? "Mine" : String(c.n || "Empty")) : c.flag ? "Flagged" : "Hidden"}
           >
-            {c.open ? (c.mine ? "💣" : c.n || "") : c.flag ? "🚩" : ""}
+            {c.open ? (c.mine ? <BombIcon className="size-4" /> : c.n || "") : c.flag ? <FlagIcon className="size-4 text-[#d93025]" /> : ""}
           </button>
         ))}
       </div>

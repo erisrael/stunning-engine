@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import * as F from "@/app/actions/fun";
 import { PlayerProvider, usePlayer } from "./player";
 import { MusicTab, NowPlaying } from "./music";
+import { GAME_ICONS } from "./icons";
 import { FocusProvider, FocusTab, useFocus } from "./focus";
 
 // Fun mode: a side window (like the assistant's) with music, games, a pet and morale boosters. Opened from the top
@@ -48,7 +49,6 @@ const GAMES: Record<string, React.ComponentType> = {
   typing: G("Typing"),
   reaction: G("Reaction"),
 };
-const GAME_ICON: Record<string, string> = { world: "🏙️", chess: "♟️", "chess-learn": "🎓", sudoku: "🔢", "2048": "🧩", snake: "🐍", memory: "🃏", minesweeper: "💣", tictactoe: "⭕", wordguess: "🔤", typing: "⌨️", reaction: "⚡" };
 
 const PetTab = dynamic(() => import("./pet").then((m) => m.PetTab), { ssr: false, loading: Loading });
 const BoostTab = dynamic(() => import("./boost").then((m) => m.BoostTab), { ssr: false, loading: Loading });
@@ -245,7 +245,7 @@ function FunWindow({ standalone = false }: { standalone?: boolean }) {
                     <div className="grid grid-cols-2 gap-2">
                       {home.config.games.map((g) => (
                         <button key={g.key} type="button" disabled={!gamesOpen} onClick={() => setGame(g.key)} className="flex flex-col items-start gap-1 rounded-xl border bg-card p-3 text-left transition-all hover:-translate-y-0.5 hover:shadow-md disabled:opacity-50" data-fun-game={g.key}>
-                          <span className="text-2xl">{GAME_ICON[g.key]}</span>
+                          {React.createElement(GAME_ICONS[g.key] ?? GAME_ICONS.chess!, { className: "size-7 text-primary" })}
                           <span className="text-sm font-medium">{g.label}</span>
                           <span className="text-[11px] text-muted-foreground">{g.note}</span>
                         </button>

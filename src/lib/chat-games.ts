@@ -4,12 +4,12 @@
 import { Chess } from "chess.js";
 
 export const CHAT_GAMES = [
-  { key: "chess", label: "Chess", emoji: "♟️", players: 2, bot: true, note: "The classic. Click a piece, then a square." },
-  { key: "tictactoe", label: "Tic-tac-toe", emoji: "⭕", players: 2, bot: true, note: "Three in a row." },
-  { key: "connect4", label: "Connect Four", emoji: "🔴", players: 2, bot: true, note: "Drop discs; four in a line wins." },
-  { key: "reversi", label: "Reversi", emoji: "⚫", players: 2, bot: true, note: "Flip your opponent's discs." },
-  { key: "rps", label: "Rock paper scissors", emoji: "✊", players: 2, bot: true, note: "Best of three; picks stay hidden until both chose." },
-  { key: "trivia", label: "Trivia quiz", emoji: "🧠", players: 0, bot: false, note: "Five questions for the whole chat; the scoreboard shows live." },
+  { key: "chess", label: "Chess", players: 2, bot: true, note: "The classic. Click a piece, then a square." },
+  { key: "tictactoe", label: "Tic-tac-toe", players: 2, bot: true, note: "Three in a row." },
+  { key: "connect4", label: "Connect Four", players: 2, bot: true, note: "Drop discs; four in a line wins." },
+  { key: "reversi", label: "Reversi", players: 2, bot: true, note: "Flip your opponent's discs." },
+  { key: "rps", label: "Rock paper scissors", players: 2, bot: true, note: "Best of three; picks stay hidden until both chose." },
+  { key: "trivia", label: "Trivia quiz", players: 0, bot: false, note: "Five questions for the whole chat; the scoreboard shows live." },
 ] as const;
 export type ChatGameKind = (typeof CHAT_GAMES)[number]["key"];
 export const BOT = "bot";

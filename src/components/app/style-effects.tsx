@@ -7,7 +7,7 @@ import * as React from "react";
 // never with reduced motion or Lite mode, and never on the customer widget or kiosks (they have no style).
 const PRESSABLE = "button, a[href], [role='button'], [role='tab'], [role='menuitem'], [role='radio'], [role='switch'], [role='checkbox'], summary, label";
 const COMIC = ["POW!", "BAM!", "ZAP!", "WHAM!", "BOOM!", "KAPOW!", "BIFF!", "ZOK!"];
-const SPARKS = ["✦", "✿", "♥", "✧", "❀", "★"];
+const SPARKS = ["+", "*", "o", "x", "•", "·"];
 const PASTEL = ["#ff8fc2", "#b28dff", "#7fd6ff", "#ffd36e", "#9ef0c5"];
 
 function spawn(layer: HTMLElement, style: string, x: number, y: number) {

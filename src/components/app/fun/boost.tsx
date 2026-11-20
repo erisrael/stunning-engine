@@ -5,11 +5,12 @@ import { toast } from "sonner";
 import { CoffeeIcon, HeartPulseIcon, MedalIcon, QuoteIcon, TimerIcon, WindIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { MOOD_ICONS, Place } from "./icons";
 import * as F from "@/app/actions/fun";
 
 // Morale boosters: today's mood (the team sees only the spread), the week's points board, how points are earned,
 // a breathing exercise, a stretch-break timer and a thought for the day.
-const MOODS = ["😫", "😕", "😐", "🙂", "🤩"];
+const MOODS = MOOD_ICONS;
 const THOUGHTS = [
   "Done is better than perfect. Ship it, then make it better.",
   "Every expert was once a beginner.",
@@ -74,9 +75,9 @@ export function BoostTab({ home }: { home: Home }) {
         <section className="space-y-1.5">
           <p className="text-sm font-medium">How are you today?</p>
           <div className="flex justify-between">
-            {MOODS.map((m, i) => (
-              <button key={m} type="button" aria-label={`Mood ${i + 1} of 5`} aria-pressed={mood?.mine === i + 1} onClick={async () => { const r = await F.moodAction(i + 1); if (r.ok) (setMood(r.data ?? null), toast.success("Thanks for sharing")); }} className={cn("rounded-full p-1.5 text-3xl transition-transform hover:scale-110", mood?.mine === i + 1 && "bg-primary/15 ring-2 ring-primary")}>
-                {m}
+            {MOODS.map((Mood, i) => (
+              <button key={i} type="button" aria-label={`Mood ${i + 1} of 5`} aria-pressed={mood?.mine === i + 1} onClick={async () => { const r = await F.moodAction(i + 1); if (r.ok) (setMood(r.data ?? null), toast.success("Thanks for sharing")); }} className={cn("rounded-full p-1.5 transition-transform hover:scale-110", mood?.mine === i + 1 && "bg-primary/15 ring-2 ring-primary")}>
+                <Mood className="size-8" />
               </button>
             ))}
           </div>
@@ -127,7 +128,7 @@ export function BoostTab({ home }: { home: Home }) {
             <ol className="space-y-1">
               {board.map((b) => (
                 <li key={b.rank} className={cn("flex items-center gap-2 rounded-lg px-2 py-1 text-sm", b.me ? "bg-primary/10 font-medium" : "bg-muted/40")}>
-                  <span className="w-6 text-center">{b.rank === 1 ? "🥇" : b.rank === 2 ? "🥈" : b.rank === 3 ? "🥉" : b.rank}</span>
+                  <span className="w-6 text-center"><Place n={b.rank} /></span>
                   <span className="flex-1 truncate">{b.name}{b.me ? " (you)" : ""}</span>
                   <span className="tabular-nums">{b.points}</span>
                 </li>

@@ -79,7 +79,7 @@ export async function startGame(user: AppUser, input: { groupId: string; game: s
   };
   const id = uid("msg_");
   const now = nowIso();
-  const body = `${def.emoji} ${def.label}${players[1] === BOT ? " against the bot" : open ? (game === "trivia" ? " for everyone" : ": who will play?") : ""}`;
+  const body = `${def.label}${players[1] === BOT ? " against the bot" : open ? (game === "trivia" ? " for everyone" : ": who will play?") : ""}`;
   await run("INSERT INTO chat_messages (id, group_id, author_id, body, kind, meta, created_at) VALUES (?, ?, ?, ?, 'game', ?, ?)", id, input.groupId, user.id, body, JSON.stringify(meta), now);
   await run("UPDATE chat_groups SET last_message_at = ? WHERE id = ?", now, input.groupId);
   if (players[1] && players[1] !== BOT) await notify([players[1]], { type: "discussion", title: `${user.name} challenges you to ${def.label}`, body: g.name, link: `/chat?g=${input.groupId}`, dedupeKey: `game:${id}` }, now, user.id);

@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { DownloadIcon, LayoutDashboardIcon } from "lucide-react";
+import { DownloadIcon, LayoutDashboardIcon, SparklesIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { FunMode } from "@/components/app/fun/fun-mode";
 
@@ -21,7 +21,7 @@ export function FunApp({ name, on }: { name: string; on: boolean }) {
   return (
     <div className="min-h-dvh bg-gradient-to-b from-primary/10 to-background" data-fun-app>
       <header className="mx-auto flex max-w-3xl items-center gap-2 px-3 py-2">
-        <span className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-[#ff7eb6] via-[#9334E6] to-[#4285F4] text-lg text-white">✨</span>
+        <span className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-[#ff7eb6] via-[#9334E6] to-[#4285F4] text-white"><SparklesIcon className="size-5" /></span>
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold">Myseed Fun</p>
           <p className="truncate text-xs text-muted-foreground">Hi {name.split(" ")[0]}</p>

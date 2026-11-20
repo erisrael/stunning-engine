@@ -4,6 +4,7 @@ import * as React from "react";
 import { toast } from "sonner";
 import { CookieIcon, HandHeartIcon, Loader2Icon, SparklesIcon, VolleyballIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { PET_ICONS, WEAR_ICONS } from "./icons";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import * as F from "@/app/actions/fun";
@@ -11,23 +12,23 @@ import * as F from "@/app/actions/fun";
 // The pet grows with the points work earns: levels unlock things to wear, food costs points, and its mood follows
 // care and today's work.
 const KINDS = [
-  { key: "cat", label: "Cat", emoji: "🐱" },
-  { key: "dog", label: "Puppy", emoji: "🐶" },
-  { key: "fox", label: "Fox", emoji: "🦊" },
-  { key: "panda", label: "Panda", emoji: "🐼" },
-  { key: "dragon", label: "Dragon", emoji: "🐲" },
-  { key: "robot", label: "Robot", emoji: "🤖" },
-  { key: "owl", label: "Owl", emoji: "🦉" },
-  { key: "bunny", label: "Bunny", emoji: "🐰" },
+  { key: "cat", label: "Cat" },
+  { key: "dog", label: "Puppy" },
+  { key: "fox", label: "Fox" },
+  { key: "panda", label: "Panda" },
+  { key: "dragon", label: "Dragon" },
+  { key: "robot", label: "Robot" },
+  { key: "owl", label: "Owl" },
+  { key: "bunny", label: "Bunny" },
 ];
 const ITEMS = [
-  { key: "none", label: "Nothing", emoji: "", level: 1 },
-  { key: "bow", label: "Bow", emoji: "🎀", level: 2 },
-  { key: "cap", label: "Cap", emoji: "🧢", level: 3 },
-  { key: "glasses", label: "Sunglasses", emoji: "🕶️", level: 4 },
-  { key: "crown", label: "Crown", emoji: "👑", level: 6 },
-  { key: "headphones", label: "Headphones", emoji: "🎧", level: 8 },
-  { key: "wizard", label: "Wizard hat", emoji: "🧙", level: 10 },
+  { key: "none", label: "Nothing", level: 1 },
+  { key: "bow", label: "Bow", level: 2 },
+  { key: "cap", label: "Cap", level: 3 },
+  { key: "glasses", label: "Sunglasses", level: 4 },
+  { key: "crown", label: "Crown", level: 6 },
+  { key: "headphones", label: "Headphones", level: 8 },
+  { key: "wizard", label: "Wizard hat", level: 10 },
 ];
 
 type PetData = {
@@ -77,8 +78,8 @@ export function PetTab() {
         <p className="text-sm">Adopt a pet. It grows with the points your work earns, and gets hungry if you forget it.</p>
         <div className="grid grid-cols-4 gap-1.5">
           {KINDS.map((k) => (
-            <button key={k.key} type="button" onClick={() => setKind(k.key)} aria-pressed={kind === k.key} className={cn("flex flex-col items-center rounded-lg border p-2 text-3xl", kind === k.key && "border-primary bg-primary/10")}>
-              {k.emoji}
+            <button key={k.key} type="button" onClick={() => setKind(k.key)} aria-pressed={kind === k.key} className={cn("flex flex-col items-center rounded-lg border p-2", kind === k.key && "border-primary bg-primary/10")}>
+              {React.createElement(PET_ICONS[k.key]!, { className: "size-8" })}
               <span className="mt-1 text-[11px]">{k.label}</span>
             </button>
           ))}
@@ -97,10 +98,10 @@ export function PetTab() {
     <div className="space-y-3" data-fun-pet={p.mood}>
       <div className="relative flex flex-col items-center rounded-2xl bg-gradient-to-b from-primary/15 to-transparent px-3 pt-5 pb-3">
         <p className="mb-1 rounded-full bg-background px-3 py-1 text-xs shadow-xs">{line}</p>
-        <div className={cn("relative text-7xl select-none", p.mood === "joyful" ? "animate-bounce" : p.mood === "sad" ? "opacity-80 grayscale-[.3]" : "motion-safe:animate-[pulse_3s_ease-in-out_infinite]")} aria-label={`${p.name} the ${k.label}, ${p.mood}`}>
-          {k.emoji}
-          {item?.emoji && <span className="absolute -top-4 left-1/2 -translate-x-1/2 text-4xl">{item.emoji}</span>}
-          {fx && <span className="pointer-events-none absolute -top-2 -right-6 animate-ping text-2xl">{fx}</span>}
+        <div className={cn("relative select-none", p.mood === "joyful" ? "animate-bounce" : p.mood === "sad" ? "opacity-80 grayscale-[.3]" : "motion-safe:animate-[pulse_3s_ease-in-out_infinite]")} aria-label={`${p.name} the ${k.label}, ${p.mood}`}>
+          {React.createElement(PET_ICONS[p.kind] ?? PET_ICONS.cat!, { className: "size-24 text-primary" })}
+          {WEAR_ICONS[p.outfit] && <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-background p-1 shadow">{React.createElement(WEAR_ICONS[p.outfit]!, { className: "size-6" })}</span>}
+          {fx && <span className="pointer-events-none absolute -top-2 -right-10 animate-ping text-sm font-semibold text-primary">{fx}</span>}
         </div>
         <p className="mt-2 text-base font-semibold">{p.name}</p>
         <p className="text-xs text-muted-foreground">Level {d.level.level} · {d.points.balance} points to spend</p>
@@ -115,11 +116,11 @@ export function PetTab() {
         <Bar label="Happy" value={p.happiness} tone="bg-[#188038]" />
       </div>
       <div className="grid grid-cols-3 gap-1.5">
-        <Button variant="outline" onClick={() => void act("feed", undefined, "🍖")} title={`Costs ${d.feedCost} points`} data-pet-feed>
+        <Button variant="outline" onClick={() => void act("feed", undefined, "Yum!")} title={`Costs ${d.feedCost} points`} data-pet-feed>
           <CookieIcon /> Feed{d.feedCost ? ` (${d.feedCost})` : ""}
         </Button>
-        <Button variant="outline" onClick={() => void act("play", undefined, "⚽")}><VolleyballIcon /> Play</Button>
-        <Button variant="outline" onClick={() => void act("pet", undefined, "💖")}><HandHeartIcon /> Pet</Button>
+        <Button variant="outline" onClick={() => void act("play", undefined, "Wheee!")}><VolleyballIcon /> Play</Button>
+        <Button variant="outline" onClick={() => void act("pet", undefined, "Purr")}><HandHeartIcon /> Pet</Button>
       </div>
       <div>
         <p className="mb-1 flex items-center gap-1 text-xs font-medium"><SparklesIcon className="size-3.5" /> Things to wear (unlocked by level)</p>
@@ -128,7 +129,7 @@ export function PetTab() {
             const locked = i.level > d.level.level;
             return (
               <button key={i.key} type="button" disabled={locked} onClick={() => void act("outfit", i.key)} title={locked ? `Unlocks at level ${i.level}` : i.label} className={cn("rounded-full border px-2 py-0.5 text-xs", p.outfit === i.key && "border-primary bg-primary/10", locked && "opacity-40")}>
-                {i.emoji || "∅"} {i.label}{locked ? ` · L${i.level}` : ""}
+                {WEAR_ICONS[i.key] ? React.createElement(WEAR_ICONS[i.key]!, { className: "mr-1 inline size-3" }) : null}{i.label}{locked ? ` · L${i.level}` : ""}
               </button>
             );
           })}
