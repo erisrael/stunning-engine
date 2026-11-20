@@ -91,7 +91,7 @@ async function main() {
   check("absences show to HR and Admin only", forAdmin.seesAbsence && !forDawit.seesAbsence && !forDawit.residents.some((r) => r.status === "absent" || r.status === "leave"));
   const s1 = await W.sync(dawit, { x: 5, z: 6, say: "hello town" });
   const s2 = await W.sync(admin, { x: 1, z: 1, emote: "wave" });
-  check("the live room shares positions and chat", s1.p.every((p) => p[0] !== dawit.id) && s2.p.some((p) => p[0] === dawit.id && p[2] === 5 && p[6] === "hello town"));
+  check("the live room shares positions and chat", s1.p.every((p) => p[0] !== dawit.id) && s2.p.some((p) => p[0] === dawit.id && p[2] === 5 && p[4] === 6 && p[7] === "hello town"));
   check("chat is paced", await rejects(W.sync(dawit, { say: "again" })));
   await fun.saveFunConfig(admin, { world: false });
   check("Admin turns Seed Town off", await rejects(W.roster(dawit)));

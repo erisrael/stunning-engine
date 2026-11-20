@@ -685,6 +685,26 @@ PREPS["fun-more"] = async () => {
   return { group, dawitName: d.name };
 };
 
+// Seed Town, the games, the pet and the YouTube player: Admin has coins to spend.
+PREPS["seed-town"] = async () => {
+  await passwordOnly();
+  const a = await admin();
+  await run("INSERT INTO fun_points (id, user_id, points, reason, source, ref, created_at) VALUES (?, ?, 600, 'Test coins', 'grant', 'grant:test', ?)", uid("fp_"), a.id, nowIso());
+  return {};
+};
+
+// Football, the circuit, pets, the 3D editor, two people with voice, a phone.
+PREPS["seed-town-play"] = async () => {
+  await passwordOnly();
+  return {};
+};
+
+// The anime characters: Admin signs in with a password.
+PREPS["seed-town-models"] = async () => {
+  await passwordOnly();
+  return {};
+};
+
 // Admin, Noor access, the new sidebar entries and Finance requests for Admin.
 PREPS["noor-access"] = async () => {
   await passwordOnly();

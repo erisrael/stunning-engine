@@ -1,0 +1,20 @@
+Seed Town 3D characters and animations
+
+Characters (VRM, rigged, with facial expressions)
+- kai.vrm (HairSample_Male), mei.vrm (HairSample_Female): VRoid Project (pixiv Inc.), CC0.
+  https://vroid.pixiv.help/hc/en-us/articles/4402614652569
+- shibu.vrm, bibi.vrm, vita.vrm, victoria.vrm (VRoid Studio alpha AvatarSample D-G), fumiriya.vrm (Sakurada Fumiriya),
+  shino.vrm (Sendagaya Shino): VRoid Project (pixiv Inc.). Embedded terms: anyone may use them, including companies
+  commercially; modification and redistribution allowed; no credit required. Mirror: https://opengameart.org/content/vroid-studio-cc0-models
+- seed.vrm (Seed-san): VirtualCast, Inc., VRM Public License 1.0 (https://vrm.dev/licenses/1.0/): corporate use,
+  modification and redistribution allowed; credit required. Seed-san model by VirtualCast, Inc.
+- aoi.vrm (VRM1_Constraint_Twist_Sample): (c) 2022 pixiv Inc., VRM Public License 1.0: corporate use, modification and
+  redistribution allowed; credit not required.
+  https://github.com/vrm-c/vrm-specification/tree/master/samples
+Textures were re-encoded smaller (WebP, at most 1024 pixels); nothing else was changed.
+
+Animations
+- anims/ual.json: Universal Animation Library by Quaternius (https://quaternius.com), CC0, retargeted to the VRM
+  humanoid skeleton with scripts/retarget-ual.mjs.
+
+Libraries: three.js (MIT), @pixiv/three-vrm (MIT), Rapier (@dimforge/rapier3d-compat, Apache-2.0).

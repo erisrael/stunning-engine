@@ -3,16 +3,17 @@
 import * as React from "react";
 import Script from "next/script";
 import { toast } from "sonner";
-import { ExternalLinkIcon, PauseIcon, PlayIcon, RotateCcwIcon, SquareIcon, TargetIcon } from "lucide-react";
+import { Loader2Icon, PauseIcon, PlayIcon, RotateCcwIcon, SearchIcon, SquareIcon, TargetIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import * as F from "@/app/actions/fun";
-import { PERSONAS, QUIZ, parseYouTube, personaFrom, ytEmbed } from "@/lib/focus";
+import { PERSONAS, QUIZ, parseYouTube, personaFrom } from "@/lib/focus";
 import type { FocusPrefs } from "@/server/fun";
 import { usePlayer } from "./player";
 import { PERSONA_ICONS } from "./icons";
+import { YouTubeResults, useYouTube, useYtSearch } from "./youtube";
 
 // Focus mode: a timer (focus, then a break), music for the person's persona (free music, or YouTube: their own
 // playlists after signing in when Admin set it up, or any playlist link), and the page quietens while focusing
@@ -142,15 +143,21 @@ declare global {
   }
 }
 
-export function FocusTab({ initial, youtubeOn, clientId }: { initial: { persona: string | null; prefs: FocusPrefs; sessions: number; minutes: number }; youtubeOn: boolean; clientId: string }) {
+export function FocusTab({ initial, youtubeOn, clientId, serverSearch = false }: { initial: { persona: string | null; prefs: FocusPrefs; sessions: number; minutes: number }; youtubeOn: boolean; clientId: string; serverSearch?: boolean }) {
   const f = useFocus()!;
   const player = usePlayer();
   const [persona, setPersona] = React.useState(initial.persona);
   const [quiz, setQuiz] = React.useState<number[] | null>(initial.persona ? null : []);
   const [stats, setStats] = React.useState({ sessions: initial.sessions, minutes: initial.minutes });
-  const [yt, setYt] = React.useState<{ list?: string; video?: string } | null>(null);
+  const ytp = useYouTube();
   const [link, setLink] = React.useState("");
+  const [q, setQ] = React.useState("");
+  const [token, setToken] = React.useState<string | null>(null);
   const [mine, setMine] = React.useState<{ id: string; title: string; count?: number }[] | null>(null);
+  const yts = useYtSearch(serverSearch, token);
+  const canSearch = serverSearch || !!token;
+  // Videos and playlists play in the player inside the app (it keeps playing while you work).
+  const setYt = (y: { list?: string; video?: string; title?: string }) => ytp?.play(y);
   const prefs = f.prefs;
   React.useEffect(() => {
     f.setPrefs({ minutes: 25, breakMinutes: 5, ...initial.prefs });
@@ -170,6 +177,7 @@ export function FocusTab({ initial, youtubeOn, clientId }: { initial: { persona:
       scope: "https://www.googleapis.com/auth/youtube.readonly",
       callback: async (r) => {
         if (!r.access_token) return void toast.error("YouTube sign-in was cancelled.");
+        setToken(r.access_token);
         const res = await fetch("https://www.googleapis.com/youtube/v3/playlists?part=snippet,contentDetails&mine=true&maxResults=50", { headers: { Authorization: `Bearer ${r.access_token}` } });
         if (!res.ok) return void toast.error("YouTube did not share your playlists.");
         const j = (await res.json()) as { items?: { id: string; snippet: { title: string }; contentDetails: { itemCount: number } }[] };
@@ -276,10 +284,10 @@ export function FocusTab({ initial, youtubeOn, clientId }: { initial: { persona:
             <div className="flex flex-wrap gap-1">
               {p.youtube.map((y) =>
                 y.video ? (
-                  <Button key={y.label} size="xs" variant="outline" onClick={() => (player?.pause(), setYt({ video: y.video }))}><YoutubeIcon className="text-[#ff0000]" /> {y.label}</Button>
-                ) : (
-                  <a key={y.label} href={`https://www.youtube.com/results?search_query=${encodeURIComponent(y.search)}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs hover:bg-muted"><YoutubeIcon className="size-3.5 text-[#ff0000]" /> {y.label} <ExternalLinkIcon className="size-3" /></a>
-                ),
+                  <Button key={y.label} size="xs" variant="outline" onClick={() => (player?.pause(), setYt({ video: y.video, title: y.label }))} data-focus-yt={y.video}><YoutubeIcon className="text-[#ff0000]" /> {y.label}</Button>
+                ) : canSearch ? (
+                  <Button key={y.label} size="xs" variant="outline" onClick={() => (setQ(y.search), void yts.search(y.search))}><SearchIcon /> {y.label}</Button>
+                ) : null,
               )}
             </div>
           )}
@@ -302,8 +310,15 @@ export function FocusTab({ initial, youtubeOn, clientId }: { initial: { persona:
               <Button size="sm" variant="outline" onClick={signIn} data-youtube-signin><YoutubeIcon className="text-[#ff0000]" /> Sign in to YouTube for your playlists</Button>
             )
           ) : (
-            <p className="text-[11px] text-muted-foreground">Paste a YouTube playlist or video link. Videos play with your YouTube account when you are signed in to YouTube in this browser.</p>
+            <p className="text-[11px] text-muted-foreground">Paste a YouTube playlist or video link. It plays here, in the player at the side, with your YouTube account when you are signed in to YouTube in this browser.</p>
           )}
+          {canSearch && (
+            <form className="flex gap-1" onSubmit={(e) => (e.preventDefault(), void yts.search(q))}>
+              <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search YouTube" aria-label="Search YouTube" className="h-8" data-youtube-search />
+              <Button size="sm" type="submit" variant="outline" disabled={yts.busy}>{yts.busy ? <Loader2Icon className="animate-spin" /> : <SearchIcon />}</Button>
+            </form>
+          )}
+          <YouTubeResults items={yts.items} onPick={(r) => (player?.pause(), setYt(r.playlist ? { list: r.id, title: r.title } : { video: r.id, title: r.title }))} />
           <form className="flex gap-1" onSubmit={(e) => { e.preventDefault(); const y = parseYouTube(link); if (!y) return void toast.error("That is not a YouTube link."); player?.pause(); setYt(y); if (y.list) void save({ prefs: { ...prefs, youtube: [...(prefs.youtube ?? []).filter((x) => x.id !== y.list), { id: y.list, title: `Playlist ${y.list.slice(0, 8)}` }] } }); setLink(""); }}>
             <Input value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://www.youtube.com/playlist?list=…" aria-label="YouTube link" className="h-8" />
             <Button size="sm" type="submit">Play</Button>
@@ -315,10 +330,12 @@ export function FocusTab({ initial, youtubeOn, clientId }: { initial: { persona:
               ))}
             </div>
           )}
-          {yt && (
-            <div className="space-y-1">
-              <iframe title="YouTube player" src={ytEmbed(yt)} className="aspect-video w-full rounded-lg border" allow="autoplay; encrypted-media; picture-in-picture" allowFullScreen data-youtube-player />
-              <Button size="xs" variant="ghost" onClick={() => setYt(null)}>Close YouTube</Button>
+          {(ytp?.history.length ?? 0) > 0 && (
+            <div>
+              <p className="mb-1 text-[11px] font-medium text-muted-foreground">Watched lately</p>
+              <div className="flex flex-wrap gap-1">
+                {ytp!.history.slice(0, 6).map((h) => <button key={h.id} type="button" onClick={() => setYt({ video: h.id, title: h.title })} className="max-w-48 truncate rounded-full border px-2 py-0.5 text-xs hover:bg-muted">{h.title}</button>)}
+              </div>
             </div>
           )}
         </section>

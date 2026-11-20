@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { saveFunConfigAction } from "@/app/actions/fun";
 import type { FunConfig, PointRule } from "@/server/fun";
+import { EconomyAdmin, ShopAdmin, TownEditor } from "./fun-admin-world";
 
 // Admin, Fun mode: what people get in the Fun window (music, lyrics, playlists, games, the pet, points, the board,
 // moods), who sees it, when games are open, and how work earns points.
@@ -20,7 +21,7 @@ export function FunAdmin({ initial, games, roles }: { initial: FunConfig; games:
   const [saving, setSaving] = React.useState(false);
   const set = (p: Partial<FunConfig>) => setC((x) => ({ ...x, ...p }));
   const rule = (i: number, p: Partial<PointRule>) => set({ rules: c.rules.map((r, j) => (j === i ? { ...r, ...p } : r)) });
-  const Toggle = ({ k, label, hint }: { k: "enabled" | "world" | "worldChat" | "focus" | "youtube" | "music" | "lyrics" | "playlists" | "pet" | "points" | "leaderboard" | "moods"; label: string; hint: string }) => (
+  const Toggle = ({ k, label, hint }: { k: "enabled" | "world" | "worldChat" | "worldVoice" | "shop" | "focus" | "youtube" | "music" | "lyrics" | "playlists" | "pet" | "points" | "leaderboard" | "moods"; label: string; hint: string }) => (
     <label className="flex items-start justify-between gap-3 rounded-lg border p-3">
       <span>
         <span className="block text-sm font-medium">{label}</span>
@@ -39,7 +40,9 @@ export function FunAdmin({ initial, games, roles }: { initial: FunConfig; games:
         <CardContent className="grid gap-2 sm:grid-cols-2">
           <Toggle k="enabled" label="Fun mode on" hint="The gamepad in the top bar, Alt+F and the assistant's fun commands." />
           <Toggle k="world" label="Seed Town 3D" hint="The office world: homes, department workspaces, who is working, characters people design, chat bubbles." />
-          <Toggle k="worldChat" label="Chat in Seed Town" hint="Speech bubbles over the characters (kept for seven seconds, never stored)." />
+          <Toggle k="worldChat" label="Chat in Seed Town" hint="Nearby, town and room chat with speech bubbles (kept in memory for a short while, never stored)." />
+          <Toggle k="worldVoice" label="Voice in Seed Town" hint="Nearby voice (louder the closer) and voice rooms. Voices go straight between browsers and are never recorded." />
+          <Toggle k="shop" label="Shops, homes and vehicles" hint="Spend points (coins) on clothes, accessories, furniture, homes, vehicles, pet things and game skins." />
           <Toggle k="focus" label="Focus mode" hint="A focus timer, a persona quiz and recommended music; finished sessions earn points." />
           <Toggle k="youtube" label="YouTube in focus mode" hint="Play YouTube playlists and videos; sign-in for people's own playlists needs the client ID below." />
           <Toggle k="music" label="Music" hint="Search, moods, trending, the player." />
@@ -82,6 +85,35 @@ export function FunAdmin({ initial, games, roles }: { initial: FunConfig; games:
 
       <Card>
         <CardHeader>
+          <CardTitle className="text-base">Seed Town play and voice</CardTitle>
+          <CardDescription>Coins a day for playing (town activities and mini-games; work earns separately up to its own cap) and the biggest voice room. Voice uses Google's free public STUN server to connect browsers; a few strict office networks block direct calls.</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-wrap items-center gap-2 text-sm">
+          Play coins a day
+          <Input type="number" min={0} value={c.playCoins} onChange={(e) => set({ playCoins: Number(e.target.value) })} className="h-8 w-24" aria-label="Play coins a day" data-fun-playcoins />
+          (0: only work earns) · voice rooms hold up to
+          <Input type="number" min={2} max={12} value={c.voiceRoomCap} onChange={(e) => set({ voiceRoomCap: Number(e.target.value) })} className="h-8 w-20" aria-label="Voice room size" />
+          people
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Voice relay (TURN)</CardTitle>
+          <CardDescription>
+            Optional. Voice goes straight between browsers; some office and mobile networks block that. A relay server carries the voice when they do. Run one (for example coturn on the same VPS: open UDP 3478 and a port range) or use a hosted TURN service, and enter its address. With coturn&apos;s shared secret (use-auth-secret), each person gets credentials that expire in a day; otherwise enter a username and password.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-2 sm:grid-cols-2">
+          <Input value={c.turnUrls} onChange={(e) => set({ turnUrls: e.target.value })} placeholder="turn:turn.example.com:3478, turns:turn.example.com:5349" aria-label="TURN addresses" className="font-mono text-xs sm:col-span-2" data-fun-turn />
+          <Input value={c.turnSecret} onChange={(e) => set({ turnSecret: e.target.value })} placeholder="Shared secret (coturn static-auth-secret)" aria-label="TURN shared secret" type="password" autoComplete="off" className="font-mono text-xs sm:col-span-2" />
+          <Input value={c.turnUsername} onChange={(e) => set({ turnUsername: e.target.value })} placeholder="Or a username" aria-label="TURN username" autoComplete="off" className="font-mono text-xs" />
+          <Input value={c.turnCredential} onChange={(e) => set({ turnCredential: e.target.value })} placeholder="and its password" aria-label="TURN password" type="password" autoComplete="off" className="font-mono text-xs" />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle className="text-base">YouTube sign-in</CardTitle>
           <CardDescription>
             Optional. In Google Cloud make an OAuth client (Web application) with this site as an authorised JavaScript origin, switch on the YouTube Data API v3 and paste its client ID. People then sign in to see their own playlists. Without it they paste playlist links.
@@ -89,6 +121,8 @@ export function FunAdmin({ initial, games, roles }: { initial: FunConfig; games:
         </CardHeader>
         <CardContent>
           <Input value={c.youtubeClientId} onChange={(e) => set({ youtubeClientId: e.target.value })} placeholder="1234567890-abc.apps.googleusercontent.com" aria-label="Google OAuth client ID" className="font-mono text-xs" />
+          <p className="mt-3 mb-1 text-xs text-muted-foreground">Optional: a YouTube Data API key (same Google Cloud project, API key restricted to the YouTube Data API) lets everyone search YouTube inside the app. The free quota allows about 100 searches a day; results are kept for a day.</p>
+          <Input value={c.youtubeApiKey} onChange={(e) => set({ youtubeApiKey: e.target.value })} placeholder="AIza…" aria-label="YouTube Data API key" className="font-mono text-xs" type="password" autoComplete="off" />
         </CardContent>
       </Card>
 
@@ -188,6 +222,10 @@ export function FunAdmin({ initial, games, roles }: { initial: FunConfig; games:
       >
         {saving ? "Saving…" : "Save Fun mode"}
       </Button>
+
+      <EconomyAdmin />
+      <ShopAdmin />
+      <TownEditor />
     </div>
   );
 }

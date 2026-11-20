@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 84;
+export const SCHEMA_VERSION = 86;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -4273,6 +4273,53 @@ CREATE TABLE IF NOT EXISTS fun_moods (
 );
 ALTER TABLE sup_tickets ADD COLUMN IF NOT EXISTS rated_agent_id TEXT;
 
+-- Seed Town's shop (src/server/fun-shop.ts): what each person owns (clothes, furniture, homes, vehicles, pet things,
+-- game skins; stacks for food), their home's layout, saved character presets and the vehicle they ride.
+CREATE TABLE IF NOT EXISTS fun_items (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  item TEXT NOT NULL,
+  qty INTEGER NOT NULL DEFAULT 1,
+  data TEXT NOT NULL DEFAULT '{}',
+  source TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_fun_items_owner ON fun_items(user_id, item);
+CREATE TABLE IF NOT EXISTS fun_homes (
+  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  layout TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+ALTER TABLE fun_avatars ADD COLUMN IF NOT EXISTS presets TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE fun_avatars ADD COLUMN IF NOT EXISTS ride TEXT;
+ALTER TABLE fun_pets ADD COLUMN IF NOT EXISTS xp INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE fun_pets ADD COLUMN IF NOT EXISTS washed_at TEXT;
+ALTER TABLE fun_pets ADD COLUMN IF NOT EXISTS slept_at TEXT;
+ALTER TABLE fun_pets ADD COLUMN IF NOT EXISTS stats TEXT NOT NULL DEFAULT '{}';
+ALTER TABLE fun_pets ADD COLUMN IF NOT EXISTS streak INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE fun_pets ADD COLUMN IF NOT EXISTS streak_day TEXT;
+ALTER TABLE fun_pets ADD COLUMN IF NOT EXISTS skin TEXT;
+ALTER TABLE fun_pets ADD COLUMN IF NOT EXISTS wear TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE fun_pets ADD COLUMN IF NOT EXISTS log TEXT NOT NULL DEFAULT '[]';
+-- Pets resting while another is out (their needs pause), and models Admin uploads for the town editor.
+CREATE TABLE IF NOT EXISTS fun_pet_kennel (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  data TEXT NOT NULL,
+  stored_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_fun_pet_kennel_user ON fun_pet_kennel(user_id);
+CREATE TABLE IF NOT EXISTS fun_models (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  mime TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  data TEXT NOT NULL,
+  created_by TEXT,
+  created_at TEXT NOT NULL
+);
+
 `;
 
 // Tables in dependency order; used to empty the workspace and to export or restore backups.
@@ -4553,4 +4600,8 @@ export const TABLES = [
   "fun_moods",
   "fun_focus",
   "fun_avatars",
+  "fun_items",
+  "fun_homes",
+  "fun_pet_kennel",
+  "fun_models",
 ] as const;

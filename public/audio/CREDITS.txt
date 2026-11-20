@@ -1,0 +1,11 @@
+Seed Town music and sound effects (all CC0, public domain)
+
+Music (re-encoded at 96 kbit/s)
+- music/town-theme.mp3: "Town Theme RPG" by cynicmusic. https://opengameart.org/content/town-theme-rpg
+- music/town-1.mp3, music/town-2.mp3, music/market.mp3: "Town theme 1" (TOWN 1, TOWN 2, Market theme 1) by Geomancer. https://opengameart.org/content/town-theme-1
+- music/castle-town.mp3: "Castle Town" by Will Carpenter. https://opengameart.org/content/castle-town
+- music/action-1.mp3, action-2.mp3, action-3.mp3: "5 Action Chiptunes" (Level 1-3) by Juhani Junkala. https://opengameart.org/content/5-chiptunes-action
+
+Sound effects
+- sfx/*.mp3: "Interface Sounds" by Kenney (www.kenney.nl), CC0; see sfx/KENNEY-LICENSE.txt.
+- Footsteps, engines, horns, crashes, kicks, the crowd, arrows, splashes and fireworks are made in the browser (Web Audio).

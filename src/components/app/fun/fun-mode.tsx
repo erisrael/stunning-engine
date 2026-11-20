@@ -10,6 +10,7 @@ import { PlayerProvider, usePlayer } from "./player";
 import { MusicTab, NowPlaying } from "./music";
 import { GAME_ICONS } from "./icons";
 import { FocusProvider, FocusTab, useFocus } from "./focus";
+import { YouTubeEvents, YouTubeProvider } from "./youtube";
 
 // Fun mode: a side window (like the assistant's) with music, games, a pet and morale boosters. Opened from the top
 // bar's gamepad, from the assistant ("play some jazz", "open chess"), or with Alt+F. It stays mounted once opened,
@@ -51,6 +52,21 @@ const GAMES: Record<string, React.ComponentType> = {
 };
 
 const PetTab = dynamic(() => import("./pet").then((m) => m.PetTab), { ssr: false, loading: Loading });
+const RoamingPet = dynamic(() => import("./pet-roam").then((m) => m.RoamingPet), { ssr: false });
+
+// The pet on the screen loads (with 3D) only when someone switched it on in the Pet tab.
+function PetGate() {
+  const [on, setOn] = React.useState(false);
+  React.useEffect(() => {
+    try {
+      setOn(localStorage.getItem("myseed.pet.roam") === "1");
+    } catch {}
+    const t = (e: Event) => setOn(!!(e as CustomEvent<boolean>).detail);
+    window.addEventListener("myseed-pet-roam", t);
+    return () => window.removeEventListener("myseed-pet-roam", t);
+  }, []);
+  return on ? <RoamingPet /> : null;
+}
 const BoostTab = dynamic(() => import("./boost").then((m) => m.BoostTab), { ssr: false, loading: Loading });
 
 type Home = NonNullable<Extract<Awaited<ReturnType<typeof F.funHomeAction>>, { ok: true }>["data"]>;
@@ -68,9 +84,13 @@ const inHours = (from: string, to: string) => {
 export function FunMode({ standalone = false }: { standalone?: boolean }) {
   return (
     <PlayerProvider>
-      <FocusProvider>
-        <FunWindow standalone={standalone} />
-      </FocusProvider>
+      <YouTubeProvider>
+        <YouTubeEvents />
+        <FocusProvider>
+          <FunWindow standalone={standalone} />
+          <PetGate />
+        </FocusProvider>
+      </YouTubeProvider>
     </PlayerProvider>
   );
 }
@@ -231,7 +251,7 @@ function FunWindow({ standalone = false }: { standalone?: boolean }) {
               <>
                 {seen.has("focus") && home.config.focus && home.focus && (
                   <div hidden={tab !== "focus"}>
-                    <FocusTab initial={home.focus} youtubeOn={home.config.youtube} clientId={home.config.youtubeClientId} />
+                    <FocusTab initial={home.focus} youtubeOn={home.config.youtube} clientId={home.config.youtubeClientId} serverSearch={!!home.config.youtubeSearch} />
                   </div>
                 )}
                 {seen.has("music") && home.config.music && (
@@ -241,6 +261,7 @@ function FunWindow({ standalone = false }: { standalone?: boolean }) {
                 )}
                 {tab === "games" && (
                   <div className="space-y-2" data-fun-games>
+                    <GameSoundToggle />
                     {!gamesOpen && <p className="rounded-lg bg-muted p-2 text-xs">Games are open from {home.config.gamesFrom} to {home.config.gamesTo}. Music and the rest stay open.</p>}
                     <div className="grid grid-cols-2 gap-2">
                       {home.config.games.map((g) => (
@@ -275,5 +296,21 @@ export function FunLauncher() {
     <Button size="icon" variant="ghost" className="rounded-full" aria-label="Fun mode: music, games and your pet" title="Fun mode (Alt+F)" onClick={() => funCommand({ toggle: true })} data-fun-launcher>
       <Gamepad2Icon />
     </Button>
+  );
+}
+
+// Game sounds on or off (remembered on this device).
+function GameSoundToggle() {
+  const [on, setOn] = React.useState(true);
+  React.useEffect(() => {
+    try {
+      setOn(localStorage.getItem("myseed.games.sound") !== "off");
+    } catch {}
+  }, []);
+  return (
+    <label className="flex items-center justify-end gap-1.5 text-xs text-muted-foreground">
+      Game sounds
+      <input type="checkbox" checked={on} onChange={(e) => { setOn(e.target.checked); try { localStorage.setItem("myseed.games.sound", e.target.checked ? "on" : "off"); } catch {} }} aria-label="Game sounds" data-game-sounds />
+    </label>
   );
 }

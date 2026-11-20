@@ -1,4 +1,4 @@
-import { all, get, nowIso, parseJson, run, uid } from "./db";
+import { all, get, nowIso, parseJson, run, tx, uid } from "./db";
 import { can, type AppUser } from "./users";
 import { audit, WorkflowError } from "./workflow";
 
@@ -69,6 +69,22 @@ export type FunConfig = {
   worldAbsence: "hr" | "leads" | "everyone";
   worldProgress: "points" | "tasks";
   worldName: string;
+  // Seed Town's shop, homes and vehicles (bought with points: work is the main way to earn), voice chat (nearby or
+  // in rooms; voices go straight between browsers, the server only introduces them), the biggest voice room, and
+  // coins a day for playing (town activities and the mini-games; 0: only work earns).
+  shop: boolean;
+  worldVoice: boolean;
+  voiceRoomCap: number;
+  playCoins: number;
+  // Optional YouTube Data API key: search YouTube inside the app (100 searches a day on the free quota; results
+  // are kept for a day).
+  youtubeApiKey: string;
+  // Voice relay (TURN) for networks that block direct calls: comma-separated turn: or turns: addresses, with either
+  // a fixed username and password, or coturn's shared secret (time-limited credentials per person).
+  turnUrls: string;
+  turnUsername: string;
+  turnCredential: string;
+  turnSecret: string;
 };
 export const DEFAULT_FUN: FunConfig = {
   enabled: true,
@@ -94,6 +110,15 @@ export const DEFAULT_FUN: FunConfig = {
   worldAbsence: "hr",
   worldProgress: "points",
   worldName: "Seed Town",
+  shop: true,
+  worldVoice: true,
+  voiceRoomCap: 8,
+  playCoins: 40,
+  youtubeApiKey: "",
+  turnUrls: "",
+  turnUsername: "",
+  turnCredential: "",
+  turnSecret: "",
 };
 
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -149,6 +174,20 @@ export async function saveFunConfig(user: AppUser, input: Partial<FunConfig>) {
     worldAbsence: (["hr", "leads", "everyone"] as const).find((x) => x === (input.worldAbsence ?? cur.worldAbsence)) ?? "hr",
     worldProgress: input.worldProgress === "tasks" || (input.worldProgress === undefined && cur.worldProgress === "tasks") ? "tasks" : "points",
     worldName: String(input.worldName ?? cur.worldName ?? "Seed Town").trim().slice(0, 40) || "Seed Town",
+    shop: bool("shop"),
+    worldVoice: bool("worldVoice"),
+    voiceRoomCap: Math.max(2, Math.min(12, Math.round(Number(input.voiceRoomCap ?? cur.voiceRoomCap) || 8))),
+    playCoins: Math.max(0, Math.min(1000, Math.round(Number(input.playCoins ?? cur.playCoins) || 0))),
+    youtubeApiKey: String(input.youtubeApiKey ?? cur.youtubeApiKey ?? "").trim().slice(0, 200),
+    turnUrls: String(input.turnUrls ?? cur.turnUrls ?? "")
+      .split(",")
+      .map((u) => u.trim())
+      .filter((u) => /^turns?:[^\s]{3,200}$/.test(u))
+      .slice(0, 4)
+      .join(", "),
+    turnUsername: String(input.turnUsername ?? cur.turnUsername ?? "").trim().slice(0, 200),
+    turnCredential: String(input.turnCredential ?? cur.turnCredential ?? "").trim().slice(0, 200),
+    turnSecret: String(input.turnSecret ?? cur.turnSecret ?? "").trim().slice(0, 200),
     points: bool("points"),
     leaderboard: bool("leaderboard"),
     moods: bool("moods"),
@@ -246,7 +285,7 @@ export const PET_KINDS = [
   { key: "owl", label: "Owl" },
   { key: "bunny", label: "Bunny" },
 ] as const;
-// Things the pet wears, unlocked by level.
+// Things the pet wears, unlocked by level (more in the pet shop).
 export const PET_ITEMS = [
   { key: "none", label: "Nothing", level: 1 },
   { key: "bow", label: "Bow", level: 2 },
@@ -256,19 +295,63 @@ export const PET_ITEMS = [
   { key: "headphones", label: "Headphones", level: 8 },
   { key: "wizard", label: "Wizard hat", level: 10 },
 ] as const;
+// Growth: care earns the pet experience; it grows up in four stages.
+export const PET_STAGES = [
+  { key: "baby", label: "Baby", xp: 0 },
+  { key: "young", label: "Young", xp: 100 },
+  { key: "teen", label: "Adolescent", xp: 300 },
+  { key: "adult", label: "Adult", xp: 700 },
+] as const;
 
-type PetRow = { user_id: string; kind: string; name: string; outfit: string; fed_at: string | null; played_at: string | null; petted_at: string | null; created_at: string };
+type Need = "full" | "fun" | "clean" | "energy" | "love" | "health";
+type PetStats = Partial<Record<Need, { v: number; at: string }>> & { sleepUntil?: string; petXpAt?: string; waterAt?: string };
+type PetRow = {
+  user_id: string; kind: string; name: string; outfit: string; fed_at: string | null; played_at: string | null; petted_at: string | null; created_at: string;
+  xp: number; washed_at: string | null; slept_at: string | null; stats: string; streak: number; streak_day: string | null; skin: string | null; wear: string; log: string;
+};
+// How fast each need drops, per hour (energy rises while asleep).
+const DECAY: Record<Need, number> = { full: 6, fun: 5, clean: 3, energy: 4, love: 4, health: 2 };
+const hrs = (iso: string | null | undefined) => (iso ? Math.max(0, (Date.now() - Date.parse(iso)) / 36e5) : 999);
+const clamp = (n: number) => Math.max(0, Math.min(100, Math.round(n)));
 
-// Mood from care in the last hours and from work: fed and played with lately, and points earned today.
-function petMood(p: PetRow, todayPts: number) {
-  const hrs = (iso: string | null) => (iso ? (Date.now() - Date.parse(iso)) / 36e5 : 999);
-  const hunger = Math.min(100, Math.round(hrs(p.fed_at) * 6));
-  const fun = Math.max(0, 100 - Math.round(hrs(p.played_at) * 5));
-  const love = Math.max(0, 100 - Math.round(hrs(p.petted_at) * 4));
+function needsOf(p: PetRow) {
+  const s = parseJson<PetStats>(p.stats ?? "{}", {});
+  // Pets from before the needs were kept start from their old care times.
+  const legacy: Record<Need, string | null> = { full: p.fed_at, fun: p.played_at, love: p.petted_at, clean: p.washed_at ?? p.created_at, energy: p.slept_at ?? p.created_at, health: p.created_at };
+  const now: Record<Need, number> = { full: 0, fun: 0, clean: 0, energy: 0, love: 0, health: 0 };
+  const sleeping = !!s.sleepUntil && Date.parse(s.sleepUntil) > Date.now();
+  for (const k of Object.keys(DECAY) as Need[]) {
+    const e = s[k] ?? { v: 100, at: legacy[k] ?? p.created_at };
+    if (k === "energy" && s.sleepUntil) {
+      // Asleep: energy fills; after waking it drops again.
+      const start = Date.parse(e.at), end = Math.min(Date.now(), Date.parse(s.sleepUntil));
+      const slept = Math.max(0, (end - start) / 36e5);
+      const awake = Math.max(0, (Date.now() - Math.max(start, Date.parse(s.sleepUntil))) / 36e5);
+      now.energy = clamp(e.v + slept * 120 - awake * DECAY.energy);
+    } else now[k] = clamp(e.v - hrs(e.at) * DECAY[k]);
+  }
+  now.health = clamp(now.health * 0.4 + now.full * 0.25 + now.clean * 0.2 + now.energy * 0.15);
+  return { now, stats: s, sleeping };
+}
+
+const stageOf = (xp: number) => {
+  let i = 0;
+  while (i + 1 < PET_STAGES.length && xp >= PET_STAGES[i + 1]!.xp) i++;
+  return { ...PET_STAGES[i]!, index: i, next: PET_STAGES[i + 1]?.xp ?? null };
+};
+
+function petView(p: PetRow, todayPts: number) {
+  const { now, sleeping } = needsOf(p);
   const work = Math.min(100, todayPts * 2);
-  const happiness = Math.max(0, Math.min(100, Math.round((100 - hunger) * 0.35 + fun * 0.2 + love * 0.15 + work * 0.3)));
-  const mood = happiness >= 75 ? "joyful" : happiness >= 50 ? "happy" : happiness >= 25 ? "okay" : "sad";
-  return { hunger, fun, love, happiness, mood };
+  const happiness = clamp(now.full * 0.25 + now.fun * 0.2 + now.love * 0.15 + now.clean * 0.1 + now.health * 0.1 + work * 0.2);
+  const mood = sleeping ? "sleeping" : happiness >= 75 ? "joyful" : happiness >= 50 ? "happy" : happiness >= 25 ? "okay" : "sad";
+  const stage = stageOf(Number(p.xp ?? 0));
+  return {
+    kind: p.kind, name: p.name, outfit: p.outfit, since: p.created_at,
+    hunger: 100 - now.full, full: now.full, fun: now.fun, love: now.love, clean: now.clean, energy: now.energy, health: now.health,
+    happiness, mood, sleeping, xp: Number(p.xp ?? 0), stage: stage.key, stageLabel: stage.label, stageIndex: stage.index, nextXp: stage.next,
+    streak: Number(p.streak ?? 0), skin: p.skin, wear: parseJson<string[]>(p.wear ?? "[]", []), log: parseJson<{ at: string; what: string }[]>(p.log ?? "[]", []).slice(0, 20),
+  };
 }
 
 export async function myPet(user: AppUser) {
@@ -276,51 +359,201 @@ export async function myPet(user: AppUser) {
   const p = await get<PetRow>("SELECT * FROM fun_pets WHERE user_id = ?", user.id);
   const pts = await pointsOf(user.id);
   const lvl = levelOf(pts.earned);
-  if (!p) return { pet: null, points: pts, level: lvl, feedCost: c.feedCost };
-  return { pet: { kind: p.kind, name: p.name, outfit: p.outfit, since: p.created_at, ...petMood(p, pts.today) }, points: pts, level: lvl, feedCost: c.feedCost };
+  const things = c.shop ? await all<{ item: string; qty: number }>("SELECT item, qty FROM fun_items WHERE user_id = ? AND qty > 0 AND (item LIKE 'food.%' OR item LIKE 'toy.%' OR item LIKE 'petwear.%' OR item LIKE 'petskin.%')", user.id) : [];
+  const kennel = await all<{ id: string; data: string }>("SELECT id, data FROM fun_pet_kennel WHERE user_id = ? ORDER BY stored_at", user.id);
+  const others = kennel.map((k) => {
+    const r = parseJson<PetRow>(k.data, {} as PetRow);
+    return { id: k.id, name: r.name, kind: r.kind, stage: stageOf(Number(r.xp ?? 0)).label };
+  });
+  const base = { points: pts, level: lvl, feedCost: c.feedCost, things: things.map((t) => ({ key: t.item, qty: Number(t.qty) })), shop: c.shop, others, slots: MAX_PETS };
+  if (!p) return { pet: null, ...base };
+  return { pet: petView(p, pts.today), ...base };
+}
+
+// Up to three pets: one out, the others resting in the kennel (their needs pause while they rest).
+export const MAX_PETS = 3;
+async function toKennel(userId: string) {
+  const cur = await get<PetRow>("SELECT * FROM fun_pets WHERE user_id = ?", userId);
+  if (!cur) return;
+  await run("INSERT INTO fun_pet_kennel (id, user_id, data, stored_at) VALUES (?, ?, ?, ?)", uid("pk_"), userId, JSON.stringify(cur), nowIso());
+  await run("DELETE FROM fun_pets WHERE user_id = ?", userId);
+}
+
+export async function switchPet(user: AppUser, kennelId: string) {
+  await need(user, "pet");
+  const k = await get<{ id: string; data: string; stored_at: string }>("SELECT * FROM fun_pet_kennel WHERE id = ? AND user_id = ?", kennelId, user.id);
+  if (!k) throw new WorkflowError("NOT_FOUND", "That pet is not in your kennel.");
+  const r = parseJson<PetRow>(k.data, {} as PetRow);
+  // Needs pick up where they were when it went to rest.
+  const away = Date.now() - Date.parse(k.stored_at);
+  const shift = (iso: string | null) => (iso ? new Date(Date.parse(iso) + away).toISOString() : iso);
+  const stats = parseJson<PetStats>(r.stats ?? "{}", {});
+  for (const key of Object.keys(DECAY) as Need[]) if (stats[key]) stats[key]!.at = shift(stats[key]!.at)!;
+  if (stats.sleepUntil) stats.sleepUntil = shift(stats.sleepUntil)!;
+  await tx(async () => {
+    await toKennel(user.id);
+    await run("DELETE FROM fun_pet_kennel WHERE id = ?", k.id);
+    await run(
+      "INSERT INTO fun_pets (user_id, kind, name, outfit, fed_at, played_at, petted_at, created_at, updated_at, xp, washed_at, slept_at, stats, streak, streak_day, skin, wear, log) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      user.id, r.kind, r.name, r.outfit ?? "none", shift(r.fed_at), shift(r.played_at), shift(r.petted_at), r.created_at, nowIso(), Number(r.xp ?? 0), shift(r.washed_at), shift(r.slept_at), JSON.stringify(stats), Number(r.streak ?? 0), r.streak_day, r.skin, r.wear ?? "[]", r.log ?? "[]",
+    );
+  });
+  return myPet(user);
 }
 
 export async function adoptPet(user: AppUser, kind: string, name: string) {
   await need(user, "pet");
   if (!PET_KINDS.some((k) => k.key === kind)) throw new WorkflowError("VALIDATION", "Choose one of the pets.");
+  // Another pet: the one out now goes to rest in the kennel (three at most).
+  if (await get("SELECT user_id FROM fun_pets WHERE user_id = ?", user.id)) {
+    const n = Number((await get<{ n: number }>("SELECT COUNT(*) AS n FROM fun_pet_kennel WHERE user_id = ?", user.id))?.n ?? 0);
+    if (n + 1 >= MAX_PETS) throw new WorkflowError("VALIDATION", `You can keep ${MAX_PETS} pets.`);
+    await toKennel(user.id);
+  }
   const n = name.trim().slice(0, 30) || PET_KINDS.find((k) => k.key === kind)!.label;
   const now = nowIso();
+  const stats: PetStats = { full: { v: 90, at: now }, fun: { v: 90, at: now }, clean: { v: 100, at: now }, energy: { v: 100, at: now }, love: { v: 80, at: now }, health: { v: 100, at: now } };
   await run(
-    "INSERT INTO fun_pets (user_id, kind, name, outfit, fed_at, played_at, petted_at, created_at, updated_at) VALUES (?, ?, ?, 'none', ?, ?, ?, ?, ?) ON CONFLICT (user_id) DO UPDATE SET kind = excluded.kind, name = excluded.name, updated_at = excluded.updated_at",
-    user.id, kind, n, now, now, now, now, now,
+    "INSERT INTO fun_pets (user_id, kind, name, outfit, fed_at, played_at, petted_at, created_at, updated_at, stats, xp, log) VALUES (?, ?, ?, 'none', ?, ?, ?, ?, ?, ?, 0, ?) ON CONFLICT (user_id) DO UPDATE SET kind = excluded.kind, name = excluded.name, updated_at = excluded.updated_at",
+    user.id, kind, n, now, now, now, now, now, JSON.stringify(stats), JSON.stringify([{ at: now, what: `${n} came home` }]),
   );
   return myPet(user);
 }
 
-export async function carePet(user: AppUser, act: "feed" | "play" | "pet" | "outfit", outfit?: string) {
+export type PetAct = "feed" | "water" | "play" | "pet" | "bath" | "sleep" | "wake" | "outfit" | "wear" | "skin" | "rename";
+
+// Care: each act changes the needs; care that is needed (not when already full) earns the pet experience, and the
+// first care of a day keeps the streak going. Food beyond the basic bowl comes from the pet shop.
+export async function carePet(user: AppUser, act: PetAct, arg?: string) {
   const c = await need(user, "pet");
   const p = await get<PetRow>("SELECT * FROM fun_pets WHERE user_id = ?", user.id);
   if (!p) throw new WorkflowError("VALIDATION", "Adopt a pet first.");
-  const now = nowIso();
+  const nowS = nowIso();
+  const { now: n, stats, sleeping } = needsOf(p);
+  const set = (k: Need, v: number) => (stats[k] = { v: clamp(v), at: nowS });
+  let xp = 0;
+  let what = "";
+  const fields: Record<string, string | number | null> = {};
+  if (sleeping && !["wake", "pet", "outfit", "wear", "skin", "rename"].includes(act)) throw new WorkflowError("VALIDATION", `${p.name} is asleep. Let it rest, or wake it up.`);
   if (act === "feed") {
-    const pts = await pointsOf(user.id);
-    if (c.points && c.feedCost > 0) {
-      if (pts.balance < c.feedCost) throw new WorkflowError("VALIDATION", `Food costs ${c.feedCost} points; you have ${pts.balance}. Work earns points.`);
-      await run("INSERT INTO fun_points (id, user_id, points, reason, source, ref, created_at) VALUES (?, ?, ?, ?, 'spend', 'pet.feed', ?)", uid("fp_"), user.id, -c.feedCost, `Fed ${p.name}`, now);
+    const food = arg && arg !== "kibble" ? arg : null;
+    if (food) {
+      const { itemOf, useOne } = await import("./fun-shop");
+      const it = await itemOf(food);
+      if (!it || it.kind !== "petfood") throw new WorkflowError("VALIDATION", "That is not pet food.");
+      await useOne(user.id, food);
+      const e = it.effect ?? {};
+      set("full", n.full + (e.hunger ?? 0));
+      if (e.fun) set("fun", n.fun + e.fun);
+      if (e.energy) set("energy", n.energy + e.energy);
+      if (e.love) set("love", n.love + e.love);
+      if (e.health) set("health", n.health + e.health);
+      what = `Ate ${it.label.toLowerCase()}`;
+    } else {
+      const pts = await pointsOf(user.id);
+      if (c.points && c.feedCost > 0) {
+        if (pts.balance < c.feedCost) throw new WorkflowError("VALIDATION", `Food costs ${c.feedCost} points; you have ${pts.balance}. Work earns points.`);
+        await run("INSERT INTO fun_points (id, user_id, points, reason, source, ref, created_at) VALUES (?, ?, ?, ?, 'spend', 'pet.feed', ?)", uid("fp_"), user.id, -c.feedCost, `Fed ${p.name}`, nowS);
+      }
+      set("full", n.full + 35);
+      what = "Ate a bowl of food";
     }
-    await run("UPDATE fun_pets SET fed_at = ?, updated_at = ? WHERE user_id = ?", now, now, user.id);
-  } else if (act === "play") await run("UPDATE fun_pets SET played_at = ?, updated_at = ? WHERE user_id = ?", now, now, user.id);
-  else if (act === "pet") await run("UPDATE fun_pets SET petted_at = ?, updated_at = ? WHERE user_id = ?", now, now, user.id);
-  else {
-    const item = PET_ITEMS.find((i) => i.key === outfit);
+    if (n.full < 80) xp += 10;
+    fields.fed_at = nowS;
+  } else if (act === "water") {
+    set("full", n.full + 8);
+    set("health", n.health + 6);
+    if (hrs(stats.waterAt) > 0.5) xp += 2;
+    stats.waterAt = nowS;
+    what = "Had some water";
+  } else if (act === "play") {
+    if (n.energy < 12) throw new WorkflowError("VALIDATION", `${p.name} is too sleepy to play. Let it nap first.`);
+    let boost = 25;
+    if (arg) {
+      const { owns, itemOf } = await import("./fun-shop");
+      const it = await itemOf(arg);
+      if (!it || it.kind !== "pettoy" || !(await owns(user.id, arg))) throw new WorkflowError("VALIDATION", "Get that toy at Paws & Treats first.");
+      boost = 40;
+      what = `Played with the ${it.label.toLowerCase()}`;
+    } else what = "Played together";
+    if (n.fun < 80) xp += 6;
+    set("fun", n.fun + boost);
+    set("energy", n.energy - 10);
+    set("clean", n.clean - 5);
+    fields.played_at = nowS;
+  } else if (act === "pet") {
+    set("love", n.love + 15);
+    if (hrs(stats.petXpAt) > 1 / 3) (xp += 3), (stats.petXpAt = nowS);
+    what = arg === "belly" ? "Got a belly rub" : arg === "chin" ? "Got a chin scratch" : "Got a pat on the head";
+    fields.petted_at = nowS;
+  } else if (act === "bath") {
+    if (n.clean < 70) xp += 8;
+    set("clean", 100);
+    set("love", n.love - 5);
+    what = "Had a bath";
+    fields.washed_at = nowS;
+  } else if (act === "sleep") {
+    stats.energy = { v: n.energy, at: nowS };
+    stats.sleepUntil = new Date(Date.now() + Math.max(10, Math.round(((100 - n.energy) / 120) * 60)) * 60e3).toISOString();
+    what = "Went to sleep";
+    fields.slept_at = nowS;
+  } else if (act === "wake") {
+    stats.energy = { v: n.energy, at: nowS };
+    delete stats.sleepUntil;
+    what = "Woke up";
+  } else if (act === "outfit") {
+    const item = PET_ITEMS.find((i) => i.key === arg);
     if (!item) throw new WorkflowError("VALIDATION", "Unknown item.");
     const lvl = levelOf((await pointsOf(user.id)).earned).level;
     if (item.level > lvl) throw new WorkflowError("VALIDATION", `${item.label} unlocks at level ${item.level}.`);
-    await run("UPDATE fun_pets SET outfit = ?, updated_at = ? WHERE user_id = ?", item.key, now, user.id);
+    fields.outfit = item.key;
+  } else if (act === "wear") {
+    const list = (arg ? arg.split(",") : []).filter(Boolean).slice(0, 3);
+    const { owns } = await import("./fun-shop");
+    for (const k of list) if (!k.startsWith("petwear.") || !(await owns(user.id, k))) throw new WorkflowError("VALIDATION", "Get that at Paws & Treats first.");
+    fields.wear = JSON.stringify(list);
+  } else if (act === "skin") {
+    if (arg) {
+      const { owns } = await import("./fun-shop");
+      if (!arg.startsWith("petskin.") || !(await owns(user.id, arg))) throw new WorkflowError("VALIDATION", "Get that coat at Paws & Treats first.");
+    }
+    fields.skin = arg || null;
+  } else if (act === "rename") {
+    const nm = String(arg ?? "").trim().slice(0, 30);
+    if (!nm) throw new WorkflowError("VALIDATION", "Give it a name.");
+    fields.name = nm;
+    what = `Is now called ${nm}`;
+  } else throw new WorkflowError("VALIDATION", "Unknown care.");
+
+  // The day's first care keeps the streak (and gives a bonus).
+  const day = nowS.slice(0, 10);
+  if (xp > 0 && p.streak_day !== day) {
+    const yesterday = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
+    fields.streak = p.streak_day === yesterday ? Number(p.streak ?? 0) + 1 : 1;
+    fields.streak_day = day;
+    xp += 15;
   }
-  return myPet(user);
+  const before = stageOf(Number(p.xp ?? 0));
+  const after = stageOf(Number(p.xp ?? 0) + xp);
+  const log = parseJson<{ at: string; what: string }[]>(p.log ?? "[]", []);
+  if (what) log.unshift({ at: nowS, what });
+  if (after.index > before.index) log.unshift({ at: nowS, what: `Grew up: now ${after.label.toLowerCase()}` });
+  fields.stats = JSON.stringify(stats);
+  fields.xp = Number(p.xp ?? 0) + xp;
+  fields.log = JSON.stringify(log.slice(0, 30));
+  fields.updated_at = nowS;
+  const keys = Object.keys(fields);
+  await run(`UPDATE fun_pets SET ${keys.map((k) => `${k} = ?`).join(", ")} WHERE user_id = ?`, ...keys.map((k) => fields[k]!), user.id);
+  const res = await myPet(user);
+  return { ...res, gained: xp, grew: after.index > before.index ? after.label : null };
 }
 
 // ------------------------------------------------------------------------------------------------- scores
 
 export async function saveScore(user: AppUser, game: string, score: number, meta?: Record<string, unknown>) {
   const c = await need(user);
-  if (!c.games.includes(game)) throw new WorkflowError("FORBIDDEN", "Admin switched this game off.");
+  if (!/^[a-z0-9-]{1,30}(:[a-z0-9-]{1,30})?$/.test(game)) throw new WorkflowError("VALIDATION", "Unknown game.");
+  if (!c.games.includes(game.split(":")[0]!)) throw new WorkflowError("FORBIDDEN", "Admin switched this game off.");
   const s = Math.round(Number(score));
   if (!Number.isFinite(s) || s < 0 || s > 10_000_000) throw new WorkflowError("VALIDATION", "Not a score.");
   await run("INSERT INTO fun_scores (id, user_id, game, score, meta, created_at) VALUES (?, ?, ?, ?, ?, ?)", uid("fs_"), user.id, game, s, meta ? JSON.stringify(meta).slice(0, 2000) : null, nowIso());
@@ -328,18 +561,21 @@ export async function saveScore(user: AppUser, game: string, score: number, meta
 }
 
 // Lower is better for times (typing is words per minute: higher is better).
-const LOWER_BETTER = new Set(["reaction", "sudoku", "minesweeper", "memory"]);
+const LOWER_BETTER = new Set(["reaction", "sudoku", "minesweeper", "memory", "reaction:classic", "reaction:aim", "world:parkour", "world:race"]);
+const lowerBetter = (game: string) => LOWER_BETTER.has(game) || (LOWER_BETTER.has(game.split(":")[0]!) && !/:(time|zen|daily-streak|sequence|stroop|blitz)/.test(game));
 
 export async function bestScores(user: AppUser, game: string) {
   await need(user);
-  const order = LOWER_BETTER.has(game) ? "ASC" : "DESC";
-  const agg = LOWER_BETTER.has(game) ? "MIN" : "MAX";
+  const lower = lowerBetter(game);
+  const order = lower ? "ASC" : "DESC";
+  const agg = lower ? "MIN" : "MAX";
   const mine = await get<{ s: number | null }>(`SELECT ${agg}(score) AS s FROM fun_scores WHERE user_id = ? AND game = ?`, user.id, game);
   const top = await all<{ name: string; s: number }>(
     `SELECT u.name AS name, ${agg}(f.score) AS s FROM fun_scores f JOIN users u ON u.id = f.user_id WHERE f.game = ? GROUP BY f.user_id, u.name ORDER BY s ${order} LIMIT 5`,
     game,
   );
-  return { mine: mine?.s ?? null, top, lowerIsBetter: LOWER_BETTER.has(game) };
+  const games = await get<{ n: number }>("SELECT COUNT(*) AS n FROM fun_scores WHERE user_id = ? AND game = ?", user.id, game);
+  return { mine: mine?.s ?? null, top, lowerIsBetter: lower, played: Number(games?.n ?? 0) };
 }
 
 // ------------------------------------------------------------------------------------------------- leaderboard and moods
@@ -502,7 +738,7 @@ export async function funHome(user: AppUser) {
   const pts = await pointsOf(user.id);
   return {
     focus: c.focus ? await focusOf(user) : null,
-    config: { focus: c.focus, youtube: c.youtube, youtubeClientId: c.youtube ? c.youtubeClientId : "", music: c.music, lyrics: c.lyrics, playlists: c.playlists, games: FUN_GAMES.filter((g) => c.games.includes(g.key)), pet: c.pet, points: c.points, leaderboard: c.leaderboard, moods: c.moods, gamesFrom: c.gamesFrom, gamesTo: c.gamesTo, feedCost: c.feedCost, dailyCap: c.dailyCap },
+    config: { focus: c.focus, youtube: c.youtube, youtubeClientId: c.youtube ? c.youtubeClientId : "", youtubeSearch: c.youtube && !!c.youtubeApiKey, shop: c.shop, playCoins: c.playCoins, music: c.music, lyrics: c.lyrics, playlists: c.playlists, games: FUN_GAMES.filter((g) => c.games.includes(g.key)), pet: c.pet, points: c.points, leaderboard: c.leaderboard, moods: c.moods, gamesFrom: c.gamesFrom, gamesTo: c.gamesTo, feedCost: c.feedCost, dailyCap: c.dailyCap },
     points: pts,
     level: levelOf(pts.earned),
     rules: c.points ? c.rules.filter((r) => r.on && r.points > 0).map((r) => ({ label: r.label, points: r.points })) : [],
@@ -569,3 +805,22 @@ export async function completeFocus(user: AppUser, minutes: number) {
   const pts = m >= 20 ? await awardForAction(user.id, "focus.session", `${user.name} focused for ${m} minutes`, `focus:${now}`) : 0;
   return { ...(await focusOf(user)), earned: pts };
 }
+
+// ------------------------------------------------------------------------------------------------- YouTube search
+
+// Search YouTube inside the app with Admin's Data API key (each search costs 100 of the free 10,000 daily units, so
+// results are kept for a day). Without a key people search after signing in to YouTube, or paste links.
+export type YtVideo = { id: string; title: string; channel: string; thumb: string; live: boolean };
+export async function youtubeSearch(user: AppUser, q: string, kind: "video" | "playlist" = "video") {
+  const c = await need(user);
+  if (!c.youtube) throw new WorkflowError("FORBIDDEN", "Admin switched YouTube off.");
+  if (!c.youtubeApiKey) throw new WorkflowError("VALIDATION", "YouTube search needs Admin's API key. Sign in to YouTube, or paste a link.");
+  const query = q.trim().slice(0, 100);
+  if (!query) return [];
+  const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=20&safeSearch=moderate&type=${kind}&q=${encodeURIComponent(query)}&key=${encodeURIComponent(c.youtubeApiKey)}`;
+  const r = await fetchJson<{ items?: { id: { videoId?: string; playlistId?: string }; snippet: { title: string; channelTitle: string; liveBroadcastContent?: string; thumbnails?: { medium?: { url: string } } } }[] }>(url, 24 * 3600e3);
+  return (r.items ?? [])
+    .map((i) => ({ id: i.id.videoId ?? i.id.playlistId ?? "", title: decodeEntities(i.snippet.title), channel: decodeEntities(i.snippet.channelTitle), thumb: i.snippet.thumbnails?.medium?.url ?? "", live: i.snippet.liveBroadcastContent === "live", playlist: !!i.id.playlistId }))
+    .filter((v) => v.id);
+}
+const decodeEntities = (s: string) => s.replace(/&quot;/g, '"').replace(/&#0?39;|&apos;/g, "'").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");

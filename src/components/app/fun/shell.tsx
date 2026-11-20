@@ -51,3 +51,33 @@ export function ScoreBoard({ best, unit = "" }: { best: Best | null; unit?: stri
 
 // A grid of square cells that fits the window.
 export const cellGrid = (cols: number) => ({ display: "grid", gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }) as React.CSSProperties;
+
+// Short sounds for the games (Kenney's interface sounds, CC0): on unless the person turned them off.
+const SOUNDS = { move: "toggle", flip: "select", match: "confirm", win: "maximize", lose: "error", tap: "click", key: "click" } as const;
+let audioCtx: AudioContext | null = null;
+const buffers = new Map<string, Promise<AudioBuffer | null>>();
+export const gameSoundOn = () => {
+  try {
+    return localStorage.getItem("myseed.games.sound") !== "off";
+  } catch {
+    return true;
+  }
+};
+export function gameSfx(kind: keyof typeof SOUNDS, volume = 0.5) {
+  if (typeof window === "undefined" || !gameSoundOn()) return;
+  try {
+    audioCtx ??= new AudioContext();
+    const c = audioCtx;
+    const name = SOUNDS[kind];
+    if (!buffers.has(name)) buffers.set(name, fetch(`/audio/sfx/${name}.mp3`).then((r) => r.arrayBuffer()).then((b) => c.decodeAudioData(b)).catch(() => null));
+    void buffers.get(name)!.then((buf) => {
+      if (!buf) return;
+      const src = c.createBufferSource();
+      src.buffer = buf;
+      const g = c.createGain();
+      g.gain.value = volume;
+      src.connect(g).connect(c.destination);
+      src.start();
+    });
+  } catch {}
+}

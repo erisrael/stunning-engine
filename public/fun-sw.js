@@ -1,11 +1,13 @@
 // Myseed Fun (the installed Fun mode): the app's code, styles, fonts and icons are kept on this device, so it opens
 // fast and only small data travels (positions, scores, music lists). Pages and data always come from the server,
 // so sign-in and updates stay current.
-const CACHE = "myseed-fun-v1";
+const CACHE = "myseed-fun-v2";
+// Characters and animations are a few megabytes each: kept separately and only replaced when their version changes.
+const MODELS = "myseed-fun-models-v1";
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (event) =>
   event.waitUntil(
-    caches.keys().then((keys) => Promise.all(keys.filter((k) => k.startsWith("myseed-fun-") && k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim()),
+    caches.keys().then((keys) => Promise.all(keys.filter((k) => k.startsWith("myseed-fun-") && k !== CACHE && k !== MODELS).map((k) => caches.delete(k)))).then(() => self.clients.claim()),
   ),
 );
 self.addEventListener("fetch", (event) => {
@@ -13,6 +15,19 @@ self.addEventListener("fetch", (event) => {
   if (req.method !== "GET") return;
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
+  // Character models and animations: from the device once downloaded.
+  if (url.pathname.startsWith("/models/") || url.pathname.startsWith("/audio/")) {
+    event.respondWith(
+      caches.open(MODELS).then(async (cache) => {
+        const hit = await cache.match(req);
+        if (hit) return hit;
+        const res = await fetch(req);
+        if (res.ok) cache.put(req, res.clone());
+        return res;
+      }),
+    );
+    return;
+  }
   // Built files never change under the same name: from the device first.
   if (url.pathname.startsWith("/_next/static/") || url.pathname.startsWith("/api/branding/favicon")) {
     event.respondWith(

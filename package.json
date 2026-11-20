@@ -28,8 +28,10 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.4.0",
+    "@dimforge/rapier3d-compat": "^0.21.0",
     "@electric-sql/pglite": "^0.5.12",
     "@phosphor-icons/react": "^2.1.10",
+    "@pixiv/three-vrm": "^3.5.5",
     "@simplewebauthn/browser": "^13.3.0",
     "@simplewebauthn/server": "^13.3.3",
     "@types/three": "^0.180.0",

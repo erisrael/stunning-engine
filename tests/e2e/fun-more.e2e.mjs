@@ -74,6 +74,7 @@ try {
   await win.locator("[data-world-people]").click();
   check("who is where, by status", await seen(win.locator("[data-world-panel]")));
   await win.locator("[data-world-dress]").click();
+  await win.locator('[data-studio-tab="acc"]').click();
   await win.locator("[data-world-dressup]").getByRole("button", { name: /Crown/ }).click();
   await win.locator("[data-world-save-look]").click();
   check("the character look is saved", await seen(page.getByText("Looking good!")));

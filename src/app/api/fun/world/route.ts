@@ -1,14 +1,18 @@
 import { NextResponse } from "next/server";
 import { requireViewer } from "@/server/auth";
-import { sync } from "@/server/fun-world";
+import { sync, type SyncInput } from "@/server/fun-world";
 
-// Seed Town's live room: a few numbers in, everyone else's few numbers out, several times a second.
+// Seed Town's live room: a few numbers in (and chat, voice introductions), everyone else's few numbers out, several
+// times a second.
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
   try {
     const viewer = await requireViewer();
-    const body = (await req.json().catch(() => ({}))) as { x?: number; z?: number; ry?: number; mv?: number; say?: string; emote?: string };
+    // Voice introductions can be a few kilobytes; anything bigger is not a town update.
+    const text = await req.text();
+    if (text.length > 200_000) return NextResponse.json({ error: "Too big." }, { status: 413 });
+    const body = (JSON.parse(text || "{}") ?? {}) as SyncInput;
     return NextResponse.json(await sync(viewer, body), { headers: { "Cache-Control": "no-store" } });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 400 });
