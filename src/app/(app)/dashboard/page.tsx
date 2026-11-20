@@ -25,7 +25,8 @@ import { PageImport } from "@/components/app/page-import";
 import { DASHBOARD_PANELS as PANELS } from "@/lib/panels";
 import { redirect } from "next/navigation";
 import { can, isLeadOf } from "@/server/users";
-import { leadDesk, myWork } from "@/server/team-flow";
+import { leadDesk, myWork, teamOverview } from "@/server/team-flow";
+import { TeamOverview } from "@/components/app/team-overview";
 import { LeadDesk, MyBoard, TeamGuide } from "@/components/app/team-flow";
 import { teamRules } from "@/lib/team-rules";
 
@@ -37,15 +38,16 @@ const ROLE_COPY: Record<string, { title: string; description: string; empty: str
   uploading: { title: "Uploading", description: "Approved masters, upload queue, failed transfers and processing checks.", empty: "No uploads waiting for you." },
   publication: { title: "Publication", description: "Lessons ready for review, approvals, the release calendar and release failures.", empty: "Nothing waiting for review or release." },
   manager: { title: "Organization overview", description: "Delivery health across stages, overdue work, blockers, unanswered questions and capacity signals.", empty: "No exceptions right now." },
+  assistant_manager: { title: "Production overview", description: "Delivery across stages (read only), studio sessions and presenters.", empty: "No exceptions right now." },
 };
 
 // A plain boolean (not a type guard), so later code keeps the full role type.
-const managerView = (role: string): boolean => role === "manager";
+const managerView = (role: string): boolean => role === "manager" || role === "assistant_manager";
 
 export default async function DashboardPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const viewer = await requireViewer();
   // People only in Dev, Studio or Marketing (or owners only) start in their own section, not the production home.
-  if (!viewer.roles.some((r) => ["recording", "editing", "uploading", "publication", "manager", "admin"].includes(r))) {
+  if (!viewer.roles.some((r) => ["recording", "editing", "uploading", "publication", "manager", "assistant_manager", "admin"].includes(r))) {
     const home = can(viewer, "owners.view") ? "/owners" : can(viewer, "dev.access") ? "/dev" : can(viewer, "studio.access") ? "/studio" : can(viewer, "marketing.access") ? "/marketing" : null;
     if (home) redirect(home);
   }
@@ -78,6 +80,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     const hour = Number(new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", hourCycle: "h23" }).format(new Date()));
     const greeting = `${hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening"}, ${viewer.name.split(" ")[0]}`;
     const [desk, mine] = await Promise.all([isLeadOf(viewer, team) ? leadDesk(viewer, team) : Promise.resolve(null), myWork(viewer)]);
+    // Members with "team.overview" (Recording by default) see the whole team's progress, read only.
+    const overview = !desk && can(viewer, "team.overview") ? await teamOverview(viewer, team) : null;
     const own = mine.items.filter((i) => i.stage === team);
     return (
       <div className="space-y-6">
@@ -90,6 +94,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           </Link>
         )}
         {!desk && <MyBoard items={own} title="My work" />}
+        {overview && <TeamOverview data={overview} tz={tz} links={can(viewer, "items.detail")} />}
       </div>
     );
   }

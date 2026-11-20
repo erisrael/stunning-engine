@@ -689,6 +689,9 @@ PREPS["fun-more"] = async () => {
 PREPS["seed-town"] = async () => {
   await passwordOnly();
   const a = await admin();
+  // The shop with prices (Admin's "everything free" is on by default).
+  const fun = await import("../../src/server/fun");
+  await fun.saveFunConfig(a, { freeAll: false });
   await run("INSERT INTO fun_points (id, user_id, points, reason, source, ref, created_at) VALUES (?, ?, 600, 'Test coins', 'grant', 'grant:test', ?)", uid("fp_"), a.id, nowIso());
   return {};
 };
@@ -703,6 +706,31 @@ PREPS["seed-town-play"] = async () => {
 PREPS["seed-town-models"] = async () => {
   await passwordOnly();
   return {};
+};
+
+// The city overhaul (streets, people, cars, the Grand Prix, archery, Seed Strike, the Windows app overlay) and the
+// admin changes (everything free, the V E D U grid, the Assistant Manager, Redo, the recording overview).
+PREPS["seed-town-city"] = async () => {
+  await passwordOnly();
+  const a = await admin();
+  // Dawit's part comes back from the team lead (Redo) and he is a Recording member (team overview).
+  const items = await all<{ id: string }>("SELECT i.id FROM items i JOIN lessons l ON l.id = i.lesson_id ORDER BY l.number");
+  const wf = await import("../../src/server/workflow");
+  const { getSettings } = await import("../../src/server/settings");
+  const dawit = (await loadUser((await get<{ id: string }>("SELECT id FROM users WHERE email = 'dawit@demo.local'"))!.id))!;
+  const hana = (await loadUser((await get<{ id: string }>("SELECT id FROM users WHERE email = 'hana@demo.local'"))!.id))!;
+  const p1 = items[0]!.id;
+  await wf.assignStage({ actor: a }, p1, { stage: "recording", userId: dawit.id }).catch(() => null);
+  await wf.startWork({ actor: dawit }, p1, { switchFrom: true });
+  await wf.addAsset({ actor: dawit }, p1, { kind: "raw", url: "https://drive.example/raw-e2e", cameraCode: "00042" } as never);
+  for (const c of (await getSettings()).checklists.recording) if (c.required) await wf.setChecklist({ actor: dawit }, p1, c.key, true);
+  await wf.submitToLead({ actor: dawit }, p1);
+  await wf.leadDecide({ actor: hana }, p1, { decision: "return", note: "Board out of focus" });
+  await wf.startWork({ actor: dawit }, p1, { switchFrom: true });
+  await run("UPDATE users SET prefs = ? WHERE id = ?", JSON.stringify({ tour: { seen: ["member", "lead", "publication", "manager", "owner", "department", "hr", "finance"] } }), dawit.id);
+  const am = await upsertAccount({ name: "Abeba Assistant", email: "am@demo.local", title: "Assistant manager", roles: ["assistant_manager"] as never, password: "Demo-Workflow-2026", mustChangePassword: false });
+  await run("UPDATE users SET prefs = ? WHERE id = ?", JSON.stringify({ tour: { seen: ["member", "lead", "publication", "manager", "owner", "department", "hr", "finance"] } }), am.id);
+  return { part: p1 };
 };
 
 // Admin, Noor access, the new sidebar entries and Finance requests for Admin.

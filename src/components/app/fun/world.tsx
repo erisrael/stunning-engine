@@ -18,6 +18,13 @@ import { Studio, type Wallet } from "./world/studio";
 import { autoQuality, PRESETS, Town, type ChatMsg, type Gfx, type Room, type TownData, type VoiceState } from "./world/town";
 import { useScores } from "./shell";
 import { usePlayer } from "./player";
+import { useYouTube } from "./youtube";
+import { PERSONAS } from "@/lib/focus";
+import { NpcConversation } from "./world/npc-dialog";
+import { WEATHER_LABEL } from "./world/atmosphere";
+import { COMPOUND, GP_MODES, SKILL, fmtLap, type Compound, type Difficulty, type GpMode, type RaceState } from "./world/gp";
+import { ARCHERY_MODES, BOWS, archeryLevel, type ArcheryMode, type Bow } from "./world/archery";
+import { STRIKE_MAPS, STRIKE_MODES, WEAPONS, type StrikeHud, type StrikeMap, type StrikeMode, type WeaponKey } from "./world/strike";
 
 // Commands to the Fun window (open a tab or a game), without importing it (it imports this file).
 const funCommand = (c: { open?: string; game?: string }) => window.dispatchEvent(new CustomEvent("myseed-fun", { detail: c }));
@@ -52,6 +59,58 @@ function loadGfx(): Gfx {
 
 type PanelState = { kind: string; data?: Record<string, unknown> } | null;
 
+// The Windows app (desktop/): its launcher's graphics settings, and live numbers for the overlay.
+type DesktopApi = { desktop: true; getSettings: () => Promise<{ settings: { graphics: { quality: Gfx["quality"]; renderScale: number; shadows: 0 | 1 | 2; view: number; fps: 0 | 30 | 60 }; showFps: boolean } }>; perf: () => Promise<{ cpu: number; memoryMb: number; gpu: number | null }> };
+const desktopApi = () => (typeof window !== "undefined" ? ((window as unknown as { seedDesktop?: DesktopApi }).seedDesktop ?? null) : null);
+
+// Frame rate, draw calls, triangles, the GPU and memory (F3; on by default in the Windows app).
+function PerfOverlay({ town }: { town: React.RefObject<Town | null> }) {
+  const [s, setS] = React.useState<{ fps: number; calls: number; tris: number; gpu: string; heap: number | null; app: { cpu: number; memoryMb: number; gpu: number | null } | null } | null>(null);
+  React.useEffect(() => {
+    let frames = 0, raf = 0, last = performance.now();
+    const tick = () => {
+      frames++;
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    const id = window.setInterval(async () => {
+      const now = performance.now();
+      const fps = Math.round((frames * 1000) / (now - last));
+      frames = 0;
+      last = now;
+      const t = town.current as unknown as { renderer?: THREE_Renderer } | null;
+      const r = t?.renderer;
+      let calls = 0, tris = 0, gpu = "";
+      if (r) {
+        r.info.autoReset = false;
+        r.info.reset();
+        await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
+        calls = r.info.render.calls;
+        tris = r.info.render.triangles;
+        r.info.autoReset = true;
+        const gl = r.getContext();
+        const ext = gl.getExtension("WEBGL_debug_renderer_info");
+        gpu = ext ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)) : "";
+      }
+      const mem = (performance as unknown as { memory?: { usedJSHeapSize: number } }).memory;
+      const app = desktopApi() ? await desktopApi()!.perf().catch(() => null) : null;
+      setS({ fps, calls, tris, gpu: gpu.replace(/^ANGLE \(|\)$/g, "").slice(0, 70), heap: mem ? Math.round(mem.usedJSHeapSize / 1048576) : null, app });
+    }, 1000);
+    return () => (cancelAnimationFrame(raf), window.clearInterval(id));
+  }, [town]);
+  if (!s) return null;
+  return (
+    <div className="pointer-events-none absolute top-14 left-3 z-20 rounded-md bg-black/70 px-2 py-1 font-mono text-[10px] leading-tight text-[#a7f3d0]" data-world-perf>
+      <p className="text-sm font-bold text-white">{s.fps} fps</p>
+      <p>{s.calls} draws · {(s.tris / 1000).toFixed(0)}k tris</p>
+      {s.heap !== null && <p>JS heap {s.heap} MB</p>}
+      {s.app && <p>app CPU {s.app.cpu}% · RAM {s.app.memoryMb} MB{s.app.gpu !== null ? " · GPU process " + s.app.gpu + "%" : ""}</p>}
+      <p className="max-w-56 truncate text-white/60">{s.gpu}</p>
+    </div>
+  );
+}
+type THREE_Renderer = { info: { autoReset: boolean; reset: () => void; render: { calls: number; triangles: number } }; getContext: () => WebGLRenderingContext };
+
 export function SeedTown({ big = false }: { big?: boolean }) {
   const box = React.useRef<HTMLDivElement>(null);
   const shell = React.useRef<HTMLDivElement>(null);
@@ -75,6 +134,30 @@ export function SeedTown({ big = false }: { big?: boolean }) {
   const [speaking, setSpeaking] = React.useState<Set<string>>(new Set());
   const [volumes, setVolumes] = React.useState<Record<string, number>>({});
   const [speed, setSpeed] = React.useState<number | null>(null);
+  const [gauge, setGauge] = React.useState<{ rpm: number; redline: number; gear: number; condition: number; manual: boolean } | null>(null);
+  const [race, setRace] = React.useState<RaceState | null>(null);
+  const [arch, setArch] = React.useState<{ mode: ArcheryMode; bow: Bow }>({ mode: "classic", bow: "training" });
+  const [strike, setStrike] = React.useState<StrikeHud | null>(null);
+  const [lobby, setLobby] = React.useState<{ open: { id: string; mode: string; map: string; n: number; max: number }[] } | null>(null);
+  const [sk, setSk] = React.useState<{ mode: StrikeMode; map: StrikeMap; bots: number; difficulty: "easy" | "normal" | "hard"; primary: WeaponKey; code: string }>({ mode: "tdm", map: "warehouse", bots: 5, difficulty: "normal", primary: "rifle", code: "" });
+  const [board, setBoard] = React.useState(false);
+  // Tab holds the Strike scoreboard open.
+  const inStrike = !!strike;
+  React.useEffect(() => {
+    if (!inStrike) return;
+    const k = (e: KeyboardEvent) => {
+      if (e.key !== "Tab") return;
+      e.preventDefault();
+      setBoard(e.type === "keydown");
+    };
+    window.addEventListener("keydown", k);
+    window.addEventListener("keyup", k);
+    return () => {
+      window.removeEventListener("keydown", k);
+      window.removeEventListener("keyup", k);
+    };
+  }, [inStrike]);
+  const [gpSetup, setGpSetup] = React.useState<{ mode: GpMode; difficulty: Difficulty; opponents: number; compound: Compound }>({ mode: "sprint", difficulty: "amateur", opponents: 7, compound: "medium" });
   const [gems, setGems] = React.useState(0);
   const [cam, setCam] = React.useState<"third" | "first">("third");
   const [driving, setDriving] = React.useState(false);
@@ -91,10 +174,25 @@ export function SeedTown({ big = false }: { big?: boolean }) {
   const lookRef = React.useRef<Look | null>(null);
   // Town music steps back while the Fun player plays or a voice chat is on.
   const player = usePlayer();
+  const yt = useYouTube();
   React.useEffect(() => town.current?.sound.setDuck(!!player?.playing || rooms.me.mode !== "off"), [player?.playing, rooms.me.mode]);
 
+  const [perf, setPerf] = React.useState(false);
   React.useEffect(() => {
-    setGfx(loadGfx());
+    const k = (e: KeyboardEvent) => e.key === "F3" && (e.preventDefault(), setPerf((p) => !p));
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  }, []);
+  React.useEffect(() => {
+    const d = desktopApi();
+    // The Windows app: its launcher decides the graphics (higher levels than a browser tab), and shows the overlay.
+    if (d)
+      void d.getSettings().then(({ settings }) => {
+        const g = settings.graphics;
+        setGfx({ ...loadGfx(), preset: "custom", quality: g.quality, ratio: g.renderScale, shadows: g.shadows, view: g.view, fps: g.fps, aa: true, effects: true });
+        setPerf(settings.showFps);
+      });
+    else setGfx(loadGfx());
     const coarse = matchMedia("(pointer: coarse)").matches;
     setTouch(coarse);
     // Phones: the chat starts folded so the controls have room.
@@ -150,8 +248,21 @@ export function SeedTown({ big = false }: { big?: boolean }) {
         },
         toast: (text, kind) => (kind === "err" ? toast.error(text) : kind === "ok" ? toast.success(text) : toast(text)),
         speed: setSpeed,
+        gauge: setGauge,
+        race: setRace,
+        strike: setStrike,
+        strikeLobby: setLobby,
         card: setCard,
         npc: setNpc,
+        // A task someone gave me is done (I am at its place): the server checks and pays.
+        quest: (npcId, q) => {
+          void F.npcQuestDoneAction(npcId, { x: q.x, z: q.z }).then((r) => {
+            if (!r.ok) return void toast.error(r.error);
+            const got = (r.data as { coins: number }).coins;
+            if (got) setCoins((c) => c + got);
+            toast.success(`Task done: ${q.place}${got ? ` · +${got} coins` : ""}`);
+          });
+        },
         reward: (activity, amount, text, score) => {
           void (async () => {
             if (activity !== "gems" && activity !== "treasure" && score > 0) void F.saveScoreAction(`world:${activity}`, score, { activity }).catch(() => {});
@@ -234,6 +345,7 @@ export function SeedTown({ big = false }: { big?: boolean }) {
     else if (act === "tip") t.interact();
     else if (act === "dance") t.doEmote("dance");
     else if (act === "archery") setPanel({ kind: "activity", data: { kind: "archery" } });
+    else if (act === "gp") setPanel({ kind: "gp" });
     setNpc(null);
   };
 
@@ -288,7 +400,16 @@ export function SeedTown({ big = false }: { big?: boolean }) {
             <kbd className="mr-1.5 rounded bg-white/90 px-1.5 text-xs text-black">E</kbd>{prompt.label}
           </button>
         )}
-        {speed !== null && <div className="absolute right-3 bottom-28 z-10 rounded-lg bg-black/60 px-3 py-1 text-right text-white sm:bottom-16" data-world-speed><span className="text-2xl font-bold tabular-nums">{speed}</span> <span className="text-xs">km/h</span><p className="text-[10px] opacity-70">W/S drive · A/D steer · Space brake · H horn · E get out</p></div>}
+        {speed !== null && <div className="absolute right-3 bottom-28 z-10 rounded-lg bg-black/60 px-3 py-1 text-right text-white sm:bottom-16" data-world-speed><span className="text-2xl font-bold tabular-nums">{speed}</span> <span className="text-xs">km/h</span>
+            {gauge && (
+              <div className="mt-0.5 flex items-center justify-end gap-2" data-world-gauge>
+                <span className="text-sm font-bold tabular-nums">{gauge.gear < 0 ? "R" : gauge.gear}</span>
+                <span className="h-1.5 w-20 overflow-hidden rounded-full bg-white/20"><span className="block h-full" style={{ width: `${Math.min(100, (gauge.rpm / gauge.redline) * 100)}%`, background: gauge.rpm > gauge.redline * 0.9 ? "#ef4444" : "#22c55e" }} /></span>
+                <span className="text-[10px] tabular-nums">{Math.round(gauge.rpm / 100) / 10}k</span>
+                {gauge.condition < 100 && <span className={cn("text-[10px]", gauge.condition < 40 ? "text-red-300" : "text-amber-200")}>{gauge.condition}%</span>}
+              </div>
+            )}
+            <p className="text-[10px] opacity-70">W/S drive · A/D steer · Space handbrake · H horn · E get out{gauge?.manual ? " · X/Z gears" : ""}</p></div>}
         {hud && (
           <div className="absolute top-14 left-1/2 z-10 w-72 -translate-x-1/2 rounded-xl bg-black/65 p-2 text-center text-white" data-world-hud>
             <p className="text-sm font-semibold">{hud.title}</p>
@@ -300,8 +421,8 @@ export function SeedTown({ big = false }: { big?: boolean }) {
           </div>
         )}
 
-        {/* Emotes and actions. */}
-        <div className={cn("absolute right-2 z-10 flex flex-col items-end gap-1", touch ? "bottom-40" : "bottom-36 sm:bottom-14")}>
+        {/* Emotes and actions (not while driving, racing or in a match: the speed and ammo displays sit there). */}
+        <div className={cn("absolute right-2 z-10 flex flex-col items-end gap-1", touch ? "bottom-40" : "bottom-36 sm:bottom-14", (speed !== null || strike || race) && "hidden")}>
           {emotes && (
             <div className="grid grid-cols-3 gap-1 rounded-xl bg-black/40 p-1">
               {([["wave", HandIcon], ["cheer", PartyPopperIcon], ["dance", MusicIcon], ["laugh", LaughIcon], ["cry", FrownIcon], ["clap", HandHeartIcon], ["bow", FootprintsIcon], ["jump", ArrowUpIcon], ["firework", SparklesIcon]] as const).map(([k, Icon]) => (
@@ -319,7 +440,7 @@ export function SeedTown({ big = false }: { big?: boolean }) {
         </div>
         {touch && <TouchControls town={town} sitting={sitting} driving={driving} />}
 
-        <ChatBox className={touch ? "top-24 bottom-auto" : undefined} messages={messages} onSend={(text, ch) => t?.say(text, ch)} open={chatOpen} setOpen={setChatOpen} channel={channel} setChannel={setChannel} inRoom={rooms.me.mode === "room"} enabled={home.chat} muted={muted} focusKey={chatFocus} />
+        <ChatBox className={cn(touch && "top-24 bottom-auto", strike && "hidden")} messages={messages} onSend={(text, ch) => t?.say(text, ch)} open={chatOpen} setOpen={setChatOpen} channel={channel} setChannel={setChannel} inRoom={rooms.me.mode === "room"} enabled={home.chat} muted={muted} focusKey={chatFocus} />
 
         {/* Panels. */}
         {p?.kind === "people" && (
@@ -423,11 +544,283 @@ export function SeedTown({ big = false }: { big?: boolean }) {
             <p className="mt-2 text-xs text-muted-foreground">Step inside before it leaves: the doors close, it moves, and opens on your floor.</p>
           </Panel>
         )}
-        {p?.kind === "activity" && (
+        {p?.kind === "activity" && p.data?.kind === "archery" && (
+          <Panel title="Archery" onClose={() => setPanel(null)}>
+            {(() => {
+              const lvl = archeryLevel();
+              return (
+                <div className="space-y-2 text-xs" data-archery-setup>
+                  <div className="grid grid-cols-2 gap-1">
+                    {ARCHERY_MODES.map((m) => (
+                      <button key={m.key} type="button" onClick={() => setArch((a) => ({ ...a, mode: m.key }))} className={cn("rounded-md border p-1.5 text-left", arch.mode === m.key ? "border-primary bg-primary/10" : "hover:bg-muted")} data-archery-mode={m.key}>
+                        <span className="block font-medium">{m.label}</span>
+                        <span className="block text-[10px] text-muted-foreground">{m.note}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {(Object.keys(BOWS) as Bow[]).map((b) => (
+                      <Button key={b} size="xs" variant={arch.bow === b ? "default" : "outline"} disabled={lvl < BOWS[b].unlock} onClick={() => setArch((a) => ({ ...a, bow: b }))} data-archery-bow={b}>
+                        {BOWS[b].label}
+                        {lvl < BOWS[b].unlock ? " (level " + BOWS[b].unlock + ")" : ""}
+                      </Button>
+                    ))}
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">Progressive level {lvl} of 10 (score 40 in a progressive round to go up; better bows unlock on the way). On a phone: drag to aim, hold to draw, lift to shoot.</p>
+                  <Button className="w-full" onClick={() => (t?.startActivity("archery", lvl, arch), setPanel(null))} data-archery-start>
+                    To the shooting line
+                  </Button>
+                </div>
+              );
+            })()}
+          </Panel>
+        )}
+        {p?.kind === "activity" && p.data?.kind !== "archery" && (
           <Panel title={p.data?.kind === "archery" ? "Archery" : "Target gallery"} onClose={() => setPanel(null)}>
             <p className="mb-2 text-xs text-muted-foreground">{p.data?.kind === "archery" ? "Ten arrows. Hold to draw, move to aim, let go. Higher levels move the targets." : "Forty seconds. Tap white (2) and gold (5) targets; red ones cost points."}</p>
             <div className="grid grid-cols-3 gap-1">
               {[1, 2, 3].map((lv) => <Button key={lv} onClick={() => (t?.startActivity(p.data?.kind as string, lv), setPanel(null))} data-activity-level={lv}>Level {lv}</Button>)}
+            </div>
+          </Panel>
+        )}
+        {p?.kind === "strike" && (
+          <Panel title="Seed Strike" onClose={() => setPanel(null)}>
+            <div className="space-y-2 text-xs" data-strike-setup>
+              <div className="grid grid-cols-2 gap-1">
+                {STRIKE_MODES.map((m) => (
+                  <button key={m.key} type="button" onClick={() => setSk((s) => ({ ...s, mode: m.key }))} className={cn("rounded-md border p-1.5 text-left", sk.mode === m.key ? "border-primary bg-primary/10" : "hover:bg-muted")} data-strike-mode={m.key}>
+                    <span className="block font-medium">{m.label}</span>
+                    <span className="block text-[10px] text-muted-foreground">{m.note}</span>
+                  </button>
+                ))}
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {STRIKE_MAPS.map((m) => (
+                  <Button key={m.key} size="xs" variant={sk.map === m.key ? "default" : "outline"} onClick={() => setSk((s) => ({ ...s, map: m.key }))} data-strike-map={m.key}>
+                    {m.label}
+                  </Button>
+                ))}
+              </div>
+              <div className="flex flex-wrap items-center gap-1">
+                Weapon:
+                {(["rifle", "smg", "shotgun", "marksman"] as WeaponKey[]).map((w) => (
+                  <Button key={w} size="xs" variant={sk.primary === w ? "default" : "outline"} onClick={() => setSk((s) => ({ ...s, primary: w }))}>
+                    {WEAPONS[w].label}
+                  </Button>
+                ))}
+                <span className="text-muted-foreground">+ K9 pistol</span>
+              </div>
+              {sk.mode !== "duel" && sk.mode !== "training" && (
+                <label className="flex items-center justify-between gap-2">
+                  Bots <input type="range" min={1} max={9} value={sk.bots} onChange={(e) => setSk((s) => ({ ...s, bots: Number(e.target.value) }))} /> <span className="w-4 tabular-nums">{sk.bots}</span>
+                </label>
+              )}
+              <div className="flex gap-1">
+                {(["easy", "normal", "hard"] as const).map((d) => (
+                  <Button key={d} size="xs" variant={sk.difficulty === d ? "default" : "outline"} onClick={() => setSk((s) => ({ ...s, difficulty: d }))} className="capitalize">
+                    {d}
+                  </Button>
+                ))}
+              </div>
+              <p className="text-[10px] text-muted-foreground">WASD move, Shift sprint, Space jump, click to shoot (the mouse locks; Esc frees it), right button aims, R reloads, 1 and 2 switch weapons, Tab shows the scoreboard. Made-up weapons; no blood.</p>
+              <Button className="w-full" onClick={() => (t?.startActivity("strike", 1, { mode: sk.mode, map: sk.map, bots: sk.bots, difficulty: sk.difficulty, loadout: [sk.primary, "pistol"] }), setPanel(null))} data-strike-start>
+                Play with bots
+              </Button>
+              {sk.mode !== "training" && (
+                <div className="space-y-1 rounded-md border p-2">
+                  <p className="font-medium">Online with colleagues</p>
+                  <div className="flex flex-wrap gap-1">
+                    <Button size="xs" onClick={() => (t?.strikeOp({ op: "quick", mode: sk.mode }), t?.startActivity("strike", 1, { mode: sk.mode, map: sk.map, bots: 0, difficulty: sk.difficulty, loadout: [sk.primary, "pistol"], online: true }), setPanel(null))} data-strike-quick>
+                      Quick match
+                    </Button>
+                    <Button size="xs" variant="outline" onClick={() => (t?.strikeOp({ op: "create", mode: sk.mode, map: sk.map, priv: true }), t?.startActivity("strike", 1, { mode: sk.mode, map: sk.map, bots: 0, difficulty: sk.difficulty, loadout: [sk.primary, "pistol"], online: true }), setPanel(null))}>
+                      Private match (gets a code)
+                    </Button>
+                  </div>
+                  {(lobby?.open ?? []).map((m) => (
+                    <Button key={m.id} size="xs" variant="secondary" className="mr-1" onClick={() => (t?.strikeOp({ op: "join", id: m.id }), t?.startActivity("strike", 1, { mode: m.mode as StrikeMode, map: m.map as StrikeMap, bots: 0, difficulty: sk.difficulty, loadout: [sk.primary, "pistol"], online: true }), setPanel(null))}>
+                      Join {m.mode} on {m.map} ({m.n}/{m.max})
+                    </Button>
+                  ))}
+                  <div className="flex gap-1">
+                    <input value={sk.code} onChange={(e) => setSk((s) => ({ ...s, code: e.target.value.replace(/\D/g, "").slice(0, 4) }))} placeholder="Code" className="h-7 w-20 rounded border bg-background px-1" />
+                    <span className="self-center text-[10px] text-muted-foreground">A private match's code: ask its host; join from the list with it.</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </Panel>
+        )}
+        {strike && (
+          <>
+            <div className="pointer-events-none absolute top-1/2 left-1/2 z-10 -translate-x-1/2 -translate-y-1/2" data-strike-crosshair>
+              <div className={cn("size-5 rounded-full border-2", strike.hit ? "border-red-500" : "border-white/80", strike.zoom && "size-2")} />
+            </div>
+            <div className="pointer-events-none absolute bottom-24 left-3 z-10 rounded-lg bg-black/65 px-3 py-2 text-white sm:bottom-16" data-strike-hud>
+              <p className="text-xs">Health</p>
+              <div className="h-2 w-40 overflow-hidden rounded bg-white/20"><div className="h-full bg-green-500" style={{ width: strike.hp + "%" }} /></div>
+              <div className="mt-1 h-1.5 w-40 overflow-hidden rounded bg-white/20"><div className="h-full bg-sky-400" style={{ width: strike.armor * 2 + "%" }} /></div>
+            </div>
+            <div className="pointer-events-none absolute right-3 bottom-24 z-10 rounded-lg bg-black/65 px-3 py-2 text-right text-white sm:bottom-16">
+              <p className="text-xs">{strike.weapon}</p>
+              <p className="text-2xl font-bold tabular-nums">{strike.reloading ? "Reloading" : strike.ammo + " / " + strike.reserve}</p>
+            </div>
+            <div className="pointer-events-none absolute top-14 left-1/2 z-10 -translate-x-1/2 rounded-lg bg-black/65 px-3 py-1 text-center text-white">
+              <p className="text-sm font-bold">{strike.score}</p>
+              <p className="text-[11px] tabular-nums">{strike.time}{strike.round ? " · " + strike.round : ""} · {strike.kills} kills · {strike.deaths} deaths</p>
+            </div>
+            <div className="pointer-events-none absolute top-24 right-3 z-10 space-y-0.5 text-right text-[11px] text-white">
+              {strike.feed.map((f, i) => (
+                <p key={i} className="rounded bg-black/55 px-2 py-0.5">{f}</p>
+              ))}
+            </div>
+            {strike.dead > 0 && <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-red-900/30 text-2xl font-bold text-white">Respawning in {strike.dead}</div>}
+            {(board || strike.over) && (
+              <div className="absolute inset-x-6 top-16 z-20 mx-auto max-w-md rounded-xl bg-black/80 p-3 text-sm text-white" data-strike-board>
+                {strike.over && <p className="mb-2 text-center text-lg font-bold text-[#f5c518]">{strike.over}</p>}
+                <table className="w-full text-xs">
+                  <thead><tr className="text-left text-white/60"><th>Player</th><th className="text-right">Kills</th><th className="text-right">Deaths</th></tr></thead>
+                  <tbody>{strike.board.map((b) => <tr key={b.name} className={cn(b.me && "font-bold text-[#fde68a]")}><td><span className="mr-1 inline-block size-2 rounded-full" style={{ background: b.team === 0 ? "#3b82f6" : "#ef4444" }} />{b.name}</td><td className="text-right">{b.k}</td><td className="text-right">{b.d}</td></tr>)}</tbody>
+                </table>
+                {strike.over && <Button className="mt-2 w-full" size="sm" onClick={() => t?.stopActivity()}>Leave the arena</Button>}
+              </div>
+            )}
+          </>
+        )}
+        {p?.kind === "gp" && (
+          <Panel title="Seed Grand Prix" onClose={() => setPanel(null)}>
+            <div className="space-y-2 text-xs" data-gp-setup>
+              <div className="grid grid-cols-2 gap-1">
+                {GP_MODES.map((m) => (
+                  <button key={m.key} type="button" onClick={() => setGpSetup((s) => ({ ...s, mode: m.key }))} className={cn("rounded-md border p-1.5 text-left", gpSetup.mode === m.key ? "border-primary bg-primary/10" : "hover:bg-muted")} data-gp-mode={m.key}>
+                    <span className="block font-medium">{m.label}</span>
+                    <span className="block text-[10px] text-muted-foreground">{m.note}</span>
+                  </button>
+                ))}
+              </div>
+              {!["practice", "qualifying", "timetrial"].includes(gpSetup.mode) && (
+                <>
+                  <label className="flex items-center justify-between gap-2">
+                    AI drivers <input type="range" min={1} max={11} value={gpSetup.opponents} onChange={(e) => setGpSetup((s) => ({ ...s, opponents: Number(e.target.value) }))} /> <span className="w-5 tabular-nums">{gpSetup.opponents}</span>
+                  </label>
+                  <div className="flex flex-wrap gap-1">
+                    {(Object.keys(SKILL) as Difficulty[]).map((d) => (
+                      <Button key={d} size="xs" variant={gpSetup.difficulty === d ? "default" : "outline"} onClick={() => setGpSetup((s) => ({ ...s, difficulty: d }))}>
+                        {SKILL[d].label}
+                      </Button>
+                    ))}
+                  </div>
+                </>
+              )}
+              <div className="flex items-center gap-1">
+                Tyres:{" "}
+                {(Object.keys(COMPOUND) as Compound[]).map((c) => (
+                  <Button key={c} size="xs" variant={gpSetup.compound === c ? "default" : "outline"} onClick={() => setGpSetup((s) => ({ ...s, compound: c }))} className="capitalize">
+                    <span className="mr-1 inline-block size-2 rounded-full" style={{ background: COMPOUND[c].color }} />
+                    {c}
+                  </Button>
+                ))}
+              </div>
+              <p className="text-[10px] text-muted-foreground">Your car: the Seed F2 single-seater. W/S throttle and brake, A/D steer, Space handbrake, V cockpit view. The pit lane (left of the straight) limits you to 60 km/h; stop in the first box for new tyres and fuel. Esc leaves the session.</p>
+              <Button className="w-full" onClick={() => (t?.startActivity("gp", 1, gpSetup), setPanel(null))} data-gp-start>
+                Go to the grid
+              </Button>
+            </div>
+          </Panel>
+        )}
+        {perf && <PerfOverlay town={town} />}
+        {race && (
+          <div className="pointer-events-none absolute top-14 right-3 z-10 w-56 rounded-lg bg-black/70 p-2 text-[11px] text-white" data-gp-hud>
+            <div className="flex items-baseline justify-between">
+              <span className="text-lg font-bold">
+                P{race.pos}
+                <span className="text-xs font-normal">/{race.of}</span>
+              </span>
+              <span>{race.laps ? "Lap " + Math.max(1, Math.min(race.lap, race.laps)) + "/" + race.laps : "Lap " + Math.max(1, race.lap)}</span>
+            </div>
+            <p className="font-mono tabular-nums">
+              {fmtLap(race.lapTime)} {race.delta !== null && <span className={race.delta > 0 ? "text-red-300" : "text-green-300"}>{(race.delta > 0 ? "+" : "") + race.delta.toFixed(3)}</span>}
+            </p>
+            <p className="font-mono text-white/70">
+              Last {fmtLap(race.last)} · Best {fmtLap(race.best)}
+            </p>
+            <p className="flex gap-1">
+              {race.sectors.map((s, i) => (
+                <span key={i} className={cn("flex-1 rounded px-1 text-center", s === null ? "bg-white/10" : "bg-purple-700/70")}>
+                  S{i + 1} {s === null ? "--" : s.toFixed(1)}
+                </span>
+              ))}
+            </p>
+            <p className="mt-1 flex items-center gap-1">
+              <span className="inline-block size-2 rounded-full" style={{ background: COMPOUND[race.tyre].color }} /> <span className="capitalize">{race.tyre}</span> {Math.round((1 - race.wear) * 100)}% · {Math.round(race.temp)}°C · fuel {Math.round(race.fuel)}%
+            </p>
+            {(race.penalty > 0 || race.warnings > 0) && (
+              <p className="text-amber-300">
+                Track limits {race.warnings % 3}/3{race.penalty ? " · +" + race.penalty + "s" : ""}
+              </p>
+            )}
+            {race.inPit && <p className="text-sky-300">Pit lane · 60 km/h</p>}
+            {race.phase === "lights" || race.phase === "grid" ? (
+              <div className="my-1 flex justify-center gap-1" data-gp-lights>
+                {[0, 1, 2, 3, 4].map((i) => (
+                  <span key={i} className={cn("size-4 rounded-full border border-white/30", i < race.lights ? "bg-red-600" : "bg-black")} />
+                ))}
+              </div>
+            ) : null}
+            <p className="mt-1 text-[#fde68a]">{race.message}</p>
+            <ol className="mt-1 space-y-0.5 border-t border-white/15 pt-1">
+              {race.standings.filter((s) => s.pos <= 5 || s.me).map((s) => (
+                <li key={s.name} className={cn("flex justify-between", s.me && "font-bold text-[#fde68a]")}>
+                  <span>
+                    {s.pos}. {s.name}
+                  </span>
+                  <span className="tabular-nums text-white/70">{s.gap}</span>
+                </li>
+              ))}
+            </ol>
+          </div>
+        )}
+        {race?.results && (
+          <Panel title="Race results" onClose={() => (t?.stopActivity(), setRace(null))}>
+            <table className="w-full text-xs" data-gp-results>
+              <thead>
+                <tr className="text-left text-muted-foreground">
+                  <th>Pos</th>
+                  <th>Driver</th>
+                  <th>Time</th>
+                  <th>Best</th>
+                  <th className="text-right">Pts</th>
+                </tr>
+              </thead>
+              <tbody>
+                {race.results.map((r) => (
+                  <tr key={r.name} className={cn(r.me && "font-semibold")}>
+                    <td>{r.pos}</td>
+                    <td>{r.name}</td>
+                    <td className="font-mono">{r.time}</td>
+                    <td className="font-mono">{r.best}</td>
+                    <td className="text-right">{r.points}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <Button className="mt-2 w-full" size="sm" onClick={() => (t?.stopActivity(), setRace(null))}>
+              Back to the paddock
+            </Button>
+          </Panel>
+        )}
+        {p?.kind === "tv" && (
+          <Panel title="Television" onClose={() => setPanel(null)}>
+            <p className="mb-2 text-xs text-muted-foreground">Pick a channel; it plays in the app's video player.</p>
+            <div className="grid grid-cols-2 gap-1" data-tv-channels>
+              {PERSONAS.flatMap((x) => x.youtube)
+                .filter((y) => y.video)
+                .slice(0, 8)
+                .map((y) => (
+                  <Button key={y.video} size="xs" variant="outline" onClick={() => (yt?.play({ video: y.video!, title: y.label }), setPanel(null))} data-tv-channel={y.video}>
+                    {y.label}
+                  </Button>
+                ))}
             </div>
           </Panel>
         )}
@@ -468,7 +861,24 @@ export function SeedTown({ big = false }: { big?: boolean }) {
             </div>
           </Panel>
         )}
-        {npc && <NpcDialog name={npc.name} role={npc.role} lines={npc.lines} actions={npc.actions} onAct={npcAct} onClose={() => setNpc(null)} />}
+        {npc && t && npc.person ? (
+          <NpcConversation
+            key={npc.id}
+            def={npc}
+            host={{
+              hours: t.atmosphere.hours,
+              weather: WEATHER_LABEL[t.atmosphere.weather],
+              player: home.residents.find((r) => r.me)?.name ?? "friend",
+              speak: (id, v) => t.npcSpeak(id, v),
+              mark: (m) => t.setMarker(m),
+              quest: (id, q) => t.addQuest(id, q),
+              act: npcAct,
+            }}
+            onClose={() => setNpc(null)}
+          />
+        ) : npc ? (
+          <NpcDialog name={npc.name} role={npc.role} lines={npc.lines} actions={npc.actions} onAct={npcAct} onClose={() => setNpc(null)} />
+        ) : null}
         {card && (
           <div className="absolute bottom-16 left-1/2 z-20 w-64 -translate-x-1/2 rounded-xl bg-background/95 p-3 text-sm shadow-lg" data-world-card>
             <div className="flex items-start justify-between">

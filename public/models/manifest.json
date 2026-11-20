@@ -1,0 +1,1462 @@
+{
+ "assets": [
+  {
+   "id": "anim.ual",
+   "name": "Universal Animation Library",
+   "category": "animation",
+   "file": "/models/anims/ual.json",
+   "source": "https://quaternius.com/packs/universalanimationlibrary.html",
+   "author": "Quaternius",
+   "license": "CC0",
+   "sizeKb": 1140,
+   "steps": [
+    "retargeted to the humanoid rig (scripts/retarget-ual.mjs)",
+    "quantised JSON"
+   ],
+   "status": "integrated",
+   "usedIn": "Every character (anime and realistic)",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "anime.aoi",
+   "name": "VRM1 Constraint Twist Sample",
+   "category": "character",
+   "file": "/models/avatars/aoi.vrm",
+   "source": "https://github.com/vrm-c/vrm-specification/tree/master/samples",
+   "author": "pixiv Inc.",
+   "license": "VRM Public License 1.0",
+   "sizeKb": 4565,
+   "steps": [
+    "textures WebP 1024px"
+   ],
+   "status": "integrated",
+   "usedIn": "Anime characters (designer, town)",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "anime.bibi",
+   "name": "AvatarSample E",
+   "category": "character",
+   "file": "/models/avatars/bibi.vrm",
+   "source": "https://opengameart.org/content/vroid-studio-cc0-models",
+   "author": "VRoid Project (pixiv Inc.)",
+   "license": "VRoid sample terms: free use, commercial, modification, redistribution",
+   "sizeKb": 3959,
+   "steps": [
+    "textures WebP 1024px"
+   ],
+   "status": "integrated",
+   "usedIn": "Anime characters (designer, town)",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "anime.fumiriya",
+   "name": "Sakurada Fumiriya",
+   "category": "character",
+   "file": "/models/avatars/fumiriya.vrm",
+   "source": "https://opengameart.org/content/vroid-studio-cc0-models",
+   "author": "VRoid Project (pixiv Inc.)",
+   "license": "VRoid sample terms: free use, commercial, modification, redistribution",
+   "sizeKb": 4950,
+   "steps": [
+    "textures WebP 1024px"
+   ],
+   "status": "integrated",
+   "usedIn": "Anime characters (designer, town)",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "anime.kai",
+   "name": "HairSample_Male",
+   "category": "character",
+   "file": "/models/avatars/kai.vrm",
+   "source": "https://vroid.pixiv.help/hc/en-us/articles/4402614652569",
+   "author": "VRoid Project (pixiv Inc.)",
+   "license": "CC0",
+   "sizeKb": 4332,
+   "steps": [
+    "textures WebP 1024px"
+   ],
+   "status": "integrated",
+   "usedIn": "Anime characters (designer, town)",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "anime.mei",
+   "name": "HairSample_Female",
+   "category": "character",
+   "file": "/models/avatars/mei.vrm",
+   "source": "https://vroid.pixiv.help/hc/en-us/articles/4402614652569",
+   "author": "VRoid Project (pixiv Inc.)",
+   "license": "CC0",
+   "sizeKb": 4517,
+   "steps": [
+    "textures WebP 1024px"
+   ],
+   "status": "integrated",
+   "usedIn": "Anime characters (designer, town)",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "anime.seed",
+   "name": "Seed-san",
+   "category": "character",
+   "file": "/models/avatars/seed.vrm",
+   "source": "https://vrm.dev/licenses/1.0/",
+   "author": "VirtualCast, Inc. (credit required)",
+   "license": "VRM Public License 1.0",
+   "sizeKb": 4397,
+   "steps": [
+    "textures WebP 1024px"
+   ],
+   "status": "integrated",
+   "usedIn": "Anime characters (designer, town)",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "anime.shibu",
+   "name": "AvatarSample D",
+   "category": "character",
+   "file": "/models/avatars/shibu.vrm",
+   "source": "https://opengameart.org/content/vroid-studio-cc0-models",
+   "author": "VRoid Project (pixiv Inc.)",
+   "license": "VRoid sample terms: free use, commercial, modification, redistribution",
+   "sizeKb": 4368,
+   "steps": [
+    "textures WebP 1024px"
+   ],
+   "status": "integrated",
+   "usedIn": "Anime characters (designer, town)",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "anime.shino",
+   "name": "Sendagaya Shino",
+   "category": "character",
+   "file": "/models/avatars/shino.vrm",
+   "source": "https://opengameart.org/content/vroid-studio-cc0-models",
+   "author": "VRoid Project (pixiv Inc.)",
+   "license": "VRoid sample terms: free use, commercial, modification, redistribution",
+   "sizeKb": 4221,
+   "steps": [
+    "textures WebP 1024px"
+   ],
+   "status": "integrated",
+   "usedIn": "Anime characters (designer, town)",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "anime.victoria",
+   "name": "AvatarSample G",
+   "category": "character",
+   "file": "/models/avatars/victoria.vrm",
+   "source": "https://opengameart.org/content/vroid-studio-cc0-models",
+   "author": "VRoid Project (pixiv Inc.)",
+   "license": "VRoid sample terms: free use, commercial, modification, redistribution",
+   "sizeKb": 4099,
+   "steps": [
+    "textures WebP 1024px"
+   ],
+   "status": "integrated",
+   "usedIn": "Anime characters (designer, town)",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "anime.vita",
+   "name": "AvatarSample F",
+   "category": "character",
+   "file": "/models/avatars/vita.vrm",
+   "source": "https://opengameart.org/content/vroid-studio-cc0-models",
+   "author": "VRoid Project (pixiv Inc.)",
+   "license": "VRoid sample terms: free use, commercial, modification, redistribution",
+   "sizeKb": 4007,
+   "steps": [
+    "textures WebP 1024px"
+   ],
+   "status": "integrated",
+   "usedIn": "Anime characters (designer, town)",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "person.rb_f01",
+   "name": "Female Adult 01 (Rocketbox)",
+   "category": "character",
+   "file": "/models/people/rb_f01.glb",
+   "source": "https://github.com/microsoft/Microsoft-Rocketbox/tree/master/Assets/Avatars/Adults/Female_Adult_01",
+   "author": "Microsoft (Rocketbox)",
+   "license": "MIT",
+   "sizeKb": 689,
+   "steps": [
+    "FBX to glTF",
+    "textures 1024px WebP",
+    "meshopt",
+    "animations retargeted at load (Biped to humanoid)"
+   ],
+   "status": "integrated",
+   "usedIn": "Realistic characters and town folk",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "person.rb_f04",
+   "name": "Female Adult 04 (Rocketbox)",
+   "category": "character",
+   "file": "/models/people/rb_f04.glb",
+   "source": "https://github.com/microsoft/Microsoft-Rocketbox/tree/master/Assets/Avatars/Adults/Female_Adult_04",
+   "author": "Microsoft (Rocketbox)",
+   "license": "MIT",
+   "sizeKb": 719,
+   "steps": [
+    "FBX to glTF",
+    "textures 1024px WebP",
+    "meshopt",
+    "animations retargeted at load (Biped to humanoid)"
+   ],
+   "status": "integrated",
+   "usedIn": "Realistic characters and town folk",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "person.rb_f08",
+   "name": "Female Adult 08 (Rocketbox)",
+   "category": "character",
+   "file": "/models/people/rb_f08.glb",
+   "source": "https://github.com/microsoft/Microsoft-Rocketbox/tree/master/Assets/Avatars/Adults/Female_Adult_08",
+   "author": "Microsoft (Rocketbox)",
+   "license": "MIT",
+   "sizeKb": 684,
+   "steps": [
+    "FBX to glTF",
+    "textures 1024px WebP",
+    "meshopt",
+    "animations retargeted at load (Biped to humanoid)"
+   ],
+   "status": "integrated",
+   "usedIn": "Realistic characters and town folk",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "person.rb_f12",
+   "name": "Female Adult 12 (Rocketbox)",
+   "category": "character",
+   "file": "/models/people/rb_f12.glb",
+   "source": "https://github.com/microsoft/Microsoft-Rocketbox/tree/master/Assets/Avatars/Adults/Female_Adult_12",
+   "author": "Microsoft (Rocketbox)",
+   "license": "MIT",
+   "sizeKb": 640,
+   "steps": [
+    "FBX to glTF",
+    "textures 1024px WebP",
+    "meshopt",
+    "animations retargeted at load (Biped to humanoid)"
+   ],
+   "status": "integrated",
+   "usedIn": "Realistic characters and town folk",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "person.rb_m01",
+   "name": "Male Adult 01 (Rocketbox)",
+   "category": "character",
+   "file": "/models/people/rb_m01.glb",
+   "source": "https://github.com/microsoft/Microsoft-Rocketbox/tree/master/Assets/Avatars/Adults/Male_Adult_01",
+   "author": "Microsoft (Rocketbox)",
+   "license": "MIT",
+   "sizeKb": 624,
+   "steps": [
+    "FBX to glTF",
+    "textures 1024px WebP",
+    "meshopt",
+    "animations retargeted at load (Biped to humanoid)"
+   ],
+   "status": "integrated",
+   "usedIn": "Realistic characters and town folk",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "person.rb_m05",
+   "name": "Male Adult 05 (Rocketbox)",
+   "category": "character",
+   "file": "/models/people/rb_m05.glb",
+   "source": "https://github.com/microsoft/Microsoft-Rocketbox/tree/master/Assets/Avatars/Adults/Male_Adult_05",
+   "author": "Microsoft (Rocketbox)",
+   "license": "MIT",
+   "sizeKb": 729,
+   "steps": [
+    "FBX to glTF",
+    "textures 1024px WebP",
+    "meshopt",
+    "animations retargeted at load (Biped to humanoid)"
+   ],
+   "status": "integrated",
+   "usedIn": "Realistic characters and town folk",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "person.rb_m08",
+   "name": "Male Adult 08 (Rocketbox)",
+   "category": "character",
+   "file": "/models/people/rb_m08.glb",
+   "source": "https://github.com/microsoft/Microsoft-Rocketbox/tree/master/Assets/Avatars/Adults/Male_Adult_08",
+   "author": "Microsoft (Rocketbox)",
+   "license": "MIT",
+   "sizeKb": 632,
+   "steps": [
+    "FBX to glTF",
+    "textures 1024px WebP",
+    "meshopt",
+    "animations retargeted at load (Biped to humanoid)"
+   ],
+   "status": "integrated",
+   "usedIn": "Realistic characters and town folk",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "person.rb_m12",
+   "name": "Male Adult 12 (Rocketbox)",
+   "category": "character",
+   "file": "/models/people/rb_m12.glb",
+   "source": "https://github.com/microsoft/Microsoft-Rocketbox/tree/master/Assets/Avatars/Adults/Male_Adult_12",
+   "author": "Microsoft (Rocketbox)",
+   "license": "MIT",
+   "sizeKb": 435,
+   "steps": [
+    "FBX to glTF",
+    "textures 1024px WebP",
+    "meshopt",
+    "animations retargeted at load (Biped to humanoid)"
+   ],
+   "status": "integrated",
+   "usedIn": "Realistic characters and town folk",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "prop.armchair",
+   "name": "Modern Arm Chair 01",
+   "category": "furniture",
+   "file": "/models/props/armchair.glb",
+   "source": "https://polyhaven.com/a/modern_arm_chair_01",
+   "author": "Vibrant Nordic",
+   "license": "CC0",
+   "sizeKb": 147,
+   "polycount": 8916,
+   "steps": [
+    "glTF 1k",
+    "textures 512px WebP",
+    "meshopt"
+   ],
+   "status": "integrated",
+   "usedIn": "Homes and offices",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "prop.armchair_classic",
+   "name": "Arm Chair 01",
+   "category": "furniture",
+   "file": "/models/props/armchair_classic.glb",
+   "source": "https://polyhaven.com/a/ArmChair_01",
+   "author": "Kirill Sannikov",
+   "license": "CC0",
+   "sizeKb": 139,
+   "polycount": 5626,
+   "steps": [
+    "glTF 1k",
+    "textures 512px WebP",
+    "meshopt"
+   ],
+   "status": "integrated",
+   "usedIn": "Homes and offices",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "prop.ceiling_lamp",
+   "name": "Modern Ceiling Lamp 01",
+   "category": "furniture",
+   "file": "/models/props/ceiling_lamp.glb",
+   "source": "https://polyhaven.com/a/modern_ceiling_lamp_01",
+   "author": "James Ray Cock",
+   "license": "CC0",
+   "sizeKb": 80,
+   "polycount": 5602,
+   "steps": [
+    "glTF 1k",
+    "textures 512px WebP",
+    "meshopt"
+   ],
+   "status": "integrated",
+   "usedIn": "Homes and offices",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "prop.chair",
+   "name": "Green Chair 01",
+   "category": "furniture",
+   "file": "/models/props/chair.glb",
+   "source": "https://polyhaven.com/a/GreenChair_01",
+   "author": "Kirill Sannikov",
+   "license": "CC0",
+   "sizeKb": 116,
+   "polycount": 4213,
+   "steps": [
+    "glTF 1k",
+    "textures 512px WebP",
+    "meshopt"
+   ],
+   "status": "integrated",
+   "usedIn": "Homes and offices",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "prop.chair_plastic",
+   "name": "Plastic Monobloc Chair 01",
+   "category": "furniture",
+   "file": "/models/props/chair_plastic.glb",
+   "source": "https://polyhaven.com/a/plastic_monobloc_chair_01",
+   "author": "Kuutti Siitonen",
+   "license": "CC0",
+   "sizeKb": 129,
+   "polycount": 3356,
+   "steps": [
+    "glTF 1k",
+    "textures 512px WebP",
+    "meshopt"
+   ],
+   "status": "integrated",
+   "usedIn": "Homes and offices",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "prop.coffee_table",
+   "name": "Coffee Table Round 01",
+   "category": "furniture",
+   "file": "/models/props/coffee_table.glb",
+   "source": "https://polyhaven.com/a/coffee_table_round_01",
+   "author": "Ulan Cabanilla",
+   "license": "CC0",
+   "sizeKb": 88,
+   "polycount": 4044,
+   "steps": [
+    "glTF 1k",
+    "textures 512px WebP",
+    "meshopt"
+   ],
+   "status": "integrated",
+   "usedIn": "Homes and offices",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "prop.plant",
+   "name": "Potted Plant 02",
+   "category": "furniture",
+   "file": "/models/props/plant.glb",
+   "source": "https://polyhaven.com/a/potted_plant_02",
+   "author": "Rico Cilliers",
+   "license": "CC0",
+   "sizeKb": 615,
+   "polycount": 69806,
+   "steps": [
+    "glTF 1k",
+    "textures 512px WebP",
+    "meshopt"
+   ],
+   "status": "integrated",
+   "usedIn": "Homes and offices",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "prop.plant_small",
+   "name": "Potted Plant 04",
+   "category": "furniture",
+   "file": "/models/props/plant_small.glb",
+   "source": "https://polyhaven.com/a/potted_plant_04",
+   "author": "James Ray Cock",
+   "license": "CC0",
+   "sizeKb": 176,
+   "polycount": 6097,
+   "steps": [
+    "glTF 1k",
+    "textures 512px WebP",
+    "meshopt"
+   ],
+   "status": "integrated",
+   "usedIn": "Homes and offices",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "prop.school_chair",
+   "name": "School Chair 01",
+   "category": "furniture",
+   "file": "/models/props/school_chair.glb",
+   "source": "https://polyhaven.com/a/SchoolChair_01",
+   "author": "Ethan Place",
+   "license": "CC0",
+   "sizeKb": 88,
+   "polycount": 5072,
+   "steps": [
+    "glTF 1k",
+    "textures 512px WebP",
+    "meshopt"
+   ],
+   "status": "integrated",
+   "usedIn": "Homes and offices",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "prop.shelves",
+   "name": "Wooden Display Shelves 01",
+   "category": "furniture",
+   "file": "/models/props/shelves.glb",
+   "source": "https://polyhaven.com/a/wooden_display_shelves_01",
+   "author": "James Ray Cock",
+   "license": "CC0",
+   "sizeKb": 77,
+   "polycount": 3174,
+   "steps": [
+    "glTF 1k",
+    "textures 512px WebP",
+    "meshopt"
+   ],
+   "status": "integrated",
+   "usedIn": "Homes and offices",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "prop.shelves_steel",
+   "name": "Steel Frame Shelves 01",
+   "category": "furniture",
+   "file": "/models/props/shelves_steel.glb",
+   "source": "https://polyhaven.com/a/steel_frame_shelves_01",
+   "author": "James Ray Cock",
+   "license": "CC0",
+   "sizeKb": 82,
+   "polycount": 4348,
+   "steps": [
+    "glTF 1k",
+    "textures 512px WebP",
+    "meshopt"
+   ],
+   "status": "integrated",
+   "usedIn": "Homes and offices",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "prop.sofa",
+   "name": "Sofa 02",
+   "category": "furniture",
+   "file": "/models/props/sofa.glb",
+   "source": "https://polyhaven.com/a/sofa_02",
+   "author": "Kirill Sannikov",
+   "license": "CC0",
+   "sizeKb": 79,
+   "polycount": 2728,
+   "steps": [
+    "glTF 1k",
+    "textures 512px WebP",
+    "meshopt"
+   ],
+   "status": "integrated",
+   "usedIn": "Homes and offices",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "prop.sofa_modern",
+   "name": "Sofa 03",
+   "category": "furniture",
+   "file": "/models/props/sofa_modern.glb",
+   "source": "https://polyhaven.com/a/sofa_03",
+   "author": "Fran Calvente",
+   "license": "CC0",
+   "sizeKb": 138,
+   "polycount": 8004,
+   "steps": [
+    "glTF 1k",
+    "textures 512px WebP",
+    "meshopt"
+   ],
+   "status": "integrated",
+   "usedIn": "Homes and offices",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "prop.table",
+   "name": "Wooden Table 02",
+   "category": "furniture",
+   "file": "/models/props/table.glb",
+   "source": "https://polyhaven.com/a/wooden_table_02",
+   "author": "Serhii Khromov",
+   "license": "CC0",
+   "sizeKb": 63,
+   "polycount": 196,
+   "steps": [
+    "glTF 1k",
+    "textures 512px WebP",
+    "meshopt"
+   ],
+   "status": "integrated",
+   "usedIn": "Homes and offices",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "prop.table_round",
+   "name": "Round Wooden Table 01",
+   "category": "furniture",
+   "file": "/models/props/table_round.glb",
+   "source": "https://polyhaven.com/a/round_wooden_table_01",
+   "author": "Ulan Cabanilla",
+   "license": "CC0",
+   "sizeKb": 104,
+   "polycount": 8640,
+   "steps": [
+    "glTF 1k",
+    "textures 512px WebP",
+    "meshopt"
+   ],
+   "status": "integrated",
+   "usedIn": "Homes and offices",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "prop.tv",
+   "name": "Television 01",
+   "category": "furniture",
+   "file": "/models/props/tv.glb",
+   "source": "https://polyhaven.com/a/Television_01",
+   "author": "Gabriel Radi\u0107",
+   "license": "CC0",
+   "sizeKb": 86,
+   "polycount": 1918,
+   "steps": [
+    "glTF 1k",
+    "textures 512px WebP",
+    "meshopt"
+   ],
+   "status": "integrated",
+   "usedIn": "Homes and offices",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "prop.barrel",
+   "name": "Barrel_01",
+   "category": "industrial",
+   "file": "/models/props/barrel.glb",
+   "source": "https://polyhaven.com/a/Barrel_01",
+   "author": "Jorge Camacho",
+   "license": "CC0",
+   "sizeKb": 124,
+   "polycount": 2682,
+   "steps": [
+    "glTF 1k",
+    "textures 512px WebP",
+    "meshopt"
+   ],
+   "status": "integrated",
+   "usedIn": "Shooter maps and the industrial district",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "prop.barrel_blue",
+   "name": "Barrel 02",
+   "category": "industrial",
+   "file": "/models/props/barrel_blue.glb",
+   "source": "https://polyhaven.com/a/Barrel_02",
+   "author": "Jorge Camacho",
+   "license": "CC0",
+   "sizeKb": 77,
+   "polycount": 2688,
+   "steps": [
+    "glTF 1k",
+    "textures 512px WebP",
+    "meshopt"
+   ],
+   "status": "integrated",
+   "usedIn": "Shooter maps and the industrial district",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "prop.cardboard",
+   "name": "Cardboard Box 01",
+   "category": "industrial",
+   "file": "/models/props/cardboard.glb",
+   "source": "https://polyhaven.com/a/cardboard_box_01",
+   "author": "Rahul Chaudhary",
+   "license": "CC0",
+   "sizeKb": 171,
+   "polycount": 16952,
+   "steps": [
+    "glTF 1k",
+    "textures 512px WebP",
+    "meshopt"
+   ],
+   "status": "integrated",
+   "usedIn": "Shooter maps and the industrial district",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "prop.crate",
+   "name": "Wooden Crate 01",
+   "category": "industrial",
+   "file": "/models/props/crate.glb",
+   "source": "https://polyhaven.com/a/wooden_crate_01",
+   "author": "James Ray Cock",
+   "license": "CC0",
+   "sizeKb": 135,
+   "polycount": 6576,
+   "steps": [
+    "glTF 1k",
+    "textures 512px WebP",
+    "meshopt"
+   ],
+   "status": "integrated",
+   "usedIn": "Shooter maps and the industrial district",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "prop.power_box",
+   "name": "Power Box 01",
+   "category": "industrial",
+   "file": "/models/props/power_box.glb",
+   "source": "https://polyhaven.com/a/power_box_01",
+   "author": "Rico Cilliers, Yann Kervran",
+   "license": "CC0",
+   "sizeKb": 264,
+   "polycount": 21272,
+   "steps": [
+    "glTF 1k",
+    "textures 512px WebP",
+    "meshopt"
+   ],
+   "status": "integrated",
+   "usedIn": "Shooter maps and the industrial district",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "prop.tyre",
+   "name": "Old Tyre",
+   "category": "industrial",
+   "file": "/models/props/tyre.glb",
+   "source": "https://polyhaven.com/a/old_tyre",
+   "author": "MP",
+   "license": "CC0",
+   "sizeKb": 117,
+   "polycount": 2880,
+   "steps": [
+    "glTF 1k",
+    "textures 512px WebP",
+    "meshopt"
+   ],
+   "status": "integrated",
+   "usedIn": "Shooter maps and the industrial district",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "music.action-1",
+   "name": "Action 1",
+   "category": "music",
+   "file": "/audio/music/action-1.mp3",
+   "source": "https://opengameart.org",
+   "author": "Juhani Junkala",
+   "license": "CC0",
+   "sizeKb": 871,
+   "steps": [
+    "96 kbit/s MP3"
+   ],
+   "status": "integrated",
+   "usedIn": "Town music by district",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "music.action-2",
+   "name": "Action 2",
+   "category": "music",
+   "file": "/audio/music/action-2.mp3",
+   "source": "https://opengameart.org",
+   "author": "Juhani Junkala",
+   "license": "CC0",
+   "sizeKb": 854,
+   "steps": [
+    "96 kbit/s MP3"
+   ],
+   "status": "integrated",
+   "usedIn": "Town music by district",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "music.action-3",
+   "name": "Action 3",
+   "category": "music",
+   "file": "/audio/music/action-3.mp3",
+   "source": "https://opengameart.org",
+   "author": "Juhani Junkala",
+   "license": "CC0",
+   "sizeKb": 961,
+   "steps": [
+    "96 kbit/s MP3"
+   ],
+   "status": "integrated",
+   "usedIn": "Town music by district",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "music.castle-town",
+   "name": "Castle Town",
+   "category": "music",
+   "file": "/audio/music/castle-town.mp3",
+   "source": "https://opengameart.org",
+   "author": "Will Carpenter",
+   "license": "CC0",
+   "sizeKb": 393,
+   "steps": [
+    "96 kbit/s MP3"
+   ],
+   "status": "integrated",
+   "usedIn": "Town music by district",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "music.market",
+   "name": "Market",
+   "category": "music",
+   "file": "/audio/music/market.mp3",
+   "source": "https://opengameart.org",
+   "author": "Geomancer",
+   "license": "CC0",
+   "sizeKb": 470,
+   "steps": [
+    "96 kbit/s MP3"
+   ],
+   "status": "integrated",
+   "usedIn": "Town music by district",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "music.town-1",
+   "name": "Town 1",
+   "category": "music",
+   "file": "/audio/music/town-1.mp3",
+   "source": "https://opengameart.org",
+   "author": "Geomancer",
+   "license": "CC0",
+   "sizeKb": 938,
+   "steps": [
+    "96 kbit/s MP3"
+   ],
+   "status": "integrated",
+   "usedIn": "Town music by district",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "music.town-2",
+   "name": "Town 2",
+   "category": "music",
+   "file": "/audio/music/town-2.mp3",
+   "source": "https://opengameart.org",
+   "author": "Geomancer",
+   "license": "CC0",
+   "sizeKb": 876,
+   "steps": [
+    "96 kbit/s MP3"
+   ],
+   "status": "integrated",
+   "usedIn": "Town music by district",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "music.town-theme",
+   "name": "Town Theme",
+   "category": "music",
+   "file": "/audio/music/town-theme.mp3",
+   "source": "https://opengameart.org",
+   "author": "cynicmusic",
+   "license": "CC0",
+   "sizeKb": 1143,
+   "steps": [
+    "96 kbit/s MP3"
+   ],
+   "status": "integrated",
+   "usedIn": "Town music by district",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "prop.fern",
+   "name": "Fern 02",
+   "category": "nature",
+   "file": "/models/props/fern.glb",
+   "source": "https://polyhaven.com/a/fern_02",
+   "author": "Rob Tuytel, Rico Cilliers",
+   "license": "CC0",
+   "sizeKb": 97,
+   "polycount": 6232,
+   "steps": [
+    "glTF 1k",
+    "textures 512px WebP",
+    "meshopt"
+   ],
+   "status": "integrated",
+   "usedIn": "Streets and parks",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "prop.rock",
+   "name": "Boulder 01",
+   "category": "nature",
+   "file": "/models/props/rock.glb",
+   "source": "https://polyhaven.com/a/boulder_01",
+   "author": "Rico Cilliers",
+   "license": "CC0",
+   "sizeKb": 904,
+   "polycount": 123976,
+   "steps": [
+    "glTF 1k",
+    "textures 512px WebP",
+    "meshopt"
+   ],
+   "status": "integrated",
+   "usedIn": "Streets and parks",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "prop.shrub",
+   "name": "Shrub Sorrel 01",
+   "category": "nature",
+   "file": "/models/props/shrub.glb",
+   "source": "https://polyhaven.com/a/shrub_sorrel_01",
+   "author": "Rico Cilliers",
+   "license": "CC0",
+   "sizeKb": 75,
+   "polycount": 3319,
+   "steps": [
+    "glTF 1k",
+    "textures 512px WebP",
+    "meshopt"
+   ],
+   "status": "integrated",
+   "usedIn": "Streets and parks",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "sfx.kenney",
+   "name": "Interface Sounds",
+   "category": "sound",
+   "file": "/audio/sfx/click.mp3",
+   "source": "https://kenney.nl/assets/interface-sounds",
+   "author": "Kenney",
+   "license": "CC0",
+   "sizeKb": 27,
+   "steps": [
+    "MP3"
+   ],
+   "status": "integrated",
+   "usedIn": "Clicks, pickups, the lift, game sounds",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "prop.aircon",
+   "name": "Exterior Aircon Unit",
+   "category": "street",
+   "file": "/models/props/aircon.glb",
+   "source": "https://polyhaven.com/a/exterior_aircon_unit",
+   "author": "Monsta3D",
+   "license": "CC0",
+   "sizeKb": 446,
+   "polycount": 18986,
+   "steps": [
+    "glTF 1k",
+    "textures 512px WebP",
+    "meshopt"
+   ],
+   "status": "integrated",
+   "usedIn": "Streets and parks",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "prop.coffee_cart",
+   "name": "Coffee Cart 01",
+   "category": "street",
+   "file": "/models/props/coffee_cart.glb",
+   "source": "https://polyhaven.com/a/CoffeeCart_01",
+   "author": "Joe Seabuhr",
+   "license": "CC0",
+   "sizeKb": 381,
+   "polycount": 27659,
+   "steps": [
+    "glTF 1k",
+    "textures 512px WebP",
+    "meshopt"
+   ],
+   "status": "integrated",
+   "usedIn": "Streets and parks",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "prop.outdoor_set",
+   "name": "Outdoor Table Chair Set 01",
+   "category": "street",
+   "file": "/models/props/outdoor_set.glb",
+   "source": "https://polyhaven.com/a/outdoor_table_chair_set_01",
+   "author": "James Ray Cock",
+   "license": "CC0",
+   "sizeKb": 215,
+   "polycount": 9828,
+   "steps": [
+    "glTF 1k",
+    "textures 512px WebP",
+    "meshopt"
+   ],
+   "status": "integrated",
+   "usedIn": "Streets and parks",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "prop.picnic",
+   "name": "Wooden Picnic Table",
+   "category": "street",
+   "file": "/models/props/picnic.glb",
+   "source": "https://polyhaven.com/a/wooden_picnic_table",
+   "author": "Ulan Cabanilla",
+   "license": "CC0",
+   "sizeKb": 180,
+   "polycount": 10210,
+   "steps": [
+    "glTF 1k",
+    "textures 512px WebP",
+    "meshopt"
+   ],
+   "status": "integrated",
+   "usedIn": "Streets and parks",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "prop.trash",
+   "name": "Metal Trash Can",
+   "category": "street",
+   "file": "/models/props/trash.glb",
+   "source": "https://polyhaven.com/a/metal_trash_can",
+   "author": "GurJas Studios",
+   "license": "CC0",
+   "sizeKb": 337,
+   "polycount": 13960,
+   "steps": [
+    "glTF 1k",
+    "textures 512px WebP",
+    "meshopt"
+   ],
+   "status": "integrated",
+   "usedIn": "Streets and parks",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "prop.utility_box",
+   "name": "Utility Box 02",
+   "category": "street",
+   "file": "/models/props/utility_box.glb",
+   "source": "https://polyhaven.com/a/utility_box_02",
+   "author": "James Ray Cock",
+   "license": "CC0",
+   "sizeKb": 115,
+   "polycount": 6268,
+   "steps": [
+    "glTF 1k",
+    "textures 512px WebP",
+    "meshopt"
+   ],
+   "status": "integrated",
+   "usedIn": "Streets and parks",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "prop.wet_sign",
+   "name": "Wet Floor Sign 01",
+   "category": "street",
+   "file": "/models/props/wet_sign.glb",
+   "source": "https://polyhaven.com/a/WetFloorSign_01",
+   "author": "Fran Calvente",
+   "license": "CC0",
+   "sizeKb": 46,
+   "polycount": 228,
+   "steps": [
+    "glTF 1k",
+    "textures 512px WebP",
+    "meshopt"
+   ],
+   "status": "integrated",
+   "usedIn": "Streets and parks",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "tex.asphalt",
+   "name": "Asphalt 02",
+   "category": "texture",
+   "file": "/textures/pbr/asphalt_color.webp",
+   "source": "https://polyhaven.com/a/asphalt_02",
+   "author": "Rob Tuytel",
+   "license": "CC0",
+   "sizeKb": 874,
+   "steps": [
+    "1k maps resized to 1024px",
+    "WebP"
+   ],
+   "status": "integrated",
+   "usedIn": "City surfaces",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "tex.brick",
+   "name": "Red Brick 03",
+   "category": "texture",
+   "file": "/textures/pbr/brick_color.webp",
+   "source": "https://polyhaven.com/a/red_brick_03",
+   "author": "Rob Tuytel",
+   "license": "CC0",
+   "sizeKb": 544,
+   "steps": [
+    "1k maps resized to 1024px",
+    "WebP"
+   ],
+   "status": "integrated",
+   "usedIn": "City surfaces",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "tex.clayroof",
+   "name": "Clay Roof Tiles 02",
+   "category": "texture",
+   "file": "/textures/pbr/clayroof_color.webp",
+   "source": "https://polyhaven.com/a/clay_roof_tiles_02",
+   "author": "Amal Kumar",
+   "license": "CC0",
+   "sizeKb": 125,
+   "steps": [
+    "1k maps resized to 512px",
+    "WebP"
+   ],
+   "status": "integrated",
+   "usedIn": "City surfaces",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "tex.cobble",
+   "name": "Cobblestone Floor 04",
+   "category": "texture",
+   "file": "/textures/pbr/cobble_color.webp",
+   "source": "https://polyhaven.com/a/cobblestone_floor_04",
+   "author": "Rob Tuytel",
+   "license": "CC0",
+   "sizeKb": 150,
+   "steps": [
+    "1k maps resized to 512px",
+    "WebP"
+   ],
+   "status": "integrated",
+   "usedIn": "City surfaces",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "tex.concrete",
+   "name": "Concrete Floor 02",
+   "category": "texture",
+   "file": "/textures/pbr/concrete_color.webp",
+   "source": "https://polyhaven.com/a/concrete_floor_02",
+   "author": "Rob Tuytel",
+   "license": "CC0",
+   "sizeKb": 513,
+   "steps": [
+    "1k maps resized to 1024px",
+    "WebP"
+   ],
+   "status": "integrated",
+   "usedIn": "City surfaces",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "tex.dirt",
+   "name": "Forest Ground 04",
+   "category": "texture",
+   "file": "/textures/pbr/dirt_color.webp",
+   "source": "https://polyhaven.com/a/forest_ground_04",
+   "author": "Rob Tuytel, Rico Cilliers",
+   "license": "CC0",
+   "sizeKb": 184,
+   "steps": [
+    "1k maps resized to 512px",
+    "WebP"
+   ],
+   "status": "integrated",
+   "usedIn": "City surfaces",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "tex.fabric",
+   "name": "Fabric Pattern 07",
+   "category": "texture",
+   "file": "/textures/pbr/fabric_color.webp",
+   "source": "https://polyhaven.com/a/fabric_pattern_07",
+   "author": "Rob Tuytel",
+   "license": "CC0",
+   "sizeKb": 94,
+   "steps": [
+    "1k maps resized to 512px",
+    "WebP"
+   ],
+   "status": "integrated",
+   "usedIn": "City surfaces",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "tex.factory",
+   "name": "Factory Wall",
+   "category": "texture",
+   "file": "/textures/pbr/factory_color.webp",
+   "source": "https://polyhaven.com/a/factory_wall",
+   "author": "Rob Tuytel",
+   "license": "CC0",
+   "sizeKb": 35,
+   "steps": [
+    "1k maps resized to 512px",
+    "WebP"
+   ],
+   "status": "integrated",
+   "usedIn": "City surfaces",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "tex.grass",
+   "name": "Leafy Grass",
+   "category": "texture",
+   "file": "/textures/pbr/grass_color.webp",
+   "source": "https://polyhaven.com/a/leafy_grass",
+   "author": "Charlotte Baglioni",
+   "license": "CC0",
+   "sizeKb": 934,
+   "steps": [
+    "1k maps resized to 1024px",
+    "WebP"
+   ],
+   "status": "integrated",
+   "usedIn": "City surfaces",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "tex.gravel",
+   "name": "Gravelly Sand",
+   "category": "texture",
+   "file": "/textures/pbr/gravel_color.webp",
+   "source": "https://polyhaven.com/a/gravelly_sand",
+   "author": "Dario Barresi",
+   "license": "CC0",
+   "sizeKb": 160,
+   "steps": [
+    "1k maps resized to 512px",
+    "WebP"
+   ],
+   "status": "integrated",
+   "usedIn": "City surfaces",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "tex.laminate",
+   "name": "Laminate Floor 02",
+   "category": "texture",
+   "file": "/textures/pbr/laminate_color.webp",
+   "source": "https://polyhaven.com/a/laminate_floor_02",
+   "author": "Dario Barresi, Charlotte Baglioni",
+   "license": "CC0",
+   "sizeKb": 26,
+   "steps": [
+    "1k maps resized to 512px",
+    "WebP"
+   ],
+   "status": "integrated",
+   "usedIn": "City surfaces",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "tex.marble",
+   "name": "Marble 01",
+   "category": "texture",
+   "file": "/textures/pbr/marble_color.webp",
+   "source": "https://polyhaven.com/a/marble_01",
+   "author": "Rob Tuytel",
+   "license": "CC0",
+   "sizeKb": 18,
+   "steps": [
+    "1k maps resized to 512px",
+    "WebP"
+   ],
+   "status": "integrated",
+   "usedIn": "City surfaces",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "tex.metal",
+   "name": "Metal Plate",
+   "category": "texture",
+   "file": "/textures/pbr/metal_color.webp",
+   "source": "https://polyhaven.com/a/metal_plate",
+   "author": "Rob Tuytel",
+   "license": "CC0",
+   "sizeKb": 106,
+   "steps": [
+    "1k maps resized to 512px",
+    "WebP"
+   ],
+   "status": "integrated",
+   "usedIn": "City surfaces",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "tex.planks",
+   "name": "Wood Planks Dirt",
+   "category": "texture",
+   "file": "/textures/pbr/planks_color.webp",
+   "source": "https://polyhaven.com/a/wood_planks_dirt",
+   "author": "Rob Tuytel",
+   "license": "CC0",
+   "sizeKb": 55,
+   "steps": [
+    "1k maps resized to 512px",
+    "WebP"
+   ],
+   "status": "integrated",
+   "usedIn": "City surfaces",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "tex.plaster",
+   "name": "White Plaster 02",
+   "category": "texture",
+   "file": "/textures/pbr/plaster_color.webp",
+   "source": "https://polyhaven.com/a/white_plaster_02",
+   "author": "Rob Tuytel",
+   "license": "CC0",
+   "sizeKb": 69,
+   "steps": [
+    "1k maps resized to 512px",
+    "WebP"
+   ],
+   "status": "integrated",
+   "usedIn": "City surfaces",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "tex.roof",
+   "name": "Grey Roof Tiles 02",
+   "category": "texture",
+   "file": "/textures/pbr/roof_color.webp",
+   "source": "https://polyhaven.com/a/grey_roof_tiles_02",
+   "author": "Rob Tuytel",
+   "license": "CC0",
+   "sizeKb": 81,
+   "steps": [
+    "1k maps resized to 512px",
+    "WebP"
+   ],
+   "status": "integrated",
+   "usedIn": "City surfaces",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "tex.sidewalk",
+   "name": "Concrete Pavement",
+   "category": "texture",
+   "file": "/textures/pbr/sidewalk_color.webp",
+   "source": "https://polyhaven.com/a/concrete_pavement",
+   "author": "Charlotte Baglioni",
+   "license": "CC0",
+   "sizeKb": 598,
+   "steps": [
+    "1k maps resized to 1024px",
+    "WebP"
+   ],
+   "status": "integrated",
+   "usedIn": "City surfaces",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "tex.stone",
+   "name": "Stone Tiles 02",
+   "category": "texture",
+   "file": "/textures/pbr/stone_color.webp",
+   "source": "https://polyhaven.com/a/stone_tiles_02",
+   "author": "Charlotte Baglioni",
+   "license": "CC0",
+   "sizeKb": 85,
+   "steps": [
+    "1k maps resized to 512px",
+    "WebP"
+   ],
+   "status": "integrated",
+   "usedIn": "City surfaces",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "tex.tiles",
+   "name": "Floor Tiles 06",
+   "category": "texture",
+   "file": "/textures/pbr/tiles_color.webp",
+   "source": "https://polyhaven.com/a/floor_tiles_06",
+   "author": "Rob Tuytel",
+   "license": "CC0",
+   "sizeKb": 29,
+   "steps": [
+    "1k maps resized to 512px",
+    "WebP"
+   ],
+   "status": "integrated",
+   "usedIn": "City surfaces",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "tex.wood",
+   "name": "Wood Floor",
+   "category": "texture",
+   "file": "/textures/pbr/wood_color.webp",
+   "source": "https://polyhaven.com/a/wood_floor",
+   "author": "Dimitrios Savva",
+   "license": "CC0",
+   "sizeKb": 26,
+   "steps": [
+    "1k maps resized to 512px",
+    "WebP"
+   ],
+   "status": "integrated",
+   "usedIn": "City surfaces",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "car.concept",
+   "name": "Car Concept",
+   "category": "vehicle",
+   "file": "/models/cars/concept.glb",
+   "source": "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/CarConcept",
+   "author": "Eric Chadwick, Darmstadt Graphics Group GmbH (Khronos glTF Sample Assets)",
+   "license": "CC BY 4.0",
+   "sizeKb": 2542,
+   "steps": [
+    "textures 1024px WebP",
+    "meshopt",
+    "wheels found by name at load"
+   ],
+   "status": "integrated",
+   "usedIn": "Vehicles (dealer, garage, traffic)",
+   "updated": "2026-11-20"
+  },
+  {
+   "id": "car.porsche911",
+   "name": "Porsche 911 Carrera 4S",
+   "category": "vehicle",
+   "file": "/models/cars/porsche911.glb",
+   "source": "https://sketchfab.com/3d-models/free-porsche-911-carrera-4s-d01b254483794de3819786d93e0e1ebf",
+   "author": "Lionsharp Studios (Karol Miklas)",
+   "license": "CC BY-SA 4.0",
+   "note": "Real-world car design and name are trademarks of their maker; the model's licence covers the 3D model only.",
+   "sizeKb": 3549,
+   "steps": [
+    "textures 1024px WebP",
+    "meshopt",
+    "wheels found by name at load"
+   ],
+   "status": "integrated",
+   "usedIn": "Vehicles (dealer, garage, traffic)",
+   "updated": "2026-11-20"
+  }
+ ]
+}

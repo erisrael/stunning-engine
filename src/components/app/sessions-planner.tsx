@@ -42,9 +42,12 @@ export function SessionPlanner(props: {
   staff: { id: string; name: string }[];
   candidates: Candidate[];
   canPlan: boolean;
+  // Cancelling is its own permission (Roles and permissions, Studio sessions); undefined: same as booking.
+  canCancel?: boolean;
   me: string;
 }) {
   const { week, today, tz, bookings, studios, staff, candidates, canPlan, me } = props;
+  const canCancel = props.canCancel ?? canPlan;
   const router = useRouter();
   const [busy, setBusy] = React.useState(false);
   const [booking, setBooking] = React.useState(false);
@@ -155,9 +158,11 @@ export function SessionPlanner(props: {
                               <Button size="xs" variant="ghost" onClick={() => setEditing({ batchId: b.batchId, date: t.date, time: t.time, booking: b })}>
                                 Change
                               </Button>
-                              <Button size="icon-xs" variant="ghost" aria-label="Cancel the session" disabled={busy} onClick={() => run(setSessionStatusAction(b.batchId, "cancelled"), "Cancelled")}>
-                                <XIcon />
-                              </Button>
+                              {canCancel && (
+                                <Button size="icon-xs" variant="ghost" aria-label="Cancel the session" disabled={busy} onClick={() => run(setSessionStatusAction(b.batchId, "cancelled"), "Cancelled")}>
+                                  <XIcon />
+                                </Button>
+                              )}
                             </>
                           )}
                         </div>

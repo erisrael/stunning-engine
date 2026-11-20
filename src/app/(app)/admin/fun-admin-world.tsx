@@ -346,3 +346,77 @@ export function TownEditor() {
     </Card>
   );
 }
+
+// Admin, Seed Town: the asset library. Every third-party asset the town uses (textures, props, cars, people, the
+// anime characters, music and sounds are listed in their own credits): where it came from, who made it, its
+// licence, its size, what was done to it and where it is used. Read from public/models/manifest.json (written by
+// scripts/fetch-assets.mjs); Admin's own uploads are in the town editor below.
+type Asset = { id: string; name: string; category: string; file: string; source: string; author: string; license: string; sizeKb: number; steps?: string[]; status: string; usedIn: string; updated: string; note?: string; polycount?: number | null };
+export function AssetLibrary() {
+  const [list, setList] = React.useState<Asset[] | null>(null);
+  const [cat, setCat] = React.useState("all");
+  const [q, setQ] = React.useState("");
+  React.useEffect(() => {
+    void fetch("/models/manifest.json").then((r) => r.json()).then((d: { assets: Asset[] }) => setList(d.assets)).catch(() => setList([]));
+  }, []);
+  const cats = [...new Set((list ?? []).map((a) => a.category))];
+  const shown = (list ?? []).filter((a) => (cat === "all" || a.category === cat) && (!q || `${a.name} ${a.author} ${a.license}`.toLowerCase().includes(q.toLowerCase())));
+  const total = (list ?? []).reduce((s, a) => s + a.sizeKb, 0);
+  return (
+    <Card data-asset-library>
+      <CardHeader>
+        <CardTitle className="text-base">Asset library</CardTitle>
+        <CardDescription>
+          {list ? `${list.length} assets, ${(total / 1024).toFixed(1)} MB in all` : "Loading…"}. Every one is licensed for this use (CC0, CC BY, CC BY-SA or MIT); attribution is shown where the licence asks. Real car designs and names stay their makers&apos; trademarks.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-2 text-xs">
+        <div className="flex flex-wrap items-center gap-1">
+          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, author or licence" className="h-8 w-56" />
+          {["all", ...cats].map((c) => (
+            <Button key={c} size="xs" variant={cat === c ? "default" : "outline"} onClick={() => setCat(c)} className="capitalize">
+              {c}
+            </Button>
+          ))}
+        </div>
+        <div className="max-h-[420px] overflow-auto rounded-md border">
+          <table className="w-full">
+            <thead className="sticky top-0 bg-muted text-left text-muted-foreground">
+              <tr>
+                <th className="p-1.5">Preview</th>
+                <th>Asset</th>
+                <th>Source and author</th>
+                <th>Licence</th>
+                <th className="text-right">Size</th>
+                <th>Optimised</th>
+                <th>Status</th>
+                <th>Used in</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {shown.map((a) => (
+                <tr key={a.id} data-asset={a.id}>
+                  <td className="p-1.5">{a.category === "texture" ? <img src={a.file} alt="" className="size-10 rounded object-cover" /> : <span className="inline-flex size-10 items-center justify-center rounded bg-muted text-[9px] uppercase">{a.category.slice(0, 4)}</span>}</td>
+                  <td>
+                    <p className="font-medium">{a.name}</p>
+                    <p className="text-[10px] text-muted-foreground">{a.id} · {a.updated}{a.polycount ? ` · ${(a.polycount / 1000).toFixed(0)}k polygons` : ""}</p>
+                    {a.note && <p className="text-[10px] text-amber-700 dark:text-amber-300">{a.note}</p>}
+                  </td>
+                  <td>
+                    <a href={a.source} target="_blank" rel="noreferrer" className="text-primary underline">source</a>
+                    <p className="text-[10px] text-muted-foreground">{a.author}</p>
+                  </td>
+                  <td>{a.license}</td>
+                  <td className="text-right tabular-nums">{a.sizeKb >= 1024 ? `${(a.sizeKb / 1024).toFixed(1)} MB` : `${a.sizeKb} KB`}</td>
+                  <td className="text-[10px] text-muted-foreground">{(a.steps ?? []).join(", ")}</td>
+                  <td className="capitalize">{a.status}</td>
+                  <td className="text-[10px]">{a.usedIn}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}

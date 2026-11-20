@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { saveFunConfigAction } from "@/app/actions/fun";
 import type { FunConfig, PointRule } from "@/server/fun";
-import { EconomyAdmin, ShopAdmin, TownEditor } from "./fun-admin-world";
+import { AssetLibrary, EconomyAdmin, ShopAdmin, TownEditor } from "./fun-admin-world";
 
 // Admin, Fun mode: what people get in the Fun window (music, lyrics, playlists, games, the pet, points, the board,
 // moods), who sees it, when games are open, and how work earns points.
@@ -79,6 +79,29 @@ export function FunAdmin({ initial, games, roles }: { initial: FunConfig; games:
               <option value="points">Today's work points (of the daily cap)</option>
               <option value="tasks">Tasks finished today</option>
             </select>
+          </label>
+        </CardContent>
+      </Card>
+
+      <Card data-fun-free>
+        <CardHeader>
+          <CardTitle className="text-base">Everything free</CardTitle>
+          <CardDescription>While nobody has earned many coins yet, everything in Seed Town can be free: clothes, accessories, characters, homes, furniture, vehicles, upgrades, pet things and game skins are everyone&apos;s without buying, and pet food and fireworks never run out. Switch it off to bring the prices back; what people already have stays theirs only if they bought or were given it.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-2 sm:grid-cols-2">
+          <label className="flex items-start justify-between gap-3 rounded-lg border p-3">
+            <span>
+              <span className="block text-sm font-medium">Everything free</span>
+              <span className="block text-xs text-muted-foreground">Prices become 0 everywhere (shops, garage, homes, the pet); coins still count for the board and levels.</span>
+            </span>
+            <Switch checked={c.freeAll} onCheckedChange={(v) => set({ freeAll: v })} aria-label="Everything free" data-fun-switch="freeAll" />
+          </label>
+          <label className={"flex items-start justify-between gap-3 rounded-lg border p-3" + (c.freeAll ? "" : " opacity-50")}>
+            <span>
+              <span className="block text-sm font-medium">No level locks</span>
+              <span className="block text-xs text-muted-foreground">With everything free, also open what needs a higher level (legendary characters, the castle, the hover car).</span>
+            </span>
+            <Switch checked={c.freeLevels} disabled={!c.freeAll} onCheckedChange={(v) => set({ freeLevels: v })} aria-label="No level locks" data-fun-switch="freeLevels" />
           </label>
         </CardContent>
       </Card>
@@ -226,6 +249,7 @@ export function FunAdmin({ initial, games, roles }: { initial: FunConfig; games:
       <EconomyAdmin />
       <ShopAdmin />
       <TownEditor />
+      <AssetLibrary />
     </div>
   );
 }

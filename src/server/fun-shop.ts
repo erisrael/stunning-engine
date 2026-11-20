@@ -42,8 +42,17 @@ export async function shopConfig(): Promise<ShopConfig> {
   return cfg;
 }
 
+// With Admin's "everything free" on, every price is 0 (so everything is everyone's: see owns) and, with
+// freeLevels, the level locks are lifted.
+export async function freeMode() {
+  const c = await funConfig();
+  return { all: !!c.freeAll, levels: !!c.freeAll && c.freeLevels !== false };
+}
+
 export async function catalog() {
-  return mergedCatalog(await shopConfig());
+  const items = mergedCatalog(await shopConfig());
+  const free = await freeMode();
+  return free.all ? items.map((i) => ({ ...i, price: 0, level: free.levels ? undefined : i.level })) : items;
 }
 
 export async function itemOf(key: string) {
@@ -129,6 +138,7 @@ export async function wallet(user: AppUser) {
     level: levelOf(pts.earned),
     owned: rows.map((r) => ({ key: r.item, qty: r.qty, data: parseJson<Record<string, unknown>>(r.data, {}), since: r.created_at, source: r.source })),
     ride,
+    free: (await freeMode()).all,
   };
 }
 
@@ -143,7 +153,12 @@ export async function buy(user: AppUser, key: string, qty = 1) {
   const item = await itemOf(key);
   if (!item || !item.on) throw new WorkflowError("VALIDATION", "That is not for sale.");
   const n = item.stack ? Math.max(1, Math.min(20, Math.round(Number(qty) || 1))) : 1;
-  if (isFree(item)) throw new WorkflowError("VALIDATION", `${item.label} is free: it is already yours.`);
+  // Free things are everyone's already; free food and fireworks are simply taken (they never run out anyway).
+  if (isFree(item) && !item.stack) throw new WorkflowError("VALIDATION", `${item.label} is free: it is already yours.`);
+  if (isFree(item)) {
+    await giveItem(user.id, item, n, "free");
+    return wallet(user);
+  }
   const pts = await pointsOf(user.id);
   const lvl = levelOf(pts.earned).level;
   if (item.level && lvl < item.level) throw new WorkflowError("VALIDATION", `${item.label} unlocks at level ${item.level}; you are level ${lvl}.`);
@@ -158,8 +173,9 @@ export async function buy(user: AppUser, key: string, qty = 1) {
   return wallet(user);
 }
 
-// Use up one of a stack (pet food, fireworks).
+// Use up one of a stack (pet food, fireworks). With everything free they never run out.
 export async function useOne(userId: string, key: string) {
+  if ((await freeMode()).all) return;
   const r = await run("UPDATE fun_items SET qty = qty - 1, updated_at = ? WHERE user_id = ? AND item = ? AND qty > 0", nowIso(), userId, key);
   if (!r.changes) throw new WorkflowError("VALIDATION", "You have none left. The shop has more.");
 }
@@ -216,10 +232,10 @@ export async function upgradeRide(user: AppUser, key: string) {
     const data = parseJson<Ride>(row.data, {});
     const level = data.level ?? 1;
     if (level >= 3) throw new WorkflowError("VALIDATION", "It is fully upgraded.");
-    const cost = upgradeCost(item, level);
+    const cost = (await freeMode()).all ? 0 : upgradeCost(item, level);
     const bal = (await pointsOf(user.id)).balance;
     if (bal < cost) throw new WorkflowError("VALIDATION", `The upgrade costs ${cost} coins; you have ${bal}.`);
-    await run("INSERT INTO fun_points (id, user_id, points, reason, source, ref, created_at) VALUES (?, ?, ?, ?, 'shop', ?, ?)", uid("fp_"), user.id, -cost, `Upgraded ${item.label} to level ${level + 1}`, `upgrade:${key}`, nowIso());
+    if (cost > 0) await run("INSERT INTO fun_points (id, user_id, points, reason, source, ref, created_at) VALUES (?, ?, ?, ?, 'shop', ?, ?)", uid("fp_"), user.id, -cost, `Upgraded ${item.label} to level ${level + 1}`, `upgrade:${key}`, nowIso());
     await run("UPDATE fun_items SET data = ?, updated_at = ? WHERE id = ?", JSON.stringify({ ...data, level: level + 1 }), nowIso(), row.id);
   });
   return wallet(user);
@@ -312,11 +328,11 @@ export async function upgradeHome(user: AppUser) {
   const cur = await homeOf(user.id);
   const house = (await itemOf(cur.house))!;
   if ((cur.level ?? 1) >= 3) throw new WorkflowError("VALIDATION", "Your home is fully upgraded.");
-  const cost = upgradeCost(house, cur.level ?? 1);
+  const cost = (await freeMode()).all ? 0 : upgradeCost(house, cur.level ?? 1);
   await tx(async () => {
     const bal = (await pointsOf(user.id)).balance;
     if (bal < cost) throw new WorkflowError("VALIDATION", `The upgrade costs ${cost} coins; you have ${bal}.`);
-    await run("INSERT INTO fun_points (id, user_id, points, reason, source, ref, created_at) VALUES (?, ?, ?, ?, 'shop', 'upgrade:home', ?)", uid("fp_"), user.id, -cost, `Upgraded ${house.label} to level ${(cur.level ?? 1) + 1}`, nowIso());
+    if (cost > 0) await run("INSERT INTO fun_points (id, user_id, points, reason, source, ref, created_at) VALUES (?, ?, ?, ?, 'shop', 'upgrade:home', ?)", uid("fp_"), user.id, -cost, `Upgraded ${house.label} to level ${(cur.level ?? 1) + 1}`, nowIso());
     await run("INSERT INTO fun_homes (user_id, layout, updated_at) VALUES (?, ?, ?) ON CONFLICT (user_id) DO UPDATE SET layout = excluded.layout, updated_at = excluded.updated_at", user.id, JSON.stringify({ ...cur, level: (cur.level ?? 1) + 1 }), nowIso());
   });
   return homeOf(user.id);
@@ -329,7 +345,8 @@ export async function upgradeHome(user: AppUser) {
 export async function playReward(user: AppUser, activity: string, amount: number) {
   const c = await funFor(user);
   if (!c || !c.points) return { coins: 0, left: 0 };
-  const rule = PLAY_REWARDS[activity];
+  // A mode of an activity ("archery-wind") pays as the activity.
+  const rule = PLAY_REWARDS[activity] ?? PLAY_REWARDS[activity.split("-")[0]!];
   if (!rule) throw new WorkflowError("VALIDATION", "Unknown activity.");
   const day = nowIso().slice(0, 10);
   const today = Number((await get<{ n: number }>("SELECT COALESCE(SUM(points), 0) AS n FROM fun_points WHERE user_id = ? AND source = 'play' AND substr(created_at, 1, 10) = ?", user.id, day))?.n ?? 0);

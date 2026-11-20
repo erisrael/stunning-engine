@@ -11,6 +11,22 @@ import { textSprite, toon, TOON, type Quality } from "./toon";
 import { VoiceMesh } from "./voice";
 import { PITCH, Penalty, Soccer, type BallState } from "./soccer";
 import { TownAudio, musicFor, type Surface } from "./audio";
+import { Atmosphere } from "./atmosphere";
+import { Post } from "./post";
+import { setTextureQuality } from "./pbr";
+import { updateLights } from "./streets";
+import { NpcBrain, PERSONALITIES, TOWNFOLK, WalkGraph, seeded, type Place } from "./npc-brain";
+import { PEOPLE } from "./people";
+import type { Quest } from "./npc-talk";
+import { cleanLook } from "@/lib/fun-catalog";
+import { lamp } from "./pbr";
+import { anyVehicle, forgetCarDetail, updateCarDetail, type CarRig } from "./cars";
+import { newCarState, speedOf, stepCar, type CarState } from "./vehicle-physics";
+import { ROADS } from "./streets";
+import { Traffic } from "./traffic";
+import { GrandPrix, type GpSetup, type RaceState } from "./gp";
+import { ArcheryField, FIELD, type ArcheryMode, type Bow } from "./archery";
+import { Strike, type StrikeHud, type StrikeSetup, type WeaponKey } from "./strike";
 
 // Seed Town's game loop: builds the town, moves me (walking with collisions, or driving), the camera (third person
 // with collision, or first person), everyone else (colleagues at desks or home, people in town live, town folk on
@@ -41,6 +57,8 @@ export const PRESETS: Record<Quality, Omit<Gfx, "preset" | "sens" | "invert" | "
 };
 export function autoQuality(): Quality {
   if (typeof navigator === "undefined") return "medium";
+  // Automated browsers draw in software: Medium keeps tests quick (no shadows or post-processing).
+  if (navigator.webdriver) return "medium";
   const mobile = /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent) || matchMedia("(pointer: coarse)").matches;
   const cores = navigator.hardwareConcurrency ?? 4;
   const mem = (navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? 4;
@@ -71,6 +89,8 @@ export type VoiceState = { mode: "off" | "near" | "room"; room: string | null; m
 
 export type TownCallbacks = {
   prompt: (p: { label: string; key: string } | null) => void;
+  // I reached the place of a task someone gave me.
+  quest?: (npcId: string, q: Quest) => void;
   hud: (h: Hud | null) => void;
   where: (w: string) => void;
   online: (n: number, people: { id: string; name: string; voice: string; muted: boolean; x: number; z: number }[]) => void;
@@ -80,6 +100,14 @@ export type TownCallbacks = {
   open: (panel: string, data?: Record<string, unknown>) => void;
   toast: (text: string, kind?: "ok" | "err" | "info") => void;
   speed: (kmh: number | null) => void;
+  // Seed Strike's display (null when not playing).
+  strike?: (h: StrikeHud | null) => void;
+  // Online Strike: the open matches to join, and the match I am in.
+  strikeLobby?: (s: { open: { id: string; mode: string; map: string; n: number; max: number }[] } | null) => void;
+  // The Grand Prix display (null when not racing).
+  race?: (s: RaceState | null) => void;
+  // The car's dials: engine speed, gear, condition (null on foot).
+  gauge?: (g: { rpm: number; redline: number; gear: number; condition: number; manual: boolean } | null) => void;
   card: (r: Resident) => void;
   npc: (n: NpcDef) => void;
   reward: (activity: string, amount: number, text: string, score: number) => void;
@@ -126,12 +154,26 @@ export class Town {
   private city: ReturnType<typeof buildCity>;
   private sun: THREE.DirectionalLight;
   private hemi: THREE.HemisphereLight;
+  // The sky, time of day and weather; the picture's finish (bloom, ambient occlusion).
+  atmosphere: Atmosphere;
+  private post: Post;
+  private lightTick = 0;
   private people = new Map<string, Person>();
-  private npcs: { def: NpcDef; av: Character; seg: number; k: number }[] = [];
+  private npcs: { def: NpcDef; av: Character; seg: number; k: number; brain?: NpcBrain; bubble?: THREE.Sprite | null; bubbleText?: string }[] = [];
+  // Town folk's lives: places to go, the street graph they walk on.
+  private places: Place[] = [];
+  private graph: WalkGraph | null = null;
+  // A destination someone pointed me to (map marker and a light in town), and tasks people gave me.
+  marker: { x: number; z: number; label: string } | null = null;
+  private beacon: THREE.Mesh | null = null;
+  quests = new Map<string, Quest>();
   // Something for the eyes of town folk and colleagues to follow: my head.
   private meHead = new THREE.Object3D();
   private homeInteracts = new Map<string, Interact[]>();
   private homeGroups = new Map<string, THREE.Group>();
+  private homeLive = new Map<string, { update: (me: { x: number; z: number }, t: number) => void; toggleLights: () => boolean; light: () => { x: number; y: number; z: number; on: boolean; r: number } }>();
+  // One light for the inside of the home I am in (cheaper than a light per house).
+  private homeLight = new THREE.PointLight("#ffe8c4", 0, 16, 1.6);
   private body: ReturnType<typeof newBody>;
   private me: Character;
   private meGroup = new THREE.Group();
@@ -140,6 +182,8 @@ export class Town {
   private pitch = 0.35;
   private fpPitch = 0;
   private dist = 9;
+  // Photo mode: [x, y, z, lookX, lookY, lookZ] or null.
+  freeCam: number[] | null = null;
   private heading = Math.PI;
   private keys = new Set<string>();
   private joy = { x: 0, y: 0 };
@@ -147,7 +191,15 @@ export class Town {
   private crouch = false;
   private camMode: "third" | "first" = "third";
   private sit: { x: number; y: number; z: number; ry: number; swing?: boolean } | null = null;
-  private car: { c: Car; g: THREE.Group; wheels: THREE.Object3D[]; lights: THREE.Mesh[]; key: string; paint: string; driving: boolean; seatY: number } | null = null;
+  private car: { c: Car; g: THREE.Group; wheels: THREE.Object3D[]; lights: THREE.Mesh[]; key: string; paint: string; driving: boolean; seatY: number; rig: CarRig | null; st: CarState | null } | null = null;
+  // Extra paved areas (race tracks) where cars keep their grip; the rest off the streets is grass.
+  paved: ((x: number, z: number) => boolean)[] = [];
+  private shiftKey: -1 | 0 | 1 = 0;
+  private traffic: Traffic | null = null;
+  // Race control of my car (the Grand Prix): held on the grid, the pit lane limit, tyre and fuel grip.
+  private carHold = false;
+  private carLimit: number | null = null;
+  private carGrip = 1;
   private activity: Activity | null = null;
   private emote = "";
   private emoteUntil = 0;
@@ -187,7 +239,12 @@ export class Town {
   // Football: the physics world loads when I come near the stadium.
   private soccer: Soccer | null = null;
   private soccerLoading = false;
+  // After my kick I share the ball for 3.5 s of ball time (slow frames slow the ball too), at most 15 s of clock.
+  private ballAuth = 0;
   private ballAuthUntil = 0;
+  private get ballMine() {
+    return this.ballAuth > 0 && performance.now() < this.ballAuthUntil;
+  }
   private ballSeq = 0;
   score = { teal: 0, gold: 0 };
 
@@ -198,6 +255,7 @@ export class Town {
     private cb: TownCallbacks,
   ) {
     TOON.quality = gfx.quality;
+    setTextureQuality(gfx.quality !== "low", gfx.quality === "ultra" ? 8 : gfx.quality === "high" ? 4 : 2);
     this.camMode = gfx.camera;
     this.renderer = new THREE.WebGLRenderer({ antialias: gfx.aa, powerPreference: gfx.quality === "low" ? "low-power" : "high-performance" });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, gfx.ratio));
@@ -207,17 +265,21 @@ export class Town {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     el.appendChild(this.renderer.domElement);
     this.renderer.domElement.style.touchAction = "none";
-    this.camera = new THREE.PerspectiveCamera(gfx.fov, el.clientWidth / Math.max(1, el.clientHeight), 0.1, gfx.view + 60);
+    this.camera = new THREE.PerspectiveCamera(gfx.fov, el.clientWidth / Math.max(1, el.clientHeight), 0.1, gfx.view + 120);
     this.hemi = new THREE.HemisphereLight("#ffffff", "#7ca06a", 1.15);
     this.scene.add(this.hemi);
     this.sun = new THREE.DirectionalLight("#fff7e6", 1.5);
     this.sun.castShadow = gfx.shadows > 0;
-    const sm = gfx.shadows === 2 ? 2048 : 1024;
+    const sm = gfx.shadows === 2 ? 4096 : 2048;
     this.sun.shadow.mapSize.set(sm, sm);
-    Object.assign(this.sun.shadow.camera, { left: -40, right: 40, top: 40, bottom: -40, near: 1, far: 140 });
-    this.sun.shadow.bias = -0.0008;
+    const span = gfx.shadows === 2 ? 70 : 50;
+    Object.assign(this.sun.shadow.camera, { left: -span, right: span, top: span, bottom: -span, near: 1, far: 220 });
+    this.sun.shadow.bias = -0.0005;
+    this.sun.shadow.normalBias = 0.04;
     this.scene.add(this.sun, this.sun.target);
-    this.daylight();
+    this.atmosphere = new Atmosphere(this.scene, this.renderer, this.sun, this.hemi, { quality: gfx.quality, view: gfx.view, lights: gfx.quality === "ultra" ? 10 : gfx.quality === "high" ? 6 : gfx.quality === "medium" ? 2 : 0 });
+    this.atmosphere.onThunder = (v) => this.sound.play("crash", { volume: Math.max(0.3, v) });
+    this.post = new Post(this.renderer, this.scene, this.camera, gfx.quality === "ultra" ? "full" : gfx.quality === "high" ? "bloom" : "off", el.clientWidth, el.clientHeight);
 
     this.city = buildCity(this.ph, {
       name: data.name,
@@ -228,10 +290,36 @@ export class Town {
       notice: data.layout.notice,
       props: data.layout.props,
       meId: data.meId,
+      detail: gfx.quality === "low" ? 0 : 1,
     });
     this.scene.add(this.city.root);
+    // Small things do not cast shadows (they would double the draw calls for little gain).
+    this.city.root.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh || (m as unknown as THREE.InstancedMesh).isInstancedMesh) return;
+      if (!m.geometry.boundingSphere) m.geometry.computeBoundingSphere();
+      const s = m.getWorldScale(new THREE.Vector3());
+      if ((m.geometry.boundingSphere?.radius ?? 1) * Math.max(s.x, s.y, s.z) < 0.9) m.castShadow = false;
+    });
+    this.atmosphere.setLamps(this.city.lampSpots);
+    this.scene.add(this.homeLight);
+    // Traffic on the streets (more cars on better graphics).
+    const cars = { low: 0, medium: 8, high: 16, ultra: 26 }[gfx.quality];
+    if (cars) this.traffic = new Traffic(this.scene, this.ph, cars);
     for (const [id, lot] of this.city.lots) this.buildHomeFor(id, lot);
-    for (const d of this.city.npcs) this.addNpc(d);
+    // Shopkeepers, the coach and Admin's people stay at their posts; the old fixed walkers are replaced by town
+    // folk with their own day (more of them on better graphics).
+    for (const d of this.city.npcs) if (!d.id.startsWith("npc-walk")) this.addNpc(d);
+    this.places = this.buildPlaces();
+    this.graph = new WalkGraph();
+    const folk = gfx.quality === "low" ? 6 : gfx.quality === "medium" ? 10 : TOWNFOLK.length;
+    TOWNFOLK.slice(0, folk).forEach((f, i) => {
+      const rng = seeded(1000 + i * 97);
+      const home = this.places.filter((p) => p.kind === "home")[i % Math.max(1, this.places.filter((p) => p.kind === "home").length)] ?? null;
+      const start = this.places[Math.floor(rng() * this.places.length)] ?? { x: 0, z: 10 };
+      const brain = new NpcBrain(f.name, f.personality, f.role, start.x + (rng() - 0.5) * 3, start.z + (rng() - 0.5) * 3, rng, home);
+      this.addNpc({ id: `npc-folk-${i}`, name: f.name, role: { worker: "Office worker", shopper: "Shopper", student: "Student", retiree: "Retired", athlete: "Athlete", keeper: "Shopkeeper", guide: "Guide" }[f.role], seed: 200 + i, x: brain.body.x, y: 0, z: brain.body.z, ry: 0, lines: [], actions: [], personality: f.personality, person: f.person, female: f.person.startsWith("rb_f"), brainRole: f.role }, brain);
+    });
     void placeModels(this.scene, this.ph, data.layout.props);
 
     // Me.
@@ -261,16 +349,9 @@ export class Town {
 
   // ------------------------------------------------------------------------------------------------- building
 
+  // Night for headlights and lamps (from the town's clock).
   private daylight() {
-    const h = new Date().getHours() + new Date().getMinutes() / 60;
-    const day = h >= 6.5 && h < 18 ? 1 : h >= 18 && h < 19.5 ? (19.5 - h) / 1.5 : h >= 5 && h < 6.5 ? (h - 5) / 1.5 : 0;
-    const sky = new THREE.Color("#0f1d3a").lerp(new THREE.Color(day > 0.6 ? "#bfe3ff" : "#f8b77a"), Math.min(1, day * 1.2));
-    this.scene.background = sky;
-    this.scene.fog = new THREE.Fog(sky, this.gfx.view * 0.55, this.gfx.view);
-    this.hemi.intensity = 0.45 + day * 0.75;
-    this.sun.intensity = 0.25 + day * 1.3;
-    this.sun.color.set(day > 0.6 ? "#fff7e6" : "#ffb37a");
-    this.scene.userData.night = day < 0.3;
+    this.scene.userData.night = this.atmosphere.night > 0.55;
   }
 
   private spotOf(r: Resident) {
@@ -294,18 +375,68 @@ export class Town {
     this.city.homesGroup.add(built.group);
     this.homeGroups.set(id, built.group);
     this.homeInteracts.set(id, built.interacts);
+    if ("update" in built) this.homeLive.set(id, built as unknown as { update: (me: { x: number; z: number }, t: number) => void; toggleLights: () => boolean; light: () => { x: number; y: number; z: number; on: boolean; r: number } });
   }
 
-  private addNpc(def: NpcDef) {
-    const av = new Character(npcLook(def.seed), this.gfx.quality !== "low");
+  // Where town folk go: benches, the plaza, the park, shop windows, the café, work in the office, the stadium
+  // stands, bus shelters and their homes.
+  private buildPlaces(): Place[] {
+    const out: Place[] = [];
+    for (const i of this.city.interacts) {
+      const d = i.data ?? {};
+      if (i.kind === "sit" && i.id.startsWith("bench") && typeof d.x === "number") out.push({ kind: "bench", x: d.x as number, y: 0, z: d.z as number, ry: d.ry as number, label: "a bench" });
+    }
+    for (let a = 0; a < 8; a++) out.push({ kind: "plaza", x: Math.cos(a * 0.785) * 15, y: 0, z: Math.sin(a * 0.785) * 15, ry: -a * 0.785 - Math.PI / 2, label: "the plaza" });
+    for (const [x, z] of [[-60, -18], [-95, 10], [-70, 22], [-110, -10], [-55, 8], [-85, -12]] as const) out.push({ kind: "park", x, y: 0, z, ry: 0, label: "the park" });
+    for (const x of [30, 50, 70, 90]) {
+      out.push({ kind: "shop", x, y: 0.15, z: -10.5, ry: Math.PI, label: "the shops" });
+      out.push({ kind: "shop", x, y: 0.15, z: 10.5, ry: 0, label: "the shops" });
+    }
+    out.push({ kind: "cafe", x: 40, y: 0.15, z: -45.5, ry: Math.PI, label: "Habesha Coffee" }, { kind: "cafe", x: 6, y: 0, z: 9, ry: Math.PI, label: "the plaza" });
+    for (let i = 0; i < 6; i++) out.push({ kind: "work", x: -16 + i * 6.5, y: 0, z: -47.5, ry: Math.PI, label: "the office" });
+    for (let i = 0; i < 8; i++) out.push({ kind: "stands", x: 166 + i * 5, y: 0.6, z: 40.5, ry: 0, label: "the stadium" });
+    for (const [x, z, ry] of [[8.8, 60, -Math.PI / 2], [-8.8, 100, Math.PI / 2], [8.8, -110, -Math.PI / 2], [80, 7.6, Math.PI], [-80, -5.5, 0]] as const) out.push({ kind: "stop", x, y: 0.15, z, ry, label: "the bus stop" });
+    for (const d of this.city.homeDoors.values()) out.push({ kind: "home", x: d.x, y: 0, z: d.z - 1.5, ry: Math.PI, label: "home" });
+    for (const [x, z] of [[-110, -46], [-110, -94], [-70, -96], [-30, -96]] as const) out.push({ kind: "home", x, y: 0, z, ry: 0, label: "home" });
+    return out;
+  }
+
+  // A light where someone sent me, and its marker on the map.
+  setMarker(m: { x: number; z: number; label: string } | null) {
+    this.marker = m;
+    if (!this.beacon) {
+      this.beacon = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, 60, 16, 1, true), lamp("#ffd34d", 1.2, 2.2));
+      (this.beacon.material as THREE.MeshStandardMaterial).transparent = true;
+      (this.beacon.material as THREE.MeshStandardMaterial).opacity = 0.35;
+      (this.beacon.material as THREE.MeshStandardMaterial).depthWrite = false;
+      this.scene.add(this.beacon);
+    }
+    this.beacon.visible = !!m;
+    if (m) this.beacon.position.set(m.x, 30, m.z);
+  }
+  addQuest(npcId: string, q: Quest) {
+    this.quests.set(npcId, q);
+  }
+  // A person talking to me: their mouth moves with their voice.
+  npcSpeak(id: string, level: number) {
+    this.npcs.find((n) => n.def.id === id)?.av.speak(level);
+  }
+
+  private addNpc(def: NpcDef, brain?: NpcBrain) {
+    // Everyone in town is a realistic person now (their model by their seed, or as set for town folk).
+    const person = def.person ?? PEOPLE[def.seed % PEOPLE.length]!.key;
+    def.person = person;
+    def.female ??= person.startsWith("rb_f");
+    def.personality ??= PERSONALITIES[def.seed % PERSONALITIES.length];
+    const av = new Character(this.gfx.quality === "low" ? npcLook(def.seed) : { ...cleanLook({}), style: "realistic", base: person }, this.gfx.quality !== "low");
     av.root.position.set(def.x, def.y, def.z);
     av.root.rotation.y = def.ry;
     const tag = textSprite([def.name, def.role], { color: "#fde68a", width: 2.6 });
     tag.position.set(0, 2.25, 0);
     av.root.add(tag);
     this.scene.add(av.root);
-    if (!def.path) this.ph.post({ x: def.x, z: def.z, r: 0.35, minY: def.y, maxY: def.y + 1.8 });
-    this.npcs.push({ def, av, seg: 0, k: 0 });
+    if (!def.path && !brain) this.ph.post({ x: def.x, z: def.z, r: 0.35, minY: def.y, maxY: def.y + 1.8 });
+    this.npcs.push({ def, av, seg: 0, k: 0, brain });
   }
 
   private newPerson(id: string, name: string, look: Look, at: THREE.Vector3, r: Resident | null, live: boolean): Person {
@@ -394,6 +525,11 @@ export class Town {
       if ((e.target as HTMLElement)?.closest?.("input, textarea, select")) return;
       const k = e.key.toLowerCase();
       const down = e.type === "keydown";
+      // Manual gears: X up, Z down (Settings, driving).
+      if (down && this.car?.driving && this.car.st?.manual && (k === "x" || k === "z")) {
+        this.shiftKey = k === "x" ? 1 : -1;
+        return;
+      }
       if (["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright", " ", "shift"].includes(k)) {
         e.preventDefault();
         if (down) this.keys.add(k);
@@ -434,7 +570,7 @@ export class Town {
       if (!this.drag || e.pointerId !== this.drag.id) return;
       const dx = e.clientX - this.drag.x, dy = e.clientY - this.drag.y;
       if (Math.abs(dx) + Math.abs(dy) > 3) this.drag.moved = true;
-      if (!this.activity) this.lookBy(dx, dy);
+      if (!this.activity || (this.activity as { fps?: boolean }).fps) this.lookBy(dx, dy);
       this.drag.x = e.clientX;
       this.drag.y = e.clientY;
     };
@@ -600,6 +736,8 @@ export class Town {
         this.cb.open("shop", d);
         break;
       case "garage":
+        // The garage repairs the car for free.
+        if (this.car?.st && this.car.st.condition < 100) (this.car.st.condition = 100), this.cb.toast("Your car is repaired.", "ok");
         this.cb.open("garage");
         break;
       case "ride":
@@ -615,6 +753,21 @@ export class Town {
       }
       case "decorate":
         this.cb.open("home");
+        break;
+      case "lights": {
+        const on = this.homeLive.get(String(d.owner))?.toggleLights();
+        this.sound.play("toggle" as never);
+        this.cb.toast(on ? "Lights on" : "Lights off", "info");
+        break;
+      }
+      case "tv":
+        this.cb.open("tv");
+        break;
+      case "gp":
+        this.cb.open("gp");
+        break;
+      case "strike":
+        this.cb.open("strike");
         break;
       case "home":
         this.cb.open("visit", d);
@@ -697,7 +850,7 @@ export class Town {
     this.cb.reward("treasure", 1, "You found today's treasure chest!", 1);
   }
 
-  startActivity(kind: string, level: number) {
+  startActivity(kind: string, level: number, setup?: GpSetup | { mode: ArcheryMode; bow: Bow } | StrikeSetup) {
     this.stopActivity();
     this.leaveCar();
     this.sit = null;
@@ -713,7 +866,39 @@ export class Town {
       },
       sound: (s: "shoot" | "hit" | "miss" | "win" | "splash") => this.beep(s),
     };
-    if (kind === "archery") (this.teleport(-99.3, 0, -23), (this.activity = new Archery(ctx, level)));
+    if (kind === "archery") {
+      // The archery field (south-west): first person with the bow, the mode and bow chosen.
+      const a = (setup as { mode?: ArcheryMode; bow?: Bow } | undefined) ?? {};
+      this.teleport(FIELD.x + 1.5, 0, FIELD.z);
+      this.activity = new ArcheryField(ctx, a.mode ?? "classic", a.bow ?? "training", level);
+    } else if (kind === "strike") {
+      // Seed Strike: a closed map far out of town, in first person.
+      this.strikeCam = this.camMode;
+      this.camMode = "first";
+      this.cb.camera("first");
+      const s = setup as StrikeSetup;
+      this.activity = new Strike(
+        {
+          scene: this.scene,
+          ph: this.ph,
+          camera: this.camera,
+          body: () => this.body,
+          teleport: (x, z, yaw) => (this.teleport(x, 0, z), (this.yaw = yaw + Math.PI), (this.fpPitch = 0)),
+          look: (dx, dy) => this.lookBy(dx, dy),
+          fov: (k) => {
+            const f = this.gfx.fov / k;
+            if (Math.abs(this.camera.fov - f) > 0.1) (this.camera.fov += (f - this.camera.fov) * 0.35), this.camera.updateProjectionMatrix();
+          },
+          hud: (h) => this.cb.strike?.(h),
+          sound: (k) => this.beep(k),
+          done: (k, score, coins, text) => this.cb.reward(k, coins, text, score),
+          others: () => [...this.people.values()].filter((p) => p.live && p.act.startsWith("strike")).map((p) => ({ id: p.id, name: p.name, x: p.group.position.x, y: p.group.position.y, z: p.group.position.z })),
+          hitOnline: (to: string, w: WeaponKey, hs: boolean) => ((this.outQueue.hits = [...((this.outQueue.hits as unknown[]) ?? []), { to, w, hs }])),
+          canvas: this.renderer.domElement,
+        },
+        s,
+      );
+    } else if (kind === "archery-old") (this.teleport(-99.3, 0, -23), (this.activity = new Archery(ctx, level)));
     else if (kind === "gallery") (this.teleport(-110, 0, 23), (this.activity = new Gallery(ctx, level)));
     else if (kind === "hoops") (this.teleport(-75, 0, 26.5), (this.activity = new Hoops(ctx)));
     else if (kind === "fishing") (this.teleport(-75, 0.45, -11), (this.activity = new Fishing(ctx)));
@@ -736,6 +921,35 @@ export class Town {
       }
       const lap = c.checkpoints.slice(1).concat([c.checkpoints[0]!]);
       this.activity = new Run(ctx, "circuit", [...lap, ...lap, ...lap].map(([x, z]) => ({ x, y: 0, z, r: 9 })));
+    } else if (kind === "gp") {
+      // A Formula 2 style car on the grid, race control on it.
+      const tr = this.city.gp;
+      const s: GpSetup = (setup as GpSetup | undefined) ?? { mode: "practice", difficulty: "amateur", opponents: 7, compound: "medium" };
+      if (!this.paved.includes(tr.onTrack)) this.paved.push(tr.onTrack);
+      this.activity = new GrandPrix(
+        {
+          scene: this.scene,
+          car: () => (this.car ? { x: this.car.c.x, z: this.car.c.z, heading: this.car.c.heading, speed: this.car.c.speed } : null),
+          placeCar: (x, z, h) => {
+            this.teleport(x, 0, z);
+            this.spawnCar(x, z, h, "car.f2");
+            this.enterCar();
+            this.yaw = h + Math.PI;
+          },
+          hold: (on) => (this.carHold = on),
+          limit: (v) => (this.carLimit = v),
+          grip: (k) => (this.carGrip = k),
+          state: (st) => this.cb.race?.(st),
+          done: (score, coins, text, best) => {
+            if (best) void import("@/app/actions/fun").then((F) => F.saveScoreAction("world:gp", Math.round(best * 1000), { activity: "gp" }).catch(() => {}));
+            this.cb.reward("gp", Math.ceil(coins / 5), text, 0);
+            void score;
+          },
+          sound: (k) => this.beep(k),
+        },
+        tr,
+        s,
+      ) as unknown as Activity;
     } else if (kind === "race") {
       this.teleport(this.city.race.start.x - 4, 0, this.city.race.start.z + 3);
       if (!this.car) this.callRide(true);
@@ -743,9 +957,28 @@ export class Town {
       this.activity = new Run(ctx, "race", this.city.race.checkpoints.map(([x, z]) => ({ x, y: 0, z, r: 9 })));
     }
   }
+  private strikeCam: "third" | "first" | null = null;
+  // A match I joined online before the game started (the lobby starts it on the right map).
+  pendingMatch: { map?: string; mode?: string; code?: string } | null = null;
+  // Online Strike: create, join or leave a match (the next sync carries it).
+  strikeOp(op: Record<string, unknown>) {
+    this.outQueue.strike = op;
+  }
   stopActivity() {
+    const wasGp = this.activity?.kind === "gp";
+    if (this.activity?.kind === "strike") {
+      if ((this.activity as unknown as { setup: StrikeSetup }).setup?.online) this.outQueue.strike = { op: "leave" };
+      if (this.strikeCam) (this.camMode = this.strikeCam), this.cb.camera(this.strikeCam), (this.strikeCam = null);
+      this.cb.strike?.(null);
+    }
     this.activity?.stop();
     this.activity = null;
+    // Out of the race car: back on foot by the paddock, my own vehicle next time I call it.
+    if (wasGp && this.car) {
+      this.leaveCar();
+      this.scene.remove(this.car.g);
+      this.car = null;
+    }
     this.cb.hud(null);
     if (this.soccer) this.soccer.onGoal = (team) => this.goal(team);
   }
@@ -770,14 +1003,15 @@ export class Town {
     this.sound.play("goal");
     this.burst(team === "teal" ? PITCH.x0 : PITCH.x1, PITCH.cz, -8);
     // Whoever is sharing the ball reports the goal; the server keeps the score.
-    if (performance.now() < this.ballAuthUntil) this.outQueue.goal = team;
+    if (this.ballMine) this.outQueue.goal = team;
   }
   kickBall(hard: boolean) {
     const sc = this.soccer;
     if (!sc) return false;
     const ok = sc.kick(this.body.x, this.body.z, this.heading, hard ? 17 : 9, hard ? 0.28 : 0.1, (Math.random() - 0.5) * (hard ? 1 : 0.3));
     if (ok) {
-      this.ballAuthUntil = performance.now() + 3500;
+      this.ballAuth = 3.5;
+      this.ballAuthUntil = performance.now() + 15000;
       this.doEmote("kick");
       this.sound.play("kick");
     }
@@ -806,10 +1040,10 @@ export class Town {
     this.spawnCar(this.body.x + Math.cos(h) * 3, this.body.z - Math.sin(h) * 3, h);
     if (!quiet) this.cb.toast("Your vehicle is here. Press E (or the hand button) to get in.", "info");
   }
-  private spawnCar(x: number, z: number, heading: number) {
+  private spawnCar(x: number, z: number, heading: number, key?: string) {
     if (this.car) this.scene.remove(this.car.g);
-    const it = this.data.items.find((i) => i.key === this.data.ride.key) ?? this.data.items.find((i) => i.key === "car.bike")!;
-    const v = vehicle(it.model ?? "bike", this.data.ride.paint ?? it.color ?? "#3b82f6", this.data.ride.rims);
+    const it = this.data.items.find((i) => i.key === (key ?? this.data.ride.key)) ?? this.data.items.find((i) => i.key === "car.bike")!;
+    const v = anyVehicle(it.model ?? "bike", this.data.ride.paint ?? it.color ?? "#3b82f6", this.data.ride.rims, this.gfx.quality === "high" || this.gfx.quality === "ultra");
     const pos = { x, z };
     this.ph.resolve(pos, v.r, 0, 1.4, 0.35, true);
     const lvl = this.data.ride.level ?? 1;
@@ -817,7 +1051,9 @@ export class Town {
     v.group.position.set(c.x, 0, c.z);
     v.group.rotation.y = heading;
     this.scene.add(v.group);
-    this.car = { c, g: v.group, wheels: v.wheels, lights: v.lights, key: it.key, paint: this.data.ride.paint ?? it.color ?? "#3b82f6", driving: false, seatY: v.seatY };
+    const st = v.rig?.spec ? newCarState(c.x, c.z, heading) : null;
+    if (st) st.manual = this.manualGears;
+    this.car = { c, g: v.group, wheels: v.wheels, lights: v.lights, key: it.key, paint: this.data.ride.paint ?? it.color ?? "#3b82f6", driving: false, seatY: v.seatY, rig: v.rig, st };
   }
   private enterCar() {
     if (!this.car) return;
@@ -838,6 +1074,8 @@ export class Town {
     this.body.y = c.y;
     this.cb.driving(false);
     this.cb.speed(null);
+    this.cb.gauge?.(null);
+    if (this.car.st) (this.car.st.vx = 0), (this.car.st.vz = 0), (this.car.st.yawRate = 0);
     this.stopEngine();
   }
   private honk() {
@@ -983,7 +1221,7 @@ export class Town {
       ...this.outQueue,
     };
     if (this.fresh) payload.fresh = true;
-    if (this.soccer && performance.now() < this.ballAuthUntil) payload.ball = this.soccer.state();
+    if (this.soccer && this.ballMine) payload.ball = this.soccer.state();
     const sig = this.voice.take();
     if (sig.length) payload.sig = sig;
     this.outQueue = {};
@@ -1001,14 +1239,22 @@ export class Town {
   }
   private syncing = false;
 
-  private apply(d: { p: Live[]; looks: Record<string, Look>; m: ChatMsg[]; last: number; s: { from: string; d: never }[]; rooms: Room[]; me: { voice: VoiceState }; fw: { x: number; z: number; at: number; by: string }[]; err: string | null; pitch?: { ball: BallState | null; seq: number; by: string; score: { teal: number; gold: number } } | null }) {
+  private apply(d: { p: Live[]; looks: Record<string, Look>; m: ChatMsg[]; last: number; s: { from: string; d: never }[]; rooms: Room[]; me: { voice: VoiceState }; fw: { x: number; z: number; at: number; by: string }[]; err: string | null; pitch?: { ball: BallState | null; seq: number; by: string; score: { teal: number; gold: number } } | null; strike?: (Parameters<Strike["online"]>[0] & { id?: string; mode?: string; map?: string; code?: string }) | { open: { id: string; mode: string; map: string; n: number; max: number }[] } | null }) {
+    // Seed Strike online: the lobby list, or the match I am in (the server referees).
+    if (d.strike && "open" in d.strike) this.cb.strikeLobby?.(d.strike);
+    else if (d.strike && "me" in d.strike) {
+      this.cb.strikeLobby?.(null);
+      const a = this.activity as unknown as Strike | null;
+      if (a?.kind === "strike") a.online(d.strike, this.data.meId);
+      else this.pendingMatch = d.strike as { map?: string; mode?: string; code?: string };
+    }
     if (d.pitch) {
       if (d.pitch.score.teal !== this.score.teal || d.pitch.score.gold !== this.score.gold) {
         this.score = d.pitch.score;
         this.city.scoreboard.draw(this.score.teal, this.score.gold);
       }
       // Someone else kicked last: take their ball.
-      if (this.soccer && d.pitch.ball && d.pitch.seq > this.ballSeq && d.pitch.by !== this.data.meId && performance.now() > this.ballAuthUntil) this.soccer.setState(d.pitch.ball);
+      if (this.soccer && d.pitch.ball && d.pitch.seq > this.ballSeq && d.pitch.by !== this.data.meId && !this.ballMine) this.soccer.setState(d.pitch.ball);
       this.ballSeq = Math.max(this.ballSeq, d.pitch.seq);
     }
     const seen = new Set<string>();
@@ -1036,7 +1282,7 @@ export class Town {
         p.vp = vp;
         if (veh) {
           const it = this.data.items.find((i) => i.key === veh);
-          const v = vehicle(it?.model ?? "hatch", vp || it?.color || "#3b82f6");
+          const v = anyVehicle(it?.model ?? "hatch", vp || it?.color || "#3b82f6", undefined, this.gfx.quality === "ultra");
           p.vehMesh = v.group;
           p.vehMesh.userData.seatY = v.seatY;
           p.group.add(v.group);
@@ -1098,23 +1344,43 @@ export class Town {
   // Every 0.4 s: build or drop avatars by distance, show districts in view, the place name, speaking rings.
   private slowTick() {
     const me = new THREE.Vector3(this.body.x, this.body.y, this.body.z);
-    const reach = Math.min(70, this.gfx.view * 0.6);
+    const reach = Math.min(55, this.gfx.view * 0.5);
     for (const p of this.people.values()) {
       const d = p.group.position.distanceTo(me);
       if (d < reach) this.ensureAvatar(p);
       else if (d > reach + 15) this.dropAvatar(p);
       if (p.av) p.group.visible = true;
     }
-    for (const n of this.npcs) n.av.root.visible = n.av.root.position.distanceTo(me) < this.gfx.view * 0.7;
+    // Drawn characters made of many small parts only near me (the detailed models, one skinned mesh, further).
+    const show = (c: Character, d: number) => {
+      const far = c.usingVrm ? Math.min(60, this.gfx.view * 0.5) : 35;
+      c.root.visible = d < far;
+      if (c.root.visible && c.root.userData.shadowNear !== d < 20) {
+        c.root.userData.shadowNear = d < 20;
+        c.root.traverse((o) => ((o as THREE.Mesh).isMesh ? ((o as THREE.Mesh).castShadow = d < 20) : 0));
+      }
+    };
+    for (const n of this.npcs) show(n.av, n.av.root.position.distanceTo(me));
+    for (const p of this.people.values()) if (p.av) show(p.av, p.group.position.distanceTo(me));
+    // Districts beyond sight are not drawn at all (their bounds are known); the open-air ones stay.
+    for (const d of this.city.districts) {
+      if (d.r > 200) continue;
+      d.group.visible = Math.hypot(d.x - me.x, d.z - me.z) - d.r < this.gfx.view * 0.85;
+    }
+    // The licensed car models only up close (the dealer's, parked ones, mine); farther away their drawn bodies.
+    updateCarDetail(this.camera.position, { low: 0, medium: 30, high: 55, ultra: 90 }[this.gfx.quality]);
     // Detailed anime models for me and the nearest characters, as many as the graphics level allows.
-    const budget = { low: 0, medium: 4, high: 8, ultra: 14 }[this.gfx.quality];
+    // Realistic people share their model and draw in a few calls, so more of them can be detailed.
+    const budget = { low: 0, medium: 6, high: 14, ultra: 22 }[this.gfx.quality];
     const near = [
       ...[...this.people.values()].filter((p) => p.av).map((p) => ({ c: p.av!, d: p.group.position.distanceTo(me) })),
       ...this.npcs.filter((n) => n.av.root.visible).map((n) => ({ c: n.av, d: n.av.root.position.distanceTo(me) })),
     ].sort((a, b) => a.d - b.d);
     this.me.setDetailed(budget > 0);
     near.forEach((x, i) => x.c.setDetailed(i < budget - 1 && x.d < 45));
-    for (const d of this.city.districts) d.group.visible = Math.hypot(d.x - me.x, d.z - me.z) < this.gfx.view + d.r;
+    // Tasks: am I where someone asked me to go?
+    for (const [id, q] of this.quests) if (Math.hypot(q.x - me.x, q.z - me.z) < q.r) (this.quests.delete(id), this.cb.quest?.(id, q));
+    if (this.marker && Math.hypot(this.marker.x - me.x, this.marker.z - me.z) < 7) (this.cb.toast(`You have reached ${this.marker.label}.`, "ok"), this.setMarker(null));
     for (const [id, g] of this.homeGroups) {
       const lot = this.city.lots.get(id);
       if (lot) g.visible = Math.hypot(lot.cx - me.x, lot.cz - me.z) < this.gfx.view;
@@ -1162,7 +1428,23 @@ export class Town {
     const t = this.clock.elapsedTime;
     this.gamepad();
     this.step(dt, t);
-    this.renderer.render(this.scene, this.camera);
+    this.atmosphere.update(dt, this.camera, this.meGroup.position);
+    if (this.traffic) {
+      const obs = [{ x: this.body.x, z: this.body.z }, ...this.npcs.filter((n) => n.brain && n.av.root.visible).map((n) => ({ x: n.av.root.position.x, z: n.av.root.position.z })), ...[...this.people.values()].filter((p) => p.live).map((p) => ({ x: p.group.position.x, z: p.group.position.z }))];
+      this.traffic.update(dt, obs, this.meGroup.position, this.gfx.view);
+    }
+    let inside: { x: number; y: number; z: number; on: boolean; r: number } | null = null;
+    for (const h of this.homeLive.values()) {
+      h.update(this.body, t);
+      const l = h.light();
+      if (l.on && Math.hypot(l.x - this.body.x, l.z - this.body.z) < l.r + 4) inside = l;
+    }
+    this.homeLight.intensity = inside ? 7 : 0;
+    if (inside) this.homeLight.position.set(inside.x, inside.y, inside.z);
+    this.post.setNight(this.atmosphere.night);
+    this.lightTick -= dt;
+    if (this.lightTick <= 0) (this.lightTick = 0.25), updateLights(this.city.trafficLights);
+    this.post.render(dt);
   };
 
   private pad = { a: false, x: false, y: false };
@@ -1196,8 +1478,10 @@ export class Town {
     const car = this.car;
     if (this.activity) {
       // Activities hold the player in place (except timed runs).
-      if (this.activity instanceof Run && !car?.driving) speed = this.walk(fx, fz, dt, run);
-      else if (this.activity instanceof Run && car?.driving) this.driveStep(fx, fz, dt);
+      const drives = this.activity instanceof Run || (this.activity as { drives?: boolean }).drives;
+      if ((this.activity as { walks?: boolean }).walks) speed = this.walk(fx, fz, dt, run);
+      else if (drives && !car?.driving) speed = this.walk(fx, fz, dt, run);
+      else if (drives && car?.driving) this.driveStep(this.carHold ? 0 : fx, this.carHold ? 0 : fz, dt);
       this.activity.update(dt, t);
     } else if (car?.driving) this.driveStep(fx, fz, dt);
     else if (this.sit) {
@@ -1221,15 +1505,16 @@ export class Town {
     if (this.sit?.swing) this.me.root.rotation.x = Math.sin(t * 2.4) * 0.4;
     else this.me.root.rotation.x = 0;
     if (this.mySay && performance.now() - this.mySayAt > 7000) (this.mySay = ""), this.setBubble("");
-    this.me.root.visible = !(this.camMode === "first" && !this.activity);
-    // My own name tag only when the camera is far enough back to see it whole.
-    if (this.meTag) this.meTag.visible = this.camMode === "third" && this.camera.position.distanceTo(this.meGroup.position) > 3.5;
+    // Hidden in first person (my own head would fill the view), and with the bow or a gun in my hands.
+    this.me.root.visible = !(this.camMode === "first" && (!this.activity || (this.activity as { fps?: boolean }).fps)) && this.activity?.kind !== "archery";
+    // My own name tag only when the camera is far enough back to see it whole; not while driving, racing or playing.
+    if (this.meTag) this.meTag.visible = this.camMode === "third" && !this.activity && !this.car?.driving && this.camera.position.distanceTo(this.meGroup.position) > 3.5;
 
     // My parked or driven vehicle.
     if (car) {
       car.g.position.set(car.c.x, car.c.y, car.c.z);
       car.g.rotation.y = car.c.heading;
-      for (const w of car.wheels) w.rotation.x += (car.c.speed * dt) / 0.35;
+      if (!car.st) for (const w of car.wheels) w.rotation.x += (car.c.speed * dt) / 0.35;
       const night = !!this.scene.userData.night;
       for (const l of car.lights) l.visible = l.userData.front ? night || car.driving : car.driving && (car.c.speed < 0.3 || fz > 0);
     }
@@ -1254,9 +1539,38 @@ export class Town {
       p.av.update(t, dt, { speed: p.live ? (p.mv ? (p.mv === 2 ? 1 : 0.5) : 0) : d > 0.05 ? 0.4 : 0, air: false, sit: p.seat && d < 0.1, drive, crouch: false, emote: p.emote }, p.group.position.distanceTo(this.meGroup.position) < 6 ? this.meHead : null);
     }
 
+    // Town folk with a day of their own (brains), then the ones at their posts.
+    const world = this.graph ? { hours: this.atmosphere.hours, raining: this.atmosphere.rainAmount > 0.35, me: { x: b.x, z: b.z, moving: this.keys.size > 0 }, places: this.places, graph: this.graph, ph: this.ph, others: this.npcs.filter((n) => n.brain).map((n) => n.brain!), matchOn: !!this.soccer } : null;
+    const nowMs = Date.now();
+    for (const n of this.npcs) {
+      if (!n.brain || !world) continue;
+      const talking = this.npcTalk === n.def.id;
+      const pos = n.av.root.position;
+      if (talking) {
+        n.av.root.rotation.y = Math.atan2(b.x - pos.x, b.z - pos.z);
+        n.av.update(t, dt, { speed: 0, air: false, sit: false, drive: false, crouch: false, emote: "talk" }, this.meHead);
+        continue;
+      }
+      const o = n.brain.update(dt, world, nowMs);
+      pos.set(o.x, o.y, o.z);
+      let dr = o.ry - n.av.root.rotation.y;
+      dr = Math.atan2(Math.sin(dr), Math.cos(dr));
+      n.av.root.rotation.y += dr * Math.min(1, dt * 8);
+      if (!o.visible) n.av.root.visible = false;
+      if (n.av.root.visible) n.av.update(t, dt, { speed: o.speed, air: false, sit: o.sit, drive: false, crouch: false, emote: o.emote }, Math.hypot(b.x - o.x, b.z - o.z) < 5 ? this.meHead : null);
+      if ((o.say ?? "") !== (n.bubbleText ?? "")) {
+        if (n.bubble) (n.av.root.remove(n.bubble), n.bubble.material.map?.dispose(), n.bubble.material.dispose(), (n.bubble = null));
+        n.bubbleText = o.say ?? "";
+        if (o.say && Math.hypot(b.x - o.x, b.z - o.z) < 25) {
+          n.bubble = textSprite([o.say], { bubble: true, width: 2.6 });
+          n.bubble.position.set(0, 2.55, 0);
+          n.av.root.add(n.bubble);
+        }
+      }
+    }
     // Town folk: walkers follow their paths; everyone turns to greet me when I come close.
     for (const n of this.npcs) {
-      if (!n.av.root.visible) continue;
+      if (!n.av.root.visible || n.brain) continue;
       const pos = n.av.root.position;
       const near = Math.hypot(pos.x - b.x, pos.z - b.z) < 3.5 && Math.abs(pos.y - b.y) < 2;
       let sp = 0;
@@ -1324,6 +1638,7 @@ export class Town {
         for (const p of this.people.values()) if (p.live && Math.abs(p.group.position.x - (PITCH.x0 + PITCH.x1) / 2) < 40) this.soccer.setPlayer(p.id, p.group.position.x, p.group.position.y, p.group.position.z);
       } else this.soccer.dropPlayer("me");
       this.soccer.step(dt);
+      this.ballAuth = Math.max(0, this.ballAuth - dt);
     }
 
     this.updateCamera(dt);
@@ -1335,9 +1650,7 @@ export class Town {
       for (const p of this.people.values()) if (p.live) others.set(p.id, p.group.position);
       this.voice.place({ x: b.x, y: b.y, z: b.z, heading: this.heading }, others, this.voiceState.mode === "room" ? "room" : "near");
     }
-    // The sun follows me so shadows stay sharp nearby.
-    this.sun.position.set(b.x + 30, b.y + 50, b.z + 20);
-    this.sun.target.position.set(b.x, b.y, b.z);
+    // The sun follows me so shadows stay sharp nearby (its direction comes from the town's clock).
   }
 
   private walk(fx: number, fz: number, dt: number, run: boolean) {
@@ -1371,15 +1684,58 @@ export class Town {
     return speed;
   }
 
+  // On a street, a sidewalk, the plaza, a car park or a race track (the rest is grass: less grip).
+  private onPavement(x: number, z: number) {
+    for (const r of ROADS) {
+      const along = r.axis === "x" ? x : z, across = r.axis === "x" ? z : x;
+      if (along > r.from - 1 && along < r.to + 1 && Math.abs(across - r.c) < r.w / 2 + r.s) return true;
+    }
+    if (Math.hypot(x, z) < 26 || (x > 12 && x < 32 && z > 12 && z < 32)) return true;
+    return this.paved.some((f) => f(x, z));
+  }
+
+  // Manual or automatic gears (a setting).
+  manualGears = false;
+
   private driveStep(fx: number, fz: number, dt: number) {
     const car = this.car!;
     const before = Math.abs(car.c.speed);
-    if (driveCar(this.ph, car.c, { throttle: -fz, steer: -fx, brake: this.keys.has(" ") }, dt) && before > 5) this.sound.play("crash", { volume: Math.min(1, before / 20) });
+    const spec = car.rig?.spec;
+    if (spec && car.st) {
+      const st = car.st;
+      const lvl = Math.max(0, (this.data.ride.level ?? 1) - 1);
+      const hit = stepCar(this.ph, st, spec, { throttle: -fz, brake: this.carHold ? 1 : 0, steer: -fx, handbrake: this.keys.has(" ") || this.carHold, shift: this.shiftKey }, { grip: this.atmosphere.grip * this.carGrip, offRoad: !this.onPavement(st.x, st.z), time: this.clock.elapsedTime }, dt, car.rig!.len, car.rig!.r, { engine: lvl, brakes: lvl, tyres: lvl, suspension: lvl, gearbox: lvl });
+      // The pit lane speed limiter.
+      if (this.carLimit !== null) {
+        const v = Math.hypot(st.vx, st.vz);
+        if (v > this.carLimit) (st.vx *= this.carLimit / v), (st.vz *= this.carLimit / v);
+      }
+      this.shiftKey = 0;
+      Object.assign(car.c, { x: st.x, z: st.z, y: st.y, heading: st.heading, speed: speedOf(st) });
+      if (hit > 4) {
+        this.sound.play("crash", { volume: Math.min(1, hit / 20) });
+        if (st.condition < 30) this.cb.toast("Your car is badly damaged. The garage repairs it for free.", "err");
+      }
+      // Springs, wheels and lights.
+      const rig = car.rig!;
+      rig.body.rotation.x = THREE.MathUtils.clamp(st.pitch * 0.06, -0.06, 0.06);
+      rig.body.rotation.z = THREE.MathUtils.clamp(-st.roll * 0.09, -0.08, 0.08);
+      for (const w of rig.wheels) {
+        w.spin.rotation.x = st.wheelSpin;
+        if (w.front) w.obj.rotation.y = st.steer * spec.steer;
+      }
+      const braking = -fz < 0 && speedOf(st) > 0.5;
+      if (rig.brakeMat) rig.brakeMat.emissiveIntensity = braking || this.keys.has(" ") ? 3.5 : 0.4;
+      this.cb.gauge?.({ rpm: Math.round(st.rpm), redline: spec.redline, gear: st.gear, condition: Math.round(st.condition), manual: st.manual });
+      this.sound.setEngine(true, (st.rpm / spec.redline) * 32, this.data.items.find((i) => i.key === car.key)?.model ?? "car");
+    } else {
+      if (driveCar(this.ph, car.c, { throttle: -fz, steer: -fx, brake: this.keys.has(" ") }, dt) && before > 5) this.sound.play("crash", { volume: Math.min(1, before / 20) });
+      this.sound.setEngine(true, Math.abs(car.c.speed), this.data.items.find((i) => i.key === car.key)?.model ?? "car");
+    }
     this.body.x = car.c.x;
     this.body.z = car.c.z;
     this.body.y = car.c.y;
     this.cb.speed(Math.round(Math.abs(car.c.speed) * 3.6));
-    this.sound.setEngine(true, Math.abs(car.c.speed), this.data.items.find((i) => i.key === car.key)?.model ?? "car");
     // The camera swings behind the car.
     if (!this.drag) {
       let d = car.c.heading + Math.PI - this.yaw;
@@ -1399,6 +1755,12 @@ export class Town {
       return;
     }
     const car = this.car?.driving ? this.car : null;
+    // A fixed camera (photo mode and tests): from a point, looking at another.
+    if (this.freeCam) {
+      cam.position.set(this.freeCam[0], this.freeCam[1], this.freeCam[2]);
+      cam.lookAt(this.freeCam[3], this.freeCam[4], this.freeCam[5]);
+      return;
+    }
     if (this.camMode === "first") {
       const y = car ? car.c.y + car.seatY + 0.85 : b.y + (this.crouch ? 1.1 : 1.58);
       const x = car ? car.c.x : b.x, z = car ? car.c.z : b.z;
@@ -1457,6 +1819,7 @@ export class Town {
     const w = this.el.clientWidth, h = this.el.clientHeight;
     if (!w || !h) return;
     this.renderer.setSize(w, h);
+    this.post.setSize(w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
   }
@@ -1488,6 +1851,23 @@ export class Town {
       g.arc(tx(p.target.x), tz(p.target.z), big ? 4 : 3, 0, Math.PI * 2);
       g.fill();
     }
+    // Where someone sent me (clamped to the edge of the minimap when far), and tasks.
+    const pin = (x: number, z: number, color: string) => {
+      const px = Math.max(6, Math.min(W - 6, tx(x))), pz = Math.max(6, Math.min(H - 6, tz(z)));
+      g.fillStyle = color;
+      g.strokeStyle = "#111";
+      g.lineWidth = 1.5;
+      g.beginPath();
+      g.moveTo(px, pz - 7);
+      g.lineTo(px + 5, pz);
+      g.lineTo(px, pz + 7);
+      g.lineTo(px - 5, pz);
+      g.closePath();
+      g.fill();
+      g.stroke();
+    };
+    for (const q of this.quests.values()) pin(q.x, q.z, "#a855f7");
+    if (this.marker) pin(this.marker.x, this.marker.z, "#facc15");
     g.save();
     g.translate(tx(this.body.x), tz(this.body.z));
     g.rotate(-this.heading + Math.PI);
@@ -1508,6 +1888,7 @@ export class Town {
   npcTalk = "";
   dispose() {
     this.stop = true;
+    forgetCarDetail(this.scene);
     this.soccer?.dispose();
     this.me.dispose();
     for (const n of this.npcs) n.av.dispose();
@@ -1517,6 +1898,9 @@ export class Town {
     this.ro.disconnect();
     this.unbind();
     this.stopActivity();
+    this.atmosphere.dispose();
+    this.post.dispose();
+    this.traffic?.dispose();
     this.voice.stop();
     this.sound.dispose();
     this.scene.traverse((o) => {

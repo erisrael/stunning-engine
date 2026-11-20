@@ -602,7 +602,9 @@ function Card({ item, open, onToggle, children, badge, select }: { item: FlowIte
 // Team member's board
 // ---------------------------------------------------------------------------
 
-const COLUMNS: { key: string; label: string; statuses: string[]; hint: string }[] = [
+// Work sent back to redo has its own column, so it never reads as plain In progress.
+const COLUMNS: { key: string; label: string; statuses: string[]; hint: string; redo?: boolean }[] = [
+  { key: "redo", label: "Redo", statuses: ["queued", "paused", "in_progress"], hint: "Sent back to you to redo", redo: true },
   { key: "todo", label: "To do", statuses: ["queued", "paused", "blocked"], hint: "Assigned to you" },
   { key: "doing", label: "In progress", statuses: ["in_progress"], hint: "Your timer runs while it is here" },
   { key: "done", label: "Done, not sent", statuses: ["finished"], hint: "Send to the team lead when you are ready" },
@@ -624,6 +626,9 @@ export function TeamGuide({ stage, steps }: { stage: Stage; steps: string[] }) {
   );
 }
 
+// Redo work (not blocked) sits in the Redo column; everything else by its status.
+const inColumn = (c: (typeof COLUMNS)[number], it: { status: string; redo?: boolean }) => c.statuses.includes(it.status) && (c.redo ? !!it.redo : !(it.redo && COLUMNS[0]!.statuses.includes(it.status)));
+
 export function MyBoard({ items, title = "My work" }: { items: FlowItem[]; title?: string }) {
   const { act, busy } = useAct();
   const router = useRouter();
@@ -633,7 +638,7 @@ export function MyBoard({ items, title = "My work" }: { items: FlowItem[]; title
   // Columns show twelve cards at a time; a link to one item opens its whole column.
   const [shown, setShown] = React.useState<Record<string, number>>(() => {
     const it = items.find((i) => i.id === params.get("item"));
-    const col = it && COLUMNS.find((c) => c.statuses.includes(it.status));
+    const col = it && COLUMNS.find((c) => inColumn(c, it));
     return col ? { [col.key]: items.length } : {};
   });
   const done = items.filter((i) => i.status === "finished");
@@ -666,9 +671,9 @@ export function MyBoard({ items, title = "My work" }: { items: FlowItem[]; title
       {!items.length ? (
         <EmptyState icon={<InboxIcon className="size-5" />} title="Nothing assigned to you" description="Your team lead assigns work; it appears here." />
       ) : (
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {COLUMNS.map((col) => {
-            const list = items.filter((i) => col.statuses.includes(i.status));
+        <div className={cn("grid gap-3 md:grid-cols-2", items.some((i) => inColumn(COLUMNS[0]!, i)) ? "xl:grid-cols-5" : "xl:grid-cols-4")}>
+          {COLUMNS.filter((col) => !col.redo || items.some((i) => inColumn(col, i))).map((col) => {
+            const list = items.filter((i) => inColumn(col, i));
             return (
               <div key={col.key} className="flex flex-col gap-2 rounded-xl bg-muted/40 p-2">
                 <div className="px-1">
@@ -686,7 +691,7 @@ export function MyBoard({ items, title = "My work" }: { items: FlowItem[]; title
                       item={it}
                       open={isOpen}
                       onToggle={() => setOpen(isOpen ? null : it.id)}
-                      badge={it.status === "paused" || it.status === "blocked" ? <Badge variant="secondary">{STATUS_LABELS[it.status]}</Badge> : null}
+                      badge={it.redo && col.redo && it.status !== "in_progress" ? <Badge variant="secondary">{it.status === "queued" ? "Not started" : STATUS_LABELS[it.status]}</Badge> : it.status === "paused" || it.status === "blocked" ? <Badge variant="secondary">{STATUS_LABELS[it.status]}</Badge> : null}
                     >
                       {isOpen && (it.draft ? <p className="border-t pt-2 text-xs text-muted-foreground">Press Start when the session begins; then fill in the recording here.</p> : <WorkPanel item={it} canEdit={it.status !== "lead_review"} lead={false} />)}
                       <div className="mt-2 flex flex-wrap gap-1.5">

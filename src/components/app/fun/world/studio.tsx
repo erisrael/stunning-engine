@@ -15,7 +15,7 @@ import { Character } from "./character";
 // tabs for the body, face, hair, outfit, accessories and saved looks. Paid things can be tried on; saving needs them
 // bought (right here).
 
-export type Wallet = { coins: number; level: { level: number; into: number; need: number }; owned: { key: string; qty: number; data: Record<string, unknown> }[]; ride: string | null };
+export type Wallet = { coins: number; level: { level: number; into: number; need: number }; owned: { key: string; qty: number; data: Record<string, unknown> }[]; ride: string | null; free?: boolean };
 type Preset = { name: string; look: Look };
 const POSES = ["idle", "walk", "run", "jump", "sit", "wave", "dance", "laugh", "cry", "cheer", "bow", "clap"] as const;
 const SKINS = ["#fde3cf", "#f9d7b5", "#f2c9a0", "#d9a07a", "#b97d55", "#8d5a3b", "#5c3a26", "#3b2417"];
@@ -183,7 +183,8 @@ export function Studio({ look: start, wallet, items, presets: startPresets, onCl
     </label>
   );
   const slots: [AccSlot, string][] = [["head", "Head"], ["face", "Face"], ["neck", "Neck"], ["ears", "Ears"], ["back", "Back"]];
-  const anime = l.style === "anime";
+  // Detailed models: anime (VRoid) or realistic people (Rocketbox); both use the motion library.
+  const anime = l.style === "anime" || l.style === "realistic";
   const TABS: [Tab, string, React.ReactNode][] = [
     ["characters", "Characters", <UsersIcon key="c" />],
     ["body", "Body", <PersonStandingIcon key="b" />],
@@ -219,14 +220,14 @@ export function Studio({ look: start, wallet, items, presets: startPresets, onCl
           {tab === "characters" && (
             <div className="space-y-3">
               <div className="flex flex-wrap gap-1">
-                {([["anime", "Anime (detailed)"], ["chibi", "Chibi"], ["blocky", "Blocky"]] as const).map(([s, label]) => <Button key={s} size="xs" variant={l.style === s ? "default" : "secondary"} onClick={() => set({ style: s })} data-studio-style={s}>{label}</Button>)}
+                {([["realistic", "Realistic"], ["anime", "Anime"], ["chibi", "Chibi"], ["blocky", "Blocky"]] as const).map(([s, label]) => <Button key={s} size="xs" variant={l.style === s ? "default" : "secondary"} onClick={() => set(s === "realistic" ? { style: s, base: l.style === "realistic" ? l.base : "rb_m01" } : s === "anime" ? { style: s, base: l.style === "anime" ? l.base : "kai" } : { style: s })} data-studio-style={s}>{label}</Button>)}
               </div>
               {anime ? (
-                <div className="grid grid-cols-2 gap-1.5">{CATALOG.filter((i) => i.kind === "avatar").map((a) => tile(priceOf(a.key) ?? a, l.base === a.model, () => set({ base: a.model })))}</div>
+                <div className="grid grid-cols-2 gap-1.5">{CATALOG.filter((i) => i.kind === "avatar" && !!i.realistic === (l.style === "realistic")).map((a) => tile(priceOf(a.key) ?? a, l.base === a.model, () => set({ base: a.model })))}</div>
               ) : (
                 <p className="text-xs text-white/70">The chibi and blocky styles are built from simple shapes: choose hair, outfits and proportions in the other tabs.</p>
               )}
-              <p className="text-[11px] text-white/60">Anime characters are rigged 3D models with real animations, facial expressions and swinging hair. They load the first time you see them.</p>
+              <p className="text-[11px] text-white/60">{l.style === "realistic" ? "Realistic people (Microsoft Rocketbox, free to use) are rigged 3D models with real animations; their faces move when they talk and blink." : "Anime characters are rigged 3D models with real animations, facial expressions and swinging hair."} They load the first time you see them.</p>
             </div>
           )}
           {tab === "body" && (

@@ -17,6 +17,7 @@ export type WorkRow = {
   stage: Stage | null;
   stage_status: AttemptStatus | null;
   substate: string | null;
+  redo?: boolean;
   priority: string;
   grade_name: string;
   subject_name: string;
@@ -77,7 +78,7 @@ export function Worklist({
                 {r.title_am && <span className="ethiopic truncate" lang="am">{r.title_am}</span>}
               </div>
               <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-                <ItemStatusPill lifecycle={r.lifecycle} stage={r.stage} status={r.stage_status} substate={r.substate} size="xs" />
+                <ItemStatusPill lifecycle={r.lifecycle} stage={r.stage} status={r.stage_status} substate={r.substate} redo={r.redo} size="xs" />
                 {incoming && <span className="text-muted-foreground">From {STAGE_LABELS[r.stage!]}</span>}
                 <span className="flex items-center gap-1.5" title="Next action owner">
                   <UserAvatar name={r.next_action_owner_id ? users[r.next_action_owner_id] : null} size="xs" />

@@ -9,6 +9,8 @@ export type Shop = "clothes" | "accessories" | "furniture" | "homes" | "cars" | 
 export type AccSlot = "head" | "face" | "neck" | "back" | "ears";
 
 export type Item = {
+  // A realistic person (avatar kind), not an anime model.
+  realistic?: boolean;
   key: string;
   kind: ItemKind;
   label: string;
@@ -57,6 +59,15 @@ export const CATALOG: Item[] = [
   I("avatar.victoria", "avatar", "Victoria", 200, "epic", "clothes", { model: "victoria" }),
   I("avatar.fumiriya", "avatar", "Fumiriya", 220, "epic", "clothes", { model: "fumiriya" }),
   I("avatar.seed", "avatar", "Seed-san", 400, "legendary", "special", { model: "seed", level: 4, note: "The android with the jet pack." }),
+  // Realistic people (Microsoft Rocketbox avatars, MIT; models/people), free for everyone.
+  I("avatar.rb_m01", "avatar", "Daniel", 0, "common", "clothes", { model: "rb_m01", realistic: true }),
+  I("avatar.rb_m05", "avatar", "Samuel", 0, "common", "clothes", { model: "rb_m05", realistic: true }),
+  I("avatar.rb_m08", "avatar", "Michael", 0, "common", "clothes", { model: "rb_m08", realistic: true }),
+  I("avatar.rb_m12", "avatar", "Robert", 0, "common", "clothes", { model: "rb_m12", realistic: true }),
+  I("avatar.rb_f01", "avatar", "Hana", 0, "common", "clothes", { model: "rb_f01", realistic: true }),
+  I("avatar.rb_f04", "avatar", "Sara", 0, "common", "clothes", { model: "rb_f04", realistic: true }),
+  I("avatar.rb_f08", "avatar", "Ruth", 0, "common", "clothes", { model: "rb_f08", realistic: true }),
+  I("avatar.rb_f12", "avatar", "Lidya", 0, "common", "clothes", { model: "rb_f12", realistic: true }),
 
   // ---------------------------------------------------------------- outfits (the clothes shop)
   I("outfit.tee", "outfit", "T-shirt and jeans", 0, "common", "clothes", { model: "tee" }),
@@ -141,6 +152,14 @@ export const CATALOG: Item[] = [
   I("car.sports", "vehicle", "Sports car", 900, "epic", "cars", { model: "sports", color: "#f97316", speed: 30, handling: 2.0, seats: 2, level: 4 }),
   I("car.cart", "vehicle", "Golf cart", 200, "common", "cars", { model: "cart", color: "#f8fafc", speed: 11, handling: 2.0, seats: 2 }),
   I("car.hover", "vehicle", "Hover car", 1800, "legendary", "special", { model: "hover", color: "#06b6d4", speed: 34, handling: 2.4, seats: 2, level: 8 }),
+  // Cars with their own driving numbers (see world/cars.ts SPECS): drawn bodies, and two licensed 3D models.
+  I("car.sedan", "vehicle", "Seed Aurora sedan", 450, "rare", "cars", { model: "sedan", color: "#1f3a5f", speed: 62, handling: 2, seats: 4, note: "Rear-wheel drive, 150 kW, six gears. Comfortable and quick." }),
+  I("car.suv", "vehicle", "Seed Atlas SUV", 700, "epic", "cars", { model: "suv", color: "#4b5563", speed: 64, handling: 1.7, seats: 5, level: 2, note: "All-wheel drive, 230 kW, eight gears; heavy (2,150 kg), leans in corners." }),
+  I("car.pickup", "vehicle", "Seed Ridge pickup", 600, "rare", "cars", { model: "pickup", color: "#7c2d12", speed: 53, handling: 1.6, seats: 2, level: 2, note: "Rear-wheel drive, 190 kW. Slides on gravel." }),
+  I("car.supercar", "vehicle", "Vortex V12", 2400, "legendary", "special", { model: "supercar", color: "#b91c1c", speed: 94, handling: 2.3, seats: 2, level: 6, note: "560 kW, rear-wheel drive, downforce. Game numbers (a made-up car)." }),
+  I("car.gt911", "vehicle", "Porsche 911 Carrera 4S", 2000, "legendary", "cars", { model: "gt911", color: "#9ca3af", speed: 85, handling: 2.3, seats: 2, level: 5, note: "Real 3D model (Lionsharp Studios, CC BY-SA 4.0). Real-world numbers: 331 kW, all-wheel drive, 8-speed, 1,565 kg, 306 km/h. The name and design belong to their maker." }),
+  I("car.concept", "vehicle", "Darmstadt Concept", 1500, "epic", "cars", { model: "concept", color: "#9f1239", speed: 80, handling: 2.2, seats: 2, level: 4, note: "Real 3D model (Khronos glTF sample, CC BY 4.0) with a full interior. Game numbers: 260 kW, rear-wheel drive." }),
+  I("car.f2", "vehicle", "Seed F2 single-seater", 3000, "legendary", "special", { model: "f2", color: "#1d4ed8", speed: 89, handling: 2.6, seats: 1, level: 7, note: "A Formula 2 style racing car (our own design): 455 kW, 795 kg, big downforce. Best on the Grand Prix circuit." }),
 
   // ---------------------------------------------------------------- pets (food, toys, things to wear, skins)
   I("food.fish", "petfood", "Fresh fish", 15, "common", "pets", { stack: true, model: "fish", effect: { hunger: 45, love: 10 } }),
@@ -217,7 +236,7 @@ export const isFree = (i: Pick<Item, "price">) => i.price <= 0;
 // and up to one accessory per slot. Colours are free.
 export type Look = {
   // anime: a VRM character (base); chibi: the drawn figure built from shapes; blocky: the first, square style.
-  style: "anime" | "chibi" | "blocky";
+  style: "anime" | "chibi" | "blocky" | "realistic";
   base: string;
   tintHair: boolean;
   tintEyes: boolean;
@@ -272,7 +291,8 @@ export const DEFAULT_LOOK: Look = {
 // Anime characters: VRM models in public/models/avatars (VRoid Project sample models released for free use and
 // redistribution, Seed-san by VirtualCast under the VRM Public License, the twist sample by pixiv). Credits in
 // public/models/CREDITS.txt.
-export const VRM_BASES = CATALOG.filter((i) => i.kind === "avatar").map((i) => ({ key: i.model!, item: i.key, label: i.label, file: `/models/avatars/${i.model}.vrm` }));
+export const PEOPLE_BASES = CATALOG.filter((i) => i.kind === "avatar" && i.realistic).map((i) => ({ key: i.model!, item: i.key, label: i.label, file: `/models/people/${i.model}.glb` }));
+export const VRM_BASES = CATALOG.filter((i) => i.kind === "avatar" && !i.realistic).map((i) => ({ key: i.model!, item: i.key, label: i.label, file: `/models/avatars/${i.model}.vrm` }));
 export const HAIR_STYLES = CATALOG.filter((i) => i.kind === "hair");
 export const OUTFITS = CATALOG.filter((i) => i.kind === "outfit");
 export const ACCESSORIES = CATALOG.filter((i) => i.kind === "acc");
@@ -300,8 +320,8 @@ export function cleanLook(l: Partial<Look> | null | undefined): Look {
       return true;
     });
   return {
-    style: l?.style === "blocky" ? "blocky" : l?.style === "chibi" ? "chibi" : "anime",
-    base: pick(l?.base, CATALOG.filter((i) => i.kind === "avatar").map((i) => i.model!), "kai"),
+    style: l?.style === "blocky" ? "blocky" : l?.style === "chibi" ? "chibi" : l?.style === "realistic" ? "realistic" : "anime",
+    base: l?.style === "realistic" ? pick(l?.base, PEOPLE_BASES.map((p) => p.key), "rb_m01") : pick(l?.base, CATALOG.filter((i) => i.kind === "avatar" && !i.realistic).map((i) => i.model!), "kai"),
     tintHair: !!l?.tintHair,
     tintEyes: !!l?.tintEyes,
     tintClothes: !!l?.tintClothes,
@@ -329,7 +349,7 @@ export function cleanLook(l: Partial<Look> | null | undefined): Look {
 // The catalog keys a look uses (for the ownership check).
 export function lookItems(l: Look): string[] {
   const keys = [...l.acc];
-  if (l.style === "anime") keys.push(`avatar.${l.base}`);
+  if (l.style === "anime" || l.style === "realistic") keys.push(`avatar.${l.base}`);
   const outfit = OUTFITS.find((o) => o.model === l.outfit);
   if (outfit) keys.push(outfit.key);
   const hair = HAIR_STYLES.find((h) => h.model === l.hairStyle);
@@ -350,6 +370,9 @@ export type Ride = { paint?: string; rims?: string; level?: number };
 // Coins for playing in town and in the games (on top of what work earns), within a daily cap Admin sets.
 export const PLAY_REWARDS: Record<string, { label: string; per: number; max: number }> = {
   archery: { label: "Archery", per: 1, max: 15 },
+  quest: { label: "A task for someone in town", per: 1, max: 20 },
+  gp: { label: "Grand Prix", per: 5, max: 25 },
+  strike: { label: "Seed Strike", per: 1, max: 20 },
   gallery: { label: "Target gallery", per: 1, max: 15 },
   hoops: { label: "Hoops", per: 2, max: 12 },
   parkour: { label: "Parkour course", per: 10, max: 10 },

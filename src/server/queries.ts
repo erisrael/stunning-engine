@@ -2,7 +2,7 @@ import { all, get, parseJson, placeholders, type Param } from "./db";
 import { getSettings } from "./settings";
 import { scopeSql, type AppUser } from "./users";
 import type { Filters } from "@/lib/filters";
-import { STAGES, type AttemptStatus, type Stage } from "@/lib/domain";
+import { STAGES, isRedo, type AttemptStatus, type Stage } from "@/lib/domain";
 import { endOfLocalDayIso, localInputToIso } from "@/lib/format";
 
 // ---------------------------------------------------------------------------
@@ -34,9 +34,13 @@ export type StageCell = {
   attempts: number;
   enteredAt: string | null;
   completedAt: string | null;
+  // Sent back to this team (returned or a redo request): shown as Redo while the member works it.
+  redo: boolean;
 };
 
 export type ItemListRow = {
+  // The current stage is a redo (see StageCell.redo).
+  redo: boolean;
   id: string;
   code: string;
   title: string;
@@ -313,16 +317,16 @@ export async function listItems(user: AppUser, f: Filters, nowIso: string, opts:
   return { rows: await hydrateStages(rows), total };
 }
 
-async function hydrateStages(rows: Omit<ItemListRow, "stages" | "owners" | "stageDue">[]): Promise<ItemListRow[]> {
+async function hydrateStages(rows: Omit<ItemListRow, "stages" | "owners" | "stageDue" | "redo">[]): Promise<ItemListRow[]> {
   if (!rows.length) return [];
   const ids = rows.map((r) => r.id);
-  const attempts: { id: string; item_id: string; stage: Stage; status: AttemptStatus; substate: string | null; owner_id: string | null; entered_at: string; completed_at: string | null; attempt_no: number }[] = [];
+  const attempts: { id: string; item_id: string; stage: Stage; status: AttemptStatus; substate: string | null; owner_id: string | null; entered_at: string; completed_at: string | null; attempt_no: number; cause: string | null; cause_note: string | null; lead_returned: number | null }[] = [];
   const assigns: { item_id: string; stage: Stage; user_id: string | null; stage_due_at: string | null }[] = [];
   for (let i = 0; i < ids.length; i += 500) {
     const c = ids.slice(i, i + 500);
     attempts.push(
       ...await all<(typeof attempts)[number]>(
-                `SELECT id, item_id, stage, status, substate, owner_id, entered_at, completed_at, attempt_no FROM stage_attempts
+                `SELECT id, item_id, stage, status, substate, owner_id, entered_at, completed_at, attempt_no, cause, cause_note, lead_returned FROM stage_attempts
          WHERE item_id IN (${placeholders(c.length)}) ORDER BY entered_at`,
                 ...c,
               ),
@@ -349,6 +353,7 @@ async function hydrateStages(rows: Omit<ItemListRow, "stages" | "owners" | "stag
         attempts: forStage.length,
         enteredAt: latest?.entered_at ?? null,
         completedAt: latest?.completed_at ?? null,
+        redo: isRedo(latest?.cause, latest?.cause_note, latest?.lead_returned),
       };
       owners[st] = asg?.user_id ?? null;
       stageDue[st] = asg?.stage_due_at ?? null;
@@ -357,10 +362,10 @@ async function hydrateStages(rows: Omit<ItemListRow, "stages" | "owners" | "stag
     if (r.lifecycle === "in_production" && r.stage) {
       const idx = STAGES.indexOf(r.stage);
       for (const st of STAGES.slice(idx + 1)) {
-        if (stages[st].status === "completed") stages[st] = { ...stages[st], status: null, substate: null };
+        if (stages[st].status === "completed") stages[st] = { ...stages[st], status: null, substate: null, redo: false };
       }
     }
-    return { ...r, stages, owners, stageDue };
+    return { ...r, stages, owners, stageDue, redo: r.lifecycle === "in_production" && !!r.stage && stages[r.stage].redo };
   });
 }
 
@@ -407,6 +412,7 @@ export async function itemDetail(itemId: string) {
       closed_at: string | null;
       raw_duration_min: number | null;
       notes: string | null;
+      lead_returned: number | null;
     }>("SELECT * FROM stage_attempts WHERE item_id = ? ORDER BY entered_at", itemId);
   const sessions = await all<{ id: string; attempt_id: string; user_id: string; started_at: string; ended_at: string | null; end_reason: string | null; corrected_from: string | null; correction_reason: string | null }>(
       "SELECT * FROM work_sessions WHERE item_id = ? ORDER BY started_at",

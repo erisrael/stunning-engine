@@ -85,6 +85,11 @@ export type FunConfig = {
   turnUsername: string;
   turnCredential: string;
   turnSecret: string;
+  // Everything free (Admin): every shop item, home, vehicle, avatar and upgrade costs nothing and is everyone's
+  // without buying; pet food and fireworks never run out. freeLevels also lifts the level locks. On by default
+  // while nobody has earned many coins yet; Admin switches it off to bring prices back.
+  freeAll: boolean;
+  freeLevels: boolean;
 };
 export const DEFAULT_FUN: FunConfig = {
   enabled: true,
@@ -119,6 +124,8 @@ export const DEFAULT_FUN: FunConfig = {
   turnUsername: "",
   turnCredential: "",
   turnSecret: "",
+  freeAll: true,
+  freeLevels: true,
 };
 
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -188,6 +195,8 @@ export async function saveFunConfig(user: AppUser, input: Partial<FunConfig>) {
     turnUsername: String(input.turnUsername ?? cur.turnUsername ?? "").trim().slice(0, 200),
     turnCredential: String(input.turnCredential ?? cur.turnCredential ?? "").trim().slice(0, 200),
     turnSecret: String(input.turnSecret ?? cur.turnSecret ?? "").trim().slice(0, 200),
+    freeAll: bool("freeAll"),
+    freeLevels: bool("freeLevels"),
     points: bool("points"),
     leaderboard: bool("leaderboard"),
     moods: bool("moods"),
@@ -451,7 +460,7 @@ export async function carePet(user: AppUser, act: PetAct, arg?: string) {
       what = `Ate ${it.label.toLowerCase()}`;
     } else {
       const pts = await pointsOf(user.id);
-      if (c.points && c.feedCost > 0) {
+      if (c.points && c.feedCost > 0 && !c.freeAll) {
         if (pts.balance < c.feedCost) throw new WorkflowError("VALIDATION", `Food costs ${c.feedCost} points; you have ${pts.balance}. Work earns points.`);
         await run("INSERT INTO fun_points (id, user_id, points, reason, source, ref, created_at) VALUES (?, ?, ?, ?, 'spend', 'pet.feed', ?)", uid("fp_"), user.id, -c.feedCost, `Fed ${p.name}`, nowS);
       }
@@ -561,7 +570,7 @@ export async function saveScore(user: AppUser, game: string, score: number, meta
 }
 
 // Lower is better for times (typing is words per minute: higher is better).
-const LOWER_BETTER = new Set(["reaction", "sudoku", "minesweeper", "memory", "reaction:classic", "reaction:aim", "world:parkour", "world:race"]);
+const LOWER_BETTER = new Set(["reaction", "sudoku", "minesweeper", "memory", "reaction:classic", "reaction:aim", "world:parkour", "world:race", "world:gp", "world:archery-distance"]);
 const lowerBetter = (game: string) => LOWER_BETTER.has(game) || (LOWER_BETTER.has(game.split(":")[0]!) && !/:(time|zen|daily-streak|sequence|stroop|blitz)/.test(game));
 
 export async function bestScores(user: AppUser, game: string) {

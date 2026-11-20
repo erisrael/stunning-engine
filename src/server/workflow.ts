@@ -115,6 +115,8 @@ export type AttemptRow = {
   held: number;
   raw_duration_min: number | null;
   notes: string | null;
+  // The team lead sent it back to the member (shown as Redo).
+  lead_returned?: number;
 };
 
 export type TargetRow = {
@@ -1427,6 +1429,7 @@ export async function leadDecide(ctx: Ctx, itemId: string, input: { decision: "a
       await run("UPDATE stage_attempts SET notes = ?, handoff_submitted_at = NULL WHERE id = ?", [a.notes, `Team lead: ${input.note.trim()}`].filter(Boolean).join("\n"), a.id);
       await run("UPDATE checklist_results SET verified_by = NULL, verified_at = NULL WHERE attempt_id = ?", a.id);
       await setAttemptStatus(a, "paused", now, input.note.trim());
+      await run("UPDATE stage_attempts SET lead_returned = 1 WHERE id = ?", a.id);
       await audit(ctx, { itemId, attemptId: a.id, stage: a.stage, action: "lead.returned", summary: `${actorName(ctx)} returned ${STAGE_LABELS[a.stage].toLowerCase()} to the team member`, reason: input.note.trim() });
       if (!ctx.silent && a.owner_id && a.owner_id !== actorId(ctx))
         await notify([a.owner_id], { type: "handoff", title: `Changes needed: ${item.code}`, body: input.note.trim(), link: `/dashboard?item=${itemId}`, itemId, dedupeKey: `lead-return:${a.id}:${now}` }, now, actorId(ctx) ?? undefined);

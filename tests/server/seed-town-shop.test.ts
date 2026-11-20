@@ -24,7 +24,8 @@ async function main() {
   const admin = await by("admin@demo.local");
   const dawit = await by("dawit@demo.local");
   const guest = (await loadUser((await upsertAccount({ name: "Town Guest", email: "guest@seedtown.local", title: "x", roles: ["editing"] as never, password: "Guest-Town-2026!", mustChangePassword: false })).id))!;
-  await fun.saveFunConfig(admin, { enabled: true, shop: true, world: true, worldVoice: true, playCoins: 30, points: true, pet: true });
+  // Prices on (Admin's "everything free" is on by default; it is tested at the end).
+  await fun.saveFunConfig(admin, { enabled: true, shop: true, world: true, worldVoice: true, playCoins: 30, points: true, pet: true, freeAll: false });
   await run("DELETE FROM fun_points WHERE user_id = ?", dawit.id);
   await run("DELETE FROM fun_items WHERE user_id = ?", dawit.id);
   await run("DELETE FROM fun_homes WHERE user_id = ?", dawit.id);
@@ -223,6 +224,36 @@ async function main() {
     return no;
   })());
   check("odd game names are refused", await rejects(fun.saveScore(dawit, "snake:<script>", 5)));
+
+  // ---------------------------------------------------------------- everything free (Admin)
+  check("everything is free by default (nobody has coins yet)", fun.DEFAULT_FUN.freeAll === true && fun.DEFAULT_FUN.freeLevels === true);
+  const fresh = guest;
+  await run("DELETE FROM fun_points WHERE user_id = ?", fresh.id);
+  await run("DELETE FROM fun_items WHERE user_id = ?", fresh.id);
+  check("with prices on, a newcomer owns no paid vehicle", !(await shop.owns(fresh.id, "car.sports")));
+  await fun.saveFunConfig(admin, { freeAll: true, freeLevels: true });
+  const fw = await shop.wallet(fresh);
+  check("the wallet says everything is free", fw.free === true);
+  check("every price is 0 and nothing is level-locked", (await shop.catalog()).every((i) => i.price === 0 && !i.level));
+  check("paid things are everyone's without buying", (await shop.owns(fresh.id, "car.sports")) && (await shop.owns(fresh.id, "house.castle")) && (await shop.owns(fresh.id, "avatar.seed")));
+  check("a free vehicle cannot be bought twice (it is already yours)", await rejects(shop.buy(fresh, "car.sports")));
+  await shop.setRide(fresh, "car.sports", { paint: "#ff0000" });
+  check("ride a vehicle that was a level-locked purchase", (await shop.rideOf(fresh.id)).key === "car.sports");
+  const coins0 = (await shop.wallet(fresh)).coins;
+  await shop.upgradeRide(fresh, "car.sports");
+  check("upgrades are free too", (await shop.rideOf(fresh.id)).level === 2 && (await shop.wallet(fresh)).coins === coins0);
+  const took = await shop.buy(fresh, "special.firework", 3);
+  check("free fireworks are simply taken", took.owned.some((o) => o.key === "special.firework" && o.qty === 3) && took.coins === coins0);
+  await shop.useOne(fresh.id, "special.firework");
+  check("free stacks never run out", (await shop.ownedQty(fresh.id, "special.firework")) === 3);
+  const worn = await W.saveLook(fresh, { ...cleanLook({}), style: "anime", base: "seed" } as never).catch((e) => String(e));
+  check("a legendary character can be worn", typeof worn === "object" && (await W.myLook(fresh)).base === "seed", worn);
+  await fun.saveFunConfig(admin, { freeLevels: false });
+  check("Admin can keep the level locks while things are free", (await shop.catalog()).some((i) => i.level && i.price === 0));
+  check("only Admin switches it", await rejects(fun.saveFunConfig(fresh, { freeAll: false })));
+  await fun.saveFunConfig(admin, { freeAll: false });
+  check("switched off, prices come back", (await shop.catalog()).some((i) => i.price > 0) && (await shop.wallet(fresh)).free === false);
+  check("switched off, what was only free is no longer owned", !(await shop.owns(fresh.id, "house.castle")));
 
   console.log(`${pass} passed, ${fail} failed`);
   await closeDb();

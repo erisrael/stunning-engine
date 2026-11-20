@@ -61,13 +61,14 @@ try {
   await win.locator("[data-world-prompt]").click();
   check("the floor picker opens", await seen(win.locator("[data-world-elevator]")));
   await win.locator('[data-floor="2"]').click();
-  check("the elevator cabin goes up to the second floor", await until(page, () => window.__seedTown.city.elevator.y === 9, null, 15000));
+  // The cabin moves in game time; the software renderer the tests use draws the city at a few frames a second.
+  check("the elevator cabin goes up to the second floor", await until(page, () => window.__seedTown.city.elevator.y === 9, null, 60000));
   await T(() => window.__seedTown.elevator(0));
-  await until(page, () => window.__seedTown.city.elevator.y === 0, null, 15000);
+  await until(page, () => window.__seedTown.city.elevator.y === 0, null, 60000);
   await page.waitForTimeout(1500);
   await T(() => window.__seedTown.teleport(20, 0, -56));
   await T(() => window.__seedTown.elevator(1));
-  check("riding the elevator takes me to the first floor", await until(page, () => Math.abs(window.__seedTown.body.y - 4.5) < 0.1, null, 15000));
+  check("riding the elevator takes me to the first floor", await until(page, () => Math.abs(window.__seedTown.body.y - 4.5) < 0.1, null, 60000));
   await page.screenshot({ path: path.join(shots, "office.png") });
 
   // ------------------------------------------------------------ town folk
@@ -142,19 +143,23 @@ try {
   check("the map travels to the park", await seen(win.locator("[data-world-where]", { hasText: "Park" })));
   await T(() => window.__seedTown.teleport(-99.5, 0, -23));
   check("the archery range", await seen(win.locator("[data-world-prompt]", { hasText: /archery/ })));
+  // The range opens the archery setup (modes and bows); the round is played on the field.
   await win.locator("[data-world-prompt]").click();
-  await win.locator('[data-activity-level="1"]').click();
-  check("a round starts with its score board", await seen(win.locator("[data-world-hud]", { hasText: "Archery" })));
+  await win.locator('[data-archery-mode="practice"]').click();
+  await win.locator("[data-archery-start]").click();
+  check("a round starts on the archery field", await until(page, () => window.__seedTown.activity?.kind === "archery", null, 20000));
+  await page.waitForTimeout(1500);
   const cv = await win.locator("[data-world-canvas] canvas").boundingBox();
-  for (let i = 0; i < 10; i++) {
+  for (let i = 0; i < 2; i++) {
     await page.mouse.move(cv.x + cv.width / 2, cv.y + cv.height / 2);
     await page.mouse.down();
-    await page.waitForTimeout(700);
+    await page.waitForTimeout(1300);
     await page.mouse.up();
-    await page.waitForTimeout(120);
+    await page.waitForTimeout(400);
   }
-  check("ten arrows finish the round", await seen(page.getByText(/points with 10 arrows/), 15000));
+  check("holding and letting go shoots arrows", await until(page, () => (window.__seedTown.activity?.shots ?? 0) >= 2, null, 20000), await T(() => window.__seedTown.activity?.shots));
   await page.screenshot({ path: path.join(shots, "archery.png") });
+  await T(() => window.__seedTown.stopActivity());
 
   // ------------------------------------------------------------ chat and voice
   await win.locator("[data-world-chat]").getByRole("button", { name: "Town" }).click();

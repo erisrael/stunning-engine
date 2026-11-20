@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { DownloadIcon, LayoutDashboardIcon, SparklesIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { FunMode } from "@/components/app/fun/fun-mode";
+import { FunMode, funCommand } from "@/components/app/fun/fun-mode";
 
 type InstallEvent = Event & { prompt: () => Promise<void> };
 
@@ -16,7 +16,9 @@ export function FunApp({ name, on }: { name: string; on: boolean }) {
     if ("serviceWorker" in navigator) void navigator.serviceWorker.register("/fun-sw.js", { scope: "/fun" }).catch(() => {});
     const f = (e: Event) => (e.preventDefault(), setInstall(e as InstallEvent));
     window.addEventListener("beforeinstallprompt", f);
-    return () => window.removeEventListener("beforeinstallprompt", f);
+    // ?world=1 (the desktop app, a shortcut): straight into Seed Town.
+    const go = new URLSearchParams(window.location.search).get("world") === "1" ? window.setTimeout(() => funCommand({ game: "world" }), 600) : 0;
+    return () => (window.removeEventListener("beforeinstallprompt", f), window.clearTimeout(go));
   }, []);
   return (
     <div className="min-h-dvh bg-gradient-to-b from-primary/10 to-background" data-fun-app>

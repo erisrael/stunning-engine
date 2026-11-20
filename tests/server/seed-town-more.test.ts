@@ -35,10 +35,10 @@ async function main() {
   const by = async (email: string) => (await loadUser((await get<{ id: string }>("SELECT id FROM users WHERE email = ?", email))!.id))!;
   const admin = await by("admin@demo.local");
   const dawit = await by("dawit@demo.local");
-  await fun.saveFunConfig(admin, { enabled: true, pet: true, world: true, worldVoice: true, shop: true });
+  await fun.saveFunConfig(admin, { enabled: true, pet: true, world: true, worldVoice: true, shop: true, freeAll: false });
 
   // ---------------------------------------------------------------- anime characters
-  check("ten anime characters, four free", VRM_BASES.length === 10 && CATALOG.filter((i) => i.kind === "avatar" && i.price === 0).length === 4);
+  check("ten anime characters, four free", VRM_BASES.length === 10 && CATALOG.filter((i) => i.kind === "avatar" && !i.realistic && i.price === 0).length === 4);
   const fs = await import("node:fs");
   check("every character file is in the app", VRM_BASES.every((b) => fs.existsSync(`public${b.file}`)), VRM_BASES.map((b) => b.file));
   check("the animations are in the app", fs.existsSync("public/models/anims/ual.json") && fs.existsSync("public/models/CREDITS.txt"));

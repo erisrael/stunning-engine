@@ -1,10 +1,12 @@
 import { cn } from "@/lib/utils";
 import { tip } from "@/lib/help";
-import { sheetStatusLabel, LIFECYCLE_LABELS, type AttemptStatus, type Stage } from "@/lib/domain";
+import { sheetStatusLabel, showsRedo, LIFECYCLE_LABELS, type AttemptStatus, type Stage } from "@/lib/domain";
 
-export type Tone = "neutral" | "queued" | "active" | "paused" | "blocked" | "handoff" | "done" | "scheduled" | "failed";
+export type Tone = "neutral" | "queued" | "active" | "paused" | "blocked" | "handoff" | "done" | "scheduled" | "failed" | "redo";
 
 const TONE_CLASS: Record<Tone, string> = {
+  // Sent back to redo: the paused colours with a ring, so it stands apart from plain In progress.
+  redo: "bg-[var(--st-paused-bg)] text-[var(--st-paused-fg)] ring-1 ring-inset ring-[var(--st-paused-fg)]/45",
   neutral: "bg-[var(--st-neutral-bg)] text-[var(--st-neutral-fg)]",
   queued: "bg-[var(--st-queued-bg)] text-[var(--st-queued-fg)]",
   active: "bg-[var(--st-active-bg)] text-[var(--st-active-fg)]",
@@ -17,6 +19,7 @@ const TONE_CLASS: Record<Tone, string> = {
 };
 
 const DOT_CLASS: Record<Tone, string> = {
+  redo: "bg-[var(--st-paused-fg)]",
   neutral: "bg-[var(--st-neutral-fg)]",
   queued: "bg-[var(--st-queued-fg)]",
   active: "bg-[var(--st-active-fg)]",
@@ -28,7 +31,8 @@ const DOT_CLASS: Record<Tone, string> = {
   failed: "bg-[var(--st-failed-fg)]",
 };
 
-export function toneFor(status: string | null | undefined, substate?: string | null): Tone {
+export function toneFor(status: string | null | undefined, substate?: string | null, redo?: { stage: Stage | null; redo?: boolean | null }): Tone {
+  if (redo && showsRedo(redo.stage, (status ?? null) as AttemptStatus | null, redo.redo)) return "redo";
   if (substate === "failed") return "failed";
   if (substate === "scheduled") return "scheduled";
   if (substate === "changes_requested") return "paused";
@@ -102,18 +106,21 @@ export function ItemStatusPill({
   status,
   substate,
   size,
+  redo,
 }: {
   lifecycle: string;
   stage: Stage | null;
   status: AttemptStatus | null;
   substate: string | null;
   size?: "xs" | "sm";
+  redo?: boolean | null;
 }) {
   if (lifecycle !== "in_production" || !stage) {
     const tone: Tone = lifecycle === "published" ? "done" : "neutral";
     return <StatusPill tone={tone} size={size} title={tip(`status.${lifecycle}`)} label={LIFECYCLE_LABELS[lifecycle as keyof typeof LIFECYCLE_LABELS] ?? lifecycle} />;
   }
-  return <StatusPill tone={toneFor(status, substate)} size={size} title={tip(`status.${status}`)} label={sheetStatusLabel(stage, status, substate)} />;
+  const r = showsRedo(stage, status, redo);
+  return <StatusPill tone={toneFor(status, substate, { stage, redo })} size={size} title={r ? "Sent back to this team to redo" : tip(`status.${status}`)} label={sheetStatusLabel(stage, status, substate, redo)} />;
 }
 
 export function PriorityBadge({ priority }: { priority: string }) {

@@ -45,9 +45,11 @@ export function SessionsTable(props: {
   staff: { id: string; name: string }[];
   candidates: Candidate[];
   canPlan: boolean;
+  canCancel?: boolean;
   me: string;
 }) {
   const { rows, from, until, today, tz, studios, staff, candidates, canPlan, me } = props;
+  const canCancel = props.canCancel ?? canPlan;
   const router = useRouter();
   const [f, setF] = React.useState({ q: "", status: "", studio: "", operator: "" });
   const [picked, setPicked] = React.useState<Set<string>>(new Set());
@@ -157,15 +159,19 @@ export function SessionsTable(props: {
             </Button>
             {canPlan && (
               <>
-                <Button size="xs" variant="outline" disabled={busy} onClick={() => run(setSessionsStatusAction(chosen.map((b) => b.batchId), "cancelled"), "Cancelled")}>
-                  <XIcon /> Cancel
-                </Button>
+                {canCancel && (
+                  <Button size="xs" variant="outline" disabled={busy} onClick={() => run(setSessionsStatusAction(chosen.map((b) => b.batchId), "cancelled"), "Cancelled")}>
+                    <XIcon /> Cancel
+                  </Button>
+                )}
                 <Button size="xs" variant="outline" disabled={busy} onClick={() => run(setSessionsStatusAction(chosen.map((b) => b.batchId), "scheduled"), "Booked again")}>
                   <RotateCcwIcon /> Book again
                 </Button>
-                <Button size="xs" variant="destructive" disabled={busy} onClick={() => setConfirmDelete(chosen.map((b) => b.batchId))}>
-                  <Trash2Icon /> Delete
-                </Button>
+                {canCancel && (
+                  <Button size="xs" variant="destructive" disabled={busy} onClick={() => setConfirmDelete(chosen.map((b) => b.batchId))}>
+                    <Trash2Icon /> Delete
+                  </Button>
+                )}
               </>
             )}
           </span>
@@ -246,9 +252,11 @@ export function SessionsTable(props: {
                         <Button size="icon-xs" variant="ghost" aria-label={`Change the session on ${t.date} at ${t.time}`} onClick={() => setEditing({ batchId: b.batchId, date: t.date, time: t.time, booking: b })}>
                           <PencilIcon />
                         </Button>
-                        <Button size="icon-xs" variant="ghost" aria-label={`Delete the session on ${t.date} at ${t.time}`} onClick={() => setConfirmDelete([b.batchId])}>
-                          <Trash2Icon />
-                        </Button>
+                        {canCancel && (
+                          <Button size="icon-xs" variant="ghost" aria-label={`Delete the session on ${t.date} at ${t.time}`} onClick={() => setConfirmDelete([b.batchId])}>
+                            <Trash2Icon />
+                          </Button>
+                        )}
                       </>
                     )}
                   </td>

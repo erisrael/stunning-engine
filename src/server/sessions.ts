@@ -23,7 +23,10 @@ export async function sessionsConfig(): Promise<SessionsConfig> {
   return { ...DEFAULT_SESSIONS, ...v, managers: Array.isArray(v.managers) ? v.managers : [] };
 }
 
-export function plansWith(u: AppUser, cfg: SessionsConfig) {
+// Booked by Admin's configuration (named academic managers, planners, the Recording lead): they do everything,
+// cancelling included. Roles given Studio sessions permissions (Roles and permissions) book with "sessions.book"
+// and cancel only with "sessions.cancel".
+function plansByConfig(u: AppUser, cfg: SessionsConfig) {
   if (can(u, "users.manage")) return true;
   if (cfg.managers.includes(u.id)) return true;
   // Until an academic manager is named, managers book them.
@@ -32,8 +35,21 @@ export function plansWith(u: AppUser, cfg: SessionsConfig) {
   return cfg.recordingLead && isLeadOf(u, "recording");
 }
 
+export function plansWith(u: AppUser, cfg: SessionsConfig) {
+  return plansByConfig(u, cfg) || can(u, "sessions.book") || can(u, "sessions.update");
+}
+
 export async function canPlanSessions(u: AppUser) {
   return plansWith(u, await sessionsConfig());
+}
+
+export async function canCancelSessions(u: AppUser) {
+  return plansByConfig(u, await sessionsConfig()) || can(u, "sessions.cancel");
+}
+
+// Everyone who sees every session (not only their own).
+export async function seesAllSessions(u: AppUser) {
+  return (await canPlanSessions(u)) || can(u, "team.view") || can(u, "sessions.view");
 }
 
 export async function saveSessionsConfig(user: AppUser, input: Partial<SessionsConfig>) {
@@ -49,8 +65,12 @@ export async function saveSessionsConfig(user: AppUser, input: Partial<SessionsC
   await audit({ actor: user }, { action: "settings.sessions", summary: `${user.name} changed who manages studio sessions`, newValue: next });
 }
 
-async function need(u: AppUser) {
-  if (!(await canPlanSessions(u))) throw new WorkflowError("FORBIDDEN", "The academic manager books studio sessions.");
+// Booking new sessions needs "sessions.book"; moving, changing and closing them "sessions.update" (unless Admin's
+// configuration names the person, who then does everything).
+async function need(u: AppUser, what: "book" | "update" = "update") {
+  if (plansByConfig(u, await sessionsConfig())) return;
+  if (can(u, what === "book" ? "sessions.book" : "sessions.update")) return;
+  throw new WorkflowError("FORBIDDEN", what === "book" ? "The academic manager books studio sessions (or someone given Studio sessions, Edit in Roles and permissions)." : "The academic manager changes studio sessions (or someone given Studio sessions, Update in Roles and permissions).");
 }
 
 export type Booking = {
@@ -125,7 +145,7 @@ function group(rows: Row[]): Booking[] {
 }
 
 export async function sessionWeek(user: AppUser, weekStart: string) {
-  if (!(await canPlanSessions(user)) && !can(user, "team.view") && !user.roles.includes("recording")) throw new WorkflowError("FORBIDDEN", "You cannot see studio sessions.");
+  if (!(await seesAllSessions(user)) && !user.roles.includes("recording")) throw new WorkflowError("FORBIDDEN", "You cannot see studio sessions.");
   const s = await getSettings();
   const tz = s.workspace.timezone;
   const from = localInputToIso(`${weekStart}T00:00`, tz)!;
@@ -133,7 +153,7 @@ export async function sessionWeek(user: AppUser, weekStart: string) {
   const sc = scopeSql(user, "i");
   const rows = await all<Row>(`${ROWS} WHERE rs.scheduled_start >= ? AND rs.scheduled_start < ? AND rs.status <> 'cancelled' AND ${sc.sql} ORDER BY rs.scheduled_start, i.code`, from, to, ...sc.params);
   // Team members see only their own sessions.
-  const mine = !(await canPlanSessions(user)) && !can(user, "team.view");
+  const mine = !(await seesAllSessions(user));
   return { bookings: group(rows).filter((b) => !mine || b.operatorId === user.id), studios: s.lists.studios ?? [], tz };
 }
 
@@ -145,7 +165,7 @@ export async function mySessions(user: AppUser) {
 
 // Parts that still need recording: drafts and parts in Recording not yet done.
 export async function sessionCandidates(user: AppUser) {
-  await need(user);
+  if (!(await canPlanSessions(user))) await need(user, "book");
   const sc = scopeSql(user, "i");
   return all<{ id: string; code: string; title: string; grade: string | null; subject: string | null; unit_number: number | null; part_number: number | null; booked: string | null }>(
     `SELECT i.id, i.code, i.title, g.name AS grade, s.name AS subject, un.number AS unit_number, l.number AS part_number,
@@ -204,7 +224,7 @@ async function prepareBooking(input: BookingInput, opts: { allowPast?: boolean; 
 
 export async function bookSession(user: AppUser, input: BookingInput, opts: { allowPast?: boolean } = {}) {
   if ((await (await import("./handover-config")).handoverConfig()).studioBooking === "off") throw new WorkflowError("VALIDATION", "Studio booking is turned off (Handovers, Settings).");
-  await need(user);
+  await need(user, "book");
   const { ids, start, duration, room, operatorId, presenter } = await prepareBooking(input, opts);
   const batchId = uid("rsb_");
   const now = nowIso();
@@ -271,7 +291,8 @@ export async function setSessionStatus(user: AppUser, batchId: string, status: "
   const rows = await batchRows(batchId);
   if (!rows.length) throw new WorkflowError("NOT_FOUND", "Session not found.");
   // The operator can mark their own session recorded; booking changes are the lead's.
-  if (!((await canPlanSessions(user)) || (status === "completed" && rows[0]!.operator_id === user.id))) await need(user);
+  if (!(status === "completed" && rows[0]!.operator_id === user.id)) await need(user);
+  if (status === "cancelled" && !(await canCancelSessions(user))) throw new WorkflowError("FORBIDDEN", "Cancelling studio sessions needs the Cancel permission (Roles and permissions, Studio sessions).");
   await run("UPDATE recording_sessions SET status = ?, outcome_note = COALESCE(?, outcome_note) WHERE batch_id = ? OR id = ?", status, note?.trim() || null, batchId, batchId);
   await audit({ actor: user }, { action: `session.${status}`, stage: "recording", summary: `${user.name} marked a studio session ${status === "completed" ? "recorded" : status === "cancelled" ? "cancelled" : "booked again"}${note ? `: ${note}` : ""}` });
   if (status === "completed") await sendToRecordingDetails(batchId);
@@ -364,6 +385,7 @@ export async function editSession(user: AppUser, batchId: string, input: Booking
 
 export async function deleteSessions(user: AppUser, batchIds: string[]) {
   await need(user);
+  if (!(await canCancelSessions(user))) throw new WorkflowError("FORBIDDEN", "Deleting studio sessions needs the Cancel permission (Roles and permissions, Studio sessions).");
   const ids = [...new Set(batchIds)].slice(0, 300);
   if (!ids.length) throw new WorkflowError("VALIDATION", "Choose the sessions to delete.");
   let n = 0;
@@ -376,13 +398,13 @@ export async function deleteSessions(user: AppUser, batchIds: string[]) {
 
 // Every session in a span of days, in any state, for the table (filters run on the page).
 export async function sessionTable(user: AppUser, from: string, until: string) {
-  if (!(await canPlanSessions(user)) && !can(user, "team.view") && !user.roles.includes("recording")) throw new WorkflowError("FORBIDDEN", "You cannot see studio sessions.");
+  if (!(await seesAllSessions(user)) && !user.roles.includes("recording")) throw new WorkflowError("FORBIDDEN", "You cannot see studio sessions.");
   const tz = (await getSettings()).workspace.timezone;
   const a = localInputToIso(`${from}T00:00`, tz)!;
   const b = new Date(Date.parse(localInputToIso(`${until}T00:00`, tz)!) + 864e5).toISOString();
   const sc = scopeSql(user, "i");
   const rows = await all<Row>(`${ROWS} WHERE rs.scheduled_start >= ? AND rs.scheduled_start < ? AND ${sc.sql} ORDER BY rs.scheduled_start, i.code LIMIT 5000`, a, b, ...sc.params);
-  const mine = !(await canPlanSessions(user)) && !can(user, "team.view");
+  const mine = !(await seesAllSessions(user));
   return group(rows).filter((x) => !mine || x.operatorId === user.id);
 }
 
@@ -428,7 +450,7 @@ const normTime = (v: string) => {
 };
 
 export async function importSessions(user: AppUser, rows: SessionImportRow[], commit: boolean) {
-  await need(user);
+  await need(user, "book");
   if (rows.length > 500) throw new WorkflowError("VALIDATION", "Import at most 500 sessions at once.");
   const staff = await all<{ id: string; name: string; email: string }>(
     "SELECT u.id, u.name, u.email FROM users u JOIN role_assignments r ON r.user_id = u.id WHERE r.role = 'recording' AND u.active = 1",

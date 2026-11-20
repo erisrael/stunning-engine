@@ -14,9 +14,11 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ t
   const manage = canPresenters(viewer);
   const view = seesPresenters(viewer);
   const finance = can(viewer, "finance.access");
+  // Fees stay with HR, Admin and Finance (people who only register or assign presenters do not see them).
+  const fees = can(viewer, "users.manage") || can(viewer, "hr.access");
   if (!view && !finance) redirect("/dashboard?denied=permission");
   const sp = await searchParams;
-  const tab = sp.tab === "fees" && (manage || finance) ? "fees" : view ? "people" : "fees";
+  const tab = sp.tab === "fees" && (fees || finance) ? "fees" : view ? "people" : "fees";
   const month = /^\d{4}-\d{2}$/.test(sp.month ?? "") ? sp.month! : new Date().toISOString().slice(0, 7);
   return (
     <div className="space-y-4">
@@ -24,7 +26,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ t
       <PresentersClient
         tab={tab}
         month={month}
-        manage={manage}
+        manage={tab === "fees" ? fees : manage}
         view={view}
         finance={finance}
         presenters={view ? await listPresenters(viewer) : []}

@@ -1,7 +1,7 @@
 // Shared domain vocabulary used by both the server and the client.
 
 // Production roles first, then the department roles (Phase 5). Department positions (head, lead, member) are set in Admin.
-export const ROLES = ["recording", "editing", "uploading", "publication", "manager", "admin", "owner", "developer", "content", "marketing", "hr_manager", "hr_officer", "finance_manager", "accountant", "support", "sales", "operations"] as const;
+export const ROLES = ["recording", "editing", "uploading", "publication", "manager", "assistant_manager", "admin", "owner", "developer", "content", "marketing", "hr_manager", "hr_officer", "finance_manager", "accountant", "support", "sales", "operations"] as const;
 export type Role = (typeof ROLES)[number];
 
 export const ROLE_LABELS: Record<Role, string> = {
@@ -10,6 +10,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   uploading: "Uploading",
   publication: "Publication",
   manager: "Manager",
+  assistant_manager: "Assistant Manager",
   admin: "Admin",
   owner: "Owner",
   developer: "Developer",
@@ -30,6 +31,7 @@ export const ROLE_DESCRIPTIONS: Record<Role, string> = {
   uploading: "Uploads approved masters to each destination and verifies playback.",
   publication: "Reviews, schedules and confirms releases.",
   manager: "Plans work, assigns owners, sets deadlines and follows delivery.",
+  assistant_manager: "Follows production read only (no editing or status changes); books studio sessions and registers and assigns presenters.",
   admin: "Manages people, roles, permissions, access and workspace data.",
   owner: "Company owner: sees stats and reports from every department.",
   developer: "Dev team: projects, milestones and tasks in Dev.",
@@ -51,6 +53,15 @@ export const CAPABILITIES = [
   { key: "items.close", label: "Archive, cancel and restore items", group: "Production" },
   { key: "work.override", label: "Edit any stage's data (override owners)", group: "Production" },
   { key: "release.emergency", label: "Emergency release without the Publication role", group: "Production" },
+  { key: "team.overview", label: "Their team's overview: what is recorded, in progress, sent back to redo, and who is on what (read only)", group: "Production" },
+  { key: "sessions.view", label: "See every studio session (read only)", group: "Studio sessions" },
+  { key: "sessions.book", label: "Book new studio sessions (and import them)", group: "Studio sessions" },
+  { key: "sessions.update", label: "Move and change studio sessions, and mark them recorded or booked again", group: "Studio sessions" },
+  { key: "sessions.cancel", label: "Cancel and delete studio sessions", group: "Studio sessions" },
+  { key: "presenters.view", label: "See the presenters list", group: "Presenters" },
+  { key: "presenters.register", label: "Register presenters and edit their details and releases", group: "Presenters" },
+  { key: "presenters.assign", label: "Assign presenters to departments and to studio sessions", group: "Presenters" },
+  { key: "presenters.remove", label: "Take presenters off the list (mark them inactive)", group: "Presenters" },
   { key: "import.run", label: "Run planning and curriculum imports", group: "Import and export" },
   { key: "import.stage", label: "Import progress for their own stage (CSV, Excel, JSON)", group: "Import and export" },
   { key: "import.tracker", label: "Import the curriculum tracker JSON", group: "Import and export" },
@@ -121,6 +132,50 @@ export const CAPABILITIES = [
 ] as const;
 export type Capability = (typeof CAPABILITIES)[number]["key"];
 
+// Roles and permissions, "By role" grid: pick a role, then tick View, Edit, Delete and Update per area. Each box
+// grants the capabilities listed for it (a box is half-ticked when the role has only some of them); an area without
+// an action shows no box. Every capability belongs to one area, so the grid covers everything the other views do.
+export const CRUD_ACTIONS = [
+  { key: "v", short: "V", label: "View", hint: "See the pages and the data" },
+  { key: "e", short: "E", label: "Edit", hint: "Create and add (new parts, bookings, entries)" },
+  { key: "d", short: "D", label: "Delete", hint: "Remove, cancel or archive" },
+  { key: "u", short: "U", label: "Update", hint: "Change what exists: status, assignment, approval, settings" },
+] as const;
+export type CrudKey = (typeof CRUD_ACTIONS)[number]["key"];
+export type CrudArea = { key: string; label: string; group: string; caps: Partial<Record<CrudKey, Capability[]>> };
+export const CRUD_AREAS: CrudArea[] = [
+  { key: "production", label: "Production parts", group: "Production", caps: { v: ["nav.overview", "nav.list", "nav.sheet", "nav.board", "nav.calendar", "nav.coverage", "items.detail"], e: ["items.create"], d: ["items.close"], u: ["items.plan", "work.override"] } },
+  { key: "handovers", label: "Handovers", group: "Production", caps: { v: ["nav.handovers"], u: ["assign.bulk"] } },
+  { key: "release", label: "Emergency release", group: "Production", caps: { u: ["release.emergency"] } },
+  { key: "team-overview", label: "Team overview (recorded, in progress, redo)", group: "Production", caps: { v: ["team.overview"] } },
+  { key: "sessions", label: "Studio sessions", group: "Production", caps: { v: ["sessions.view"], e: ["sessions.book"], d: ["sessions.cancel"], u: ["sessions.update"] } },
+  { key: "presenters", label: "Presenters", group: "Production", caps: { v: ["presenters.view"], e: ["presenters.register"], d: ["presenters.remove"], u: ["presenters.assign"] } },
+  { key: "checklists", label: "Checklists", group: "Production", caps: { e: ["checklists.manage"], u: ["checklists.verify"] } },
+  { key: "questions", label: "Questions", group: "Collaboration", caps: { v: ["nav.questions"], e: ["questions.ask"] } },
+  { key: "chat", label: "Chat groups and channels", group: "Collaboration", caps: { v: ["chat.contact_owners"], e: ["chat.channels"], u: ["chat.manage"] } },
+  { key: "email", label: "Email", group: "Collaboration", caps: { e: ["email.send"], u: ["email.manage"] } },
+  { key: "team", label: "Team, effort and timer corrections", group: "Insights", caps: { v: ["nav.team", "team.view"], u: ["corrections.approve"] } },
+  { key: "reports", label: "Reports", group: "Insights", caps: { v: ["reports.view"] } },
+  { key: "export", label: "Export (Excel, CSV, JSON, PDF, tracker, audit)", group: "Import and export", caps: { v: ["export.run", "export.report", "export.tracker", "export.audit"] } },
+  { key: "import", label: "Import (planning, stage progress, tracker)", group: "Import and export", caps: { e: ["import.run", "import.stage", "import.tracker"] } },
+  { key: "company", label: "Company overview and owners' dashboard", group: "Departments", caps: { v: ["company.view", "owners.view"] } },
+  { key: "dev", label: "Dev team section", group: "Departments", caps: { v: ["dev.access"] } },
+  { key: "studio", label: "Studio section (notes, exams, flash cards)", group: "Departments", caps: { v: ["studio.access"] } },
+  { key: "marketing", label: "Marketing section", group: "Departments", caps: { v: ["marketing.access"] } },
+  { key: "hr", label: "HR records", group: "HR", caps: { v: ["hr.access"], d: ["hr.manage"], u: ["hr.sensitive"] } },
+  { key: "hr-cases", label: "HR cases", group: "HR", caps: { v: ["hr.cases"] } },
+  { key: "attendance", label: "Attendance", group: "HR", caps: { u: ["attendance.manage", "attendance.capture"] } },
+  { key: "performance", label: "Performance", group: "HR", caps: { v: ["perf.view_company"], u: ["perf.library"] } },
+  { key: "finance", label: "Finance", group: "Finance", caps: { v: ["finance.view"], e: ["finance.access", "finance.payroll"], u: ["finance.approve", "finance.owner_approve"] } },
+  { key: "support-conversations", label: "Customer conversations", group: "Customer support", caps: { v: ["support.conversations_all"], d: ["support.delete_messages"], u: ["support.assign", "support.lead"] } },
+  { key: "support-calls", label: "Calls and recordings", group: "Customer support", caps: { v: ["support.recordings", "support.export", "support.analytics"], d: ["support.retention"], u: ["support.queues", "support.ivr"] } },
+  { key: "support-setup", label: "Support setup (agents, content, forwarding, requests)", group: "Customer support", caps: { e: ["support.content"], u: ["support.agents", "support.forwarding", "support.requests_setup"] } },
+  { key: "cms", label: "Noor (legacy CMS)", group: "Legacy CMS", caps: { v: ["cms.sensitive", "cms.export"], u: ["cms.manage"] } },
+  { key: "admin-users", label: "People, roles and permissions", group: "Administration", caps: { u: ["users.manage"] } },
+  { key: "admin-data", label: "Workspace data (empty, import, back up)", group: "Administration", caps: { d: ["data.manage"] } },
+  { key: "admin-settings", label: "Workflow settings", group: "Administration", caps: { u: ["settings.manage"] } },
+];
+
 // Sidebar pages everyone sees unless Admin turns them off for a role.
 export const NAV_CAPABILITIES: Capability[] = ["nav.overview", "nav.questions", "nav.list", "nav.sheet", "nav.board", "nav.calendar", "nav.coverage", "nav.team", "nav.handovers"];
 // Editorial workflow tools; team leads get them for their own stage, Admin for every stage.
@@ -131,13 +186,17 @@ const STAFF: Capability[] = ["nav.questions", "nav.team"];
 const FULL_VIEW: Capability[] = [...NAV_CAPABILITIES, "items.detail"];
 
 export const DEFAULT_PERMISSIONS: Record<Role, Capability[]> = {
-  recording: STAFF,
+  // Recording members also see their team's overview (what is recorded, in progress, sent back to redo).
+  recording: [...STAFF, "team.overview"],
   editing: STAFF,
   uploading: STAFF,
   // Publication reviews and releases from the item page, with the release calendar.
   publication: [...STAFF, "nav.calendar", "items.detail"],
   // Managers follow delivery: they view everything but do not edit item data.
-  manager: [...FULL_VIEW, "export.run", "export.report", "export.tracker", "export.audit", "reports.view", "team.view", "corrections.approve", "chat.manage", "chat.channels", "chat.contact_owners", "email.send", "questions.ask", "settings.manage", "company.view"],
+  manager: [...FULL_VIEW, "team.overview", "sessions.view", "presenters.view", "export.run", "export.report", "export.tracker", "export.audit", "reports.view", "team.view", "corrections.approve", "chat.manage", "chat.channels", "chat.contact_owners", "email.send", "questions.ask", "settings.manage", "company.view"],
+  // Assistant managers follow production read only (no planning, editing or status changes); they run studio
+  // sessions and presenters: book, change and cancel sessions, register presenters and assign them.
+  assistant_manager: [...FULL_VIEW, "team.overview", "reports.view", "team.view", "export.run", "export.report", "questions.ask", "chat.channels", "chat.contact_owners", "email.send", "sessions.view", "sessions.book", "sessions.update", "sessions.cancel", "presenters.view", "presenters.register", "presenters.assign", "presenters.remove"],
   // Department roles see their own section only; Admin can widen this in Roles and permissions.
   owner: ["perf.view_company", "owners.view", "company.view", "finance.view", "finance.owner_approve", "items.detail", "nav.overview", "nav.coverage", "reports.view", "team.view", "export.run", "export.report", "chat.channels", "chat.contact_owners", "email.send"],
   developer: ["dev.access"],
@@ -200,6 +259,15 @@ export const DEFAULT_PERMISSIONS: Record<Role, Capability[]> = {
     "cms.manage",
     "cms.sensitive",
     "cms.export",
+    "team.overview",
+    "sessions.view",
+    "sessions.book",
+    "sessions.update",
+    "sessions.cancel",
+    "presenters.view",
+    "presenters.register",
+    "presenters.assign",
+    "presenters.remove",
     ...EDITORIAL_CAPABILITIES,
   ],
 };
@@ -218,7 +286,7 @@ export const DEPARTMENT_LABELS: Record<Department, string> = {
   operations: "Operations",
 };
 export const DEPARTMENT_ROLES: Record<Department, Role[]> = {
-  production: ["recording", "editing", "uploading", "publication", "manager"],
+  production: ["recording", "editing", "uploading", "publication", "manager", "assistant_manager"],
   dev: ["developer"],
   studio: ["content"],
   marketing: ["marketing"],
@@ -432,7 +500,14 @@ export function sheetStatusValue(stage: Stage, status: AttemptStatus | null, sub
   return status;
 }
 
-export function sheetStatusLabel(stage: Stage, status: AttemptStatus | null, substate: string | null): string {
+// Work sent back to a team (returned for rework, or a redo request) reads Redo, not In progress, while the team
+// member has it. Restoring an archived part also reopens a stage, but that is not a redo.
+export const isRedo = (cause?: string | null, note?: string | null, leadReturned?: number | boolean | null) => !!Number(leadReturned ?? 0) || ((cause === "returned" || cause === "reopened") && !(note ?? "").startsWith("Restored:"));
+const REDO_LABELS_BY_STATUS: Partial<Record<AttemptStatus, string>> = { queued: "Redo, to do", in_progress: "Redo", paused: "Redo, paused" };
+export const showsRedo = (stage: Stage | null, status: AttemptStatus | null, redo?: boolean | null) => !!redo && !!status && stage !== "publication" && !!REDO_LABELS_BY_STATUS[status];
+
+export function sheetStatusLabel(stage: Stage, status: AttemptStatus | null, substate: string | null, redo?: boolean | null): string {
+  if (showsRedo(stage, status, redo)) return stage === "uploading" && status === "in_progress" && substate === "processing" ? "Redo, processing" : REDO_LABELS_BY_STATUS[status!]!;
   const v = sheetStatusValue(stage, status, substate);
   if (!v) return "Not started";
   return SHEET_STATUS_OPTIONS[stage].find((o) => o.value === v)?.label ?? STATUS_LABELS[status as AttemptStatus] ?? v;

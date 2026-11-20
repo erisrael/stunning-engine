@@ -7,7 +7,7 @@ import { all, get } from "./db";
 import { evaluateRequirements, workChecklistItems, type Requirement } from "./workflow";
 import { getSettings } from "./settings";
 import { hasRole, isLeadOf, isManager, scopeSql, type AppUser } from "./users";
-import { NEXT_STAGE, STAGES, type AttemptStatus, type Stage } from "@/lib/domain";
+import { NEXT_STAGE, STAGES, isRedo, type AttemptStatus, type Stage } from "@/lib/domain";
 import { changesSinceReturn, reviewNotes, type ReviewNote } from "./review-notes";
 
 export type FlowCheck = { key: string; label: string; required: boolean; verify: boolean; checked: boolean; verified: boolean };
@@ -29,6 +29,8 @@ export type FlowItem = {
   canRename: boolean;
   // Why it came back, when it was rejected or returned.
   returnNote: string | null;
+  // Sent back to redo (returned for rework or a redo request): the board shows it under Redo.
+  redo: boolean;
   version: number;
   dueAt: string | null;
   ownerId: string | null;
@@ -61,6 +63,7 @@ type Row = {
   priority: string;
   cause?: string | null;
   cause_note?: string | null;
+  lead_returned?: number | null;
   version: number;
   current_due_at: string | null;
   actual_duration_min: number | null;
@@ -79,7 +82,7 @@ type Row = {
   draft?: number;
 };
 
-const BASE = `SELECT i.id, i.code, i.title, i.priority, a.cause, a.cause_note, i.version, i.current_due_at, i.actual_duration_min, a.id AS attempt_id, a.stage, a.status, a.owner_id, u.name AS owner_name,
+const BASE = `SELECT i.id, i.code, i.title, i.priority, a.cause, a.cause_note, a.lead_returned, i.version, i.current_due_at, i.actual_duration_min, a.id AS attempt_id, a.stage, a.status, a.owner_id, u.name AS owner_name,
     a.notes, a.handoff_submitted_at, a.raw_duration_min, g.name AS grade, s.name AS subject, un.number AS unit_number, l.number AS part_number
   FROM items i JOIN stage_attempts a ON a.id = i.current_attempt_id
   LEFT JOIN users u ON u.id = a.owner_id
@@ -143,6 +146,7 @@ async function hydrate(rows: Row[], user: AppUser): Promise<FlowItem[]> {
       priority: r.priority ?? "normal",
       canRename,
       returnNote: r.cause === "returned" && r.status !== "finished" && r.status !== "lead_review" ? (r.cause_note ?? null) : null,
+      redo: isRedo(r.cause, r.cause_note, r.lead_returned),
       version: Number(r.version),
       dueAt: r.current_due_at,
       ownerId: r.owner_id,
@@ -390,3 +394,80 @@ export async function waitingInStage(user: AppUser, stage: Stage) {
 }
 
 
+
+// A team's overview for its members (permission "team.overview", Recording members by default): what the team has
+// recorded, what is in progress, sent back to redo or waiting, and who is on what. Read only. It follows the
+// person's grade and subject scope, but not "own work only", so members see the whole team.
+export type TeamOverviewData = {
+  stage: Stage;
+  counts: { todo: number; active: number; redo: number; blocked: number; done: number; withLead: number; handedOver: number; doneWeek: number; doneTotal: number };
+  people: { id: string; name: string; todo: number; active: number; redo: number; waiting: number; doneWeek: number }[];
+  recent: { id: string; code: string; title: string; who: string | null; at: string }[];
+  open: { id: string; code: string; title: string; who: string | null; status: AttemptStatus; redo: boolean }[];
+};
+
+export async function teamOverview(user: AppUser, stage: Stage): Promise<TeamOverviewData> {
+  const sc = scopeSql({ ...user, ownWorkOnly: false }, "i");
+  const week = new Date(Date.now() - 7 * 864e5).toISOString();
+  const [rows, people, weekBy, recent, total] = await Promise.all([
+    all<{ id: string; code: string; title: string; status: AttemptStatus; cause: string | null; cause_note: string | null; lead_returned: number | null; owner_id: string | null; owner: string | null }>(
+      `SELECT i.id, i.code, i.title, a.status, a.cause, a.cause_note, a.lead_returned, a.owner_id, u.name AS owner FROM items i JOIN stage_attempts a ON a.id = i.current_attempt_id LEFT JOIN users u ON u.id = a.owner_id
+       WHERE i.lifecycle = 'in_production' AND a.stage = ? AND ${sc.sql} ORDER BY i.updated_at DESC LIMIT 2000`,
+      stage,
+      ...sc.params,
+    ),
+    all<{ id: string; name: string }>("SELECT u.id, u.name FROM users u JOIN role_assignments r ON r.user_id = u.id WHERE r.role = ? AND u.active = 1 ORDER BY u.name", stage),
+    all<{ owner_id: string | null; c: number }>(
+      `SELECT a.owner_id, COUNT(*) AS c FROM stage_attempts a JOIN items i ON i.id = a.item_id WHERE a.stage = ? AND a.status = 'completed' AND a.completed_at >= ? AND ${sc.sql} GROUP BY a.owner_id`,
+      stage,
+      week,
+      ...sc.params,
+    ),
+    all<{ id: string; code: string; title: string; who: string | null; at: string }>(
+      `SELECT i.id, i.code, i.title, u.name AS who, a.completed_at AS at FROM stage_attempts a JOIN items i ON i.id = a.item_id LEFT JOIN users u ON u.id = a.owner_id
+       WHERE a.stage = ? AND a.status = 'completed' AND a.completed_at IS NOT NULL AND ${sc.sql} ORDER BY a.completed_at DESC LIMIT 12`,
+      stage,
+      ...sc.params,
+    ),
+    get<{ c: number }>(`SELECT COUNT(DISTINCT a.item_id) AS c FROM stage_attempts a JOIN items i ON i.id = a.item_id WHERE a.stage = ? AND a.status = 'completed' AND ${sc.sql}`, stage, ...sc.params),
+  ]);
+  const redoOf = (r: (typeof rows)[number]) => isRedo(r.cause, r.cause_note, r.lead_returned) && ["queued", "in_progress", "paused"].includes(r.status);
+  const n = (f: (r: (typeof rows)[number]) => boolean) => rows.filter(f).length;
+  const num = (v: unknown) => Number(v ?? 0);
+  const ids = new Set(people.map((p) => p.id));
+  // Owners who left the role but still hold work show too.
+  for (const r of rows) if (r.owner_id && !ids.has(r.owner_id)) (ids.add(r.owner_id), people.push({ id: r.owner_id, name: r.owner ?? "Someone" }));
+  return {
+    stage,
+    counts: {
+      todo: n((r) => !redoOf(r) && (r.status === "queued" || r.status === "paused")),
+      active: n((r) => !redoOf(r) && r.status === "in_progress"),
+      redo: n(redoOf),
+      blocked: n((r) => r.status === "blocked"),
+      done: n((r) => r.status === "finished"),
+      withLead: n((r) => r.status === "lead_review" || r.status === "ready"),
+      handedOver: n((r) => r.status === "awaiting_handoff"),
+      doneWeek: weekBy.reduce((a, x) => a + num(x.c), 0),
+      doneTotal: num(total?.c),
+    },
+    people: people
+      .map((p) => {
+        const mine = rows.filter((r) => r.owner_id === p.id);
+        return {
+          id: p.id,
+          name: p.name,
+          todo: mine.filter((r) => !redoOf(r) && (r.status === "queued" || r.status === "paused" || r.status === "blocked")).length,
+          active: mine.filter((r) => !redoOf(r) && r.status === "in_progress").length,
+          redo: mine.filter(redoOf).length,
+          waiting: mine.filter((r) => ["finished", "lead_review", "ready"].includes(r.status)).length,
+          doneWeek: num(weekBy.find((x) => x.owner_id === p.id)?.c),
+        };
+      })
+      .filter((p) => p.todo + p.active + p.redo + p.waiting + p.doneWeek > 0 || ids.has(p.id)),
+    recent,
+    open: rows
+      .filter((r) => ["queued", "in_progress", "paused", "blocked"].includes(r.status))
+      .slice(0, 40)
+      .map((r) => ({ id: r.id, code: r.code, title: r.title, who: r.owner, status: r.status, redo: redoOf(r) })),
+  };
+}

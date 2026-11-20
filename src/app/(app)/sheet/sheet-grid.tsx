@@ -263,8 +263,8 @@ export function SheetGrid({
       const st = STATUS_COLS[col];
       const c = r.stages[st];
       const published = st === "publication" && r.lifecycle === "published";
-      const label = published ? "Published" : c.status ? sheetStatusLabel(st, c.status, c.substate) : "Not started";
-      const tone = published ? "done" : c.status ? toneFor(c.status, c.substate) : "neutral";
+      const label = published ? "Published" : c.status ? sheetStatusLabel(st, c.status, c.substate, c.redo) : "Not started";
+      const tone = published ? "done" : c.status ? toneFor(c.status, c.substate, { stage: st, redo: c.redo }) : "neutral";
       const lock = lockReason(r, st);
       const current = published ? "completed" : sheetStatusValue(st, c.status, c.substate) ?? "";
       if (lock)

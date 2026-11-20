@@ -14,6 +14,7 @@ import * as F from "@/app/actions/fun";
 import { RARITY, SHOPS, isFree, type HomeLayout, type Item, type Placed, type Ride, type Shop } from "@/lib/fun-catalog";
 import type { Resident } from "@/server/fun-world";
 import { furniture, showcase, vehicle } from "./models";
+import { anyVehicle } from "./cars";
 import type { ChatMsg, Gfx, Room, VoiceState } from "./town";
 import { PRESETS } from "./town";
 import type { Wallet } from "./studio";
@@ -47,7 +48,7 @@ function Thumb({ item, className }: { item: Item; className?: string }) {
     const d = new THREE.DirectionalLight("#fff", 1.2);
     d.position.set(2, 3, 2);
     scene.add(d);
-    const m = item.kind === "vehicle" ? vehicle(item.model ?? "hatch", item.color ?? "#3b82f6").group : item.kind === "furniture" ? furniture(item.model ?? "", item.color ?? "#a16207", (item.size?.[0] ?? 2) * 0.5, (item.size?.[1] ?? 2) * 0.5) : showcase(item.kind, item.model ?? "", item.color ?? "#a855f7");
+    const m = item.kind === "vehicle" ? anyVehicle(item.model ?? "hatch", item.color ?? "#3b82f6", undefined, true).group : item.kind === "furniture" ? furniture(item.model ?? "", item.color ?? "#a16207", (item.size?.[0] ?? 2) * 0.5, (item.size?.[1] ?? 2) * 0.5) : showcase(item.kind, item.model ?? "", item.color ?? "#a855f7");
     const bb = new THREE.Box3().setFromObject(m);
     const size = bb.getSize(new THREE.Vector3()).length() || 1;
     m.position.sub(bb.getCenter(new THREE.Vector3()));
@@ -107,7 +108,11 @@ export function ShopPanel({ shop, focus, items, wallet, onWallet, onClose, onTry
         <button type="button" onClick={() => setStore("wish")} className={cn("rounded-full border px-2 py-0.5 text-xs", store === "wish" && "border-primary bg-primary/10")}><StarIcon className="inline size-3" /> Wishlist</button>
         <button type="button" onClick={async () => { const r = await F.pointsLogAction(); if (r.ok) setHistory((r.data ?? []).filter((x) => x.points < 0)); }} className="rounded-full border px-2 py-0.5 text-xs">Purchases</button>
       </div>
-      <p className="mb-2 text-xs text-muted-foreground">{wallet?.coins ?? 0} coins · level {lvl}. Work earns most coins; town activities and games add a few each day.</p>
+      {wallet?.free ? (
+        <p className="mb-2 rounded-md border border-[#188038]/40 bg-[#188038]/10 px-2 py-1 text-xs text-[#188038]" data-shop-free>Everything is free for now (Admin): take what you like. {wallet.coins} coins · level {lvl}.</p>
+      ) : (
+        <p className="mb-2 text-xs text-muted-foreground">{wallet?.coins ?? 0} coins · level {lvl}. Work earns most coins; town activities and games add a few each day.</p>
+      )}
       {history && (
         <div className="mb-2 rounded-lg border p-2 text-xs">
           <div className="mb-1 flex justify-between font-medium">Your purchases <button type="button" onClick={() => setHistory(null)}><XIcon className="size-3" /></button></div>
@@ -157,11 +162,11 @@ export function ShopPanel({ shop, focus, items, wallet, onWallet, onClose, onTry
                   setBusy(false);
                   if (!r.ok) return void toast.error(r.error);
                   onWallet(r.data as Wallet);
-                  toast.success(`Bought ${it.stack && qty > 1 ? `${qty} x ` : ""}${it.label}`);
+                  toast.success(`${isFree(it) ? "Took" : "Bought"} ${it.stack && qty > 1 ? `${qty} x ` : ""}${it.label}`);
                 }}
                 data-shop-buy
               >
-                Buy for {it.price * (it.stack ? qty : 1)} coins
+                {isFree(it) ? "Take it (free)" : `Buy for ${it.price * (it.stack ? qty : 1)} coins`}
               </Button>
             )}
             <div className="flex gap-1">
@@ -581,6 +586,9 @@ export function SettingsPanel({ gfx, onChange, onClose }: { gfx: Gfx; onChange: 
         <label className="block">Music {Math.round((gfx.music ?? 0.5) * 100)}%<input type="range" min={0} max={1} step={0.05} value={gfx.music ?? 0.5} onChange={(e) => set({ music: Number(e.target.value) }, false)} className="w-full" data-gfx-music /></label>
         <label className="block">Sound effects {Math.round(gfx.sfx * 100)}%<input type="range" min={0} max={1} step={0.1} value={gfx.sfx} onChange={(e) => set({ sfx: Number(e.target.value) }, false)} className="w-full" /></label>
         <p className="text-[10px] text-muted-foreground">Music: town themes by cynicmusic and Geomancer, Castle Town by Will Carpenter, action chiptunes by Juhani Junkala (all CC0). Effects: Kenney (CC0) and sounds made in your browser.</p>
+        <p className="text-[10px] text-muted-foreground" data-desktop-download>
+          On a Windows PC with a graphics card: <a className="underline" href="/downloads/desktop/latest">get the Seed Town app</a> (higher graphics levels, full screen, a launcher with diagnostics; same account). F3 shows the frame rate.
+        </p>
       </div>
     </Panel>
   );
@@ -595,7 +603,7 @@ export function MapPanel({ draw, onTravel, onClose }: { draw: (c: HTMLCanvasElem
     if (ref.current) draw(ref.current);
     return () => window.clearInterval(t);
   }, [draw]);
-  const PLACES: [string, number, number, number][] = [["Plaza", 0, 0, 12], ["Office", 0, 0, -40], ["Shops", 40, 0, 2], ["Car dealer", 100, 0, 10], ["Park", -50, 0, -4], ["Archery", -97, 0, -23], ["Parkour", -114, 0, 36], ["Homes", 0, 0, 30], ["Race start", 0, 0, -130], ["Library", -52, 0, -51], ["Stadium", 185, 0, 41], ["Seed Circuit", 152, 0, -52]];
+  const PLACES: [string, number, number, number][] = [["Plaza", 0, 0, 12], ["Office", 0, 0, -40], ["Shops", 40, 0, 2], ["Car dealer", 100, 0, 10], ["Park", -50, 0, -4], ["Archery", -97, 0, -23], ["Parkour", -114, 0, 36], ["Homes", 0, 0, 30], ["Race start", 0, 0, -130], ["Library", -52, 0, -51], ["Stadium", 185, 0, 41], ["Seed Circuit", 152, 0, -52], ["Grand Prix", 214, 0, -124], ["Archery field", -226, 0, 2], ["Seed Strike", 300, 0, 218], ["Downtown", 60, 0, -45], ["Industrial yard", 98, 0, 64]];
   return (
     <Panel title={<span className="flex items-center gap-2"><MapPinIcon className="size-4" /> Map</span>} onClose={onClose} wide>
       <canvas ref={ref} width={420} height={420} className="mx-auto aspect-square w-full max-w-[420px] rounded-lg border" data-world-map />

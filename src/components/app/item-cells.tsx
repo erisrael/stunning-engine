@@ -29,7 +29,7 @@ export function stageCell(row: ItemListRow, st: Stage) {
   if (st === "publication" && row.lifecycle === "published") return <StatusPill tone="done" size="xs" label="Published" />;
   const c = row.stages[st];
   if (!c.status) return <span className="text-xs text-muted-foreground">Not started</span>;
-  return <StatusPill tone={toneFor(c.status, c.substate)} size="xs" label={sheetStatusLabel(st, c.status, c.substate)} />;
+  return <StatusPill tone={toneFor(c.status, c.substate, { stage: st, redo: c.redo })} size="xs" label={sheetStatusLabel(st, c.status, c.substate, c.redo)} />;
 }
 
 function person(id: string | null, ctx: CellContext, fallback = "Unassigned") {
@@ -100,7 +100,7 @@ export function renderCell(row: ItemListRow, key: string, ctx: CellContext): Rea
     case "stage":
       return <span className="text-xs">{row.lifecycle === "in_production" && row.stage ? STAGE_LABELS[row.stage] : row.lifecycle === "published" ? "Published" : row.lifecycle === "draft" ? "Draft" : row.lifecycle}</span>;
     case "status":
-      return <ItemStatusPill lifecycle={row.lifecycle} stage={row.stage} status={row.stage_status} substate={row.substate} size="xs" />;
+      return <ItemStatusPill lifecycle={row.lifecycle} stage={row.stage} status={row.stage_status} substate={row.substate} redo={row.redo} size="xs" />;
     case "recording_status":
       return stageCell(row, "recording");
     case "editing_status":

@@ -1794,3 +1794,28 @@ export async function aiConsole(user: AppUser, input: { prompt: string; modelId?
     return { ok: false, text: e instanceof Error ? e.message : String(e), ms: Date.now() - t0, tokensIn: u.in, tokensOut: u.out, model: `${cfg.provider} ${cfg.model}` };
   }
 }
+
+// Seed Town: a few town folk Admin chooses answer free questions with the AI, in character and briefly. The same
+// switch, key and daily limits as the assistant; null when the AI is off for this person (they answer from their
+// script instead).
+export async function npcReply(user: Viewer, input: { name: string; role: string; personality: string; context: string; history: { who: "me" | "npc"; text: string }[]; text: string }): Promise<string | null> {
+  if (!(await aiAvailable(user))) return null;
+  const cfg = await stored();
+  const ro = await roleOptions(user.activeRole);
+  const limit = ro.dailyLimit ?? cfg.dailyLimit;
+  if (limit && (await usedToday(user.id)) >= limit) return null;
+  await logAi(user, `town: ${input.name}: ${input.text}`.slice(0, 200));
+  if (fake()) return `${input.name} thinks about "${input.text.slice(0, 40)}" and smiles.`;
+  const system = `You are ${input.name}, a ${input.personality} ${input.role} who lives in Seed Town, the 3D town inside Myseed's work app. Stay in character, warm and natural. Answer in one to three short sentences, plain text, no emojis, no lists. You only know life in the town (its plaza, office tower, shops on Market Street, park, archery range, stadium, circuits, downtown, homes) and general knowledge; never invent facts about the company's real work or people. ${input.context}`;
+  const messages = [...input.history.slice(-8).map((h) => ({ role: h.who === "me" ? ("user" as const) : ("assistant" as const), content: h.text.slice(0, 500) })), { role: "user" as const, content: input.text.slice(0, 500) }];
+  // The model call wants the conversation to start with the person.
+  while (messages.length && messages[0]!.role !== "user") messages.shift();
+  const call = await realModel(cfg, "town");
+  const res = await call({ system, tools: [], messages });
+  return res.content
+    .filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === "text")
+    .map((b) => b.text)
+    .join("")
+    .trim()
+    .slice(0, 600);
+}

@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { ACCESSORIES, cleanLook, type Look } from "@/lib/fun-catalog";
-import { capsule, cone, cyl, mesh, outline, sphere, toon, TOON, unitBox } from "./toon";
+import { capsule, cel as toon, cone, cyl, mesh, outline, sphere, TOON, unitBox } from "./toon";
 
 // Characters for Seed Town: an anime-style figure (cel shading, outlines, big drawn eyes, styled hair, outfits and
 // accessories) built from simple shapes, with joints for walking, running, jumping, sitting, driving and emotes.

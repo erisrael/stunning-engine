@@ -156,7 +156,7 @@ export function Board({ columns, viewer, users, tz, now, mode }: { columns: Col[
                           <PriorityBadge priority={r.priority} />
                         </div>
                         <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                          <ItemStatusPill lifecycle={r.lifecycle} stage={r.stage} status={r.stage_status} substate={r.substate} size="xs" />
+                          <ItemStatusPill lifecycle={r.lifecycle} stage={r.stage} status={r.stage_status} substate={r.substate} redo={r.redo} size="xs" />
                           {r.stage_status === "awaiting_handoff" && r.stage && NEXT_STAGE[r.stage] && <span className="text-[10px] text-muted-foreground">to {STAGE_LABELS[NEXT_STAGE[r.stage]!]}</span>}
                         </div>
                         <div className="mt-2 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">

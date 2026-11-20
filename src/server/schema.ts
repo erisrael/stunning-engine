@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 86;
+export const SCHEMA_VERSION = 87;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -4319,6 +4319,19 @@ CREATE TABLE IF NOT EXISTS fun_models (
   created_by TEXT,
   created_at TEXT NOT NULL
 );
+-- v87: work the team lead sent back to the member ("Changes needed") reads Redo, not In progress. Open attempts
+-- returned before this are found from the audit trail (only open attempts not yet marked; cheap when none are).
+ALTER TABLE stage_attempts ADD COLUMN IF NOT EXISTS lead_returned INTEGER NOT NULL DEFAULT 0;
+-- v87: what Seed Town's people remember about each person (meetings, how they feel, topics, a task).
+CREATE TABLE IF NOT EXISTS fun_npc_memory (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  npc TEXT NOT NULL,
+  data TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (user_id, npc)
+);
+UPDATE stage_attempts SET lead_returned = 1 WHERE lead_returned = 0 AND status IN ('queued','in_progress','paused')
+  AND id IN (SELECT attempt_id FROM audit_events WHERE action = 'lead.returned' AND attempt_id IS NOT NULL);
 
 `;
 
@@ -4604,4 +4617,5 @@ export const TABLES = [
   "fun_homes",
   "fun_pet_kennel",
   "fun_models",
+  "fun_npc_memory",
 ] as const;

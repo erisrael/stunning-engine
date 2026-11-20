@@ -37,7 +37,7 @@ async function userMap() {
 export function cellValue(row: ItemListRow, key: string, users: Map<string, string>, tz: string, now: number, s: Settings): string {
   const stageStatus = (st: Stage) => {
     const c = row.stages[st];
-    return c.status ? sheetStatusLabel(st, c.status, c.substate) : "Not started";
+    return c.status ? sheetStatusLabel(st, c.status, c.substate, c.redo) : "Not started";
   };
   if (key.endsWith("_progress")) return SIMPLE_STATUS_LABELS[progressOf(row, key.replace("_progress", "") as Stage)];
   switch (key) {
@@ -70,7 +70,7 @@ export function cellValue(row: ItemListRow, key: string, users: Map<string, stri
     case "stage":
       return row.lifecycle === "in_production" && row.stage ? STAGE_LABELS[row.stage] : LIFECYCLE_LABELS[row.lifecycle as keyof typeof LIFECYCLE_LABELS] ?? row.lifecycle;
     case "status":
-      return row.lifecycle === "in_production" && row.stage ? sheetStatusLabel(row.stage, row.stage_status, row.substate) : LIFECYCLE_LABELS[row.lifecycle as keyof typeof LIFECYCLE_LABELS] ?? "";
+      return row.lifecycle === "in_production" && row.stage ? sheetStatusLabel(row.stage, row.stage_status, row.substate, row.redo) : LIFECYCLE_LABELS[row.lifecycle as keyof typeof LIFECYCLE_LABELS] ?? "";
     case "recording_status":
       return stageStatus("recording");
     case "editing_status":

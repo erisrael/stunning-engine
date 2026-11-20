@@ -142,3 +142,23 @@ export async function revokeItemAction(fromId: string, key: string) {
 export async function grantUpgradeAction(toId: string, what: string) {
   return wrap(async () => (await shop()).grantUpgrade(await requireViewer(), toId, what), quiet);
 }
+
+// Seed Town's people: what they remember, a conversation, a finished task, and AI answers (when Admin allows).
+const npcs = () => import("@/server/fun-npc");
+export async function npcMemoryAction(npc: string) {
+  return wrap(async () => (await npcs()).npcMemory(await requireViewer(), npc), quiet);
+}
+export async function npcTalkedAction(npc: string, input: { topic: string; quest?: import("@/server/fun-npc").Quest | null }) {
+  return wrap(async () => (await npcs()).npcTalked(await requireViewer(), npc, input), quiet);
+}
+export async function npcQuestDoneAction(npc: string, at: { x: number; z: number }) {
+  return wrap(async () => (await npcs()).npcQuestDone(await requireViewer(), npc, at), quiet);
+}
+export async function npcAskAction(input: { name: string; role: string; personality: string; context: string; history: { who: "me" | "npc"; text: string }[]; text: string }) {
+  return wrap(async () => {
+    const v = await requireViewer();
+    const c = await fun.funFor(v);
+    if (!c || !c.world) return null;
+    return (await import("@/server/assistant-ai")).npcReply(v, input);
+  }, quiet);
+}

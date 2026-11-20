@@ -18,3 +18,25 @@ Animations
   humanoid skeleton with scripts/retarget-ual.mjs.
 
 Libraries: three.js (MIT), @pixiv/three-vrm (MIT), Rapier (@dimforge/rapier3d-compat, Apache-2.0).
+
+Realistic people (models/people)
+- rb_*.glb: Microsoft Rocketbox Avatar Library (Adults: Male_Adult_01, 05, 08, 12; Female_Adult_01, 04, 08, 12),
+  (c) 2020 Microsoft, MIT License (see people/LICENSE-ROCKETBOX.txt).
+  https://github.com/microsoft/Microsoft-Rocketbox
+  Converted from FBX to glTF, textures 1024 px WebP, meshopt; animations from the library above at load time.
+
+Cars (models/cars)
+- porsche911.glb: "(FREE) Porsche 911 Carrera 4S" by Lionsharp Studios (Karol Miklas), CC BY-SA 4.0
+  (https://creativecommons.org/licenses/by-sa/4.0/). https://sketchfab.com/3d-models/free-porsche-911-carrera-4s-d01b254483794de3819786d93e0e1ebf
+  Changes: textures re-encoded (WebP), meshopt compression. The modified model is shared under the same licence.
+  Porsche and 911 are trademarks of Dr. Ing. h.c. F. Porsche AG; their use here is not endorsed by them.
+- concept.glb: "Car Concept" by Eric Chadwick, Darmstadt Graphics Group GmbH (Khronos glTF Sample Assets),
+  CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). Changes: textures 1024 px WebP, meshopt compression.
+- All other cars are drawn by the game (procedural, our own designs).
+
+Props and surface textures (models/props, textures/pbr)
+- Poly Haven (https://polyhaven.com), CC0: 32 models and 20 texture sets; each is listed with its source page in
+  models/manifest.json (Admin, Fun mode, Asset library). Resized and re-encoded (WebP, meshopt).
+
+Characters not included: copyrighted cartoon and comic characters (for example SpongeBob SquarePants, Tom and Jerry,
+Rick and Morty) are not in the game: models of them shared online are not licensed by their owners.

@@ -47,7 +47,7 @@ async function main() {
   check("Fun mode is on for everyone by default", !!(await fun.funFor(member)));
   check("only Admin sets Fun mode", await rejects(fun.saveFunConfig(member, { enabled: false })));
   check("a bad text match is refused", await rejects(fun.saveFunConfig(admin, { rules: [{ key: "x", label: "x", action: "submit", summary: "([", points: 1, on: true }] })));
-  await fun.saveFunConfig(admin, { dailyCap: 25, feedCost: 10 });
+  await fun.saveFunConfig(admin, { dailyCap: 25, feedCost: 10, freeAll: false });
 
   const p0 = (await fun.pointsOf(member.id)).balance;
   await audit({ actor: member }, { itemId: "item-1", action: "submit", summary: `${member.name} submitted editing` });

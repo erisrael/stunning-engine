@@ -1,0 +1,33 @@
+{
+  "name": "seed-town-desktop",
+  "productName": "Seed Town",
+  "version": "1.0.0",
+  "description": "Seed Town for Windows: the Myseed 3D world on your PC's graphics card, with a launcher, graphics settings, diagnostics and automatic updates.",
+  "main": "main.js",
+  "author": "Myseed",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis portable",
+    "dist:dir": "electron-builder --win dir"
+  },
+  "dependencies": {
+    "electron-updater": "6.3.9"
+  },
+  "devDependencies": {
+    "electron": "33.2.1",
+    "electron-builder": "25.1.8"
+  },
+  "build": {
+    "appId": "et.com.myseed.seedtown",
+    "productName": "Seed Town",
+    "copyright": "Myseed",
+    "directories": { "output": "dist", "buildResources": "build" },
+    "files": ["main.js", "preload.js", "launcher.html", "launcher.js", "settings.js", "build/icon.png", "package.json"],
+    "win": { "target": ["nsis", "portable"], "icon": "build/icon.png", "artifactName": "SeedTown-${version}-${arch}.${ext}" },
+    "nsis": { "oneClick": false, "perMachine": false, "allowToChangeInstallationDirectory": true, "createDesktopShortcut": true, "createStartMenuShortcut": true, "shortcutName": "Seed Town" },
+    "portable": { "artifactName": "SeedTown-${version}-portable.${ext}" },
+    "publish": [{ "provider": "generic", "url": "https://ops.myseed.com.et/downloads/desktop" }]
+  }
+}

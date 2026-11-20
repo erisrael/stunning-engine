@@ -21,6 +21,7 @@ export async function toWorkRows(rows: ItemListRow[], viewerId: string): Promise
       stage: r.stage,
       stage_status: r.stage_status,
       substate: r.substate,
+      redo: r.redo,
       priority: r.priority,
       grade_name: r.grade_name,
       subject_name: r.subject_name,

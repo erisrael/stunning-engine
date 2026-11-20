@@ -31,8 +31,12 @@ export type Presenter = {
 };
 
 // HR manages presenters (and Admin). The Recording, Editing and Uploading leads and planners see the list.
-export const canPresenters = (u: AppUser) => can(u, "users.manage") || can(u, "hr.access");
-export const seesPresenters = (u: AppUser) => canPresenters(u) || can(u, "items.plan") || isLeadOf(u, "recording") || isLeadOf(u, "editing") || isLeadOf(u, "uploading");
+// Roles given Presenters permissions (Roles and permissions): register (add and edit, releases), assign (to
+// departments and sessions) and view. Fees stay with HR, Admin and Finance.
+export const canPresenters = (u: AppUser) => can(u, "users.manage") || can(u, "hr.access") || can(u, "presenters.register");
+export const canAssignPresenters = (u: AppUser) => canPresenters(u) || can(u, "presenters.assign");
+export const seesPresenters = (u: AppUser) => canAssignPresenters(u) || can(u, "presenters.view") || can(u, "items.plan") || isLeadOf(u, "recording") || isLeadOf(u, "editing") || isLeadOf(u, "uploading");
+const seesFees = (u: AppUser) => can(u, "users.manage") || can(u, "hr.access");
 const canFinance = (u: AppUser) => can(u, "finance.access");
 function need(u: AppUser) {
   if (!canPresenters(u)) throw new WorkflowError("FORBIDDEN", "HR manages presenters.");
@@ -105,7 +109,7 @@ export async function deptPresenters(dept: string): Promise<{ id: string; name: 
 }
 
 export async function setPresenterDepartment(user: AppUser, presenterId: string, dept: string | null) {
-  if (!canPresenters(user)) throw new WorkflowError("FORBIDDEN", "Only HR and Admin assign presenters to departments.");
+  if (!canAssignPresenters(user)) throw new WorkflowError("FORBIDDEN", "Only HR, Admin and people allowed to assign presenters assign them to departments.");
   const p = await get<{ name: string }>("SELECT name FROM presenters WHERE id = ?", presenterId);
   if (!p) throw new WorkflowError("NOT_FOUND", "Presenter not found.");
   await run("UPDATE presenters SET department = ?, updated_at = ? WHERE id = ?", dept || null, nowIso(), presenterId);
@@ -115,6 +119,11 @@ export async function setPresenterDepartment(user: AppUser, presenterId: string,
 
 export async function savePresenter(user: AppUser, input: { id?: string | null; name: string; kind?: string; phone?: string | null; email?: string | null; subjects?: string | null; aliases?: string[]; rateKind?: string | null; rate?: number | null; department?: string | null; active?: boolean }) {
   need(user);
+  // Taking someone off the list is its own permission for people who only register presenters.
+  if (input.id && input.active === false && !can(user, "users.manage") && !can(user, "hr.access") && !can(user, "presenters.remove")) {
+    const was = await get<{ active: number }>("SELECT active FROM presenters WHERE id = ?", input.id);
+    if (was && Number(was.active)) throw new WorkflowError("FORBIDDEN", "Taking a presenter off the list needs the Remove permission (Roles and permissions, Presenters).");
+  }
   const name = String(input.name ?? "").replace(/\s+/g, " ").trim().slice(0, 120);
   if (!name) throw new WorkflowError("VALIDATION", "Give the presenter's name.");
   const kind = ["teacher", "guest", "student"].includes(String(input.kind)) ? input.kind! : "teacher";
@@ -219,7 +228,7 @@ export type Statement = { presenterId: string; name: string; month: string; rate
 const monthRange = (m: string) => ({ from: `${m}-01`, to: plusDays(`${m}-01`, 31).slice(0, 7) + "-01" });
 
 export async function statements(user: AppUser, month: string): Promise<Statement[]> {
-  if (!canPresenters(user) && !canFinance(user)) throw new WorkflowError("FORBIDDEN", "Only HR, managers, the Recording lead and Finance see fees.");
+  if (!seesFees(user) && !canFinance(user)) throw new WorkflowError("FORBIDDEN", "Only HR, Admin and Finance see fees.");
   if (!/^\d{4}-\d{2}$/.test(month)) throw new WorkflowError("VALIDATION", "Choose a month.");
   const { from, to } = monthRange(month);
   const ps = await all<Row>("SELECT * FROM presenters ORDER BY name");

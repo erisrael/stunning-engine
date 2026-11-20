@@ -19,6 +19,7 @@ import {
   UserPlusIcon,
   UserXIcon,
   LayoutGridIcon,
+  ListChecksIcon,
   TableIcon,
   SlidersHorizontalIcon,
   XIcon,
@@ -51,7 +52,7 @@ import {
   signOutUserAction,
 } from "@/app/actions/admin";
 import type { CurriculumImportSummary } from "@/server/workspace-data";
-import { CAPABILITIES, ROLE_DESCRIPTIONS, ROLE_LABELS, ROLES, STAGE_LABELS, STAGES, leadKey, type Capability, type PermissionMatrix, type Role, type Stage } from "@/lib/domain";
+import { CAPABILITIES, CRUD_ACTIONS, CRUD_AREAS, ROLE_DESCRIPTIONS, ROLE_LABELS, ROLES, STAGE_LABELS, STAGES, leadKey, type Capability, type CrudKey, type PermissionMatrix, type Role, type Stage } from "@/lib/domain";
 import { fmtRelative } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -77,6 +78,7 @@ type Opt = { id: string; name: string };
 const ROLE_TONE: Record<Role, string> = {
   admin: "bg-[var(--role-admin)] text-white",
   manager: "bg-[var(--role-manager)] text-white",
+  assistant_manager: "bg-[var(--role-manager)]/15 text-[var(--role-manager)]",
   recording: "bg-[var(--stage-recording-bg)] text-[var(--stage-recording)]",
   editing: "bg-[var(--stage-editing-bg)] text-[var(--stage-editing)]",
   uploading: "bg-[var(--stage-uploading-bg)] text-[var(--stage-uploading)]",
@@ -641,6 +643,117 @@ function UserDialog({
 // Roles and permissions
 // ---------------------------------------------------------------------------
 
+// Pick a role, then tick View, Edit, Delete and Update per area (CRUD_AREAS in lib/domain). A box grants every
+// capability listed for it; half-ticked means the role has only some of them. Saved with the other views' Save.
+function RoleCrudGrid({ columns, role, setRole, caps, search, group, onChange }: { columns: { key: string; name: string; count: number }[]; role: string; setRole: (k: string) => void; caps: Capability[]; search: string; group: string; onChange: (role: string, caps: Capability[]) => void }) {
+  const has = new Set(caps);
+  const label = (c: Capability) => CAPABILITIES.find((x) => x.key === c)?.label ?? c;
+  const state = (list: Capability[] | undefined): boolean | "indeterminate" | null => {
+    if (!list?.length) return null;
+    const n = list.filter((c) => has.has(c)).length;
+    return n === 0 ? false : n === list.length ? true : "indeterminate";
+  };
+  const set = (list: Capability[], on: boolean) => onChange(role, on ? [...new Set([...caps, ...list])] : caps.filter((c) => !list.includes(c)));
+  const q = search.trim().toLowerCase();
+  const areas = CRUD_AREAS.filter((a) => {
+    const all = Object.values(a.caps).flat() as Capability[];
+    if (group !== "all" && a.group !== group && !all.some((c) => CAPABILITIES.find((x) => x.key === c)?.group === group)) return false;
+    return !q || a.label.toLowerCase().includes(q) || a.group.toLowerCase().includes(q) || all.some((c) => c.includes(q) || label(c).toLowerCase().includes(q));
+  });
+  const groups = [...new Set(areas.map((a) => a.group))];
+  const col = columns.find((c) => c.key === role);
+  return (
+    <div className="space-y-2 p-3" data-perm-grid={role}>
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <Label htmlFor="perm-grid-role" className="text-xs">
+          Role
+        </Label>
+        <select id="perm-grid-role" value={role} onChange={(e) => setRole(e.target.value)} className="h-8 rounded-md border bg-background px-2 text-xs" data-perm-grid-role>
+          {columns.map((c) => (
+            <option key={c.key} value={c.key}>
+              {c.name} ({c.count})
+            </option>
+          ))}
+        </select>
+        <span className="text-muted-foreground">
+          {col ? col.count + (col.count === 1 ? " person" : " people") + " · " : ""}
+          {caps.length} of {CAPABILITIES.length} capabilities
+        </span>
+        <span className="ml-auto flex flex-wrap gap-3 text-muted-foreground">
+          {CRUD_ACTIONS.map((a) => (
+            <span key={a.key} title={a.hint}>
+              <b className="text-foreground">{a.short}</b> {a.label}
+            </span>
+          ))}
+        </span>
+      </div>
+      <div className="overflow-x-auto rounded-lg border">
+        <table className="w-full min-w-[640px] text-sm">
+          <thead className="bg-muted/50 text-xs">
+            <tr>
+              <th className="px-3 py-2 text-left font-medium text-muted-foreground">Permission</th>
+              {CRUD_ACTIONS.map((a) => (
+                <th key={a.key} className="w-16 px-2 py-2 text-center font-semibold" title={a.label + ": " + a.hint}>
+                  {a.short}
+                </th>
+              ))}
+              <th className="w-16 px-2 py-2 text-center font-medium text-muted-foreground">All</th>
+            </tr>
+          </thead>
+          {groups.map((g) => (
+            <tbody key={g} className="divide-y border-t">
+              <tr className="bg-muted/25">
+                <td colSpan={6} className="px-3 py-1.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                  {g}
+                </td>
+              </tr>
+              {areas
+                .filter((a) => a.group === g)
+                .map((a) => {
+                  const every = [...new Set(Object.values(a.caps).flat())] as Capability[];
+                  const all = state(every);
+                  return (
+                    <tr key={a.key} className="hover:bg-muted/20" data-perm-area={a.key}>
+                      <td className="px-3 py-2">
+                        <span className="font-medium">{a.label}</span>
+                      </td>
+                      {CRUD_ACTIONS.map((act) => {
+                        const list = a.caps[act.key as CrudKey];
+                        const st = state(list);
+                        return (
+                          <td key={act.key} className="px-2 py-2 text-center">
+                            {st === null ? (
+                              <span className="text-muted-foreground/50" aria-hidden>
+                                -
+                              </span>
+                            ) : (
+                              <Checkbox
+                                checked={st}
+                                onCheckedChange={() => set(list!, st !== true)}
+                                aria-label={act.label + ": " + a.label}
+                                title={act.label + ": " + list!.map(label).join("; ")}
+                                data-perm-cell={a.key + ":" + act.key}
+                                className="data-[state=indeterminate]:opacity-50"
+                              />
+                            )}
+                          </td>
+                        );
+                      })}
+                      <td className="px-2 py-2 text-center">
+                        <Checkbox checked={all === null ? false : all} onCheckedChange={() => set(every, all !== true)} aria-label={"All of " + a.label} />
+                      </td>
+                    </tr>
+                  );
+                })}
+            </tbody>
+          ))}
+        </table>
+      </div>
+      <p className="text-[11px] text-muted-foreground">Hover a box to see what it grants. Press Save permissions to apply; people get the change on their next page.</p>
+    </div>
+  );
+}
+
 export function PermissionsAdmin({ matrix, counts, leadCounts }: { matrix: PermissionMatrix; counts: Record<Role, number>; leadCounts: Record<Stage, number> }) {
   const roleCatalog = React.useContext(AdminRoles);
   const roleKeys = roleCatalog.map(r=>r.key);
@@ -649,7 +762,9 @@ export function PermissionsAdmin({ matrix, counts, leadCounts }: { matrix: Permi
   const [busy, setBusy] = React.useState(false);
   const [search, setSearch] = React.useState("");
   const [selectedGroup, setSelectedGroup] = React.useState<string>("all");
-  const [mode, setMode] = React.useState<"matrix" | "table">("table");
+  const [mode, setMode] = React.useState<"matrix" | "table" | "role">("table");
+  // "By role" grid: the role (or team lead) being set.
+  const [gridRole, setGridRole] = React.useState<string>("assistant_manager");
   const [editingCap, setEditingCap] = React.useState<{ key: Capability; label: string; group: string } | null>(null);
   const [createRoleOpen, setCreateRoleOpen] = React.useState(false);
   const [newRoleName, setNewRoleName] = React.useState("");
@@ -671,6 +786,7 @@ export function PermissionsAdmin({ matrix, counts, leadCounts }: { matrix: Permi
     })),
   ];
 
+  const gridKey = columns.some((c) => c.key === gridRole) ? gridRole : String(columns[0]?.key ?? "");
   const toggle = (k: keyof PermissionMatrix, c: Capability) => setM({ ...m, [k]: m[k].includes(c) ? m[k].filter((x) => x !== c) : [...m[k], c] });
 
   const grantAll = (c: Capability) => {
@@ -725,6 +841,14 @@ export function PermissionsAdmin({ matrix, counts, leadCounts }: { matrix: Permi
               className={cn("flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-colors", mode === "matrix" ? "bg-background font-semibold shadow-xs text-foreground" : "text-muted-foreground hover:text-foreground")}
             >
               <LayoutGridIcon className="size-3.5" /> Matrix View
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode("role")}
+              data-perm-mode="role"
+              className={cn("flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-colors", mode === "role" ? "bg-background font-semibold shadow-xs text-foreground" : "text-muted-foreground hover:text-foreground")}
+            >
+              <ListChecksIcon className="size-3.5" /> By role (V E D U)
             </button>
           </div>
           <Button
@@ -792,7 +916,17 @@ export function PermissionsAdmin({ matrix, counts, leadCounts }: { matrix: Permi
         </div>
       </div>
 
-      {mode === "table" ? (
+      {mode === "role" ? (
+        <RoleCrudGrid
+          columns={columns.map((c) => ({ key: String(c.key), name: c.name, count: c.count }))}
+          role={gridKey}
+          setRole={setGridRole}
+          caps={m[gridKey] ?? []}
+          search={search}
+          group={selectedGroup}
+          onChange={(k, next) => setM({ ...m, [k]: next })}
+        />
+      ) : mode === "table" ? (
         /* Table Mode View */
         <div className="overflow-x-auto">
           <table className="w-full text-sm">

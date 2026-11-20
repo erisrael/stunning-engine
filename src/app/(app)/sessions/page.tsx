@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { requireViewer } from "@/server/auth";
 import { getSettings } from "@/server/settings";
 import { can } from "@/server/users";
-import { canPlanSessions, recordingStaff, sessionCandidates, sessionsConfig, sessionTable, sessionWeek, weekStartOf } from "@/server/sessions";
+import { canCancelSessions, canPlanSessions, recordingStaff, sessionCandidates, sessionsConfig, sessionTable, sessionWeek, weekStartOf } from "@/server/sessions";
 import { userDirectory } from "@/server/users";
 import { SessionsManagers } from "./managers";
 import { localDate } from "@/lib/format";
@@ -20,7 +20,8 @@ export const metadata = { title: "Studio sessions" };
 export default async function SessionsPage({ searchParams }: { searchParams: Promise<{ week?: string; view?: string; from?: string; to?: string }> }) {
   const viewer = await requireViewer();
   const plan = await canPlanSessions(viewer);
-  if (!plan && !can(viewer, "team.view") && !viewer.roles.includes("recording")) redirect("/dashboard?denied=permission");
+  const cancel = await canCancelSessions(viewer);
+  if (!plan && !can(viewer, "team.view") && !can(viewer, "sessions.view") && !viewer.roles.includes("recording")) redirect("/dashboard?denied=permission");
   const booking = (await handoverConfig()).studioBooking;
   if (booking === "off") redirect("/dashboard?denied=permission");
   const s = await getSettings();
@@ -56,9 +57,9 @@ export default async function SessionsPage({ searchParams }: { searchParams: Pro
         ))}
       </div>
       {table ? (
-        <SessionsTable rows={rows} from={from} until={until} today={today} tz={data.tz} studios={data.studios} staff={staff} candidates={candidates} canPlan={plan} me={viewer.id} />
+        <SessionsTable rows={rows} from={from} until={until} today={today} tz={data.tz} studios={data.studios} staff={staff} candidates={candidates} canPlan={plan} canCancel={cancel} me={viewer.id} />
       ) : (
-      <SessionPlanner week={week} today={today} tz={data.tz} bookings={data.bookings} studios={data.studios} staff={staff} candidates={candidates} canPlan={plan} me={viewer.id} />
+      <SessionPlanner week={week} today={today} tz={data.tz} bookings={data.bookings} studios={data.studios} staff={staff} candidates={candidates} canPlan={plan} canCancel={cancel} me={viewer.id} />
       )}
     </div>
   );

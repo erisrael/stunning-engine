@@ -177,7 +177,21 @@ export type SyncInput = {
   ball?: { x: number; y: number; z: number; vx: number; vy: number; vz: number };
   goal?: "teal" | "gold";
   ballReset?: boolean;
+  // Seed Strike online: create, join (public or with the code) or leave a match; hits I landed (checked here).
+  strike?: { op: "create"; mode: "duel" | "tdm" | "ffa"; map: string; priv?: boolean } | { op: "join"; id: string; code?: string } | { op: "quick"; mode: "duel" | "tdm" | "ffa" } | { op: "leave" };
+  hits?: { to: string; w: string; hs: boolean }[];
 };
+
+// Seed Strike matches between people (in memory): the server is the referee. A hit counts only between two
+// people alive in the same match, on different teams in team play, within the weapon's range of where the server
+// last saw them, and no faster than the weapon fires; it takes the weapon's damage (twice on the head). Kills,
+// deaths, respawns (three seconds), the kill feed and the winner live here.
+type MatchPlayer = { team: number; hp: number; armor: number; alive: boolean; respawnAt: number; k: number; d: number; hits: number[] };
+type Match = { id: string; mode: "duel" | "tdm" | "ffa"; map: string; code: string; host: string; at: number; endsAt: number; players: Map<string, MatchPlayer>; feed: { at: number; text: string }[]; over: string | null };
+const matches = new Map<string, Match>();
+const LIMIT = { duel: 5, tdm: 30, ffa: 20 } as const;
+const MAX = { duel: 2, tdm: 10, ffa: 8 } as const;
+const matchOf = (id: string) => [...matches.values()].find((m) => m.players.has(id)) ?? null;
 
 // The stadium's shared ball and score (in memory, like positions).
 const pitch = { ball: null as SyncInput["ball"] | null, seq: 0, by: "", score: { teal: 0, gold: 0 }, goalAt: 0 };
@@ -203,9 +217,10 @@ export async function sync(user: AppUser, input: SyncInput) {
     room.set(user.id, p);
   }
   const num = (v: unknown, d: number, lo: number, hi: number) => (typeof v === "number" && Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : d);
-  p.x = num(input.x, p.x, -240, 240);
-  p.y = num(input.y, p.y, 0, 40);
-  p.z = num(input.z, p.z, -240, 240);
+  // The town reaches past the ring road (the Grand Prix, the archery field) and the Strike maps lie further out.
+  p.x = num(input.x, p.x, -1100, 1100);
+  p.y = num(input.y, p.y, -2, 60);
+  p.z = num(input.z, p.z, -1100, 1100);
   p.ry = num(input.ry, p.ry, -10, 10);
   p.mv = input.mv ? Math.min(2, Math.round(Number(input.mv))) : 0;
   p.veh = typeof input.veh === "string" && /^[a-z0-9.-]{0,40}$/.test(input.veh) ? input.veh : "";
@@ -259,6 +274,78 @@ export async function sync(user: AppUser, input: SyncInput) {
     pitch.seq++;
     pitch.by = "";
   }
+
+  // Seed Strike: matches and hits.
+  if (input.strike) {
+    const op = input.strike;
+    const cur = matchOf(p.id);
+    if (op.op === "leave" || op.op === "create" || op.op === "join" || op.op === "quick") cur?.players.delete(p.id);
+    const joinTo = (m: Match) => {
+      if (m.players.size >= MAX[m.mode]) return (err = "That match is full."), false;
+      const teams = [0, 1].map((t) => [...m.players.values()].filter((x) => x.team === t).length);
+      m.players.set(p!.id, { team: m.mode === "tdm" ? (teams[0]! <= teams[1]! ? 0 : 1) : m.players.size, hp: 100, armor: 50, alive: true, respawnAt: 0, k: 0, d: 0, hits: [] });
+      m.feed.push({ at: now, text: `${p!.name} joined` });
+      return true;
+    };
+    if (op.op === "create" && ["duel", "tdm", "ffa"].includes(op.mode) && /^[a-z]{3,12}$/.test(String(op.map))) {
+      const id = `sm_${Math.random().toString(36).slice(2, 9)}`;
+      const m: Match = { id, mode: op.mode, map: op.map, code: op.priv ? String(Math.floor(1000 + Math.random() * 9000)) : "", host: p.id, at: now, endsAt: now + (op.mode === "tdm" ? 8 : 10) * 60_000, players: new Map(), feed: [], over: null };
+      matches.set(id, m);
+      joinTo(m);
+    } else if (op.op === "join") {
+      const m = matches.get(String(op.id));
+      if (!m || m.over) err = "That match has ended.";
+      else if (m.code && String(op.code ?? "") !== m.code && m.host !== p.id) err = "That match is private: ask for its code.";
+      else joinTo(m);
+    } else if (op.op === "quick" && ["duel", "tdm", "ffa"].includes(op.mode)) {
+      // Matchmaking: the fullest open public match of the mode, or a new one.
+      const open = [...matches.values()].filter((m) => !m.code && !m.over && m.mode === op.mode && m.players.size < MAX[m.mode]).sort((a, b) => b.players.size - a.players.size)[0];
+      if (open) joinTo(open);
+      else {
+        const id = `sm_${Math.random().toString(36).slice(2, 9)}`;
+        const m: Match = { id, mode: op.mode, map: ["facility", "warehouse", "urban", "desert"][Math.floor(Math.random() * 4)]!, code: "", host: p.id, at: now, endsAt: now + 8 * 60_000, players: new Map(), feed: [], over: null };
+        matches.set(id, m);
+        joinTo(m);
+      }
+    }
+  }
+  const mm = matchOf(p.id);
+  if (mm && !mm.over) {
+    const me = mm.players.get(p.id)!;
+    if (!me.alive && now > me.respawnAt) (me.alive = true), (me.hp = 100), (me.armor = 50);
+    const { WEAPONS } = await import("@/lib/strike-weapons");
+    for (const h of (input.hits ?? []).slice(0, 20)) {
+      const w = WEAPONS[h.w as keyof typeof WEAPONS];
+      const vp = room.get(String(h.to));
+      const v = mm.players.get(String(h.to));
+      if (!w || !vp || !v || !me.alive || !v.alive || h.to === p.id) continue;
+      if (mm.mode === "tdm" && v.team === me.team) continue;
+      if (Math.hypot(vp.x - p.x, vp.z - p.z) > w.range + 6) continue;
+      me.hits = me.hits.filter((t) => now - t < 1000);
+      if (me.hits.length > (w.rpm / 60) * w.pellets + 2) continue;
+      me.hits.push(now);
+      const dmg = w.dmg * (h.hs ? (h.w === "shotgun" ? 1.5 : 2) : 1);
+      const toArmor = Math.min(v.armor, dmg * 0.5);
+      v.armor -= toArmor;
+      v.hp -= dmg - toArmor;
+      if (v.hp <= 0) {
+        v.alive = false;
+        v.d++;
+        v.respawnAt = now + 3000;
+        me.k++;
+        mm.feed.push({ at: now, text: `${p.name} ${h.hs ? "headshot" : "took out"} ${vp.name} (${w.label})` });
+        if (mm.mode === "duel") for (const x of mm.players.values()) (x.hp = 100), (x.armor = 50);
+      }
+    }
+    const teamK = [0, 1].map((t) => [...mm.players.values()].filter((x) => x.team === t).reduce((a, x) => a + x.k, 0));
+    const top = [...mm.players.entries()].sort((a, b) => b[1].k - a[1].k)[0];
+    if (mm.mode === "tdm" && Math.max(...teamK) >= LIMIT.tdm) mm.over = teamK[0]! >= LIMIT.tdm ? "Blue team won" : "Red team won";
+    else if (mm.mode !== "tdm" && top && top[1].k >= LIMIT[mm.mode]) mm.over = `${room.get(top[0])?.name ?? "Someone"} won`;
+    else if (now > mm.endsAt) mm.over = "Time";
+    while (mm.feed.length > 30) mm.feed.shift();
+  }
+  for (const [id, m] of matches) if ((m.players.size === 0 && now - m.at > 30_000) || now - m.at > 30 * 60_000) matches.delete(id);
+  for (const m of matches.values()) for (const id of m.players.keys()) if (!room.has(id)) m.players.delete(id);
 
   // Voice: the mode, mute, and rooms (create, join with a code when private, leave; the owner removes people).
   if (input.voice && c.worldVoice) {
@@ -328,6 +415,22 @@ export async function sync(user: AppUser, input: SyncInput) {
     rooms: c.worldVoice ? [...rooms.values()].map((r) => ({ id: r.id, name: r.name, owner: r.owner, priv: r.priv, code: r.owner === p.id ? r.code : "", cap: r.cap, n: [...room.values()].filter((q) => q.voice.room === r.id).length })) : [],
     fw: fireworks.filter((f) => now - f.at < 6000),
     pitch: p.x > PITCH_X[0] && p.x < PITCH_X[1] ? { ball: pitch.ball, seq: pitch.seq, by: pitch.by, score: pitch.score } : null,
+    strike: (() => {
+      const m = matchOf(p.id);
+      if (!m) return p.act.startsWith("strike") ? { open: [...matches.values()].filter((x) => !x.code && !x.over).map((x) => ({ id: x.id, mode: x.mode, map: x.map, n: x.players.size, max: MAX[x.mode] })) } : null;
+      const me = m.players.get(p.id)!;
+      return {
+        id: m.id,
+        mode: m.mode,
+        map: m.map,
+        code: m.host === p.id ? m.code : "",
+        me: { team: me.team, hp: Math.max(0, Math.round(me.hp)), armor: Math.round(me.armor), alive: me.alive, respawnIn: me.alive ? 0 : Math.max(0, Math.ceil((me.respawnAt - now) / 1000)) },
+        board: [...m.players.entries()].map(([id, x]) => ({ id, name: room.get(id)?.name ?? "?", team: x.team, k: x.k, d: x.d, alive: x.alive })),
+        feed: m.feed.slice(-5).map((f) => f.text).reverse(),
+        over: m.over,
+        endsIn: Math.max(0, Math.ceil((m.endsAt - now) / 1000)),
+      };
+    })(),
     err,
   };
 }

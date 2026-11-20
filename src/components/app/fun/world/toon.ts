@@ -1,7 +1,10 @@
 import * as THREE from "three";
+import { facade, plain, surface, SURFACES, type FacadeStyle, type SurfaceKey } from "./pbr";
 
-// Cel-shaded ("anime") look for everything in Seed Town: toon materials with three light bands, shared by colour so
-// thousands of meshes reuse a few materials, outlines on characters (inverted hull), and small canvas textures.
+// Materials for Seed Town. The town itself is realistic (physically based materials, see pbr.ts): toon() gives a
+// physically based colour, or a textured surface when the colour names one ("brick:#ffffff", "facade:glass:#9aa"),
+// shared so thousands of meshes reuse a few materials. Characters and pets keep the cel-shaded ("anime") look with
+// cel() and outlines (inverted hull). Small canvas textures for signs and labels.
 
 let gradient: THREE.DataTexture | null = null;
 function gradientMap() {
@@ -16,11 +19,36 @@ function gradientMap() {
 }
 
 export type Quality = "low" | "medium" | "high" | "ultra";
-export const TOON = { quality: "high" as Quality };
+// realistic: the town's materials are physically based (the editor and tests may switch it off).
+export const TOON = { quality: "high" as Quality, realistic: true };
+
+// How rough a plain coloured surface is, guessed from its colour (dark trims and metals shinier, greens matte).
+function roughOf(c: THREE.Color) {
+  const hsl = { h: 0, s: 0, l: 0 };
+  c.getHSL(hsl);
+  if (hsl.h > 0.2 && hsl.h < 0.45 && hsl.s > 0.25) return 0.9;
+  if (hsl.l < 0.15) return 0.45;
+  if (hsl.l > 0.85) return 0.55;
+  return 0.72;
+}
+
+// The town's material for a colour: physically based, or a textured surface ("grass:#ffffff") or facade
+// ("facade:office:#d8d2c4") when the colour names one.
+export function toon(color: string | number, opts: { emissive?: string; transparent?: number; side?: THREE.Side; flat?: boolean } = {}): THREE.Material {
+  if (!TOON.realistic) return cel(color, opts);
+  if (typeof color === "string" && color.includes(":")) {
+    const parts = color.split(":");
+    if (parts[0] === "facade") return facade(parts[1] as FacadeStyle, parts[2] ?? "#d8d2c4", Number(parts[3] ?? 1));
+    if ((SURFACES as string[]).includes(parts[0]!)) return surface(parts[0] as SurfaceKey, { tint: parts[1] || "#ffffff", side: opts.side, transparent: opts.transparent });
+  }
+  if (opts.flat) return cel(color, opts);
+  const c = new THREE.Color(typeof color === "string" ? color.replace(/^.*:/, "") : color);
+  return plain(`#${c.getHexString()}`, { rough: roughOf(c), side: opts.side, transparent: opts.transparent, emissive: opts.emissive, emissiveIntensity: opts.emissive ? 1.2 : undefined });
+}
 
 const cache = new Map<string, THREE.Material>();
-// A shared toon material for a colour (low quality: plain Lambert, cheaper).
-export function toon(color: string | number, opts: { emissive?: string; transparent?: number; side?: THREE.Side; flat?: boolean } = {}): THREE.Material {
+// The cel-shaded material for a colour (characters, pets; low quality: plain Lambert, cheaper).
+export function cel(color: string | number, opts: { emissive?: string; transparent?: number; side?: THREE.Side; flat?: boolean } = {}): THREE.Material {
   const key = `${color}|${opts.emissive ?? ""}|${opts.transparent ?? ""}|${opts.side ?? ""}|${opts.flat ? 1 : 0}|${TOON.quality === "low" ? "l" : "t"}`;
   let m = cache.get(key);
   if (!m) {
@@ -39,7 +67,8 @@ export function toon(color: string | number, opts: { emissive?: string; transpar
 const outlineMat = new THREE.MeshBasicMaterial({ color: "#1a1423", side: THREE.BackSide });
 // A dark rim around a mesh (the anime outline); skipped on low quality.
 export function outline(mesh: THREE.Mesh, width = 0.035) {
-  if (TOON.quality === "low") return mesh;
+  // Only cel-shaded things (characters) get the rim; the realistic town does not.
+  if (TOON.quality === "low" || !(mesh.material as THREE.MeshToonMaterial).isMeshToonMaterial) return mesh;
   const o = new THREE.Mesh(mesh.geometry, outlineMat);
   o.scale.setScalar(1 + width / Math.max(0.05, boundingRadius(mesh.geometry)));
   o.userData.outline = true;

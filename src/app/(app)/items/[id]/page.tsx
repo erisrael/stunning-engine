@@ -23,6 +23,7 @@ import {
   STAGE_LABELS,
   STAGES,
   STATUS_LABELS,
+  isRedo,
   sheetStatusLabel,
   type AttemptStatus,
   type Stage,
@@ -176,7 +177,7 @@ export default async function ItemPage({ params, searchParams }: { params: Promi
         <div className="min-w-0 space-y-1.5">
           <div className="flex flex-wrap items-center gap-2 text-xs">
             <span className="font-mono text-muted-foreground">{it.code}</span>
-            <ItemStatusPill lifecycle={lifecycle} stage={stage} status={status} substate={it.substate as string | null} />
+            <ItemStatusPill lifecycle={lifecycle} stage={stage} status={status} substate={it.substate as string | null} redo={!!current && isRedo(current.cause, current.cause_note, current.lead_returned)} />
             <PriorityBadge priority={it.priority as string} />
             {it.provenance !== "live" && (
               <Badge variant="outline" className="font-normal capitalize" title={it.provenance === "historical" ? "Excluded from timing and performance metrics" : undefined}>
@@ -239,7 +240,7 @@ export default async function ItemPage({ params, searchParams }: { params: Promi
               {x.st === "publication" && lifecycle === "published" ? (
                 <StatusPill tone="done" size="xs" label="Published" />
               ) : x.status ? (
-                <StatusPill tone={toneFor(x.status, x.latest?.substate)} size="xs" label={sheetStatusLabel(x.st, x.status as AttemptStatus, x.latest?.substate ?? null)} />
+                <StatusPill tone={toneFor(x.status, x.latest?.substate, { stage: x.st, redo: isRedo(x.latest?.cause, x.latest?.cause_note, x.latest?.lead_returned) })} size="xs" label={sheetStatusLabel(x.st, x.status as AttemptStatus, x.latest?.substate ?? null, isRedo(x.latest?.cause, x.latest?.cause_note, x.latest?.lead_returned))} />
               ) : (
                 <span className="text-xs text-muted-foreground">Not started</span>
               )}
@@ -556,7 +557,7 @@ export default async function ItemPage({ params, searchParams }: { params: Promi
                 <CardHeader>
                   <CardTitle className="flex flex-wrap items-center gap-2">
                     {STAGE_LABELS[a.stage]} attempt {a.attempt_no}
-                    <StatusPill size="xs" tone={toneFor(a.status, a.substate)} label={a.status === "superseded" || a.status === "returned" ? STATUS_LABELS[a.status] : sheetStatusLabel(a.stage, a.status, a.substate)} />
+                    <StatusPill size="xs" tone={toneFor(a.status, a.substate, { stage: a.stage, redo: isRedo(a.cause, a.cause_note, a.lead_returned) })} label={a.status === "superseded" || a.status === "returned" ? STATUS_LABELS[a.status] : sheetStatusLabel(a.stage, a.status, a.substate, isRedo(a.cause, a.cause_note, a.lead_returned))} />
                     {a.cause !== "initial" && <Badge variant="outline" className="font-normal capitalize">{a.cause}</Badge>}
                   </CardTitle>
                   <CardDescription>

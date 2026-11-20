@@ -1,9 +1,16 @@
 import * as THREE from "three";
-import { SHOPS, type HomeLayout, type Item, type Shop } from "@/lib/fun-catalog";
+import { CATALOG, SHOPS, type HomeLayout, type Item, type Shop } from "@/lib/fun-catalog";
 import type { Physics } from "./engine";
 import { furniture, prop, showcase, tree, vehicle } from "./models";
 import { canvasTex, cone, cyl, floorTex, grassTex, mesh, pavingTex, roadTex, signPlane, sphere, textSprite, toon, unitBox } from "./toon";
 import { PITCH } from "./soccer";
+import { ROADS, buildStreets } from "./streets";
+import { buildDistricts } from "./buildings";
+import { glass as glassMat, surface } from "./pbr";
+import { buildHouse } from "./houses";
+import { optimizeStatic } from "./merge";
+import { anyVehicle } from "./cars";
+import { buildGrandPrix } from "./gp";
 
 // The town: a plaza in the middle; the office tower (three floors with stairs, an elevator, a lobby, a café, a town
 // hall, meeting rooms and a desk for everyone) to the north; shops and the car dealer to the east; the park with
@@ -11,7 +18,7 @@ import { PITCH } from "./soccer";
 // south; a ring road for racing. Every building can be entered; walls, furniture and fences are solid.
 
 export type Interact = { id: string; x: number; y: number; z: number; r: number; label: string; kind: string; data?: Record<string, unknown> };
-export type NpcDef = { id: string; name: string; role: string; seed: number; x: number; y: number; z: number; ry: number; lines: string[]; actions: { label: string; act: string; arg?: string }[]; path?: [number, number][]; sit?: boolean };
+export type NpcDef = { id: string; name: string; role: string; seed: number; x: number; y: number; z: number; ry: number; lines: string[]; actions: { label: string; act: string; arg?: string }[]; path?: [number, number][]; sit?: boolean; personality?: import("./npc-brain").Personality; person?: string; female?: boolean; brainRole?: import("./npc-brain").Role };
 export type Spot = { x: number; y: number; z: number; ry: number };
 type Rect = { x0: number; z0: number; x1: number; z1: number };
 export type MapRect = { x: number; z: number; w: number; d: number; color: string; label?: string };
@@ -26,6 +33,7 @@ class Blocks {
   private byColor = new Map<string, THREE.Matrix4[]>();
   constructor(private ph: Physics) {}
   add(color: string, x: number, y: number, z: number, w: number, h: number, d: number, solid = true, rotY = 0, tag?: string) {
+    if (SKIN[color]) color = SKIN[color]!;
     // "veh" boxes are invisible and stop only vehicles.
     if (color !== "veh") {
       const m = new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), rotY), new THREE.Vector3(w, h, d));
@@ -48,7 +56,10 @@ class Blocks {
   finish(parent: THREE.Object3D, opts: { transparent?: number; shadows?: boolean } = {}) {
     for (const [color, list] of this.byColor) {
       const [c, t] = color.split("|");
-      const inst = new THREE.InstancedMesh(unitBox(), toon(c!, t ? { transparent: Number(t) } : {}), list.length);
+      // See-through walls are real glass (reflections from the sky); everything else by its colour or surface.
+      // Building glass: a clear, slightly blue-grey pane (whatever pale colour the old block used).
+      const mat = t && Number(t) < 0.6 && !c!.includes(":") ? glassMat("#5f7682", 0.2, 0.03) : toon(c!, t ? { transparent: Number(t) } : {});
+      const inst = new THREE.InstancedMesh(unitBox(), mat, list.length);
       list.forEach((m, i) => inst.setMatrixAt(i, m));
       inst.instanceMatrix.needsUpdate = true;
       inst.castShadow = opts.shadows ?? true;
@@ -98,6 +109,21 @@ function wall(b: Blocks, color: string, axis: "x" | "z", at: number, from: numbe
 
 export type Elevator = { y: number; target: number; level: number; moving: boolean; doorOpen: number; cab: THREE.Group; doors: { box: import("./engine").Box; mesh: THREE.Mesh }[]; floor: import("./engine").Box; goTo: (l: number) => void };
 
+// The town's buildings, given real surfaces: floors, stairs and trims of the old blocks keep their layout but are
+// drawn in stone, wood, tiles and concrete (by their colour).
+const SKIN: Record<string, string> = {
+  "#e7e5e4": "marble:#f4f2ee",
+  "#d6d3d1": "laminate:#ffffff",
+  "#a8a29e": "concrete:#d4d0c8",
+  "#94a3b8": "concrete:#b9b6b0",
+  "#78350f": "wood:#c8a27a",
+  "#f1f5f9": "tiles:#d8d6d2",
+  "#fef3c7": "plaster:#f2e6c9",
+  "#fde68a": "plaster:#ecd9a6",
+  "#cbd5e1": "plaster:#d9dde2",
+  "#e2e8f0": "concrete:#e8e6e1",
+};
+
 export type CityInput = {
   name: string;
   departments: string[];
@@ -107,6 +133,8 @@ export type CityInput = {
   notice: string;
   props: { id: string; kind: string; x: number; z: number; r: number; s: number; color: string; text: string; name: string; lines: string[]; model?: string; solid?: boolean; y?: number }[];
   meId: string;
+  // 0: few details (low graphics), 1: everything.
+  detail?: number;
 };
 
 export function buildCity(ph: Physics, input: CityInput) {
@@ -126,40 +154,29 @@ export function buildCity(ph: Physics, input: CityInput) {
     return g;
   };
   const I = (i: Interact) => interacts.push(i);
-  const itemsOf = (s: Shop) => input.items.filter((i) => i.shop === s && i.price > 0);
+  // What each shop shows on its podiums: the things that normally cost something (even while Admin makes
+  // everything free), newest first for the car dealer.
+  const listPrice = (k: string, p: number) => CATALOG.find((c) => c.key === k)?.price ?? p;
+  const itemsOf = (s: Shop) => input.items.filter((i) => i.shop === s && listPrice(i.key, i.price) > 0).sort((a, b) => (s === "cars" ? listPrice(b.key, b.price) - listPrice(a.key, a.price) : 0));
 
-  // ---------------------------------------------------------------- ground, roads, sky dome
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(540, 540), new THREE.MeshLambertMaterial({ map: grassTex() }));
+  // ---------------------------------------------------------------- ground, streets and the districts round the old town
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(1400, 1400), surface("grass", { tint: "#b9d79a" }));
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
   root.add(ground);
-  const road = (x: number, z: number, w: number, d: number, alongZ: boolean) => {
-    const t = roadTex().clone();
-    t.needsUpdate = true;
-    t.wrapS = t.wrapT = THREE.RepeatWrapping;
-    t.repeat.set(1, (alongZ ? d : w) / 12);
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(alongZ ? w : d, alongZ ? d : w), new THREE.MeshLambertMaterial({ map: t }));
-    m.rotation.x = -Math.PI / 2;
-    if (!alongZ) m.rotation.z = Math.PI / 2;
-    m.position.set(x, 0.02, z);
-    m.receiveShadow = true;
-    root.add(m);
-    mapRects.push({ x, z, w, d, color: "#6b7280" });
-  };
-  road(0, -100, 10, 112, true);
-  road(0, 92, 10, 86, true);
-  road(-80, 0, 110, 10, false);
-  road(80, 0, 110, 10, false);
-  road(0, -RING, 280, 10, false);
-  road(0, RING, 280, 10, false);
-  road(-RING, 0, 10, 260, true);
-  road(RING, 0, 10, 260, true);
-  // Pavements on the residential streets.
-  for (const z of [30, 46, 62, 78, 94, 110]) road(0, z, 180, 4, false);
+  const streets = buildStreets(ph, { trees: true, detail: input.detail ?? 1 });
+  root.add(streets.group);
+  for (const r of ROADS) {
+    const len = r.to - r.from, mid = (r.from + r.to) / 2;
+    mapRects.push(r.axis === "x" ? { x: mid, z: r.c, w: len, d: r.w + r.s * 2, color: "#6b7280" } : { x: r.c, z: mid, w: r.w + r.s * 2, d: len, color: "#6b7280" });
+  }
+  const districtsBuilt = buildDistricts(ph, { detail: input.detail ?? 1 });
+  root.add(districtsBuilt.group);
+  mapRects.push({ x: 78, z: -86, w: 96, d: 80, color: "#9aa3ad", label: "Downtown" }, { x: -78, z: -86, w: 96, d: 80, color: "#b8b0a2", label: "Civic" }, { x: 114, z: 78, w: 24, d: 96, color: "#8d959b", label: "Industry" }, { x: -112, z: 104, w: 26, d: 44, color: "#4d7a3a", label: "Wood" });
 
   // ---------------------------------------------------------------- the plaza
   const plaza = district("Plaza", 0, 0, 30);
-  const pv = new THREE.Mesh(new THREE.CircleGeometry(24, 48), new THREE.MeshLambertMaterial({ map: pavingTex() }));
+  const pv = new THREE.Mesh(new THREE.CircleGeometry(24, 48), surface("stone", { tint: "#e6e1d6" }));
   pv.rotation.x = -Math.PI / 2;
   pv.position.y = 0.03;
   pv.receiveShadow = true;
@@ -172,6 +189,7 @@ export function buildCity(ph: Physics, input: CityInput) {
   const spray: THREE.Mesh[] = [];
   for (let i = 0; i < 6; i++) {
     const d = mesh(sphere(8), toon("#bae6fd", { transparent: 0.7 }), 0, 2.4, 0, 0.3, 0.3, 0.3);
+    d.userData.keep = true;
     plaza.add(d);
     spray.push(d);
   }
@@ -229,6 +247,7 @@ export function buildCity(ph: Physics, input: CityInput) {
     return g;
   });
   const roof = new THREE.Group();
+  roof.name = "roof";
   biz.add(roof);
   const glass = "#a5d8ff|0.32";
   {
@@ -299,10 +318,12 @@ export function buildCity(ph: Physics, input: CityInput) {
   cab.add(mesh(unitBox(), toon("#e5e7eb"), 0, 1.6, -1.9, 3.9, 3.2, 0.05));
   cab.add(mesh(unitBox(), toon("#fef3c7", { emissive: "#a16207" }), 0, 3.0, 0, 1.2, 0.05, 1.2));
   cab.position.set((SHAFT.x0 + SHAFT.x1) / 2, 0, (SHAFT.z0 + SHAFT.z1) / 2);
+  cab.userData.keep = true;
   biz.add(cab);
   const cabFloor = ph.addDynamic({ minX: SHAFT.x0 + 0.05, maxX: SHAFT.x1 - 0.05, minZ: SHAFT.z0 + 0.05, maxZ: SHAFT.z1 - 0.05, minY: -0.2, maxY: 0, tag: "cab" });
   const doors = [0, 1, 2].map((l) => {
     const m = mesh(unitBox(), toon("#9ca3af"), (SHAFT.x0 + SHAFT.x1) / 2, l * FH + 1.5, SHAFT.z1 + 0.1, 2.4, 3, 0.1);
+    m.userData.keep = true;
     biz.add(m);
     return { box: ph.addDynamic({ minX: SHAFT.x0 + 0.8, maxX: SHAFT.x1 - 0.8, minZ: SHAFT.z1, maxZ: SHAFT.z1 + 0.2, minY: l * FH, maxY: l * FH + 3, tag: "door" }), mesh: m };
   });
@@ -574,11 +595,16 @@ export function buildCity(ph: Physics, input: CityInput) {
     const x0 = cx - w / 2, x1 = cx + w / 2;
     const b = new Blocks(ph);
     const big = key === "cars";
-    wall(b, big ? glass : color, "x", front, x0, x1, 0, 5.5, 0.4, [[cx - (big ? 3 : 1.6), cx + (big ? 3 : 1.6), 3.2]], big ? "glass" : undefined);
-    wall(b, color, "x", back, x0, x1, 0, 5.5, 0.4);
-    wall(b, color, "z", x0, z0, z1, 0, 5.5, 0.4);
-    wall(b, color, "z", x1, z0, z1, 0, 5.5, 0.4);
-    b.span("#334155", x0 - 0.4, 5.5, z0 - 0.4, x1 + 0.4, 5.9, z1 + 0.4);
+    // A shop front of glass under a fascia, rendered walls in the shop's colour (muted, as real paint).
+    const paint = `plaster:#${new THREE.Color(color).lerp(new THREE.Color("#e8e2d8"), 0.55).getHexString()}`;
+    wall(b, glass, "x", front, x0 + 0.6, x1 - 0.6, 0, 4.2, 0.12, [[cx - (big ? 3 : 1.6), cx + (big ? 3 : 1.6), 3.2]], "glass");
+    b.span(paint, x0, 4.2, front - 0.25, x1, 5.5, front + 0.25);
+    for (const x of [x0 + 0.3, x1 - 0.3]) b.span(paint, x - 0.3, 0, front - 0.25, x + 0.3, 4.2, front + 0.25);
+    b.span("#2f3438", x0 + 0.6, 4.1, front - 0.08, x1 - 0.6, 4.25, front + 0.08, false);
+    wall(b, paint, "x", back, x0, x1, 0, 5.5, 0.4);
+    wall(b, paint, "z", x0, z0, z1, 0, 5.5, 0.4);
+    wall(b, paint, "z", x1, z0, z1, 0, 5.5, 0.4);
+    b.span("#3a3f45", x0 - 0.4, 5.5, z0 - 0.4, x1 + 0.4, 5.9, z1 + 0.4);
     b.span("veh", cx - 3, 0, front - 0.25, cx + 3, 2, front + 0.25, true, "veh");
     // Counter and keeper at the back.
     const ck = south ? back - 2.4 : back + 2.4;
@@ -605,7 +631,7 @@ export function buildCity(ph: Physics, input: CityInput) {
       shopsG.add(pod);
       if (big) ph.post({ x: px, z: pz, r: 2.3, minY: 0, maxY: 1.4 });
       else ph.post({ x: px, z: pz, r: 0.7, minY: 0, maxY: 1.2 });
-      const m = showcase(it.kind, it.model ?? "", it.color ?? "#a855f7");
+      const m = it.kind === "vehicle" ? anyVehicle(it.model ?? "hatch", it.color ?? "#3b82f6", undefined, true).group : showcase(it.kind, it.model ?? "", it.color ?? "#a855f7");
       m.position.set(px, 0.4, pz);
       m.scale.setScalar(big ? 0.9 : 0.8);
       m.userData.spin = true;
@@ -890,7 +916,6 @@ export function buildCity(ph: Physics, input: CityInput) {
     I({ id: "score-reset", x: (x0 + x1) / 2, y: 0, z: z1 - 1.5, r: 2.2, label: "Start a new match (score to 0:0)", kind: "match" });
     npcs.push({ id: "npc-coach", name: "Coach Tesfaye", role: "Football", seed: 91, x: x0 + 15, y: 0, z: z0 + 1.6, ry: 0, lines: ["Walk into the ball to dribble; E kicks it, hold Shift for a hard shot.", "Teal defends the west goal, Gold the east. First to five?"], actions: [{ label: "Penalty challenge", act: "penalty" }] });
     mapRects.push({ x: (x0 + x1) / 2, z: cz, w: x1 - x0, d: z1 - z0, color: "#4ade80", label: "Stadium" });
-    road(150, 48, 22, 6, false);
   }
 
   // ---------------------------------------------------------------- Seed Circuit: a kart track with barriers
@@ -971,7 +996,41 @@ export function buildCity(ph: Physics, input: CityInput) {
     const pit = start.clone().addScaledVector(side, W / 2 + 4);
     I({ id: "circuit", x: pit.x, y: 0, z: pit.z, r: 3, label: "Race three laps of Seed Circuit", kind: "circuit" });
     mapRects.push({ x: 192, z: -54, w: 72, d: 64, color: "#9ca3af", label: "Circuit" });
-    road(149, -50, 22, 8, false);
+  }
+
+  // ---------------------------------------------------------------- Seed Strike arena (the entrance; the maps are far out)
+  {
+    const ar = district("Arena", 300, 230, 30);
+    const shell = new THREE.Mesh(new THREE.BoxGeometry(40, 14, 28), surface("factory", { tint: "#ffffff" }));
+    shell.position.set(300, 7, 240);
+    shell.castShadow = true;
+    ar.add(shell);
+    ph.sized(300, 7, 240, 40, 14, 28, "bldg");
+    const sign = signPlane("SEED STRIKE ARENA", 18, 2.4, "#0b0f14", "#f5c518");
+    sign.position.set(300, 11, 225.9);
+    sign.rotation.y = Math.PI;
+    ar.add(sign);
+    const doorway = new THREE.Mesh(new THREE.BoxGeometry(8, 4, 0.2), glassMat("#30404c", 0.55, 0.05));
+    doorway.position.set(300, 2, 225.9);
+    ar.add(doorway);
+    I({ id: "strike", x: 300, y: 0, z: 222, r: 4, label: "Seed Strike: play a match", kind: "strike" });
+    mapRects.push({ x: 300, z: 240, w: 40, d: 28, color: "#3b4148", label: "Arena" });
+  }
+
+  // ---------------------------------------------------------------- the archery field (south-west, past the ring road)
+  I({ id: "archery-field", x: -228, y: 0, z: 3, r: 3, label: "Archery: choose a mode and a bow", kind: "archery" });
+  mapRects.push({ x: -275, z: 0, w: 100, d: 40, color: "#9bc27f", label: "Archery" });
+
+  // ---------------------------------------------------------------- the Grand Prix circuit (east, past the ring road)
+  const gpG = district("Grand Prix", 345, -258, 175);
+  const gpBuilt = buildGrandPrix(ph, input.detail ?? 1);
+  gpG.add(gpBuilt.group);
+  mapRects.push({ x: 345, z: -258, w: 260, d: 250, color: "#7f8a94", label: "Grand Prix" });
+  {
+    const g = gpBuilt.track.grid[0]!;
+    I({ id: "gp", x: 214, y: 0, z: -127, r: 4, label: "Grand Prix: race, qualify or practise", kind: "gp" });
+    npcs.push({ id: "npc-gp-director", name: "Race Director", role: "Seed Grand Prix", seed: 95, x: 216, y: 0, z: -129, ry: -Math.PI / 2, lines: ["Welcome to the Seed Grand Prix. Pick a session and I will put your car on the grid.", "Track limits are strict here: three warnings cost five seconds."], actions: [{ label: "Choose a session", act: "gp" }] });
+    void g;
   }
 
   // ---------------------------------------------------------------- homes (south)
@@ -1032,6 +1091,9 @@ export function buildCity(ph: Physics, input: CityInput) {
   }
   const treasureSpots: [number, number, number][] = [[-114, 5.5, 72.6], [28, 0, -84], [-30, 0, 120], [125, 0, -125], [-100, 0, 24], [60, 0, 34], [-128, 0, -34], [0, 13.5, -62]];
 
+  // Static scenery merged by material (far fewer draw calls); homes are rebuilt as people change them, so not here.
+  for (const d of districts) if (d.name !== "Homes" && d.name !== "Extras") optimizeStatic(d.group);
+
   return {
     root,
     interacts,
@@ -1052,6 +1114,9 @@ export function buildCity(ph: Physics, input: CityInput) {
     gemSpots,
     treasureSpots,
     spawn: spawnProp ? { x: spawnProp.x, z: spawnProp.z } : { x: 0, z: 12 },
+    lampSpots: streets.lampSpots,
+    gp: gpBuilt.track,
+    trafficLights: streets.lights,
     update: (t: number, dt: number) => animated.forEach((f) => f(t, dt)),
   };
 }
@@ -1070,6 +1135,12 @@ const HOUSE_STYLE: Record<string, { wall: string; roof: string; h: number }> = {
 // chose, and their furniture where they put it (solid; chairs, sofas and beds can be sat on). The door stays shut
 // for people the owner did not let in.
 export function buildHome(ph: Physics, ownerId: string, ownerName: string, lot: { cx: number; cz: number }, h: HomeLayout, items: Item[], canEnter: boolean, mine: boolean) {
+  const house = items.find((i) => i.key === h.house) ?? items.find((i) => i.key === "house.cottage");
+  return buildHouse(ph, ownerId, ownerName, lot, h, items, canEnter, mine, house?.model ?? "cottage", (house?.room as [number, number] | undefined) ?? [16, 12]);
+}
+
+// The earlier block homes (kept for the editor's simple preview).
+export function buildBlockHome(ph: Physics, ownerId: string, ownerName: string, lot: { cx: number; cz: number }, h: HomeLayout, items: Item[], canEnter: boolean, mine: boolean) {
   const tag = `home:${ownerId}`;
   ph.remove(tag);
   const g = new THREE.Group();
