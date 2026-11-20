@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import * as F from "@/app/actions/fun";
+import { F, isGuestActions } from "./actions";
 import type { HomeLayout, Look, Ride, Shop } from "@/lib/fun-catalog";
 import type { Resident, Status } from "@/server/fun-world";
 import type { Hud } from "./world/activities";
@@ -111,7 +111,9 @@ function PerfOverlay({ town }: { town: React.RefObject<Town | null> }) {
 }
 type THREE_Renderer = { info: { autoReset: boolean; reset: () => void; render: { calls: number; triangles: number } }; getContext: () => WebGLRenderingContext };
 
-export function SeedTown({ big = false }: { big?: boolean }) {
+export function SeedTown({ big = false, fill = false }: { big?: boolean; fill?: boolean }) {
+  // The guest arcade: no account, nothing online, no links into Myseed.
+  const guest = React.useMemo(() => isGuestActions(), []);
   const box = React.useRef<HTMLDivElement>(null);
   const shell = React.useRef<HTMLDivElement>(null);
   const town = React.useRef<Town | null>(null);
@@ -229,6 +231,7 @@ export function SeedTown({ big = false }: { big?: boolean }) {
       meId: me?.id ?? "me",
       seesAbsence: home.seesAbsence,
       iceServers: home.iceServers as RTCIceServer[],
+      offline: guest,
     };
     let t: Town;
     try {
@@ -355,8 +358,8 @@ export function SeedTown({ big = false }: { big?: boolean }) {
   const t = town.current;
   const p = panel;
   return (
-    <div ref={shell} className={cn("space-y-2", full && "bg-background")} data-game="world">
-      <div className={cn("relative overflow-hidden rounded-xl border bg-[#bfe3ff] outline-none select-none", touch ? "h-[calc(100dvh-9rem)] min-h-[420px]" : big ? "h-[72vh]" : "h-[460px]", full && "h-screen rounded-none")} id="seed-town" onClickCapture={(e) => (e.target as HTMLElement).closest("button") && town.current?.sound.play("click", { volume: 0.6 })}>
+    <div ref={shell} className={cn(fill ? "flex h-full flex-col" : "space-y-2", full && "bg-background")} data-game="world">
+      <div className={cn("relative overflow-hidden rounded-xl border bg-[#bfe3ff] outline-none select-none", fill ? "min-h-[300px] flex-1 rounded-none border-0" : touch ? "h-[calc(100dvh-9rem)] min-h-[420px]" : big ? "h-[72vh]" : "h-[460px]", full && "h-screen rounded-none")} id="seed-town" onClickCapture={(e) => (e.target as HTMLElement).closest("button") && town.current?.sound.play("click", { volume: 0.6 })}>
         <div ref={box} className="absolute inset-0" onPointerDown={() => town.current?.sound.unlock()} aria-label="Seed Town: walk with WASD or the arrow keys, Space to jump, drag to look around, E to interact" data-world-canvas />
 
         {/* Top bar: coins, where I am, who is here, menus. */}
@@ -833,11 +836,13 @@ export function SeedTown({ big = false }: { big?: boolean }) {
                   <p>{me ? `${STATUS[me.status].label} · today's progress ${me.progress}%` : "Welcome back."}</p>
                   <div className="h-2 overflow-hidden rounded-full bg-muted"><div className="h-full bg-[#22c55e]" style={{ width: `${me?.progress ?? 0}%` }} /></div>
                   <p>{coins} coins · level {home.level.level}</p>
-                  <div className="flex flex-wrap gap-1">
-                    <Button size="xs" asChild><a href="/my-work" target="_blank" rel="noreferrer">Open my work</a></Button>
-                    <Button size="xs" variant="outline" asChild><a href="/chat" target="_blank" rel="noreferrer">Team chat</a></Button>
-                    <Button size="xs" variant="outline" onClick={() => funCommand({ open: "focus" })}>Start a focus session</Button>
-                  </div>
+                  {!guest && (
+                    <div className="flex flex-wrap gap-1">
+                      <Button size="xs" asChild><a href="/my-work" target="_blank" rel="noreferrer">Open my work</a></Button>
+                      <Button size="xs" variant="outline" asChild><a href="/chat" target="_blank" rel="noreferrer">Team chat</a></Button>
+                      <Button size="xs" variant="outline" onClick={() => funCommand({ open: "focus" })}>Start a focus session</Button>
+                    </div>
+                  )}
                 </div>
               );
             })()}
@@ -847,7 +852,7 @@ export function SeedTown({ big = false }: { big?: boolean }) {
           <Panel title="The big screen" onClose={() => setPanel(null)}>
             <p className="mb-2 text-xs text-muted-foreground">Present a deck to the room: open it on the presentations page and share your screen in a call, or gather colleagues here in a voice room.</p>
             <div className="flex gap-1">
-              <Button size="xs" asChild><a href="/present" target="_blank" rel="noreferrer">Presentations</a></Button>
+              {!guest && <Button size="xs" asChild><a href="/present" target="_blank" rel="noreferrer">Presentations</a></Button>}
               <Button size="xs" variant="outline" onClick={() => (void t?.roomOp({ op: "create", name: "Town hall" }), setPanel({ kind: "voice" }))}>Open a voice room</Button>
             </div>
           </Panel>
@@ -857,7 +862,7 @@ export function SeedTown({ big = false }: { big?: boolean }) {
             <p className="text-xs text-muted-foreground">{home.homes[p.data?.owner as string]?.access === "everyone" ? "The door is open: walk in." : "This home is for invited guests. Knock and wave!"}</p>
             <div className="mt-2 flex gap-1">
               <Button size="xs" onClick={() => (t?.doEmote("wave"), t?.say(`Knock knock, ${String(p.data?.name ?? "").split(" ")[0]}!`, "near"), setPanel(null))}>Knock</Button>
-              <Button size="xs" variant="outline" asChild><a href="/chat" target="_blank" rel="noreferrer">Message</a></Button>
+              {!guest && <Button size="xs" variant="outline" asChild><a href="/chat" target="_blank" rel="noreferrer">Message</a></Button>}
             </div>
           </Panel>
         )}
@@ -894,12 +899,12 @@ export function SeedTown({ big = false }: { big?: boolean }) {
             <div className="mt-2 flex flex-wrap gap-1">
               <Button size="xs" variant="outline" onClick={() => t?.doEmote("wave")}><HandIcon /> Wave</Button>
               <Button size="xs" variant="outline" onClick={() => (t?.visitHome(card.id), setCard(null))}>Visit home</Button>
-              <Button size="xs" variant="outline" asChild><a href="/chat"><MessageCircleIcon /> Message</a></Button>
+              {!guest && <Button size="xs" variant="outline" asChild><a href="/chat"><MessageCircleIcon /> Message</a></Button>}
             </div>
           </div>
         )}
       </div>
-      <p className="text-[11px] text-muted-foreground">
+      <p className={cn("text-[11px] text-muted-foreground", fill && "hidden")}>
         Walk: WASD (Shift runs) · Jump: Space · Look: drag · E: do things · V: first or third person · R: your vehicle · T: chat · M: map. The office is north, shops east, the park west, homes south.
       </p>
     </div>

@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { CheckCircle2Icon, ChevronLeftIcon, ChevronRightIcon, LightbulbIcon, Loader2Icon, RotateCcwIcon, Undo2Icon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import * as F from "@/app/actions/fun";
+import { F } from "./actions";
 import { ScoreBoard, useScores } from "./shell";
 
 // Chess: chess.js keeps the rules, react-chessboard draws the board and js-chess-engine plays (all open source).

@@ -62,3 +62,34 @@ out so they spin, parts merged by material, and the body colour replaced by the 
 - bokaroo.glb: "Bokaroo '67 - Low poly model" by Daniel Zhabotinsky, CC Attribution. https://sketchfab.com/3d-models/bokaroo-67-low-poly-model-22015d1863d6455aa31cfd738b972c50
 - townbus.glb: "Generic Town Bus" by own.guest, CC Attribution. https://sketchfab.com/3d-models/generic-town-bus-14fe03d792914d51b6c6250b393c44fd
 - formula.glb: "( FREE ) Formula One LP-830 SDC" by SDC PERFORMANCE, CC Attribution. https://sketchfab.com/3d-models/free-formula-one-lp-830-sdc-aeebdfa53e294e0390f3c2e8bbfe31b6
+
+Trees and plants from Sketchfab (CC BY 4.0, https://creativecommons.org/licenses/by/4.0/). Changes: textures 1024px (plants 512px) WebP, meshopt; trees also get a far copy (30% of the geometry, 256px textures); drawn as instances; leaves sway.
+- nature/oak.glb: "Oak tree" by evolveduk, CC Attribution. https://sketchfab.com/3d-models/oak-tree-6468dd4d3eb240ef902b9057d9913606
+- nature/beech.glb: "Beech tree" by evolveduk, CC Attribution. https://sketchfab.com/3d-models/beech-tree-0983d8933531491f9be71c669e8a907b
+- nature/birch.glb: "Birch tree" by evolveduk, CC Attribution. https://sketchfab.com/3d-models/birch-tree-aa842dffd9654d33b8b91170ce83c172
+- nature/maple.glb: "Maple Tree" by evolveduk, CC Attribution. https://sketchfab.com/3d-models/maple-tree-b5e945e7abcc471da6547c04e314774c
+- nature/willow.glb: "Willow" by evolveduk, CC Attribution. https://sketchfab.com/3d-models/willow-422de2372f3d46dfb314a0cd5da512fe
+- nature/acacia.glb: "Acacia tree" by evolveduk, CC Attribution. https://sketchfab.com/3d-models/acacia-tree-bb14c2bb679b4d0bb1c578a27e2ddabf
+- nature/oldtree.glb: "Old tree" by evolveduk, CC Attribution. https://sketchfab.com/3d-models/old-tree-3cb4d59eb4844dc4802480e9ee53785e
+- nature/coconut.glb: "Coconut Palm" by evolveduk, CC Attribution. https://sketchfab.com/3d-models/coconut-palm-26e787f2ff2e4c0fb004c3b0210805a3
+- nature/curlypalm.glb: "Curly Palm" by evolveduk, CC Attribution. https://sketchfab.com/3d-models/curly-palm-00f2b57dd0e844edbeb116034fa471ec
+- nature/datepalm.glb: "Date Palm" by evolveduk, CC Attribution. https://sketchfab.com/3d-models/date-palm-11acf710e6c149daa8d6fb8cdc5d087f
+- nature/pine.glb: "Pine Tree" by evolveduk, CC Attribution. https://sketchfab.com/3d-models/pine-tree-d45218a3fab349e5b1de040f29e7b6f9
+- nature/fir.glb: "Fir tree" by evolveduk, CC Attribution. https://sketchfab.com/3d-models/fir-tree-3f39aa5485e94477a36b435f7a1a8b54
+- nature/fern.glb: "Fern" by evolveduk, CC Attribution. https://sketchfab.com/3d-models/fern-38531afd86434987b1a0bf5968fe001f
+- nature/daisies.glb: "Daisies" by evolveduk, CC Attribution. https://sketchfab.com/3d-models/daisies-c914e2eb8bab46e0b60b891aa4b125fe
+- nature/banana.glb: "Banana Plant" by evolveduk, CC Attribution. https://sketchfab.com/3d-models/banana-plant-85695b82c7ba4b3497a663616cc3bf25
+- nature/monstera.glb: "Tropical Plant monstera deliciosa" by evolveduk, CC Attribution. https://sketchfab.com/3d-models/tropical-plant-monstera-deliciosa-2fa12ba0af5442c9af8f9bead1a7d020
+- nature/grass.glb: "Grass pack (lowpoly, game-ready)" by LOLIPOP, CC Attribution. https://sketchfab.com/3d-models/grass-pack-lowpoly-game-ready-422f42f618d342c6958b02613dc57403
+- nature/hedge.glb: "Shrub tiles pack (3 vars, seamless)" by LOLIPOP, CC Attribution. https://sketchfab.com/3d-models/shrub-tiles-pack-3-vars-seamless-ce2fce219f634f328abc6280b2409613
+
+Weapons from Sketchfab (CC BY 4.0, https://creativecommons.org/licenses/by/4.0/). Changes: textures 1024px WebP, meshopt; in the game turned muzzle ahead, scaled to the real length, loose bullets left out; game names are our own.
+- weapons/pistol.glb: "Glock-17" by Nikitos, CC Attribution. https://sketchfab.com/3d-models/glock-17-aeb171380b2b490c80aa04b4ee1a9366
+- weapons/smg.glb: "SMG-M32" by Frostoise, CC Attribution. https://sketchfab.com/3d-models/smg-m32-3a5f98f75e804e5888379cbe640cc883
+- weapons/rifle.glb: "LR-300 ML-A Assault Rifle" by Icaro Arrigoni, CC Attribution. https://sketchfab.com/3d-models/lr-300-ml-a-assault-rifle-ac375d2498bd4a59a23a878312b6ac43
+- weapons/shotgun.glb: "Remington 870 Shotgun" by Andrei Milin, CC Attribution. https://sketchfab.com/3d-models/remington-870-shotgun-6db0ad4764d14eee8f063eea3600071b
+- weapons/sniper.glb: "CheyTac M300 (McMillan stock)" by Ole Gunnar Isager, CC Attribution. https://sketchfab.com/3d-models/cheytac-m300-mcmillan-stock-ef18b1cce6834df7804ea63aa61ce63a
+- weapons/ak.glb: "AK-47S" by Frostoise, CC Attribution. https://sketchfab.com/3d-models/ak-47s-07065c43bdb2459ca8faf7a99b075b9b
+- weapons/revolver.glb: "Absolute 357" by Frostoise, CC Attribution. https://sketchfab.com/3d-models/absolute-357-0bada928716d44a08fd70ea8323013f2
+- weapons/knife.glb: "Fighting Ka-Bar knifes" by vitvitskyi, CC Attribution. https://sketchfab.com/3d-models/fighting-ka-bar-knifes-b3c3a8c7c28349268f6631567cf01d8a
+- weapons/arms.glb: "Fps arms" by DJMaesen, CC Attribution. https://sketchfab.com/3d-models/fps-arms-9452ce4cddde4110a4fd73e555a8e412

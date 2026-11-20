@@ -40,6 +40,8 @@ function render() {
   $("server").value = state.server;
   $("updates").checked = !!state.updates;
   $("crashReports").checked = !!state.crashReports;
+  $("autostart").checked = !!(state.arcade && state.arcade.autostart);
+  if (!$("pinState").textContent) $("pinState").textContent = state.arcade && state.arcade.pin ? "A PIN is set." : "No PIN yet: anyone with a keyboard can leave with Ctrl+Shift+Q.";
 }
 
 const custom = (patch) => save({ preset: "custom", graphics: patch });
@@ -59,6 +61,17 @@ $("server").addEventListener("change", (e) => /^https?:\/\//.test(e.target.value
 $("updates").addEventListener("change", (e) => save({ updates: e.target.checked }));
 $("crashReports").addEventListener("change", (e) => save({ crashReports: e.target.checked }));
 $("play").addEventListener("click", () => D.play());
+$("arcadePlay").addEventListener("click", () => D.arcade());
+$("autostart").addEventListener("change", (e) => save({ arcade: { autostart: e.target.checked } }));
+$("savePin").addEventListener("click", async () => {
+  const p = $("pin").value.trim();
+  if (p && !/^\d{4,12}$/.test(p)) return ($("pinState").textContent = "The PIN is 4 to 12 digits.");
+  const set = await D.setKioskPin(p);
+  $("pin").value = "";
+  state = (await D.getSettings()).settings;
+  render();
+  $("pinState").textContent = set ? "PIN saved." : "PIN removed: Ctrl+Shift+Q leaves without one.";
+});
 $("quit").addEventListener("click", () => D.quit());
 D.onUpdate((t) => ($("update").textContent = t));
 

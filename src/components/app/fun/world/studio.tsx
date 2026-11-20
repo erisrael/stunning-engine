@@ -7,7 +7,7 @@ import { BookmarkIcon, CheckIcon, GemIcon, Loader2Icon, LockIcon, PersonStanding
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import * as F from "@/app/actions/fun";
+import { F } from "../actions";
 import { ACCESSORIES, CATALOG, HAIR_STYLES, OUTFITS, RARITY, cleanLook, isFree, lookItems, type AccSlot, type Item, type Look } from "@/lib/fun-catalog";
 import { Character } from "./character";
 

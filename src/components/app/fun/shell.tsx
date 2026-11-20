@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { TrophyIcon } from "lucide-react";
-import * as F from "@/app/actions/fun";
+import { F } from "./actions";
 
 type Best = { mine: number | null; top: { name: string; s: number }[]; lowerIsBetter: boolean };
 

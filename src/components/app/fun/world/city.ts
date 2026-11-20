@@ -1,7 +1,8 @@
 import * as THREE from "three";
 import { CATALOG, SHOPS, type HomeLayout, type Item, type Shop } from "@/lib/fun-catalog";
 import type { Physics } from "./engine";
-import { furniture, prop, showcase, tree, vehicle } from "./models";
+import { furniture, prop, showcase, vehicle } from "./models";
+import { plant } from "./nature";
 import { canvasTex, cone, cyl, floorTex, grassTex, mesh, pavingTex, roadTex, signPlane, sphere, textSprite, toon, unitBox } from "./toon";
 import { PITCH } from "./soccer";
 import { ROADS, buildStreets } from "./streets";
@@ -681,15 +682,24 @@ export function buildCity(ph: Physics, input: CityInput) {
     pier.finish(park);
     I({ id: "fish", x: -75, y: 0, z: -10.5, r: 2, label: "Go fishing", kind: "fishing" });
     npcs.push({ id: "npc-ranger", name: "Abel", role: "Park ranger", seed: 41, x: -71, y: 0, z: -9, ry: Math.PI, lines: ["Cast, wait for the float to dip, then pull right away.", "The big ones bite in the evening."], actions: [] });
-    // Trees (instanced would be cheaper; these are shared materials and a few hundred meshes).
+    // Trees: real models drawn by Nature (oaks, maples, beeches, birches, old trees; willows by the pond), with
+    // grass, ferns and daisies between them.
+    const free = (x: number, z: number) => !(Math.hypot(x + 75, z + 20) < 11 || (x > -128 && x < -97 && z > -33 && z < -12) || (Math.abs(x + 80) < 52 && Math.abs(z + 6) < 3) || (x > -84 && x < -30 && z > 12 && z < 32) || (x < -97 && z > 12));
+    const parkTrees = ["oak", "maple", "beech", "birch", "oldtree", "oak", "acacia"] as const;
     for (let i = 0; i < 60; i++) {
       const x = -128 + (i % 12) * 9 + Math.sin(i * 3.7) * 2.5, z = -34 + Math.floor(i / 12) * 15 + Math.cos(i * 1.9) * 3;
-      if (Math.hypot(x + 75, z + 20) < 11 || (x > -128 && x < -97 && z > -33 && z < -12) || (Math.abs(x + 80) < 52 && Math.abs(z + 6) < 3) || (x > -84 && x < -30 && z > 12 && z < 32) || (x < -97 && z > 12)) continue;
-      const tr = tree(i);
-      tr.position.set(x, 0, z);
-      tr.rotation.y = i;
-      park.add(tr);
+      if (!free(x, z)) continue;
+      plant(parkTrees[i % parkTrees.length]!, x, z, ((i * 37) % 10) / 10, i);
       ph.post({ x, z, r: 0.35, minY: 0, maxY: 3 });
+    }
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      plant("willow", -75 + Math.cos(a) * 13, -20 + Math.sin(a) * 13, i / 6, a);
+    }
+    for (let i = 0; i < 260; i++) {
+      const x = -130 + ((i * 53) % 100), z = -36 + ((i * 29) % 70);
+      if (!free(x, z)) continue;
+      plant(i % 5 === 0 ? "daisies" : i % 3 === 0 ? "fern" : "grass", x + Math.sin(i) * 1.5, z + Math.cos(i * 1.7) * 1.5, ((i * 13) % 10) / 10, i, i);
     }
     for (let i = 0; i < 6; i++) {
       const x = -50 - i * 8, z = -3.5;

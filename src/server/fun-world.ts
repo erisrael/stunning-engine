@@ -488,6 +488,41 @@ export async function worldHome(user: AppUser) {
   };
 }
 
+// The guest arcade's Seed Town: the town, its public layout and the catalog (everything free), one resident (the
+// guest) and nothing else: no staff, departments, homes, chat or voice. No sign-in; Admin can switch it off.
+export async function guestHome() {
+  const c = await funConfig();
+  if (!c.enabled || !c.world || !c.guestArcade) return null;
+  const { catalog } = await import("./fun-shop");
+  const guest: Resident = { id: "guest", name: "Guest", dept: "", status: "online", progress: 0, look: cleanLook({}), me: true };
+  return {
+    look: DEFAULT_LOOK,
+    presets: [] as { name: string; look: Look }[],
+    chat: false,
+    voice: false,
+    shop: true,
+    playCoins: false,
+    name: c.worldName || "Seed Town",
+    coins: 0,
+    level: 1,
+    ride: null,
+    homes: {} as Record<string, HomeLayout>,
+    items: (await catalog()).map((i) => ({ ...i, price: 0, level: undefined })),
+    wallet: null,
+    layout: await worldLayout(),
+    iceServers: [] as RTCIceServer[],
+    residents: [guest],
+    seesAbsence: false,
+    departments: [] as string[],
+  };
+}
+// The arcade's game list (the same switches as Fun mode's games) when it is open.
+export async function guestArcade() {
+  const c = await funConfig();
+  if (!c.enabled || !c.guestArcade) return null;
+  return { world: c.world, games: c.games };
+}
+
 // For the Admin page: how many are in the world now.
 export function worldCount() {
   const now = Date.now();

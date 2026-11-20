@@ -10,7 +10,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import * as F from "@/app/actions/fun";
+import { F, isGuestActions } from "../actions";
 import { RARITY, SHOPS, isFree, type HomeLayout, type Item, type Placed, type Ride, type Shop } from "@/lib/fun-catalog";
 import type { Resident } from "@/server/fun-world";
 import { furniture, showcase, vehicle } from "./models";
@@ -587,7 +587,7 @@ export function SettingsPanel({ gfx, onChange, onClose }: { gfx: Gfx; onChange: 
         <label className="block">Sound effects {Math.round(gfx.sfx * 100)}%<input type="range" min={0} max={1} step={0.1} value={gfx.sfx} onChange={(e) => set({ sfx: Number(e.target.value) }, false)} className="w-full" /></label>
         <p className="text-[10px] text-muted-foreground">Music: town themes by cynicmusic and Geomancer, Castle Town by Will Carpenter, action chiptunes by Juhani Junkala (all CC0). Effects: Kenney (CC0) and sounds made in your browser.</p>
         <p className="text-[10px] text-muted-foreground" data-desktop-download>
-          On a Windows PC with a graphics card: <a className="underline" href="/downloads/desktop/latest">get the Seed Town app</a> (higher graphics levels, full screen, a launcher with diagnostics; same account). F3 shows the frame rate.
+          {isGuestActions() ? "F3 shows the frame rate." : <>On a Windows PC with a graphics card: <a className="underline" href="/downloads/desktop/latest">get the Seed Town app</a> (higher graphics levels, full screen, a launcher with diagnostics; same account). F3 shows the frame rate.</>}
         </p>
       </div>
     </Panel>

@@ -22,6 +22,7 @@ import { cleanLook } from "@/lib/fun-catalog";
 import { lamp } from "./pbr";
 import { anyVehicle, forgetCarDetail, updateCarDetail, type CarRig } from "./cars";
 import { forgetPropDetail, updatePropDetail } from "./props";
+import { Nature, startPlanting, takePlanted } from "./nature";
 import { newCarState, speedOf, stepCar, type CarState } from "./vehicle-physics";
 import { ROADS } from "./streets";
 import { Traffic } from "./traffic";
@@ -82,6 +83,8 @@ export type TownData = {
   meId: string;
   seesAbsence: boolean;
   iceServers?: RTCIceServer[];
+  // The guest arcade: alone with the town folk and bots; nothing is sent to the server.
+  offline?: boolean;
 };
 type Live = [string, string, number, number, number, number, number, string, string, string, string, string, string, number];
 export type ChatMsg = { id: number; from: string; name: string; ch: "near" | "town" | "room"; text: string; at: number };
@@ -179,6 +182,7 @@ export class Town {
   private me: Character;
   private meGroup = new THREE.Group();
   private meTag: THREE.Sprite | null = null;
+  nature!: Nature;
   private yaw = 0;
   private pitch = 0.35;
   private fpPitch = 0;
@@ -282,6 +286,7 @@ export class Town {
     this.atmosphere.onThunder = (v) => this.sound.play("crash", { volume: Math.max(0.3, v) });
     this.post = new Post(this.renderer, this.scene, this.camera, gfx.quality === "ultra" ? "full" : gfx.quality === "high" ? "bloom" : "off", el.clientWidth, el.clientHeight);
 
+    startPlanting();
     this.city = buildCity(this.ph, {
       name: data.name,
       departments: data.departments,
@@ -294,6 +299,7 @@ export class Town {
       detail: gfx.quality === "low" ? 0 : 1,
     });
     this.scene.add(this.city.root);
+    this.nature = new Nature(this.scene, takePlanted(), gfx.quality);
     // Small things do not cast shadows (they would double the draw calls for little gain).
     this.city.root.traverse((o) => {
       const m = o as THREE.Mesh;
@@ -342,7 +348,7 @@ export class Town {
     this.bindInput();
     this.ro = new ResizeObserver(() => this.resize());
     this.ro.observe(el);
-    this.timers.push(window.setInterval(() => void this.sync(), 200));
+    if (!data.offline) this.timers.push(window.setInterval(() => void this.sync(), 200));
     this.timers.push(window.setInterval(() => this.slowTick(), 400));
     this.loop();
     this.cb.camera(this.camMode);
@@ -942,7 +948,7 @@ export class Town {
           grip: (k) => (this.carGrip = k),
           state: (st) => this.cb.race?.(st),
           done: (score, coins, text, best) => {
-            if (best) void import("@/app/actions/fun").then((F) => F.saveScoreAction("world:gp", Math.round(best * 1000), { activity: "gp" }).catch(() => {}));
+            if (best) void import("../actions").then(({ F }) => F.saveScoreAction("world:gp", Math.round(best * 1000), { activity: "gp" }).catch(() => {}));
             this.cb.reward("gp", Math.ceil(coins / 5), text, 0);
             void score;
           },
@@ -1371,6 +1377,7 @@ export class Town {
     // The licensed car models only up close (the dealer's, parked ones, mine); farther away their drawn bodies.
     updateCarDetail(this.camera.position, { low: 0, medium: 30, high: 55, ultra: 90 }[this.gfx.quality]);
     updatePropDetail(this.camera.position, { low: 30, medium: 45, high: 65, ultra: 100 }[this.gfx.quality]);
+    this.nature.update(this.camera.position, this.gfx.view * 0.9, 0, 0);
     // Detailed anime models for me and the nearest characters, as many as the graphics level allows.
     // Realistic people share their model and draw in a few calls, so more of them can be detailed.
     const budget = { low: 0, medium: 6, high: 14, ultra: 22 }[this.gfx.quality];
@@ -1431,6 +1438,8 @@ export class Town {
     this.gamepad();
     this.step(dt, t);
     this.atmosphere.update(dt, this.camera, this.meGroup.position);
+    // The leaves move with the weather.
+    this.nature.wind(dt, { clear: 0.45, cloudy: 0.8, rain: 1.2, fog: 0.3, storm: 2.0 }[this.atmosphere.weather] ?? 0.6);
     if (this.traffic) {
       const obs = [{ x: this.body.x, z: this.body.z }, ...this.npcs.filter((n) => n.brain && n.av.root.visible).map((n) => ({ x: n.av.root.position.x, z: n.av.root.position.z })), ...[...this.people.values()].filter((p) => p.live).map((p) => ({ x: p.group.position.x, z: p.group.position.z }))];
       this.traffic.update(dt, obs, this.meGroup.position, this.gfx.view);
@@ -1891,6 +1900,7 @@ export class Town {
   dispose() {
     this.stop = true;
     forgetCarDetail(this.scene);
+    this.nature.dispose();
     forgetPropDetail(this.scene);
     this.soccer?.dispose();
     this.me.dispose();

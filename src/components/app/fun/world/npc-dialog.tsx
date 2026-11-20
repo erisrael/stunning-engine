@@ -4,7 +4,7 @@ import * as React from "react";
 import { MicIcon, SendIcon, Volume2Icon, VolumeXIcon, XIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import * as F from "@/app/actions/fun";
+import { F } from "../actions";
 import type { NpcDef } from "./city";
 import type { Personality } from "./npc-brain";
 import { answer, greet, listenOnce, options, speakLine, understand, voiceFor, type Memory, type Reply, type TalkCtx, type Topic } from "./npc-talk";

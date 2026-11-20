@@ -1,0 +1,18 @@
+{
+  "name": "myseed-arcade-android",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Myseed Arcade for Android: the guest arcade (Seed Town and the arcade games) in a locked full-screen app.",
+  "scripts": {
+    "sync": "cap sync android",
+    "apk": "cap sync android && cd android && gradlew assembleDebug"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.4.0",
+    "@capacitor/app": "^7.0.0",
+    "@capacitor/core": "^7.4.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^7.4.0"
+  }
+}

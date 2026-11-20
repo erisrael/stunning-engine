@@ -20,6 +20,9 @@ const DEFAULTS = {
   crashReports: true,
   // Unlock the frame rate beyond the screen's refresh (for benchmarking); off by default (vsync).
   uncapped: false,
+  // The guest arcade kiosk: start straight in it (a venue PC), and the staff PIN that lets someone leave it
+  // (kept as a SHA-256 hash; empty: Ctrl+Shift+Q leaves without one).
+  arcade: { autostart: false, pin: "" },
 };
 
 function file(app) {
@@ -28,7 +31,7 @@ function file(app) {
 function load(app) {
   try {
     const saved = JSON.parse(fs.readFileSync(file(app), "utf8"));
-    return { ...DEFAULTS, ...saved, graphics: { ...DEFAULTS.graphics, ...(saved.graphics || {}) }, display: { ...DEFAULTS.display, ...(saved.display || {}) } };
+    return { ...DEFAULTS, ...saved, graphics: { ...DEFAULTS.graphics, ...(saved.graphics || {}) }, display: { ...DEFAULTS.display, ...(saved.display || {}) }, arcade: { ...DEFAULTS.arcade, ...(saved.arcade || {}) } };
   } catch {
     return structuredClone(DEFAULTS);
   }

@@ -85,6 +85,61 @@ const LAYOUTS: Record<StrikeMap, Layout> = {
 type Bot = { name: string; team: number; body: Body; av: Character; hp: number; yaw: number; target: Bot | "me" | null; seeAt: number; nextShot: number; ammo: number; reloadUntil: number; state: "patrol" | "engage" | "cover" | "dead"; goal: THREE.Vector3; respawnAt: number; kills: number; deaths: number; weapon: WeaponKey; strafe: number };
 type Tgt = { m: THREE.Group; x: number; y: number; z: number; up: number; hit: boolean };
 
+// Real weapon models (Sketchfab, CC BY 4.0; credits in public/models/CREDITS.txt), in the hands: turned so the
+// muzzle points ahead (-z), at their real length, the grip near the hand; parts that are not the gun (loose
+// bullets in the file) left out. Game names are our own (see strike-weapons.ts).
+const WEAPON_MODEL: Record<string, { file: string; length: number; muzzleAtPlusZ: boolean; drop?: RegExp; pick?: number }> = {
+  pistol: { file: "pistol", length: 0.19, muzzleAtPlusZ: false },
+  smg: { file: "smg", length: 0.6, muzzleAtPlusZ: true },
+  rifle: { file: "rifle", length: 0.86, muzzleAtPlusZ: false },
+  shotgun: { file: "shotgun", length: 1.0, muzzleAtPlusZ: false },
+  marksman: { file: "sniper", length: 1.25, muzzleAtPlusZ: false, drop: /^(Case|Bullet)$/ },
+};
+const weaponCache = new Map<string, Promise<THREE.Object3D | null>>();
+async function weaponModel(key: string): Promise<{ obj: THREE.Object3D; muzzle: THREE.Vector3 } | null> {
+  const cfg = WEAPON_MODEL[key];
+  if (!cfg) return null;
+  if (!weaponCache.has(cfg.file))
+    weaponCache.set(
+      cfg.file,
+      (async () => {
+        const [{ GLTFLoader }, { MeshoptDecoder }] = await Promise.all([import("three/examples/jsm/loaders/GLTFLoader.js"), import("three/examples/jsm/libs/meshopt_decoder.module.js")]);
+        const l = new GLTFLoader();
+        l.setMeshoptDecoder(MeshoptDecoder);
+        return (await l.loadAsync(`/models/weapons/${cfg.file}.glb`)).scene;
+      })().catch(() => null),
+    );
+  const src = await weaponCache.get(cfg.file)!;
+  if (!src) return null;
+  const model = src.clone(true);
+  const out: THREE.Object3D[] = [];
+  model.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if ((o as THREE.Light).isLight || (cfg.drop && m.isMesh && !Array.isArray(m.material) && cfg.drop.test(m.material.name))) out.push(o);
+    if (m.isMesh) (m.castShadow = false), (m.receiveShadow = false), (m.frustumCulled = false);
+  });
+  out.forEach((o) => o.parent?.remove(o));
+  // Lie it along z (its longest side), muzzle ahead, at its real length, centred just ahead of the hand.
+  const holder = new THREE.Group();
+  const turn = new THREE.Group();
+  turn.add(model);
+  holder.add(turn);
+  const b = new THREE.Box3().setFromObject(model);
+  const sz = b.getSize(new THREE.Vector3());
+  if (sz.y > sz.z && sz.y > sz.x) model.rotation.x = -Math.PI / 2;
+  else if (sz.x > sz.z) model.rotation.y = Math.PI / 2;
+  if (cfg.muzzleAtPlusZ) turn.rotation.y = Math.PI;
+  holder.updateMatrixWorld(true);
+  const b2 = new THREE.Box3().setFromObject(holder);
+  const s2 = b2.getSize(new THREE.Vector3());
+  holder.scale.setScalar(cfg.length / Math.max(0.01, s2.z));
+  holder.updateMatrixWorld(true);
+  const b3 = new THREE.Box3().setFromObject(holder);
+  const len = b3.max.z - b3.min.z;
+  holder.position.set(-(b3.min.x + b3.max.x) / 2, -(b3.min.y + b3.max.y) / 2 - 0.01, -(b3.max.z - len * 0.32));
+  return { obj: holder, muzzle: new THREE.Vector3(0, 0.02, holder.position.z + b3.min.z - 0.02) };
+}
+
 export class Strike implements Activity {
   readonly kind = "strike";
   readonly walks = true;
@@ -272,6 +327,14 @@ export class Strike implements Activity {
   }
 
   private buildGun() {
+    const built = this.weapon;
+    // The real model (public/models/weapons) replaces the drawn one when it has loaded.
+    void weaponModel(built).then((m) => {
+      if (!m || this.weapon !== built) return;
+      for (const c of [...this.gun.children]) if (c !== this.flash) this.gun.remove(c);
+      this.gun.add(m.obj);
+      this.flash.position.copy(m.muzzle);
+    });
     const metal = plain("#2a2d31", { rough: 0.35, metal: 0.7 });
     const poly = plain("#1b1c1f", { rough: 0.7 });
     const w = this.weapon;

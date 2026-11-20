@@ -3,6 +3,7 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 import type { Physics } from "./engine";
 import { facade, glass, lamp, plain, surface, type FacadeStyle } from "./pbr";
 import { signPlane } from "./toon";
+import { plant } from "./nature";
 
 // The districts around the old town: downtown towers to the north-east (offices, glass towers and brick blocks
 // with shops on the ground floor, setbacks, roof parapets and rooftop plant), civic and apartment blocks to the
@@ -185,30 +186,15 @@ export function buildDistricts(ph: Physics, opts: { detail: number }) {
   put(geo, yard, yg);
 
   // ---------------------------------------------------------------- the wood (south-west)
-  const bark = plain("#4a3a2c", { rough: 0.95 });
-  const leaves = [plain("#365e27", { rough: 0.85 }), plain("#4a7431", { rough: 0.85 }), plain("#2f5222", { rough: 0.85 })];
+  // Real trees (Nature draws them): pines and firs with oaks, birches and old trees, ferns and grass under them.
   seedN = 5;
-  for (let i = 0; i < (opts.detail > 0 ? 60 : 25); i++) {
+  for (let i = 0; i < (opts.detail > 0 ? 70 : 30); i++) {
     const x = -124 + rnd() * 24, z = 82 + rnd() * 44;
-    const h = 4 + rnd() * 4;
-    const t = new THREE.CylinderGeometry(0.14, 0.24, h, 7);
-    t.translate(x, h / 2, z);
-    put(geo, bark, t);
-    const conifer = rnd() > 0.5;
-    if (conifer)
-      for (let k = 0; k < 3; k++) {
-        const c = new THREE.ConeGeometry(2.2 - k * 0.55, 2.6, 9);
-        c.translate(x, h - 0.6 + k * 1.3, z);
-        put(geo, leaves[k % 3]!, c);
-      }
-    else
-      for (let k = 0; k < 5; k++) {
-        const s = new THREE.IcosahedronGeometry(1.2 + rnd() * 0.8, 1);
-        s.translate(x + (rnd() - 0.5) * 2, h + rnd() * 1.4, z + (rnd() - 0.5) * 2);
-        put(geo, leaves[k % 3]!, s);
-      }
-    ph.post({ x, z, r: 0.3, minY: 0, maxY: h });
+    const k = rnd();
+    plant(k < 0.32 ? "pine" : k < 0.58 ? "fir" : k < 0.74 ? "oak" : k < 0.88 ? "birch" : "oldtree", x, z, rnd(), rnd() * 6.28);
+    ph.post({ x, z, r: 0.3, minY: 0, maxY: 6 });
   }
+  for (let i = 0; i < (opts.detail > 0 ? 160 : 50); i++) plant(rnd() < 0.55 ? "fern" : "grass", -126 + rnd() * 28, 80 + rnd() * 48, rnd(), rnd() * 6.28, Math.floor(rnd() * 8));
 
   for (const [m, raw] of geo) {
     const list = raw.map((g) => (g.index ? g.toNonIndexed() : g));

@@ -106,6 +106,24 @@ export function FunAdmin({ initial, games, roles }: { initial: FunConfig; games:
         </CardContent>
       </Card>
 
+      <Card data-fun-arcade>
+        <CardHeader>
+          <CardTitle className="text-base">Guest arcade</CardTitle>
+          <CardDescription>
+            Seed Town and the arcade games for visitors without an account, in an arcade machine, at <a className="underline" href="/arcade" target="_blank" rel="noreferrer">/arcade</a>. Guests play alone with the town folk and bots; they see nothing about the company (no staff, departments or homes) and nothing they do is saved on the server. Nothing in it links out; the Windows app&apos;s arcade mode and the Android app keep them in.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <label className="flex items-start justify-between gap-3 rounded-lg border p-3">
+            <span>
+              <span className="block text-sm font-medium">Open the guest arcade</span>
+              <span className="block text-xs text-muted-foreground">Off: /arcade says the arcade is closed. The games on show are the ones switched on above.</span>
+            </span>
+            <Switch checked={c.guestArcade} onCheckedChange={(v) => set({ guestArcade: v })} aria-label="Open the guest arcade" data-fun-switch="guestArcade" />
+          </label>
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Seed Town play and voice</CardTitle>

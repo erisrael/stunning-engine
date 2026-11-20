@@ -710,6 +710,12 @@ PREPS["seed-town-models"] = async () => {
 
 // The city overhaul (streets, people, cars, the Grand Prix, archery, Seed Strike, the Windows app overlay) and the
 // admin changes (everything free, the V E D U grid, the Assistant Manager, Redo, the recording overview).
+// The guest arcade: no preparation for guests; Admin signs in with the password only to close it.
+PREPS["arcade"] = async () => {
+  await passwordOnly();
+  return {};
+};
+
 PREPS["seed-town-city"] = async () => {
   await passwordOnly();
   const a = await admin();

@@ -1,0 +1,17 @@
+{
+  "appId": "et.com.myseed.arcade",
+  "appName": "Myseed Arcade",
+  "webDir": "www",
+  "server": {
+    "url": "https://ops.myseed.com.et/arcade?app=android",
+    "allowNavigation": ["ops.myseed.com.et"],
+    "cleartext": false,
+    "errorPath": "offline.html"
+  },
+  "android": {
+    "allowMixedContent": false,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": false,
+    "backgroundColor": "#05050a"
+  }
+}

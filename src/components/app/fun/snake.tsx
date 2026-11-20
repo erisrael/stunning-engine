@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { ArrowDownIcon, ArrowLeftIcon, ArrowRightIcon, ArrowUpIcon, AwardIcon, PauseIcon, PlayIcon, RotateCcwIcon, Volume2Icon, VolumeXIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import * as F from "@/app/actions/fun";
+import { F } from "./actions";
 import { CATALOG } from "@/lib/fun-catalog";
 import { ScoreBoard, useScores } from "./shell";
 

@@ -3,6 +3,7 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 import type { Physics } from "./engine";
 import { glass, lamp, plain, roadPaint, surface } from "./pbr";
 import { signPlane } from "./toon";
+import { plant, type PlantKind } from "./nature";
 
 // The town's streets, planned like a real town: a ring road, Seed Avenue north and south, Market Street through the
 // shops, Office Row behind the tower, a downtown grid to the north-east, a civic quarter to the north-west, home
@@ -162,9 +163,6 @@ export function buildStreets(ph: Physics, opts: { trees: boolean; detail: number
   const poleM = plain("#3b4148", { rough: 0.45, metal: 0.8 });
   const darkM = plain("#1c1f23", { rough: 0.5, metal: 0.3 });
   const bulb = lamp("#ffe7b8", 0.02, 4);
-  const bark = plain("#4a3a2c", { rough: 0.95 });
-  const leafA = plain("#3f6b2c", { rough: 0.85 });
-  const leafB = plain("#557f35", { rough: 0.85 });
   const soil = surface("dirt", { tint: "#ffffff" });
 
   // Junction squares (asphalt).
@@ -253,7 +251,7 @@ export function buildStreets(ph: Physics, opts: { trees: boolean; detail: number
             ph.post({ x: lp.x, z: lp.z, r: 0.15, minY: 0, maxY: 7 });
             if (opts.trees && (r.kind === "avenue" || r.kind === "street") && r.s >= 3 && t + step / 2 < b - 4) {
               const tp = along(r, t + step / 2, side * (r.w / 2 + r.s / 2 + 0.2));
-              tree(deco, tp.x, tp.z, (t * 7.3 + r.c) % 1, { bark, leafA, leafB, soil });
+              tree(deco, tp.x, tp.z, (t * 7.3 + r.c) % 1, r.kind === "avenue", soil);
               ph.post({ x: tp.x, z: tp.z, r: 0.25, minY: 0, maxY: 4 });
             }
           }
@@ -356,22 +354,13 @@ export function buildStreets(ph: Physics, opts: { trees: boolean; detail: number
 }
 
 // A street tree: a trunk, branches and clusters of leaves (several shades), slightly different every time.
-function tree(geo: Geo, x: number, z: number, seed: number, m: { bark: THREE.Material; leafA: THREE.Material; leafB: THREE.Material; soil: THREE.Material }) {
-  const h = 3.2 + seed * 1.6;
-  box(geo, m.soil, x, 0.16, z, 1.3, 0.04, 1.3);
-  cylinder(geo, m.bark, x, h / 2, z, 0.16, h, 7, 0.1);
-  const n = 7;
-  for (let i = 0; i < n; i++) {
-    const a = i * 2.4 + seed * 6;
-    const r = 0.6 + ((i * 37) % 10) / 14;
-    const y = h + 0.2 + ((i * 53) % 10) / 9;
-    const g = new THREE.IcosahedronGeometry(0.9 + ((i * 17) % 7) / 10, 1);
-    g.translate(x + Math.cos(a) * r, y, z + Math.sin(a) * r);
-    (geo.get(i % 2 ? m.leafA : m.leafB) ?? geo.set(i % 2 ? m.leafA : m.leafB, []).get(i % 2 ? m.leafA : m.leafB)!).push(g);
-  }
-  const top = new THREE.IcosahedronGeometry(1.3, 1);
-  top.translate(x, h + 1.3, z);
-  (geo.get(m.leafA) ?? geo.set(m.leafA, []).get(m.leafA)!).push(top);
+// A street tree: a soil square in the pavement; the tree itself is a real model planted for Nature (palms on the
+// avenues, broadleaf trees on the streets).
+function tree(geo: Geo, x: number, z: number, seed: number, avenue: boolean, soil: THREE.Material) {
+  box(geo, soil, x, 0.16, z, 1.3, 0.04, 1.3);
+  const kinds: PlantKind[] = avenue ? ["coconut", "curlypalm", "datepalm", "coconut"] : ["oak", "maple", "beech", "acacia", "birch"];
+  const s = ((seed % 1) + 1) % 1;
+  plant(kinds[Math.floor(s * 97) % kinds.length]!, x, z, s, s * 40);
 }
 
 // Update the traffic lights (called a few times a second).

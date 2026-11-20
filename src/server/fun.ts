@@ -90,6 +90,9 @@ export type FunConfig = {
   // while nobody has earned many coins yet; Admin switches it off to bring prices back.
   freeAll: boolean;
   freeLevels: boolean;
+  // The guest arcade (/arcade): Seed Town and the arcade games for visitors without an account, alone with the
+  // town folk and bots, nothing about the company shown, nothing saved on the server. Admin switches it off.
+  guestArcade: boolean;
 };
 export const DEFAULT_FUN: FunConfig = {
   enabled: true,
@@ -126,6 +129,7 @@ export const DEFAULT_FUN: FunConfig = {
   turnSecret: "",
   freeAll: true,
   freeLevels: true,
+  guestArcade: true,
 };
 
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -197,6 +201,7 @@ export async function saveFunConfig(user: AppUser, input: Partial<FunConfig>) {
     turnSecret: String(input.turnSecret ?? cur.turnSecret ?? "").trim().slice(0, 200),
     freeAll: bool("freeAll"),
     freeLevels: bool("freeLevels"),
+    guestArcade: bool("guestArcade"),
     points: bool("points"),
     leaderboard: bool("leaderboard"),
     moods: bool("moods"),

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'" />
+    <title>Leave the arcade</title>
+    <style>
+      :root { color-scheme: dark; }
+      body { margin: 0; font: 14px/1.45 "Segoe UI", system-ui, sans-serif; background: #0b1020; color: #e8ecf6; height: 100vh; display: flex; flex-direction: column; justify-content: center; padding: 0 24px; box-sizing: border-box; border: 1px solid #26304f; }
+      h1 { font-size: 17px; margin: 0 0 4px; }
+      p { color: #93a0bf; margin: 0 0 12px; font-size: 12px; }
+      input { width: 100%; box-sizing: border-box; background: #121a33; color: #e8ecf6; border: 1px solid #26304f; border-radius: 8px; padding: 10px; font-size: 18px; letter-spacing: 4px; }
+      .row { display: flex; gap: 8px; margin-top: 12px; }
+      button { flex: 1; border: 0; border-radius: 8px; padding: 10px; font: inherit; font-weight: 600; cursor: pointer; }
+      #ok { background: #f5c518; color: #111; }
+      #cancel { background: #121a33; color: #e8ecf6; border: 1px solid #26304f; }
+      #err { color: #fca5a5; min-height: 18px; margin: 8px 0 0; }
+    </style>
+  </head>
+  <body>
+    <h1>Staff: leave the arcade</h1>
+    <p>Enter the PIN set in the launcher (Arcade).</p>
+    <input id="pin" type="password" inputmode="numeric" maxlength="12" autofocus />
+    <p id="err"></p>
+    <div class="row"><button id="cancel">Back to the arcade</button><button id="ok">Leave</button></div>
+    <script src="pin.js"></script>
+  </body>
+</html>
