@@ -19,6 +19,7 @@ export type CarState = {
   rpm: number;
   gear: number; // -1 reverse, 1.. forward
   steer: number; // -1..1 smoothed
+  spinNow?: number; // driven wheels spinning, 0..1
   wheelSpin: number;
   condition: number; // 100 new .. 0 wrecked
   pitch: number;
@@ -106,6 +107,8 @@ export function stepCar(ph: Physics, s: CarState, spec: CarSpec, input: CarInput
       spin = Math.min(1, (Math.abs(drive) - tractionLimit) / tractionLimit);
       drive = Math.sign(drive) * tractionLimit * 0.92;
     }
+    // How much the driven wheels spin (0..1), for traction control.
+    s.spinNow = spin;
     // Brakes (and the brake key while moving forward), rolling resistance, air.
     const braking = (input.brake + (input.throttle < 0 && vLong > 0.6 ? -input.throttle : 0)) * spec.brake * brakeK * (m / 1000);
     const brakeF = Math.min(braking, mu * (Nf + Nr)) * Math.sign(vLong);

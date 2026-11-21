@@ -64,12 +64,12 @@ function loadGfx(): Gfx {
 
 type PanelState = { kind: string; data?: Record<string, unknown> } | null;
 
-const MODE_LABEL: Record<string, string> = { gp: "Grand Prix", circuit: "Seed Circuit", race: "Street race", archery: "Archery", gallery: "Target gallery", penalty: "Penalties", freekick: "Free kicks", hoops: "Basketball", fishing: "Fishing", parkour: "Parkour", strike: "Seed Strike" };
+const MODE_LABEL: Record<string, string> = { gp: "Grand Prix", circuit: "Seed Circuit", race: "Street race", archery: "Archery", gallery: "Target gallery", penalty: "Penalties", freekick: "Free kicks", match: "Five-a-side", hoops: "Basketball", fishing: "Fishing", parkour: "Parkour", strike: "Seed Strike" };
 // The keys, by what you are doing (the one you are in first).
 const CONTROL_SETS: { key: string; label: string; rows: [string, string][] }[] = [
   { key: "walk", label: "On foot", rows: [["Walk", "WASD or arrows"], ["Run", "Shift"], ["Jump", "Space"], ["Crouch", "C"], ["Look", "drag, or the mouse in first person (click locks it)"], ["First or third person", "V"], ["Do things", "E or F"], ["Greet the nearest person", "G"], ["Emote wheel", "hold T, move the mouse, let go"], ["Quick emotes", "1 to 6"], ["Punch / block", "Q / hold X"], ["Map, GPS and waypoints", "M"], ["Your things", "I"], ["Call your car", "R"], ["Chat", "Enter"], ["These controls", "F1"], ["Menu, leave a mode", "Esc"]] },
   { key: "home", label: "At home", rows: [["Cook, eat, take a bath, sleep", "E at the kitchen, table, bathtub, bed"], ["Radio, lamp, lights", "E at the radio, lamp or the switch by the door"], ["Game console", "E at the console; arrows and Enter pick a game, Esc back"], ["Call and pet the dog", "E at its bed"], ["Watch TV", "E in front of the TV"], ["Furnish", "the mailbox outside"]] },
-  { key: "drive", label: "Driving", rows: [["Throttle / brake", "W / S"], ["Steer", "A / D"], ["Handbrake", "Space"], ["Gears (manual)", "X up, Z down"], ["Horn", "H"], ["Camera", "V"], ["Get in or out", "E"]] },
+  { key: "drive", label: "Driving", rows: [["Throttle / brake", "W / S"], ["Steer", "A / D"], ["Handbrake", "Space"], ["Gears (manual)", "X up, Z down"], ["Horn", "H"], ["Camera (far chase, near chase, hood, cockpit)", "V"], ["Get in or out", "E"]] },
   { key: "gp", label: "Grand Prix", rows: [["Drive", "as above"], ["Pit lane", "left of the straight, 60 km/h; stop in the first box"], ["Pause, settings, restart, exit", "Esc"]] },
   { key: "strike", label: "Seed Strike and Seed Core", rows: [["Move", "WASD"], ["Walk quietly / crouch / jump", "Shift / Ctrl or C / Space"], ["Fire / aim or scope", "left / right mouse"], ["Reload", "R"], ["Weapons", "1, 2"], ["Abilities (Core)", "Q, E, X"], ["Buy menu (Core)", "B in the buy phase"], ["Plant or defuse (Core)", "hold F"], ["Pause, sensitivity, crosshair, leave", "Esc"]] },
   { key: "penalty", label: "Football", rows: [["Aim", "move the mouse"], ["Shoot", "hold to power up, let go"], ["Curve", "move the mouse sideways after the kick (aftertouch)"], ["On the pitch", "walk into the ball or E to kick, Shift for a hard one"], ["Pause and exit", "Esc"]] },
@@ -254,6 +254,8 @@ export function SeedTown({ big = false, fill = false }: { big?: boolean; fill?: 
   const [error, setError] = React.useState<string | null>(null);
   const [gfx, setGfx] = React.useState<Gfx | null>(null);
   const [build, setBuild] = React.useState(0);
+  // Where I was when the town is rebuilt (graphics settings), so I carry on from there.
+  const keepPos = React.useRef<{ x: number; y: number; z: number; h: number } | null>(null);
   const [panel, setPanel] = React.useState<PanelState>(null);
   const [card, setCard] = React.useState<Resident | null>(null);
   const [npc, setNpc] = React.useState<NpcDef | null>(null);
@@ -445,13 +447,15 @@ export function SeedTown({ big = false, fill = false }: { big?: boolean; fill?: 
     }
     town.current = t;
     for (const id of blocked) t.blocked.add(id);
-    // Guests start at the door of Seed Arcade.
-    if (guest) t.goToArcade();
+    // Guests start at the door of Seed Arcade; after a rebuild (graphics settings) everyone is back where they were.
+    if (keepPos.current) (t.teleport(keepPos.current.x, keepPos.current.y, keepPos.current.z), t.face(keepPos.current.h), (keepPos.current = null));
+    else if (guest) t.goToArcade();
     // Browser tests (automation only) reach the town to check walls, stairs, the elevator and vehicles.
     if (navigator.webdriver) (window as unknown as { __seedTown?: Town }).__seedTown = t;
     const mapTimer = window.setInterval(() => mini.current && t.drawMap(mini.current, false), 250);
     return () => {
       window.clearInterval(mapTimer);
+      keepPos.current = { ...t.where_(), h: t.facing };
       t.dispose();
       town.current = null;
     };
@@ -721,8 +725,14 @@ export function SeedTown({ big = false, fill = false }: { big?: boolean; fill?: 
                 <div className="space-y-1 rounded-md border p-2">
                   <p className="font-medium">Driving</p>
                   <div className="flex flex-wrap gap-1">
-                    <Button size="xs" variant="outline" onClick={() => t.toggleCamera()}>Cockpit or chase camera (V)</Button>
+                    <Button size="xs" variant="outline" onClick={() => t.toggleCamera()}>Camera: far chase, near chase, hood, cockpit (V)</Button>
                     <Button size="xs" variant={t.manual ? "default" : "outline"} onClick={() => (t.setManual(!t.manual), setPanel({ ...p }))} data-pause-manual>Manual gears (X up, Z down): {t.manual ? "on" : "off"}</Button>
+                    {gfx && (
+                      <>
+                        <Button size="xs" variant={gfx.tc !== false ? "default" : "outline"} onClick={() => saveGfx({ ...gfx, tc: gfx.tc === false }, false)} data-pause-tc>Traction control: {gfx.tc !== false ? "on" : "off"}</Button>
+                        <Button size="xs" variant={gfx.steerAssist !== false ? "default" : "outline"} onClick={() => saveGfx({ ...gfx, steerAssist: gfx.steerAssist === false }, false)} data-pause-steer>Steering assist: {gfx.steerAssist !== false ? "on" : "off"}</Button>
+                      </>
+                    )}
                   </div>
                 </div>
               )}
@@ -816,6 +826,13 @@ export function SeedTown({ big = false, fill = false }: { big?: boolean; fill?: 
         {p?.kind === "activity" && p.data?.kind === "penalty" && (
           <Panel title="Football challenges" onClose={() => setPanel(null)}>
             <div className="space-y-3 text-xs" data-football-setup>
+              <div>
+                <p className="font-medium">Five-a-side match</p>
+                <p className="mb-1 text-muted-foreground">You and four team mates against five, keepers on both sides, five minutes. Walk into the ball to dribble, E passes, F lobs, hold the mouse and let go to shoot, Q tackles, Shift sprints.</p>
+                <div className="grid grid-cols-3 gap-1">
+                  {[1, 2, 3].map((lv) => <Button key={lv} size="sm" variant="outline" onClick={() => (t?.startActivity("match", lv), setPanel(null))} data-match-level={lv}>{["Easy", "Normal", "Hard"][lv - 1]}</Button>)}
+                </div>
+              </div>
               <div>
                 <p className="font-medium">Penalties</p>
                 <p className="mb-1 text-muted-foreground">Five shots. Aim with the mouse, hold for power (too hard flies over), Shift finesse, Ctrl chip; move the mouse after the kick to curl it. The keeper reads you better at higher levels.</p>

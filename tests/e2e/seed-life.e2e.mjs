@@ -160,6 +160,15 @@ try {
   check("the ball is struck", await T(() => { const v = window.__seedTown.soccer.state(); return Math.hypot(v.vx, v.vz) > 3 || v.x < 175; }));
   await T(() => window.__seedTown.stopActivity());
 
+  // ------------------------------------------------------------ football: a five-a-side match
+  await T(() => window.__seedTown.startActivity("match", 1));
+  check("a five-a-side match with nine bots", await until(() => window.__seedTown.activity?.kind === "match" && window.__seedTown.activity.bots.length === 9, null, 30000));
+  check("the match display shows the score and clock", await seen(win.locator("[data-world-hud]", { hasText: /Five-a-side/ }), 20000));
+  await page.waitForTimeout(4000);
+  check("the bots move", await T(() => window.__seedTown.activity.bots.some((b) => Math.hypot(b.x - b.home.x, b.z - b.home.z) > 0.5)));
+  await page.screenshot({ path: path.join(shots, "match.png") });
+  await T(() => window.__seedTown.stopActivity());
+
   // ------------------------------------------------------------ the HQ campus and its sky deck
   await T(() => window.__seedTown.teleport(38, 0, -200));
   await page.waitForTimeout(2500);

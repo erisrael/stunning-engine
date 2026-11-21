@@ -10,6 +10,7 @@ import { vehicle } from "./models";
 import { textSprite, toon, TOON, type Quality } from "./toon";
 import { VoiceMesh } from "./voice";
 import { FreeKick, PITCH, Penalty, Soccer, type BallState } from "./soccer";
+import { FootballMatch } from "./match";
 import { TownAudio, musicFor, type Surface } from "./audio";
 import { Atmosphere } from "./atmosphere";
 import { Post } from "./post";
@@ -54,6 +55,10 @@ export type Gfx = {
   // Steady frame rate: the resolution drops a little (to 60 %) when frames run late and comes back when there is
   // room, so the game holds its frame rate (on unless switched off).
   steady?: boolean;
+  // Driving assists (on unless switched off): traction control eases the throttle when the wheels spin; steering
+  // assist calms the steering at speed and in a slide.
+  tc?: boolean;
+  steerAssist?: boolean;
   // Seed Strike: sensitivity while aiming through a scope or sights (times the normal one), and the crosshair.
   scopeSens?: number;
   xhair?: Crosshair;
@@ -686,7 +691,18 @@ export class Town {
     this.touchSprint = on;
     this.sprint = on;
   }
+  // In a car, V goes round the racing-game views: far chase, near chase, hood, cockpit.
+  carCam = 0;
   toggleCamera() {
+    if (this.car?.driving) {
+      if (this.camMode === "first") (this.camMode = "third"), (this.carCam = 0);
+      else if (this.carCam < 2) this.carCam++;
+      else this.camMode = "first";
+      if (this.camMode === "third" && document.pointerLockElement) document.exitPointerLock();
+      this.cb.camera(this.camMode);
+      this.cb.toast(this.camMode === "first" ? "Cockpit view" : ["Far chase view", "Near chase view", "Hood view"][this.carCam]!, "info");
+      return;
+    }
     this.camMode = this.camMode === "third" ? "first" : "third";
     if (this.camMode === "third" && document.pointerLockElement) document.exitPointerLock();
     this.cb.camera(this.camMode);
@@ -1179,6 +1195,13 @@ export class Town {
         if (!sc) return;
         this.teleport(PITCH.x0 + 12.5, 0, PITCH.cz);
         this.activity = new Penalty(ctx, sc, level);
+      });
+    } else if (kind === "match") {
+      void this.ensureSoccer().then((sc) => {
+        if (!sc) return;
+        this.teleport((PITCH.x0 + PITCH.x1) / 2 - 3, 0, PITCH.cz);
+        this.heading = Math.PI / 2;
+        this.activity = new FootballMatch(ctx, sc, () => this.heading, level);
       });
     } else if (kind === "freekick") {
       void this.ensureSoccer().then((sc) => {
@@ -2077,7 +2100,12 @@ export class Town {
     if (spec && car.st) {
       const st = car.st;
       const lvl = Math.max(0, (this.data.ride.level ?? 1) - 1);
-      const hit = stepCar(this.ph, st, spec, { throttle: -fz, brake: this.carHold ? 1 : 0, steer: -fx, handbrake: this.keys.has(" ") || this.carHold, shift: this.shiftKey }, { grip: this.atmosphere.grip * this.carGrip, offRoad: !this.onPavement(st.x, st.z), time: this.clock.elapsedTime }, dt, car.rig!.len, car.rig!.r, { engine: lvl, brakes: lvl, tyres: lvl, suspension: lvl, gearbox: lvl });
+      // Assists: traction control takes throttle off while the wheels spin; steering assist calms the steering
+      // at speed and in a slide.
+      const kmh = Math.hypot(st.vx, st.vz) * 3.6;
+      const tcK = this.gfx.tc !== false ? 1 - Math.min(0.6, (st.spinNow ?? 0) * 1.2) : 1;
+      const stK = this.gfx.steerAssist !== false ? (1 / (1 + Math.max(0, kmh - 60) * 0.008)) * (1 - Math.min(0.35, (st.slip ?? 0) * 0.4)) : 1;
+      const hit = stepCar(this.ph, st, spec, { throttle: -fz * (fz < 0 ? tcK : 1), brake: this.carHold ? 1 : 0, steer: -fx * stK, handbrake: this.keys.has(" ") || this.carHold, shift: this.shiftKey }, { grip: this.atmosphere.grip * this.carGrip, offRoad: !this.onPavement(st.x, st.z), time: this.clock.elapsedTime }, dt, car.rig!.len, car.rig!.r, { engine: lvl, brakes: lvl, tyres: lvl, suspension: lvl, gearbox: lvl });
       // The pit lane speed limiter.
       if (this.carLimit !== null) {
         const v = Math.hypot(st.vx, st.vz);
@@ -2143,8 +2171,16 @@ export class Town {
       cam.lookAt(x + lx, y + ly, z + lz);
       return;
     }
-    const tx = car ? car.c.x : b.x, ty = (car ? car.c.y : b.y) + 1.5, tz = car ? car.c.z : b.z;
-    const dist = car ? Math.max(this.dist, 7) : this.dist;
+    // The hood view: just over the bonnet, looking down the road.
+    if (car && this.carCam === 2) {
+      const h = car.c.heading, fx = Math.sin(h), fz = Math.cos(h);
+      const y = car.c.y + (car.rig?.seatY ?? car.seatY) + 0.62;
+      cam.position.set(car.c.x + fx * 0.9, y, car.c.z + fz * 0.9);
+      cam.lookAt(car.c.x + fx * 30, y - 1.2, car.c.z + fz * 30);
+      return;
+    }
+    const tx = car ? car.c.x : b.x, ty = (car ? car.c.y : b.y) + (car && this.carCam === 1 ? 1.2 : 1.5), tz = car ? car.c.z : b.z;
+    const dist = car ? (this.carCam === 1 ? 4.8 : Math.max(this.dist, 8)) : this.dist;
     const dir = new THREE.Vector3(Math.sin(this.yaw) * Math.cos(this.pitch), Math.sin(this.pitch), Math.cos(this.yaw) * Math.cos(this.pitch));
     const want = new THREE.Vector3(tx, ty, tz).addScaledVector(dir, dist);
     // Never look through a wall: pull the camera in front of whatever is behind me.
@@ -2192,7 +2228,7 @@ export class Town {
   // The steady frame rate: every second and a half, the average frame time against the target (the frame cap, or
   // 60). Late frames lower the resolution by a tenth (down to 60 %); three on-time windows in a row raise it by a
   // twentieth, but not within six seconds of a drop (no see-saw).
-  private dyn = { scale: 1, acc: 0, n: 0, at: 0, good: 0, dropAt: 0 };
+  private dyn: { scale: number; acc: number; n: number; at: number; good: number; dropAt: number; tier: number; baseView?: number } = { scale: 1, acc: 0, n: 0, at: 0, good: 0, dropAt: 0, tier: 0 };
   get renderScale() {
     return this.dyn.scale;
   }
@@ -2210,14 +2246,31 @@ export class Town {
     d.acc = 0;
     d.n = 0;
     d.at = now;
-    const target = 1000 / (this.gfx.fps || 60);
-    if (avg > target * 1.15 && d.scale > 0.6) {
+    // Hold at least 55 frames a second (or the cap): late frames lower the resolution first, then (at 60 %) the
+    // view distance, then the shadows; spare time brings them back in the opposite order.
+    const cap = this.gfx.fps || 60;
+    const slow = avg > 1000 / Math.min(cap - 2, 56), fast = avg < 1000 / Math.min(cap + 2, 61) + 0.4;
+    if (slow) {
       d.good = 0;
       d.dropAt = now;
-      this.applyScale(Math.max(0.6, d.scale - 0.1));
-    } else if (avg < target * 1.05) {
-      if (++d.good >= 3 && d.scale < 1 && now - d.dropAt > 6000) (d.good = 0), this.applyScale(Math.min(1, d.scale + 0.05));
+      if (d.scale > 0.6) this.applyScale(Math.max(0.6, d.scale - 0.1));
+      else if (d.tier < 3) this.applyTier(d.tier + 1);
+    } else if (fast) {
+      if (++d.good >= 3 && now - d.dropAt > 6000) {
+        d.good = 0;
+        if (d.tier > 0) this.applyTier(d.tier - 1);
+        else if (d.scale < 1) this.applyScale(Math.min(1, d.scale + 0.05));
+      }
     } else d.good = 0;
+  }
+  // The steps past the resolution: 1 a shorter view (70 %), 2 no shadows, 3 a much shorter view (50 %).
+  private applyTier(tier: number) {
+    const d = this.dyn;
+    d.tier = tier;
+    d.baseView ??= this.gfx.view;
+    this.gfx.view = Math.round(d.baseView * (tier >= 3 ? 0.5 : tier >= 1 ? 0.7 : 1));
+    const shadows = tier < 2 && this.gfx.shadows > 0;
+    if (this.sun.castShadow !== shadows) this.sun.castShadow = shadows;
   }
   private applyScale(s: number) {
     this.dyn.scale = Math.round(s * 100) / 100;
@@ -2350,6 +2403,13 @@ export class Town {
     g.restore();
   }
 
+  get facing() {
+    return this.heading;
+  }
+  face(h: number) {
+    this.heading = h;
+    this.yaw = h + Math.PI;
+  }
   where_() {
     return { x: this.body.x, y: this.body.y, z: this.body.z };
   }
