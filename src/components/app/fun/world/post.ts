@@ -47,6 +47,9 @@ export class Post {
     if (this.bloom) (this.bloom.strength = 0.18 + n * 0.55), (this.bloom.threshold = 0.95 - n * 0.25);
     this.renderer.toneMappingExposure = 1.0 + n * 0.25;
   }
+  setPixelRatio(r: number) {
+    this.composer?.setPixelRatio(r);
+  }
   setSize(w: number, h: number) {
     this.composer?.setSize(w, h);
     this.ao?.setSize(w, h);

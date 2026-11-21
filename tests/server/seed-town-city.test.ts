@@ -64,6 +64,22 @@ async function main() {
   check("positions past the ring road are kept (the Grand Prix)", !!seen && seen[2] === 340 && seen[4] === -255, seen);
   void r1;
 
+  // ---------------------------------------------------------------- Grand Prix online
+  type RaceOut = { open?: { id: string; circuit: string; n: number }[]; id?: string; slot?: number; host?: boolean; startIn?: number; laps?: number; rows?: { id: string; lap: number; prog: number; done: number | null }[] };
+  const opened = (await W.sync(dawit, { x: 214, y: 0, z: -127, race: { op: "open", circuit: "harbour", cars: "gt", laps: 3 } })).race as RaceOut;
+  check("opening a race puts you on the grid as host", !!opened?.id && opened.slot === 0 && opened.host === true && opened.laps === 3 && (opened.startIn ?? 0) > 20_000, opened);
+  const list = (await W.sync(hana, { x: 214, y: 0, z: -130 })).race as RaceOut;
+  check("others see the open race", !!list?.open?.some((r) => r.id === opened.id && r.circuit === "harbour" && r.n === 1), list);
+  const hanaRace = (await W.sync(hana, { x: 214, y: 0, z: -130, race: { op: "join", id: opened.id! } })).race as RaceOut;
+  check("joining takes the next grid slot", hanaRace?.id === opened.id && hanaRace.slot === 1 && !!hanaRace.rows?.some((r) => r.id === dawit.id), hanaRace);
+  check("a bad circuit opens nothing", !("id" in (((await W.sync(guest, { x: 0, y: 0, z: 0, race: { op: "open", circuit: "moon", cars: "gt", laps: 3 } })).race ?? {}) as object)));
+  const go = (await W.sync(dawit, { x: 214, y: 0, z: -127, race: { op: "go" } })).race as RaceOut;
+  check("the host can start it sooner", (go.startIn ?? 99_999) <= 6000, go);
+  check("progress before the lights is not taken", ((await W.sync(hana, { x: 214, y: 0, z: -130, rp: { lap: 3, prog: 0.5, best: 40, done: null } })).race as RaceOut).rows !== undefined && (((await W.sync(dawit, { x: 214, y: 0, z: -127 })).race as RaceOut).rows ?? []).find((r) => r.id === hana.id)?.lap === 0);
+  await W.sync(dawit, { x: 214, y: 0, z: -127, race: { op: "leave" } });
+  await W.sync(hana, { x: 214, y: 0, z: -130, race: { op: "leave" } });
+  check("an empty race closes", !(((await W.sync(hana, { x: 214, y: 0, z: -130 })).race as RaceOut | null)?.open ?? []).some((r) => r.id === opened.id));
+
   // ---------------------------------------------------------------- Seed Strike online
   await W.sync(dawit, { x: 700, y: 0, z: 0, act: "strike", strike: { op: "create", mode: "tdm", map: "warehouse" } });
   const lobby = await W.sync(hana, { x: 700, y: 0, z: 10, act: "strike-lobby" });

@@ -173,6 +173,11 @@ export function NpcConversation({ def, host, onClose }: { def: NpcDef; host: Npc
             {a.label}
           </Button>
         ))}
+        {([["highfive", "High five"], ["hug", "Hug"], ["dance", "Dance together"], ["fight", "Fight"]] as const).map(([k, label]) => (
+          <Button key={k} size="xs" variant={k === "fight" ? "destructive" : "outline"} className={k === "fight" ? "" : "border-white/30 bg-transparent text-white"} onClick={() => host.act("social", k)} data-npc-social={k}>
+            {label}
+          </Button>
+        ))}
         <Button size="xs" variant="ghost" className="text-white" onClick={() => void ask("bye", "", "Bye")}>
           Bye
         </Button>

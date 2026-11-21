@@ -18,6 +18,7 @@ export const MUSIC: Record<string, string> = {
   calm: "/audio/music/town-1.mp3",
   homes: "/audio/music/town-2.mp3",
   market: "/audio/music/market.mp3",
+  radio: "/audio/music/town-theme.mp3",
   office: "/audio/music/castle-town.mp3",
   action: "/audio/music/action-1.mp3",
   race: "/audio/music/action-2.mp3",

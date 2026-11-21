@@ -287,6 +287,29 @@ export async function createVrmAvatar(look: Look, opts: { shareKey?: string } = 
         face = "happy";
         break;
       }
+      case "fight":
+        over("rightUpperArm", E(0.6, 0.9, 1.1));
+        over("leftUpperArm", E(0.6, -0.9, -1.1));
+        over("rightLowerArm", E(0, 2.1, 0));
+        over("leftLowerArm", E(0, -2.1, 0));
+        break;
+      case "punch":
+        over("rightUpperArm", E(0, 1.45, 0.05));
+        over("rightLowerArm", E(0, 0.15, 0));
+        over("leftUpperArm", E(0.6, -0.9, -1.1));
+        over("leftLowerArm", E(0, -2.1, 0));
+        over("chest", E(0, 0.35, 0));
+        break;
+      case "highfive":
+        over("rightUpperArm", E(0, 0.6, -1.1));
+        over("rightLowerArm", E(0, -0.4, 0));
+        break;
+      case "hug":
+        over("rightUpperArm", E(0, 1.2, 0.2));
+        over("leftUpperArm", E(0, -1.2, -0.2));
+        over("rightLowerArm", E(0, 1.1, 0));
+        over("leftLowerArm", E(0, -1.1, 0));
+        break;
       case "bow":
         over("spine", E(0.5, 0, 0));
         over("chest", E(0.3, 0, 0));

@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { F, isGuestActions } from "../actions";
-import { RARITY, SHOPS, isFree, type HomeLayout, type Item, type Placed, type Ride, type Shop } from "@/lib/fun-catalog";
+import { DEFAULT_HOME, RARITY, SHOPS, isFree, type HomeLayout, type Item, type Placed, type Ride, type Shop } from "@/lib/fun-catalog";
 import type { Resident } from "@/server/fun-world";
 import { furniture, showcase, vehicle } from "./models";
 import { anyVehicle } from "./cars";
@@ -48,7 +48,7 @@ function Thumb({ item, className }: { item: Item; className?: string }) {
     const d = new THREE.DirectionalLight("#fff", 1.2);
     d.position.set(2, 3, 2);
     scene.add(d);
-    const m = item.kind === "vehicle" ? anyVehicle(item.model ?? "hatch", item.color ?? "#3b82f6", undefined, true).group : item.kind === "furniture" ? furniture(item.model ?? "", item.color ?? "#a16207", (item.size?.[0] ?? 2) * 0.5, (item.size?.[1] ?? 2) * 0.5) : showcase(item.kind, item.model ?? "", item.color ?? "#a855f7");
+    const m = item.kind === "vehicle" ? anyVehicle(item.model ?? "hatch", item.color ?? "#3b82f6", undefined, true, false).group : item.kind === "furniture" ? furniture(item.model ?? "", item.color ?? "#a16207", (item.size?.[0] ?? 2) * 0.5, (item.size?.[1] ?? 2) * 0.5) : showcase(item.kind, item.model ?? "", item.color ?? "#a855f7");
     const bb = new THREE.Box3().setFromObject(m);
     const size = bb.getSize(new THREE.Vector3()).length() || 1;
     m.position.sub(bb.getCenter(new THREE.Vector3()));
@@ -303,9 +303,11 @@ export function HomeStudio({ items, wallet, home, residents, onClose, onSaved, o
   const house = items.find((i) => i.key === h.house) ?? items.find((i) => i.key === "house.cottage")!;
   const [rw, rd] = house.room ?? [16, 12];
   const houses = items.filter((i) => i.kind === "house" && owns(wallet, i));
-  const furn = items.filter((i) => i.kind === "furniture" && owns(wallet, i));
+  // The starter home's pieces come with it (as many as it has), as the server counts them.
+  const starter = (k: string) => DEFAULT_HOME.items.filter((i) => i.key === k).length;
+  const furn = items.filter((i) => i.kind === "furniture" && (owns(wallet, i) || starter(i.key) > 0));
   const used = (k: string) => h.items.filter((p) => p.key === k).length;
-  const left = (it: Item) => (isFree(it) ? Infinity : qtyOf(wallet, it.key) - used(it.key));
+  const left = (it: Item) => (isFree(it) ? Infinity : qtyOf(wallet, it.key) + starter(it.key) - used(it.key));
   const cap = (house.capacity ?? 16) + ((h.level ?? 1) - 1) * 10;
   const foot = (p: Placed) => {
     const it = items.find((i) => i.key === p.key);
@@ -578,6 +580,7 @@ export function SettingsPanel({ gfx, onChange, onClose }: { gfx: Gfx; onChange: 
         <label className="flex items-center justify-between">Frame rate
           <select value={gfx.fps} onChange={(e) => set({ fps: Number(e.target.value) as 0 | 30 | 60 }, false)} className="h-7 rounded border bg-background px-1"><option value={30}>30</option><option value={60}>60</option><option value={0}>Screen rate</option></select>
         </label>
+        <label className="flex items-center justify-between">Hold the frame rate steady (resolution adapts)<input type="checkbox" checked={gfx.steady !== false} onChange={(e) => set({ steady: e.target.checked }, false)} data-gfx-steady /></label>
         <p className="pt-1 font-medium">Controls</p>
         <label className="block">Camera speed {gfx.sens.toFixed(1)}<input type="range" min={0.3} max={2.5} step={0.1} value={gfx.sens} onChange={(e) => set({ sens: Number(e.target.value) }, false)} className="w-full" /></label>
         <label className="flex items-center justify-between">Invert up and down<input type="checkbox" checked={gfx.invert} onChange={(e) => set({ invert: e.target.checked }, false)} /></label>
@@ -596,18 +599,80 @@ export function SettingsPanel({ gfx, onChange, onClose }: { gfx: Gfx; onChange: 
 
 // ------------------------------------------------------------------------------------------------- map
 
-export function MapPanel({ draw, onTravel, onClose }: { draw: (c: HTMLCanvasElement) => void; onTravel: (x: number, y: number, z: number) => void; onClose: () => void }) {
+export type MapView = { cx: number; cz: number; zoom: number };
+// The big map: drag to move it, scroll or the buttons to zoom, click to set a waypoint (the GPS shows the way along
+// the roads on both maps), centre on me, clear the waypoint, travel straight there; and the usual places.
+export function MapPanel({ draw, me, waypoint, onWaypoint, onClear, onTravel, onClose }: { draw: (c: HTMLCanvasElement, v: MapView) => void; me: () => { x: number; z: number }; waypoint: { x: number; z: number; label: string } | null; onWaypoint: (x: number, z: number) => void; onClear: () => void; onTravel: (x: number, y: number, z: number) => void; onClose: () => void }) {
   const ref = React.useRef<HTMLCanvasElement>(null);
+  const [view, setView] = React.useState<MapView>({ cx: 100, cz: -40, zoom: 1 });
+  const viewRef = React.useRef(view);
+  viewRef.current = view;
+  const drag = React.useRef<{ x: number; y: number; cx: number; cz: number; moved: boolean } | null>(null);
   React.useEffect(() => {
-    const t = window.setInterval(() => ref.current && draw(ref.current), 300);
-    if (ref.current) draw(ref.current);
+    const t = window.setInterval(() => ref.current && draw(ref.current, viewRef.current), 200);
+    if (ref.current) draw(ref.current, viewRef.current);
     return () => window.clearInterval(t);
   }, [draw]);
-  const PLACES: [string, number, number, number][] = [["Plaza", 0, 0, 12], ["Office", 0, 0, -40], ["Shops", 40, 0, 2], ["Car dealer", 100, 0, 10], ["Park", -50, 0, -4], ["Archery", -97, 0, -23], ["Parkour", -114, 0, 36], ["Homes", 0, 0, 30], ["Race start", 0, 0, -130], ["Library", -52, 0, -51], ["Stadium", 185, 0, 41], ["Seed Circuit", 152, 0, -52], ["Grand Prix", 214, 0, -124], ["Archery field", -226, 0, 2], ["Seed Strike", 300, 0, 218], ["Downtown", 60, 0, -45], ["Industrial yard", 98, 0, 64]];
+  React.useEffect(() => void (ref.current && draw(ref.current, view)), [draw, view]);
+  // Canvas pixels to town metres (the canvas is drawn at 520 px and shown scaled to fit).
+  const scaleOf = (c: HTMLCanvasElement, v: MapView) => (c.width / 760) * v.zoom;
+  const toWorld = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const c = e.currentTarget, r = c.getBoundingClientRect();
+    const px = ((e.clientX - r.left) / r.width) * c.width, py = ((e.clientY - r.top) / r.height) * c.height;
+    const k = scaleOf(c, view);
+    return { x: view.cx + (px - c.width / 2) / k, z: view.cz + (py - c.height / 2) / k };
+  };
+  const zoomBy = (f: number) => setView((v) => ({ ...v, zoom: Math.max(0.6, Math.min(8, v.zoom * f)) }));
+  const PLACES: [string, number, number, number][] = [["Plaza", 0, 0, 12], ["Office", 0, 0, -40], ["Shops", 40, 0, 2], ["Car dealer", 100, 0, 10], ["Park", -50, 0, -4], ["Archery", -97, 0, -23], ["Parkour", -114, 0, 36], ["Homes", 0, 0, 30], ["Race start", 0, 0, -130], ["Library", -52, 0, -51], ["Stadium", 185, 0, 41], ["Seed Circuit", 152, 0, -52], ["Grand Prix", 214, 0, -124], ["Archery field", -226, 0, 2], ["Seed Strike", 300, 0, 218], ["Downtown", 60, 0, -45], ["Industrial yard", 98, 0, 64], ["Seed Arcade", -13, 0, 178], ["Myseed Studios", 6, 0, 201], ["Myseed HQ campus", 38, 0, -150], ["HQ parking", -20, 0, -168]];
   return (
     <Panel title={<span className="flex items-center gap-2"><MapPinIcon className="size-4" /> Map</span>} onClose={onClose} wide>
-      <canvas ref={ref} width={420} height={420} className="mx-auto aspect-square w-full max-w-[420px] rounded-lg border" data-world-map />
-      <p className="mt-2 mb-1 text-xs font-medium">Travel there</p>
+      <div className="relative">
+        <canvas
+          ref={ref}
+          width={520}
+          height={520}
+          className="mx-auto aspect-square w-full max-w-[520px] cursor-crosshair touch-none rounded-lg border select-none"
+          data-world-map
+          onPointerDown={(e) => {
+            drag.current = { x: e.clientX, y: e.clientY, cx: view.cx, cz: view.cz, moved: false };
+            e.currentTarget.setPointerCapture(e.pointerId);
+          }}
+          onPointerMove={(e) => {
+            const d = drag.current;
+            if (!d) return;
+            const r = e.currentTarget.getBoundingClientRect();
+            const k = scaleOf(e.currentTarget, view) * (r.width / e.currentTarget.width);
+            if (Math.hypot(e.clientX - d.x, e.clientY - d.y) > 4) d.moved = true;
+            if (d.moved) setView((v) => ({ ...v, cx: d.cx - (e.clientX - d.x) / k, cz: d.cz - (e.clientY - d.y) / k }));
+          }}
+          onPointerUp={(e) => {
+            const d = drag.current;
+            drag.current = null;
+            if (d && !d.moved) {
+              const w = toWorld(e);
+              onWaypoint(Math.round(w.x), Math.round(w.z));
+            }
+          }}
+          onWheel={(e) => zoomBy(e.deltaY < 0 ? 1.2 : 1 / 1.2)}
+        />
+        <div className="absolute top-2 right-2 flex flex-col gap-1">
+          <Button size="icon" variant="secondary" className="size-7" aria-label="Zoom in" onClick={() => zoomBy(1.4)} data-map-zoom-in>+</Button>
+          <Button size="icon" variant="secondary" className="size-7" aria-label="Zoom out" onClick={() => zoomBy(1 / 1.4)}>-</Button>
+        </div>
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-1 text-xs">
+        <Button size="xs" variant="outline" onClick={() => { const m = me(); setView((v) => ({ cx: m.x, cz: m.z, zoom: Math.max(v.zoom, 2) })); }} data-map-center>Centre on me</Button>
+        {waypoint ? (
+          <>
+            <span className="text-muted-foreground">Waypoint: {waypoint.label}</span>
+            <Button size="xs" variant="outline" onClick={onClear} data-map-clear>Clear</Button>
+            <Button size="xs" onClick={() => onTravel(waypoint.x, 0, waypoint.z)}>Travel there</Button>
+          </>
+        ) : (
+          <span className="text-muted-foreground">Click the map to set a waypoint; the GPS shows the way along the roads.</span>
+        )}
+      </div>
+      <p className="mt-2 mb-1 text-xs font-medium">Travel to a place</p>
       <div className="flex flex-wrap gap-1">{PLACES.map(([n, x, y, z]) => <Button key={n} size="xs" variant="outline" onClick={() => onTravel(x, y, z)}>{n}</Button>)}</div>
     </Panel>
   );

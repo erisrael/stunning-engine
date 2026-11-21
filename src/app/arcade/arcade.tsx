@@ -46,7 +46,9 @@ export function Arcade({ open, games, home, kiosk }: { open: boolean; games: Gam
   });
   React.useEffect(() => () => setFunActions(null), []);
   const list = React.useMemo(() => [...(home ? [{ key: "world", label: "Seed Town 3D", note: "Drive, race, shoot, explore the city" }] : []), ...games.filter((g) => g.key !== "world" && GAMES[g.key])], [games, home]);
-  const [game, setGame] = React.useState<string | null>(null);
+  // Straight into the town (Seed Arcade is a hall in it; its cabinets play the games); the list of games only
+  // when Admin has Seed Town switched off.
+  const [game, setGame] = React.useState<string | null>(home ? "world" : null);
   const [sel, setSel] = React.useState(0);
   const [full, setFull] = React.useState(false);
   const [clock, setClock] = React.useState("");
@@ -74,7 +76,7 @@ export function Arcade({ open, games, home, kiosk }: { open: boolean; games: Gam
     window.addEventListener("myseed-fun", cmd);
     // Android: the back button returns to the game list instead of leaving.
     const cap = (window as unknown as { Capacitor?: { Plugins?: { App?: { addListener: (n: string, f: () => void) => Promise<{ remove: () => void }> } } } }).Capacitor;
-    const back = cap?.Plugins?.App?.addListener("backButton", () => setGame(null));
+    const back = cap?.Plugins?.App?.addListener("backButton", () => (home ? window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })) : setGame(null)));
     // The Windows app's kiosk: Ctrl+Shift+Q asks for the staff PIN to leave.
     const desk = (window as unknown as { seedDesktop?: { askLeave?: () => Promise<unknown> } }).seedDesktop;
     const leave = (e: KeyboardEvent) => {
@@ -172,10 +174,16 @@ export function Arcade({ open, games, home, kiosk }: { open: boolean; games: Gam
             ) : (
               <div className={cn("flex flex-1 flex-col", game === "world" && "min-h-0")}>
                 <div className="flex shrink-0 items-center gap-2 border-b border-white/10 bg-black/60 px-2 py-1">
-                  <button type="button" onClick={() => setGame(null)} className="arc-btn flex items-center gap-1 rounded-md px-2 py-1 font-[family-name:var(--font-vt323)] text-xl" data-arcade-menu-btn>
-                    <ChevronLeftIcon className="size-4" /> MENU
-                  </button>
-                  <p className="flex-1 truncate text-center font-[family-name:var(--font-vt323)] text-xl text-[#fde047]">{info?.label.toUpperCase()}</p>
+                  {game === "world" ? (
+                    <p className="arc-blink-slow flex-1 truncate font-[family-name:var(--font-vt323)] text-lg text-[#fde047]">WALK INTO SEED ARCADE AND PRESS E AT A CABINET · FREE PLAY</p>
+                  ) : (
+                    <>
+                      <button type="button" onClick={() => setGame(null)} className="arc-btn flex items-center gap-1 rounded-md px-2 py-1 font-[family-name:var(--font-vt323)] text-xl" data-arcade-menu-btn>
+                        <ChevronLeftIcon className="size-4" /> MENU
+                      </button>
+                      <p className="flex-1 truncate text-center font-[family-name:var(--font-vt323)] text-xl text-[#fde047]">{info?.label.toUpperCase()}</p>
+                    </>
+                  )}
                   <button type="button" onClick={toggleFull} className="arc-btn rounded-md p-1.5" aria-label={full ? "Leave full screen" : "Full screen"}>
                     {full ? <Minimize2Icon className="size-4" /> : <Maximize2Icon className="size-4" />}
                   </button>
@@ -226,6 +234,7 @@ const ARCADE_CSS = `
 .arc-btn { color: #e0f2fe; background: linear-gradient(180deg, #312e81, #1e1b4b); border: 1px solid #4f46e5; }
 .arc-btn:hover { border-color: #fde047; }
 .arc-blink { animation: arc-blink 1.4s steps(2, start) infinite; }
+.arc-blink-slow { animation: arc-blink 2.4s steps(2, start) infinite; }
 @keyframes arc-blink { to { visibility: hidden; } }
 .arc-deck { background: linear-gradient(180deg, #1a1328, #0c0912); box-shadow: inset 0 8px 20px rgba(0,0,0,.6); }
 .arc-stick { width: 70px; height: 70px; border-radius: 50%; background: radial-gradient(circle at 50% 40%, #111 0 14px, #2a2a2a 15px 30px, #0a0a0a 31px); position: relative; }

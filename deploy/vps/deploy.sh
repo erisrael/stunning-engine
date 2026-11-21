@@ -43,6 +43,9 @@ prune() {
     docker image rm "myseed-cm-app:$r" >/dev/null 2>&1 || true
   done
   docker image prune -f >/dev/null 2>&1 || true
+  # Every build leaves its layers in the build cache (several GB a deploy): keep the newest few GB, which is what
+  # the next build reuses, and let the rest go.
+  docker builder prune -af --max-used-space 8gb >/dev/null 2>&1 || docker builder prune -af --filter "until=48h" >/dev/null 2>&1 || true
 }
 start_release() {
   local dir="$1" prev="${2:-}"

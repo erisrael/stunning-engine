@@ -13,7 +13,9 @@ import { signPlane } from "./toon";
 // cost penalties; sectors, positions, fastest lap and results.
 
 export const GP_CENTER = { x: 340, z: -255 };
-const CTRL: [number, number][] = [
+// Three circuits on the same ground (one is built at a time). All share the pit straight along the north edge, so
+// the pits, garages, grid and the timing tower stay where they are; the rest of the lap differs.
+const PARK: [number, number][] = [
   [235, -140], [330, -140], [425, -140], // pit straight (east)
   [462, -150], [474, -182], [458, -212], // hairpin right
   [440, -238], [452, -262], [438, -286], // chicane
@@ -23,6 +25,29 @@ const CTRL: [number, number][] = [
   [256, -294], [236, -268], [258, -240], // esses
   [240, -206], [222, -178], [220, -156], // final corner onto the straight
 ];
+// Harbour: short and tight (hairpins and a slow chicane), about 1.3 km.
+const HARBOUR: [number, number][] = [
+  [235, -140], [330, -140], [425, -140],
+  [455, -160], [458, -205], [430, -225], // a long right, then a hairpin back west
+  [380, -215], [345, -240], [350, -290], // the chicane and the drop south
+  [320, -320], [270, -310], // the harbour hairpin
+  [250, -270], [262, -230], [232, -200], [222, -165], // up the esses to the line
+];
+// Highland: fast and flowing over the whole ground, about 2.1 km.
+const HIGHLAND: [number, number][] = [
+  [235, -140], [330, -140], [425, -140],
+  [465, -165], [472, -230], [450, -290], [468, -340], // the fast east side
+  [440, -378], [380, -372], [330, -340], [300, -370], [250, -372], // the valley
+  [228, -330], [250, -290], [300, -280], [320, -240], // the climb
+  [280, -205], [235, -205], [220, -170], // the last sweepers
+];
+export type GpCircuit = "park" | "harbour" | "highland";
+export const GP_CIRCUITS: { key: GpCircuit; label: string; note: string; ctrl: [number, number][] }[] = [
+  { key: "park", label: "Seed Park Circuit", note: "1.6 km: a hairpin, a chicane, fast sweepers and the esses.", ctrl: PARK },
+  { key: "harbour", label: "Harbour Street Circuit", note: "1.3 km: tight and technical, two hairpins and a slow chicane.", ctrl: HARBOUR },
+  { key: "highland", label: "Highland Ring", note: "2.1 km: fast and flowing, long sweepers and a valley.", ctrl: HIGHLAND },
+];
+let CTRL = PARK;
 export const TRACK_W = 13;
 
 export type Track = {
@@ -49,9 +74,11 @@ function sample(): { pts: THREE.Vector3[]; len: number } {
   return { pts: curve.getSpacedPoints(n).slice(0, n), len: n };
 }
 
-export function buildGrandPrix(ph: Physics, detail: number) {
+export function buildGrandPrix(ph: Physics, detail: number, circuit: GpCircuit = "park") {
+  CTRL = GP_CIRCUITS.find((c) => c.key === circuit)?.ctrl ?? PARK;
   const group = new THREE.Group();
   group.name = "grandprix";
+  group.userData.circuit = circuit;
   const { pts, len } = sample();
   const N = pts.length;
   const at = (i: number) => pts[((i % N) + N) % N]!;
@@ -382,7 +409,12 @@ export const COMPOUND: Record<Compound, { grip: number; wear: number; color: str
   medium: { grip: 1.0, wear: 0.03, color: "#eab308" },
   hard: { grip: 0.95, wear: 0.018, color: "#f8fafc" },
 };
-export type GpSetup = { mode: GpMode; difficulty: Difficulty; opponents: number; compound: Compound; round?: number };
+// Cars: Formula 2 style single-seaters, or GT (real road cars: Porsche 911 Turbo, BMW M3, 911 Carrera, Punto GT).
+export type GpClass = "f2" | "gt";
+export const GT_CARS = ["p930", "m3e30", "gt911", "punto", "supercar"] as const;
+// online: a race with people (their progress comes from the server; the lights go out at the same moment for all).
+export type GpSetup = { mode: GpMode; difficulty: Difficulty; opponents: number; compound: Compound; round?: number; circuit?: GpCircuit; cars?: GpClass; myCar?: string; online?: { slot: number; laps: number; startIn: number } };
+export type RemoteRacer = { id: string; name: string; lap: number; prog: number; best: number | null; done: number | null };
 export type Standing = { name: string; me: boolean; pos: number; lap: number; gap: string; best: number | null; last: number | null; pit: boolean; tyre: Compound; penalty: number };
 export type RaceState = {
   mode: GpMode;
@@ -457,7 +489,7 @@ export class GrandPrix {
     const skill = SKILL[setup.difficulty];
     const cols = ["#b91c1c", "#047857", "#7c3aed", "#ea580c", "#0f766e", "#be185d", "#1e3a8a", "#a16207", "#334155", "#15803d", "#9a3412"];
     // The grid: me in the middle for races (qualifying places come later), bots ahead and behind.
-    const myGrid = alone ? 0 : Math.min(n, Math.floor(n / 2));
+    const myGrid = setup.online ? Math.min(track.grid.length - 1, setup.online.slot) : alone ? 0 : Math.min(n, Math.floor(n / 2));
     let slot = 0;
     for (let k = 0; k <= n; k++) {
       const g = track.grid[k]!;
@@ -465,18 +497,27 @@ export class GrandPrix {
         host.placeCar(g.x, g.z, g.heading);
         continue;
       }
-      const rig = carRig("f2", cols[slot % cols.length]!)!;
+      if (setup.online) continue;
+      const gt = setup.cars === "gt";
+      const rig = carRig(gt ? GT_CARS[slot % GT_CARS.length]! : "f2", cols[slot % cols.length]!, undefined, { lod: true })!;
       rig.group.position.set(g.x, 0, g.z);
       rig.group.rotation.y = g.heading;
       host.scene.add(rig.group);
       const near = track.nearest(g.x, g.z);
-      this.bots.push({ name: NAMES[slot % NAMES.length]!, rig, s: near.i, lap: 0, v: 0, off: near.side, skill: skill.pace * (0.97 + Math.random() * 0.05), mistakeUntil: 0, time: 0, best: null, lapStart: 0, tyre: setup.compound, wear: 0, pitted: false, done: null, lastLap: null });
+      this.bots.push({ name: NAMES[slot % NAMES.length]!, rig, s: near.i, lap: 0, v: 0, off: near.side, skill: skill.pace * (0.97 + Math.random() * 0.05) * (gt ? 0.78 : 1), mistakeUntil: 0, time: 0, best: null, lapStart: 0, tyre: setup.compound, wear: 0, pitted: false, done: null, lastLap: null });
       slot++;
     }
     this.st = { mode: setup.mode, phase: alone ? "racing" : "grid", lights: 0, lap: alone ? 1 : 0, laps: mode.laps, pos: myGrid + 1, of: n + 1, lapTime: 0, last: null, best: null, sectors: [null, null, null], delta: null, tyre: setup.compound, wear: 0, temp: alone ? 60 : 45, fuel: setup.mode === "feature" ? 100 : 60, inPit: false, pitDone: false, warnings: 0, penalty: 0, message: alone ? "Go! The lap starts at the line." : "Lights in a moment", standings: [], results: null };
     this.lastI = track.nearest(track.grid[myGrid]!.x, track.grid[myGrid]!.z).i;
     host.hold(!alone);
     this.lightsAt = performance.now() + 2500;
+    if (setup.online) {
+      this.st.laps = setup.online.laps;
+      this.st.message = "Online race: on the grid";
+      this.syncStart(setup.online.startIn);
+      // My grid slot when the others are on the slots before me.
+      if (setup.online.slot > 0) host.placeCar(track.grid[Math.min(track.grid.length - 1, setup.online.slot)]!.x, track.grid[Math.min(track.grid.length - 1, setup.online.slot)]!.z, track.grid[0]!.heading);
+    }
     if (alone) this.st.lap = 0;
   }
 
@@ -492,7 +533,7 @@ export class GrandPrix {
     if (st.phase === "lights") {
       st.lights = Math.min(5, Math.floor((now - this.lightsAt) / 1000));
       tr.lights.forEach((m, k) => ((m.material as THREE.MeshStandardMaterial).emissiveIntensity = k < st.lights ? 4 : 0));
-      if (st.lights >= 5 && !this.goAt) this.goAt = now + 600 + Math.random() * 1600;
+      if (st.lights >= 5 && !this.goAt) this.goAt = this.setup.online ? this.lightsAt + 6000 : now + 600 + Math.random() * 1600;
       if (this.goAt && now > this.goAt) {
         tr.lights.forEach((m) => ((m.material as THREE.MeshStandardMaterial).emissiveIntensity = 0));
         st.phase = "racing";
@@ -612,13 +653,29 @@ export class GrandPrix {
     this.lastI = i;
     // The order: laps first, then distance round the lap.
     const mine = { name: "You", me: true, prog: st.lap * N + ((i - tr.start + N) % N), lap: st.lap, best: st.best, last: st.last, tyre: st.tyre, pit: st.inPit, penalty: st.penalty, done: this.myDone };
-    const rows = [mine, ...this.bots.map((b) => ({ name: b.name, me: false, prog: b.lap * N + ((Math.floor(b.s) - tr.start + N) % N), lap: b.lap, best: b.best, last: b.lastLap, tyre: b.tyre, pit: false, penalty: 0, done: b.done }))].sort((a, b) => (a.done !== null && b.done !== null ? a.done - b.done : b.prog - a.prog));
+    const people = this.remote.map((r) => ({ name: r.name, me: false, prog: r.lap * N + r.prog * N, lap: r.lap, best: r.best, last: null, tyre: st.tyre, pit: false, penalty: 0, done: r.done !== null ? this.t0 + r.done : null }));
+    const rows = [mine, ...people, ...this.bots.map((b) => ({ name: b.name, me: false, prog: b.lap * N + ((Math.floor(b.s) - tr.start + N) % N), lap: b.lap, best: b.best, last: b.lastLap, tyre: b.tyre, pit: false, penalty: 0, done: b.done }))].sort((a, b) => (a.done !== null && b.done !== null ? a.done - b.done : b.prog - a.prog));
     st.pos = rows.findIndex((r) => r.me) + 1;
     st.standings = rows.map((r, k) => ({ name: r.name, me: r.me, pos: k + 1, lap: Math.max(0, r.lap), gap: k === 0 ? "Leader" : `+${Math.max(0, (rows[0]!.prog - r.prog) / 60).toFixed(1)}s`, best: r.best, last: r.last, pit: r.pit, tyre: r.tyre, penalty: r.penalty }));
     if (Math.floor(this.clock * 2) % 2 === 0) tr.timing.draw(st.standings.map((s) => `${String(s.pos).padStart(2)} ${s.name.padEnd(11)} ${s.lap}`));
     // The finish: when I take the flag (or everyone in time trial), then results.
     if (st.phase === "finished" && !st.results && performance.now() > this.finishAt) this.results(rows);
     this.host.state({ ...st });
+  }
+
+  // Online: the others' progress (from the server), and mine for it.
+  private remote: RemoteRacer[] = [];
+  setRemote(rows: RemoteRacer[]) {
+    this.remote = rows;
+  }
+  syncStart(startIn: number) {
+    // The lights take five seconds and go out a second later: the go is at the server's start.
+    if (this.st.phase === "grid" || this.st.phase === "lights") this.lightsAt = performance.now() + startIn - 6000;
+  }
+  progress() {
+    const tr = this.track, N = tr.pts.length;
+    const lapFrac = ((this.lastI - tr.start + N) % N) / N;
+    return { lap: this.st.lap, prog: Math.round(lapFrac * 1000) / 1000, best: this.st.best, done: this.myDone !== null ? Math.round((this.myDone - this.t0) * 1000) / 1000 : null };
   }
 
   private botLap(b: Bot) {

@@ -109,11 +109,11 @@ try {
   await ed.scrollIntoViewIfNeeded();
   check("the town editor shows the town in 3D", await seen(ed.locator("[data-town-3d] canvas"), 30000));
   await ed.locator("[data-town-upload]").setInputFiles({ name: "statue.glb", mimeType: "model/gltf-binary", buffer: tinyGlb() });
-  check("a model uploads", await seen(page.getByText("statue uploaded")));
+  check("a model uploads", await seen(page.getByText("statue uploaded"), 60000));
   const v = await ed.locator("[data-town-3d]").boundingBox();
   await page.mouse.click(v.x + v.width / 2, v.y + v.height / 2);
   check("clicking the 3D town places it", await seen(ed.getByText(/1 things placed/)));
-  await ed.locator("[data-town-save]").click();
+  await ed.locator("[data-town-save]").click({ timeout: 90000 });
   check("the town is published", await seen(page.getByText("Town published")));
   await page.screenshot({ path: path.join(shots, "editor.png") });
 

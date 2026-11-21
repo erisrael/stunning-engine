@@ -121,8 +121,9 @@ try {
 
   // A Grand Prix sprint start.
   await page.evaluate(() => { const t = window.__seedTown; t.teleport(214, 0, -127); t.cb.open("gp"); });
-  await win.locator('[data-gp-mode="sprint"]').click();
-  await win.locator("[data-gp-start]").click();
+  // The software renderer draws the circuit at a few frames a second: clicks there take a while.
+  await win.locator('[data-gp-mode="sprint"]').click({ timeout: 90000 });
+  await win.locator("[data-gp-start]").click({ timeout: 90000 });
   check("the race display shows", await seen(win.locator("[data-gp-hud]"), 30000));
   await page.waitForFunction(() => window.__seedTown.activity?.st?.phase === "racing", null, { timeout: 40000 }).catch(() => {});
   check("the lights go out and the race starts", await page.evaluate(() => window.__seedTown.activity?.st?.phase === "racing"));

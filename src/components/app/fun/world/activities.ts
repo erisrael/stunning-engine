@@ -20,7 +20,7 @@ export interface Activity {
   kind: string;
   camera?: { pos: THREE.Vector3; look: THREE.Vector3 };
   update(dt: number, t: number): void;
-  down?(ndc: THREE.Vector2): void;
+  down?(ndc: THREE.Vector2, pointer?: string): void;
   up?(ndc: THREE.Vector2): void;
   move?(ndc: THREE.Vector2): void;
   key?(k: string): void;

@@ -140,6 +140,12 @@ export const CATALOG: Item[] = [
   I("furn.piano", "furniture", "Piano", 220, "epic", "furniture", { model: "piano", size: [4, 3], seat: true, stack: true, color: "#0f172a" }),
   I("furn.fireplace", "furniture", "Fireplace", 180, "epic", "furniture", { model: "fireplace", size: [4, 2], stack: true, color: "#9ca3af" }),
   I("furn.arcade", "furniture", "Arcade cabinet", 260, "epic", "furniture", { model: "arcade", size: [2, 2], stack: true, color: "#7c3aed" }),
+  I("furn.bathtub", "furniture", "Bathtub", 0, "common", "furniture", { model: "bathtub", size: [4, 2], stack: true, color: "#f8fafc", note: "Take a bath." }),
+  I("furn.kitchen", "furniture", "Kitchen with a stove", 0, "common", "furniture", { model: "kitchen", size: [4, 2], stack: true, color: "#e7e5e4", note: "Cook a meal, then eat it at the table." }),
+  I("furn.fridge", "furniture", "Fridge", 0, "common", "furniture", { model: "fridge", size: [2, 2], stack: true, color: "#d6d3d1", note: "A snack and a cold drink." }),
+  I("furn.radio", "furniture", "Radio", 0, "common", "furniture", { model: "radio", size: [1, 1], stack: true, color: "#7c2d12", note: "Music at home, on and off." }),
+  I("furn.console", "furniture", "Game console", 0, "common", "furniture", { model: "console", size: [2, 2], stack: true, color: "#111827", note: "Play the arcade games at home." }),
+  I("furn.petbed", "furniture", "Dog and its bed", 0, "common", "furniture", { model: "petbed", size: [2, 2], stack: true, color: "#b45309", note: "A dog that follows you around the house." }),
   I("furn.tree", "furniture", "Indoor tree", 70, "rare", "furniture", { model: "tree", size: [3, 3], stack: true, color: "#15803d" }),
   I("furn.throne", "furniture", "Golden throne", 600, "legendary", "special", { model: "throne", size: [3, 3], seat: true, stack: true, color: "#eab308", level: 6 }),
 
@@ -376,7 +382,31 @@ export function lookItems(l: Look): string[] {
 // A house: which home, its walls and floor, and the furniture placed in it (grid cells, rotation in quarter turns).
 export type Placed = { key: string; x: number; z: number; r: number };
 export type HomeLayout = { house: string; wall: string; floor: string; items: Placed[]; access: "everyone" | "invited" | "private"; guests: string[]; level: number };
-export const DEFAULT_HOME: HomeLayout = { house: "house.cottage", wall: "#fef3c7", floor: "#d6a77a", items: [{ key: "furn.bed", x: 2, z: 2, r: 0 }, { key: "furn.table", x: 9, z: 6, r: 0 }, { key: "furn.chair", x: 7, z: 6, r: 1 }], access: "everyone", guests: [], level: 1 };
+// A furnished starter home (cottage, 16 x 12 cells, the door in the middle of the front): living room on the
+// right (TV, console, radio, sofa), kitchen and dining at the back, bedroom and bath on the left, a dog by the door.
+export const DEFAULT_HOME: HomeLayout = {
+  house: "house.cottage",
+  wall: "#fef3c7",
+  floor: "#d6a77a",
+  items: [
+    { key: "furn.tv", x: 11, z: 0, r: 0 },
+    { key: "furn.console", x: 14, z: 1, r: 0 },
+    { key: "furn.radio", x: 10, z: 0, r: 0 },
+    { key: "furn.sofa", x: 10, z: 4, r: 2 },
+    { key: "furn.lamp", x: 9, z: 4, r: 0 },
+    { key: "furn.bed", x: 0, z: 6, r: 0 },
+    { key: "furn.bathtub", x: 5, z: 10, r: 0 },
+    { key: "furn.fridge", x: 10, z: 10, r: 2 },
+    { key: "furn.kitchen", x: 12, z: 10, r: 2 },
+    { key: "furn.table", x: 5, z: 6, r: 0 },
+    { key: "furn.chair", x: 6, z: 4, r: 0 },
+    { key: "furn.petbed", x: 0, z: 0, r: 0 },
+    { key: "furn.plant", x: 0, z: 3, r: 0 },
+  ],
+  access: "everyone",
+  guests: [],
+  level: 1,
+};
 
 // A vehicle someone owns: its paint and how far it is upgraded (1 to 3: faster each level).
 export type Ride = { paint?: string; rims?: string; level?: number };

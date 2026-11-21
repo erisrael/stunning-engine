@@ -31,6 +31,8 @@ export const ROADS: Road[] = [
   { name: "Ring Road", axis: "z", c: 135, from: -135, to: 135, w: 12, s: 3, lanes: 2, kind: "ring" },
   { name: "Seed Avenue", axis: "z", c: 0, from: -135, to: -86, w: 12, s: 3.5, lanes: 2, kind: "avenue" },
   { name: "Seed Avenue", axis: "z", c: 0, from: 34, to: 135, w: 12, s: 3.5, lanes: 2, kind: "avenue" },
+  { name: "Studio Boulevard", axis: "z", c: 0, from: 135, to: 268, w: 12, s: 3.5, lanes: 2, kind: "avenue" },
+  { name: "Campus Drive", axis: "z", c: 0, from: -262, to: -135, w: 12, s: 3.5, lanes: 2, kind: "avenue" },
   { name: "Office Row", axis: "x", c: -86, from: -135, to: 135, w: 10, s: 3, lanes: 1, kind: "street" },
   { name: "Market Street", axis: "x", c: 0, from: 34, to: 135, w: 10, s: 3, lanes: 1, kind: "street" },
   { name: "Park Road", axis: "x", c: 0, from: -135, to: -34, w: 8, s: 2.5, lanes: 1, kind: "street" },

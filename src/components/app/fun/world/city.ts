@@ -10,8 +10,11 @@ import { buildDistricts } from "./buildings";
 import { glass as glassMat, surface } from "./pbr";
 import { buildHouse } from "./houses";
 import { optimizeStatic } from "./merge";
+import { buildCampus, buildOfficeFront, HQ_TOWER } from "./campus";
 import { anyVehicle } from "./cars";
 import { buildGrandPrix } from "./gp";
+import { buildStudioLot, LOT } from "./lot";
+import { ARCADE_HALL, buildArcadeHall } from "./arcade3d";
 
 // The town: a plaza in the middle; the office tower (three floors with stairs, an elevator, a lobby, a café, a town
 // hall, meeting rooms and a desk for everyone) to the north; shops and the car dealer to the east; the park with
@@ -1043,6 +1046,27 @@ export function buildCity(ph: Physics, input: CityInput) {
     void g;
   }
 
+  // ---------------------------------------------------------------- Myseed Studios (south of the ring, on Studio Boulevard)
+  const studiosG = district("Studios", (LOT.x0 + LOT.x1) / 2, (LOT.z0 + LOT.z1) / 2, 80);
+  studiosG.add(buildStudioLot(ph, input.detail ?? 1));
+  mapRects.push({ x: (LOT.x0 + LOT.x1) / 2, z: (LOT.z0 + LOT.z1) / 2, w: LOT.x1 - LOT.x0, d: LOT.z1 - LOT.z0, color: "#e7dcc3", label: "Studios" });
+
+  // ---------------------------------------------------------------- the Myseed HQ campus (north of the ring, Campus Drive)
+  const campusG = district("HQ Campus", 20, -204, 60);
+  const campus = buildCampus(ph, interacts, input.detail ?? 1);
+  campusG.add(campus.group);
+  animated.push((t) => campus.update(t));
+  mapRects.push({ x: 38, z: -204, w: 52, d: 100, color: "#cbd5e1", label: "Myseed HQ" }, { x: -38, z: -202, w: 56, d: 100, color: "#6b7280", label: "P" }, { x: 88, z: -206, w: 40, d: 96, color: "#6b7280", label: "P" });
+  npcs.push({ id: "npc-hq-reception", name: "Liya", role: "Myseed HQ reception", seed: 97, x: 38, y: 0, z: -207, ry: 0, lines: ["Welcome to Myseed HQ. The elevators behind me go up to the sky deck on the 26th floor.", "Parking is either side: the big lot west of Campus Drive, the car park east of the tower."], actions: [] });
+  campusG.add(buildOfficeFront(ph, HQ));
+
+  // ---------------------------------------------------------------- Seed Arcade (across the boulevard from the lot)
+  const arcadeG = district("Arcade", (ARCADE_HALL.x0 + ARCADE_HALL.x1) / 2, (ARCADE_HALL.z0 + ARCADE_HALL.z1) / 2, 40);
+  const hall = buildArcadeHall(ph, interacts);
+  arcadeG.add(hall.group);
+  animated.push((_, dt) => hall.update(dt));
+  mapRects.push({ x: (ARCADE_HALL.x0 + ARCADE_HALL.x1) / 2, z: (ARCADE_HALL.z0 + ARCADE_HALL.z1) / 2, w: ARCADE_HALL.x1 - ARCADE_HALL.x0, d: ARCADE_HALL.z1 - ARCADE_HALL.z0, color: "#c4b5fd", label: "Arcade" });
+
   // ---------------------------------------------------------------- homes (south)
   const homesG = district("Homes", 0, 75, 95);
   const lots = new Map<string, { cx: number; cz: number }>();
@@ -1106,6 +1130,7 @@ export function buildCity(ph: Physics, input: CityInput) {
 
   return {
     root,
+    arcadeSpawn: hall.spawn,
     interacts,
     npcs,
     mapRects,
@@ -1126,6 +1151,7 @@ export function buildCity(ph: Physics, input: CityInput) {
     spawn: spawnProp ? { x: spawnProp.x, z: spawnProp.z } : { x: 0, z: 12 },
     lampSpots: streets.lampSpots,
     gp: gpBuilt.track,
+    campus: { crownY: campus.crownY, lobby: { x: 38, z: -200 }, deck: { x: (HQ_TOWER.x0 + HQ_TOWER.x1) / 2, z: HQ_TOWER.z1 - 1.5 } },
     trafficLights: streets.lights,
     update: (t: number, dt: number) => animated.forEach((f) => f(t, dt)),
   };

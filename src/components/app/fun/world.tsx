@@ -15,16 +15,20 @@ import type { Hud } from "./world/activities";
 import type { NpcDef } from "./world/city";
 import { ChatBox, GaragePanel, HomeStudio, InventoryPanel, MapPanel, NpcDialog, Panel, PeoplePanel, SettingsPanel, ShopPanel, VoicePanel } from "./world/panels";
 import { Studio, type Wallet } from "./world/studio";
-import { autoQuality, PRESETS, Town, type ChatMsg, type Gfx, type Room, type TownData, type VoiceState } from "./world/town";
+import { autoQuality, DEFAULT_XHAIR, PRESETS, Town, type RaceSync, type ChatMsg, type Gfx, type Room, type TownData, type VoiceState } from "./world/town";
 import { useScores } from "./shell";
 import { usePlayer } from "./player";
 import { useYouTube } from "./youtube";
 import { PERSONAS } from "@/lib/focus";
 import { NpcConversation } from "./world/npc-dialog";
 import { WEATHER_LABEL } from "./world/atmosphere";
-import { COMPOUND, GP_MODES, SKILL, fmtLap, type Compound, type Difficulty, type GpMode, type RaceState } from "./world/gp";
+import { COMPOUND, GP_CIRCUITS, GP_MODES, GT_CARS, SKILL, fmtLap, type Compound, type Difficulty, type GpCircuit, type GpClass, type GpMode, type RaceState } from "./world/gp";
 import { ARCHERY_MODES, BOWS, archeryLevel, type ArcheryMode, type Bow } from "./world/archery";
 import { STRIKE_MAPS, STRIKE_MODES, WEAPONS, type StrikeHud, type StrikeMap, type StrikeMode, type WeaponKey } from "./world/strike";
+import { AGENTS, AGENT_KEYS, type AgentKey } from "@/lib/strike-agents";
+import { ArcadeScreen } from "./world/arcade-screen";
+import { FK_LEVELS, fkStars } from "./world/soccer";
+import { EmoteWheel } from "./world/emote-wheel";
 
 // Commands to the Fun window (open a tab or a game), without importing it (it imports this file).
 const funCommand = (c: { open?: string; game?: string }) => window.dispatchEvent(new CustomEvent("myseed-fun", { detail: c }));
@@ -49,7 +53,8 @@ const STATUS: Record<Status, { label: string; color: string }> = {
 const GFX_KEY = "myseed.world.gfx";
 function loadGfx(): Gfx {
   const q = autoQuality();
-  const base: Gfx = { preset: "auto", ...PRESETS[q], sens: 1, invert: false, names: true, sfx: 0.7, music: 0.45, camera: "third" };
+  const phone = typeof navigator !== "undefined" && (/Android|iPhone|iPad|Mobile/i.test(navigator.userAgent) || matchMedia("(pointer: coarse)").matches);
+  const base: Gfx = { preset: "auto", ...PRESETS[q], ...(phone ? { view: Math.min(PRESETS[q].view, 90), shadows: 0 as const } : {}), sens: 1, invert: false, names: true, sfx: 0.7, music: 0.45, camera: "third", steady: true };
   try {
     const s = JSON.parse(localStorage.getItem(GFX_KEY) ?? "null") as Partial<Gfx> | null;
     if (s) return { ...base, ...s, ...(s.preset === "auto" ? PRESETS[q] : {}) };
@@ -58,6 +63,134 @@ function loadGfx(): Gfx {
 }
 
 type PanelState = { kind: string; data?: Record<string, unknown> } | null;
+
+const MODE_LABEL: Record<string, string> = { gp: "Grand Prix", circuit: "Seed Circuit", race: "Street race", archery: "Archery", gallery: "Target gallery", penalty: "Penalties", freekick: "Free kicks", hoops: "Basketball", fishing: "Fishing", parkour: "Parkour", strike: "Seed Strike" };
+// The keys, by what you are doing (the one you are in first).
+const CONTROL_SETS: { key: string; label: string; rows: [string, string][] }[] = [
+  { key: "walk", label: "On foot", rows: [["Walk", "WASD or arrows"], ["Run", "Shift"], ["Jump", "Space"], ["Crouch", "C"], ["Look", "drag, or the mouse in first person (click locks it)"], ["First or third person", "V"], ["Do things", "E or F"], ["Greet the nearest person", "G"], ["Emote wheel", "hold T, move the mouse, let go"], ["Quick emotes", "1 to 6"], ["Punch / block", "Q / hold X"], ["Map, GPS and waypoints", "M"], ["Your things", "I"], ["Call your car", "R"], ["Chat", "Enter"], ["These controls", "F1"], ["Menu, leave a mode", "Esc"]] },
+  { key: "home", label: "At home", rows: [["Cook, eat, take a bath, sleep", "E at the kitchen, table, bathtub, bed"], ["Radio, lamp, lights", "E at the radio, lamp or the switch by the door"], ["Game console", "E at the console; arrows and Enter pick a game, Esc back"], ["Call and pet the dog", "E at its bed"], ["Watch TV", "E in front of the TV"], ["Furnish", "the mailbox outside"]] },
+  { key: "drive", label: "Driving", rows: [["Throttle / brake", "W / S"], ["Steer", "A / D"], ["Handbrake", "Space"], ["Gears (manual)", "X up, Z down"], ["Horn", "H"], ["Camera", "V"], ["Get in or out", "E"]] },
+  { key: "gp", label: "Grand Prix", rows: [["Drive", "as above"], ["Pit lane", "left of the straight, 60 km/h; stop in the first box"], ["Pause, settings, restart, exit", "Esc"]] },
+  { key: "strike", label: "Seed Strike and Seed Core", rows: [["Move", "WASD"], ["Walk quietly / crouch / jump", "Shift / Ctrl or C / Space"], ["Fire / aim or scope", "left / right mouse"], ["Reload", "R"], ["Weapons", "1, 2"], ["Abilities (Core)", "Q, E, X"], ["Buy menu (Core)", "B in the buy phase"], ["Plant or defuse (Core)", "hold F"], ["Pause, sensitivity, crosshair, leave", "Esc"]] },
+  { key: "penalty", label: "Football", rows: [["Aim", "move the mouse"], ["Shoot", "hold to power up, let go"], ["Curve", "move the mouse sideways after the kick (aftertouch)"], ["On the pitch", "walk into the ball or E to kick, Shift for a hard one"], ["Pause and exit", "Esc"]] },
+  { key: "archery", label: "Archery and the gallery", rows: [["Aim", "the mouse"], ["Draw and loose", "hold and let go"], ["Pause and exit", "Esc"]] },
+];
+function Controls({ first, only }: { first: string; only?: boolean }) {
+  const k = first === "core" ? "strike" : first === "circuit" || first === "race" ? "drive" : first === "gallery" ? "archery" : first;
+  const sets = [...CONTROL_SETS].sort((a, b) => (a.key === k ? -1 : b.key === k ? 1 : 0)).filter((s) => !only || s.key === k || (k === "gp" && s.key === "drive"));
+  return (
+    <div className="space-y-2 text-xs" data-world-controls>
+      {sets.map((s) => (
+        <div key={s.key}>
+          <p className="font-medium">{s.label}</p>
+          <table className="w-full">
+            <tbody>
+              {s.rows.map(([a, b]) => (
+                <tr key={a} className="border-t border-border/50">
+                  <td className="py-0.5 pr-2 text-muted-foreground">{a}</td>
+                  <td className="py-0.5 font-mono text-[11px]">{b}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ))}
+      <p className="text-[10px] text-muted-foreground">Phones: the joystick on the left, buttons on the right, drag to look. Gamepad: left stick walks, right stick looks, A jumps, X does things, Y switches the camera.</p>
+    </div>
+  );
+}
+
+// Seed Core's agent select: every agent as a card, the chosen one's powers in full, and a lock-in (the clock
+// locks the chosen one in at zero).
+function AgentSelect({ initial, onLock, onCancel }: { initial: AgentKey; onLock: (a: AgentKey) => void; onCancel: () => void }) {
+  const [sel, setSel] = React.useState<AgentKey>(initial);
+  const [left, setLeft] = React.useState(30);
+  const selRef = React.useRef(sel);
+  selRef.current = sel;
+  React.useEffect(() => {
+    const id = setInterval(() => setLeft((s) => s - 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+  React.useEffect(() => {
+    if (left <= 0) onLock(selRef.current);
+  }, [left, onLock]);
+  React.useEffect(() => {
+    const k = (e: KeyboardEvent) => {
+      const i = AGENT_KEYS.indexOf(selRef.current);
+      if (e.key === "ArrowRight" || e.key === "d") setSel(AGENT_KEYS[(i + 1) % AGENT_KEYS.length]!);
+      else if (e.key === "ArrowLeft" || e.key === "a") setSel(AGENT_KEYS[(i + AGENT_KEYS.length - 1) % AGENT_KEYS.length]!);
+      else if (e.key === "Enter") onLock(selRef.current);
+      else if (e.key === "Escape") onCancel();
+      else return;
+      e.preventDefault();
+      e.stopPropagation();
+    };
+    window.addEventListener("keydown", k, true);
+    return () => window.removeEventListener("keydown", k, true);
+  }, [onLock, onCancel]);
+  const a = AGENTS[sel];
+  return (
+    <div className="absolute inset-0 z-40 flex flex-col bg-[#0b0f17]/95 p-3 text-white sm:p-6" data-core-select>
+      <div className="flex items-center justify-between">
+        <p className="text-xs tracking-[0.3em] text-white/60">SEED CORE · CHOOSE YOUR AGENT</p>
+        <p className={cn("text-2xl font-bold tabular-nums", left <= 5 && "text-red-400")}>{Math.max(0, left)}</p>
+      </div>
+      <div className="mt-2 flex min-h-0 flex-1 flex-col gap-4 sm:flex-row">
+        <div className="relative flex flex-1 flex-col justify-end overflow-hidden rounded-xl p-4" style={{ background: `radial-gradient(circle at 60% 30%, ${a.color}66, transparent 60%), linear-gradient(160deg, ${a.color}33, #0b0f17 70%)` }}>
+          <span className="pointer-events-none absolute -top-6 right-2 text-[10rem] leading-none font-black opacity-15 select-none sm:text-[16rem]" style={{ color: a.color }}>{a.name[0]}</span>
+          <p className="text-xs tracking-widest" style={{ color: a.color }}>{a.role.toUpperCase()}</p>
+          <p className="text-4xl font-black tracking-wide sm:text-6xl">{a.name.toUpperCase()}</p>
+          <p className="mt-1 max-w-md text-sm text-white/80">{a.bio}</p>
+          <div className="mt-3 grid gap-2 sm:grid-cols-3">
+            {([["Q", a.q], ["E", a.e], ["X", a.x]] as const).map(([slot, ab]) => (
+              <div key={slot} className="rounded-lg border border-white/15 bg-black/40 p-2 text-xs">
+                <p className="flex items-center gap-1 font-bold"><span className="rounded bg-white px-1 text-black">{slot}</span>{ab.name}</p>
+                <p className="mt-0.5 text-white/70">{ab.note}</p>
+                <p className="mt-0.5 text-[10px] text-white/50">{slot === "X" ? `Ultimate: ${(ab as typeof a.x).points} points` : `${ab.charges} charge${ab.charges > 1 ? "s" : ""}${ab.cost ? `, ${ab.cost} credits` : ", free each round"}`}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="flex flex-col gap-2 sm:w-72">
+          <div className="grid grid-cols-3 gap-2">
+            {AGENT_KEYS.map((k) => {
+              const g = AGENTS[k];
+              return (
+                <button key={k} type="button" onClick={() => setSel(k)} onDoubleClick={() => onLock(k)} className={cn("flex aspect-square flex-col items-center justify-center rounded-lg border-2 text-xs font-bold transition-transform", sel === k ? "scale-105 border-white" : "border-white/10 hover:border-white/40")} style={{ background: `linear-gradient(150deg, ${g.color}cc, ${g.color}33)` }} data-core-select-agent={k}>
+                  <span className="text-2xl font-black">{g.name[0]}</span>
+                  {g.name}
+                  <span className="text-[9px] font-normal text-white/80">{g.role}</span>
+                </button>
+              );
+            })}
+          </div>
+          <p className="text-[10px] text-white/50">Arrows to browse, Enter to lock in, Esc to go back. Bots fill the other places on both teams.</p>
+          <Button size="lg" className="mt-auto w-full text-lg font-black tracking-widest" style={{ background: a.color }} onClick={() => onLock(sel)} data-core-lockin>LOCK IN</Button>
+          <Button variant="ghost" className="text-white" onClick={onCancel}>Back</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Seed Strike's crosshair: four lines with a gap and an optional centre dot and outline (the usual tactical
+// shooter style). The gap opens while running, jumping or spraying; it flashes red on a hit.
+function Crosshair({ x, bloom, hit }: { x: import("./world/town").Crosshair; bloom: number; hit: boolean }) {
+  const gap = x.gap + (x.moveError ? bloom * 16 : 0);
+  const color = hit ? "#ff3b3b" : x.color;
+  const line = (style: React.CSSProperties, key: string) => <span key={key} className="absolute" style={{ background: color, boxShadow: x.outline ? "0 0 0 1px #000" : undefined, ...style }} />;
+  return (
+    <div className="pointer-events-none absolute top-1/2 left-1/2 z-10 size-0" data-strike-crosshair>
+      {x.len > 0 && [
+        line({ width: x.thick, height: x.len, left: -x.thick / 2, top: -gap - x.len }, "t"),
+        line({ width: x.thick, height: x.len, left: -x.thick / 2, top: gap }, "b"),
+        line({ height: x.thick, width: x.len, top: -x.thick / 2, left: -gap - x.len }, "l"),
+        line({ height: x.thick, width: x.len, top: -x.thick / 2, left: gap }, "r"),
+      ]}
+      {x.dot && line({ width: x.thick, height: x.thick, left: -x.thick / 2, top: -x.thick / 2 }, "d")}
+    </div>
+  );
+}
 
 // The Windows app (desktop/): its launcher's graphics settings, and live numbers for the overlay.
 type DesktopApi = { desktop: true; getSettings: () => Promise<{ settings: { graphics: { quality: Gfx["quality"]; renderScale: number; shadows: 0 | 1 | 2; view: number; fps: 0 | 30 | 60 }; showFps: boolean } }>; perf: () => Promise<{ cpu: number; memoryMb: number; gpu: number | null }> };
@@ -141,8 +274,27 @@ export function SeedTown({ big = false, fill = false }: { big?: boolean; fill?: 
   const [arch, setArch] = React.useState<{ mode: ArcheryMode; bow: Bow }>({ mode: "classic", bow: "training" });
   const [strike, setStrike] = React.useState<StrikeHud | null>(null);
   const [lobby, setLobby] = React.useState<{ open: { id: string; mode: string; map: string; n: number; max: number }[] } | null>(null);
-  const [sk, setSk] = React.useState<{ mode: StrikeMode; map: StrikeMap; bots: number; difficulty: "easy" | "normal" | "hard"; primary: WeaponKey; code: string }>({ mode: "tdm", map: "warehouse", bots: 5, difficulty: "normal", primary: "rifle", code: "" });
+  const [sk, setSk] = React.useState<{ mode: StrikeMode; map: StrikeMap; bots: number; difficulty: "easy" | "normal" | "hard"; primary: WeaponKey; code: string; agent: AgentKey }>({ mode: "core", map: "warehouse", bots: 5, difficulty: "normal", primary: "rifle", code: "", agent: "vesper" });
   const [board, setBoard] = React.useState(false);
+  const [arcadeGame, setArcadeGame] = React.useState<string | null>(null);
+  const [sleeping, setSleeping] = React.useState(false);
+  const [agentSelect, setAgentSelect] = React.useState(false);
+  const [raceLobby, setRaceLobby] = React.useState<RaceSync | null>(null);
+  const [fight, setFight] = React.useState<{ me: number; foe: { name: string; hp: number } | null; block: boolean } | null>(null);
+  React.useEffect(() => {
+    if (!sleeping) return;
+    const id = setTimeout(() => (setSleeping(false), town.current?.wake()), 4200);
+    return () => clearTimeout(id);
+  }, [sleeping]);
+  const [nav, setNav] = React.useState<{ label: string; dist: number } | null>(null);
+  // Graphics chosen in a match's pause menu: the town is rebuilt with them when the match ends.
+  const [rebuildAfter, setRebuildAfter] = React.useState(false);
+  const wheelOn = React.useCallback(() => !!town.current && !town.current.blockInput && !town.current.inFps, []);
+  const wheelPick = React.useCallback((k: string) => (k === "firework" ? town.current?.firework() : town.current?.doEmote(k)), []);
+  // While a cabinet's game is open the town leaves the keyboard alone (arrows play Snake, not walk).
+  React.useEffect(() => {
+    if (town.current) town.current.blockInput = !!arcadeGame;
+  }, [arcadeGame]);
   // Tab holds the Strike scoreboard open.
   const inStrike = !!strike;
   React.useEffect(() => {
@@ -159,7 +311,7 @@ export function SeedTown({ big = false, fill = false }: { big?: boolean; fill?: 
       window.removeEventListener("keyup", k);
     };
   }, [inStrike]);
-  const [gpSetup, setGpSetup] = React.useState<{ mode: GpMode; difficulty: Difficulty; opponents: number; compound: Compound }>({ mode: "sprint", difficulty: "amateur", opponents: 7, compound: "medium" });
+  const [gpSetup, setGpSetup] = React.useState<{ mode: GpMode; difficulty: Difficulty; opponents: number; compound: Compound; circuit: GpCircuit; cars: GpClass; myCar: string }>({ mode: "sprint", difficulty: "amateur", opponents: 7, compound: "medium", circuit: "park", cars: "f2", myCar: "p930" });
   const [gems, setGems] = React.useState(0);
   const [cam, setCam] = React.useState<"third" | "first">("third");
   const [driving, setDriving] = React.useState(false);
@@ -246,12 +398,19 @@ export function SeedTown({ big = false, fill = false }: { big?: boolean; fill?: 
         open: (kind, d) => {
           if (kind === "close") return setPanel(null), setNpc(null), setCard(null);
           if (kind === "chat-focus") return setChatFocus((x) => x + 1);
-          if (kind === "arcade") return funCommand({ game: "snake" });
+          // A cabinet in Seed Arcade: its game on the cabinet's screen, over the town.
+          if (kind === "arcade") return setArcadeGame(String(d?.game ?? "snake"));
+          if (kind === "sleep") return setSleeping(true);
+          // A menu ends a conversation (its box would cover the menu's lower half).
+          setNpc(null);
           setPanel({ kind, data: d });
         },
         toast: (text, kind) => (kind === "err" ? toast.error(text) : kind === "ok" ? toast.success(text) : toast(text)),
         speed: setSpeed,
+        nav: setNav,
         gauge: setGauge,
+        fight: setFight,
+        raceLobby: setRaceLobby,
         race: setRace,
         strike: setStrike,
         strikeLobby: setLobby,
@@ -286,6 +445,8 @@ export function SeedTown({ big = false, fill = false }: { big?: boolean; fill?: 
     }
     town.current = t;
     for (const id of blocked) t.blocked.add(id);
+    // Guests start at the door of Seed Arcade.
+    if (guest) t.goToArcade();
     // Browser tests (automation only) reach the town to check walls, stairs, the elevator and vehicles.
     if (navigator.webdriver) (window as unknown as { __seedTown?: Town }).__seedTown = t;
     const mapTimer = window.setInterval(() => mini.current && t.drawMap(mini.current, false), 250);
@@ -316,6 +477,9 @@ export function SeedTown({ big = false, fill = false }: { big?: boolean; fill?: 
     if (rebuild) setBuild((b) => b + 1);
     else if (town.current) ((town.current.gfx = g), town.current.setVolumes(g.music ?? 0.45, g.sfx));
   };
+  React.useEffect(() => {
+    if (!strike && rebuildAfter) (setRebuildAfter(false), setBuild((b) => b + 1));
+  }, [strike, rebuildAfter]);
   const toggleSet = (key: string, set: Set<string>, setter: (s: Set<string>) => void, id: string) => {
     const n = new Set(set);
     if (n.has(id)) n.delete(id);
@@ -345,6 +509,10 @@ export function SeedTown({ big = false, fill = false }: { big?: boolean; fill?: 
       t.goTo(me.id);
       t.teleport(-16 + ((i % 6) % 3) * 11 + 5, (1 + Math.floor(i / 6)) * 4.5, -79 + Math.floor((i % 6) / 3) * 17.5 + 15);
     } else if (act === "drink") (t.doEmote("cheer"), toast("Fresh coffee. You feel ready for anything."));
+    else if (act === "social" && npc) {
+      t.socialWith(npc.id, String(arg));
+      if (arg === "fight" || arg === "dance") setNpc(null);
+    }
     else if (act === "tip") t.interact();
     else if (act === "dance") t.doEmote("dance");
     else if (act === "archery") setPanel({ kind: "activity", data: { kind: "archery" } });
@@ -397,6 +565,12 @@ export function SeedTown({ big = false, fill = false }: { big?: boolean; fill?: 
         {/* Minimap. */}
         <canvas ref={mini} width={120} height={120} className="pointer-events-auto absolute top-[4.4rem] left-2 z-10 hidden size-[96px] cursor-pointer rounded-full border-2 border-white/80 shadow sm:block" onClick={() => setPanel({ kind: "map" })} aria-label="Map" />
 
+        {nav && (
+          <div className="pointer-events-none absolute top-[11rem] left-2 z-10 hidden max-w-[150px] rounded-md bg-black/70 px-2 py-1 text-[11px] text-white sm:block" data-world-nav>
+            <span className="block truncate font-medium text-[#e9d5ff]">{nav.label}</span>
+            <span className="tabular-nums">{nav.dist >= 1000 ? `${(nav.dist / 1000).toFixed(1)} km` : `${nav.dist} m`}</span>
+          </div>
+        )}
         {/* What I can do here. */}
         {prompt && !hud && (
           <button type="button" onClick={() => t?.interact()} className="absolute bottom-28 left-1/2 z-10 -translate-x-1/2 rounded-full bg-black/65 px-3 py-1.5 text-sm font-medium text-white shadow sm:bottom-16" data-world-prompt>
@@ -522,20 +696,81 @@ export function SeedTown({ big = false, fill = false }: { big?: boolean; fill?: 
           <HomeStudio items={home.items} wallet={wallet} home={home.homes[meId] ?? { house: "house.cottage", wall: "#fef3c7", floor: "#d6a77a", items: [], access: "everyone", guests: [], level: 1 }} residents={home.residents} onClose={() => setPanel(null)} onWallet={refreshWallet} onSaved={(h: HomeLayout) => ((home.homes[meId] = h), t?.rebuildHome(meId, h))} />
         )}
         {p?.kind === "settings" && <SettingsPanel gfx={gfx} onChange={saveGfx} onClose={() => setPanel(null)} />}
-        {p?.kind === "map" && t && <MapPanel draw={(c) => t.drawMap(c, true)} onTravel={(x, y, z) => (t.teleport(x, y, z), setPanel(null))} onClose={() => setPanel(null)} />}
+        {p?.kind === "map" && t && (
+          <MapPanel
+            draw={(c, v) => t.drawMap(c, true, v)}
+            me={() => t.where_()}
+            waypoint={nav ? t.marker : null}
+            onWaypoint={(x, z) => (t.setMarker({ x, z, label: "Waypoint" }), setNav({ label: "Waypoint", dist: 0 }))}
+            onClear={() => (t.setMarker(null), setNav(null))}
+            onTravel={(x, y, z) => (t.teleport(x, y, z), setPanel(null))}
+            onClose={() => setPanel(null)}
+          />
+        )}
         {p?.kind === "help" && (
-          <Panel title="Controls" onClose={() => setPanel(null)}>
-            <ul className="space-y-1 text-xs">
-              <li><b>Walk</b> WASD or arrows · <b>Run</b> Shift · <b>Jump</b> Space · <b>Crouch</b> C</li>
-              <li><b>Look</b> drag (or move the mouse in first person; click to lock it, Esc to free it) · <b>Zoom</b> wheel</li>
-              <li><b>First / third person</b> V · <b>Do things</b> E · <b>Chat</b> T or Enter · <b>Map</b> M · <b>Your things</b> I</li>
-              <li><b>Vehicle</b> R calls it, E gets in and out; W/S drive, A/D steer, Space brakes, H honks</li>
-              <li><b>Emotes</b> 1 to 6 · <b>Stop an activity</b> Esc</li>
-              <li><b>Phones</b> joystick on the left, buttons on the right, drag to look</li>
-              <li><b>Gamepad</b> left stick walks, right stick looks, A jumps, X does things, Y switches the camera</li>
-            </ul>
+          <Panel title="Controls" onClose={() => setPanel(null)} wide>
+            <Controls first={String(p.data?.mode ?? "walk")} />
             <p className="mt-2 text-xs text-muted-foreground">Coins: work earns most of them; activities and games add up to {home.playCoins} a day. Spend them on clothes, homes, furniture, vehicles and pet things.</p>
           </Panel>
+        )}
+        {p?.kind === "pause" && t && (
+          <Panel title={`Paused · ${MODE_LABEL[String(p.data?.mode)] ?? "Game"}`} onClose={() => t.setPaused(false)}>
+            <div className="space-y-2 text-xs" data-world-pause>
+              <Button className="w-full" onClick={() => t.setPaused(false)} data-pause-resume>Resume (Esc)</Button>
+              {["gp", "circuit", "race"].includes(String(p.data?.mode)) && (
+                <div className="space-y-1 rounded-md border p-2">
+                  <p className="font-medium">Driving</p>
+                  <div className="flex flex-wrap gap-1">
+                    <Button size="xs" variant="outline" onClick={() => t.toggleCamera()}>Cockpit or chase camera (V)</Button>
+                    <Button size="xs" variant={t.manual ? "default" : "outline"} onClick={() => (t.setManual(!t.manual), setPanel({ ...p }))} data-pause-manual>Manual gears (X up, Z down): {t.manual ? "on" : "off"}</Button>
+                  </div>
+                </div>
+              )}
+              {["archery", "gallery", "penalty", "freekick", "hoops", "fishing"].includes(String(p.data?.mode)) && gfx && (
+                <label className="flex items-center justify-between gap-2 rounded-md border p-2">
+                  Aim sensitivity
+                  <input type="range" min={0.3} max={2.5} step={0.1} value={gfx.sens} onChange={(e) => saveGfx({ ...gfx, sens: Number(e.target.value) }, false)} />
+                  <span className="w-8 tabular-nums">{gfx.sens.toFixed(1)}</span>
+                </label>
+              )}
+              {gfx && (
+                <div className="space-y-1 rounded-md border p-2">
+                  <label className="flex items-center justify-between gap-2">Music<input type="range" min={0} max={1} step={0.05} value={gfx.music ?? 0.5} onChange={(e) => saveGfx({ ...gfx, music: Number(e.target.value) }, false)} /></label>
+                  <label className="flex items-center justify-between gap-2">Sound effects<input type="range" min={0} max={1} step={0.1} value={gfx.sfx} onChange={(e) => saveGfx({ ...gfx, sfx: Number(e.target.value) }, false)} /></label>
+                  <label className="flex items-center justify-between gap-2">Hold the frame rate steady<input type="checkbox" checked={gfx.steady !== false} onChange={(e) => saveGfx({ ...gfx, steady: e.target.checked }, false)} /></label>
+                </div>
+              )}
+              <details className="rounded-md border p-2">
+                <summary className="cursor-pointer font-medium">Controls</summary>
+                <Controls first={String(p.data?.mode ?? "walk")} only />
+              </details>
+              <div className="grid grid-cols-2 gap-1">
+                <Button variant="outline" onClick={() => (setPanel(null), t.restartActivity())} data-pause-restart>Restart</Button>
+                <Button variant="destructive" onClick={() => (setPanel(null), t.stopActivity())} data-pause-exit>Exit to town</Button>
+              </div>
+            </div>
+          </Panel>
+        )}
+        {race && raceLobby && "id" in raceLobby && raceLobby.startIn > 0 && (
+          <div className="absolute top-28 left-1/2 z-20 -translate-x-1/2 rounded-lg bg-black/75 px-3 py-2 text-center text-xs text-white" data-gp-grid>
+            <p className="font-bold">Online race · lights in {Math.ceil(raceLobby.startIn / 1000)} s · {raceLobby.rows.length + 1} on the grid</p>
+            {raceLobby.host && raceLobby.startIn > 7000 && <Button size="xs" className="mt-1" onClick={() => t?.raceOp({ op: "go" })} data-gp-go>Start now</Button>}
+          </div>
+        )}
+        {fight && (
+          <div className="pointer-events-none absolute top-14 left-1/2 z-10 w-72 -translate-x-1/2 space-y-1 rounded-lg bg-black/60 p-2 text-[11px] text-white" data-world-fight>
+            <div className="flex items-center gap-2">
+              <span className="w-14">You</span>
+              <div className="h-2 flex-1 rounded bg-white/20"><div className="h-2 rounded bg-emerald-400" style={{ width: `${fight.me}%` }} /></div>
+            </div>
+            {fight.foe && (
+              <div className="flex items-center gap-2">
+                <span className="w-14 truncate">{fight.foe.name}</span>
+                <div className="h-2 flex-1 rounded bg-white/20"><div className="h-2 rounded bg-red-500" style={{ width: `${fight.foe.hp}%` }} /></div>
+              </div>
+            )}
+            {fight.foe && <p className="text-center text-white/70">Q punch · hold X to block · walk away to stop</p>}
+          </div>
         )}
         {p?.kind === "elevator" && (
           <Panel title="Elevator" onClose={() => setPanel(null)}>
@@ -578,7 +813,35 @@ export function SeedTown({ big = false, fill = false }: { big?: boolean; fill?: 
             })()}
           </Panel>
         )}
-        {p?.kind === "activity" && p.data?.kind !== "archery" && (
+        {p?.kind === "activity" && p.data?.kind === "penalty" && (
+          <Panel title="Football challenges" onClose={() => setPanel(null)}>
+            <div className="space-y-3 text-xs" data-football-setup>
+              <div>
+                <p className="font-medium">Penalties</p>
+                <p className="mb-1 text-muted-foreground">Five shots. Aim with the mouse, hold for power (too hard flies over), Shift finesse, Ctrl chip; move the mouse after the kick to curl it. The keeper reads you better at higher levels.</p>
+                <div className="grid grid-cols-3 gap-1">
+                  {[1, 2, 3].map((lv) => <Button key={lv} size="sm" onClick={() => (t?.startActivity("penalty", lv), setPanel(null))} data-activity-level={lv}>Level {lv}</Button>)}
+                </div>
+              </div>
+              <div>
+                <p className="font-medium">Free kicks</p>
+                <p className="mb-1 text-muted-foreground">Beat the wall and the keeper: a goal is one star, a top corner two, through the gold ring three. A star opens the next level.</p>
+                <div className="grid grid-cols-4 gap-1">
+                  {FK_LEVELS.map((l, i) => {
+                    const st = fkStars();
+                    const open = i === 0 || (st[i - 1] ?? 0) > 0;
+                    return (
+                      <Button key={i} size="sm" variant={open ? "default" : "outline"} disabled={!open} onClick={() => (t?.startActivity("freekick", i + 1), setPanel(null))} title={l.task} data-freekick-level={i + 1}>
+                        {i + 1} <span className="ml-1 text-[10px] opacity-80">{"*".repeat(st[i] ?? 0) || "-"}</span>
+                      </Button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </Panel>
+        )}
+        {p?.kind === "activity" && p.data?.kind !== "archery" && p.data?.kind !== "penalty" && (
           <Panel title={p.data?.kind === "archery" ? "Archery" : "Target gallery"} onClose={() => setPanel(null)}>
             <p className="mb-2 text-xs text-muted-foreground">{p.data?.kind === "archery" ? "Ten arrows. Hold to draw, move to aim, let go. Higher levels move the targets." : "Forty seconds. Tap white (2) and gold (5) targets; red ones cost points."}</p>
             <div className="grid grid-cols-3 gap-1">
@@ -597,13 +860,40 @@ export function SeedTown({ big = false, fill = false }: { big?: boolean; fill?: 
                   </button>
                 ))}
               </div>
+              {sk.mode === "core" && (
+                <div className="space-y-1" data-core-agents>
+                  <p className="font-medium">Choose your agent</p>
+                  <div className="grid grid-cols-2 gap-1 sm:grid-cols-3">
+                    {AGENT_KEYS.map((k) => {
+                      const a = AGENTS[k];
+                      return (
+                        <button key={k} type="button" onClick={() => setSk((s) => ({ ...s, agent: k }))} className={cn("rounded-md border p-1.5 text-left", sk.agent === k ? "border-primary bg-primary/10" : "hover:bg-muted")} data-core-agent={k}>
+                          <span className="flex items-center gap-1 font-semibold">
+                            <span className="inline-block size-2.5 rounded-full" style={{ background: a.color }} />
+                            {a.name}
+                            <span className="ml-auto text-[10px] font-normal text-muted-foreground">{a.role}</span>
+                          </span>
+                          <span className="mt-0.5 block text-[10px] text-muted-foreground">{a.bio}</span>
+                          <span className="mt-0.5 block text-[10px]">Q {a.q.name} · E {a.e.name} · X {a.x.name}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">
+                    {AGENTS[sk.agent].name}: Q {AGENTS[sk.agent].q.note} E {AGENTS[sk.agent].e.note} X {AGENTS[sk.agent].x.note}
+                  </p>
+                </div>
+              )}
+              {sk.mode !== "core" && (
               <div className="flex flex-wrap gap-1">
-                {STRIKE_MAPS.map((m) => (
+                {STRIKE_MAPS.filter((m) => m.key !== "yard").map((m) => (
                   <Button key={m.key} size="xs" variant={sk.map === m.key ? "default" : "outline"} onClick={() => setSk((s) => ({ ...s, map: m.key }))} data-strike-map={m.key}>
                     {m.label}
                   </Button>
                 ))}
               </div>
+              )}
+              {sk.mode !== "core" && (
               <div className="flex flex-wrap items-center gap-1">
                 Weapon:
                 {(["rifle", "smg", "shotgun", "marksman"] as WeaponKey[]).map((w) => (
@@ -613,7 +903,8 @@ export function SeedTown({ big = false, fill = false }: { big?: boolean; fill?: 
                 ))}
                 <span className="text-muted-foreground">+ K9 pistol</span>
               </div>
-              {sk.mode !== "duel" && sk.mode !== "training" && (
+              )}
+              {sk.mode !== "duel" && sk.mode !== "training" && sk.mode !== "core" && (
                 <label className="flex items-center justify-between gap-2">
                   Bots <input type="range" min={1} max={9} value={sk.bots} onChange={(e) => setSk((s) => ({ ...s, bots: Number(e.target.value) }))} /> <span className="w-4 tabular-nums">{sk.bots}</span>
                 </label>
@@ -625,11 +916,14 @@ export function SeedTown({ big = false, fill = false }: { big?: boolean; fill?: 
                   </Button>
                 ))}
               </div>
-              <p className="text-[10px] text-muted-foreground">WASD move, Shift sprint, Space jump, click to shoot (the mouse locks; Esc frees it), right button aims, R reloads, 1 and 2 switch weapons, Tab shows the scoreboard. Made-up weapons; no blood.</p>
-              <Button className="w-full" onClick={() => (t?.startActivity("strike", 1, { mode: sk.mode, map: sk.map, bots: sk.bots, difficulty: sk.difficulty, loadout: [sk.primary, "pistol"] }), setPanel(null))} data-strike-start>
-                Play with bots
+              <p className="text-[10px] text-muted-foreground">
+                WASD move, Shift sprint, Space jump, click to shoot (the mouse locks; Esc frees it), right button aims, R reloads, 1 and 2 switch weapons, Tab shows the scoreboard.
+                {sk.mode === "core" && " Seed Core: B buys in the buy phase, Q and E are your powers, X your ultimate, hold F to plant or defuse."} Made-up names; no blood.
+              </p>
+              <Button className="w-full" onClick={() => (sk.mode === "core" ? setAgentSelect(true) : t?.startActivity("strike", 1, { mode: sk.mode, map: sk.map, bots: sk.bots, difficulty: sk.difficulty, loadout: [sk.primary, "pistol"] }), setPanel(null))} data-strike-start>
+                {sk.mode === "core" ? `Play Seed Core as ${AGENTS[sk.agent].name}` : "Play with bots"}
               </Button>
-              {sk.mode !== "training" && (
+              {sk.mode !== "training" && sk.mode !== "core" && !guest && (
                 <div className="space-y-1 rounded-md border p-2">
                   <p className="font-medium">Online with colleagues</p>
                   <div className="flex flex-wrap gap-1">
@@ -656,9 +950,64 @@ export function SeedTown({ big = false, fill = false }: { big?: boolean; fill?: 
         )}
         {strike && (
           <>
-            <div className="pointer-events-none absolute top-1/2 left-1/2 z-10 -translate-x-1/2 -translate-y-1/2" data-strike-crosshair>
-              <div className={cn("size-5 rounded-full border-2", strike.hit ? "border-red-500" : "border-white/80", strike.zoom && "size-2")} />
-            </div>
+            {strike.scope ? (
+              <div className="pointer-events-none absolute inset-0 z-10" style={{ background: "radial-gradient(circle at center, transparent 0 32%, rgba(0,0,0,.92) 32.5%)" }} data-strike-scope>
+                <div className="absolute top-1/2 left-0 h-px w-full bg-black" />
+                <div className="absolute top-0 left-1/2 h-full w-px bg-black" />
+                <div className="absolute top-1/2 left-1/2 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-red-500" />
+              </div>
+            ) : (
+              <Crosshair x={gfx?.xhair ?? DEFAULT_XHAIR} bloom={strike.bloom} hit={strike.hit > 0} />
+            )}
+            {strike.paused && !strike.over && (
+              <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/55 p-3" data-strike-pause>
+                <div className="w-full max-w-md space-y-3 rounded-xl bg-[#0f1117]/95 p-4 text-sm text-white">
+                  <p className="text-lg font-bold">Paused</p>
+                  <Button className="w-full" onClick={() => t?.strikeAct("resume")} data-strike-resume>Resume (click)</Button>
+                  <label className="flex items-center justify-between gap-2 text-xs">
+                    Mouse sensitivity
+                    <input type="range" min={0.1} max={3} step={0.05} value={gfx?.sens ?? 1} onChange={(e) => gfx && saveGfx({ ...gfx, sens: Number(e.target.value) }, false)} data-strike-sens />
+                    <span className="w-8 tabular-nums">{(gfx?.sens ?? 1).toFixed(2)}</span>
+                  </label>
+                  <label className="flex items-center justify-between gap-2 text-xs">
+                    Scoped sensitivity
+                    <input type="range" min={0.2} max={2} step={0.05} value={gfx?.scopeSens ?? 1} onChange={(e) => gfx && saveGfx({ ...gfx, scopeSens: Number(e.target.value) }, false)} />
+                    <span className="w-8 tabular-nums">{(gfx?.scopeSens ?? 1).toFixed(2)}</span>
+                  </label>
+                  <div className="space-y-1 rounded-md border border-white/15 p-2 text-xs">
+                    <p className="font-medium">Crosshair</p>
+                    <div className="flex items-center gap-1">
+                      {["#ffffff", "#00ff00", "#7fff00", "#ffff00", "#00ffff", "#ff4df0", "#ff3b3b"].map((c) => (
+                        <button key={c} type="button" aria-label={`Colour ${c}`} onClick={() => gfx && saveGfx({ ...gfx, xhair: { ...(gfx.xhair ?? DEFAULT_XHAIR), color: c } }, false)} className={cn("size-5 rounded-sm border", (gfx?.xhair ?? DEFAULT_XHAIR).color === c ? "border-white" : "border-transparent")} style={{ background: c }} />
+                      ))}
+                    </div>
+                    {(["len", "gap", "thick"] as const).map((k) => (
+                      <label key={k} className="flex items-center justify-between gap-2">
+                        {k === "len" ? "Length" : k === "gap" ? "Gap" : "Thickness"}
+                        <input type="range" min={k === "thick" ? 1 : 0} max={k === "thick" ? 5 : 12} step={1} value={(gfx?.xhair ?? DEFAULT_XHAIR)[k]} onChange={(e) => gfx && saveGfx({ ...gfx, xhair: { ...(gfx.xhair ?? DEFAULT_XHAIR), [k]: Number(e.target.value) } }, false)} />
+                        <span className="w-5 tabular-nums">{(gfx?.xhair ?? DEFAULT_XHAIR)[k]}</span>
+                      </label>
+                    ))}
+                    <div className="flex flex-wrap gap-3">
+                      {(["dot", "outline", "moveError"] as const).map((k) => (
+                        <label key={k} className="flex items-center gap-1">
+                          <input type="checkbox" checked={(gfx?.xhair ?? DEFAULT_XHAIR)[k]} onChange={(e) => gfx && saveGfx({ ...gfx, xhair: { ...(gfx.xhair ?? DEFAULT_XHAIR), [k]: e.target.checked } }, false)} />
+                          {k === "dot" ? "Centre dot" : k === "outline" ? "Outline" : "Opens when moving"}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1 text-xs">
+                    Graphics:
+                    {(["low", "medium", "high", "ultra"] as const).map((q) => (
+                      <Button key={q} size="xs" variant={gfx?.quality === q ? "default" : "outline"} className="capitalize" onClick={() => gfx && (saveGfx({ ...gfx, ...PRESETS[q], preset: q }, false), setRebuildAfter(true))}>{q}</Button>
+                    ))}
+                    {rebuildAfter && <span className="text-white/60">applies when you leave the match</span>}
+                  </div>
+                  <Button variant="destructive" className="w-full" onClick={() => t?.stopActivity()} data-strike-leave>Leave the match</Button>
+                </div>
+              </div>
+            )}
             <div className="pointer-events-none absolute bottom-24 left-3 z-10 rounded-lg bg-black/65 px-3 py-2 text-white sm:bottom-16" data-strike-hud>
               <p className="text-xs">Health</p>
               <div className="h-2 w-40 overflow-hidden rounded bg-white/20"><div className="h-full bg-green-500" style={{ width: strike.hp + "%" }} /></div>
@@ -668,7 +1017,7 @@ export function SeedTown({ big = false, fill = false }: { big?: boolean; fill?: 
               <p className="text-xs">{strike.weapon}</p>
               <p className="text-2xl font-bold tabular-nums">{strike.reloading ? "Reloading" : strike.ammo + " / " + strike.reserve}</p>
             </div>
-            <div className="pointer-events-none absolute top-14 left-1/2 z-10 -translate-x-1/2 rounded-lg bg-black/65 px-3 py-1 text-center text-white">
+            <div className={cn("pointer-events-none absolute top-14 left-1/2 z-10 -translate-x-1/2 rounded-lg bg-black/65 px-3 py-1 text-center text-white", strike.core && "hidden")}>
               <p className="text-sm font-bold">{strike.score}</p>
               <p className="text-[11px] tabular-nums">{strike.time}{strike.round ? " · " + strike.round : ""} · {strike.kills} kills · {strike.deaths} deaths</p>
             </div>
@@ -678,6 +1027,72 @@ export function SeedTown({ big = false, fill = false }: { big?: boolean; fill?: 
               ))}
             </div>
             {strike.dead > 0 && <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-red-900/30 text-2xl font-bold text-white">Respawning in {strike.dead}</div>}
+            {strike.core && (() => {
+              const c = strike.core;
+              return (
+                <>
+                  <div className="pointer-events-none absolute top-14 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-lg bg-black/70 px-3 py-1 text-xs text-white" data-core-hud>
+                    <span className={cn("rounded px-1.5 py-0.5 font-bold", c.side === "attack" ? "bg-red-600" : "bg-sky-600")}>{c.side === "attack" ? "ATTACK" : "DEFEND"}</span>
+                    <span>Round {c.round}</span>
+                    <span className="font-bold tabular-nums">{c.score[0]} : {c.score[1]}</span>
+                    <span className="tabular-nums">{c.phase === "buy" ? "Buy " : c.phase === "planted" ? "Core " : ""}{c.timer}</span>
+                    <span className="text-white/70">{c.alive[0]} v {c.alive[1]}</span>
+                    {c.planted && <span className="rounded bg-amber-500 px-1.5 py-0.5 font-bold text-black">Core on {c.planted}</span>}
+                    {c.history.length > 0 && (
+                      <span className="flex gap-0.5" data-core-history>
+                        {c.history.map((w, i) => <span key={i} className={cn("inline-block h-3 w-1.5 rounded-sm", w === 0 ? "bg-emerald-400" : "bg-red-500")} title={`Round ${i + 1}: ${w === 0 ? "won" : "lost"}`} />)}
+                      </span>
+                    )}
+                  </div>
+                  {c.banner && <div className="pointer-events-none absolute top-1/3 left-1/2 z-20 -translate-x-1/2 rounded-xl bg-black/70 px-5 py-2 text-center text-lg font-bold text-white" data-core-banner>{c.banner}</div>}
+                  {c.blind > 0 && <div className="pointer-events-none absolute inset-0 z-30 bg-white" style={{ opacity: Math.min(0.97, c.blind) }} />}
+                  {c.progress !== null && (
+                    <div className="pointer-events-none absolute top-[58%] left-1/2 z-20 w-60 -translate-x-1/2 rounded-lg bg-black/70 p-2 text-center text-xs text-white" data-core-progress>
+                      {c.progressLabel}
+                      <div className="mt-1 h-2 overflow-hidden rounded bg-white/20"><div className="h-full bg-amber-400" style={{ width: `${Math.round(c.progress * 100)}%` }} /></div>
+                    </div>
+                  )}
+                  <div className="absolute bottom-24 left-1/2 z-10 flex -translate-x-1/2 flex-col items-center gap-1 sm:bottom-16" data-core-powers>
+                    {c.hint && <p className="pointer-events-none rounded bg-black/60 px-2 py-0.5 text-[11px] text-white">{c.hint}</p>}
+                    <div className="flex items-end gap-1">
+                      {c.abilities.map((a) => (
+                        <button key={a.slot} type="button" title={a.note} onClick={() => t?.strikeAct(a.slot.toLowerCase())} className={cn("w-24 rounded-md border px-1.5 py-1 text-left text-[10px] text-white", a.charges > 0 ? "border-white/40 bg-black/70" : "border-white/10 bg-black/40 opacity-70")} data-core-power={a.slot}>
+                          <span className="flex items-center justify-between font-bold">
+                            <span className="rounded bg-white/90 px-1 text-black">{a.slot}</span>
+                            <span className="flex gap-0.5">
+                              {a.slot === "X" ? <span className="tabular-nums">{a.pts}/{a.need}</span> : Array.from({ length: a.max }, (_, i) => <span key={i} className={cn("inline-block size-1.5 rounded-full", i < a.charges ? "bg-white" : "bg-white/25")} />)}
+                            </span>
+                          </span>
+                          <span className="block truncate">{a.name}</span>
+                        </button>
+                      ))}
+                      <div className="rounded-md bg-black/70 px-2 py-1 text-[10px] text-white">
+                        <span className="block font-bold" style={{ color: c.color }}>{c.agent}</span>
+                        <span className="tabular-nums text-[#fde68a]">{c.credits} credits</span>
+                        {c.carrier && <span className="block text-amber-300">Core</span>}
+                      </div>
+                    </div>
+                  </div>
+                  {c.buy && (
+                    <div className="absolute inset-x-4 top-16 z-30 mx-auto max-w-lg rounded-xl bg-black/85 p-3 text-sm text-white" data-core-buy>
+                      <div className="mb-2 flex items-center justify-between">
+                        <p className="font-bold">Buy: {c.credits} credits</p>
+                        <Button size="xs" variant="secondary" onClick={() => t?.strikeAct("close-buy")}>Close (B)</Button>
+                      </div>
+                      <div className="grid grid-cols-2 gap-1">
+                        {c.shop.map((it) => (
+                          <button key={it.key} type="button" disabled={it.owned || !it.afford} onClick={() => t?.strikeAct(`buy:${it.key}`)} className={cn("flex items-center justify-between rounded-md border px-2 py-1.5 text-left text-xs", it.owned ? "border-emerald-500/60 bg-emerald-900/30" : it.afford ? "border-white/25 hover:bg-white/10" : "border-white/10 opacity-50")} data-core-buy-item={it.key}>
+                            <span>{it.label}</span>
+                            <span className="tabular-nums text-[#fde68a]">{it.owned ? "owned" : it.cost}</span>
+                          </button>
+                        ))}
+                      </div>
+                      <p className="mt-2 text-[10px] text-white/60">The K9 pistol is always yours. A weapon you buy stays while you live; armour takes half the damage.</p>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
             {(board || strike.over) && (
               <div className="absolute inset-x-6 top-16 z-20 mx-auto max-w-md rounded-xl bg-black/80 p-3 text-sm text-white" data-strike-board>
                 {strike.over && <p className="mb-2 text-center text-lg font-bold text-[#f5c518]">{strike.over}</p>}
@@ -693,6 +1108,26 @@ export function SeedTown({ big = false, fill = false }: { big?: boolean; fill?: 
         {p?.kind === "gp" && (
           <Panel title="Seed Grand Prix" onClose={() => setPanel(null)}>
             <div className="space-y-2 text-xs" data-gp-setup>
+              <p className="font-medium">Circuit</p>
+              <div className="grid grid-cols-3 gap-1">
+                {GP_CIRCUITS.map((c) => (
+                  <button key={c.key} type="button" onClick={() => setGpSetup((s) => ({ ...s, circuit: c.key }))} className={cn("rounded-md border p-1.5 text-left", gpSetup.circuit === c.key ? "border-primary bg-primary/10" : "hover:bg-muted")} data-gp-circuit={c.key}>
+                    <span className="block font-medium">{c.label}</span>
+                    <span className="block text-[10px] text-muted-foreground">{c.note}</span>
+                  </button>
+                ))}
+              </div>
+              <div className="flex flex-wrap items-center gap-1">
+                Cars:
+                <Button size="xs" variant={gpSetup.cars === "f2" ? "default" : "outline"} onClick={() => setGpSetup((s) => ({ ...s, cars: "f2" }))} data-gp-class="f2">Formula 2</Button>
+                <Button size="xs" variant={gpSetup.cars === "gt" ? "default" : "outline"} onClick={() => setGpSetup((s) => ({ ...s, cars: "gt" }))} data-gp-class="gt">GT road cars</Button>
+                {gpSetup.cars === "gt" && (
+                  <select value={gpSetup.myCar} onChange={(e) => setGpSetup((s) => ({ ...s, myCar: e.target.value }))} className="h-6 rounded border bg-background px-1" aria-label="Your car">
+                    {GT_CARS.map((k) => <option key={k} value={k}>{({ p930: "Porsche 911 Turbo (930)", m3e30: "BMW M3 (E30)", gt911: "Porsche 911 Carrera 4S", punto: "Fiat Punto GT", supercar: "Vortex V12" } as Record<string, string>)[k]}</option>)}
+                  </select>
+                )}
+              </div>
+              <p className="font-medium">Session</p>
               <div className="grid grid-cols-2 gap-1">
                 {GP_MODES.map((m) => (
                   <button key={m.key} type="button" onClick={() => setGpSetup((s) => ({ ...s, mode: m.key }))} className={cn("rounded-md border p-1.5 text-left", gpSetup.mode === m.key ? "border-primary bg-primary/10" : "hover:bg-muted")} data-gp-mode={m.key}>
@@ -724,14 +1159,51 @@ export function SeedTown({ big = false, fill = false }: { big?: boolean; fill?: 
                   </Button>
                 ))}
               </div>
-              <p className="text-[10px] text-muted-foreground">Your car: the Seed F2 single-seater. W/S throttle and brake, A/D steer, Space handbrake, V cockpit view. The pit lane (left of the straight) limits you to 60 km/h; stop in the first box for new tyres and fuel. Esc leaves the session.</p>
+              <p className="text-[10px] text-muted-foreground">{gpSetup.cars === "gt" ? "GT: real road cars, the field mixed." : "Your car: the Seed F2 single-seater."} W/S throttle and brake, A/D steer, Space handbrake, V cockpit view. The pit lane (left of the straight) limits you to 60 km/h; stop in the first box for new tyres and fuel. Esc leaves the session.</p>
               <Button className="w-full" onClick={() => (t?.startActivity("gp", 1, gpSetup), setPanel(null))} data-gp-start>
                 Go to the grid
               </Button>
+              <div className="space-y-1 rounded-md border p-2" data-gp-online>
+                <p className="font-medium">Race people online</p>
+                <p className="text-[10px] text-muted-foreground">Opens a race on the circuit and cars above ({GP_MODES.find((m) => m.key === gpSetup.mode)?.laps || 5} laps); others join from here until the lights (25 seconds, or start it sooner).</p>
+                <Button size="sm" variant="outline" className="w-full" onClick={() => (t?.raceOp({ op: "open", circuit: gpSetup.circuit, cars: gpSetup.cars, laps: GP_MODES.find((m) => m.key === gpSetup.mode)?.laps || 5 }), setPanel(null))} data-gp-open>
+                  Open an online race
+                </Button>
+                {raceLobby && "open" in raceLobby && raceLobby.open.length > 0 ? (
+                  raceLobby.open.map((r) => (
+                    <div key={r.id} className="flex items-center justify-between gap-2 rounded border px-2 py-1">
+                      <span>{GP_CIRCUITS.find((c) => c.key === r.circuit)?.label ?? r.circuit} · {r.cars === "gt" ? "GT" : "F2"} · {r.laps} laps · {r.n} on the grid · {r.host}</span>
+                      <Button size="xs" onClick={() => (t?.raceOp({ op: "join", id: r.id }), setPanel(null))} data-gp-join={r.id}>Join</Button>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-[10px] text-muted-foreground">No open races right now.</p>
+                )}
+              </div>
             </div>
           </Panel>
         )}
         {perf && <PerfOverlay town={town} />}
+        {arcadeGame && <ArcadeScreen game={arcadeGame} onClose={() => setArcadeGame(null)} />}
+        {agentSelect && (
+          <AgentSelect
+            initial={sk.agent}
+            onLock={(agent) => {
+              setSk((s) => ({ ...s, agent }));
+              setAgentSelect(false);
+              t?.startActivity("strike", 1, { mode: "core", map: "yard", bots: 9, difficulty: sk.difficulty, loadout: ["pistol", "pistol"], agent });
+            }}
+            onCancel={() => setAgentSelect(false)}
+          />
+        )}
+        {sleeping && (
+          <div className="world-sleep pointer-events-none absolute inset-0 z-40 flex items-center justify-center bg-black text-white" data-world-sleep>
+            <style>{`.world-sleep { animation: world-sleep 4.2s ease both; } @keyframes world-sleep { 0% { opacity: 0; } 20%, 80% { opacity: 1; } 100% { opacity: 0; } }`}</style>
+            <p className="text-lg tracking-widest">Sleeping...</p>
+          </div>
+        )}
+        {/* Hold T: the emote wheel (not in a first-person match, a cabinet's game or a panel). */}
+        <EmoteWheel enabled={wheelOn} onPick={wheelPick} />
         {race && (
           <div className="pointer-events-none absolute top-14 right-3 z-10 w-56 rounded-lg bg-black/70 p-2 text-[11px] text-white" data-gp-hud>
             <div className="flex items-baseline justify-between">

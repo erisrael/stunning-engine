@@ -297,7 +297,8 @@ export async function saveHome(user: AppUser, input: Partial<HomeLayout>) {
   for (const [k, n] of counts) {
     const it = cat.find((c) => c.key === k)!;
     if (isFree(it)) continue;
-    const have = await ownedQty(user.id, k);
+    // The starter home's pieces come with it (as many as it has), on top of what was bought.
+    const have = (await ownedQty(user.id, k)) + DEFAULT_HOME.items.filter((i) => i.key === k).length;
     if (have < n) throw new WorkflowError("VALIDATION", `You have ${have} ${it.label}${have === 1 ? "" : "s"}; buy more at Nest Home.`);
   }
   const access = (["everyone", "invited", "private"] as const).find((a) => a === (input.access ?? cur.access)) ?? "everyone";

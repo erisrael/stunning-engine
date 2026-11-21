@@ -147,6 +147,33 @@ export class NpcBrain {
   private nextDecide = 0;
   say: string | null = null;
   sayUntil = 0;
+  // A fist fight with me: their health, the next punch, down until, running away until; mad ones fight back.
+  fight: { hp: number; nextHit: number; koUntil: number; fleeUntil: number; mad: boolean } | null = null;
+  hitMe: ((dmg: number, from: NpcBrain) => void) | null = null;
+  // A social moment I started (high five, hug, dance): the emote until a time.
+  social: { emote: string; until: number } | null = null;
+  // Hit by me: the first punch starts a fight (or a run); returns true on a knock-out.
+  struck(dmg: number, fromX: number, fromZ: number, ph: Physics, now: number) {
+    const b = this.body;
+    if (this.chatWith) this.endChat();
+    if (!this.fight) {
+      const mad = ["competitive", "serious", "funny", "professional"].includes(this.personality) || this.rng() < 0.25;
+      this.fight = { hp: 100, nextHit: now + 600, koUntil: 0, fleeUntil: mad ? 0 : now + 9000, mad };
+      this.say = mad ? ["You want a fight? Fine.", "Oh, it's on!", "Big mistake."][Math.floor(this.rng() * 3)]! : ["Help!", "Hey! Leave me alone!", "What is wrong with you?"][Math.floor(this.rng() * 3)]!;
+      this.sayUntil = now + 2500;
+    }
+    const f = this.fight;
+    if (now < f.koUntil) return false;
+    f.hp -= dmg;
+    const dx = b.x - fromX, dz = b.z - fromZ, d = Math.hypot(dx, dz) || 1;
+    moveBody(ph, b, (dx / d) * 0.45, (dz / d) * 0.45, 1 / 60, 0);
+    if (f.hp <= 0) {
+      f.koUntil = now + 7000;
+      this.say = null;
+      return true;
+    }
+    return false;
+  }
   constructor(
     public name: string,
     public personality: Personality,
@@ -207,6 +234,43 @@ export class NpcBrain {
     this.nextDecide = this.plan.until;
   }
 
+  // In a fight: knocked down, getting up (and giving up), running away, or coming at me with punches.
+  private fighting(dt: number, w: World, now: number): BrainOut {
+    const b = this.body;
+    const f = this.fight!;
+    const dx = w.me.x - b.x, dz = w.me.z - b.z, d = Math.hypot(dx, dz) || 1;
+    const out = (speed: number, emote: string): BrainOut => ({ x: b.x, y: b.y, z: b.z, ry: this.ry, speed, sit: false, emote, visible: true, say: this.say });
+    if (now < f.koUntil) return out(0, "ko");
+    if (f.hp <= 0) {
+      f.hp = 100;
+      f.mad = false;
+      f.fleeUntil = now + 7000;
+      this.say = ["Okay, okay! You win.", "Ow. I give up.", "That's enough for me."][Math.floor(this.rng() * 3)]!;
+      this.sayUntil = now + 3000;
+    }
+    // I left (far away), or they have run far enough: back to their day.
+    if (d > 35 || (!f.mad && now > f.fleeUntil)) {
+      this.fight = null;
+      this.decide(w, now);
+      return out(0, "");
+    }
+    if (!f.mad) {
+      this.ry = Math.atan2(-dx, -dz);
+      moveBody(w.ph, b, (-dx / d) * 3.6 * dt, (-dz / d) * 3.6 * dt, dt, 0);
+      return out(0.9, "");
+    }
+    this.ry = Math.atan2(dx, dz);
+    if (d > 1.05) {
+      moveBody(w.ph, b, (dx / d) * 3.1 * dt, (dz / d) * 3.1 * dt, dt, 0);
+      return out(0.75, "fight");
+    }
+    if (now > f.nextHit) {
+      f.nextHit = now + 850 + this.rng() * 750;
+      this.hitMe?.(6 + Math.floor(this.rng() * 8), this);
+    }
+    return out(0, now > f.nextHit - 300 || now < f.nextHit - 1300 ? "punch" : "fight");
+  }
+
   // Start a chat with someone met on the way.
   startChat(o: NpcBrain, now: number) {
     if (this.chatWith || o.chatWith) return;
@@ -228,6 +292,11 @@ export class NpcBrain {
     let speed = 0;
     let emote = "";
     if (this.say && now > this.sayUntil) this.say = null;
+    if (this.fight) return this.fighting(dt, w, now);
+    if (this.social) {
+      if (now > this.social.until) this.social = null;
+      else return { x: b.x, y: b.y, z: b.z, ry: Math.atan2(w.me.x - b.x, w.me.z - b.z), speed: 0, sit: false, emote: this.social.emote, visible: true, say: this.say };
+    }
     // A chat: face each other, take turns, part after a few lines.
     if (this.chatWith) {
       const o = this.chatWith;

@@ -76,11 +76,13 @@ async function main() {
 
   // ---------------------------------------------------------------- homes
   let h = await shop.homeOf(dawit.id);
-  check("everyone starts in the free cottage with a bed, a table and a chair", h.house === "house.cottage" && h.items.length === 3);
+  check("everyone starts in a furnished free cottage (kitchen, bath, TV and console, radio, a dog, bed, table)", h.house === "house.cottage" && ["furn.kitchen", "furn.bathtub", "furn.console", "furn.radio", "furn.petbed", "furn.bed", "furn.table", "furn.tv"].every((k) => h.items.some((i) => i.key === k)));
+  check("the starter layout passes the home's own rules when saved", !(await rejects(shop.saveHome(dawit, { items: h.items }))));
   check("only owned houses", await rejects(shop.saveHome(dawit, { house: "house.villa" })));
   check("furniture must fit inside", await rejects(shop.saveHome(dawit, { items: [{ key: "furn.bed", x: 15, z: 0, r: 0 }] })));
   check("furniture cannot overlap", await rejects(shop.saveHome(dawit, { items: [{ key: "furn.table", x: 2, z: 2, r: 0 }, { key: "furn.chair", x: 3, z: 3, r: 0 }] })));
-  check("you place only as many as you own", await rejects(shop.saveHome(dawit, { items: [{ key: "furn.sofa", x: 0, z: 0, r: 0 }, { key: "furn.sofa", x: 0, z: 4, r: 0 }, { key: "furn.sofa", x: 0, z: 8, r: 0 }] })));
+  // (the starter home's sofa counts as one more)
+  check("you place only as many as you own", await rejects(shop.saveHome(dawit, { items: [{ key: "furn.sofa", x: 0, z: 0, r: 0 }, { key: "furn.sofa", x: 0, z: 4, r: 0 }, { key: "furn.sofa", x: 0, z: 8, r: 0 }, { key: "furn.sofa", x: 8, z: 0, r: 0 }] })));
   check("only furniture goes inside", await rejects(shop.saveHome(dawit, { items: [{ key: "car.hatch", x: 0, z: 0, r: 0 }] })));
   await shop.buy(dawit, "furn.rug");
   h = await shop.saveHome(dawit, { wall: "#ffeeee", floor: "#112233", access: "private", items: [{ key: "furn.sofa", x: 0, z: 0, r: 1 }, { key: "furn.rug", x: 4, z: 4, r: 0 }, { key: "furn.table", x: 5, z: 5, r: 0 }] });

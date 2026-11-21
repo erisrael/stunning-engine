@@ -123,7 +123,17 @@ export class Soccer {
     this.world.timestep = Math.min(1 / 30, Math.max(1 / 240, dt));
     // A curling ball bends (the Magnus effect, simply).
     const v = this.ball.linvel(), w = this.ball.angvel();
-    if (Math.abs(w.y) > 0.5) this.ball.applyImpulse({ x: -w.y * v.z * 0.0006, y: 0, z: w.y * v.x * 0.0006 }, true);
+    const kM = 0.0006 * this.world.timestep * 60;
+    if (Math.abs(w.y) > 0.5) this.ball.applyImpulse({ x: -w.y * v.z * kM, y: 0, z: w.y * v.x * kM }, true);
+    // The wall jumps when the kick is taken, and lands.
+    if (this.wall.length) {
+      const up = Math.max(0, 1 - Math.abs(performance.now() - this.jumpAt - 250) / 250) * 0.4;
+      this.wall.forEach((b, i) => {
+        const p = this.wallAt[i]!;
+        b.setNextKinematicTranslation({ x: p.x, y: 0.9 + up, z: p.z });
+        this.wallMeshes[i]!.position.set(p.x, up, p.z);
+      });
+    }
     this.world.step();
     const t = this.ball.translation(), q = this.ball.rotation();
     this.ballMesh.position.set(t.x, t.y, t.z);
@@ -140,6 +150,43 @@ export class Soccer {
     }
     // A ball that left the stadium comes back to the centre.
     if (t.y < -2 || Math.abs(t.x - (PITCH.x0 + PITCH.x1) / 2) > 45 || Math.abs(t.z - PITCH.cz) > 35) this.reset();
+  }
+
+  // Spin about the vertical (curl): set, or add to it (aftertouch).
+  setSpin(wy: number) {
+    this.ball.setAngvel({ x: 0, y: wy, z: 0 }, true);
+  }
+  addSpin(dwy: number) {
+    const w = this.ball.angvel();
+    this.ball.setAngvel({ x: w.x, y: Math.max(-14, Math.min(14, w.y + dwy)), z: w.z }, true);
+  }
+  // A free-kick wall: players (bodies the ball bounces off) at these spots, facing the ball.
+  private wall: RAPIER_NS.RigidBody[] = [];
+  private wallAt: { x: number; z: number }[] = [];
+  private wallMeshes: THREE.Object3D[] = [];
+  private jumpAt = -1e9;
+  setWall(pts: { x: number; z: number }[], scene: THREE.Scene) {
+    for (const b of this.wall) this.world.removeRigidBody(b);
+    for (const m of this.wallMeshes) scene.remove(m);
+    this.wall = [];
+    this.wallMeshes = [];
+    this.wallAt = pts;
+    for (const p of pts) {
+      const b = this.world.createRigidBody(this.R.RigidBodyDesc.kinematicPositionBased().setTranslation(p.x, 0.9, p.z));
+      this.world.createCollider(this.R.ColliderDesc.cuboid(0.22, 0.9, 0.28).setRestitution(0.35), b);
+      this.wall.push(b);
+      const g = new THREE.Group();
+      g.add(mesh(unitBox(), toon("#1d4ed8"), 0, 1.15, 0, 0.42, 0.7, 0.5));
+      g.add(mesh(unitBox(), toon("#f8fafc"), 0, 0.62, 0, 0.4, 0.36, 0.48));
+      for (const z of [-0.12, 0.12]) g.add(mesh(unitBox(), toon("#e2b48c"), 0, 0.22, z, 0.14, 0.44, 0.14));
+      g.add(mesh(sphere(12), toon("#8d5a3b"), 0, 1.68, 0, 0.3, 0.32, 0.3));
+      g.position.set(p.x, 0, p.z);
+      scene.add(g);
+      this.wallMeshes.push(g);
+    }
+  }
+  jumpWall() {
+    this.jumpAt = performance.now() + 60;
   }
 
   // The goalkeeper (penalty challenge): a body that slides and dives along the goal line.
@@ -170,44 +217,106 @@ export class Soccer {
   }
 }
 
-// Penalties: five shots from the spot against a keeper who guesses a side (more often right at higher levels).
+// ------------------------------------------------------------------------------------------------- shooting
+// The shot, as in the big football games: aim at a point in the goal mouth (the mouse), hold for power (past 85 %
+// the shot gets wild), Shift for a finesse shot (placed, with curl), Ctrl for a chip; after the kick, moving the
+// mouse sideways bends the ball (aftertouch). The ball flies with air drag and the Magnus effect, so the numbers
+// below solve for the kick that would reach the aim point without spin.
+
+const G = 9.81;
+const K = 0.35; // the ball's linear damping (air drag), the same as its body's
+function solveKick(from: { x: number; y: number; z: number }, to: { x: number; y: number; z: number }, speed: number) {
+  const dx = to.x - from.x, dz = to.z - from.z;
+  const D = Math.hypot(dx, dz);
+  const s = Math.max(speed, D * K * 1.3);
+  const T = -Math.log(1 - (D * K) / s) / K;
+  const e = 1 - Math.exp(-K * T);
+  const vy = ((to.y - from.y + (G * T) / K) * K) / e - G / K;
+  return { vx: (dx / D) * s, vy, vz: (dz / D) * s, T };
+}
+
+type ShotKeys = { finesse: boolean; chip: boolean };
+function shotKeys(): [ShotKeys, () => void] {
+  const k: ShotKeys = { finesse: false, chip: false };
+  const on = (e: KeyboardEvent) => {
+    if (e.key === "Shift") k.finesse = e.type === "keydown";
+    if (e.key === "Control") k.chip = e.type === "keydown";
+  };
+  window.addEventListener("keydown", on);
+  window.addEventListener("keyup", on);
+  return [k, () => (window.removeEventListener("keydown", on), window.removeEventListener("keyup", on))];
+}
+
+// A ring that shows where the shot is aimed (white) or the target to hit (gold), standing in the goal mouth.
+function ring(color: string, r: number) {
+  const m = new THREE.Mesh(new THREE.TorusGeometry(r, 0.05, 8, 32), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, depthTest: false }));
+  m.rotation.y = Math.PI / 2;
+  m.renderOrder = 5;
+  return m;
+}
+
+// Penalties: five shots from the spot against a keeper who guesses (more often right at higher levels) and dives
+// low or high; a chip down the middle beats a keeper who has already gone.
 export class Penalty implements Activity {
   kind = "penalty";
   private left = 5;
   private goals = 0;
   private drawAt = 0;
   private aimZ = 0;
+  private aimY = 0.35;
   private shotAt = 0;
+  private lastX = 0;
   private dive = 0;
+  private diveY = 0.95;
   private result = "";
   private keeperZ: number = PITCH.cz;
+  private keys: ShotKeys;
+  private unkey: () => void;
+  private aim = ring("#ffffff", 0.22);
   camera: { pos: THREE.Vector3; look: THREE.Vector3 };
   constructor(private c: ActCtx, private s: Soccer, private level: number) {
     s.addKeeper(c.scene);
+    [this.keys, this.unkey] = shotKeys();
     s.onGoal = () => {
-      if (this.shotAt) (this.goals++, (this.result = "GOAL!"), c.sound("win"));
+      if (this.shotAt && !this.result) (this.goals++, (this.result = "GOAL!"), c.sound("win"));
     };
     this.camera = { pos: new THREE.Vector3(PITCH.x0 + 15, 2.2, PITCH.cz), look: new THREE.Vector3(PITCH.x0, 1.2, PITCH.cz) };
+    c.scene.add(this.aim);
     this.place();
+  }
+  private target() {
+    return { x: PITCH.x0, y: 0.25 + this.aimY * (PITCH.goalH - 0.45), z: PITCH.cz - this.aimZ * (PITCH.goalW / 2 - 0.25) };
   }
   private place() {
     this.s.setState({ x: PITCH.x0 + 11, y: BALL_R, z: PITCH.cz, vx: 0, vy: 0, vz: 0 });
+    this.s.setSpin(0);
     this.keeperZ = PITCH.cz;
     this.s.moveKeeper(this.keeperZ);
+    if (this.s.keeperMesh) this.s.keeperMesh.rotation.x = 0;
     this.shotAt = 0;
+    this.result = "";
+    this.aim.visible = true;
     this.hud();
   }
   private hud() {
-    this.c.hud({ title: `Penalties · level ${this.level}`, line: this.result || (this.drawAt ? `Power ${Math.round(this.power() * 100)}%` : "Aim left or right, hold for power, let go"), score: this.goals, left: `${this.left} shots`, hint: "Esc to stop" });
+    const kind = this.keys.chip ? "Chip" : this.keys.finesse ? "Finesse" : "Power";
+    this.c.hud({ title: `Penalties · level ${this.level}`, line: this.result || (this.drawAt ? `${kind} shot · ${Math.round(this.power() * 100)}%${this.power() > 0.85 ? " (too hard?)" : ""}` : "Aim with the mouse, hold to power up, let go. Shift finesse, Ctrl chip"), score: this.goals, left: `${Math.max(0, this.left)} shots`, hint: "Esc pauses" });
   }
   private power() {
-    return this.drawAt ? Math.min(1, (performance.now() - this.drawAt) / 900) : 0;
+    return this.drawAt ? Math.min(1, (performance.now() - this.drawAt) / 1000) : 0;
   }
   down() {
     if (!this.shotAt && this.left > 0) this.drawAt = performance.now();
   }
   move(ndc: THREE.Vector2) {
-    this.aimZ = Math.max(-1, Math.min(1, ndc.x));
+    // After the kick: aftertouch (sideways mouse bends the ball for half a second).
+    if (this.shotAt && performance.now() - this.shotAt < 500) this.s.addSpin((ndc.x - this.lastX) * -18);
+    this.lastX = ndc.x;
+    if (this.shotAt) return;
+    this.aimZ = Math.max(-1, Math.min(1, ndc.x * 1.3));
+    this.aimY = Math.max(0, Math.min(1, (ndc.y + 0.6) / 1.2));
+    const t = this.target();
+    this.aim.position.set(t.x + 0.05, t.y, t.z);
   }
   up() {
     if (!this.drawAt || this.shotAt) return;
@@ -215,22 +324,32 @@ export class Penalty implements Activity {
     this.drawAt = 0;
     this.left--;
     this.result = "";
-    // Toward the goal (-x), sideways by the aim; harder shots rise more.
-    const speed = 14 + p * 16;
-    const dirZ = this.aimZ * 0.42;
-    this.s.setState({ x: PITCH.x0 + 11, y: BALL_R, z: PITCH.cz, vx: -speed, vy: 1 + p * 4.2, vz: -dirZ * speed });
+    const t = this.target();
+    // Too hard: wild (higher and wider, more the harder); too soft: weak and easy to save.
+    const wild = Math.max(0, p - 0.85) / 0.15;
+    t.y += wild * (0.4 + Math.random() * 1.1);
+    t.z += (Math.random() - 0.5) * wild * 1.6;
+    const speed = this.keys.chip ? 9 + p * 3 : this.keys.finesse ? 15 + p * 7 : 16 + p * 14;
+    const k = solveKick({ x: PITCH.x0 + 11, y: BALL_R, z: PITCH.cz }, t, speed);
+    this.s.setState({ x: PITCH.x0 + 11, y: BALL_R, z: PITCH.cz, vx: k.vx, vy: k.vy, vz: k.vz });
+    // Finesse: curl towards the far side of where it is aimed.
+    this.s.setSpin(this.keys.finesse ? Math.sign(t.z - PITCH.cz) * 3 : 0);
     this.shotAt = performance.now();
-    // The keeper guesses: right more often as the level rises.
-    const right = Math.random() < 0.25 + this.level * 0.2;
-    const target = PITCH.cz - dirZ * 11;
-    this.dive = right ? target : PITCH.cz + (Math.random() - 0.5) * PITCH.goalW;
+    this.aim.visible = false;
+    // The keeper guesses: right more often as the level rises; a chip is read only by the best.
+    const right = Math.random() < 0.2 + this.level * 0.2 - (this.keys.chip ? 0.35 : 0) - (p > 0.75 ? 0.1 : 0);
+    this.dive = right ? t.z : PITCH.cz + (Math.random() < 0.5 ? -1 : 1) * (1.5 + Math.random() * 2);
+    this.diveY = right && t.y > 1.3 ? 1.25 : 0.7;
     this.c.sound("shoot");
   }
   update(dt: number) {
     if (this.shotAt) {
       const since = (performance.now() - this.shotAt) / 1000;
-      if (since > 0.22) this.keeperZ += Math.sign(this.dive - this.keeperZ) * Math.min(Math.abs(this.dive - this.keeperZ), dt * (4 + this.level * 2));
-      this.s.moveKeeper(this.keeperZ, since > 0.22 && Math.abs(this.dive - PITCH.cz) > 1.5 ? 0.7 : 0.95);
+      const go = since > 0.2;
+      if (go) this.keeperZ += Math.sign(this.dive - this.keeperZ) * Math.min(Math.abs(this.dive - this.keeperZ), dt * (4.5 + this.level * 1.6));
+      const off = this.keeperZ - PITCH.cz;
+      this.s.moveKeeper(this.keeperZ, go && Math.abs(this.dive - PITCH.cz) > 1.2 ? this.diveY : 0.95);
+      if (this.s.keeperMesh) this.s.keeperMesh.rotation.x += ((go ? Math.max(-1.3, Math.min(1.3, -off * 0.45)) : 0) - this.s.keeperMesh.rotation.x) * Math.min(1, dt * 10);
       if (since > 2.6) {
         if (!this.result) (this.result = "Saved!"), this.c.sound("miss");
         if (this.left > 0) this.place();
@@ -241,11 +360,190 @@ export class Penalty implements Activity {
         }
       }
     }
-    if (this.drawAt || this.shotAt) this.hud();
+    this.hud();
   }
   stop() {
+    this.unkey();
+    this.c.scene.remove(this.aim);
     this.s.removeKeeper();
     this.s.onGoal = null;
+    this.s.reset();
+    this.c.hud(null);
+  }
+}
+
+// Free kicks (a challenge in levels, as in the score-a-goal mobile games): the ball on a spot, a wall 9.15 m in
+// front that jumps, a keeper who reacts. Get it in for a star, into a top corner for two, through the gold ring for
+// three. Stars are kept; a level with a star opens the next.
+export const FK_LEVELS: { dist: number; angle: number; wall: number; ring: [number, number]; task: string }[] = [
+  { dist: 18, angle: 0, wall: 2, ring: [-0.7, 0.6], task: "Over the wall, into the goal" },
+  { dist: 20, angle: 0.25, wall: 3, ring: [0.7, 0.7], task: "Curl it round the wall" },
+  { dist: 22, angle: -0.3, wall: 3, ring: [-0.75, 0.8], task: "Far top corner" },
+  { dist: 19, angle: 0.5, wall: 4, ring: [0.8, 0.85], task: "A tight angle: bend it" },
+  { dist: 24, angle: -0.15, wall: 4, ring: [0.75, 0.85], task: "From distance: power and dip" },
+  { dist: 26, angle: 0.35, wall: 5, ring: [-0.8, 0.8], task: "Long range, five in the wall" },
+  { dist: 21, angle: -0.55, wall: 5, ring: [0.8, 0.85], task: "From the edge of the box" },
+  { dist: 28, angle: 0, wall: 5, ring: [0.0, 0.9], task: "Right under the bar" },
+];
+const FK_KEY = "seed.freekick.stars";
+export function fkStars(): number[] {
+  try {
+    const a = JSON.parse(localStorage.getItem(FK_KEY) ?? "[]") as number[];
+    return Array.isArray(a) ? a : [];
+  } catch {
+    return [];
+  }
+}
+export class FreeKick implements Activity {
+  kind = "freekick";
+  private ball = { x: 0, y: BALL_R, z: 0 };
+  private drawAt = 0;
+  private shotAt = 0;
+  private aimZ = 0;
+  private aimY = 0.6;
+  private lastX = 0;
+  private result = "";
+  private stars = 0;
+  private keeperZ: number = PITCH.cz;
+  private dive = PITCH.cz;
+  private diveY = 0.95;
+  private keys: ShotKeys;
+  private unkey: () => void;
+  private aim = ring("#ffffff", 0.22);
+  private gold = ring("#facc15", 0.5);
+  private crossed = false;
+  camera: { pos: THREE.Vector3; look: THREE.Vector3 };
+  constructor(private c: ActCtx, private s: Soccer, private level: number) {
+    this.level = Math.max(1, Math.min(FK_LEVELS.length, level));
+    s.addKeeper(c.scene);
+    [this.keys, this.unkey] = shotKeys();
+    s.onGoal = null;
+    c.scene.add(this.aim, this.gold);
+    this.camera = { pos: new THREE.Vector3(), look: new THREE.Vector3() };
+    this.setup();
+  }
+  get where() {
+    return { x: this.ball.x + 1.6, z: this.ball.z };
+  }
+  private def() {
+    return FK_LEVELS[this.level - 1]!;
+  }
+  private setup() {
+    const L = this.def();
+    this.ball = { x: PITCH.x0 + Math.cos(L.angle) * L.dist, y: BALL_R, z: PITCH.cz + Math.sin(L.angle) * L.dist };
+    this.s.setState({ ...this.ball, vx: 0, vy: 0, vz: 0 });
+    this.s.setSpin(0);
+    // The wall: 9.15 m towards the goal, covering the near post side.
+    const toGoal = new THREE.Vector2(PITCH.x0 - this.ball.x, PITCH.cz - this.ball.z).normalize();
+    const side = new THREE.Vector2(-toGoal.y, toGoal.x);
+    const near = Math.sign(this.ball.z - PITCH.cz) || 1;
+    const c = { x: this.ball.x + toGoal.x * 9.15, z: this.ball.z + toGoal.y * 9.15 };
+    const pts: { x: number; z: number }[] = [];
+    for (let i = 0; i < L.wall; i++) {
+      const k = (i - (L.wall - 1) / 2) * 0.62 + near * 0.35 * (L.wall > 2 ? 1 : 0);
+      pts.push({ x: c.x + side.x * k, z: c.z + side.y * k });
+    }
+    this.s.setWall(pts, this.c.scene);
+    this.keeperZ = PITCH.cz + near * 0.6;
+    this.s.moveKeeper(this.keeperZ);
+    if (this.s.keeperMesh) this.s.keeperMesh.rotation.x = 0;
+    this.gold.position.set(PITCH.x0 + 0.05, 0.25 + L.ring[1] * (PITCH.goalH - 0.5), PITCH.cz + L.ring[0] * (PITCH.goalW / 2 - 0.5));
+    this.shotAt = 0;
+    this.crossed = false;
+    this.result = "";
+    this.stars = 0;
+    this.aim.visible = true;
+    // Behind the ball, looking at the goal.
+    this.camera.pos.set(this.ball.x - toGoal.x * 5, 2.1, this.ball.z - toGoal.y * 5);
+    this.camera.look.set(PITCH.x0, 1.3, PITCH.cz);
+    this.hud();
+  }
+  private target() {
+    return { x: PITCH.x0, y: 0.25 + this.aimY * (PITCH.goalH - 0.45), z: PITCH.cz - this.aimZ * (PITCH.goalW / 2 - 0.25) };
+  }
+  private power() {
+    return this.drawAt ? Math.min(1, (performance.now() - this.drawAt) / 1000) : 0;
+  }
+  private hud() {
+    const total = fkStars().reduce((a, b) => a + (b ?? 0), 0);
+    this.c.hud({ title: `Free kicks · level ${this.level} of ${FK_LEVELS.length}`, line: this.result || (this.drawAt ? `Power ${Math.round(this.power() * 100)}%${this.power() > 0.85 ? " (too hard?)" : ""}` : `${this.def().task}. Aim, hold, let go; move the mouse after the kick to curl it`), score: total, left: `best ${fkStars()[this.level - 1] ?? 0} of 3 stars`, hint: "Esc pauses" });
+  }
+  down() {
+    if (!this.shotAt) this.drawAt = performance.now();
+  }
+  move(ndc: THREE.Vector2) {
+    if (this.shotAt && performance.now() - this.shotAt < 600) this.s.addSpin((ndc.x - this.lastX) * -22);
+    this.lastX = ndc.x;
+    if (this.shotAt) return;
+    this.aimZ = Math.max(-1.15, Math.min(1.15, ndc.x * 1.3));
+    this.aimY = Math.max(0, Math.min(1.1, (ndc.y + 0.5) / 1.1));
+    const t = this.target();
+    this.aim.position.set(t.x + 0.05, t.y, t.z);
+  }
+  up() {
+    if (!this.drawAt || this.shotAt) return;
+    const p = this.power();
+    this.drawAt = 0;
+    const t = this.target();
+    const wild = Math.max(0, p - 0.85) / 0.15;
+    t.y += wild * (0.4 + Math.random() * 1.1);
+    t.z += (Math.random() - 0.5) * wild * 1.6;
+    const speed = this.keys.chip ? 12 + p * 4 : this.keys.finesse ? 17 + p * 7 : 19 + p * 12;
+    const k = solveKick(this.ball, t, speed);
+    this.s.setState({ ...this.ball, vx: k.vx, vy: k.vy, vz: k.vz });
+    this.s.setSpin(this.keys.finesse ? Math.sign(t.z - this.ball.z) * 3 : 0);
+    this.s.jumpWall();
+    this.shotAt = performance.now();
+    this.aim.visible = false;
+    // The keeper reads it late (better at higher levels) and goes for where it will cross.
+    this.dive = t.z + (Math.random() - 0.5) * (3.2 - this.level * 0.25);
+    this.diveY = t.y > 1.4 ? 1.3 : 0.75;
+    this.c.sound("shoot");
+  }
+  update(dt: number) {
+    if (this.shotAt) {
+      const since = (performance.now() - this.shotAt) / 1000;
+      const go = since > 0.32 - this.level * 0.02;
+      if (go) this.keeperZ += Math.sign(this.dive - this.keeperZ) * Math.min(Math.abs(this.dive - this.keeperZ), dt * (3.6 + this.level * 0.45));
+      this.s.moveKeeper(this.keeperZ, go ? this.diveY : 0.95);
+      const off = this.keeperZ - PITCH.cz;
+      if (this.s.keeperMesh) this.s.keeperMesh.rotation.x += ((go ? Math.max(-1.3, Math.min(1.3, -off * 0.45)) : 0) - this.s.keeperMesh.rotation.x) * Math.min(1, dt * 10);
+      // Scored? The ball past the line, between the posts, under the bar: stars by where it went in.
+      const b = this.s.pos;
+      if (!this.crossed && b.x < PITCH.x0 - BALL_R) {
+        this.crossed = true;
+        if (Math.abs(b.z - PITCH.cz) < PITCH.goalW / 2 && b.y < PITCH.goalH) {
+          const g = this.gold.position;
+          const corner = Math.abs(b.z - PITCH.cz) > PITCH.goalW / 2 - 1.1 && b.y > 1.45;
+          this.stars = Math.hypot(b.z - g.z, b.y - g.y) < 0.6 ? 3 : corner ? 2 : 1;
+          this.result = this.stars === 3 ? "GOAL! Through the ring: 3 stars" : this.stars === 2 ? "GOAL! Top corner: 2 stars" : "GOAL! 1 star";
+          this.c.sound("win");
+        }
+      }
+      if (since > 3) {
+        if (!this.stars) (this.result = "No goal. Try again."), this.c.sound("miss");
+        const all = fkStars();
+        if (this.stars > (all[this.level - 1] ?? 0)) {
+          all[this.level - 1] = this.stars;
+          try {
+            localStorage.setItem(FK_KEY, JSON.stringify(all));
+          } catch {}
+        }
+        if (this.stars) {
+          this.c.done("freekick", this.stars, this.stars, `Free kick level ${this.level}: ${this.stars} of 3 stars`);
+          if (this.level < FK_LEVELS.length) this.level++;
+        }
+        this.setup();
+        this.result = this.stars ? "" : "No goal. Try again.";
+      }
+    }
+    this.hud();
+  }
+  stop() {
+    this.unkey();
+    this.c.scene.remove(this.aim, this.gold);
+    this.s.setWall([], this.c.scene);
+    this.s.removeKeeper();
     this.s.reset();
     this.c.hud(null);
   }

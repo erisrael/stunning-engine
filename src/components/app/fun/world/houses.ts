@@ -2,7 +2,7 @@ import * as THREE from "three";
 import type { HomeLayout, Item } from "@/lib/fun-catalog";
 import type { Physics } from "./engine";
 import type { Interact } from "./city";
-import { furniture } from "./models";
+import { dog, furniture } from "./models";
 import { FURNITURE_PROP, placeProp } from "./props";
 import { glass, lamp, plain, surface } from "./pbr";
 import { textSprite } from "./toon";
@@ -89,7 +89,7 @@ function mergeStatic(g: THREE.Group, keep: Set<THREE.Object3D>) {
   }
 }
 
-export type BuiltHouse = { group: THREE.Group; interacts: Interact[]; door: { x: number; z: number }; inside: { x: number; z: number }; update: (me: { x: number; z: number }, t: number) => void; toggleLights: () => boolean; light: () => { x: number; y: number; z: number; on: boolean; r: number } };
+export type BuiltHouse = { group: THREE.Group; interacts: Interact[]; door: { x: number; z: number }; inside: { x: number; z: number }; update: (me: { x: number; z: number }, t: number) => void; toggleLights: () => boolean; light: () => { x: number; y: number; z: number; on: boolean; r: number }; callPet: (me: { x: number; z: number }) => boolean };
 
 // x0..x1 / z0..z1 is the room the owner furnishes (grid cells of 0.5 m from x0, z0); the door is on z0 (the
 // street side, north).
@@ -309,6 +309,7 @@ export function buildHouse(ph: Physics, ownerId: string, ownerName: string, lot:
   let lightsOn = true;
   const seats: Interact[] = [];
   const extra: Interact[] = [];
+  let pet: { bed: { x: number; z: number } } | null = null;
   for (const p of h.items) {
     const it = items.find((i) => i.key === p.key);
     if (!it) continue;
@@ -330,6 +331,30 @@ export function buildHouse(ph: Physics, ownerId: string, ownerName: string, lot:
     if (it.seat || it.model === "bed") seats.push({ id: `seat-${ownerId}-${p.x}-${p.z}`, x: px + Math.sin(fwd) * 0.9, y: 0, z: pz + Math.cos(fwd) * 0.9, r: 1.3, label: it.model === "bed" ? "Lie down" : it.model === "piano" ? "Play the piano" : "Sit down", kind: "sit", data: { x: px + Math.sin(fwd) * 0.2, y: 0.05, z: pz + Math.cos(fwd) * 0.2, ry: fwd } });
     if (it.model === "tv") extra.push({ id: `tv-${ownerId}-${p.x}-${p.z}`, x: px + Math.sin(fwd) * 1.4, y: 0, z: pz + Math.cos(fwd) * 1.4, r: 1.4, label: "Watch TV", kind: "tv" });
     if (it.model === "desk") extra.push({ id: `pc-${ownerId}-${p.x}-${p.z}`, x: px + Math.sin(fwd) * 0.9, y: 0, z: pz + Math.cos(fwd) * 0.9, r: 1.2, label: "Use the computer", kind: "computer" });
+    // Things to do at home: stand in front of it (k metres out along its front) and press E.
+    const front = (k: number) => ({ x: px + Math.sin(fwd) * k, z: pz + Math.cos(fwd) * k });
+    const act = (kind: string, label: string, k: number, data: Record<string, unknown> = {}, at = front(k)) =>
+      extra.push({ id: `${kind}-${ownerId}-${p.x}-${p.z}`, x: at.x, y: 0, z: at.z, r: 1.25, label, kind, data: { owner: ownerId, ...data } });
+    const side = { x: px + Math.cos(fwd) * (fw * 0.25 + 0.7), z: pz - Math.sin(fwd) * (fw * 0.25 + 0.7) };
+    if (it.model === "bathtub") act("bath", "Take a bath", 1.0, { x: px, y: 0.22, z: pz, ry: fwd + Math.PI / 2 });
+    else if (it.model === "kitchen") act("cook", "Cook a meal", 1.0);
+    else if (it.model === "fridge") act("snack", "Grab a snack and a drink", 1.0);
+    else if (it.model === "table") {
+      const seat = front(-(fd * 0.25 + 0.45));
+      act("dine", "Sit down and eat", 0, { x: seat.x, y: 0.05, z: seat.z, ry: fwd }, front(-(fd * 0.25 + 0.9)));
+    } else if (it.model === "radio") act("radio", "Turn the radio on or off", 0.8);
+    else if (it.model === "console") act("console", "Play the game console", 1.1);
+    else if (it.model === "lamp") act("lights", "Switch the lamp", 0.7);
+    else if (it.model === "bed") act("sleep", "Sleep (rest until you feel fresh)", 0, { x: px, y: 0.5, z: pz, ry: fwd + Math.PI }, side);
+    else if (it.model === "petbed") pet = { bed: { x: px, z: pz } };
+  }
+  // The dog: lies in its bed, wanders the room, follows its owner around the house, runs over when called.
+  let dogG: THREE.Group | null = null;
+  if (pet) {
+    dogG = dog(["#b07a43", "#3f3f46", "#e7d3b0", "#8a5a2b"][ownerId.length % 4]);
+    dogG.position.set(pet.bed.x, 0.06, pet.bed.z);
+    g.add(dogG);
+    extra.push({ id: `pet-${ownerId}`, x: pet.bed.x, y: 0, z: pet.bed.z + 0.9, r: 1.4, label: "Call and pet the dog", kind: "pet", data: { owner: ownerId } });
   }
   // The light switch by the door.
   extra.push({ id: `lights-${ownerId}`, x: cx + 1, y: 0, z: z0 + 0.8, r: 1.2, label: "Switch the lights", kind: "lights", data: { owner: ownerId } });
@@ -342,10 +367,50 @@ export function buildHouse(ph: Physics, ownerId: string, ownerName: string, lot:
   add(g, plain(mine ? "#1f6b3a" : "#1f3f7a", { rough: 0.4, metal: 0.5 }), cx + 1.6, 1.15, fz + 0.4, 0.42, 0.3, 0.26);
   const interacts: Interact[] = [...seats, ...extra, { id: `mail-${ownerId}`, x: cx + 1.6, y: 0, z: fz - 0.4, r: 1.6, label: mine ? "Decorate your home" : canEnter ? `${ownerName.split(" ")[0]}'s home` : "Private home: knock", kind: mine ? "decorate" : "home", data: { owner: ownerId, name: ownerName } }];
 
-  mergeStatic(g, new Set<THREE.Object3D>([n, ceilingLamp]));
+  mergeStatic(g, new Set<THREE.Object3D>([n, ceilingLamp, ...(dogG ? [dogG] : [])]));
   // The door opens when someone allowed in comes near, and closes behind them.
   let open = 0;
+  let goal = pet ? { ...pet.bed } : { x: 0, z: 0 };
+  let calledUntil = 0, lastT = 0, rest = 0;
+  const inRoom = (p: { x: number; z: number }) => p.x > x0 + 0.3 && p.x < x1 - 0.3 && p.z > z0 + 0.3 && p.z < z1 - 0.3;
+  const walkDog = (me: { x: number; z: number }, t: number) => {
+    if (!dogG) return;
+    const dt = Math.min(0.1, Math.max(0, t - lastT));
+    lastT = t;
+    const p = dogG.position;
+    const now = performance.now();
+    const called = now < calledUntil;
+    const ownerIn = inRoom(me);
+    // Far from anyone: stay still (no work for a house nobody is looking at).
+    if (Math.hypot(me.x - p.x, me.z - p.z) > 40) return;
+    if (called || (ownerIn && Math.hypot(me.x - p.x, me.z - p.z) > 2.6 && Math.random() < 0.02)) goal = { x: me.x, z: me.z };
+    else if (Math.hypot(goal.x - p.x, goal.z - p.z) < 0.35 && (rest -= dt) < 0) {
+      rest = 2 + Math.random() * 5;
+      goal = Math.random() < 0.3 && pet ? { ...pet.bed } : { x: x0 + 0.7 + Math.random() * (W - 1.4), z: z0 + 0.7 + Math.random() * (D - 1.4) };
+    }
+    const dx = goal.x - p.x, dz = goal.z - p.z, dl = Math.hypot(dx, dz);
+    const moving = dl > (called || ownerIn ? 0.9 : 0.3);
+    if (moving) {
+      const sp = (called ? 2.8 : 1.1) * dt;
+      const nx = p.x + (dx / dl) * Math.min(sp, dl), nz = p.z + (dz / dl) * Math.min(sp, dl);
+      if (inRoom({ x: nx, z: nz })) (p.x = nx), (p.z = nz);
+      else goal = pet ? { ...pet.bed } : goal;
+      dogG.rotation.y += (((Math.atan2(dx, dz) - dogG.rotation.y + Math.PI * 3) % (Math.PI * 2)) - Math.PI) * Math.min(1, dt * 8);
+    }
+    const u = dogG.userData as { legs: THREE.Object3D[]; tail: THREE.Object3D; head: THREE.Object3D };
+    u.legs.forEach((l, i) => (l.rotation.x = moving ? Math.sin(t * (called ? 18 : 11) + (i % 3 ? Math.PI : 0)) * 0.6 : 0));
+    u.tail.rotation.y = Math.sin(t * (called || ownerIn ? 18 : 5)) * (called || ownerIn ? 0.7 : 0.25);
+    u.head.rotation.x = !moving && (called || ownerIn) ? -0.35 : 0;
+    p.y = 0.06 + (called && !moving ? Math.abs(Math.sin(t * 9)) * 0.12 : 0);
+  };
+  const callPet = (me: { x: number; z: number }) => {
+    if (!dogG) return false;
+    calledUntil = performance.now() + 5000;
+    goal = { x: me.x, z: me.z };
+    return true;
+  };
   const update = (me: { x: number; z: number }, _t: number) => {
+    walkDog(me, _t);
     const near = canEnter && Math.hypot(me.x - cx, me.z - z0) < 2.3;
     const want = near ? 1 : 0;
     if (Math.abs(open - want) > 0.001) {
@@ -361,5 +426,5 @@ export function buildHouse(ph: Physics, ownerId: string, ownerName: string, lot:
   };
   // One shared room light (the town's) comes here when someone is inside and the lights are on.
   const light = () => ({ x: cx, y: H - 0.4, z: cz, on: lightsOn, r: Math.max(W, D) * 0.7 });
-  return { group: g, interacts, door: { x: cx, z: z0 - 1.2 }, inside: { x: cx, z: cz }, update, toggleLights, light };
+  return { group: g, interacts, door: { x: cx, z: z0 - 1.2 }, inside: { x: cx, z: cz }, update, toggleLights, light, callPet };
 }

@@ -180,7 +180,20 @@ export type SyncInput = {
   // Seed Strike online: create, join (public or with the code) or leave a match; hits I landed (checked here).
   strike?: { op: "create"; mode: "duel" | "tdm" | "ffa"; map: string; priv?: boolean } | { op: "join"; id: string; code?: string } | { op: "quick"; mode: "duel" | "tdm" | "ffa" } | { op: "leave" };
   hits?: { to: string; w: string; hs: boolean }[];
+  // Grand Prix online: open a race (circuit, cars, laps), join one, start it now (the host), leave; my race
+  // progress (laps done, the part of the current lap, best lap and finish time in seconds).
+  race?: { op: "open"; circuit: string; cars: string; laps: number } | { op: "join"; id: string } | { op: "go" } | { op: "leave" };
+  rp?: { lap: number; prog: number; best: number | null; done: number | null };
 };
+
+// Grand Prix races between people (in memory): someone opens one, others join on the grid until the lights (25
+// seconds after it opens, or sooner when the host starts it); laps and distance come in with each sync, so
+// everyone sees the same order; a race closes when everyone has left or after half an hour.
+type RacePlayer = { lap: number; prog: number; best: number | null; done: number | null; slot: number };
+type Race = { id: string; circuit: string; cars: string; laps: number; host: string; at: number; startAt: number; players: Map<string, RacePlayer> };
+const races = new Map<string, Race>();
+const RACE_MAX = 12;
+const raceOf = (id: string) => [...races.values()].find((r) => r.players.has(id)) ?? null;
 
 // Seed Strike matches between people (in memory): the server is the referee. A hit counts only between two
 // people alive in the same match, on different teams in team play, within the weapon's range of where the server
@@ -219,7 +232,7 @@ export async function sync(user: AppUser, input: SyncInput) {
   const num = (v: unknown, d: number, lo: number, hi: number) => (typeof v === "number" && Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : d);
   // The town reaches past the ring road (the Grand Prix, the archery field) and the Strike maps lie further out.
   p.x = num(input.x, p.x, -1100, 1100);
-  p.y = num(input.y, p.y, -2, 60);
+  p.y = num(input.y, p.y, -2, 140);
   p.z = num(input.z, p.z, -1100, 1100);
   p.ry = num(input.ry, p.ry, -10, 10);
   p.mv = input.mv ? Math.min(2, Math.round(Number(input.mv))) : 0;
@@ -273,6 +286,39 @@ export async function sync(user: AppUser, input: SyncInput) {
     pitch.ball = { x: 185, y: 1, z: 60, vx: 0, vy: 0, vz: 0 };
     pitch.seq++;
     pitch.by = "";
+  }
+
+  // Grand Prix online.
+  if (input.race) {
+    const op = input.race;
+    const cur = raceOf(p.id);
+    if (op.op === "leave" || op.op === "open" || op.op === "join") cur?.players.delete(p.id);
+    if (op.op === "open" && ["park", "harbour", "highland"].includes(String(op.circuit)) && ["f2", "gt"].includes(String(op.cars))) {
+      const id = `r${now.toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`;
+      const r: Race = { id, circuit: op.circuit, cars: op.cars, laps: Math.max(2, Math.min(10, Math.round(Number(op.laps) || 5))), host: p.id, at: now, startAt: now + 25_000, players: new Map() };
+      r.players.set(p.id, { lap: 0, prog: 0, best: null, done: null, slot: 0 });
+      races.set(id, r);
+    } else if (op.op === "join") {
+      const r = races.get(String(op.id));
+      if (!r || now > r.startAt - 3000) err = "That race has started.";
+      else if (r.players.size >= RACE_MAX) err = "That race is full.";
+      else r.players.set(p.id, { lap: 0, prog: 0, best: null, done: null, slot: Math.max(-1, ...[...r.players.values()].map((x) => x.slot)) + 1 });
+    } else if (op.op === "go" && cur && cur.host === p.id && now < cur.startAt - 6000) cur.startAt = now + 6000;
+  }
+  {
+    const r = raceOf(p.id);
+    const rp = input.rp;
+    if (r && rp && now > r.startAt) {
+      const me = r.players.get(p.id)!;
+      me.lap = Math.max(0, Math.min(r.laps + 1, Math.round(num(rp.lap, me.lap, 0, 20))));
+      me.prog = num(rp.prog, me.prog, 0, 1);
+      me.best = typeof rp.best === "number" && rp.best > 5 ? rp.best : me.best;
+      if (me.done === null && typeof rp.done === "number" && rp.done > 10 && me.lap > r.laps) me.done = rp.done;
+    }
+  }
+  for (const [id, r] of races) {
+    for (const pid of r.players.keys()) if (!room.has(pid)) r.players.delete(pid);
+    if (!r.players.size || now - r.at > 30 * 60_000) races.delete(id);
   }
 
   // Seed Strike: matches and hits.
@@ -429,6 +475,20 @@ export async function sync(user: AppUser, input: SyncInput) {
         feed: m.feed.slice(-5).map((f) => f.text).reverse(),
         over: m.over,
         endsIn: Math.max(0, Math.ceil((m.endsAt - now) / 1000)),
+      };
+    })(),
+    race: (() => {
+      const r = raceOf(p.id);
+      if (!r) return races.size ? { open: [...races.values()].filter((x) => now < x.startAt - 3000).map((x) => ({ id: x.id, circuit: x.circuit, cars: x.cars, laps: x.laps, n: x.players.size, startIn: x.startAt - now, host: room.get(x.host)?.name ?? "" })) } : null;
+      return {
+        id: r.id,
+        circuit: r.circuit,
+        cars: r.cars,
+        laps: r.laps,
+        host: r.host === p.id,
+        startIn: r.startAt - now,
+        slot: r.players.get(p.id)!.slot,
+        rows: [...r.players.entries()].filter(([id]) => id !== p.id).map(([id, x]) => ({ id, name: room.get(id)?.name ?? "?", lap: x.lap, prog: x.prog, best: x.best, done: x.done })),
       };
     })(),
     err,

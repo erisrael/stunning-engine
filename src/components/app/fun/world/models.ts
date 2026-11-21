@@ -26,6 +26,37 @@ const C = (g: THREE.Group, c: string, x: number, y: number, z: number, r: number
 };
 const dark = (hex: string, k = 0.7) => `#${new THREE.Color(hex).multiplyScalar(k).getHexString()}`;
 
+// A dog (a home's pet): legs, tail and head are groups the house animates (walk, wag, look up).
+export function dog(color = "#b07a43") {
+  const g = new THREE.Group();
+  B(g, color, 0, 0.33, 0, 0.26, 0.24, 0.56);
+  B(g, dark(color, 1.2), 0, 0.27, 0.05, 0.2, 0.12, 0.4);
+  const head = new THREE.Group();
+  head.position.set(0, 0.5, 0.3);
+  g.add(head);
+  B(head, color, 0, 0, 0, 0.22, 0.2, 0.22);
+  B(head, dark(color, 0.85), 0, -0.04, 0.14, 0.12, 0.1, 0.12);
+  S(head, "#111111", 0, -0.01, 0.205, 0.04);
+  for (const x of [-1, 1]) {
+    S(head, "#111111", x * 0.06, 0.04, 0.11, 0.03);
+    B(head, dark(color, 0.6), x * 0.1, 0.09, -0.03, 0.05, 0.13, 0.08);
+  }
+  const legs: THREE.Group[] = [];
+  for (const [x, z] of [[-1, 1], [1, 1], [-1, -1], [1, -1]] as const) {
+    const l = new THREE.Group();
+    l.position.set(x * 0.09, 0.23, z * 0.2);
+    B(l, color, 0, -0.11, 0, 0.07, 0.23, 0.07);
+    g.add(l);
+    legs.push(l);
+  }
+  const tail = new THREE.Group();
+  tail.position.set(0, 0.42, -0.28);
+  B(tail, color, 0, 0.06, -0.06, 0.05, 0.05, 0.2).rotation.x = 0.7;
+  g.add(tail);
+  g.userData = { legs, tail, head };
+  return g;
+}
+
 // ------------------------------------------------------------------------------------------------- furniture
 
 // A piece of furniture, its footprint w x d metres (cells x 0.5), in its colour.
@@ -93,6 +124,48 @@ export function furniture(model: string, color: string, w: number, d: number): T
       for (const x of [-1, 1]) B(g, "#64748b", (x * w) / 2.3, 0.37, 0, 0.06, 0.72, d * 0.8);
       B(g, "#111827", 0, 1.05, -d * 0.25, w * 0.4, 0.3, 0.04);
       B(g, "#38bdf8", 0, 1.05, -d * 0.23, w * 0.36, 0.25, 0.01);
+      break;
+    case "bathtub":
+      B(g, color, 0, 0.29, 0, w * 0.95, 0.58, d * 0.9, true);
+      B(g, "#e2e8f0", 0, 0.56, 0, w * 0.82, 0.04, d * 0.66).material = toon("#7dd3fc", { emissive: "#0c4a6e" });
+      C(g, "#cbd5e1", -w * 0.42, 0.78, 0, 0.025, 0.42);
+      B(g, "#cbd5e1", -w * 0.38, 0.98, 0, 0.14, 0.035, 0.035);
+      B(g, "#ffffff", w * 0.2, 0.62, -d * 0.36, w * 0.3, 0.06, 0.12);
+      break;
+    case "kitchen":
+      B(g, color, 0, 0.44, 0, w * 0.98, 0.88, d * 0.88, true);
+      B(g, "#3f3f46", 0, 0.9, 0, w, 0.05, d * 0.94);
+      B(g, "#111827", w * 0.22, 0.93, 0.05, w * 0.32, 0.012, d * 0.5);
+      for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) C(g, "#52525b", w * 0.22 + x! * w * 0.075, 0.94, 0.05 + z! * d * 0.12, 0.05, 0.012);
+      B(g, "#a1a1aa", -w * 0.24, 0.925, 0.05, w * 0.24, 0.02, d * 0.45);
+      C(g, "#d4d4d8", -w * 0.24, 1.04, -d * 0.3, 0.018, 0.24);
+      B(g, "#18181b", w * 0.22, 0.45, d * 0.45, w * 0.32, 0.5, 0.02);
+      for (const x of [-0.36, -0.12, 0.36]) B(g, dark(color, 0.8), x * w, 0.62, d * 0.45, 0.12, 0.02, 0.02);
+      B(g, color, 0, 1.78, -d * 0.3, w * 0.98, 0.62, d * 0.36, true);
+      C(g, "#9ca3af", w * 0.29, 1.0, 0.1, 0.1, 0.13);
+      break;
+    case "fridge":
+      B(g, color, 0, 0.92, 0, w * 0.86, 1.84, d * 0.84, true);
+      B(g, dark(color, 0.75), 0, 1.22, d * 0.425, w * 0.84, 0.012, 0.012);
+      for (const y of [1.5, 0.75]) B(g, "#71717a", w * 0.33, y, d * 0.44, 0.03, 0.4, 0.04);
+      break;
+    case "radio":
+      B(g, "#78350f", 0, 0.35, 0, w * 0.82, 0.7, d * 0.82);
+      B(g, color, 0, 0.82, 0, w * 0.74, 0.24, d * 0.36, true);
+      B(g, "#e7e5e4", -w * 0.15, 0.82, d * 0.185, w * 0.3, 0.16, 0.01);
+      S(g, "#1c1917", w * 0.2, 0.83, d * 0.18, 0.06);
+      C(g, "#a8a29e", w * 0.26, 1.06, -d * 0.08, 0.008, 0.3);
+      break;
+    case "console":
+      B(g, "#3f3f46", 0, 0.2, 0, w * 0.9, 0.4, d * 0.6, true);
+      B(g, color, 0, 0.46, 0, w * 0.42, 0.09, d * 0.34);
+      B(g, "#ffffff", w * 0.12, 0.505, d * 0.17, 0.1, 0.006, 0.012).material = toon("#60a5fa", { emissive: "#1d4ed8" });
+      for (const x of [-1, 1]) B(g, "#1f2937", x * w * 0.3, 0.43, d * 0.16, 0.16, 0.04, 0.1);
+      break;
+    case "petbed":
+      C(g, dark(color, 0.8), 0, 0.08, 0, Math.min(w, d) * 0.42, 0.16, 16);
+      C(g, "#fde68a", 0, 0.12, 0, Math.min(w, d) * 0.34, 0.06, 16);
+      B(g, "#94a3b8", w * 0.3, 0.05, d * 0.3, 0.16, 0.08, 0.16);
       break;
     case "tv":
       B(g, "#78350f", 0, 0.25, 0, w * 0.9, 0.5, d * 0.8);

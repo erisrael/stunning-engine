@@ -480,7 +480,7 @@ function splitWheels(m: THREE.Mesh, space: THREE.Object3D) {
 }
 
 // Swap the drawn body of a rig for the licensed model, keeping the rig (physics, lights) as it is.
-async function upgradeToGlb(rig: CarRig, key: string, color: string) {
+async function upgradeToGlb(rig: CarRig, key: string, color: string, lod = true) {
   const cfg = GLB[key];
   if (!cfg) return;
   const src = await loadGlb(key);
@@ -600,7 +600,8 @@ async function upgradeToGlb(rig: CarRig, key: string, color: string) {
     for (const l of rig.lights) (l.userData.off = n), (l.visible = !n);
   };
   setNear(true);
-  DETAILED.add({ group: rig.group, setNear, orphan: 0, k: cfg.lite ? 2.5 : 1 });
+  // My own car and the shop's pictures always show the model; the rest swap with distance.
+  if (lod) DETAILED.add({ group: rig.group, setNear, orphan: 0, k: cfg.lite ? 2.5 : 1 });
   rig.wheels = wheels.length ? wheels : rig.wheels;
   rig.paint = (c, finish = "metallic") => {
     const next = carPaint(c, finish);
@@ -613,20 +614,20 @@ async function upgradeToGlb(rig: CarRig, key: string, color: string) {
 }
 
 // A car for a catalog model: drawn now, the licensed model swapped in when it has loaded (High and Ultra).
-export function carRig(model: string, paintColor: string, rims = "#c0c4c8", opts: { detailed?: boolean } = {}): CarRig | null {
+export function carRig(model: string, paintColor: string, rims = "#c0c4c8", opts: { detailed?: boolean; lod?: boolean } = {}): CarRig | null {
   const style = CAR_BODY[model];
   if (!style) return null;
   const rig = style === "f2" ? formulaCar(paintColor) : drawnCar(style, paintColor, rims);
   rig.spec = SPECS[model] ?? SPECS[style] ?? SPECS.sedan!;
   // Scenery merging leaves cars alone (their drawn body and model swap with distance, their wheels spin).
   rig.group.userData.keep = true;
-  if (GLB[model] && opts.detailed !== false) void upgradeToGlb(rig, model, paintColor).catch(() => {});
+  if (GLB[model] && opts.detailed !== false) void upgradeToGlb(rig, model, paintColor, opts.lod !== false).catch(() => {});
   return rig;
 }
 
 // Any vehicle: a car rig when the model is a car, otherwise the older shapes (bikes, scooters, the cart, hover).
-export function anyVehicle(model: string, paint: string, rims?: string, detailed = true) {
-  const rig = carRig(model, paint, rims, { detailed });
+export function anyVehicle(model: string, paint: string, rims?: string, detailed = true, lod = true) {
+  const rig = carRig(model, paint, rims, { detailed, lod });
   if (rig) return { group: rig.group, wheels: rig.wheels.map((w) => w.spin), lights: rig.lights, len: rig.len, r: rig.r, seatY: rig.seatY, rig };
   const v = vehicle(model, paint, rims);
   return { ...v, rig: null as CarRig | null };

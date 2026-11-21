@@ -9,7 +9,7 @@ import { driveCar, moveBody, newBody, Physics, type Car } from "./engine";
 import { vehicle } from "./models";
 import { textSprite, toon, TOON, type Quality } from "./toon";
 import { VoiceMesh } from "./voice";
-import { PITCH, Penalty, Soccer, type BallState } from "./soccer";
+import { FreeKick, PITCH, Penalty, Soccer, type BallState } from "./soccer";
 import { TownAudio, musicFor, type Surface } from "./audio";
 import { Atmosphere } from "./atmosphere";
 import { Post } from "./post";
@@ -23,10 +23,12 @@ import { lamp } from "./pbr";
 import { anyVehicle, forgetCarDetail, updateCarDetail, type CarRig } from "./cars";
 import { forgetPropDetail, updatePropDetail } from "./props";
 import { Nature, startPlanting, takePlanted } from "./nature";
+import { route, routeLength } from "./gps";
 import { newCarState, speedOf, stepCar, type CarState } from "./vehicle-physics";
 import { ROADS } from "./streets";
 import { Traffic } from "./traffic";
-import { GrandPrix, type GpSetup, type RaceState } from "./gp";
+import { optimizeStatic } from "./merge";
+import { buildGrandPrix, GrandPrix, GT_CARS, type GpCircuit, type GpSetup, type RaceState } from "./gp";
 import { ArcheryField, FIELD, type ArcheryMode, type Bow } from "./archery";
 import { Strike, type StrikeHud, type StrikeSetup, type WeaponKey } from "./strike";
 
@@ -34,6 +36,10 @@ import { Strike, type StrikeHud, type StrikeSetup, type WeaponKey } from "./stri
 // with collision, or first person), everyone else (colleagues at desks or home, people in town live, town folk on
 // their walks), interactions, activities, voice, and talks to the server five times a second.
 
+export type RaceSync = { open: { id: string; circuit: string; cars: string; laps: number; n: number; startIn: number; host: string }[] } | { id: string; circuit: string; cars: string; laps: number; host: boolean; startIn: number; slot: number; rows: { id: string; name: string; lap: number; prog: number; best: number | null; done: number | null }[] };
+type HomeLive = { update: (me: { x: number; z: number }, t: number) => void; toggleLights: () => boolean; light: () => { x: number; y: number; z: number; on: boolean; r: number }; callPet: (me: { x: number; z: number }) => boolean };
+export type Crosshair = { color: string; len: number; gap: number; thick: number; dot: boolean; outline: boolean; moveError: boolean };
+export const DEFAULT_XHAIR: Crosshair = { color: "#ffffff", len: 5, gap: 3, thick: 2, dot: false, outline: true, moveError: true };
 export type Gfx = {
   preset: "auto" | Quality | "custom";
   quality: Quality;
@@ -45,6 +51,12 @@ export type Gfx = {
   fps: 0 | 30 | 60;
   fov: number;
   sens: number;
+  // Steady frame rate: the resolution drops a little (to 60 %) when frames run late and comes back when there is
+  // room, so the game holds its frame rate (on unless switched off).
+  steady?: boolean;
+  // Seed Strike: sensitivity while aiming through a scope or sights (times the normal one), and the crosshair.
+  scopeSens?: number;
+  xhair?: Crosshair;
   invert: boolean;
   names: boolean;
   sfx: number;
@@ -93,6 +105,8 @@ export type VoiceState = { mode: "off" | "near" | "room"; room: string | null; m
 
 export type TownCallbacks = {
   prompt: (p: { label: string; key: string } | null) => void;
+  // The GPS: where the waypoint is and how far along the roads.
+  nav?: (n: { label: string; dist: number } | null) => void;
   // I reached the place of a task someone gave me.
   quest?: (npcId: string, q: Quest) => void;
   hud: (h: Hud | null) => void;
@@ -112,6 +126,8 @@ export type TownCallbacks = {
   race?: (s: RaceState | null) => void;
   // The car's dials: engine speed, gear, condition (null on foot).
   gauge?: (g: { rpm: number; redline: number; gear: number; condition: number; manual: boolean } | null) => void;
+  fight?: (f: { me: number; foe: { name: string; hp: number } | null; block: boolean } | null) => void;
+  raceLobby?: (r: RaceSync | null) => void;
   card: (r: Resident) => void;
   npc: (n: NpcDef) => void;
   reward: (activity: string, amount: number, text: string, score: number) => void;
@@ -132,6 +148,9 @@ type Person = {
   group: THREE.Group;
   tag: THREE.Sprite | null;
   tagKey: string;
+  // Name tags show for a few seconds when I come near, then fade; again only after I have walked away.
+  near?: boolean;
+  tagUntil?: number;
   bubble: THREE.Sprite | null;
   bubbleText: string;
   target: THREE.Vector3;
@@ -169,13 +188,15 @@ export class Town {
   private graph: WalkGraph | null = null;
   // A destination someone pointed me to (map marker and a light in town), and tasks people gave me.
   marker: { x: number; z: number; label: string } | null = null;
+  // The way to the marker along the roads (GPS), kept up to date a few times a second.
+  gps: { x: number; z: number }[] = [];
   private beacon: THREE.Mesh | null = null;
   quests = new Map<string, Quest>();
   // Something for the eyes of town folk and colleagues to follow: my head.
   private meHead = new THREE.Object3D();
   private homeInteracts = new Map<string, Interact[]>();
   private homeGroups = new Map<string, THREE.Group>();
-  private homeLive = new Map<string, { update: (me: { x: number; z: number }, t: number) => void; toggleLights: () => boolean; light: () => { x: number; y: number; z: number; on: boolean; r: number } }>();
+  private homeLive = new Map<string, HomeLive>();
   // One light for the inside of the home I am in (cheaper than a light per house).
   private homeLight = new THREE.PointLight("#ffe8c4", 0, 16, 1.6);
   private body: ReturnType<typeof newBody>;
@@ -183,6 +204,10 @@ export class Town {
   private meGroup = new THREE.Group();
   private meTag: THREE.Sprite | null = null;
   nature!: Nature;
+  // Seed Core: slow fields, planting and defusing change how fast I walk.
+  private walkMul = 1;
+  // An arcade game (or another full panel) has the keyboard: the town does not walk or act on keys.
+  blockInput = false;
   private yaw = 0;
   private pitch = 0.35;
   private fpPitch = 0;
@@ -224,6 +249,10 @@ export class Town {
   private timers: number[] = [];
   private clock = new THREE.Clock();
   private lastFrame = 0;
+  // Home life: a cooked meal waiting at the table, the radio at home.
+  private meal = false;
+  private radio = false;
+  private atHome = false;
   private ro: ResizeObserver;
   private ray = new THREE.Raycaster();
   private drag: { x: number; y: number; moved: boolean; id: number } | null = null;
@@ -382,7 +411,7 @@ export class Town {
     this.city.homesGroup.add(built.group);
     this.homeGroups.set(id, built.group);
     this.homeInteracts.set(id, built.interacts);
-    if ("update" in built) this.homeLive.set(id, built as unknown as { update: (me: { x: number; z: number }, t: number) => void; toggleLights: () => boolean; light: () => { x: number; y: number; z: number; on: boolean; r: number } });
+    if ("update" in built) this.homeLive.set(id, built as unknown as HomeLive);
   }
 
   // Where town folk go: benches, the plaza, the park, shop windows, the café, work in the office, the stadium
@@ -530,6 +559,7 @@ export class Town {
     el.addEventListener("keydown", wake);
     const onKey = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement)?.closest?.("input, textarea, select")) return;
+      if (this.blockInput) return void this.keys.clear();
       const k = e.key.toLowerCase();
       const down = e.type === "keydown";
       // Manual gears: X up, Z down (Settings, driving).
@@ -537,7 +567,7 @@ export class Town {
         this.shiftKey = k === "x" ? 1 : -1;
         return;
       }
-      if (["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright", " ", "shift"].includes(k)) {
+      if (["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright", " ", "shift", "control", "x"].includes(k)) {
         e.preventDefault();
         if (down) this.keys.add(k);
         else this.keys.delete(k);
@@ -545,12 +575,21 @@ export class Town {
         return;
       }
       if (!down || e.repeat) return;
+      if ((this.activity as { fps?: boolean } | null)?.fps) {
+        if (k === "escape") this.escape();
+        else if (k === "enter") (e.preventDefault(), this.cb.open("chat-focus"));
+        else if (k === "c") this.crouch = !this.crouch;
+        return;
+      }
       if (k === "e" || k === "f") (e.preventDefault(), this.interact());
+      else if (k === "q") this.punch();
+      else if (k === "g") this.greetNearest();
+      else if (k === "f1" || k === "?") (e.preventDefault(), this.cb.open("help", { mode: this.activity?.kind ?? (this.car?.driving ? "drive" : "walk") }));
       else if (k === "v") this.toggleCamera();
       else if (k === "c") this.crouch = !this.crouch;
       else if (k === "h") this.honk();
       else if (k === "escape") this.escape();
-      else if (k === "t" || k === "enter") (e.preventDefault(), this.cb.open("chat-focus"));
+      else if (k === "enter") (e.preventDefault(), this.cb.open("chat-focus"));
       else if (k === "m") this.cb.open("map");
       else if (k === "i") this.cb.open("inventory");
       else if (k === "r" && !this.car?.driving) this.callRide();
@@ -560,6 +599,14 @@ export class Town {
     el.addEventListener("keydown", onKey);
     el.addEventListener("keyup", onKey);
     window.addEventListener("blur", blur);
+    // Esc works wherever the focus is (a menu button that went away leaves it on the page): pause, leave, close.
+    const onWinKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented || this.blockInput) return;
+      const tgt = e.target as HTMLElement | null;
+      if (tgt && (el.contains(tgt) || tgt.closest?.("input, textarea, select, [role=dialog]"))) return;
+      this.escape();
+    };
+    window.addEventListener("keydown", onWinKey);
     const ndc = (e: PointerEvent | MouseEvent) => {
       const r = this.renderer.domElement.getBoundingClientRect();
       return new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
@@ -567,7 +614,8 @@ export class Town {
     const cv = this.renderer.domElement;
     const down = (e: PointerEvent) => {
       el.focus();
-      if (this.activity?.down) return this.activity.down(ndc(e));
+      if (this.paused) return;
+      if (this.activity?.down) return this.activity.down(ndc(e), e.pointerType);
       if (this.camMode === "first" && e.pointerType === "mouse" && document.pointerLockElement !== cv) void cv.requestPointerLock?.();
       this.drag = { x: e.clientX, y: e.clientY, moved: false, id: e.pointerId };
     };
@@ -600,6 +648,7 @@ export class Town {
       el.removeEventListener("keydown", onKey);
       el.removeEventListener("keyup", onKey);
       window.removeEventListener("blur", blur);
+      window.removeEventListener("keydown", onWinKey);
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
       if (document.pointerLockElement === cv) document.exitPointerLock();
@@ -634,7 +683,8 @@ export class Town {
     this.cb.camera(this.camMode);
   }
   private escape() {
-    if (this.activity) return this.stopActivity();
+    if (this.activity?.kind === "strike") return (this.activity as unknown as Strike).act("pause");
+    if (this.activity) return this.setPaused(!this.paused);
     if (this.sit) return this.stand();
     this.cb.open("close");
   }
@@ -658,6 +708,135 @@ export class Town {
 
   // ------------------------------------------------------------------------------------------------- doing things
 
+  // ---- pause (a game mode other than Seed Strike, which has its own): everything holds; the menu shows.
+  paused = false;
+  private lastSetup: { kind: string; level: number; setup?: unknown } | null = null;
+  setPaused(on: boolean) {
+    if (!this.activity) on = false;
+    this.paused = on;
+    this.keys.clear();
+    this.clock.getDelta();
+    this.cb.open(on ? "pause" : "close", on ? { mode: this.activity!.kind } : undefined);
+    if (!on) this.el.focus({ preventScroll: true });
+  }
+  // Start the same session again (Restart in the pause menu).
+  restartActivity() {
+    const l = this.lastSetup;
+    this.paused = false;
+    this.stopActivity();
+    if (l) this.startActivity(l.kind, l.level, l.setup as never);
+  }
+  get manual() {
+    return this.manualGears;
+  }
+  setManual(on: boolean) {
+    this.manualGears = on;
+    if (this.car?.st) this.car.st.manual = on;
+  }
+
+  // ---- fists: Q punches whoever is in front of me (town folk); X held blocks most of a punch.
+  private hp = 100;
+  private hurtAt = 0;
+  private punchAt = 0;
+  private foe: NpcBrain | null = null;
+  private fightSent = "";
+  get health() {
+    return this.hp;
+  }
+  punch() {
+    const now = performance.now();
+    if (now - this.punchAt < 420 || this.car?.driving || this.sit || this.activity) return;
+    this.punchAt = now;
+    this.emote = "punch";
+    this.emoteUntil = now + 380;
+    this.sound.play("swish", { volume: 0.5 });
+    const b = this.body;
+    const fx = Math.sin(this.heading), fz = Math.cos(this.heading);
+    let best: { n: Town["npcs"][number]; d: number } | null = null;
+    for (const n of this.npcs) {
+      if (!n.brain || !n.av.root.visible) continue;
+      const p = n.brain.body;
+      const dx = p.x - b.x, dz = p.z - b.z, d = Math.hypot(dx, dz);
+      if (d > 1.8 || Math.abs(p.y - b.y) > 1 || (dx * fx + dz * fz) / (d || 1) < 0.45) continue;
+      if (!best || d < best.d) best = { n, d };
+    }
+    if (!best) return;
+    const br = best.n.brain!;
+    br.hitMe ??= (dmg, from) => this.hitMe(dmg, from);
+    const crit = Math.random() < 0.2;
+    const ko = br.struck(crit ? 28 : 14 + Math.floor(Math.random() * 7), b.x, b.z, this.ph, Date.now());
+    this.foe = br;
+    this.sound.play("hit");
+    if (ko) (this.sound.play("crash", { volume: 0.4 }), this.cb.toast(`You knocked out ${best.n.def.name}.`, "info"));
+  }
+  private hitMe(dmg: number, from: NpcBrain) {
+    const block = this.keys.has("x");
+    this.hp = Math.max(0, this.hp - (block ? Math.ceil(dmg * 0.25) : dmg));
+    this.hurtAt = performance.now();
+    this.foe = from;
+    this.sound.play(block ? "kick" : "hit", { volume: block ? 0.4 : 0.8 });
+    if (this.hp > 0) return;
+    // Knocked out: wake up at home (or the plaza), health back, the fight over.
+    for (const n of this.npcs) if (n.brain?.fight) n.brain.fight = null;
+    this.foe = null;
+    this.hp = 100;
+    const home = this.city.homeDoors.get(this.data.meId);
+    this.teleport(home?.x ?? 0, 0, (home?.z ?? 6) - 2);
+    this.cb.toast("You were knocked out and woke up at home.", "err");
+  }
+  // Every frame: the guard pose while someone fights me, health back over time, the health display.
+  private fists(dt: number) {
+    const now = performance.now();
+    const f = this.foe?.fight;
+    if (f && now > this.emoteUntil) (this.emote = this.keys.has("x") ? "fight" : "fight"), (this.emoteUntil = now + 200);
+    if (this.foe && !this.foe.fight) this.foe = null;
+    if (now - this.hurtAt > 5000 && this.hp < 100) this.hp = Math.min(100, this.hp + dt * 6);
+    const sig = this.foe?.fight ? `${Math.round(this.hp)}:${Math.max(0, Math.round(this.foe.fight.hp))}:${this.foe.name}` : this.hp < 100 ? `${Math.round(this.hp)}` : "";
+    if (sig !== this.fightSent) {
+      this.fightSent = sig;
+      this.cb.fight?.(sig ? { me: Math.round(this.hp), foe: this.foe?.fight ? { name: this.foe.name, hp: Math.max(0, Math.round(this.foe.fight.hp)) } : null, block: this.keys.has("x") } : null);
+    }
+  }
+  // G: wave and say hello to the nearest person; they wave back.
+  greetNearest() {
+    const b = this.body;
+    const n = this.npcs.filter((x) => x.brain && x.av.root.visible).sort((p, q) => Math.hypot(p.brain!.body.x - b.x, p.brain!.body.z - b.z) - Math.hypot(q.brain!.body.x - b.x, q.brain!.body.z - b.z))[0];
+    this.doEmote("wave");
+    if (n && Math.hypot(n.brain!.body.x - b.x, n.brain!.body.z - b.z) < 6 && !n.brain!.fight) {
+      n.brain!.social = { emote: "wave", until: Date.now() + 2500 };
+      n.brain!.say = ["Hello!", "Hi there!", "Hey!", "Good to see you."][Math.floor(Math.random() * 4)]!;
+      n.brain!.sayUntil = Date.now() + 2500;
+    }
+  }
+  // From the talk window: a high five, a hug, a dance together, or a fight.
+  socialWith(id: string, kind: string) {
+    const n = this.npcs.find((x) => x.def.id === id);
+    const br = n?.brain;
+    if (!n || !br) return;
+    const now = Date.now();
+    if (kind === "fight") {
+      br.hitMe ??= (dmg, from) => this.hitMe(dmg, from);
+      br.fight = { hp: 100, nextHit: now + 1200, koUntil: 0, fleeUntil: 0, mad: true };
+      br.say = "Fine. Let's go!";
+      br.sayUntil = now + 2500;
+      this.foe = br;
+      this.cb.toast("Q punches, hold X to block. Walk away to stop.", "info");
+      return;
+    }
+    const emote = kind === "dance" ? "dance" : kind === "hug" ? "hug" : "highfive";
+    br.social = { emote, until: now + (kind === "dance" ? 8000 : 2500) };
+    this.doEmote(emote);
+    if (kind !== "dance") this.emoteUntil = performance.now() + 2500;
+    this.sound.play(kind === "highfive" ? "kick" : "select", { volume: 0.6 });
+    const lines: Record<string, string[]> = { highfive: ["Up top!", "Nice one!", "Yes!"], hug: ["Aww, thanks.", "Good to see you too.", "Group hug!"], dance: ["Let's go!", "I love this song!", "Watch this move."] };
+    br.say = lines[emote === "highfive" ? "highfive" : kind]![Math.floor(Math.random() * 3)]!;
+    br.sayUntil = now + 2500;
+  }
+  // After a night's sleep: up from the bed, rested.
+  wake() {
+    if (this.sit) this.stand();
+    this.cb.toast("You slept well and feel rested.", "ok");
+  }
   doEmote(e: string) {
     this.emote = e;
     this.emoteUntil = performance.now() + (e === "dance" ? 8000 : 3000);
@@ -770,6 +949,57 @@ export class Town {
       case "tv":
         this.cb.open("tv");
         break;
+      // ---- home life
+      case "bath":
+        this.sit = { x: d.x as number, y: d.y as number, z: d.z as number, ry: d.ry as number, swing: false };
+        this.cb.sitting(true);
+        this.sound.play("splash");
+        this.cb.toast("A warm bath. Move or press E to get out.", "info");
+        break;
+      case "cook":
+        this.doEmote("interact");
+        this.sound.play("ding", { volume: 0.6 });
+        this.meal = true;
+        this.cb.toast("You cook shiro and injera. Dinner is ready at the table.", "ok");
+        break;
+      case "snack":
+        this.doEmote("interact");
+        this.sound.play("open");
+        this.cb.toast("A cold drink and a snack from the fridge.", "info");
+        break;
+      case "dine":
+        this.sit = { x: d.x as number, y: d.y as number, z: d.z as number, ry: d.ry as number, swing: false };
+        this.cb.sitting(true);
+        this.cb.toast(this.meal ? "You eat the meal you cooked. Delicious." : "You sit at the table. Cook something in the kitchen first.", this.meal ? "ok" : "info");
+        this.meal = false;
+        break;
+      case "radio":
+        this.radio = !this.radio;
+        this.sound.play("toggle" as never);
+        this.cb.toast(this.radio ? "Radio on" : "Radio off", "info");
+        break;
+      case "console":
+        this.cb.open("arcade", { game: "pick" });
+        break;
+      case "skydeck": {
+        const c = this.city.campus;
+        if (d.up) (this.teleport(c.deck.x, c.crownY, c.deck.z), this.cb.toast("The sky deck, 26 floors up. The whole town below.", "info"));
+        else this.teleport(c.lobby.x, 0, c.lobby.z);
+        this.sound.play("ding", { volume: 0.5 });
+        break;
+      }
+      case "sleep":
+        this.sit = { x: d.x as number, y: d.y as number, z: d.z as number, ry: d.ry as number, swing: false };
+        this.cb.sitting(true);
+        this.cb.open("sleep");
+        break;
+      case "pet":
+        if (this.homeLive.get(String(d.owner))?.callPet(this.body)) {
+          this.doEmote("interact");
+          this.sound.play("swish");
+          this.cb.toast("The dog runs over, wagging its tail.", "ok");
+        }
+        break;
       case "gp":
         this.cb.open("gp");
         break;
@@ -810,7 +1040,7 @@ export class Town {
         this.cb.open("present");
         break;
       case "arcade":
-        this.cb.open("arcade");
+        this.cb.open("arcade", { game: (d.game as string) ?? "snake" });
         break;
       case "treasure":
         this.claimChest();
@@ -857,7 +1087,27 @@ export class Town {
     this.cb.reward("treasure", 1, "You found today's treasure chest!", 1);
   }
 
+  // In a first-person match (Seed Strike): the match owns the keys and the mouse.
+  get inFps() {
+    return !!(this.activity as { fps?: boolean } | null)?.fps;
+  }
+
+  // Where guests start: the door of Seed Arcade.
+  goToArcade() {
+    const p = this.city.arcadeSpawn;
+    this.teleport(p.x, 0, p.z);
+  }
+
+  // Seed Core's buy menu and power buttons on the display.
+  strikeAct(a: string) {
+    if (this.activity?.kind === "strike") (this.activity as unknown as Strike).act(a);
+  }
+
   startActivity(kind: string, level: number, setup?: GpSetup | { mode: ArcheryMode; bow: Bow } | StrikeSetup) {
+    this.lastSetup = { kind, level, setup };
+    this.paused = false;
+    // The keys go to the game again (the menu's button that started it had them).
+    this.el.focus({ preventScroll: true });
     this.stopActivity();
     this.leaveCar();
     this.sit = null;
@@ -897,6 +1147,9 @@ export class Town {
             if (Math.abs(this.camera.fov - f) > 0.1) (this.camera.fov += (f - this.camera.fov) * 0.35), this.camera.updateProjectionMatrix();
           },
           hud: (h) => this.cb.strike?.(h),
+          speed: (k) => (this.walkMul = k),
+          scopeSens: () => this.gfx.scopeSens ?? 1,
+          jump: (vy) => ((this.body.vy = vy), (this.body.ground = false)),
           sound: (k) => this.beep(k),
           done: (k, score, coins, text) => this.cb.reward(k, coins, text, score),
           others: () => [...this.people.values()].filter((p) => p.live && p.act.startsWith("strike")).map((p) => ({ id: p.id, name: p.name, x: p.group.position.x, y: p.group.position.y, z: p.group.position.z })),
@@ -918,6 +1171,13 @@ export class Town {
         this.teleport(PITCH.x0 + 12.5, 0, PITCH.cz);
         this.activity = new Penalty(ctx, sc, level);
       });
+    } else if (kind === "freekick") {
+      void this.ensureSoccer().then((sc) => {
+        if (!sc) return;
+        const fk = new FreeKick(ctx, sc, level);
+        this.teleport(fk.where.x, 0, fk.where.z);
+        this.activity = fk;
+      });
     } else if (kind === "circuit") {
       const c = this.city.circuit;
       this.teleport(c.start.x - Math.sin(c.start.heading) * 4, 0, c.start.z - Math.cos(c.start.heading) * 4);
@@ -930,8 +1190,9 @@ export class Town {
       this.activity = new Run(ctx, "circuit", [...lap, ...lap, ...lap].map(([x, z]) => ({ x, y: 0, z, r: 9 })));
     } else if (kind === "gp") {
       // A Formula 2 style car on the grid, race control on it.
-      const tr = this.city.gp;
       const s: GpSetup = (setup as GpSetup | undefined) ?? { mode: "practice", difficulty: "amateur", opponents: 7, compound: "medium" };
+      this.gpCircuit(s.circuit ?? "park");
+      const tr = this.city.gp;
       if (!this.paved.includes(tr.onTrack)) this.paved.push(tr.onTrack);
       this.activity = new GrandPrix(
         {
@@ -939,7 +1200,7 @@ export class Town {
           car: () => (this.car ? { x: this.car.c.x, z: this.car.c.z, heading: this.car.c.heading, speed: this.car.c.speed } : null),
           placeCar: (x, z, h) => {
             this.teleport(x, 0, z);
-            this.spawnCar(x, z, h, "car.f2");
+            this.spawnCar(x, z, h, s.cars === "gt" ? `car.${s.myCar && (GT_CARS as readonly string[]).includes(s.myCar) ? s.myCar : "p930"}` : "car.f2");
             this.enterCar();
             this.yaw = h + Math.PI;
           },
@@ -964,6 +1225,25 @@ export class Town {
       this.activity = new Run(ctx, "race", this.city.race.checkpoints.map(([x, z]) => ({ x, y: 0, z, r: 9 })));
     }
   }
+  // The Grand Prix ground holds one circuit at a time: another one is built in its place (old track, walls and
+  // stands out; new ones in), and the town's map and driving surface follow.
+  private gpCircuit(key: GpCircuit) {
+    const old = this.scene.getObjectByName("grandprix");
+    if ((old?.userData.circuit ?? "park") === key) return;
+    const parent = old?.parent;
+    if (!old || !parent) return;
+    parent.remove(old);
+    old.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (m.isMesh) m.geometry.dispose();
+    });
+    this.ph.remove("gp");
+    const built = buildGrandPrix(this.ph, this.gfx.quality === "low" ? 0 : 1, key);
+    optimizeStatic(built.group);
+    parent.add(built.group);
+    this.paved = this.paved.filter((f) => f !== this.city.gp.onTrack);
+    (this.city as { gp: typeof built.track }).gp = built.track;
+  }
   private strikeCam: "third" | "first" | null = null;
   // A match I joined online before the game started (the lobby starts it on the right map).
   pendingMatch: { map?: string; mode?: string; code?: string } | null = null;
@@ -971,7 +1251,16 @@ export class Town {
   strikeOp(op: Record<string, unknown>) {
     this.outQueue.strike = op;
   }
+  // Grand Prix online: open, join, start or leave a race (the next sync carries it).
+  raceOp(op: Record<string, unknown>) {
+    this.outQueue.race = op;
+  }
+  private raceId = "";
+  // A race I left (answers still on their way must not put me back in it).
+  private leftRace = "";
   stopActivity() {
+    this.paused = false;
+    if (this.raceId && this.activity?.kind === "gp") (this.outQueue.race = { op: "leave" }), (this.leftRace = this.raceId), (this.raceId = "");
     const wasGp = this.activity?.kind === "gp";
     if (this.activity?.kind === "strike") {
       if ((this.activity as unknown as { setup: StrikeSetup }).setup?.online) this.outQueue.strike = { op: "leave" };
@@ -980,6 +1269,7 @@ export class Town {
     }
     this.activity?.stop();
     this.activity = null;
+    this.walkMul = 1;
     // Out of the race car: back on foot by the paddock, my own vehicle next time I call it.
     if (wasGp && this.car) {
       this.leaveCar();
@@ -1050,7 +1340,8 @@ export class Town {
   private spawnCar(x: number, z: number, heading: number, key?: string) {
     if (this.car) this.scene.remove(this.car.g);
     const it = this.data.items.find((i) => i.key === (key ?? this.data.ride.key)) ?? this.data.items.find((i) => i.key === "car.bike")!;
-    const v = anyVehicle(it.model ?? "bike", this.data.ride.paint ?? it.color ?? "#3b82f6", this.data.ride.rims, this.gfx.quality === "high" || this.gfx.quality === "ultra");
+    // My own car: always its real model, close or far, at every graphics level.
+    const v = anyVehicle(it.model ?? "bike", this.data.ride.paint ?? it.color ?? "#3b82f6", this.data.ride.rims, true, false);
     const pos = { x, z };
     this.ph.resolve(pos, v.r, 0, 1.4, 0.35, true);
     const lvl = this.data.ride.level ?? 1;
@@ -1229,6 +1520,7 @@ export class Town {
     };
     if (this.fresh) payload.fresh = true;
     if (this.soccer && this.ballMine) payload.ball = this.soccer.state();
+    if (this.raceId && this.activity?.kind === "gp") payload.rp = (this.activity as unknown as GrandPrix).progress();
     const sig = this.voice.take();
     if (sig.length) payload.sig = sig;
     this.outQueue = {};
@@ -1255,6 +1547,21 @@ export class Town {
       if (a?.kind === "strike") a.online(d.strike, this.data.meId);
       else this.pendingMatch = d.strike as { map?: string; mode?: string; code?: string };
     }
+    // Grand Prix online: the open races, or the race I am in (the grid and the others' progress).
+    const race = (d as { race?: RaceSync }).race ?? null;
+    this.cb.raceLobby?.(race);
+    if (race && "id" in race && race.id !== this.leftRace) {
+      const a = this.activity as unknown as GrandPrix | null;
+      if (this.raceId !== race.id) {
+        // Start first (stopping a session I was in would leave the race), then remember the race.
+        this.raceId = "";
+        this.startActivity("gp", 1, { mode: "sprint", difficulty: "amateur", opponents: 0, compound: "medium", circuit: race.circuit as GpCircuit, cars: race.cars as "f2" | "gt", online: { slot: race.slot, laps: race.laps, startIn: race.startIn } });
+        this.raceId = race.id;
+      } else if (a?.kind === "gp") {
+        a.setRemote(race.rows);
+        a.syncStart(race.startIn);
+      }
+    } else if (this.raceId) this.raceId = "";
     if (d.pitch) {
       if (d.pitch.score.teal !== this.score.teal || d.pitch.score.gold !== this.score.gold) {
         this.score = d.pitch.score;
@@ -1289,7 +1596,7 @@ export class Town {
         p.vp = vp;
         if (veh) {
           const it = this.data.items.find((i) => i.key === veh);
-          const v = anyVehicle(it?.model ?? "hatch", vp || it?.color || "#3b82f6", undefined, this.gfx.quality === "ultra");
+          const v = anyVehicle(it?.model ?? "hatch", vp || it?.color || "#3b82f6", undefined, true);
           p.vehMesh = v.group;
           p.vehMesh.userData.seatY = v.seatY;
           p.group.add(v.group);
@@ -1377,6 +1684,11 @@ export class Town {
     // The licensed car models only up close (the dealer's, parked ones, mine); farther away their drawn bodies.
     updateCarDetail(this.camera.position, { low: 0, medium: 30, high: 55, ultra: 90 }[this.gfx.quality]);
     updatePropDetail(this.camera.position, { low: 30, medium: 45, high: 65, ultra: 100 }[this.gfx.quality]);
+    if (this.marker) {
+      const here = this.car?.driving ? { x: this.car.c.x, z: this.car.c.z } : { x: this.body.x, z: this.body.z };
+      this.gps = route(here, this.marker);
+      this.cb.nav?.({ label: this.marker.label, dist: Math.round(routeLength(this.gps)) });
+    } else if (this.gps.length) (this.gps = []), this.cb.nav?.(null);
     this.nature.update(this.camera.position, this.gfx.view * 0.9, 0, 0);
     // Detailed anime models for me and the nearest characters, as many as the graphics level allows.
     // Realistic people share their model and draw in a few calls, so more of them can be detailed.
@@ -1408,7 +1720,7 @@ export class Town {
       if (where === "Out and about" && (Math.abs(me.x) > RING_IN || Math.abs(me.z) > RING_IN)) where = "Ring road";
     }
     if (where !== this.where) (this.where = where), this.cb.where(where);
-    this.sound.setMusic(musicFor(where, this.activity?.kind ?? null));
+    this.sound.setMusic(this.radio && this.atHome && !this.activity ? "radio" : musicFor(where, this.activity?.kind ?? null));
     // Speaking rings.
     if (this.voice.on) {
       const now = this.voice.speaking();
@@ -1431,12 +1743,13 @@ export class Town {
     this.raf = requestAnimationFrame(this.loop);
     const now = performance.now();
     if (this.gfx.fps && now - this.lastFrame < 1000 / this.gfx.fps - 1) return;
+    this.govern(now, now - this.lastFrame);
     this.lastFrame = now;
     // Up to a tenth of a second a frame: slow devices still move in real time.
     const dt = Math.min(this.clock.getDelta(), 0.1);
     const t = this.clock.elapsedTime;
     this.gamepad();
-    this.step(dt, t);
+    if (!this.paused) this.step(dt, t);
     this.atmosphere.update(dt, this.camera, this.meGroup.position);
     // The leaves move with the weather.
     this.nature.wind(dt, { clear: 0.45, cloudy: 0.8, rain: 1.2, fog: 0.3, storm: 2.0 }[this.atmosphere.weather] ?? 0.6);
@@ -1445,10 +1758,12 @@ export class Town {
       this.traffic.update(dt, obs, this.meGroup.position, this.gfx.view);
     }
     let inside: { x: number; y: number; z: number; on: boolean; r: number } | null = null;
+    this.atHome = false;
     for (const h of this.homeLive.values()) {
       h.update(this.body, t);
       const l = h.light();
       if (l.on && Math.hypot(l.x - this.body.x, l.z - this.body.z) < l.r + 4) inside = l;
+      if (Math.hypot(l.x - this.body.x, l.z - this.body.z) < l.r) this.atHome = true;
     }
     this.homeLight.intensity = inside ? 7 : 0;
     if (inside) this.homeLight.position.set(inside.x, inside.y, inside.z);
@@ -1519,7 +1834,19 @@ export class Town {
     // Hidden in first person (my own head would fill the view), and with the bow or a gun in my hands.
     this.me.root.visible = !(this.camMode === "first" && (!this.activity || (this.activity as { fps?: boolean }).fps)) && this.activity?.kind !== "archery";
     // My own name tag only when the camera is far enough back to see it whole; not while driving, racing or playing.
-    if (this.meTag) this.meTag.visible = this.camMode === "third" && !this.activity && !this.car?.driving && this.camera.position.distanceTo(this.meGroup.position) > 3.5;
+    // My own name is never over my head (others see it; I know who I am).
+    if (this.meTag) this.meTag.visible = false;
+    // Other people's names: shown for four seconds when I come within 12 m, fading out; again after I leave (18 m).
+    const nowT = performance.now();
+    for (const p of this.people.values()) {
+      if (!p.tag) continue;
+      const d = p.group.position.distanceTo(this.meGroup.position);
+      if (d < 12 && !p.near) (p.near = true), (p.tagUntil = nowT + 4000);
+      else if (d > 18) p.near = false;
+      const left = (p.tagUntil ?? 0) - nowT;
+      p.tag.visible = left > 0;
+      if (left > 0) p.tag.material.opacity = Math.min(1, left / 700);
+    }
 
     // My parked or driven vehicle.
     if (car) {
@@ -1550,6 +1877,7 @@ export class Town {
       p.av.update(t, dt, { speed: p.live ? (p.mv ? (p.mv === 2 ? 1 : 0.5) : 0) : d > 0.05 ? 0.4 : 0, air: false, sit: p.seat && d < 0.1, drive, crouch: false, emote: p.emote }, p.group.position.distanceTo(this.meGroup.position) < 6 ? this.meHead : null);
     }
 
+    this.fists(dt);
     // Town folk with a day of their own (brains), then the ones at their posts.
     const world = this.graph ? { hours: this.atmosphere.hours, raining: this.atmosphere.rainAmount > 0.35, me: { x: b.x, z: b.z, moving: this.keys.size > 0 }, places: this.places, graph: this.graph, ph: this.ph, others: this.npcs.filter((n) => n.brain).map((n) => n.brain!), matchOn: !!this.soccer } : null;
     const nowMs = Date.now();
@@ -1563,7 +1891,8 @@ export class Town {
         continue;
       }
       const o = n.brain.update(dt, world, nowMs);
-      pos.set(o.x, o.y, o.z);
+      pos.set(o.x, o.y + (o.emote === "ko" ? 0.18 : 0), o.z);
+      n.av.root.rotation.x += ((o.emote === "ko" ? -1.45 : 0) - n.av.root.rotation.x) * Math.min(1, dt * 6);
       let dr = o.ry - n.av.root.rotation.y;
       dr = Math.atan2(Math.sin(dr), Math.cos(dr));
       n.av.root.rotation.y += dr * Math.min(1, dt * 8);
@@ -1664,24 +1993,34 @@ export class Town {
     // The sun follows me so shadows stay sharp nearby (its direction comes from the town's clock).
   }
 
+  // Walking: speed eases in and out (quick, not instant). In a first-person match (Seed Strike) running is the
+  // default, Shift walks (slow, quiet, steady aim) and Ctrl or C crouches; in town Shift runs.
+  private vel = new THREE.Vector2();
   private walk(fx: number, fz: number, dt: number, run: boolean) {
     const b = this.body;
     const len = Math.hypot(fx, fz);
-    let dx = 0, dz = 0;
     let speed = 0;
+    const fps = !!(this.activity as { fps?: boolean } | null)?.fps;
+    const crouch = this.crouch || (fps && this.keys.has("control"));
+    let tx = 0, tz = 0;
     if (len > 0.1) {
       const sx = fx / Math.max(1, len), sz = fz / Math.max(1, len);
       const dir = new THREE.Vector3(sx, 0, sz).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.yaw);
-      const v = this.crouch ? 2.2 : run ? 8.5 : 4.6;
-      dx = dir.x * v * dt * Math.min(1, len);
-      dz = dir.z * v * dt * Math.min(1, len);
+      const v = (fps ? (crouch ? 2.0 : run ? 3.0 : 6.2) : crouch ? 2.2 : run ? 8.5 : 4.6) * this.walkMul;
+      tx = dir.x * v * Math.min(1, len);
+      tz = dir.z * v * Math.min(1, len);
       const want = Math.atan2(dir.x, dir.z);
       let diff = want - this.heading;
       while (diff > Math.PI) diff -= Math.PI * 2;
       while (diff < -Math.PI) diff += Math.PI * 2;
       this.heading += diff * Math.min(1, dt * 12);
-      speed = (run ? 1 : 0.5) * Math.min(1, len);
+      speed = (fps ? (run || crouch ? 0.4 : 0.85) : run ? 1 : 0.5) * Math.min(1, len);
     } else if (this.camMode === "first") this.heading = this.yaw + Math.PI;
+    // Ease towards the wanted speed (faster to stop than to start; on the ground only).
+    const k = 1 - Math.exp(-dt * (b.ground ? (tx || tz ? 14 : 20) : 2.5));
+    this.vel.x += (tx - this.vel.x) * k;
+    this.vel.y += (tz - this.vel.y) * k;
+    const dx = this.vel.x * dt, dz = this.vel.y * dt;
     const jump = (this.keys.has(" ") && b.ground ? 9.2 : 0) || 0;
     const x0 = b.x, z0 = b.z;
     if (jump) this.sound.play("jump");
@@ -1690,7 +2029,7 @@ export class Town {
     this.wasGround = b.ground;
     if (b.ground && speed > 0) {
       this.stepDist += Math.hypot(b.x - x0, b.z - z0);
-      if (this.stepDist > (run ? 0.85 : 0.6)) ((this.stepDist = 0), this.sound.step(this.surface(), run));
+      if (this.stepDist > (run ? 0.85 : 0.6)) ((this.stepDist = 0), !(fps && (run || crouch)) && this.sound.step(this.surface(), run));
     }
     return speed;
   }
@@ -1826,6 +2165,44 @@ export class Town {
     }
   }
 
+  // The steady frame rate: every second and a half, the average frame time against the target (the frame cap, or
+  // 60). Late frames lower the resolution by a tenth (down to 60 %); three on-time windows in a row raise it by a
+  // twentieth, but not within six seconds of a drop (no see-saw).
+  private dyn = { scale: 1, acc: 0, n: 0, at: 0, good: 0, dropAt: 0 };
+  get renderScale() {
+    return this.dyn.scale;
+  }
+  private govern(now: number, ms: number) {
+    const d = this.dyn;
+    if (this.gfx.steady === false) {
+      if (d.scale !== 1) this.applyScale(1);
+      return;
+    }
+    if (ms <= 0 || ms > 250) return;
+    d.acc += ms;
+    d.n++;
+    if (now - d.at < 1500) return;
+    const avg = d.acc / d.n;
+    d.acc = 0;
+    d.n = 0;
+    d.at = now;
+    const target = 1000 / (this.gfx.fps || 60);
+    if (avg > target * 1.15 && d.scale > 0.6) {
+      d.good = 0;
+      d.dropAt = now;
+      this.applyScale(Math.max(0.6, d.scale - 0.1));
+    } else if (avg < target * 1.05) {
+      if (++d.good >= 3 && d.scale < 1 && now - d.dropAt > 6000) (d.good = 0), this.applyScale(Math.min(1, d.scale + 0.05));
+    } else d.good = 0;
+  }
+  private applyScale(s: number) {
+    this.dyn.scale = Math.round(s * 100) / 100;
+    const r = Math.min(window.devicePixelRatio, this.gfx.ratio) * this.dyn.scale;
+    this.renderer.setPixelRatio(r);
+    this.post.setPixelRatio(r);
+    this.resize();
+  }
+
   private resize() {
     const w = this.el.clientWidth, h = this.el.clientHeight;
     if (!w || !h) return;
@@ -1836,24 +2213,53 @@ export class Town {
   }
 
   // The minimap: town blocks, me (an arrow) and everyone in town.
-  drawMap(c: HTMLCanvasElement, big: boolean) {
+  // The map: the minimap (around me, north up) or the big map (pan and zoom: view). Ground, districts, roads with
+  // their pavements and names, people, tasks, the waypoint and the GPS route, and me.
+  drawMap(c: HTMLCanvasElement, big: boolean, view?: { cx: number; cz: number; zoom: number }) {
     const g = c.getContext("2d");
     if (!g) return;
     const W = c.width, H = c.height;
-    const scale = big ? W / 480 : W / 120;
-    const cx = big ? 40 : this.body.x, cz = big ? 0 : this.body.z;
-    g.fillStyle = "#86c96b";
+    const scale = big ? (W / 760) * (view?.zoom ?? 1) : W / 120;
+    const cx = big ? (view?.cx ?? 100) : this.body.x, cz = big ? (view?.cz ?? -40) : this.body.z;
+    g.fillStyle = "#8fbf73";
     g.fillRect(0, 0, W, H);
     const tx = (x: number) => W / 2 + (x - cx) * scale, tz = (z: number) => H / 2 + (z - cz) * scale;
     for (const r of this.city.mapRects) {
       g.fillStyle = r.color;
       g.fillRect(tx(r.x - r.w / 2), tz(r.z - r.d / 2), r.w * scale, r.d * scale);
     }
+    // Roads: pavement, asphalt, a centre line on the big map.
+    const rect = (r: (typeof ROADS)[number], w: number) =>
+      r.axis === "x" ? g.fillRect(tx(r.from), tz(r.c - w / 2), (r.to - r.from) * scale, Math.max(1, w * scale)) : g.fillRect(tx(r.c - w / 2), tz(r.from), Math.max(1, w * scale), (r.to - r.from) * scale);
+    g.fillStyle = "#d9d5cc";
+    for (const r of ROADS) rect(r, r.w + r.s * 2);
+    g.fillStyle = "#4a4f57";
+    for (const r of ROADS) rect(r, r.w);
+    if (big && scale > 0.9) {
+      g.fillStyle = "#e9c46a";
+      for (const r of ROADS) if (r.lanes > 1) rect(r, 0.35);
+    }
     if (big) {
       g.fillStyle = "#0f172a";
-      g.font = "bold 12px system-ui";
+      g.font = `bold ${Math.round(11 + Math.min(4, scale * 2))}px system-ui`;
       g.textAlign = "center";
       for (const r of this.city.mapRects) if (r.label) g.fillText(r.label, tx(r.x), tz(r.z) + 4);
+      // Road names along the bigger roads when zoomed in.
+      if (scale > 1.1) {
+        g.font = "10px system-ui";
+        g.fillStyle = "#f8fafc";
+        const seen = new Set<string>();
+        for (const r of ROADS) {
+          if (seen.has(r.name) || r.to - r.from < 40) continue;
+          seen.add(r.name);
+          const m = (r.from + r.to) / 2;
+          g.save();
+          g.translate(r.axis === "x" ? tx(m) : tx(r.c), r.axis === "x" ? tz(r.c) + 3 : tz(m));
+          if (r.axis === "z") g.rotate(-Math.PI / 2);
+          g.fillText(r.name, 0, 0);
+          g.restore();
+        }
+      }
     }
     for (const p of this.people.values()) {
       if (!p.live) continue;
@@ -1862,7 +2268,16 @@ export class Town {
       g.arc(tx(p.target.x), tz(p.target.z), big ? 4 : 3, 0, Math.PI * 2);
       g.fill();
     }
-    // Where someone sent me (clamped to the edge of the minimap when far), and tasks.
+    // The GPS route.
+    if (this.gps.length > 1) {
+      g.strokeStyle = "#a855f7";
+      g.lineWidth = big ? 4 : 3;
+      g.lineJoin = "round";
+      g.beginPath();
+      this.gps.forEach((p, i) => (i ? g.lineTo(tx(p.x), tz(p.z)) : g.moveTo(tx(p.x), tz(p.z))));
+      g.stroke();
+    }
+    // Where someone sent me or I set a waypoint (clamped to the edge of the minimap when far), and tasks.
     const pin = (x: number, z: number, color: string) => {
       const px = Math.max(6, Math.min(W - 6, tx(x))), pz = Math.max(6, Math.min(H - 6, tz(z)));
       g.fillStyle = color;
@@ -1883,11 +2298,15 @@ export class Town {
     g.translate(tx(this.body.x), tz(this.body.z));
     g.rotate(-this.heading + Math.PI);
     g.fillStyle = "#dc2626";
+    g.strokeStyle = "#fff";
+    g.lineWidth = 1.5;
     g.beginPath();
     g.moveTo(0, -7);
     g.lineTo(5, 6);
     g.lineTo(-5, 6);
+    g.closePath();
     g.fill();
+    g.stroke();
     g.restore();
   }
 
