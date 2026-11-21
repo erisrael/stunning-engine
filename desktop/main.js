@@ -11,11 +11,18 @@
 
 const { app, BrowserWindow, ipcMain, screen, shell, session } = require("electron");
 const path = require("node:path");
+const fs = require("node:fs");
 const os = require("node:os");
+// The offline edition keeps its own data folder (the online app may be open at the same time).
+if (fs.existsSync(path.join(process.resourcesPath || "", "server", "server.js"))) {
+  app.setName("Seed Town Offline");
+  app.setPath("userData", path.join(app.getPath("appData"), "Seed Town Offline"));
+}
 const crypto = require("node:crypto");
 const settings = require("./settings");
 
 let cfg = null;
+let offline = false;
 let launcher = null;
 let game = null;
 let kiosk = false;
@@ -69,7 +76,7 @@ function openGame(mode = "town") {
   });
   game.setMenuBarVisibility(false);
   const home = new URL(cfg.server);
-  game.loadURL(kiosk ? `${cfg.server}/arcade?app=desktop` : `${cfg.server}/fun?world=1&desktop=1`);
+  game.loadURL(kiosk || offline ? `${cfg.server}/arcade?app=desktop` : `${cfg.server}/fun?world=1&desktop=1`);
   if (kiosk) {
     // Only the arcade: no other page of the site, no other site, no new windows, no closing.
     const keep = (e, url) => {
@@ -181,8 +188,40 @@ ipcMain.handle("perf:get", async () => {
   return { cpu: Math.round(cpu), memoryMb: Math.round(mem / 1024), gpu: metrics.filter((m) => m.type === "GPU").map((m) => Math.round(m.cpu ? m.cpu.percentCPUUsage : 0))[0] ?? null };
 });
 
-app.whenReady().then(() => {
+// The offline edition carries the whole site (resources/server): it runs on this computer with its own database
+// (in the app's data folder), and the arcade opens without an account or the internet.
+function startLocalServer() {
+  const js = path.join(process.resourcesPath || "", "server", "server.js");
+  if (!fs.existsSync(js)) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const probe = require("net").createServer();
+    probe.listen(0, "127.0.0.1", () => {
+      const port = probe.address().port;
+      probe.close(() => {
+        const db = path.join(app.getPath("userData"), "offline-db");
+        fs.mkdirSync(db, { recursive: true });
+        const child = require("child_process").spawn(process.execPath, [js], {
+          cwd: path.dirname(js),
+          env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", PORT: String(port), HOSTNAME: "127.0.0.1", NODE_ENV: "production", DATABASE_URL: "", PGLITE_DIR: db, MYSEED_INSECURE_COOKIES: "1", MYSEED_TIMER: "0" },
+          stdio: "ignore",
+          windowsHide: true,
+        });
+        app.on("before-quit", () => child.kill());
+        const url = `http://127.0.0.1:${port}`;
+        const wait = (n) => require("http").get(`${url}/api/health`, (r) => (r.resume(), resolve(url))).on("error", () => (n > 0 ? setTimeout(() => wait(n - 1), 500) : resolve(null)));
+        wait(240);
+      });
+    });
+  });
+}
+
+app.whenReady().then(async () => {
   cfg = settings.load(app);
+  const local = await startLocalServer();
+  if (local) {
+    cfg.server = local;
+    offline = true;
+  }
   if (cfg.uncapped) app.commandLine.appendSwitch("disable-frame-rate-limit");
   // Keep the session cookie (signed in once, like the browser), and send a desktop marker to the server.
   session.fromPartition("persist:seedtown").setUserAgent(`${session.defaultSession.getUserAgent()} SeedTownDesktop/${app.getVersion()}`);

@@ -1,6 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // The offline desktop edition carries a self-contained server (NEXT_OUTPUT=standalone); the live site does not.
+  ...(process.env.NEXT_OUTPUT === "standalone" ? { output: "standalone" as const } : {}),
   serverExternalPackages: ["exceljs", "@electric-sql/pglite", "postgres"],
   experimental: {
     agentUpgrade: "security",
