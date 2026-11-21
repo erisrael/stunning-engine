@@ -282,9 +282,9 @@ export function Studio({ look: start, wallet, items, presets: startPresets, onCl
               ) : (
                 <div className="grid grid-cols-2 gap-1.5">{OUTFITS.map((o) => tile(priceOf(o.key) ?? o, l.outfit === o.model, () => set({ outfit: o.model })))}</div>
               )}
-              {swatches(CLOTH, l.shirt, (c) => set({ shirt: c }), "Top")}
-              {swatches(CLOTH, l.pants, (c) => set({ pants: c }), "Bottom")}
-              {swatches(CLOTH, l.shoes, (c) => set({ shoes: c }), "Shoes")}
+              {swatches(CLOTH, l.shirt, (c) => set({ shirt: c, tintClothes: true }), "Top")}
+              {swatches(CLOTH, l.pants, (c) => set({ pants: c, tintClothes: true }), "Bottom")}
+              {swatches(CLOTH, l.shoes, (c) => set({ shoes: c, tintClothes: true }), "Shoes")}
             </div>
           )}
           {tab === "acc" && (

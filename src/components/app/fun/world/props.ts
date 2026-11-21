@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
+import { onCarriageway } from "./streets";
 
 // Real props (Poly Haven, CC0; public/models/props, see the asset manifest): each file loads once and is cloned
 // where it is used (geometry and textures shared). Sizes are fitted to the space they stand in.
@@ -52,6 +53,9 @@ export function forgetPropDetail(root: THREE.Object3D) {
 // A copy of a prop on the floor at (x, z), turned ry; fit: the size to fit into (width, depth) when given.
 export async function placeProp(parent: THREE.Object3D, key: string, x: number, z: number, ry: number, fit?: { w: number; d: number; y?: number }) {
   if (!(PROP_KEYS as readonly string[]).includes(key)) return null;
+  parent.updateWorldMatrix(true, false);
+  const w = parent.localToWorld(new THREE.Vector3(x, 0, z));
+  if (onCarriageway(w.x, w.z)) return null;
   const src = await load(key).catch(() => null);
   if (!src) return null;
   const o = src.clone(true);

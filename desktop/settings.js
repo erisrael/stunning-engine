@@ -12,8 +12,11 @@ const PRESETS = {
 
 const DEFAULTS = {
   server: "https://ops.myseed.com.et",
-  preset: "high",
-  graphics: { ...PRESETS.high },
+  // Medium by default: the town is big now; the game also lowers its resolution by itself to hold 60 fps.
+  preset: "medium",
+  graphics: { ...PRESETS.medium },
+  // Settings from before 1.2 move once to Medium (High was the old default and too heavy for most PCs).
+  v: 2,
   display: { mode: "windowed", width: 1600, height: 900 },
   showFps: true,
   updates: true,
@@ -31,6 +34,7 @@ function file(app) {
 function load(app) {
   try {
     const saved = JSON.parse(fs.readFileSync(file(app), "utf8"));
+    if ((saved.v ?? 1) < 2) (saved.v = 2), saved.preset !== "low" && ((saved.preset = "medium"), (saved.graphics = { ...PRESETS.medium }));
     return { ...DEFAULTS, ...saved, graphics: { ...DEFAULTS.graphics, ...(saved.graphics || {}) }, display: { ...DEFAULTS.display, ...(saved.display || {}) }, arcade: { ...DEFAULTS.arcade, ...(saved.arcade || {}) } };
   } catch {
     return structuredClone(DEFAULTS);

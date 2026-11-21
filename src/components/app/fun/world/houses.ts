@@ -323,12 +323,13 @@ export function buildHouse(ph: Physics, ownerId: string, ownerName: string, lot:
     g.add(m);
     // A real model (Poly Haven, CC0) replaces the drawn one when there is one for this kind of furniture.
     const pk = FURNITURE_PROP[it.model ?? ""];
-    if (pk) void placeProp(g, pk, px, pz, p.r * (Math.PI / 2) + Math.PI, { w: fw * 0.5, d: fd * 0.5, y: 0.06 }).then((h) => h && (m.visible = false));
+    if (pk) void placeProp(g, pk, px, pz, p.r * (Math.PI / 2), { w: fw * 0.5, d: fd * 0.5, y: 0.06 }).then((h) => h && (m.visible = false));
     const tall: Record<string, number> = { rug: 0, lamp: 1.7, plant: 1, tree: 2.2, shelf: 2, tv: 1.5, painting: 0, aquarium: 1.3, fireplace: 1.4, arcade: 1.8, bed: 0.6, chair: 0.5, sofa: 0.5, armchair: 0.5, throne: 0.6, piano: 1.2, table: 0.78, desk: 0.78 };
     const ht = tall[it.model ?? ""] ?? 0.8;
     if (ht > 0) ph.sized(px, ht / 2, pz, fw * 0.5 * 0.9, ht, fd * 0.5 * 0.9, tag);
     const fwd = p.r * (Math.PI / 2);
-    if (it.seat || it.model === "bed") seats.push({ id: `seat-${ownerId}-${p.x}-${p.z}`, x: px + Math.sin(fwd) * 0.9, y: 0, z: pz + Math.cos(fwd) * 0.9, r: 1.3, label: it.model === "bed" ? "Lie down" : it.model === "piano" ? "Play the piano" : "Sit down", kind: "sit", data: { x: px + Math.sin(fwd) * 0.2, y: 0.05, z: pz + Math.cos(fwd) * 0.2, ry: fwd } });
+    const lie = { x: px + Math.sin(fwd) * (sd * 0.25 - 0.55), y: 0.6, z: pz + Math.cos(fwd) * (sd * 0.25 - 0.55), ry: fwd, lie: true };
+    if (it.seat || it.model === "bed") seats.push({ id: `seat-${ownerId}-${p.x}-${p.z}`, x: px + Math.sin(fwd) * 0.9, y: 0, z: pz + Math.cos(fwd) * 0.9, r: 1.3, label: it.model === "bed" ? "Lie down" : it.model === "piano" ? "Play the piano" : "Sit down", kind: "sit", data: it.model === "bed" ? lie : { x: px + Math.sin(fwd) * 0.2, y: 0.05, z: pz + Math.cos(fwd) * 0.2, ry: fwd } });
     if (it.model === "tv") extra.push({ id: `tv-${ownerId}-${p.x}-${p.z}`, x: px + Math.sin(fwd) * 1.4, y: 0, z: pz + Math.cos(fwd) * 1.4, r: 1.4, label: "Watch TV", kind: "tv" });
     if (it.model === "desk") extra.push({ id: `pc-${ownerId}-${p.x}-${p.z}`, x: px + Math.sin(fwd) * 0.9, y: 0, z: pz + Math.cos(fwd) * 0.9, r: 1.2, label: "Use the computer", kind: "computer" });
     // Things to do at home: stand in front of it (k metres out along its front) and press E.
@@ -345,7 +346,7 @@ export function buildHouse(ph: Physics, ownerId: string, ownerName: string, lot:
     } else if (it.model === "radio") act("radio", "Turn the radio on or off", 0.8);
     else if (it.model === "console") act("console", "Play the game console", 1.1);
     else if (it.model === "lamp") act("lights", "Switch the lamp", 0.7);
-    else if (it.model === "bed") act("sleep", "Sleep (rest until you feel fresh)", 0, { x: px, y: 0.5, z: pz, ry: fwd + Math.PI }, side);
+    else if (it.model === "bed") act("sleep", "Sleep (rest until you feel fresh)", 0, lie, side);
     else if (it.model === "petbed") pet = { bed: { x: px, z: pz } };
   }
   // The dog: lies in its bed, wanders the room, follows its owner around the house, runs over when called.

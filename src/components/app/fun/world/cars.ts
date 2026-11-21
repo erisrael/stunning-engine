@@ -523,6 +523,8 @@ async function upgradeToGlb(rig: CarRig, key: string, color: string, lod = true)
   holder.updateMatrixWorld(true);
   const b3 = new THREE.Box3().setFromObject(holder);
   holder.position.set(-(b3.min.x + b3.max.x) / 2, -b3.min.y, -(b3.min.z + b3.max.z) / 2);
+  // The driver's head stays under this model's roof (a sitting driver's head is about a metre over the seat).
+  rig.seatY = Math.min(rig.seatY, b3.max.y - b3.min.y - 1.02);
   // Its paint becomes the car paint (own copy), shadows on.
   let paintM = carPaint(color, "metallic");
   model.traverse((o) => {

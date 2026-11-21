@@ -47,6 +47,7 @@ export class Character {
         .then((v: Detailed) => {
           this.loading = false;
           if (this.dead || g !== this.gen) return v.dispose();
+          if (this.look.style === "realistic") v.setLook?.(this.look);
           this.vrm = v;
           this.group.add(v.root);
           if (this.wantVrm) this.dropProc();

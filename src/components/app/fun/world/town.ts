@@ -25,7 +25,7 @@ import { forgetPropDetail, updatePropDetail } from "./props";
 import { Nature, startPlanting, takePlanted } from "./nature";
 import { route, routeLength } from "./gps";
 import { newCarState, speedOf, stepCar, type CarState } from "./vehicle-physics";
-import { ROADS } from "./streets";
+import { onCarriageway, ROADS } from "./streets";
 import { Traffic } from "./traffic";
 import { optimizeStatic } from "./merge";
 import { buildGrandPrix, GrandPrix, GT_CARS, type GpCircuit, type GpSetup, type RaceState } from "./gp";
@@ -220,7 +220,8 @@ export class Town {
   private sprint = false;
   private crouch = false;
   private camMode: "third" | "first" = "third";
-  private sit: { x: number; y: number; z: number; ry: number; swing?: boolean } | null = null;
+  // A seat (or a bed: lie flat, head on the pillow).
+  private sit: { x: number; y: number; z: number; ry: number; swing?: boolean; lie?: boolean } | null = null;
   private car: { c: Car; g: THREE.Group; wheels: THREE.Object3D[]; lights: THREE.Mesh[]; key: string; paint: string; driving: boolean; seatY: number; rig: CarRig | null; st: CarState | null } | null = null;
   // Extra paved areas (race tracks) where cars keep their grip; the rest off the streets is grass.
   paved: ((x: number, z: number) => boolean)[] = [];
@@ -249,6 +250,9 @@ export class Town {
   private timers: number[] = [];
   private clock = new THREE.Clock();
   private lastFrame = 0;
+  // Trees and plants left out because they would have stood on a road or a track (tests read it).
+  offRoad = 0;
+  private wasLying = false;
   // Home life: a cooked meal waiting at the table, the radio at home.
   private meal = false;
   private radio = false;
@@ -328,7 +332,10 @@ export class Town {
       detail: gfx.quality === "low" ? 0 : 1,
     });
     this.scene.add(this.city.root);
-    this.nature = new Nature(this.scene, takePlanted(), gfx.quality);
+    const spots = takePlanted();
+    const kept = spots.filter((p) => !onCarriageway(p.x, p.z, 0) && !this.city.gp.onTrack(p.x, p.z));
+    this.offRoad = spots.length - kept.length;
+    this.nature = new Nature(this.scene, kept, gfx.quality);
     // Small things do not cast shadows (they would double the draw calls for little gain).
     this.city.root.traverse((o) => {
       const m = o as THREE.Mesh;
@@ -516,6 +523,7 @@ export class Town {
     const r = this.data.residents.find((x) => x.me);
     this.meTag = r ? textSprite(["You", STATUS_LABEL[r.status]], { bar: r.progress, color: STATUS_COLOR[r.status], speaking: this.speakingIds.has(this.data.meId) }) : textSprite(["You"], { speaking: this.speakingIds.has(this.data.meId) });
     this.meTag.position.set(0, 2.45, 0);
+    this.meTag.visible = false;
     this.meGroup.add(this.meTag);
   }
 
@@ -601,9 +609,10 @@ export class Town {
     window.addEventListener("blur", blur);
     // Esc works wherever the focus is (a menu button that went away leaves it on the page): pause, leave, close.
     const onWinKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape" || e.defaultPrevented || this.blockInput) return;
+      if ((e.key !== "Escape" && e.key !== "F1") || e.defaultPrevented || this.blockInput) return;
       const tgt = e.target as HTMLElement | null;
       if (tgt && (el.contains(tgt) || tgt.closest?.("input, textarea, select, [role=dialog]"))) return;
+      if (e.key === "F1") return e.preventDefault(), this.cb.open("help", { mode: this.activity?.kind ?? (this.car?.driving ? "drive" : "walk") });
       this.escape();
     };
     window.addEventListener("keydown", onWinKey);
@@ -911,7 +920,7 @@ export class Town {
     const d = it.data ?? {};
     switch (it.kind) {
       case "sit":
-        this.sit = { x: d.x as number, y: d.y as number, z: d.z as number, ry: d.ry as number, swing: !!d.swing };
+        this.sit = { x: d.x as number, y: d.y as number, z: d.z as number, ry: d.ry as number, swing: !!d.swing, lie: !!d.lie };
         this.sound.play("select");
         this.cb.sitting(true);
         break;
@@ -989,7 +998,7 @@ export class Town {
         break;
       }
       case "sleep":
-        this.sit = { x: d.x as number, y: d.y as number, z: d.z as number, ry: d.ry as number, swing: false };
+        this.sit = { x: d.x as number, y: d.y as number, z: d.z as number, ry: d.ry as number, swing: false, lie: true };
         this.cb.sitting(true);
         this.cb.open("sleep");
         break;
@@ -1360,6 +1369,13 @@ export class Town {
     this.cb.driving(true);
     this.startEngine();
   }
+  // Where the driver sits: the left seat (cars here drive on the right), in the middle of a single-seater; the
+  // seat's height follows the car's model (its roof).
+  private driverSeat(car: NonNullable<Town["car"]>) {
+    const h = car.c.heading;
+    const side = car.key === "car.f2" || !car.rig ? 0 : 0.36;
+    return { x: car.c.x + Math.cos(h) * side, y: car.c.y + (car.rig?.seatY ?? car.seatY), z: car.c.z - Math.sin(h) * side };
+  }
   private leaveCar() {
     if (!this.car?.driving) return;
     const c = this.car.c;
@@ -1599,6 +1615,7 @@ export class Town {
           const v = anyVehicle(it?.model ?? "hatch", vp || it?.color || "#3b82f6", undefined, true);
           p.vehMesh = v.group;
           p.vehMesh.userData.seatY = v.seatY;
+          p.vehMesh.userData.rig = v.rig;
           p.group.add(v.group);
         }
       }
@@ -1819,7 +1836,8 @@ export class Town {
 
     // Me.
     if (car?.driving) {
-      this.meGroup.position.set(car.c.x, car.c.y + car.seatY - 0.45, car.c.z);
+      const seat = this.driverSeat(car);
+      this.meGroup.position.set(seat.x, seat.y - 0.45, seat.z);
       this.meGroup.rotation.y = car.c.heading;
       this.heading = car.c.heading;
     } else {
@@ -1827,9 +1845,14 @@ export class Town {
       this.meGroup.rotation.y = this.heading;
     }
     const emote = performance.now() < this.emoteUntil ? this.emote : "";
-    this.me.update(t, dt, { speed, air: !b.ground && !car?.driving && !this.sit, sit: !!this.sit, drive: !!car?.driving, crouch: this.crouch && speed < 0.6, emote, aim: this.activity?.kind === "archery" }, null);
-    if (this.sit?.swing) this.me.root.rotation.x = Math.sin(t * 2.4) * 0.4;
+    const lying = !!this.sit?.lie;
+    this.me.update(t, dt, { speed, air: !b.ground && !car?.driving && !this.sit, sit: !!this.sit && !lying, drive: !!car?.driving, crouch: this.crouch && speed < 0.6, emote: lying ? "" : emote, aim: this.activity?.kind === "archery" }, null);
+    // Lying in bed: the body flat along the bed (the feet at the foot end), resting.
+    if (lying) (this.me.root.rotation.x = -Math.PI / 2), (this.me.root.position.y = 0.12);
+    else if (this.sit?.swing) this.me.root.rotation.x = Math.sin(t * 2.4) * 0.4;
     else this.me.root.rotation.x = 0;
+    if (!lying && this.wasLying) this.me.root.position.y = 0;
+    this.wasLying = lying;
     if (this.mySay && performance.now() - this.mySayAt > 7000) (this.mySay = ""), this.setBubble("");
     // Hidden in first person (my own head would fill the view), and with the bow or a gun in my hands.
     this.me.root.visible = !(this.camMode === "first" && (!this.activity || (this.activity as { fps?: boolean }).fps)) && this.activity?.kind !== "archery";
@@ -1872,7 +1895,7 @@ export class Town {
       if (p.live) p.group.rotation.y = p.ry;
       else if (p.seat && d < 0.05) p.group.rotation.y = Math.PI;
       const drive = !!p.vehMesh;
-      if (p.vehMesh) p.av.root.position.y = ((p.vehMesh.userData.seatY as number) ?? 0.5) - 0.45;
+      if (p.vehMesh) p.av.root.position.y = (((p.vehMesh.userData.rig as CarRig | null)?.seatY ?? p.vehMesh.userData.seatY) as number ?? 0.5) - 0.45;
       else p.av.root.position.y = 0;
       p.av.update(t, dt, { speed: p.live ? (p.mv ? (p.mv === 2 ? 1 : 0.5) : 0) : d > 0.05 ? 0.4 : 0, air: false, sit: p.seat && d < 0.1, drive, crouch: false, emote: p.emote }, p.group.position.distanceTo(this.meGroup.position) < 6 ? this.meHead : null);
     }
@@ -2112,8 +2135,9 @@ export class Town {
       return;
     }
     if (this.camMode === "first") {
-      const y = car ? car.c.y + car.seatY + 0.85 : b.y + (this.crouch ? 1.1 : 1.58);
-      const x = car ? car.c.x : b.x, z = car ? car.c.z : b.z;
+      const seat = car ? this.driverSeat(car) : null;
+      const y = seat ? seat.y + 0.85 : b.y + (this.crouch ? 1.1 : 1.58);
+      const x = seat ? seat.x : b.x, z = seat ? seat.z : b.z;
       cam.position.set(x, y, z);
       const lx = -Math.sin(this.yaw) * Math.cos(this.fpPitch), ly = Math.sin(this.fpPitch), lz = -Math.cos(this.yaw) * Math.cos(this.fpPitch);
       cam.lookAt(x + lx, y + ly, z + lz);
@@ -2221,33 +2245,48 @@ export class Town {
     const W = c.width, H = c.height;
     const scale = big ? (W / 760) * (view?.zoom ?? 1) : W / 120;
     const cx = big ? (view?.cx ?? 100) : this.body.x, cz = big ? (view?.cz ?? -40) : this.body.z;
-    g.fillStyle = "#8fbf73";
+    // The look of the big open-world maps: dark land, districts as faint tints, light grey roads, white labels, a
+    // purple route; the minimap turns with me (the way I face is up).
+    g.fillStyle = "#1e2621";
     g.fillRect(0, 0, W, H);
+    g.save();
+    if (!big) {
+      g.translate(W / 2, H / 2);
+      g.rotate(this.heading - Math.PI);
+      g.translate(-W / 2, -H / 2);
+    }
     const tx = (x: number) => W / 2 + (x - cx) * scale, tz = (z: number) => H / 2 + (z - cz) * scale;
+    g.globalAlpha = 0.32;
     for (const r of this.city.mapRects) {
       g.fillStyle = r.color;
       g.fillRect(tx(r.x - r.w / 2), tz(r.z - r.d / 2), r.w * scale, r.d * scale);
     }
+    g.globalAlpha = 1;
     // Roads: pavement, asphalt, a centre line on the big map.
     const rect = (r: (typeof ROADS)[number], w: number) =>
       r.axis === "x" ? g.fillRect(tx(r.from), tz(r.c - w / 2), (r.to - r.from) * scale, Math.max(1, w * scale)) : g.fillRect(tx(r.c - w / 2), tz(r.from), Math.max(1, w * scale), (r.to - r.from) * scale);
-    g.fillStyle = "#d9d5cc";
+    g.fillStyle = "#3a4046";
     for (const r of ROADS) rect(r, r.w + r.s * 2);
-    g.fillStyle = "#4a4f57";
+    g.fillStyle = "#a9aeb3";
     for (const r of ROADS) rect(r, r.w);
+    g.fillStyle = "#d8dbde";
+    for (const r of ROADS) if (r.kind === "ring" || r.kind === "avenue") rect(r, r.w * 0.82);
     if (big && scale > 0.9) {
       g.fillStyle = "#e9c46a";
       for (const r of ROADS) if (r.lanes > 1) rect(r, 0.35);
     }
     if (big) {
-      g.fillStyle = "#0f172a";
-      g.font = `bold ${Math.round(11 + Math.min(4, scale * 2))}px system-ui`;
+      g.fillStyle = "#f3f4f6";
+      g.font = `600 ${Math.round(10 + Math.min(4, scale * 2))}px system-ui`;
       g.textAlign = "center";
-      for (const r of this.city.mapRects) if (r.label) g.fillText(r.label, tx(r.x), tz(r.z) + 4);
+      g.shadowColor = "rgba(0,0,0,0.8)";
+      g.shadowBlur = 3;
+      for (const r of this.city.mapRects) if (r.label) g.fillText(r.label.toUpperCase(), tx(r.x), tz(r.z) + 4);
+      g.shadowBlur = 0;
       // Road names along the bigger roads when zoomed in.
       if (scale > 1.1) {
         g.font = "10px system-ui";
-        g.fillStyle = "#f8fafc";
+        g.fillStyle = "#1f2937";
         const seen = new Set<string>();
         for (const r of ROADS) {
           if (seen.has(r.name) || r.to - r.from < 40) continue;
@@ -2263,15 +2302,15 @@ export class Town {
     }
     for (const p of this.people.values()) {
       if (!p.live) continue;
-      g.fillStyle = "#2563eb";
+      g.fillStyle = "#4ea1ff";
       g.beginPath();
       g.arc(tx(p.target.x), tz(p.target.z), big ? 4 : 3, 0, Math.PI * 2);
       g.fill();
     }
     // The GPS route.
     if (this.gps.length > 1) {
-      g.strokeStyle = "#a855f7";
-      g.lineWidth = big ? 4 : 3;
+      g.strokeStyle = "#b44ee8";
+      g.lineWidth = big ? 5 : 4;
       g.lineJoin = "round";
       g.beginPath();
       this.gps.forEach((p, i) => (i ? g.lineTo(tx(p.x), tz(p.z)) : g.moveTo(tx(p.x), tz(p.z))));
@@ -2307,6 +2346,7 @@ export class Town {
     g.closePath();
     g.fill();
     g.stroke();
+    g.restore();
     g.restore();
   }
 

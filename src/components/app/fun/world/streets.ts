@@ -365,6 +365,16 @@ function tree(geo: Geo, x: number, z: number, seed: number, avenue: boolean, soi
   plant(kinds[Math.floor(s * 97) % kinds.length]!, x, z, s, s * 40);
 }
 
+// On a carriageway (where cars drive), as opposed to a sidewalk or a lot: trees, seats and props never stand
+// there, whatever placed them (a new road can cross where something already stood).
+export function onCarriageway(x: number, z: number, margin = 0.2) {
+  for (const r of ROADS) {
+    const along = r.axis === "x" ? x : z, across = r.axis === "x" ? z : x;
+    if (along >= Math.min(r.from, r.to) - r.w / 2 && along <= Math.max(r.from, r.to) + r.w / 2 && Math.abs(across - r.c) < r.w / 2 - margin) return true;
+  }
+  return false;
+}
+
 // Update the traffic lights (called a few times a second).
 export function updateLights(_lights: TrafficLight[], t = Date.now() / 1000) {
   for (const axis of ["x", "z"] as const) {

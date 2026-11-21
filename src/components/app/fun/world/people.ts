@@ -3,7 +3,8 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js";
 import { VRMHumanoid, type VRMHumanBoneName, type VRMHumanBones } from "@pixiv/three-vrm";
-import type { Pose } from "./avatar";
+import { accessoryMeshes, type Pose } from "./avatar";
+import { ACCESSORIES, type Look } from "@/lib/fun-catalog";
 
 // Realistic people: the Microsoft Rocketbox avatars (MIT; public/models/people, see the asset manifest), rigged
 // with a 3ds Max Biped skeleton. Their bones are mapped to a humanoid rig (the same one the anime characters use),
@@ -99,6 +100,7 @@ export type PersonAvatar = {
   // 0..1 how loud the person is speaking now (moves the jaw); set by the speech system.
   speak: (level: number) => void;
   dispose: () => void;
+  setLook?: (l: Look) => void;
 };
 
 const q = new THREE.Quaternion();
@@ -343,11 +345,37 @@ export async function createPerson(key: string, opts: { seed?: number } = {}): P
       if (r) c.position.copy(r.p).add(new THREE.Vector3(0, 0.003 * smile, (i ? -1 : 1) * 0.002 * smile));
     });
   };
+  // Accessories on the head, neck or back bones (built for a head of radius 0.2 around its centre).
+  const extra: THREE.Object3D[] = [];
+  const setLook = (l: Look) => {
+    extra.forEach((o) => o.parent?.remove(o));
+    extra.length = 0;
+    const head = bone("Bip01 Head"), neck = bone("Bip01 Neck") ?? head, chest = bone("Bip01 Spine2") ?? bone("Bip01 Spine1") ?? bone("Bip01 Spine");
+    if (!head || !chest) return;
+    head.updateWorldMatrix(true, false);
+    const k = 1 / head.getWorldScale(new THREE.Vector3()).x;
+    for (const key of [...l.acc, ACCESSORIES.find((a) => a.slot === "head" && a.model === l.hat)?.key].filter(Boolean) as string[]) {
+      const a = ACCESSORIES.find((x) => x.key === key);
+      if (!a) continue;
+      const g = accessoryMeshes(a.model!, a.color ?? "#111827", l);
+      const onHead = a.slot === "head" || a.slot === "face" || a.slot === "ears";
+      const holder = new THREE.Group();
+      holder.add(g.head);
+      if (!onHead) holder.add(g.body);
+      holder.scale.setScalar(0.62 * k);
+      // Biped bones point along +x (up the body): turn the holder to stand upright on them.
+      holder.rotation.set(0, -Math.PI / 2, -Math.PI / 2);
+      holder.position.set(onHead ? 0.1 * k : a.slot === "neck" ? -0.05 * k : -0.1 * k, 0, 0);
+      (onHead ? head : a.slot === "neck" ? neck! : chest).add(holder);
+      extra.push(holder);
+    }
+  };
   return {
     root,
     key,
     height,
     update,
+    setLook,
     speak: (level) => (speech = Math.max(0, Math.min(1, level))),
     // Geometry, materials and textures are shared with other copies (kept for the page's life).
     dispose: () => {

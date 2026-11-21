@@ -5,12 +5,13 @@ import { furniture, prop, showcase, vehicle } from "./models";
 import { plant } from "./nature";
 import { canvasTex, cone, cyl, floorTex, grassTex, mesh, pavingTex, roadTex, signPlane, sphere, textSprite, toon, unitBox } from "./toon";
 import { PITCH } from "./soccer";
-import { ROADS, buildStreets } from "./streets";
+import { ROADS, buildStreets, onCarriageway } from "./streets";
 import { buildDistricts } from "./buildings";
 import { glass as glassMat, surface } from "./pbr";
 import { buildHouse } from "./houses";
 import { optimizeStatic } from "./merge";
 import { buildCampus, buildOfficeFront, HQ_TOWER } from "./campus";
+import { buildFountain } from "./fountain";
 import { anyVehicle } from "./cars";
 import { buildGrandPrix } from "./gp";
 import { buildStudioLot, LOT } from "./lot";
@@ -186,9 +187,10 @@ export function buildCity(ph: Physics, input: CityInput) {
   pv.receiveShadow = true;
   plaza.add(pv);
   mapRects.push({ x: 0, z: 0, w: 40, d: 40, color: "#e7e2d8", label: "Plaza" });
-  const fountain = prop("fountain", "#a8a29e", "");
-  fountain.scale.setScalar(1.4);
-  plaza.add(fountain);
+  // The fountain: a stone basin with two bowls, falling water and a jet.
+  const fountain = buildFountain(3.08);
+  plaza.add(fountain.group);
+  animated.push((t) => fountain.update(t));
   ph.post({ x: 0, z: 0, r: 3.2, minY: 0, maxY: 1.2 });
   const spray: THREE.Mesh[] = [];
   for (let i = 0; i < 6; i++) {
@@ -1085,8 +1087,9 @@ export function buildCity(ph: Physics, input: CityInput) {
       npcs.push({ id: `npc-${p.id}`, name: p.name || "Visitor", role: p.text || "", seed: p.id.length * 7 + p.x, x: p.x, y: 0, z: p.z, ry: (p.r * Math.PI) / 180, lines: p.lines.length ? p.lines : ["Hello!"], actions: [] });
       continue;
     }
-    // Uploaded models load on their own (they are files); see placeModels.
+    // Uploaded models load on their own (they are files); see placeModels. Nothing stands on a road.
     if (p.kind === "spawn" || p.kind === "model") continue;
+    if (onCarriageway(p.x, p.z)) continue;
     const m = prop(p.kind, p.color, p.text);
     m.position.set(p.x, 0, p.z);
     m.rotation.y = (p.r * Math.PI) / 180;

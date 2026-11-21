@@ -6,6 +6,7 @@ import { facade, glass, lamp, plain, roadPaint, surface } from "./pbr";
 import { signPlane } from "./toon";
 import { plant } from "./nature";
 import { anyVehicle } from "./cars";
+import { buildFountain } from "./fountain";
 
 // The Myseed HQ campus, north of the ring road at the end of Campus Drive: a glass tower of 26 storeys on a
 // two-storey podium with a lobby you can walk into (reception, a logo wall, lounges, the elevator bank to the sky
@@ -199,13 +200,10 @@ export function buildCampus(ph: Physics, interacts: Interact[], detail: number) 
 
   // ---- the forecourt: a fountain, flags, the name in stone, benches, trees in planters.
   const fx = 38, fz = -176;
-  cyl(geo, stone, fx, 0, fz, 6.2, 0.6, 40);
-  const water = new THREE.Mesh(new THREE.CylinderGeometry(5.7, 5.7, 0.05, 40), new THREE.MeshPhysicalMaterial({ color: "#5fb3cf", roughness: 0.05, transmission: 0.2, transparent: true, opacity: 0.85 }));
-  water.position.set(fx, 0.55, fz);
-  group.add(water);
-  cyl(geo, stone, fx, 0.6, fz, 1.2, 1.4, 24);
-  cyl(geo, stone, fx, 2, fz, 2.2, 0.3, 24);
-  ph.post({ x: fx, z: fz, r: 6.2, minY: 0, maxY: 0.6, tag: "bldg" } as never);
+  const fountain = buildFountain(6.2);
+  fountain.group.position.set(fx, 0, fz);
+  group.add(fountain.group);
+  ph.post({ x: fx, z: fz, r: 6.2, minY: 0, maxY: 0.7, tag: "bldg" } as never);
   for (let i = 0; i < 3; i++) {
     const x = 18 + i * 4;
     cyl(geo, steel, x, 0, -158, 0.08, 11, 8);
@@ -337,6 +335,7 @@ export function buildCampus(ph: Physics, interacts: Interact[], detail: number) 
   const flags = group.children.filter((c) => c.userData.flag);
   const update = (t: number) => {
     for (const [i, f] of flags.entries()) f.rotation.y = Math.sin(t * 2.2 + i) * 0.18;
+    fountain.update(t);
   };
   return { group, update, crownY: crown + 0.3 };
 }

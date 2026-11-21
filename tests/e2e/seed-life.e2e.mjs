@@ -150,7 +150,8 @@ try {
   check("a free kick with a wall", await until(() => window.__seedTown.activity?.kind === "freekick", null, 30000));
   await page.waitForTimeout(1500);
   const cv = await win.locator("[data-world-canvas] canvas").boundingBox();
-  await page.mouse.move(cv.x + cv.width * 0.5, cv.y + cv.height * 0.35);
+  // Below the challenge's display (it sits at the top of the screen).
+  await page.mouse.move(cv.x + cv.width * 0.5, cv.y + cv.height * 0.62);
   await page.mouse.down();
   await page.waitForTimeout(600);
   await page.mouse.up();

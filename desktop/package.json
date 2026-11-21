@@ -1,7 +1,7 @@
 {
   "name": "seed-town-desktop",
   "productName": "Seed Town",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Seed Town for Windows: the Myseed 3D world on your PC's graphics card, with a launcher, graphics settings, diagnostics and automatic updates.",
   "main": "main.js",
   "author": "Myseed",
