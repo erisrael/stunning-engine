@@ -27,6 +27,11 @@ import {
   AlertTriangleIcon,
   CalendarIcon,
   LayersIcon,
+  BookOpenIcon,
+  PencilLineIcon,
+  Columns2Icon,
+  FileCodeIcon,
+  GitBranchIcon,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -45,6 +50,8 @@ import { RITUALS } from "@/lib/dept-config";
 import { deptViewPath } from "@/lib/work";
 import { cn } from "@/lib/utils";
 import { DocLibrary } from "./doc-library";
+import { SpecDocument } from "./spec-document";
+import { resolveRepoPath, specDocumentHtml, type SpecDocInput } from "@/lib/spec-doc";
 
 type R = { ok: boolean; error?: string; data?: unknown };
 function useRun() {
@@ -985,7 +992,8 @@ export function DocsView({ dept, docs, projects, people, openId, workspace }: { 
   const { run, busy } = useRun();
   const [template, setTemplate] = React.useState(DOC_TEMPLATES[0]!.key);
   const [project, setProject] = React.useState("none");
-  if (openId) return <DocEditor dept={dept} id={openId} people={people} workspace={workspace} onBack={() => router.push(deptViewPath(dept, "docs"))} />;
+  // Keyed by the document, so opening another one (a link inside a document) starts the editor afresh.
+  if (openId) return <DocEditor key={openId} dept={dept} id={openId} people={people} workspace={workspace} onBack={() => router.push(deptViewPath(dept, "docs"))} />;
   const t = DOC_TEMPLATES.find((x) => x.key === template)!;
   return (
     <div className="space-y-4" data-docs>
@@ -1036,25 +1044,21 @@ export function DocsView({ dept, docs, projects, people, openId, workspace }: { 
   );
 }
 
-const esc = (s: string) => s.replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" })[c]!);
-// Plain text with "#" headings, as HTML for Word and printing, with a cover page.
-function docHtml(d: DocView, workspace: string) {
-  const body = d.body
-    .split("\n")
-    .map((l) => {
-      const h = l.match(/^(#{1,3})\s+(.*)$/);
-      if (h) return `<h${h[1]!.length + 1}>${esc(h[2]!)}</h${h[1]!.length + 1}>`;
-      return l.trim() ? `<p>${esc(l)}</p>` : "";
-    })
-    .join("\n");
-  return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(d.title)}</title><style>body{font-family:Calibri,Arial,sans-serif;line-height:1.4;max-width:46rem;margin:2rem auto;color:#111}h2{margin-top:1.6em}.cover{page-break-after:always;padding-top:30vh}.cover h1{font-size:2.2em;margin:0}.muted{color:#555}</style></head><body><div class="cover"><p class="muted">${esc(workspace)}</p><h1>${esc(d.title)}</h1><p class="muted">${esc(DOC_KINDS.find((k) => k.key === d.kind)?.label ?? "")}, version ${d.version}, ${esc(DOC_STATUS_LABELS[d.status] ?? d.status)}</p><p class="muted">${new Date().toISOString().slice(0, 10)}</p></div>${body}</body></html>`;
-}
+type DocMode = "read" | "edit" | "split";
+const DOC_MODES: { key: DocMode; label: string; icon: React.ComponentType<{ className?: string }>; wide?: boolean }[] = [
+  { key: "read", label: "Formatted", icon: BookOpenIcon },
+  { key: "edit", label: "Markdown", icon: PencilLineIcon },
+  { key: "split", label: "Side by side", icon: Columns2Icon, wide: true },
+];
 
 function DocEditor({ dept, id, people, workspace, onBack }: { dept: string; id: string; people: { id: string; name: string }[]; workspace: string; onBack: () => void }) {
   const { run, busy } = useRun();
   const [d, setD] = React.useState<DocView | null>(null);
   const [title, setTitle] = React.useState("");
   const [body, setBody] = React.useState("");
+  // Documents open formatted, as the company document; an empty one opens for writing.
+  const [mode, setMode] = React.useState<DocMode>("read");
+  const opened = React.useRef(false);
   const [reviewers, setReviewers] = React.useState<string[]>([]);
   const [link, setLink] = React.useState<Record<string, string>>({});
   const [note, setNote] = React.useState("");
@@ -1066,18 +1070,68 @@ function DocEditor({ dept, id, people, workspace, onBack }: { dept: string; id: 
     setReviewers(selected => selected.filter(id => v.eligibleReviewers.some(person => person.id === id)));
     setTitle(v.title);
     setBody(v.body);
+    if (!opened.current) {
+      opened.current = true;
+      if (!v.body.trim() && v.canEdit) setMode("edit");
+    }
   }, [dept, id]);
   React.useEffect(() => void load(), [load]);
-  if (!d) return <Loader2Icon className="animate-spin" />;
+  // The formatted document, from the text being written (unsaved changes show as they are typed).
+  const spec = React.useMemo<SpecDocInput | null>(() => {
+    if (!d) return null;
+    return {
+      workspace,
+      logoUrl: "/api/branding/logo",
+      title: title.trim() || d.title,
+      kindLabel: DOC_KINDS.find((k) => k.key === d.kind)?.label ?? "Document",
+      ref: d.ref,
+      version: d.version,
+      status: d.status,
+      statusLabel: DOC_STATUS_LABELS[d.status] ?? d.status,
+      author: d.author,
+      updatedAt: d.updatedAt,
+      approvedAt: d.approvedAt,
+      project: d.project,
+      reviewers: d.reviewers.map((r) => ({ name: r.name, approved: r.approved })),
+      source: d.source,
+      body,
+      // Links between repository documents open the matching document here.
+      linkTo: (href) => {
+        if (!d.source) return null;
+        const path = resolveRepoPath(d.source, href);
+        const to = path ? d.repoDocs[path] : undefined;
+        return to ? deptViewPath(dept, "docs", `doc=${to}`) : null;
+      },
+    };
+  }, [d, title, body, workspace, dept]);
+  if (!d || !spec) return <Loader2Icon className="animate-spin" />;
   const dirty = title !== d.title || body !== d.body;
   const save = async () => (await run("save", () => A.saveDocAction(dept, id, { title, body }), d.status === "draft" ? "Saved" : "Saved as a new version")) && load();
+  // PDF: the same company document on A4 pages, printed from its own window once the logo has loaded.
   const print = () => {
     const w = window.open("", "_blank");
     if (!w) return;
-    w.document.write(docHtml({ ...d, title, body }, workspace));
+    const origin = window.location.origin;
+    w.document.write(
+      specDocumentHtml({
+        ...spec,
+        logoUrl: `${origin}/api/branding/logo`,
+        linkTo: (href) => {
+          const to = spec.linkTo?.(href);
+          return to ? origin + to : null;
+        },
+      }),
+    );
+    let printed = false;
+    const go = () => {
+      if (printed) return;
+      printed = true;
+      w.focus();
+      w.print();
+    };
+    w.addEventListener("load", go);
     w.document.close();
-    w.focus();
-    w.print();
+    window.setTimeout(go, 1500);
   };
   return (
     <div className="space-y-3" data-doc-editor>
@@ -1088,6 +1142,25 @@ function DocEditor({ dept, id, people, workspace, onBack }: { dept: string; id: 
         <Badge variant="secondary">
           v{d.version} · {DOC_STATUS_LABELS[d.status] ?? d.status}
         </Badge>
+        {d.source && (
+          <Badge variant="outline" className="gap-1 font-mono text-[11px]" title="Brought in from this file in the repository" data-doc-source>
+            <GitBranchIcon className="size-3" /> {d.source}
+          </Badge>
+        )}
+        <div className="inline-flex rounded-md border bg-muted/40 p-0.5" role="group" aria-label="How to show the document" data-doc-modes>
+          {DOC_MODES.map((m) => (
+            <button
+              key={m.key}
+              type="button"
+              aria-pressed={mode === m.key}
+              onClick={() => setMode(m.key)}
+              className={cn("items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground", m.wide ? "hidden lg:inline-flex" : "inline-flex", mode === m.key && "bg-background text-foreground shadow-sm")}
+              data-doc-mode={m.key}
+            >
+              <m.icon className="size-3.5" /> {m.label}
+            </button>
+          ))}
+        </div>
         <span className="ml-auto flex gap-2">
           <Button asChild size="sm" variant="outline">
             <a href={`/api/dept-docs/${d.id}?dept=${dept}&format=docx`} data-doc-export="docx">
@@ -1096,7 +1169,7 @@ function DocEditor({ dept, id, people, workspace, onBack }: { dept: string; id: 
           </Button>
           <Button asChild size="sm" variant="ghost">
             <a href={`/api/dept-docs/${d.id}?dept=${dept}&format=md`} data-doc-export="md">
-              Markdown
+              <FileCodeIcon /> Markdown
             </a>
           </Button>
           <Button size="sm" variant="outline" onClick={print}>
@@ -1104,16 +1177,31 @@ function DocEditor({ dept, id, people, workspace, onBack }: { dept: string; id: 
           </Button>
         </span>
       </div>
-      <Input value={title} onChange={(e) => setTitle(e.target.value)} aria-label="Title" className="text-lg font-semibold" disabled={!d.canEdit} />
-      {d.status !== "draft" && <p className="text-xs text-muted-foreground">Changing it now saves a new version (the {d.status === "approved" ? "approved" : "reviewed"} one is kept in the history) and it goes through review again.</p>}
-      <Textarea value={body} onChange={(e) => setBody(e.target.value)} rows={22} className="font-mono text-sm" aria-label="Document" disabled={!d.canEdit} />
-      <div className="flex flex-wrap gap-2">
-        {d.canEdit && (
+      {mode !== "read" && <Input value={title} onChange={(e) => setTitle(e.target.value)} aria-label="Title" className="text-lg font-semibold" disabled={!d.canEdit} />}
+      {mode !== "read" && d.status !== "draft" && d.canEdit && <p className="text-xs text-muted-foreground">Changing it now saves a new version (the {d.status === "approved" ? "approved" : "reviewed"} one is kept in the history) and it goes through review again.</p>}
+      {mode !== "read" && d.source && d.canEdit && (
+        <p className="text-xs text-muted-foreground">
+          This document comes from <code className="rounded bg-muted px-1">{d.source}</code> and follows the file when it changes. Once an edit is saved here, the app&apos;s text is kept and the file no longer replaces it.
+        </p>
+      )}
+      <div className={cn(mode === "split" && "grid gap-3 lg:grid-cols-2 lg:items-start")}>
+        {mode !== "read" && (
+          <Textarea value={body} onChange={(e) => setBody(e.target.value)} rows={mode === "split" ? 32 : 22} className={cn("font-mono text-sm", mode === "split" && "lg:h-[calc(100vh-14rem)] lg:resize-none")} aria-label="Document" disabled={!d.canEdit} spellCheck={false} />
+        )}
+        {mode !== "edit" && (
+          <div className={cn("rounded-xl bg-muted/40 p-2 sm:p-5", mode === "split" && "lg:h-[calc(100vh-14rem)] lg:overflow-auto")} data-doc-formatted>
+            <SpecDocument doc={spec} />
+          </div>
+        )}
+      </div>
+      {d.canEdit && (dirty || mode !== "read") && (
+        <div className="flex flex-wrap items-center gap-2">
           <Button disabled={!dirty || busy === "save"} onClick={save}>
             Save
           </Button>
-        )}
-      </div>
+          {dirty && <span className="text-xs text-muted-foreground">Unsaved changes</span>}
+        </div>
+      )}
 
       <div className="grid gap-3 lg:grid-cols-2">
         <Card>

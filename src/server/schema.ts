@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 87;
+export const SCHEMA_VERSION = 88;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -4332,6 +4332,21 @@ CREATE TABLE IF NOT EXISTS fun_npc_memory (
 );
 UPDATE stage_attempts SET lead_returned = 1 WHERE lead_returned = 0 AND status IN ('queued','in_progress','paused')
   AND id IN (SELECT attempt_id FROM audit_events WHERE action = 'lead.returned' AND attempt_id IS NOT NULL);
+-- v88: documents kept in step with Markdown files in the repository (src/server/doc-sync.ts, docs/library.json):
+-- which document each file became, the file's last copied text (its hash), the hash of the text written then (an
+-- edit in the app changes the document's own hash, and the file then no longer overwrites it) and the title then.
+-- The row stays when the document is deleted, so a deleted document is not brought back.
+CREATE TABLE IF NOT EXISTS dept_doc_sources (
+  dept TEXT NOT NULL,
+  source TEXT NOT NULL,
+  doc_id TEXT NOT NULL,
+  file_hash TEXT NOT NULL,
+  body_hash TEXT NOT NULL,
+  title TEXT NOT NULL,
+  synced_at TEXT NOT NULL,
+  PRIMARY KEY (dept, source)
+);
+CREATE INDEX IF NOT EXISTS idx_dept_doc_sources_doc ON dept_doc_sources(doc_id);
 
 `;
 
@@ -4618,4 +4633,5 @@ export const TABLES = [
   "fun_pet_kennel",
   "fun_models",
   "fun_npc_memory",
+  "dept_doc_sources",
 ] as const;

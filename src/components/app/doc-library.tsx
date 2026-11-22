@@ -4,12 +4,13 @@ import { ImportTemplateButton } from "./import-template-button";
 import { DOCUMENT_IMPORT_TEMPLATE } from "@/lib/dev-import-templates";
 
 // The department's document library (Phase 26): a folder tree, the open folder's folders, documents and files,
-// search, pinned and recent documents, upload, import from Word or Markdown, move, duplicate and export.
+// search, pinned and recent documents, upload, import from Word or Markdown (kept as Markdown, shown formatted),
+// move, duplicate and export. Documents brought in from the repository (docs/library.json) are marked.
 
 import * as React from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { ChevronRightIcon, CopyIcon, DownloadIcon, FileIcon, FileTextIcon, FileUpIcon, FolderIcon, FolderOpenIcon, FolderPlusIcon, Loader2Icon, PinIcon, SearchIcon, Trash2Icon, UploadIcon } from "lucide-react";
+import { ChevronRightIcon, CopyIcon, DownloadIcon, FileIcon, FileTextIcon, FileUpIcon, FolderIcon, FolderOpenIcon, FolderPlusIcon, GitBranchIcon, Loader2Icon, PinIcon, SearchIcon, Trash2Icon, UploadIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import * as A from "@/app/actions/departments";
@@ -250,6 +251,11 @@ export function DocLibrary({ dept }: { dept: string }) {
                   {d.title}
                 </button>
                 <span className="rounded bg-muted px-1.5 text-[11px]">{d.kindLabel}</span>
+                {d.source && (
+                  <span className="inline-flex items-center gap-1 rounded border px-1.5 text-[11px] text-muted-foreground" title={`Kept in step with ${d.source} in the repository`} data-lib-source={d.source}>
+                    <GitBranchIcon className="size-3" /> repository
+                  </span>
+                )}
                 <span className="text-xs text-muted-foreground">
                   v{d.version} · {d.status} · {d.author ?? ""} · {d.updatedAt.slice(0, 10)}
                 </span>

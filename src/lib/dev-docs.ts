@@ -1,6 +1,6 @@
 // Specs and documents in the Dev studio (Phase 12b.3 and 12b.4): the kinds, and ready templates written for
-// Myseed's own products. Documents are plain text with "#" headings; requirements carry IDs such as FR-1 and
-// NFR-2, which link to tasks.
+// Myseed's own products. Documents are Markdown (plain text with "#" headings reads the same), shown formatted by
+// src/lib/spec-doc.ts; requirements carry IDs such as FR-1 and NFR-2, which link to tasks.
 
 export const DOC_KINDS = [
   { key: "srs", label: "Software requirements (SRS)" },
@@ -11,10 +11,16 @@ export const DOC_KINDS = [
   { key: "release", label: "Release notes" },
   { key: "runbook", label: "Runbook" },
   { key: "postmortem", label: "Postmortem" },
-  { key: "note", label: "Note or imported document" },
+  // Notes, guides, handbooks and imported documents: shown simply as "Document" on the cover and in the library.
+  { key: "note", label: "Document" },
 ] as const;
 export type DocKind = (typeof DOC_KINDS)[number]["key"];
 export const DOC_STATUS_LABELS: Record<string, string> = { draft: "Draft", review: "In review", approved: "Approved" };
+// How long a document's text may be (characters). Markdown is stored as it is; a longer file is refused, never cut.
+export const DOC_MAX_CHARS = 1_000_000;
+
+// A document's reference on its cover and in the PDF: department, kind and a short form of its ID (DEV-SRS-3F9A1C).
+export const docRef = (dept: string, kind: string, id: string) => `${dept.toUpperCase()}-${(kind === "note" ? "DOC" : kind).toUpperCase()}-${id.replace(/^doc_/, "").slice(0, 6).toUpperCase()}`;
 
 // Requirement IDs in a document, in order of appearance: FR-1, NFR-2, IR-3...
 export function requirementIds(body: string): string[] {

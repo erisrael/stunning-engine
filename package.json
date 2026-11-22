@@ -24,7 +24,8 @@
     "db:set-password": "tsx scripts/set-password.ts",
     "panel": "python control-panel/control_panel.py",
     "db:restore": "tsx scripts/backup.ts --restore",
-    "db:bulk-restore": "tsx scripts/bulk-restore.ts"
+    "db:bulk-restore": "tsx scripts/bulk-restore.ts",
+    "docs:sync": "tsx scripts/sync-docs.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.4.0",

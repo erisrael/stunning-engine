@@ -77,7 +77,9 @@ async function main() {
   const md = await L.exportDoc(dev, "dev", docId, "md");
   check("as Markdown", md.name.endsWith(".md") && md.data.toString().startsWith("# Offline lessons"));
   const html = await L.exportDoc(dev, "dev", docId, "html");
-  check("as HTML", /<h1>Purpose<\/h1>/.test(html.data.toString()) && /<table>/.test(html.data.toString()));
+  check("as HTML, the formatted company document", /<h1 id="spec-purpose">Purpose<\/h1>/.test(html.data.toString()) && /<table>/.test(html.data.toString()) && /class="spec-doc spec-print"/.test(html.data.toString()) && /DEV-SRS-/.test(html.data.toString()));
+  const footer = await (await JSZip.loadAsync(docx.data)).file("word/footer1.xml")?.async("string");
+  check("Word has the document control table and page numbers", /DEV-SRS-/.test(xml) && /PAGE/.test(footer ?? ""), footer?.slice(0, 200));
 
   // Import.
   const fromWord = await L.importDocument(dev, "dev", { folderId: app, name: "Partner brief.docx", base64: docx.data.toString("base64") });
@@ -85,6 +87,19 @@ async function main() {
   check("a Word file is imported as a document, headings and lists kept", back?.title === "Partner brief" && back.kind === "note" && back.folder_id === app && /^# |\n# |## Purpose|# Purpose/.test(back.body) && /- FR-1 Download a lesson|FR-1 Download a lesson/.test(back.body), back?.body.slice(0, 300));
   const fromMd = await L.importDocument(dev, "dev", { folderId: null, name: "notes.md", base64: Buffer.from("# Notes\n- one").toString("base64") });
   check("a Markdown file too", (await get<{ body: string }>("SELECT body FROM dept_docs WHERE id = ?", fromMd))?.body === "# Notes\n- one");
+  check("a single first-line heading names an imported Markdown file", (await get<{ title: string }>("SELECT title FROM dept_docs WHERE id = ?", fromMd))?.title === "Notes");
+  const planMd = "---\ntitle: Release plan\n---\n# Heading\n\n| A | B |\n|---|---|\n| <b>x</b> | `y` |\n\n- [ ] task\r\n";
+  const kept = await L.importDocument(dev, "dev", { folderId: null, name: "plan.md", base64: Buffer.from(`﻿${planMd}`).toString("base64") });
+  const keptRow = await get<{ title: string; body: string }>("SELECT title, body FROM dept_docs WHERE id = ?", kept);
+  check("imported Markdown is stored exactly as the file, titled from its front matter", keptRow?.title === "Release plan" && keptRow.body === planMd.replace(/\r\n/g, "\n"), keptRow);
+  check("a document too long is refused, not cut", /hold up to/.test((await throws(() => L.importDocument(dev, "dev", { folderId: null, name: "big.md", base64: Buffer.from("x".repeat(1_000_001)).toString("base64") }))) ?? ""));
+  check("and so is saving one", /hold up to/.test((await throws(() => saveDoc(dev, "dev", kept, { title: "Big", body: "x".repeat(1_000_001) }))) ?? ""));
+  check("a Word table comes in as a Markdown table, and bold stays bold", /\| Phone \| Tested \|\n\| --- \| --- \|\n\| Tecno Spark \| yes \|/.test(back!.body) && /\*\*Bold\*\*/.test(back!.body), back?.body.slice(0, 600));
+  const web = await L.importDocument(dev, "dev", { folderId: null, name: "page.html", base64: Buffer.from('<html><head><title>x</title></head><body><h2>Plan</h2><p>One <strong>two</strong> <a href="https://a.b">link</a></p><table><tr><th>A</th><th>B</th></tr><tr><td>1</td><td>2</td></tr></table><script>bad()</script></body></html>').toString("base64") });
+  const webBody = (await get<{ body: string }>("SELECT body FROM dept_docs WHERE id = ?", web))!.body;
+  check("a web page comes in as Markdown with its table and link, without scripts", /## Plan/.test(webBody) && /\*\*two\*\*/.test(webBody) && /\[link\]\(https:\/\/a\.b\)/.test(webBody) && /\| A \| B \|/.test(webBody) && !/bad\(\)/.test(webBody), webBody);
+  await saveDoc(dev, "dev", docId, { title: "Offline lessons", body: "# Offline lessons\n\n## Purpose\ntext" });
+  check("Markdown export does not repeat a title the text already starts with", (await L.exportDoc(dev, "dev", docId, "md")).data.toString() === "# Offline lessons\n\n## Purpose\ntext\n");
   check("other files are refused as documents", /Import a Word/.test((await throws(() => L.importDocument(dev, "dev", { folderId: null, name: "x.pdf", base64: "AAAA" }))) ?? ""));
 
   // Removing a folder keeps its contents.

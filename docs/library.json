@@ -1,0 +1,42 @@
+{
+  "about": "The repository's documents shown in Dev team, Specs and docs. The server brings them in on every start (src/server/doc-sync.ts); npm run docs:sync does the same locally. Each entry: the Markdown file, the library folder (parent/child), the kind (srs, prd, design, adr, testplan, release, runbook, postmortem, note) and the title. See docs/dev-team/SPEC-GUIDE.md, section 6.",
+  "dept": "dev",
+  "documents": [
+    { "file": "docs/project/INDEX.md", "folder": "Myseed Ops documentation/1. Start here", "kind": "note", "title": "Myseed Ops documentation index" },
+    { "file": "docs/project/PRODUCT-OVERVIEW.md", "folder": "Myseed Ops documentation/1. Start here", "kind": "prd", "title": "Product overview: Myseed Ops" },
+    { "file": "docs/project/PROGRESS.md", "folder": "Myseed Ops documentation/1. Start here", "kind": "note", "title": "Dev team progress report" },
+    { "file": "README.md", "folder": "Myseed Ops documentation/1. Start here", "kind": "note", "title": "Quick start (README)" },
+
+    { "file": "docs/project/SRS.md", "folder": "Myseed Ops documentation/2. Requirements and plans", "kind": "srs", "title": "Software requirements specification: Myseed Ops" },
+    { "file": "docs/ROADMAP.md", "folder": "Myseed Ops documentation/2. Requirements and plans", "kind": "note", "title": "Roadmap" },
+    { "file": "Myseed_Content_Manager_Plan.md", "folder": "Myseed Ops documentation/2. Requirements and plans", "kind": "prd", "title": "Original product and workflow plan" },
+    { "file": "docs/Update-1.0.md", "folder": "Myseed Ops documentation/2. Requirements and plans", "kind": "note", "title": "Update 1.0 request list" },
+    { "file": "docs/UPDATE-1.2-PLAN.md", "folder": "Myseed Ops documentation/2. Requirements and plans", "kind": "prd", "title": "Update 1.2 plan" },
+    { "file": "docs/planner.md", "folder": "Myseed Ops documentation/2. Requirements and plans", "kind": "prd", "title": "Update 1.2 source specification" },
+    { "file": "docs/PHASE-17-PLAN.md", "folder": "Myseed Ops documentation/2. Requirements and plans", "kind": "prd", "title": "Phase 17 plan: KRAs, KPIs and OKRs" },
+    { "file": "docs/REQUEST-REPAIR-TRACKER.md", "folder": "Myseed Ops documentation/2. Requirements and plans", "kind": "note", "title": "Requested repairs and verification" },
+
+    { "file": "docs/project/ARCHITECTURE.md", "folder": "Myseed Ops documentation/3. Architecture and decisions", "kind": "design", "title": "Technical design: Myseed Ops" },
+    { "file": "docs/project/DECISIONS.md", "folder": "Myseed Ops documentation/3. Architecture and decisions", "kind": "adr", "title": "Architecture decision records" },
+    { "file": "docs/APP-SHELL.md", "folder": "Myseed Ops documentation/3. Architecture and decisions", "kind": "design", "title": "The app shell on Android and iPhone" },
+    { "file": "docs/SUPPORT-SDK.md", "folder": "Myseed Ops documentation/3. Architecture and decisions", "kind": "design", "title": "Customer support SDK and API" },
+
+    { "file": "docs/RUNBOOK.md", "folder": "Myseed Ops documentation/4. Operations and runbooks", "kind": "runbook", "title": "Runbook" },
+    { "file": "docs/RECOVERY.md", "folder": "Myseed Ops documentation/4. Operations and runbooks", "kind": "runbook", "title": "Backups, recovery and keeping the site running" },
+    { "file": "docs/DEPLOY.md", "folder": "Myseed Ops documentation/4. Operations and runbooks", "kind": "runbook", "title": "Deploying for free (Netlify and Supabase)" },
+    { "file": "docs/USERS.md", "folder": "Myseed Ops documentation/4. Operations and runbooks", "kind": "note", "title": "Accounts and teams" },
+    { "file": "docs/DATA-MANAGERS.md", "folder": "Myseed Ops documentation/4. Operations and runbooks", "kind": "runbook", "title": "Department data managers" },
+    { "file": "docs/KIOSK-SETUP.md", "folder": "Myseed Ops documentation/4. Operations and runbooks", "kind": "runbook", "title": "Attendance kiosk setup" },
+    { "file": "docs/FACE-CHECKIN.md", "folder": "Myseed Ops documentation/4. Operations and runbooks", "kind": "runbook", "title": "Face check-in guidelines" },
+    { "file": "docs/CALL-CENTER-SETUP.md", "folder": "Myseed Ops documentation/4. Operations and runbooks", "kind": "runbook", "title": "Call center and phone menu setup" },
+
+    { "file": "docs/project/TEST-PLAN.md", "folder": "Myseed Ops documentation/5. Quality and releases", "kind": "testplan", "title": "Test plan: Myseed Ops" },
+    { "file": "docs/project/RELEASE-HISTORY.md", "folder": "Myseed Ops documentation/5. Quality and releases", "kind": "release", "title": "Release history" },
+
+    { "file": "docs/dev-team/RULEBOOK.md", "folder": "Dev team handbook", "kind": "note", "title": "Dev team guidelines and rule book" },
+    { "file": "docs/dev-team/OPERATING-GUIDE.md", "folder": "Dev team handbook", "kind": "note", "title": "How the Dev team operates" },
+    { "file": "docs/dev-team/ONBOARDING.md", "folder": "Dev team handbook", "kind": "note", "title": "Onboarding a new developer" },
+    { "file": "docs/dev-team/SPEC-GUIDE.md", "folder": "Dev team handbook", "kind": "note", "title": "Writing specs and docs" },
+    { "file": "docs/dev-team/RELEASE-GUIDE.md", "folder": "Dev team handbook", "kind": "runbook", "title": "Releases, deploys and incidents" }
+  ]
+}

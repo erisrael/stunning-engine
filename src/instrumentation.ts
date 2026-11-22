@@ -7,6 +7,18 @@ export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
   // Every request to Noor's address goes through Noor's protection (src/server/noor-gate.ts).
   (await import("./server/noor-gate")).installNoorGate();
+  // The project's documentation (docs/library.json) into the Dev team's Specs and docs, once per start, so a deploy
+  // brings the documents with it. MYSEED_DOCS_SYNC=0 switches it off.
+  if (process.env.MYSEED_DOCS_SYNC !== "0")
+    setTimeout(async () => {
+      try {
+        const r = await (await import("./server/doc-sync")).syncRepoDocs();
+        if (r.added.length || r.updated.length || r.keptEdited.length || r.problems.length)
+          console.log(`Repository documents: ${r.added.length} added, ${r.updated.length} updated, ${r.keptEdited.length} kept as edited in the app, ${r.unchanged} unchanged${r.problems.length ? `; ${r.problems.join("; ")}` : ""}`);
+      } catch (e) {
+        console.error("Repository documents sync failed", e);
+      }
+    }, 20e3).unref();
   if (process.env.MYSEED_TIMER === "0") return;
   const tick = async () => {
     try {

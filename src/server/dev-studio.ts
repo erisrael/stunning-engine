@@ -16,7 +16,7 @@ import { need, workAccess, type WorkAccess } from "./dept-config";
 import { saveTask } from "./work";
 import { can, type AppUser } from "./users";
 import { labelOf, type SprintConfig } from "@/lib/dept-config";
-import { DOC_KINDS, DOC_TEMPLATES, requirementIds, type DocKind } from "@/lib/dev-docs";
+import { DOC_KINDS, DOC_MAX_CHARS, DOC_TEMPLATES, docRef, requirementIds, type DocKind } from "@/lib/dev-docs";
 import { deptPath } from "@/lib/work";
 
 const DAY = 864e5;
@@ -376,6 +376,12 @@ export async function getDoc(user: AppUser, d: string, id: string) {
   const names = new Map((await deptPeople(a.dept)).map((p) => [p.id, p.name]));
   names.set(user.id, user.name);
   const reviewOptions = await docReviewOptions(user, a);
+  const extra = await get<{ author: string | null; project: string | null; source: string | null }>(
+    "SELECT u.name AS author, p.name AS project, s.source FROM dept_docs x LEFT JOIN users u ON u.id = x.created_by LEFT JOIN dept_projects p ON p.id = x.project_id LEFT JOIN dept_doc_sources s ON s.doc_id = x.id WHERE x.id = ?",
+    id,
+  );
+  // Documents brought in from the repository link to each other: their repository paths, as documents here.
+  const repoDocs = extra?.source ? await all<{ source: string; doc_id: string }>("SELECT s.source, s.doc_id FROM dept_doc_sources s JOIN dept_docs x ON x.id = s.doc_id WHERE s.dept = ?", a.dept) : [];
   return {
     id: r.id,
     kind: r.kind,
@@ -384,6 +390,14 @@ export async function getDoc(user: AppUser, d: string, id: string) {
     status: r.status,
     version: Number(r.version),
     projectId: r.project_id,
+    ref: docRef(a.dept, r.kind, r.id),
+    author: extra?.author ?? (extra?.source ? "Repository" : null),
+    project: extra?.project ?? null,
+    source: extra?.source ?? null,
+    repoDocs: Object.fromEntries(repoDocs.map((x) => [x.source, x.doc_id])) as Record<string, string>,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+    approvedAt: r.approved_at,
     reviewers: reviewers.map((x) => ({ id: x, name: names.get(x) ?? "Someone", approved: approvals.some((p) => p.by === x) })),
     // Requirements traced to tasks: each requirement with its tasks and their state; uncovered ones stand out.
     trace: reqs.map((req) => {
@@ -423,7 +437,8 @@ export async function saveDoc(user: AppUser, d: string, id: string, input: { tit
   if (!r) throw new WorkflowError("NOT_FOUND", "Document not found.");
   const title = input.title.trim().slice(0, 160);
   if (!title) throw new WorkflowError("VALIDATION", "Give the document a title.");
-  const body = input.body.slice(0, 200_000);
+  if (input.body.length > DOC_MAX_CHARS) throw new WorkflowError("VALIDATION", `Documents hold up to ${DOC_MAX_CHARS.toLocaleString("en")} characters; this one has ${input.body.length.toLocaleString("en")}. Split it into two.`);
+  const body = input.body;
   const now = nowIso();
   if (r.status === "approved" || r.status === "review") {
     await run("INSERT INTO dept_doc_versions (doc_id, version, title, body, status, saved_by, saved_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING", id, r.version, r.title, r.body, r.status, user.id, now);

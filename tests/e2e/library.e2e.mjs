@@ -36,9 +36,23 @@ try {
   await page.locator("[data-upload-input]").setInputFiles(file);
   check("a file is added to it", await seen(page.locator('[data-lib-file="wireframe.txt"]')));
   const md = path.join(shots, "Offline plan.md");
-  fs.writeFileSync(md, "# Offline plan\nLessons download at night.\n- Wi-Fi only");
+  const mdText = "# Offline plan\nLessons download at night.\n- Wi-Fi only\n\n| Phone | Works |\n|---|---|\n| Tecno Spark | yes |\n\n- [x] FR-1 (Must): download\n\n> [!NOTE]\n> Night only.\n";
+  fs.writeFileSync(md, mdText);
   await page.locator("[data-import-input]").setInputFiles(md);
   check("a Markdown file is imported and opened", await seen(page.locator("[data-doc-editor]"), 20000));
+  // Phase 46: it opens as the formatted company document, the Markdown kept as it was.
+  const formatted = page.locator("[data-doc-formatted] .spec-doc");
+  check("it opens formatted, titled from its heading", await seen(formatted) && (await formatted.locator(".spec-title").textContent())?.trim() === "Offline plan");
+  check("with its table, checklist, callout and requirement ID", (await formatted.locator(".spec-table table").count()) === 1 && (await formatted.locator(".spec-check.is-done").count()) === 1 && (await formatted.locator(".spec-callout-note").count()) === 1 && (await formatted.locator(".spec-req").first().textContent()) === "FR-1");
+  check("the title is not repeated in the body", (await formatted.locator(".spec-body h1").count()) === 0);
+  check("the document control table shows the reference and version", /DEV-DOC-/.test((await formatted.locator(".spec-control").textContent()) ?? ""));
+  await page.screenshot({ path: path.join(shots, "0-formatted.png"), fullPage: true });
+  await page.locator('[data-doc-mode="edit"]').click();
+  check("the Markdown view shows the file's text unchanged", (await page.getByLabel("Document", { exact: true }).inputValue()) === mdText);
+  await page.locator('[data-doc-mode="split"]').click();
+  await page.getByLabel("Document", { exact: true }).fill(`${mdText}\n## Added\nNew line`);
+  check("side by side shows what is typed, formatted", await seen(page.locator("[data-doc-formatted] .spec-body h2", { hasText: "Added" })));
+  await page.screenshot({ path: path.join(shots, "0-side-by-side.png"), fullPage: true });
   await page.goto(`${base}/dev/docs`);
   await page.getByLabel("Search the library").fill("download at night");
   check("search finds it by its text", await seen(page.locator('[data-found-doc="Offline plan"]')));

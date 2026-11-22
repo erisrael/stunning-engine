@@ -5,12 +5,13 @@
 // deletes.
 
 import JSZip from "jszip";
-import { AlignmentType, Document, HeadingLevel, Packer, Paragraph, ShadingType, Table, TableCell, TableRow, TextRun, WidthType } from "docx";
-import { all, get, nowIso, run, uid } from "./db";
+import { AlignmentType, BorderStyle, Document, ExternalHyperlink, Footer, Header, HeadingLevel, ImageRun, Packer, PageNumber, Paragraph, ShadingType, Table, TableCell, TableRow, TabStopType, TextRun, WidthType } from "docx";
+import { all, get, nowIso, parseJson, run, uid } from "./db";
 import { workAccess } from "./dept-config";
 import { audit, WorkflowError } from "./workflow";
 import type { AppUser } from "./users";
-import { DOC_KINDS, DOC_STATUS_LABELS } from "@/lib/dev-docs";
+import { DOC_KINDS, DOC_MAX_CHARS, DOC_STATUS_LABELS, docRef } from "@/lib/dev-docs";
+import { markdownTitle, specDocumentHtml, splitFrontMatter } from "@/lib/spec-doc";
 
 const MAX_FILE = 15 * 1024 * 1024;
 const clean = (s: unknown, n: number) => String(s ?? "").replace(/[\\/:*?"<>|\u0000-\u001f]+/g, " ").trim().slice(0, n);
@@ -32,9 +33,9 @@ export async function library(user: AppUser, d: string, folderId: string | null)
   const current = folderId ? (folders.find((f) => f.id === folderId) ?? null) : null;
   const path: { id: string; name: string }[] = [];
   for (let f = current; f; f = folders.find((x) => x.id === f!.parent_id) ?? null) path.unshift({ id: f.id, name: f.name });
-  const docs = await all<{ id: string; kind: string; title: string; status: string; version: number; updated_at: string; author: string | null; pinned: number }>(
-    `SELECT x.id, x.kind, x.title, x.status, x.version, x.updated_at, u.name AS author, CASE WHEN p.doc_id IS NULL THEN 0 ELSE 1 END AS pinned
-     FROM dept_docs x LEFT JOIN users u ON u.id = x.created_by LEFT JOIN dept_doc_pins p ON p.doc_id = x.id AND p.user_id = ?
+  const docs = await all<{ id: string; kind: string; title: string; status: string; version: number; updated_at: string; author: string | null; pinned: number; source: string | null }>(
+    `SELECT x.id, x.kind, x.title, x.status, x.version, x.updated_at, u.name AS author, CASE WHEN p.doc_id IS NULL THEN 0 ELSE 1 END AS pinned, s.source
+     FROM dept_docs x LEFT JOIN users u ON u.id = x.created_by LEFT JOIN dept_doc_pins p ON p.doc_id = x.id AND p.user_id = ? LEFT JOIN dept_doc_sources s ON s.doc_id = x.id
      WHERE x.dept = ? AND ${current ? "x.folder_id = ?" : "x.folder_id IS NULL"} ORDER BY x.title`,
     user.id,
     a.dept,
@@ -52,7 +53,7 @@ export async function library(user: AppUser, d: string, folderId: string | null)
     path,
     tree: folders.map((f) => ({ id: f.id, parentId: f.parent_id, name: f.name, docs: Number(counts.find((c) => c.folder_id === f.id)?.docs ?? 0), files: Number(fcounts.find((c) => c.folder_id === f.id)?.files ?? 0) })) as Folder[],
     subfolders: folders.filter((f) => f.parent_id === (current?.id ?? null)).map((f) => ({ id: f.id, name: f.name })),
-    docs: docs.map((x) => ({ id: x.id, kind: x.kind, kindLabel: DOC_KINDS.find((k) => k.key === x.kind)?.label ?? "Document", title: x.title, status: DOC_STATUS_LABELS[x.status] ?? x.status, version: Number(x.version), updatedAt: x.updated_at, author: x.author, pinned: !!Number(x.pinned) })),
+    docs: docs.map((x) => ({ id: x.id, kind: x.kind, kindLabel: DOC_KINDS.find((k) => k.key === x.kind)?.label ?? "Document", title: x.title, status: DOC_STATUS_LABELS[x.status] ?? x.status, version: Number(x.version), updatedAt: x.updated_at, author: x.author ?? (x.source ? "Repository" : null), pinned: !!Number(x.pinned), source: x.source })),
     files: files.map((f) => ({ id: f.id, name: f.name, mime: f.mime, size: Number(f.size), createdAt: f.created_at, by: f.by })),
     pins: pins.map((p) => ({ id: p.id, title: p.title })),
     recent: recent.map((r) => ({ id: r.id, title: r.title, updatedAt: r.updated_at })),
@@ -170,44 +171,136 @@ export async function searchLibrary(user: AppUser, d: string, q: string) {
   };
 }
 
+
 // ---------------------------------------------------------------------------
 // Import and export
 // ---------------------------------------------------------------------------
+// Documents are stored as Markdown. A Markdown or text file is stored exactly as it is; Word and web pages are
+// turned into Markdown once, on import. The formatted view, PDF, HTML and Word come from that Markdown.
 
-// A Word file's text, with its headings and lists, as the app's plain text with "#" headings and "- " lists.
+const xmlText = (s: string) => s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n))).replace(/&amp;/g, "&");
+const wordOn = (rpr: string, tag: string) => new RegExp(`<w:${tag}(?: w:val="(?!0"|false")[^"]*")?\\s*/>`).test(rpr);
+
+// A Word paragraph's runs as Markdown: bold, italic and code-font text keep their marks, links keep their address.
+function wordInline(xml: string, rels: Map<string, string>): string {
+  const parts: { mark: string; text: string }[] = [];
+  for (const m of xml.matchAll(/<w:hyperlink\b([^>]*)>([\s\S]*?)<\/w:hyperlink>|<w:r[ >][\s\S]*?<\/w:r>/g)) {
+    if (m[1] !== undefined) {
+      const text = wordInline(m[2]!, rels);
+      const url = rels.get(m[1].match(/r:id="([^"]+)"/)?.[1] ?? "");
+      parts.push({ mark: "", text: url && /^https?:\/\//.test(url) && text.trim() ? `[${text.trim()}](${url})` : text });
+      continue;
+    }
+    const r = m[0];
+    const rpr = r.match(/<w:rPr>([\s\S]*?)<\/w:rPr>/)?.[1] ?? "";
+    const text = [...r.matchAll(/<w:t(?: [^>]*)?>([^<]*)<\/w:t>|<w:tab\/>|<w:br\/>/g)].map((x) => (x[0].startsWith("<w:tab") ? "\t" : x[0].startsWith("<w:br") ? "\n" : xmlText(x[1] ?? ""))).join("");
+    if (!text) continue;
+    const code = /w:(?:ascii|hAnsi)="(?:Consolas|Courier New|Courier|Menlo|Monaco)"/.test(rpr);
+    const b = wordOn(rpr, "b");
+    const i = wordOn(rpr, "i");
+    const mark = code ? "`" : b && i ? "***" : b ? "**" : i ? "*" : "";
+    const last = parts[parts.length - 1];
+    if (last && last.mark === mark) last.text += text;
+    else parts.push({ mark, text });
+  }
+  return parts
+    .map(({ mark, text }) => {
+      if (!mark || !text.trim()) return text;
+      const lead = text.match(/^\s*/)![0];
+      const trail = text.match(/\s*$/)![0];
+      return `${lead}${mark}${text.trim()}${mark}${trail}`;
+    })
+    .join("");
+}
+
+// A Word file as Markdown: headings, paragraphs, bulleted and nested lists, tables, bold, italic, code and links.
 export async function docxToText(data: Buffer | Uint8Array) {
   const zip = await JSZip.loadAsync(data);
   const xml = await zip.file("word/document.xml")?.async("string");
   if (!xml) throw new WorkflowError("VALIDATION", "That Word file has no text.");
-  const out: string[] = [];
-  for (const p of xml.split(/<\/w:p>/)) {
+  const relsXml = (await zip.file("word/_rels/document.xml.rels")?.async("string")) ?? "";
+  const rels = new Map(
+    [...relsXml.matchAll(/<Relationship\b[^>]*>/g)]
+      .map((m) => [m[0].match(/\bId="([^"]+)"/)?.[1] ?? "", xmlText(m[0].match(/\bTarget="([^"]+)"/)?.[1] ?? "")] as const)
+      .filter(([id, target]) => id && target),
+  );
+  const body = xml.match(/<w:body>([\s\S]*)<\/w:body>/)?.[1] ?? xml;
+  const blocks: { text: string; list: boolean }[] = [];
+  const para = (p: string) => {
     const style = p.match(/<w:pStyle w:val="([^"]+)"/)?.[1] ?? "";
-    const text = [...p.matchAll(/<w:t(?: [^>]*)?>([^<]*)<\/w:t>|<w:tab\/>/g)].map((m) => (m[1] === undefined ? "\t" : m[1])).join("").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'");
+    const text = wordInline(p, rels).replace(/\s+$/, "");
+    if (!text.trim()) return null;
     const level = style === "Title" ? 1 : Number(style.match(/^[Hh]eading\s*([1-6])$/)?.[1] ?? 0);
-    if (!text.trim()) {
-      if (out.length && out[out.length - 1] !== "") out.push("");
+    if (level) return { text: `${"#".repeat(Math.min(6, level))} ${text.trim().replace(/^\*\*(.*)\*\*$/, "$1")}`, list: false };
+    if (/<w:numPr>/.test(p) || /^List/i.test(style)) {
+      const depth = Number(p.match(/<w:ilvl w:val="(\d)"/)?.[1] ?? 0);
+      return { text: `${"  ".repeat(Math.min(4, depth))}- ${text.trim()}`, list: true };
+    }
+    return { text, list: false };
+  };
+  for (const m of body.matchAll(/<w:tbl>[\s\S]*?<\/w:tbl>|<w:p[ >][\s\S]*?<\/w:p>/g)) {
+    const el = m[0];
+    if (el.startsWith("<w:tbl>")) {
+      const rows = [...el.matchAll(/<w:tr[ >][\s\S]*?<\/w:tr>/g)].map((r) =>
+        [...r[0].matchAll(/<w:tc[ >][\s\S]*?<\/w:tc>/g)].map((c) =>
+          (c[0].match(/<w:p[ >][\s\S]*?<\/w:p>/g) ?? [])
+            .map((p) => wordInline(p, rels).trim())
+            .filter(Boolean)
+            .join(" ")
+            .replace(/\|/g, "\\|")
+            .replace(/\s*\n\s*/g, " "),
+        ),
+      );
+      const cols = Math.max(0, ...rows.map((r) => r.length));
+      if (!cols) continue;
+      const line = (r: string[]) => `| ${Array.from({ length: cols }, (_, i) => r[i] || " ").join(" | ")} |`;
+      // A header row is bold already in Markdown, so a bold header cell loses its marks.
+      const head = rows[0]!.map((c) => c.replace(/^\*\*(.+)\*\*$/, "$1"));
+      blocks.push({ text: [line(head), `|${" --- |".repeat(cols)}`, ...rows.slice(1).map(line)].join("\n"), list: false });
       continue;
     }
-    if (level) out.push(`${"#".repeat(Math.min(3, level))} ${text.trim()}`);
-    else if (/<w:numPr>/.test(p)) out.push(`- ${text.trim()}`);
-    else out.push(text);
+    const b = para(el);
+    if (b) blocks.push(b);
   }
-  return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  let out = "";
+  blocks.forEach((b, i) => (out += i === 0 ? b.text : `${b.list && blocks[i - 1]!.list ? "\n" : "\n\n"}${b.text}`));
+  return out.trim();
 }
 
-const htmlToText = (html: string) =>
-  html
-    .replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, "")
-    .replace(/<h([1-3])[^>]*>([\s\S]*?)<\/h\1>/gi, (_, n, t) => `\n${"#".repeat(Number(n))} ${t.replace(/<[^>]+>/g, "").trim()}\n`)
-    .replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, (_, t) => `\n- ${t.replace(/<[^>]+>/g, "").trim()}`)
-    .replace(/<br\s*\/?>|<\/p>|<\/div>/gi, "\n")
-    .replace(/<[^>]+>/g, "")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
+const decodeHtml = (s: string) => s.replace(/&nbsp;/g, " ").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n))).replace(/&amp;/g, "&");
+const stripTags = (s: string) => decodeHtml(s.replace(/<[^>]+>/g, "")).replace(/\s+/g, " ").trim();
+
+// A web page as Markdown: headings, paragraphs, lists, tables, code, bold, italic and links.
+export function htmlToMarkdown(html: string) {
+  let s = html.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>|<head[\s\S]*?<\/head>|<!--[\s\S]*?-->/gi, "");
+  const code: string[] = [];
+  s = s.replace(/<pre[^>]*>([\s\S]*?)<\/pre>/gi, (_, t: string) => `\n\n\u0000${code.push(decodeHtml(t.replace(/<[^>]+>/g, "")).replace(/\n+$/, "")) - 1}\u0000\n\n`);
+  s = s.replace(/<(strong|b)\b[^>]*>([\s\S]*?)<\/\1>/gi, (_, __, t: string) => (stripTags(t) ? `**${stripTags(t)}**` : ""));
+  s = s.replace(/<(em|i)\b[^>]*>([\s\S]*?)<\/\1>/gi, (_, __, t: string) => (stripTags(t) ? `*${stripTags(t)}*` : ""));
+  s = s.replace(/<code\b[^>]*>([\s\S]*?)<\/code>/gi, (_, t: string) => `\`${stripTags(t)}\``);
+  s = s.replace(/<a\b[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi, (_, h: string, t: string) => (/^(https?:|mailto:)/i.test(h) && stripTags(t) ? `[${stripTags(t)}](${h})` : stripTags(t)));
+  s = s.replace(/<table[\s\S]*?<\/table>/gi, (t) => {
+    const rows = [...t.matchAll(/<tr[\s\S]*?<\/tr>/gi)].map((r) => [...r[0].matchAll(/<t[hd]\b[^>]*>([\s\S]*?)<\/t[hd]>/gi)].map((c) => stripTags(c[1]!).replace(/\|/g, "\\|")));
+    const cols = Math.max(0, ...rows.map((r) => r.length));
+    if (!cols) return "";
+    const line = (r: string[]) => `| ${Array.from({ length: cols }, (_, i) => r[i] || " ").join(" | ")} |`;
+    return `\n\n${[line(rows[0]!), `|${" --- |".repeat(cols)}`, ...rows.slice(1).map(line)].join("\n")}\n\n`;
+  });
+  s = s
+    .replace(/<h([1-6])[^>]*>([\s\S]*?)<\/h\1>/gi, (_, n, t: string) => `\n\n${"#".repeat(Number(n))} ${stripTags(t)}\n\n`)
+    .replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, (_, t: string) => `\n- ${stripTags(t)}`)
+    .replace(/<\/(ul|ol)>/gi, "\n\n")
+    .replace(/<blockquote[^>]*>([\s\S]*?)<\/blockquote>/gi, (_, t: string) => `\n\n> ${stripTags(t)}\n\n`)
+    .replace(/<hr\s*\/?>/gi, "\n\n---\n\n")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|section|article|header|footer)>/gi, "\n\n")
+    .replace(/<[^>]+>/g, "");
+  return decodeHtml(s)
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\u0000(\d+)\u0000/g, (_, i) => `\`\`\`\n${code[Number(i)]}\n\`\`\``)
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
 
 export async function importDocument(user: AppUser, d: string, input: { folderId: string | null; name: string; base64: string }) {
   const a = await workAccess(user, d, "write");
@@ -217,91 +310,202 @@ export async function importDocument(user: AppUser, d: string, input: { folderId
   const ext = input.name.toLowerCase().split(".").pop() ?? "";
   let body: string;
   if (ext === "docx") body = await docxToText(data);
-  else if (ext === "md" || ext === "txt" || ext === "markdown") body = data.toString("utf8");
-  else if (ext === "html" || ext === "htm") body = htmlToText(data.toString("utf8"));
+  // Markdown and text are kept exactly as written (only a byte-order mark is dropped and line endings made \n).
+  else if (ext === "md" || ext === "txt" || ext === "markdown") body = data.toString("utf8").replace(/^﻿/, "").replace(/\r\n?/g, "\n");
+  else if (ext === "html" || ext === "htm") body = htmlToMarkdown(data.toString("utf8"));
   else throw new WorkflowError("VALIDATION", "Import a Word (.docx), Markdown (.md), text (.txt) or web page (.html) file. Other files can be added as files.");
-  const title = clean(input.name.replace(/\.[^.]+$/, ""), 160) || "Imported document";
+  if (body.length > DOC_MAX_CHARS) throw new WorkflowError("VALIDATION", `That document is ${body.length.toLocaleString("en")} characters; documents hold up to ${DOC_MAX_CHARS.toLocaleString("en")}. Split it, or add it as a file.`);
+  const fileTitle = clean(input.name.replace(/\.[^.]+$/, ""), 160) || "Imported document";
+  // A Markdown file names itself ("title:" at the top, or one "# Title" on its first line); otherwise the file name.
+  const title = (ext === "md" || ext === "markdown" ? markdownTitle(body) : null) ?? fileTitle;
   const id = uid("doc_");
   const now = nowIso();
-  await run("INSERT INTO dept_docs (id, dept, folder_id, kind, title, body, status, version, created_by, created_at, updated_at) VALUES (?, ?, ?, 'note', ?, ?, 'draft', 1, ?, ?, ?)", id, a.dept, f?.id ?? null, title, body.slice(0, 200_000), user.id, now, now);
+  await run("INSERT INTO dept_docs (id, dept, folder_id, kind, title, body, status, version, created_by, created_at, updated_at) VALUES (?, ?, ?, 'note', ?, ?, 'draft', 1, ?, ?, ?)", id, a.dept, f?.id ?? null, title, body, user.id, now, now);
   await audit({ actor: user }, { action: `${a.dept}.doc`, summary: `${user.name} imported "${input.name}" as a document` });
   return id;
 }
 
-// Inline **bold**, *italic* and `code` in a line, as Word runs.
-function runs(text: string, base: { font?: string } = {}) {
-  const out: TextRun[] = [];
-  const re = /(\*\*[^*]+\*\*|`[^`]+`|\*[^*]+\*)/g;
+type Run = TextRun | ExternalHyperlink;
+// Inline **bold**, *italic*, `code` and [links](https://...) in a line, as Word runs.
+function runs(text: string, base: { bold?: boolean; color?: string } = {}): Run[] {
+  const out: Run[] = [];
+  const re = /(\[[^\]]+\]\([^)\s]+\)|\*\*[^*]+\*\*|`[^`]+`|\*[^*\s][^*]*\*)/g;
   let last = 0;
   for (const m of text.matchAll(re)) {
     if (m.index! > last) out.push(new TextRun({ text: text.slice(last, m.index), ...base }));
     const t = m[0];
-    if (t.startsWith("**")) out.push(new TextRun({ text: t.slice(2, -2), bold: true, ...base }));
-    else if (t.startsWith("`")) out.push(new TextRun({ text: t.slice(1, -1), font: "Consolas", shading: { type: ShadingType.CLEAR, color: "auto", fill: "F1F3F4" } }));
-    else out.push(new TextRun({ text: t.slice(1, -1), italics: true, ...base }));
+    if (t.startsWith("[")) {
+      const [, label, href] = t.match(/^\[([^\]]+)\]\(([^)\s]+)\)$/)!;
+      if (/^https?:\/\//i.test(href!)) out.push(new ExternalHyperlink({ link: href!, children: [new TextRun({ text: label!, style: "Hyperlink", color: "1A5FD0", underline: {} })] }));
+      else out.push(new TextRun({ text: label!, ...base }));
+    } else if (t.startsWith("**")) out.push(new TextRun({ text: t.slice(2, -2), ...base, bold: true }));
+    else if (t.startsWith("`")) out.push(new TextRun({ text: t.slice(1, -1), font: "Consolas", size: 20, shading: { type: ShadingType.CLEAR, color: "auto", fill: "F1F3F4" } }));
+    else out.push(new TextRun({ text: t.slice(1, -1), ...base, italics: true }));
     last = m.index! + t.length;
   }
   if (last < text.length) out.push(new TextRun({ text: text.slice(last), ...base }));
   return out;
 }
 
-// The document's text (headings, lists, numbered lists, code blocks, tables, bold, italic, code) as a Word file.
-export async function markdownToDocx(title: string, body: string, meta: { workspace: string; subtitle: string }) {
+const BRAND = "074924";
+const RULE = "D9DDE3";
+type DocxMeta = { workspace: string; subtitle: string; ref?: string; kindLabel?: string; version?: number; statusLabel?: string; author?: string | null; updatedAt?: string | null; project?: string | null; source?: string | null; logo?: { data: Buffer; type: "png" | "jpg" } | null };
+
+// The document (headings, lists, task lists, numbered lists, quotes and callouts, code blocks, tables, rules, bold,
+// italic, code and links) as a Word file in the company format: the name and logo at the top, the document's
+// control table, and the name, title and page numbers in the footer.
+export async function markdownToDocx(title: string, markdown: string, meta: DocxMeta) {
+  const { meta: front, body: withoutFront } = splitFrontMatter(markdown);
+  let body = withoutFront;
+  const first = body.match(/^\s*#[ \t]+(.+?)[ \t#]*(?:\r?\n|$)/);
+  if (first && first[1]!.replace(/[*_`]/g, "").trim().toLowerCase() === title.trim().toLowerCase()) body = body.slice(first[0].length);
+  const cellBorders = { top: { style: BorderStyle.SINGLE, size: 4, color: RULE }, bottom: { style: BorderStyle.SINGLE, size: 4, color: RULE }, left: { style: BorderStyle.SINGLE, size: 4, color: RULE }, right: { style: BorderStyle.SINGLE, size: 4, color: RULE } };
+  const control = [
+    ["Document", meta.ref ?? ""],
+    ["Kind", meta.kindLabel ?? ""],
+    ["Version", meta.version ? `${meta.version} (${meta.statusLabel ?? ""})` : ""],
+    ["Owner", meta.author ?? ""],
+    ["Project", meta.project ?? ""],
+    ["Last updated", (meta.updatedAt ?? "").slice(0, 10)],
+    ["Source", meta.source ? `${meta.source} (kept in step with the repository)` : ""],
+    ...Object.entries(front).filter(([k]) => !/^title$/i.test(k)).map(([k, v]) => [k[0]!.toUpperCase() + k.slice(1), v]),
+  ].filter(([, v]) => v);
   const children: (Paragraph | Table)[] = [
-    new Paragraph({ spacing: { after: 120 }, children: [new TextRun({ text: meta.workspace, color: "0B7A3B", bold: true, size: 22 })] }),
-    new Paragraph({ heading: HeadingLevel.TITLE, children: [new TextRun({ text: title, bold: true, size: 44 })] }),
-    new Paragraph({ spacing: { after: 300 }, children: [new TextRun({ text: meta.subtitle, color: "6B7280", size: 20 })] }),
+    new Paragraph({ spacing: { after: 60 }, children: [new TextRun({ text: (meta.kindLabel ?? "Document").toUpperCase(), color: BRAND, bold: true, size: 18, characterSpacing: 30 })] }),
+    new Paragraph({ heading: HeadingLevel.TITLE, spacing: { after: 200 }, children: [new TextRun({ text: title, bold: true, size: 48, color: "1F2328" })] }),
   ];
+  if (control.length)
+    children.push(
+      new Table({
+        width: { size: 100, type: WidthType.PERCENTAGE },
+        rows: control.map(([k, v]) => new TableRow({ children: [new TableCell({ width: { size: 24, type: WidthType.PERCENTAGE }, borders: cellBorders, shading: { type: ShadingType.CLEAR, color: "auto", fill: "F5F6F8" }, children: [new Paragraph({ children: [new TextRun({ text: k!, bold: true, size: 18, color: "5F6B7A" })] })] }), new TableCell({ borders: cellBorders, children: [new Paragraph({ children: [new TextRun({ text: v!, size: 18 })] })] })] })),
+      }),
+      new Paragraph({ text: "", spacing: { after: 200 } }),
+    );
   const lines = body.split(/\r?\n/);
   for (let i = 0; i < lines.length; i++) {
     const l = lines[i]!;
-    if (/^```/.test(l)) {
+    if (/^\s*(```|~~~)/.test(l)) {
       const code: string[] = [];
-      for (i++; i < lines.length && !/^```/.test(lines[i]!); i++) code.push(lines[i]!);
-      children.push(new Paragraph({ shading: { type: ShadingType.CLEAR, color: "auto", fill: "F1F3F4" }, children: code.flatMap((c, n) => [new TextRun({ text: c, font: "Consolas", size: 19, break: n ? 1 : 0 })]) }));
+      for (i++; i < lines.length && !/^\s*(```|~~~)/.test(lines[i]!); i++) code.push(lines[i]!);
+      children.push(new Paragraph({ spacing: { before: 80, after: 120 }, border: { left: { style: BorderStyle.SINGLE, size: 12, color: RULE, space: 8 } }, shading: { type: ShadingType.CLEAR, color: "auto", fill: "F5F6F8" }, children: code.flatMap((c, n) => [new TextRun({ text: c || " ", font: "Consolas", size: 18, break: n ? 1 : 0 })]) }));
       continue;
     }
     if (/^\|.*\|\s*$/.test(l)) {
       const rows: string[][] = [];
-      for (; i < lines.length && /^\|.*\|\s*$/.test(lines[i]!); i++) if (!/^\|[\s:|-]+\|\s*$/.test(lines[i]!)) rows.push(lines[i]!.trim().slice(1, -1).split("|").map((c) => c.trim()));
+      for (; i < lines.length && /^\|.*\|\s*$/.test(lines[i]!); i++) if (!/^\|[\s:|-]+\|\s*$/.test(lines[i]!)) rows.push(lines[i]!.trim().slice(1, -1).split(/(?<!\\)\|/).map((c) => c.trim().replace(/\\\|/g, "|")));
       i--;
-      children.push(new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: rows.map((r, ri) => new TableRow({ tableHeader: ri === 0, children: r.map((c) => new TableCell({ shading: ri === 0 ? { type: ShadingType.CLEAR, color: "auto", fill: "E6F4EA" } : undefined, children: [new Paragraph({ children: runs(c, ri === 0 ? {} : {}) })] })) })) }));
+      children.push(new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: rows.map((r, ri) => new TableRow({ tableHeader: ri === 0, children: r.map((c) => new TableCell({ borders: cellBorders, shading: ri === 0 ? { type: ShadingType.CLEAR, color: "auto", fill: "E8F2EC" } : undefined, children: [new Paragraph({ children: runs(c, ri === 0 ? { bold: true } : {}) })] })) })) }));
       children.push(new Paragraph({ text: "" }));
       continue;
     }
-    const h = l.match(/^(#{1,3})\s+(.*)$/);
+    const h = l.match(/^(#{1,6})\s+(.*)$/);
     if (h) {
-      children.push(new Paragraph({ heading: h[1]!.length === 1 ? HeadingLevel.HEADING_1 : h[1]!.length === 2 ? HeadingLevel.HEADING_2 : HeadingLevel.HEADING_3, spacing: { before: 240, after: 100 }, children: [new TextRun({ text: h[2]!, bold: true, color: "0B7A3B" })] }));
+      const n = h[1]!.length;
+      const heading = [HeadingLevel.HEADING_1, HeadingLevel.HEADING_2, HeadingLevel.HEADING_3, HeadingLevel.HEADING_4, HeadingLevel.HEADING_5, HeadingLevel.HEADING_6][n - 1]!;
+      children.push(new Paragraph({ heading, spacing: { before: n === 1 ? 320 : 240, after: 100 }, border: n === 1 ? { bottom: { style: BorderStyle.SINGLE, size: 12, color: BRAND, space: 4 } } : undefined, children: [new TextRun({ text: h[2]!.replace(/[*`]/g, ""), bold: true, color: n <= 2 ? BRAND : "1F2328" })] }));
       continue;
     }
-    const b = l.match(/^\s*[-*•]\s+(.*)$/);
+    if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(l)) {
+      children.push(new Paragraph({ text: "", border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: RULE, space: 1 } }, spacing: { after: 160 } }));
+      continue;
+    }
+    const q = l.match(/^\s*>\s?(.*)$/);
+    if (q) {
+      const quote: string[] = [q[1]!];
+      for (; i + 1 < lines.length && /^\s*>/.test(lines[i + 1]!); i++) quote.push(lines[i + 1]!.replace(/^\s*>\s?/, ""));
+      const alert = quote[0]!.match(/^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*(.*)$/i);
+      if (alert) quote[0] = alert[2]!;
+      const text = quote.filter((x, n) => n > 0 || x.trim());
+      children.push(new Paragraph({ indent: { left: 240 }, spacing: { before: 80, after: 120 }, border: { left: { style: BorderStyle.SINGLE, size: 18, color: alert ? ({ note: "2F80ED", tip: "1F9D55", important: "7B68EE", warning: "C27B00", caution: "E2445C" } as Record<string, string>)[alert[1]!.toLowerCase()]! : BRAND, space: 10 } }, shading: { type: ShadingType.CLEAR, color: "auto", fill: "F5F6F8" }, children: [...(alert ? [new TextRun({ text: `${alert[1]!.toUpperCase()}  `, bold: true, size: 16, color: "5F6B7A" })] : []), ...text.flatMap((x, n) => (n ? [new TextRun({ text: "", break: 1 }), ...runs(x)] : runs(x)))] }));
+      continue;
+    }
+    const task = l.match(/^(\s*)[-*+]\s+\[([ xX])\]\s+(.*)$/);
+    if (task) {
+      children.push(new Paragraph({ indent: { left: 360 + Math.min(3, Math.floor(task[1]!.length / 2)) * 360, hanging: 300 }, children: [new TextRun({ text: task[2] === " " ? "[  ]  " : "[x]  ", font: "Consolas", color: BRAND }), ...runs(task[3]!)] }));
+      continue;
+    }
+    const b = l.match(/^(\s*)[-*+•]\s+(.*)$/);
     if (b) {
-      children.push(new Paragraph({ bullet: { level: /^\s{2,}/.test(l) ? 1 : 0 }, children: runs(b[1]!) }));
+      children.push(new Paragraph({ bullet: { level: Math.min(3, Math.floor(b[1]!.length / 2)) }, children: runs(b[2]!) }));
       continue;
     }
-    const n = l.match(/^\s*(\d+)[.)]\s+(.*)$/);
+    const n = l.match(/^(\s*)(\d+)[.)]\s+(.*)$/);
     if (n) {
-      children.push(new Paragraph({ indent: { left: 360, hanging: 360 }, children: [new TextRun({ text: `${n[1]}. ` }), ...runs(n[2]!)] }));
+      children.push(new Paragraph({ indent: { left: 360 + Math.min(3, Math.floor(n[1]!.length / 2)) * 360, hanging: 360 }, children: [new TextRun({ text: `${n[2]}. `, bold: true, color: BRAND }), ...runs(n[3]!)] }));
       continue;
     }
-    children.push(l.trim() ? new Paragraph({ spacing: { after: 100 }, children: runs(l) }) : new Paragraph({ text: "" }));
+    children.push(l.trim() ? new Paragraph({ spacing: { after: 100 }, children: runs(l.replace(/ {2}$/, "")) }) : new Paragraph({ text: "" }));
   }
-  const doc = new Document({ creator: meta.workspace, title, styles: { default: { document: { run: { font: "Calibri", size: 22 } } } }, sections: [{ properties: {}, children: [...children, new Paragraph({ alignment: AlignmentType.RIGHT, spacing: { before: 400 }, children: [new TextRun({ text: `${meta.workspace} · ${new Date().toISOString().slice(0, 10)}`, color: "9AA0A6", size: 16 })] })] }] });
+  const header = new Header({
+    children: [
+      new Paragraph({
+        alignment: AlignmentType.LEFT,
+        border: { bottom: { style: BorderStyle.SINGLE, size: 12, color: BRAND, space: 4 } },
+        children: [...(meta.logo ? [new ImageRun({ type: meta.logo.type, data: meta.logo.data, transformation: { width: 22, height: 22 } }), new TextRun({ text: "  " })] : []), new TextRun({ text: meta.workspace, bold: true, color: BRAND, size: 18 }), new TextRun({ text: `\t${meta.ref ?? ""}${meta.version ? ` · v${meta.version}` : ""}`, color: "5F6B7A", size: 16 })],
+        tabStops: [{ type: TabStopType.RIGHT, position: 9600 }],
+      }),
+    ],
+  });
+  const footer = new Footer({
+    children: [
+      new Paragraph({
+        tabStops: [{ type: TabStopType.RIGHT, position: 9600 }],
+        children: [new TextRun({ text: `${meta.workspace} · ${title} · Internal document`, color: "7A8594", size: 16 }), new TextRun({ children: ["\tPage ", PageNumber.CURRENT, " of ", PageNumber.TOTAL_PAGES], color: "7A8594", size: 16 })],
+      }),
+    ],
+  });
+  const doc = new Document({
+    creator: meta.workspace,
+    title,
+    description: meta.subtitle,
+    styles: { default: { document: { run: { font: "Calibri", size: 22, color: "1F2328" }, paragraph: { spacing: { line: 300 } } } } },
+    sections: [{ properties: { page: { margin: { top: 1200, bottom: 1200, left: 1150, right: 1150 } } }, headers: { default: header }, footers: { default: footer }, children }],
+  });
   return Packer.toBuffer(doc);
+}
+
+// The site's logo for documents that leave the app: as a data address for HTML, and as an image for Word (PNG or
+// JPEG only; an SVG logo is left out of Word, which cannot show it without a picture beside it).
+async function documentLogo() {
+  const img = await (await import("./identity")).identityImage("logo").catch(() => null);
+  if (img) return { uri: `data:${img.mime};base64,${Buffer.from(img.data).toString("base64")}`, word: /png/.test(img.mime) ? { data: Buffer.from(img.data), type: "png" as const } : /jpe?g/.test(img.mime) ? { data: Buffer.from(img.data), type: "jpg" as const } : null };
+  const svg = await import("node:fs/promises").then((fs) => fs.readFile(`${process.cwd()}/public/brand/myseed-logo.svg`)).catch(() => null);
+  return { uri: svg ? `data:image/svg+xml;base64,${svg.toString("base64")}` : null, word: null };
 }
 
 export async function exportDoc(user: AppUser, d: string, id: string, format: "docx" | "md" | "html") {
   const a = await workAccess(user, d);
-  const r = await get<{ title: string; body: string; kind: string; version: number; status: string }>("SELECT title, body, kind, version, status FROM dept_docs WHERE id = ? AND dept = ?", id, a.dept);
+  const r = await get<{ title: string; body: string; kind: string; version: number; status: string; updated_at: string; approved_at: string | null; reviewers: string; approvals: string; project: string | null; author: string | null; source: string | null }>(
+    `SELECT x.title, x.body, x.kind, x.version, x.status, x.updated_at, x.approved_at, x.reviewers, x.approvals, p.name AS project, u.name AS author, s.source
+     FROM dept_docs x LEFT JOIN dept_projects p ON p.id = x.project_id LEFT JOIN users u ON u.id = x.created_by LEFT JOIN dept_doc_sources s ON s.doc_id = x.id
+     WHERE x.id = ? AND x.dept = ?`,
+    id,
+    a.dept,
+  );
   if (!r) throw new WorkflowError("NOT_FOUND", "Document not found.");
   const workspace = (await (await import("./settings")).getSettings()).workspace.name || "Myseed";
-  const subtitle = `${DOC_KINDS.find((k) => k.key === r.kind)?.label ?? "Document"} · version ${r.version} · ${DOC_STATUS_LABELS[r.status] ?? r.status}`;
+  const kindLabel = DOC_KINDS.find((k) => k.key === r.kind)?.label ?? "Document";
+  const statusLabel = DOC_STATUS_LABELS[r.status] ?? r.status;
+  const subtitle = `${kindLabel} · version ${r.version} · ${statusLabel}`;
   const base = r.title.replace(/[^\w\- ]+/g, "").trim() || "document";
-  if (format === "md") return { name: `${base}.md`, mime: "text/markdown; charset=utf-8", data: Buffer.from(`# ${r.title}\n\n_${subtitle}_\n\n${r.body}\n`, "utf8") };
+  const author = r.author ?? (r.source ? "Repository" : null);
+  const ref = docRef(a.dept, r.kind, id);
+  // Markdown leaves as it is stored, with the title on top only when the text does not already start with it.
+  if (format === "md") {
+    const { meta, body } = splitFrontMatter(r.body);
+    const first = body.match(/^\s*#[ \t]+(.+?)[ \t#]*(?:\r?\n|$)/)?.[1]?.replace(/[*_`]/g, "").trim().toLowerCase();
+    const named = !!meta.title || first === r.title.trim().toLowerCase();
+    const text = named ? r.body : `# ${r.title}\n\n${r.body}`;
+    return { name: `${base}.md`, mime: "text/markdown; charset=utf-8", data: Buffer.from(text.endsWith("\n") ? text : `${text}\n`, "utf8") };
+  }
+  const logo = await documentLogo();
   if (format === "html") {
-    const { marked } = await import("marked");
-    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${r.title.replace(/</g, "&lt;")}</title><style>body{font-family:Calibri,Arial,sans-serif;max-width:46rem;margin:2rem auto;line-height:1.5;color:#1f2937}h1,h2,h3{color:#0B7A3B}code,pre{background:#f1f3f4}table{border-collapse:collapse}td,th{border:1px solid #ccc;padding:4px 8px}</style></head><body><p style="color:#0B7A3B;font-weight:bold">${workspace}</p><h1>${r.title.replace(/</g, "&lt;")}</h1><p style="color:#6b7280">${subtitle}</p>${await marked.parse(r.body.replace(/</g, "&lt;"))}</body></html>`;
+    const reviewers = parseJson<string[]>(r.reviewers, []);
+    const approvals = parseJson<{ by: string }[]>(r.approvals, []);
+    const names = new Map((await all<{ id: string; name: string }>(`SELECT id, name FROM users WHERE id IN (${reviewers.map(() => "?").join(",") || "''"})`, ...reviewers)).map((u) => [u.id, u.name]));
+    const html = specDocumentHtml({ workspace, logoUrl: logo.uri, title: r.title, kindLabel, ref, version: Number(r.version), status: r.status, statusLabel, author, updatedAt: r.updated_at, approvedAt: r.approved_at, project: r.project, reviewers: reviewers.map((x) => ({ name: names.get(x) ?? "Someone", approved: approvals.some((p) => p.by === x) })), source: r.source, body: r.body });
     return { name: `${base}.html`, mime: "text/html; charset=utf-8", data: Buffer.from(html, "utf8") };
   }
-  return { name: `${base}.docx`, mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", data: await markdownToDocx(r.title, r.body, { workspace, subtitle }) };
+  return { name: `${base}.docx`, mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", data: await markdownToDocx(r.title, r.body, { workspace, subtitle, ref, kindLabel, version: Number(r.version), statusLabel, author, updatedAt: r.updated_at, project: r.project, source: r.source, logo: logo.word }) };
 }

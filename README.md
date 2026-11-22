@@ -14,7 +14,7 @@ npm run setup     # empty database + accounts, chat groups, real curriculum (dat
 npm run dev       # http://localhost:3020
 ```
 
-Sign in as `admin@myseed.test` (Admin) or `selam.tadesse@myseed.test` (Manager). Every starting password is `Myseed-2026`.
+Sign in with one of the starting accounts in [docs/USERS.md](docs/USERS.md). `npm run setup` prints each account's generated starting password and saves them to `data/initial-credentials.md` on your computer (never committed); everyone chooses a new password at first sign-in.
 
 Locally the app uses an embedded PostgreSQL in `data/pg`. In production set `DATABASE_URL` to a Supabase (or any PostgreSQL) connection string. Deploying to Netlify is described step by step in the runbook, section 3.
 
@@ -34,6 +34,12 @@ Locally the app uses an embedded PostgreSQL in `data/pg`. In production set `DAT
 | `npm run checks` | Run scheduled deadline, blocker, timer, handoff and question checks |
 | `npm run verify` | Workflow, permission and import verification against a throwaway database (66 checks) |
 | `npm run typecheck` | TypeScript check |
+| `npm test`, `npm run test:e2e` | Server and browser tests, each on a throwaway database |
+| `npm run docs:sync` | Bring the documents listed in `docs/library.json` into Dev team, Specs and docs (the server also does this when it starts) |
+
+## Documentation
+
+Everything about the project is listed in the [documentation index](docs/project/INDEX.md): the [product overview](docs/project/PRODUCT-OVERVIEW.md), [requirements](docs/project/SRS.md), [technical design](docs/project/ARCHITECTURE.md), [decisions](docs/project/DECISIONS.md), [test plan](docs/project/TEST-PLAN.md), [release history](docs/project/RELEASE-HISTORY.md) and [progress report](docs/project/PROGRESS.md), and the Dev team handbook: the [rule book](docs/dev-team/RULEBOOK.md), [how the team operates](docs/dev-team/OPERATING-GUIDE.md), [onboarding](docs/dev-team/ONBOARDING.md), [writing specs and docs](docs/dev-team/SPEC-GUIDE.md) and [releases, deploys and incidents](docs/dev-team/RELEASE-GUIDE.md). The same documents appear formatted in the app under Dev team, Specs and docs.
 
 ## What is included
 
