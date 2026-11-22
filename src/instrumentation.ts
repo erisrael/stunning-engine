@@ -19,6 +19,17 @@ export async function register() {
         console.error("Repository documents sync failed", e);
       }
     }, 20e3).unref();
+  // The Dev team's record of how the system was built (docs/dev-history.json): projects, sprints, releases and tasks,
+  // added once and only where missing. MYSEED_DEV_HISTORY=0 switches it off.
+  if (process.env.MYSEED_DEV_HISTORY !== "0")
+    setTimeout(async () => {
+      try {
+        const r = await (await import("./server/dev-history")).applyDevHistory();
+        if (r.applied || (r.reason && r.reason !== "already applied")) console.log(`Dev team record: ${r.applied ? `${r.projects} projects, ${r.sprints} sprints, ${r.releases} releases, ${r.tasks} tasks added for ${r.owner}` : r.reason}`);
+      } catch (e) {
+        console.error("Dev team record failed", e);
+      }
+    }, 30e3).unref();
   if (process.env.MYSEED_TIMER === "0") return;
   const tick = async () => {
     try {

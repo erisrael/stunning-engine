@@ -9,6 +9,7 @@ Where Myseed Ops stands on 23 November 2026: what is built, what is waiting to b
 | Roadmap phases | 58 planned; 48 done; 9 built with items still open (listed below); Phase 45 in progress |
 | Named updates | Update 1.0 (8 phases) and Update 1.1 (phases 10 to 16) done; Update 1.2 (10 phases) built and committed, with checks still to make on the live system |
 | Latest work | Phase 46: documents shown as formatted company documents; the project documentation and this handbook in Specs and docs |
+| In the app | Dev team: 13 projects on the Roadmap (12 delivered, Maintenance and improvements open), Sprints 1 and 2 closed, Sprint 3 active, 9 releases with their production deployments, 132 tasks (from `docs/dev-history.json`) |
 | Automated tests | About 110 server test files and 70 browser flows, run in CI on every push and pull request |
 | Production | https://ops.myseed.com.et on the Hostinger VPS, auto deployed from `main` |
 | History | 196 commits since 28 October 2026, all by one developer |

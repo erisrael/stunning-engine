@@ -1,0 +1,246 @@
+{
+  "about": "The Dev team's record of how Myseed Ops was built: projects, milestones, sprints, releases and tasks, from the roadmap (docs/ROADMAP.md) and the git history. src/server/dev-history.ts adds what is missing when the server starts (and with npm run dev:history); it never changes or removes what is already in the app. Tasks: [code, title, type, points, start date, done date, release, description]. Maintenance tasks are objects with their status.",
+  "dept": "dev",
+  "owner": { "name": "Kidus", "note": "Every task is assigned to the Dev account whose name starts with Kidus (the Developer role preferred), or MYSEED_DEV_OWNER_EMAIL when set." },
+  "sprints": [
+    { "name": "Sprint 1", "start": "2026-10-26", "end": "2026-11-08", "status": "closed", "goal": "The production workflow, departments, HR, Finance, attendance, the Dev studio and the platform's foundations, and the first deploy to the VPS.", "review": "Every committed task was finished and released in 0.1.0, 0.2.0 and 0.3.0: the production workflow end to end, every department with its own flow, HR, Finance, attendance with face and QR check-in, the Dev studio, presentations, the assistant, customer support, and the Hostinger VPS with auto deploy from GitHub." },
+    { "name": "Sprint 2", "start": "2026-11-09", "end": "2026-11-22", "status": "closed", "goal": "Updates 1.0, 1.1 and 1.2: Noor and Chapa in full, the customer support and contact center platform, and Fun mode with Seed Town.", "review": "Every committed task was finished and released in 1.0.0 to 1.4.0: Update 1.0 (8 phases), Update 1.1 (phases 10 to 16), Update 1.2 (10 phases), Noor protection, the watchdog, UI styles, Fun mode and Seed Town with the guest arcade and the Windows app." },
+    { "name": "Sprint 3", "start": "2026-11-23", "end": "2026-12-06", "status": "active", "goal": "Documentation and the Dev team's way of working; confirm Chapa and Noor on the live system; maintenance as it is requested." }
+  ],
+  "releases": [
+    { "name": "v0.1.0", "version": "0.1.0", "date": "2026-10-31", "commit": "3556b55", "notes": "First release. Admin data control, the editorial workflow with handovers and checklists, team chat, email from the app, departments with configurable statuses, views, dashboards and requests, calls with the app's own ringing, HR, Finance, attendance with face and QR check-in, and the foundations: sign-in policy, scheduled jobs, backups, tests in CI and errors in the app." },
+    { "name": "v0.2.0", "version": "0.2.0", "date": "2026-11-04", "commit": "d3db1d5", "notes": "The platform grows: department flows, the Dev studio, the presentation studio, the assistant, the company inbox, passkeys, Myseed's own needs, performance management, customer support with browser calls, strategic planning, the document library, Office, Power BI and Notion, Admin platform pages, phone layouts, and the control panel with the Hostinger VPS and auto deploy." },
+    { "name": "v0.3.0", "version": "0.3.0", "date": "2026-11-09", "commit": "bceda25", "notes": "Noor, Chapa and integrations: the Legacy CMS reading Noor, Chapa for several businesses, i-Conic SMS, several AI providers, email providers, Google sign-in, kiosk pairing and QR fixes." },
+    { "name": "Update 1.0", "version": "1.0.0", "date": "2026-11-14", "commit": "36e2ff2", "notes": "Update 1.0, phases 1 to 8: sticky curriculum context and kiosk access, the date-first Legacy CMS, Chapa for every business with follow-up, one help menu with the Telegram Mini App, assistant v2 in Amharic, My work for everyone, the integrations hub with SMS routing, and six colour themes." },
+    { "name": "Update 1.1", "version": "1.1.0", "date": "2026-11-14", "commit": "44712d5", "notes": "Update 1.1, phases 10 to 16: connected systems, live chat, the Telegram bot manager, the call center, the knowledge base and the live admin dashboard." },
+    { "name": "Update 1.2", "version": "1.2.0", "date": "2026-11-18", "commit": "07afd9d", "notes": "Update 1.2: Chapa sync that fetches everything, the Chapa transactions screen, the Noor field registry and filtering, support content and the Telegram bot, support chat at team-chat level, Customer Support Requests, calling, the IVR and call records; department data managers; Next.js 16.4.6." },
+    { "name": "v1.3.0", "version": "1.3.0", "date": "2026-11-19", "commit": "33f68f0", "notes": "Support, Noor and operations hardening: Noor admin pages and the academic content manager, Noor protection, the external API and SMS consoles, the Mini App redesign, agent ratings, the watchdog and memory cap, and the assistant's autopilot." },
+    { "name": "v1.4.0", "version": "1.4.0", "date": "2026-11-21", "commit": "d0350dd", "notes": "The support desk like Team chat, UI styles and Fun mode, the Redo status, the V/E/D/U permission grid and the Assistant Manager role, Seed Town as a city with licensed cars, the guest arcade, Seed Core, football and the Windows app." },
+    { "name": "v1.5.0", "version": "1.5.0", "date": "2026-11-23", "commit": "73c09c3", "notes": "Specs and docs as formatted company documents, Markdown kept as written, the project's documentation and the Dev team handbook in the library, and Seed Town Offline." }
+  ],
+  "projects": [
+    {
+      "key": "CORE", "name": "Production workflow and core platform", "color": "#7b68ee", "status": "done", "start": "2026-10-28", "due": "2026-11-20",
+      "description": "The curriculum and the four production stages (Recording, Editing, Uploading, Publication) with evidence and handovers; departments with their own flows; Myseed's own needs; roles and permissions.",
+      "milestones": [{ "name": "First release", "due": "2026-10-31" }, { "name": "Department flows", "due": "2026-11-01" }, { "name": "Update 1.0", "due": "2026-11-14" }, { "name": "Redo and the permission grid", "due": "2026-11-20" }],
+      "tasks": [
+        ["CORE-1", "Admin data control: data manager, trash with restore, bulk status and per-page imports", "feature", 5, "2026-10-28", "2026-10-29", "v0.1.0", "Phase 1. Per-page import dialogs, taxonomy import, data copy scripts, Admin data manager with trash and restore, bulk status changes, data health checks."],
+        ["CORE-2", "Editorial workflow: assigning, checklists and handovers", "feature", 8, "2026-10-30", "2026-10-30", "v0.1.0", "Phase 2. Assign, the standard and extra checklists, handovers between the four production stages with evidence gates."],
+        ["CORE-3", "Departments with configurable statuses, types, fields, names and rights", "feature", 8, "2026-10-30", "2026-10-30", "v0.1.0", "Phases 5 and 5c. Dev, Studio, Marketing and Owners; configuration with versions per department."],
+        ["CORE-4", "Department views, dashboards, the Company overview, timeline and requests", "feature", 8, "2026-10-30", "2026-10-30", "v0.1.0", "Phase 5c. List columns and grouping, board swimlanes, sheet, timeline, team, reports, time and requests between departments."],
+        ["CORE-5", "Overview, help, training manual and the get-started tour", "feature", 3, "2026-10-30", "2026-10-30", "v0.1.0", "Phase 6."],
+        ["CORE-6", "Production teams in depth: rules per team, only finished work moves on", "feature", 5, "2026-10-30", "2026-10-31", "v0.1.0", "Phase 5d. Editors' own board, lead approval and lead-only handover; team steps on Home."],
+        ["CORE-7", "Navigation by role, Profile tabs and Approvals", "feature", 3, "2026-10-31", "2026-10-31", "v0.2.0", "Phase 11. Departments as each person's own sidebar."],
+        ["CORE-8", "One flow engine for every department: member board and lead desk", "feature", 8, "2026-11-01", "2026-11-01", "v0.2.0", "Phase 12. Stages, lead review, hand-over to the next stage or department; the Dev, Marketing and Studio flows."],
+        ["CORE-9", "Myseed's own needs: presenters and fees, file places, publishing to the Myseed App, Ethiopian calendar, data protection", "feature", 8, "2026-11-03", "2026-11-03", "v0.2.0", "Phase 16."],
+        ["CORE-10", "Handovers on Approvals, curriculum fix and auto-assign, routines and the Legacy catalog", "feature", 5, "2026-11-04", "2026-11-04", "v0.2.0", "Phases 31 to 34."],
+        ["CORE-11", "Phones and settings, leave for staff, My work for everyone, presenters to HR", "feature", 5, "2026-11-04", "2026-11-04", "v0.2.0", "Phases 35 and 36."],
+        ["CORE-12", "Sticky curriculum context, kiosk access and the profile PIN switch", "feature", 3, "2026-11-10", "2026-11-10", "Update 1.0", "Update 1.0 phase 1."],
+        ["CORE-13", "My work table for everyone, taking work under Admin's rules, import undo", "feature", 5, "2026-11-12", "2026-11-13", "Update 1.0", "Update 1.0 phase 6, with recordings corrected in place and lead edits before hand-over."],
+        ["CORE-14", "Department data managers and Dev import templates", "feature", 3, "2026-11-16", "2026-11-16", "Update 1.2", "Data Manager pages for Dev, Marketing, Studio, HR and Finance."],
+        ["CORE-15", "Redo status, the V/E/D/U permission grid, Assistant Manager role and recording team overview", "feature", 5, "2026-11-20", "2026-11-20", "v1.4.0", "Phase 44 (production and admin changes)."]
+      ]
+    },
+    {
+      "key": "COMM", "name": "Communication: chat, calls and mail", "color": "#1fa7e0", "status": "done", "start": "2026-10-30", "due": "2026-11-09",
+      "description": "Team chat, voice and video calls, email from the app, the company inbox and announcements.",
+      "milestones": [{ "name": "Chat and calls", "due": "2026-10-31" }, { "name": "Company inbox", "due": "2026-11-03" }],
+      "tasks": [
+        ["COMM-1", "Team chat: groups, mentions, replies, pins, presence, receipts and search", "feature", 8, "2026-10-30", "2026-10-30", "v0.1.0", "Phases 3 and 7c."],
+        ["COMM-2", "Email from the app with cPanel setup and sending through a web API", "feature", 3, "2026-10-30", "2026-10-30", "v0.1.0", "Phase 4."],
+        ["COMM-3", "Calls with the app's own ringing: voice and video in direct chats", "feature", 5, "2026-10-30", "2026-10-30", "v0.1.0", "Phase 5a."],
+        ["COMM-4", "Group calls, email copies and Send later, Google Meet and YouTube", "feature", 3, "2026-10-31", "2026-10-31", "v0.1.0", "Phase 10 batch C."],
+        ["COMM-5", "The company inbox: mailboxes, conversations, signatures, send later", "feature", 8, "2026-11-02", "2026-11-03", "v0.2.0", "Phase 14."],
+        ["COMM-6", "Announcements and policies, Light mode for slow connections, the usage view", "feature", 3, "2026-11-03", "2026-11-03", "v0.2.0", "Phase 18."],
+        ["COMM-7", "Email providers and delivery setup in Admin", "feature", 2, "2026-11-06", "2026-11-09", "v0.3.0", "Manual mail passwords, provider selection, isolated provider keys."]
+      ]
+    },
+    {
+      "key": "PEOPLE", "name": "HR, attendance and payroll", "color": "#1f9d55", "status": "done", "start": "2026-10-30", "due": "2026-11-09",
+      "description": "Employee records, leave, hiring and performance cases; attendance at the kiosk by QR, PIN, badge and face; payroll for everyone and recognition.",
+      "milestones": [{ "name": "HR", "due": "2026-10-30" }, { "name": "Attendance", "due": "2026-10-31" }, { "name": "Payroll and recognition", "due": "2026-11-03" }],
+      "tasks": [
+        ["PEOPLE-1", "HR records: employees, documents, org chart, equipment and My record", "feature", 5, "2026-10-30", "2026-10-30", "v0.1.0", "Phase 7 step 1."],
+        ["PEOPLE-2", "Leave with line manager and HR approval, balances, calendar and holidays", "feature", 5, "2026-10-30", "2026-10-30", "v0.1.0", "Phase 7 step 2."],
+        ["PEOPLE-3", "Hiring, joiners and leavers, performance, training, cases and reports", "feature", 8, "2026-10-30", "2026-10-30", "v0.1.0", "Phase 7 steps 3 to 5."],
+        ["PEOPLE-4", "Attendance: kiosk, app and phone check-in, team-lead entry and corrections", "feature", 5, "2026-10-31", "2026-10-31", "v0.1.0", "Phase 9 step 1."],
+        ["PEOPLE-5", "Face check-in at the kiosk, with guidelines", "feature", 5, "2026-10-31", "2026-10-31", "v0.1.0", "Phase 9 step 2; docs/FACE-CHECKIN.md."],
+        ["PEOPLE-6", "Attendance by printed QR and the office network, breaks and lunch", "feature", 5, "2026-10-31", "2026-10-31", "v0.1.0", "Phase 10b."],
+        ["PEOPLE-7", "Check-in without signal, sent later", "feature", 3, "2026-11-03", "2026-11-03", "v0.2.0", "Phase 19."],
+        ["PEOPLE-8", "Attendance kept by hand, payroll for everyone and recognition", "feature", 5, "2026-11-03", "2026-11-03", "v0.2.0", "Phase 21."],
+        ["PEOPLE-9", "Kiosk pairing, QR scanning and office connection diagnostics", "improvement", 3, "2026-11-07", "2026-11-09", "v0.3.0", "Kiosk rotation and pairing, scanning fixes, attendance setup restored."],
+        ["PEOPLE-10", "App account creation and employee deletion from HR", "feature", 2, "2026-11-11", "2026-11-11", "Update 1.0", ""]
+      ]
+    },
+    {
+      "key": "FIN", "name": "Finance and Chapa", "color": "#f2a100", "status": "done", "start": "2026-10-31", "due": "2026-11-19",
+      "description": "Accounts, bills, invoices, claims, purchasing, budgets, payroll and reports; Chapa payments for every business, synced in full and reconciled.",
+      "milestones": [{ "name": "Finance", "due": "2026-10-31" }, { "name": "Chapa sync and reconciliation", "due": "2026-11-18" }],
+      "tasks": [
+        ["FIN-1", "Finance: accounts, bills, invoices, claims, purchasing, budgets, payroll and reports", "feature", 8, "2026-10-31", "2026-10-31", "v0.1.0", "Phase 8."],
+        ["FIN-2", "Chapa for several businesses", "feature", 5, "2026-11-06", "2026-11-06", "v0.3.0", "Multi-business gateway and balances."],
+        ["FIN-3", "Chapa for every business, with payment follow-up to Support", "feature", 5, "2026-11-11", "2026-11-11", "Update 1.0", "Update 1.0 phase 3."],
+        ["FIN-4", "Chapa sync that fetches every page and date window", "feature", 8, "2026-11-16", "2026-11-17", "Update 1.2", "Update 1.2 phase 1."],
+        ["FIN-5", "Chapa transactions screen and reconciliation hub", "feature", 5, "2026-11-17", "2026-11-17", "Update 1.2", "Update 1.2 phase 2."],
+        ["FIN-6", "Chapa overview filters and webhooks, owners' income, Chapa access per person", "improvement", 3, "2026-11-18", "2026-11-19", "v1.3.0", ""]
+      ]
+    },
+    {
+      "key": "SUP", "name": "Customer support and contact center", "color": "#e2445c", "status": "done", "start": "2026-11-03", "due": "2026-11-20",
+      "description": "The support desk, live chat, Telegram bots and Mini App, the widget and support app, browser calls with an IVR, call records, the knowledge base and requests with approvals.",
+      "milestones": [{ "name": "Support desk", "due": "2026-11-03" }, { "name": "Update 1.1", "due": "2026-11-14" }, { "name": "Contact center (Update 1.2)", "due": "2026-11-18" }],
+      "tasks": [
+        ["SUP-1", "Support desk with queues, automatic assignment, targets, the SDK and browser calls", "feature", 8, "2026-11-03", "2026-11-03", "v0.2.0", "Phases 19 and 20."],
+        ["SUP-2", "Email into tickets, the Telegram bot channel and the knowledge base in the widget", "feature", 5, "2026-11-03", "2026-11-03", "v0.2.0", "Phase 20."],
+        ["SUP-3", "One help menu everywhere, the Telegram Mini App and a public help center", "feature", 5, "2026-11-13", "2026-11-13", "Update 1.0", "Update 1.0 phase 4."],
+        ["SUP-4", "Integrations hub, call monitor, SMS routing and delivery reports", "feature", 5, "2026-11-13", "2026-11-13", "Update 1.0", "Update 1.0 phase 7."],
+        ["SUP-5", "Ticket preview and connected systems with channels and signed webhooks", "feature", 5, "2026-11-13", "2026-11-13", "Update 1.1", "Update 1.1 phases 10 and 11."],
+        ["SUP-6", "Live chat: typing, read receipts, presence, files and voice notes", "feature", 5, "2026-11-13", "2026-11-13", "Update 1.1", "Update 1.1 phase 12."],
+        ["SUP-7", "Telegram bot manager: content library, scheduled sends, forms and surveys", "feature", 5, "2026-11-14", "2026-11-14", "Update 1.1", "Update 1.1 phase 13."],
+        ["SUP-8", "Call center: mute, hold, conference, transfers and call-backs", "feature", 8, "2026-11-14", "2026-11-14", "Update 1.1", "Update 1.1 phase 14."],
+        ["SUP-9", "Knowledge base with how-to guides and checked videos", "feature", 3, "2026-11-14", "2026-11-14", "Update 1.1", "Update 1.1 phase 15."],
+        ["SUP-10", "Live admin dashboard: staff roster and desk numbers", "feature", 3, "2026-11-14", "2026-11-14", "Update 1.1", "Update 1.1 phase 16."],
+        ["SUP-11", "Support content manager and Telegram bot completion", "feature", 5, "2026-11-16", "2026-11-18", "Update 1.2", "Update 1.2 phase 5."],
+        ["SUP-12", "Support chat at team-chat level", "feature", 5, "2026-11-17", "2026-11-18", "Update 1.2", "Update 1.2 phase 6."],
+        ["SUP-13", "Customer Support Requests with approval chains", "feature", 5, "2026-11-17", "2026-11-18", "Update 1.2", "Update 1.2 phase 7."],
+        ["SUP-14", "Calling with one lifecycle and pre-call checks", "feature", 5, "2026-11-17", "2026-11-18", "Update 1.2", "Update 1.2 phase 8."],
+        ["SUP-15", "Phone menu (IVR), queues and call records", "feature", 8, "2026-11-18", "2026-11-18", "Update 1.2", "Update 1.2 phase 9."],
+        ["SUP-16", "Contact center permissions, reports and help", "feature", 3, "2026-11-18", "2026-11-18", "Update 1.2", "Update 1.2 phase 10."],
+        ["SUP-17", "Mini App redesign, support app on the web, agent ratings and Telegram help answers", "feature", 5, "2026-11-18", "2026-11-19", "v1.3.0", ""],
+        ["SUP-18", "Support desk laid out like Team chat; Chapa grants in the sidebar", "improvement", 3, "2026-11-20", "2026-11-20", "v1.4.0", "Phase 39."]
+      ]
+    },
+    {
+      "key": "NOOR", "name": "Legacy CMS (Noor)", "color": "#0e7490", "status": "done", "start": "2026-11-06", "due": "2026-11-19",
+      "description": "Noor's data read safely, mirrored and reported on; the academic content manager; every Noor request gated and paced.",
+      "milestones": [{ "name": "Noor reader and mirror", "due": "2026-11-08" }, { "name": "Field registry and filtering", "due": "2026-11-17" }, { "name": "Noor protection", "due": "2026-11-19" }],
+      "tasks": [
+        ["NOOR-1", "Noor CMS reader and mirror with sign-in and session checks", "feature", 8, "2026-11-06", "2026-11-06", "v0.3.0", ""],
+        ["NOOR-2", "Deep reading, student and parent directory, revenue approval, growth dashboard, Excel export", "feature", 5, "2026-11-06", "2026-11-07", "v0.3.0", ""],
+        ["NOOR-3", "Noor reading in background jobs; table controls and date matching", "improvement", 3, "2026-11-07", "2026-11-08", "v0.3.0", ""],
+        ["NOOR-4", "Date-first Legacy CMS with live updates, invoice states and reports", "feature", 5, "2026-11-11", "2026-11-11", "Update 1.0", "Update 1.0 phase 2."],
+        ["NOOR-5", "Legacy CMS client split into a state hook and one file per view", "improvement", 3, "2026-11-14", "2026-11-14", "Update 1.1", "Refactor, unchanged behaviour."],
+        ["NOOR-6", "Noor complete collection and field registry", "feature", 8, "2026-11-17", "2026-11-17", "Update 1.2", "Update 1.2 phase 3."],
+        ["NOOR-7", "Noor filtering and table customisation", "feature", 5, "2026-11-17", "2026-11-17", "Update 1.2", "Update 1.2 phase 4."],
+        ["NOOR-8", "Noor admin pages through Noor's own forms; archives with snapshot pages", "feature", 5, "2026-11-18", "2026-11-18", "v1.3.0", ""],
+        ["NOOR-9", "Academic content manager with batch imports and a content report", "feature", 5, "2026-11-19", "2026-11-19", "v1.3.0", ""],
+        ["NOOR-10", "Noor protection: every request gated and paced", "feature", 3, "2026-11-19", "2026-11-19", "v1.3.0", "Live Noor only for Admin and granted people."]
+      ]
+    },
+    {
+      "key": "DEVS", "name": "Dev studio and documents", "color": "#4b3bc4", "status": "done", "start": "2026-11-01", "due": "2026-11-23",
+      "description": "Sprints, the roadmap and Gantt, specs and docs with review and traceability, releases, incidents, DORA, the document library and integrations; documents as formatted company specs.",
+      "milestones": [{ "name": "Dev studio", "due": "2026-11-03" }, { "name": "Document library", "due": "2026-11-03" }, { "name": "Documentation and handbook", "due": "2026-11-23" }],
+      "tasks": [
+        ["DEVS-1", "Sprints configurable per department: planning, capacity, burndown, stand-ups and retrospectives", "feature", 8, "2026-11-01", "2026-11-01", "v0.2.0", "Phase 12b.1."],
+        ["DEVS-2", "Roadmap, Gantt with baselines, epics and the portfolio", "feature", 5, "2026-11-01", "2026-11-03", "v0.2.0", "Phase 12b.2."],
+        ["DEVS-3", "Specs and docs with versions, reviewers, approval and traceability; Myseed templates", "feature", 5, "2026-11-01", "2026-11-01", "v0.2.0", "Phases 12b.3 and 12b.4."],
+        ["DEVS-4", "Releases, deployments, incidents, test cases, DORA measures and imports from Jira, Trello and Asana", "feature", 8, "2026-11-03", "2026-11-03", "v0.2.0", "Phase 12b.5."],
+        ["DEVS-5", "Document library: folders, files, search, pins, import and export", "feature", 5, "2026-11-03", "2026-11-03", "v0.2.0", "Phase 26."],
+        ["DEVS-6", "Integrations: Office exports, Power BI feeds, Notion both ways, any platform by its API", "feature", 5, "2026-11-04", "2026-11-04", "v0.2.0", "Phase 27."],
+        ["DEVS-7", "Department heads submit documents for their own review", "improvement", 1, "2026-11-16", "2026-11-16", "Update 1.2", ""],
+        ["DEVS-8", "Documents shown as formatted company specs; imported Markdown kept as written", "feature", 5, "2026-11-23", "2026-11-23", "v1.5.0", "Phase 46. Formatted, Markdown and Side by side views; PDF, HTML and Word in the company format."],
+        ["DEVS-9", "The project's documentation and the Dev team handbook in Specs and docs", "feature", 5, "2026-11-23", "2026-11-23", "v1.5.0", "Phase 46. docs/project, docs/dev-team, kept in step with the repository."],
+        ["DEVS-10", "Dev team progress recorded: projects, sprints, releases and tasks", "chore", 2, "2026-11-23", "2026-11-23", "v1.5.0", "This record (docs/dev-history.json)."]
+      ]
+    },
+    {
+      "key": "AI", "name": "Assistant", "color": "#a855f7", "status": "done", "start": "2026-11-01", "due": "2026-11-19",
+      "description": "The assistant on every page, by role, in English and Amharic; agent mode and autopilot; several AI providers.",
+      "milestones": [{ "name": "Assistant in every page", "due": "2026-11-03" }, { "name": "Autopilot", "due": "2026-11-19" }],
+      "tasks": [
+        ["AI-1", "The assistant in the corner of every page, with written flows", "feature", 5, "2026-11-01", "2026-11-01", "v0.2.0", "Phase 13."],
+        ["AI-2", "A smarter assistant by voice in every department", "feature", 3, "2026-11-02", "2026-11-02", "v0.2.0", "Phase 13b."],
+        ["AI-3", "Assistant options per role, confirmed operations, tutorials and routines", "feature", 5, "2026-11-03", "2026-11-03", "v0.2.0", "Phase 13d."],
+        ["AI-4", "The assistant as an agent docked on the side, saved conversations", "feature", 5, "2026-11-03", "2026-11-03", "v0.2.0", "Phase 22."],
+        ["AI-5", "The assistant follows the role and does HR's work", "feature", 3, "2026-11-04", "2026-11-04", "v0.2.0", "Phase 30."],
+        ["AI-6", "Several AI providers and models, deep HR operations", "feature", 5, "2026-11-06", "2026-11-10", "Update 1.0", ""],
+        ["AI-7", "Assistant v2: role buttons, guided actions and Amharic", "feature", 5, "2026-11-13", "2026-11-13", "Update 1.0", "Update 1.0 phase 5."],
+        ["AI-8", "Autopilot: the assistant opens pages and presses buttons itself", "feature", 5, "2026-11-19", "2026-11-19", "v1.3.0", "Phase 38."]
+      ]
+    },
+    {
+      "key": "PLAN", "name": "Planning, performance and presentations", "color": "#f47e45", "status": "done", "start": "2026-11-01", "due": "2026-11-03",
+      "description": "Presentations for every department, performance management, the team analyzer and strategic planning with monitoring and evaluation.",
+      "milestones": [{ "name": "Planning and performance", "due": "2026-11-03" }],
+      "tasks": [
+        ["PLAN-1", "Presentation studio for every department, with a phone remote", "feature", 5, "2026-11-01", "2026-11-03", "v0.2.0", "Phase 12c."],
+        ["PLAN-2", "Performance management: KPIs, KRAs, scorecards and OKRs", "feature", 8, "2026-11-03", "2026-11-03", "v0.2.0", "Phase 17."],
+        ["PLAN-3", "Team analyzer and import helper", "feature", 3, "2026-11-03", "2026-11-03", "v0.2.0", "Phase 23."],
+        ["PLAN-4", "Presentation templates in the company's colours", "feature", 3, "2026-11-03", "2026-11-03", "v0.2.0", "Phase 24."],
+        ["PLAN-5", "Strategic planning, monitoring and evaluation", "feature", 5, "2026-11-03", "2026-11-03", "v0.2.0", "Phase 25."]
+      ]
+    },
+    {
+      "key": "FUN", "name": "Fun mode and Seed Town", "color": "#e45d8d", "status": "done", "start": "2026-11-20", "due": "2026-11-21",
+      "description": "UI styles and Fun mode, games and the pet; Seed Town as a 3D city with racing, archery, football, Seed Strike and Seed Core; the guest arcade and Seed Town Offline.",
+      "milestones": [{ "name": "Fun mode", "due": "2026-11-20" }, { "name": "Seed Town and the arcade", "due": "2026-11-21" }],
+      "tasks": [
+        ["FUN-1", "Seven UI styles, Fun mode with points, music, games, a pet and focus mode", "feature", 8, "2026-11-20", "2026-11-20", "v1.4.0", "Phase 40."],
+        ["FUN-2", "Games in chat, Seed Town 3D office and the Myseed Fun app", "feature", 5, "2026-11-20", "2026-11-20", "v1.4.0", "Phase 41."],
+        ["FUN-3", "No emojis anywhere in the product, enforced by a test", "improvement", 2, "2026-11-20", "2026-11-20", "v1.4.0", ""],
+        ["FUN-4", "Seed Town city: characters, physics, vehicles, voice, shops and homes", "feature", 8, "2026-11-20", "2026-11-20", "v1.4.0", "Phases 42 and 43."],
+        ["FUN-5", "Seed Town realism: streets, weather, houses, town folk, car physics, Grand Prix, archery, Seed Strike", "feature", 8, "2026-11-20", "2026-11-20", "v1.4.0", "Phase 44."],
+        ["FUN-6", "Faster town and real licensed cars", "improvement", 5, "2026-11-21", "2026-11-21", "v1.4.0", "Phase 45."],
+        ["FUN-7", "Guest arcade with the Windows kiosk and the Android arcade app", "feature", 5, "2026-11-21", "2026-11-21", "v1.4.0", "Phase 45."],
+        ["FUN-8", "Seed Core, shooter controls, home life and football with aim", "feature", 8, "2026-11-21", "2026-11-21", "v1.4.0", "Phase 45."],
+        ["FUN-9", "Five-a-side football against bots, racing views and a steady frame rate", "feature", 5, "2026-11-21", "2026-11-21", "v1.4.0", "Phase 45."],
+        ["FUN-10", "Seed Town Offline: the desktop edition with its own database", "feature", 3, "2026-11-21", "2026-11-21", "v1.5.0", ""]
+      ]
+    },
+    {
+      "key": "APPS", "name": "Apps, devices and kiosks", "color": "#3fc4c4", "status": "done", "start": "2026-11-03", "due": "2026-11-20",
+      "description": "The installable app shell, phone layouts and the Windows app.",
+      "milestones": [{ "name": "Phones and the app shell", "due": "2026-11-04" }, { "name": "Windows app", "due": "2026-11-20" }],
+      "tasks": [
+        ["APPS-1", "App shell, web part: offline page, app badge, service worker, Capacitor config", "feature", 3, "2026-11-03", "2026-11-03", "v0.2.0", "Phase 5b (native builds are in Maintenance)."],
+        ["APPS-2", "Designed for phones: bottom tab bar, compact view and touch sizes", "feature", 5, "2026-11-04", "2026-11-04", "v0.2.0", "Phase 29."],
+        ["APPS-3", "Windows app with launcher, graphics presets, diagnostics and automatic updates", "feature", 5, "2026-11-20", "2026-11-20", "v1.4.0", "Phase 44."]
+      ]
+    },
+    {
+      "key": "INFRA", "name": "Infrastructure, security and operations", "color": "#656f7d", "status": "done", "start": "2026-10-28", "due": "2026-11-19",
+      "description": "Sign-in and security, scheduled jobs, backups, CI, the platform pages, the VPS with auto deploy, the live domain and the watchdog.",
+      "milestones": [{ "name": "Foundations", "due": "2026-10-31" }, { "name": "VPS and auto deploy", "due": "2026-11-04" }, { "name": "Hardening", "due": "2026-11-19" }],
+      "tasks": [
+        ["INFRA-1", "First deploy and the start command for the host's port", "chore", 1, "2026-10-28", "2026-10-28", "v0.1.0", ""],
+        ["INFRA-2", "Workspace polish, security and View as, sessions and devices", "feature", 3, "2026-10-30", "2026-10-30", "v0.1.0", "Phase 7b."],
+        ["INFRA-3", "Sign-in set by Admin: password rules, lockouts, two-step, Google and Microsoft", "feature", 5, "2026-10-31", "2026-10-31", "v0.1.0", "Phase 15 step 1."],
+        ["INFRA-4", "Scheduled jobs, backups, tests in CI and errors kept in the app", "feature", 8, "2026-10-31", "2026-10-31", "v0.1.0", "Phase 15."],
+        ["INFRA-5", "Passkeys and page timings", "feature", 3, "2026-11-03", "2026-11-03", "v0.2.0", "Phase 15."],
+        ["INFRA-6", "Admin platform pages: database console, API usage, deploys, OpenAPI, health", "feature", 5, "2026-11-04", "2026-11-04", "v0.2.0", "Phase 28."],
+        ["INFRA-7", "Control panel and the Hostinger VPS with auto deploy from GitHub", "feature", 8, "2026-11-04", "2026-11-04", "v0.2.0", "Phase 37."],
+        ["INFRA-8", "Privacy Policy and Terms pages, Google sign-in", "chore", 2, "2026-11-09", "2026-11-10", "Update 1.0", ""],
+        ["INFRA-9", "Live domain ops.myseed.com.et", "chore", 2, "2026-11-11", "2026-11-11", "Update 1.0", ""],
+        ["INFRA-10", "Six colour themes, more fonts and Admin settings search", "feature", 3, "2026-11-14", "2026-11-14", "Update 1.0", "Update 1.0 phase 8."],
+        ["INFRA-11", "Next.js 16.4.6 security upgrade", "chore", 1, "2026-11-18", "2026-11-18", "Update 1.2", ""],
+        ["INFRA-12", "External API console per provider and the SMS console", "feature", 3, "2026-11-18", "2026-11-18", "v1.3.0", ""],
+        ["INFRA-13", "Watchdog, app health check, memory cap and database protection", "improvement", 3, "2026-11-19", "2026-11-19", "v1.3.0", ""],
+        ["INFRA-14", "Docker build cache trimmed on every deploy", "chore", 1, "2026-11-21", "2026-11-21", "v1.4.0", ""]
+      ]
+    },
+    {
+      "key": "MAINT", "name": "Maintenance and improvements", "color": "#14b8a6", "status": "active", "start": "2026-11-23", "due": null,
+      "description": "Ongoing: maintenance requests, bugs, live checks and the improvements still open on the roadmap. New requests from other departments are added here and planned into sprints.",
+      "milestones": [{ "name": "Sprint 3 follow-ups", "due": "2026-12-06", "status": "open" }, { "name": "Open roadmap items", "due": null, "status": "open" }],
+      "tasks": [
+        { "code": "MAINT-1", "title": "Confirm the Chapa sync against the live Chapa API (Check API, full sync, compare counts)", "type": "chore", "points": 2, "priority": "high", "status": "todo", "sprint": "Sprint 3", "milestone": "Sprint 3 follow-ups", "description": "Progress report, section 3. Finance, Chapa, Settings: Check API for each business, then a full sync in Sync and reconcile." },
+        { "code": "MAINT-2", "title": "Confirm the Noor complete collection and field registry on the live Noor", "type": "chore", "points": 2, "priority": "high", "status": "todo", "sprint": "Sprint 3", "milestone": "Sprint 3 follow-ups", "description": "Progress report, section 3. Check the hourly and nightly mirror runs." },
+        { "code": "MAINT-3", "title": "Protect main on GitHub: pull requests with one approval and green CI", "type": "chore", "points": 1, "priority": "high", "status": "todo", "sprint": "Sprint 3", "milestone": "Sprint 3 follow-ups", "description": "RULE-10 in the rule book." },
+        { "code": "MAINT-4", "title": "Name the Dev team in the app: head, leads, members and testers", "type": "chore", "points": 1, "priority": "normal", "status": "todo", "sprint": "Sprint 3", "milestone": "Sprint 3 follow-ups", "description": "Admin, Departments; Configure, Flow for testers." },
+        { "code": "MAINT-5", "title": "Make the live dashboard test independent of the time of day", "type": "chore", "points": 1, "priority": "normal", "status": "todo", "sprint": "Sprint 3", "milestone": "Sprint 3 follow-ups", "description": "tests/server/update-1-1-live-dashboard.test.ts makes tickets 30 to 50 minutes old and expects them counted as today; between 00:00 and 00:50 local time they fall on yesterday. Make the test's times stay inside today." },
+        { "code": "MAINT-6", "title": "Fill in the names and phone numbers in RECOVERY.md", "type": "chore", "points": 1, "priority": "normal", "status": "todo", "sprint": "Sprint 3", "milestone": "Sprint 3 follow-ups", "description": "docs/RECOVERY.md, section 4." },
+        { "code": "MAINT-7", "title": "Set up a staging site", "type": "improvement", "points": 3, "priority": "normal", "status": "backlog", "milestone": "Open roadmap items", "description": "Steps in docs/RECOVERY.md, section 5. Needs a second server." },
+        { "code": "MAINT-8", "title": "Native Android build of the employee app, then iPhone", "type": "feature", "points": 5, "priority": "normal", "status": "backlog", "milestone": "Open roadmap items", "description": "Roadmap Phase 19. Android Studio and Xcode machines; Google Play and TestFlight." },
+        { "code": "MAINT-9", "title": "Reliable notifications and ringing on phones", "type": "feature", "points": 5, "priority": "normal", "status": "backlog", "milestone": "Open roadmap items", "description": "Firebase on Android, PushKit with CallKit on iPhone; continuous ringing on a locked phone." },
+        { "code": "MAINT-10", "title": "Connect the Myseed App's customer support", "type": "feature", "points": 3, "priority": "normal", "status": "backlog", "milestone": "Open roadmap items", "description": "Roadmap Phase 20. Needs the app's real key; the SDK or the API from the app's server." },
+        { "code": "MAINT-11", "title": "Remaining Amharic labels, messages and emails", "type": "improvement", "points": 5, "priority": "normal", "status": "backlog", "milestone": "Open roadmap items", "description": "Roadmap 16.4; Afaan Oromo later; payroll months in the Ethiopian calendar." },
+        { "code": "MAINT-12", "title": "Mail: formatting in messages; Google Workspace and Microsoft 365 mailboxes", "type": "improvement", "points": 3, "priority": "low", "status": "backlog", "milestone": "Open roadmap items", "description": "Roadmap Phase 14." },
+        { "code": "MAINT-13", "title": "SMS as a support channel and SMS check-in for basic phones", "type": "feature", "points": 3, "priority": "low", "status": "backlog", "milestone": "Open roadmap items", "description": "Needs a paid SMS gateway: a decision for the product owner first." },
+        { "code": "MAINT-14", "title": "Presentation video export", "type": "feature", "points": 3, "priority": "low", "status": "backlog", "milestone": "Open roadmap items", "description": "Roadmap Phase 12c." },
+        { "code": "MAINT-15", "title": "Seed Town: hills and grass fields, sky lighting, more people, elevation on the circuits", "type": "improvement", "points": 5, "priority": "low", "status": "backlog", "milestone": "Open roadmap items", "description": "Roadmap Phases 44 and 45." },
+        { "code": "MAINT-16", "title": "Seed Town: online Grand Prix and Seed Core, humans and bots together, 11-a-side match", "type": "feature", "points": 5, "priority": "low", "status": "backlog", "milestone": "Open roadmap items", "description": "Roadmap Phases 44 and 45." }
+      ]
+    }
+  ]
+}
