@@ -219,6 +219,12 @@
       "folder": "6. Working on this project",
       "kind": "runbook",
       "title": "Working on MySeed Academy"
+    },
+    {
+      "file": "project/SEO-GEO-GUIDE.md",
+      "folder": "4. Operations and runbooks",
+      "kind": "runbook",
+      "title": "SEO and GEO audit and guidelines"
     }
   ]
 }

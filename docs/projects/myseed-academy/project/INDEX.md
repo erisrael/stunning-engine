@@ -49,6 +49,7 @@ This export documents the MySeed Academy website, admin console and API (`my-see
 | --- | --- | --- |
 | [Repository README: quick start and console guide](../existing/README.md) | `existing/README.md` | Quick start, database, seeded accounts, languages, console pages, providers, tests and production. |
 | [Deploying to a Hostinger VPS](../existing/docs/runbooks/DEPLOY.md) | `existing/docs/runbooks/DEPLOY.md` | The current deploy guide: domains, server setup, secrets, deploy, rollback, backups, troubleshooting, other hosts. |
+| [SEO and GEO audit and guidelines](SEO-GEO-GUIDE.md) | `project/SEO-GEO-GUIDE.md` | The live-site audit of 23 November 2026, the fixes it calls for (tasks WEB-18 to WEB-24), and the rules for search engines and AI assistants. |
 | [Control panel guide](../existing/control-panel/README.md) | `existing/control-panel/README.md` | The local panel that deploys, syncs the database and downloads backups. |
 | [Disaster recovery and secret rotation (older version)](../existing/docs/runbooks/disaster-recovery.md) | `existing/docs/runbooks/disaster-recovery.md` | Earlier recovery notes; its backup schedule differs from the scripts. Use the deploy guide first. |
 | [Zero-downtime deployment (older version)](../existing/docs/runbooks/zero-downtime-deployment.md) | `existing/docs/runbooks/zero-downtime-deployment.md` | Earlier deploy notes that assume Prisma migrations; the code uses db push. |

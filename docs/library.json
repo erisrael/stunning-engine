@@ -58,6 +58,7 @@
     { "file": "docs/projects/myseed-academy/existing/docs/guides/no-emoji-watermelon-ui.md", "folder": "MySeed Academy documentation/3. Architecture and decisions", "kind": "design", "title": "UI rules: no emoji, Watermelon-style design system" },
     { "file": "docs/projects/myseed-academy/existing/README.md", "folder": "MySeed Academy documentation/4. Operations and runbooks", "kind": "runbook", "title": "Repository README: quick start and console guide" },
     { "file": "docs/projects/myseed-academy/existing/docs/runbooks/DEPLOY.md", "folder": "MySeed Academy documentation/4. Operations and runbooks", "kind": "runbook", "title": "Deploying to a Hostinger VPS" },
+    { "file": "docs/projects/myseed-academy/project/SEO-GEO-GUIDE.md", "folder": "MySeed Academy documentation/4. Operations and runbooks", "kind": "runbook", "title": "SEO and GEO audit and guidelines" },
     { "file": "docs/projects/myseed-academy/existing/control-panel/README.md", "folder": "MySeed Academy documentation/4. Operations and runbooks", "kind": "runbook", "title": "Control panel guide" },
     { "file": "docs/projects/myseed-academy/existing/docs/runbooks/disaster-recovery.md", "folder": "MySeed Academy documentation/4. Operations and runbooks", "kind": "runbook", "title": "Disaster recovery and secret rotation (older version)" },
     { "file": "docs/projects/myseed-academy/existing/docs/runbooks/zero-downtime-deployment.md", "folder": "MySeed Academy documentation/4. Operations and runbooks", "kind": "runbook", "title": "Zero-downtime deployment (older version)" },

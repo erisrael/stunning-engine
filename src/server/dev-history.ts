@@ -13,7 +13,9 @@ import { audit } from "./workflow";
 import { getDeptConfig } from "./dept-config";
 
 export type DoneTask = [code: string, title: string, type: string, points: number, start: string, done: string, release: string, description: string];
-type OpenTask = { code: string; title: string; type: string; points: number | null; priority?: string; status: "todo" | "backlog"; sprint?: string; milestone?: string; description?: string };
+// Open work: on the timeline from its sprint (or its own start and due dates), with acceptance criteria and the
+// done checklist. Backlog work has no sprint and no dates until it is planned.
+type OpenTask = { code: string; title: string; type: string; points: number | null; priority?: string; status: "todo" | "backlog"; sprint?: string; milestone?: string; description?: string; acceptance?: string; start?: string; due?: string };
 export type DevHistory = {
   dept?: string;
   sprints: { name: string; start: string; end: string; status: "closed" | "active" | "planned"; goal: string; review?: string }[];
@@ -156,7 +158,7 @@ export async function applyDevHistory(opts: { root?: string; file?: string; forc
           // Finished: released, in the sprint and release it shipped in, on the timeline from start to finish.
           const sp = sprintOf(t.done);
           const s = sp ? sprintIds.get(sp.name) : undefined;
-          const rel = t.release ? releaseIds.get(t.release) : undefined;
+          const rel = t.release ? releaseIds.get(t.release) : undefined; // built work not yet released has none
           const ms = dated.find((m) => m.due! >= t.done!) ?? dated[dated.length - 1] ?? null;
           const completed = rel && rel.created.slice(0, 10) === t.done ? at(t.done, 14) : at(t.done, 15);
           await run(
@@ -172,12 +174,16 @@ export async function applyDevHistory(opts: { root?: string; file?: string; forc
           const ms = t.milestone ? milestoneIds.get(t.milestone) : undefined;
           const now = nowIso();
           const status = t.status === "backlog" ? backlogSt : todoSt;
+          const plan = t.sprint ? h.sprints.find((x) => x.name === t.sprint) : undefined;
+          const type = typeOf(t.type);
+          const checks = ["feature", "bug", "improvement"].includes(type) ? ["Tests added or updated", "Docs updated"].map((text) => ({ id: uid("chk_"), text, verify: false, done: false, doneBy: null, verifiedBy: null })) : [];
           await run(
             `INSERT INTO dept_tasks (id, dept, project_id, milestone_id, code, title, description, type, status, status_category, priority, assignee_id, reporter_id,
-               progress, labels, sort, created_at, updated_at, sprint_id, sprint_added_at, points, fields, checklist)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, '[]', ?, ?, ?, ?, ?, ?, '{}', '[]')`,
-            id, dept, project.id, ms?.id ?? null, t.code, t.title, t.description || null, typeOf(t.type), status.key, status.category, prioOf(t.priority),
-            t.status === "todo" ? who.id : null, who.id, sort, now, now, s?.id ?? null, s ? (s.start < now.slice(0, 10) ? now : at(s.start, 6)) : null, t.points,
+               progress, start_date, due_date, labels, sort, created_at, updated_at, sprint_id, sprint_added_at, points, fields, checklist)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, '[]', ?, ?, ?, ?, ?, ?, ?, ?)`,
+            id, dept, project.id, ms?.id ?? null, t.code, t.title, t.description || null, type, status.key, status.category, prioOf(t.priority),
+            t.status === "todo" || t.sprint ? who.id : null, who.id, t.start ?? plan?.start ?? null, t.due ?? plan?.end ?? null, sort, now, now,
+            s?.id ?? null, s ? (s.start < now.slice(0, 10) ? now : at(s.start, 6)) : null, t.points, JSON.stringify(t.acceptance ? { acceptance: t.acceptance } : {}), JSON.stringify(checks),
           );
         }
         result.tasks++;
