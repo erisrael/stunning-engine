@@ -1,0 +1,350 @@
+{
+  "project": "Transaction Verify",
+  "slug": "transaction-verify",
+  "commit": "3435810",
+  "generated": "2026-11-23",
+  "documents": [
+    {
+      "file": "project/INDEX.md",
+      "folder": "1. Start here",
+      "kind": "note",
+      "title": "Transaction Verify documentation index"
+    },
+    {
+      "file": "project/PRODUCT-OVERVIEW.md",
+      "folder": "1. Start here",
+      "kind": "prd",
+      "title": "Transaction Verify product overview"
+    },
+    {
+      "file": "project/PROGRESS.md",
+      "folder": "1. Start here",
+      "kind": "note",
+      "title": "Transaction Verify progress report"
+    },
+    {
+      "file": "project/SRS.md",
+      "folder": "2. Requirements and plans",
+      "kind": "srs",
+      "title": "Transaction Verify software requirements specification"
+    },
+    {
+      "file": "project/ARCHITECTURE.md",
+      "folder": "3. Architecture and decisions",
+      "kind": "design",
+      "title": "Transaction Verify architecture"
+    },
+    {
+      "file": "project/DECISIONS.md",
+      "folder": "3. Architecture and decisions",
+      "kind": "adr",
+      "title": "Transaction Verify architecture decisions"
+    },
+    {
+      "file": "project/TEST-PLAN.md",
+      "folder": "5. Quality and releases",
+      "kind": "testplan",
+      "title": "Transaction Verify test plan"
+    },
+    {
+      "file": "project/RELEASE-HISTORY.md",
+      "folder": "5. Quality and releases",
+      "kind": "release",
+      "title": "Transaction Verify release history"
+    },
+    {
+      "file": "project/WORKING-ON-IT.md",
+      "folder": "6. Working on this project",
+      "kind": "runbook",
+      "title": "Working on Transaction Verify"
+    },
+    {
+      "file": "existing/README.md",
+      "folder": "2. Requirements and plans",
+      "kind": "note",
+      "title": "Repository README"
+    },
+    {
+      "file": "existing/docs/README.md",
+      "folder": "2. Requirements and plans",
+      "kind": "note",
+      "title": "Repository documentation map"
+    },
+    {
+      "file": "existing/docs/product-ui.md",
+      "folder": "2. Requirements and plans",
+      "kind": "prd",
+      "title": "Product and UI specification"
+    },
+    {
+      "file": "existing/docs/roadmap.md",
+      "folder": "2. Requirements and plans",
+      "kind": "note",
+      "title": "Build roadmap and release gates"
+    },
+    {
+      "file": "existing/docs/master-roadmap-v5.md",
+      "folder": "2. Requirements and plans",
+      "kind": "note",
+      "title": "MySeed Verify master roadmap v5"
+    },
+    {
+      "file": "existing/docs/payments-providers.md",
+      "folder": "2. Requirements and plans",
+      "kind": "prd",
+      "title": "Payments and provider coverage"
+    },
+    {
+      "file": "existing/docs/pwa.md",
+      "folder": "2. Requirements and plans",
+      "kind": "design",
+      "title": "Progressive web apps plan"
+    },
+    {
+      "file": "existing/docs/commerce-and-builders.md",
+      "folder": "2. Requirements and plans",
+      "kind": "prd",
+      "title": "Storefront, QR stands, branches and the builders"
+    },
+    {
+      "file": "existing/docs/storefront-marketplace.md",
+      "folder": "2. Requirements and plans",
+      "kind": "prd",
+      "title": "Shoppers, the MySeed Shop app and store features"
+    },
+    {
+      "file": "existing/docs/storefront-benchmark.md",
+      "folder": "2. Requirements and plans",
+      "kind": "note",
+      "title": "Storefront benchmark against other shops"
+    },
+    {
+      "file": "existing/docs/creative-studio/README.md",
+      "folder": "2. Requirements and plans",
+      "kind": "prd",
+      "title": "Creative Studio specification"
+    },
+    {
+      "file": "existing/docs/creative-studio/roadmap.md",
+      "folder": "2. Requirements and plans",
+      "kind": "note",
+      "title": "Creative Studio roadmap"
+    },
+    {
+      "file": "existing/docs/launch-communications.md",
+      "folder": "2. Requirements and plans",
+      "kind": "note",
+      "title": "Launch communications plan"
+    },
+    {
+      "file": "existing/docs/architecture.md",
+      "folder": "3. Architecture and decisions",
+      "kind": "design",
+      "title": "System and repository architecture (design document)"
+    },
+    {
+      "file": "existing/docs/decisions.md",
+      "folder": "3. Architecture and decisions",
+      "kind": "adr",
+      "title": "Decision log"
+    },
+    {
+      "file": "existing/docs/api-versioning.md",
+      "folder": "3. Architecture and decisions",
+      "kind": "design",
+      "title": "API versions and deprecation rules"
+    },
+    {
+      "file": "existing/docs/integrations-sdk.md",
+      "folder": "3. Architecture and decisions",
+      "kind": "design",
+      "title": "Integrations and SDKs"
+    },
+    {
+      "file": "existing/docs/quickstart.md",
+      "folder": "3. Architecture and decisions",
+      "kind": "note",
+      "title": "Quickstart: a signed sandbox webhook"
+    },
+    {
+      "file": "existing/docs/security.md",
+      "folder": "3. Architecture and decisions",
+      "kind": "design",
+      "title": "Security: encryption, key rotation and penetration test scope"
+    },
+    {
+      "file": "existing/docs/ui-guidelines.md",
+      "folder": "3. Architecture and decisions",
+      "kind": "design",
+      "title": "UI guidelines"
+    },
+    {
+      "file": "existing/database/README.md",
+      "folder": "3. Architecture and decisions",
+      "kind": "design",
+      "title": "Database model"
+    },
+    {
+      "file": "existing/docs/creative-studio/architecture.md",
+      "folder": "3. Architecture and decisions",
+      "kind": "design",
+      "title": "Creative Studio architecture"
+    },
+    {
+      "file": "existing/docs/creative-studio/document-format.md",
+      "folder": "3. Architecture and decisions",
+      "kind": "design",
+      "title": "Creative Studio document format"
+    },
+    {
+      "file": "existing/docs/creative-studio/motion-and-sound.md",
+      "folder": "3. Architecture and decisions",
+      "kind": "design",
+      "title": "Creative Studio motion and sound"
+    },
+    {
+      "file": "existing/docs/creative-studio/scripts-and-ai.md",
+      "folder": "3. Architecture and decisions",
+      "kind": "design",
+      "title": "Creative Studio scripts and AI"
+    },
+    {
+      "file": "existing/docs/creative-studio/3d-studio.md",
+      "folder": "3. Architecture and decisions",
+      "kind": "design",
+      "title": "Creative Studio 3D studio"
+    },
+    {
+      "file": "existing/packages/evidence/README.md",
+      "folder": "3. Architecture and decisions",
+      "kind": "design",
+      "title": "Tesseract OCR adapter"
+    },
+    {
+      "file": "existing/packages/sdk-server/README.md",
+      "folder": "3. Architecture and decisions",
+      "kind": "note",
+      "title": "Server SDK (@myseed-verify/server)"
+    },
+    {
+      "file": "existing/packages/sdk-web/README.md",
+      "folder": "3. Architecture and decisions",
+      "kind": "note",
+      "title": "Web SDK (@myseed-verify/web)"
+    },
+    {
+      "file": "existing/packages/sdk-mobile/README.md",
+      "folder": "3. Architecture and decisions",
+      "kind": "note",
+      "title": "React Native SDK (@myseed-verify/react-native)"
+    },
+    {
+      "file": "existing/docs/runbooks.md",
+      "folder": "4. Operations and runbooks",
+      "kind": "runbook",
+      "title": "Operations runbooks"
+    },
+    {
+      "file": "existing/docs/incident-guide.md",
+      "folder": "4. Operations and runbooks",
+      "kind": "runbook",
+      "title": "Incident guide"
+    },
+    {
+      "file": "existing/deploy/vps/README.md",
+      "folder": "4. Operations and runbooks",
+      "kind": "runbook",
+      "title": "Deploy on the Myseed VPS"
+    },
+    {
+      "file": "existing/control-panel/README.md",
+      "folder": "4. Operations and runbooks",
+      "kind": "runbook",
+      "title": "Control panel guide"
+    },
+    {
+      "file": "existing/ops/README.md",
+      "folder": "4. Operations and runbooks",
+      "kind": "runbook",
+      "title": "Local services with Docker"
+    },
+    {
+      "file": "existing/docs/console.md",
+      "folder": "4. Operations and runbooks",
+      "kind": "runbook",
+      "title": "Staff console operator guide"
+    },
+    {
+      "file": "existing/docs/platform-admin.md",
+      "folder": "4. Operations and runbooks",
+      "kind": "runbook",
+      "title": "Platform admin guide"
+    },
+    {
+      "file": "existing/docs/billing.md",
+      "folder": "4. Operations and runbooks",
+      "kind": "runbook",
+      "title": "Billing rules and finance runbook"
+    },
+    {
+      "file": "existing/docs/customer-success.md",
+      "folder": "4. Operations and runbooks",
+      "kind": "runbook",
+      "title": "Customer success and support playbook"
+    },
+    {
+      "file": "existing/docs/offboarding.md",
+      "folder": "4. Operations and runbooks",
+      "kind": "runbook",
+      "title": "Offboarding an organization"
+    },
+    {
+      "file": "existing/docs/branches-and-cashier.md",
+      "folder": "4. Operations and runbooks",
+      "kind": "runbook",
+      "title": "Employees, branches and the cashier"
+    },
+    {
+      "file": "existing/apps/cashier/README.md",
+      "folder": "4. Operations and runbooks",
+      "kind": "note",
+      "title": "Cashier app notes"
+    },
+    {
+      "file": "existing/apps/cashier-android/README.md",
+      "folder": "4. Operations and runbooks",
+      "kind": "runbook",
+      "title": "Cashier phone app (Android)"
+    },
+    {
+      "file": "existing/apps/shop-android/README.md",
+      "folder": "4. Operations and runbooks",
+      "kind": "runbook",
+      "title": "MySeed Shop app (Android)"
+    },
+    {
+      "file": "existing/apps/relay-extension/README.md",
+      "folder": "4. Operations and runbooks",
+      "kind": "runbook",
+      "title": "Relay browser extension"
+    },
+    {
+      "file": "existing/docs/verification-audit-2026-11-15.md",
+      "folder": "5. Quality and releases",
+      "kind": "note",
+      "title": "Verification and organization data audit, 15 November 2026"
+    },
+    {
+      "file": "existing/tests/e2e/README.md",
+      "folder": "5. Quality and releases",
+      "kind": "testplan",
+      "title": "End-to-end test notes"
+    },
+    {
+      "file": "existing/examples/README.md",
+      "folder": "5. Quality and releases",
+      "kind": "note",
+      "title": "Sandbox examples"
+    }
+  ]
+}

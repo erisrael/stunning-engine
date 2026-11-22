@@ -75,11 +75,23 @@ Library folder: *Dev team handbook*
 | Writing specs and docs | `docs/dev-team/SPEC-GUIDE.md` | Which document to write, requirements, Markdown, review, repository documents |
 | Releases, deploys and incidents | `docs/dev-team/RELEASE-GUIDE.md` | Shipping, checking, rolling back, incidents, backups |
 
-## 7. Kept in the repository only
+## 7. Other Myseed projects
+
+Each project's documentation sits in its own library folder, with the same six subfolders, and has its own index. The files are in `docs/projects/`, exported from each project's repository on 23 November 2026.
+
+| Project | Library folder | Index |
+| --- | --- | --- |
+| MySeed Academy (the Myseed website and learning platform) | *MySeed Academy documentation* | [MySeed Academy index](../projects/myseed-academy/project/INDEX.md) |
+| MySeed SchoolHub | *MySeed SchoolHub documentation* | [SchoolHub index](../projects/schoolhub/project/INDEX.md) |
+| Transaction Verify | *Transaction Verify documentation* | [Transaction Verify index](../projects/transaction-verify/project/INDEX.md) |
+
+To refresh a project's documents, export them again from its repository with the same prompt, replace its folder under `docs/projects/`, update its lines in `docs/library.json`, and open a pull request.
+
+## 8. Kept in the repository only
 
 These are not in the library: the control panel's guide (`control-panel/README.md`, the panel is not part of the server's build) and documents that are deliberately kept out of git.
 
-## 8. Adding a document
+## 9. Adding a document
 
 1. Write it in Markdown under `docs/` (project documents in `docs/project/`, team documents in `docs/dev-team/`).
 2. Add a line to `docs/library.json` with its file, library folder, kind and title.

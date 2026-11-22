@@ -1,0 +1,224 @@
+{
+  "project": "MySeed Academy",
+  "slug": "my-seed-academy",
+  "commit": "31bd529",
+  "generated": "2026-11-23",
+  "documents": [
+    {
+      "file": "project/INDEX.md",
+      "folder": "1. Start here",
+      "kind": "note",
+      "title": "MySeed Academy documentation index"
+    },
+    {
+      "file": "project/PRODUCT-OVERVIEW.md",
+      "folder": "1. Start here",
+      "kind": "prd",
+      "title": "MySeed Academy product overview"
+    },
+    {
+      "file": "project/PROGRESS.md",
+      "folder": "1. Start here",
+      "kind": "note",
+      "title": "MySeed Academy progress report"
+    },
+    {
+      "file": "project/SRS.md",
+      "folder": "2. Requirements and plans",
+      "kind": "srs",
+      "title": "MySeed Academy software requirements specification"
+    },
+    {
+      "file": "existing/docs/FEATURES.md",
+      "folder": "2. Requirements and plans",
+      "kind": "note",
+      "title": "Feature inventory by plan phase"
+    },
+    {
+      "file": "existing/docs/ROADMAP.md",
+      "folder": "2. Requirements and plans",
+      "kind": "note",
+      "title": "Roadmap and site builder plan (October 2026)"
+    },
+    {
+      "file": "existing/docs/architecture/stage_map_and_implementation_plan.md",
+      "folder": "2. Requirements and plans",
+      "kind": "note",
+      "title": "Stage map and 22-phase implementation plan"
+    },
+    {
+      "file": "existing/docs/content/myseed-com-et.md",
+      "folder": "2. Requirements and plans",
+      "kind": "note",
+      "title": "myseed.com.et content inventory (10 October 2026)"
+    },
+    {
+      "file": "existing/docs/ops/README.md",
+      "folder": "2. Requirements and plans",
+      "kind": "note",
+      "title": "Ops document suite index (planning set)"
+    },
+    {
+      "file": "existing/docs/ops/01-srs-ieee830-iso29148.md",
+      "folder": "2. Requirements and plans",
+      "kind": "srs",
+      "title": "Planning SRS, IEEE 830 and ISO 29148 (planning set)"
+    },
+    {
+      "file": "existing/docs/ops/02-srs-myseed-learning-feature.md",
+      "folder": "2. Requirements and plans",
+      "kind": "srs",
+      "title": "Planning SRS: Smart Learning Loop (learning app, not in this repository)"
+    },
+    {
+      "file": "existing/docs/ops/03-product-brief.md",
+      "folder": "2. Requirements and plans",
+      "kind": "prd",
+      "title": "Product brief: the MySeed learning companion (planning set)"
+    },
+    {
+      "file": "project/ARCHITECTURE.md",
+      "folder": "3. Architecture and decisions",
+      "kind": "design",
+      "title": "MySeed Academy architecture"
+    },
+    {
+      "file": "project/DECISIONS.md",
+      "folder": "3. Architecture and decisions",
+      "kind": "adr",
+      "title": "MySeed Academy architecture decisions"
+    },
+    {
+      "file": "existing/docs/adr/ADR-001-modular-monolith-express-ts.md",
+      "folder": "3. Architecture and decisions",
+      "kind": "adr",
+      "title": "ADR-001: Modular monolith with Express and TypeScript"
+    },
+    {
+      "file": "existing/docs/adr/ADR-002-postgres-prisma.md",
+      "folder": "3. Architecture and decisions",
+      "kind": "adr",
+      "title": "ADR-002: PostgreSQL with Prisma"
+    },
+    {
+      "file": "existing/docs/adr/ADR-003-nextjs-app-router-monorepo.md",
+      "folder": "3. Architecture and decisions",
+      "kind": "adr",
+      "title": "ADR-003: Next.js App Router monorepo"
+    },
+    {
+      "file": "existing/docs/adr/ADR-004-watermelon-ui-adaptation-layer.md",
+      "folder": "3. Architecture and decisions",
+      "kind": "adr",
+      "title": "ADR-004: Watermelon UI adaptation layer"
+    },
+    {
+      "file": "existing/docs/adr/ADR-005-dual-tier-multilingual-architecture.md",
+      "folder": "3. Architecture and decisions",
+      "kind": "adr",
+      "title": "ADR-005: Two-tier multilingual architecture"
+    },
+    {
+      "file": "existing/docs/ops/05-architecture-decision-record.md",
+      "folder": "3. Architecture and decisions",
+      "kind": "adr",
+      "title": "ADR-006 proposal: offline-first sync (not implemented)"
+    },
+    {
+      "file": "existing/docs/architecture/boundary_charter.md",
+      "folder": "3. Architecture and decisions",
+      "kind": "design",
+      "title": "System boundary charter: website and support mini-app"
+    },
+    {
+      "file": "existing/docs/ops/04-technical-design-myseed-stack.md",
+      "folder": "3. Architecture and decisions",
+      "kind": "design",
+      "title": "Technical design of the MySeed stack (planning set)"
+    },
+    {
+      "file": "existing/docs/guides/no-emoji-watermelon-ui.md",
+      "folder": "3. Architecture and decisions",
+      "kind": "design",
+      "title": "UI rules: no emoji, Watermelon-style design system"
+    },
+    {
+      "file": "existing/README.md",
+      "folder": "4. Operations and runbooks",
+      "kind": "runbook",
+      "title": "Repository README: quick start and console guide"
+    },
+    {
+      "file": "existing/docs/runbooks/DEPLOY.md",
+      "folder": "4. Operations and runbooks",
+      "kind": "runbook",
+      "title": "Deploying to a Hostinger VPS"
+    },
+    {
+      "file": "existing/control-panel/README.md",
+      "folder": "4. Operations and runbooks",
+      "kind": "runbook",
+      "title": "Control panel guide"
+    },
+    {
+      "file": "existing/docs/runbooks/disaster-recovery.md",
+      "folder": "4. Operations and runbooks",
+      "kind": "runbook",
+      "title": "Disaster recovery and secret rotation (older version)"
+    },
+    {
+      "file": "existing/docs/runbooks/zero-downtime-deployment.md",
+      "folder": "4. Operations and runbooks",
+      "kind": "runbook",
+      "title": "Zero-downtime deployment (older version)"
+    },
+    {
+      "file": "existing/docs/ops/08-runbook.md",
+      "folder": "4. Operations and runbooks",
+      "kind": "runbook",
+      "title": "Production runbook (planning set)"
+    },
+    {
+      "file": "existing/docs/ops/09-postmortem.md",
+      "folder": "4. Operations and runbooks",
+      "kind": "postmortem",
+      "title": "Postmortem INC-2026-10-18 (to confirm)"
+    },
+    {
+      "file": "project/TEST-PLAN.md",
+      "folder": "5. Quality and releases",
+      "kind": "testplan",
+      "title": "MySeed Academy test plan"
+    },
+    {
+      "file": "project/RELEASE-HISTORY.md",
+      "folder": "5. Quality and releases",
+      "kind": "release",
+      "title": "MySeed Academy release history"
+    },
+    {
+      "file": "existing/docs/runbooks/production-readiness-checklist.md",
+      "folder": "5. Quality and releases",
+      "kind": "note",
+      "title": "Production readiness checklist"
+    },
+    {
+      "file": "existing/docs/ops/06-test-plan-myseed-devices.md",
+      "folder": "5. Quality and releases",
+      "kind": "testplan",
+      "title": "Device test plan (planning set, learning app)"
+    },
+    {
+      "file": "existing/docs/ops/07-release-notes-and-checklist.md",
+      "folder": "5. Quality and releases",
+      "kind": "release",
+      "title": "Release notes v2.4.0 (template, not a real release)"
+    },
+    {
+      "file": "project/WORKING-ON-IT.md",
+      "folder": "6. Working on this project",
+      "kind": "runbook",
+      "title": "Working on MySeed Academy"
+    }
+  ]
+}

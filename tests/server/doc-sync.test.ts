@@ -147,7 +147,7 @@ async function main() {
   check("every entry has a folder, a known kind and a title, and no file twice", manifest.documents.every((d) => d.folder && d.title && DOC_KINDS.some((k) => k.key === d.kind)) && new Set(files).size === files.length);
   check("nothing from folders the server's build leaves out", !files.some((f) => /^(control-panel|data|backups|templates)\//.test(f)) && !files.includes("docs/DEV-TEAM-ASSESSMENT.md"));
   const broken: string[] = [];
-  for (const f of files.filter((x) => /^docs\/(project|dev-team)\//.test(x))) {
+  for (const f of files.filter((x) => /^docs\/(project|dev-team|projects)\//.test(x))) {
     // Examples inside code are not links.
     const text = fs.readFileSync(f, "utf8").replace(/^```[\s\S]*?^```/gm, "").replace(/`[^`\n]*`/g, "");
     for (const m of text.matchAll(/\]\(([^)\s]+\.md)(#[^)]*)?\)/g)) {
@@ -157,7 +157,12 @@ async function main() {
   }
   check("links between the new documents point at real files", broken.length === 0, broken);
   const index = fs.readFileSync("docs/project/INDEX.md", "utf8");
-  check("the index lists every document in the library", files.every((f) => index.includes(`\`${f}\``)), files.filter((f) => !index.includes(`\`${f}\``)));
+  // Myseed Ops' own documents are in its index; each other project has its own index in its folder.
+  const own = files.filter((f) => !f.startsWith("docs/projects/"));
+  check("the index lists every Myseed Ops document", own.every((f) => index.includes(`\`${f}\``)), own.filter((f) => !index.includes(`\`${f}\``)));
+  const projectDirs = [...new Set(files.filter((f) => f.startsWith("docs/projects/")).map((f) => f.split("/")[2]!))];
+  check("every other project brings its index, listed in the Myseed Ops index", projectDirs.length > 0 && projectDirs.every((d) => files.includes(`docs/projects/${d}/project/INDEX.md`) && index.includes(`../projects/${d}/project/INDEX.md`)), projectDirs);
+  check("every other project's documents sit in its own library folder", manifest.documents.filter((d) => d.file.startsWith("docs/projects/")).every((d) => / documentation\/\d\. /.test(d.folder) && !d.folder.startsWith("Myseed Ops")));
 
   console.log(`\n${pass} passed, ${fail} failed`);
   if (fail) process.exitCode = 1;
