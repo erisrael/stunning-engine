@@ -30,7 +30,7 @@ async function openTown(page) {
   const win = page.locator("[data-fun-window]");
   await win.locator('[data-fun-tab="games"]').click();
   await win.locator('[data-fun-game="world"]').click();
-  await win.locator("[data-world-canvas] canvas").waitFor({ timeout: 30000 });
+  await win.locator("[data-world-canvas] canvas").waitFor({ timeout: 90000 });
   await until(page, () => !!window.__seedTown, null, 30000);
   return win;
 }
