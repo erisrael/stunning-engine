@@ -73,7 +73,10 @@ async function main() {
   const g = async (code: string) => (await get<{ id: string }>("SELECT id FROM grades WHERE code = ?", code))!.id;
   const [g7, g9] = [await g("G07"), await g("G09")];
 
-  check("a member of a team corrects names, but does not move", (await cf.curriculumRights(dawit)).rename && !(await cf.curriculumRights(dawit)).structure);
+  const hana = await by("hana@demo.local");
+  check("Curriculum is for admins, managers and team leads: a team member has none of it", !cf.curriculumAccess(dawit) && !(await cf.curriculumRights(dawit)).rename && cf.curriculumAccess(admin) && cf.curriculumAccess(hana));
+  check("a team lead corrects names", (await cf.curriculumRights(hana)).rename);
+  check("a member cannot rename", await rejects(() => cf.renamePart(dawit, "x", "Nope"), /does not correct/));
   check("someone outside the teams does neither", !(await cf.curriculumRights(other)).rename);
 
   // Findings.
@@ -93,10 +96,10 @@ async function main() {
 
   // Renaming from the team.
   check("outside the teams cannot rename", await rejects(() => cf.renamePart(other, part1, "Nope"), /does not correct/));
-  await cf.applyIssue(dawit, `part_name:${part1}`);
+  await cf.applyIssue(hana, `part_name:${part1}`);
   const item = await get<{ id: string; title: string }>("SELECT id, title FROM items WHERE lesson_id = ?", part1);
   check("the suggested name is used, on the part and its work", (await get<{ title: string }>("SELECT title FROM lessons WHERE id = ?", part1))?.title === "Atoms and molecules" && item?.title === "Atoms and molecules", item);
-  await cf.renameItem(dawit, item!.id, "Part 1: Atoms");
+  await cf.renameItem(hana, item!.id, "Part 1: Atoms");
   check("renaming from the card changes the part too", (await get<{ title: string }>("SELECT title FROM lessons WHERE id = ?", part1))?.title === "Atoms" && (await get<{ title: string }>("SELECT title FROM items WHERE id = ?", item!.id))?.title === "Atoms");
   await importCurriculumBackup(BACKUP as never, { actorId: admin.id, createItems: true, markRecorded: false });
   check("importing again keeps a corrected name", (await get<{ title: string }>("SELECT title FROM lessons WHERE id = ?", part1))?.title === "Atoms");
@@ -138,8 +141,7 @@ async function main() {
 
   // Who may fix: Admin's setting.
   await cf.saveCurriculumConfig(admin, { renameRoles: ["editing"], structure: "leads" });
-  check("Admin can take renaming away from a team", !(await cf.curriculumRights(dawit)).rename);
-  const hana = await by("hana@demo.local");
+  check("a member still has no Curriculum", !(await cf.curriculumRights(dawit)).rename);
   check("and let leads move things", (await cf.curriculumRights(hana)).structure);
   await cf.saveCurriculumConfig(admin, { renameRoles: ["recording", "editing", "uploading", "publication"], structure: "planners" });
 

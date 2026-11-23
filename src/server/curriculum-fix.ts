@@ -35,7 +35,13 @@ export async function saveCurriculumConfig(user: AppUser, input: Partial<Curricu
 
 const planner = (u: AppUser) => can(u, "items.plan") || can(u, "import.run") || can(u, "data.manage");
 
+// Curriculum is for admins, managers and team leads; team members do not see it.
+export function curriculumAccess(u: AppUser) {
+  return u.perms.includes("users.manage") || u.perms.includes("settings.manage") || u.perms.includes("work.override") || u.leads.length > 0;
+}
+
 export async function curriculumRights(u: AppUser) {
+  if (!curriculumAccess(u)) return { structure: false, rename: false };
   const cfg = await curriculumConfig();
   const structure = planner(u) || (cfg.structure === "leads" && u.leads.length > 0);
   return { structure, rename: structure || u.roles.some((r) => cfg.renameRoles.includes(r as Stage)) };

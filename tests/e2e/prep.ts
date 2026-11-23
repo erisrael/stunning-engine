@@ -195,6 +195,11 @@ const PREPS: Record<string, () => Promise<unknown>> = {
     await passwordOnly();
     return {};
   },
+  // A Recording member's team overview, and Curriculum only for leads and admins.
+  async "team-overview"() {
+    await passwordOnly();
+    return {};
+  },
   // Configure whole system: names, report name, logo, motion and icons; the department pages' PDF reports.
   async "system-config"() {
     await passwordOnly();

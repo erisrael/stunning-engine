@@ -79,12 +79,8 @@ try {
   check("marked high priority, with why", (await onBoard.locator('[data-priority="high"]').count()) === 1 && /No sound/.test(await onBoard.innerText()), await onBoard.innerText());
   await dawit.screenshot({ path: path.join(shots, "3-todo.png") });
 
-  // Correct a name right on the card.
-  await onBoard.getByRole("button", { name: /Correct the name/ }).click();
-  await dawit.getByRole("dialog").getByLabel("Part name").fill("Forces and motion");
-  await dawit.getByRole("dialog").getByRole("button", { name: "Save" }).click();
-  check("a team member corrects the name on the card", await toast(dawit, /Name corrected/));
-  check("the card shows it", await seen(onBoard.getByText("Forces and motion")));
+  // Curriculum is for leads and admins: a team member does not correct names on the card.
+  check("a team member has no name correcting on the card", (await onBoard.getByRole("button", { name: /Correct the name/ }).count()) === 0);
 
   // ---- The report.
   await meron.goto(`${base}/handovers/report`);
@@ -134,7 +130,8 @@ try {
   await admin.goto(`${base}/curriculum?tab=changes`);
   check("the changes are kept", await seen(admin.locator("[data-curriculum-changes]").getByText(/moved/)));
   await dawit.goto(`${base}/curriculum?tab=browse`);
-  check("a team member can correct names but not move", await dawit.getByRole("button", { name: /Rename part|Rename unit/ }).first().waitFor({ timeout: 8000 }).then(() => true, () => false).then(async (x) => x || (await dawit.locator("[data-curriculum]").count()) > 0) && (await dawit.getByRole("button", { name: "Move to another grade" }).count()) === 0);
+  await dawit.waitForURL(/\/dashboard/, { timeout: 10000 }).catch(() => {});
+  check("Curriculum is closed to a team member", /\/dashboard/.test(dawit.url()), dawit.url());
 
   // Auto-assign.
   await hana.goto(`${base}/curriculum?tab=auto`);

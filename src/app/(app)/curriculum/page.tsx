@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { requireViewer } from "@/server/auth";
 import { autoAssignConfig, teamOf } from "@/server/auto-assign";
-import { curriculumConfig, curriculumIndex, curriculumRights, findIssues, recentChanges, subjectUnits } from "@/server/curriculum-fix";
+import { curriculumAccess, curriculumConfig, curriculumIndex, curriculumRights, findIssues, recentChanges, subjectUnits } from "@/server/curriculum-fix";
 import { assignableStages } from "@/server/editorial";
 import { can } from "@/server/users";
 import { PageHeader } from "@/components/app/primitives";
@@ -14,6 +14,8 @@ const TABS = ["fix", "browse", "auto", "changes", "settings"] as const;
 
 export default async function CurriculumPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const viewer = await requireViewer();
+  // Admins, managers and team leads only.
+  if (!curriculumAccess(viewer)) redirect("/dashboard?denied=permission");
   const rights = await curriculumRights(viewer);
   const stages = assignableStages(viewer);
   if (!rights.rename && !stages.length) redirect("/dashboard?denied=permission");

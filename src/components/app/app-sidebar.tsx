@@ -419,13 +419,14 @@ export function AppSidebar({
         ...(views.length
           ? [{ id: "views", href: views[0]!.href, label: "Work views", icon: LayersIcon, keepFilters: true, also: views.map((v) => v.href), badge: counts.myWork, gather:true, sub:views.map(v=>({href:v.href,label:v.href==="/content"?"List":v.href==="/sheet"?"Sheet":v.href==="/pipeline"?"Board":"Calendar",keepFilters:true})) }]
           : []),
+        ...((["recording", "editing", "uploading"] as Role[]).includes(activeRole) && has("team.overview") ? [{ href: "/team-overview", label: "Team overview", icon: LayoutDashboardIcon }] : []),
         { href: "/handovers", label: "Handovers", icon: PackageCheckIcon, badge: counts.incoming, cap: "nav.handovers", sub: [{ label: "Handovers", href: "/handovers" }, { label: "Rejected", href: "/handovers/rejected" }, { label: "Report", href: "/handovers/report" }] },
         ...(studioBooking !== "off" && (sessionsManager || has("items.plan") || has("team.view") || has("sessions.view") || has("sessions.book") || activeRole === "recording") ? [{ href: "/sessions", label: "Studio sessions", icon: VideoIcon }] : []),
         ...(has("items.plan") || has("hr.access") || has("finance.access") || has("presenters.view") || has("presenters.register") || has("presenters.assign") || ((["recording", "editing", "uploading"] as Role[]).includes(activeRole) && lead)
           ? [{ href: "/presenters", label: "Presenters", icon: MicIcon, sub: has("hr.access") || has("finance.access") ? [{ label: "Presenters", href: "/presenters" }, { label: "Fees", href: "/presenters?tab=fees" }] : undefined }]
           : []),
         ...(legacy && (has("items.plan") || has("import.run") || has("data.manage") || activeRole === "recording") ? [{ href: "/legacy", label: "Legacy catalog", icon: FilmIcon }] : []),
-        ...(has("items.plan") || has("import.run") || has("data.manage") || has("assign.bulk") || (["recording", "editing", "uploading", "publication"] as Role[]).includes(activeRole) ? [{ href: "/curriculum", label: "Curriculum", icon: ListChecksIcon, sub: [{ label: "Fix", href: "/curriculum" }, { label: "Browse and edit", href: "/curriculum?tab=browse" }, { label: "Auto-assign", href: "/curriculum?tab=auto" }, { label: "Changes", href: "/curriculum?tab=changes" }] }] : []),
+        ...(lead || has("users.manage") || has("settings.manage") || has("work.override") ? [{ href: "/curriculum", label: "Curriculum", icon: ListChecksIcon, sub: [{ label: "Fix", href: "/curriculum" }, { label: "Browse and edit", href: "/curriculum?tab=browse" }, { label: "Auto-assign", href: "/curriculum?tab=auto" }, { label: "Changes", href: "/curriculum?tab=changes" }] }] : []),
         { href: "/coverage", label: "Coverage", icon: GridIcon, keepFilters: true, cap: "nav.coverage" },
         { href: "/reports", label: "Reports", icon: ChartColumnIcon, keepFilters: true, cap: "reports.view" },
         ...(lead ? [{ href: "/team", label: "Team", icon: UsersIcon, badge: has("corrections.approve") ? counts.corrections : 0, cap: "team.view" as Capability }] : []),

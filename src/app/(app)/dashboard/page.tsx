@@ -80,8 +80,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     const hour = Number(new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", hourCycle: "h23" }).format(new Date()));
     const greeting = `${hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening"}, ${viewer.name.split(" ")[0]}`;
     const [desk, mine] = await Promise.all([isLeadOf(viewer, team) ? leadDesk(viewer, team) : Promise.resolve(null), myWork(viewer)]);
-    // Members with "team.overview" (Recording by default) see the whole team's progress, read only.
-    const overview = !desk && can(viewer, "team.overview") ? await teamOverview(viewer, team) : null;
+    // Everyone in the team with "team.overview" (Recording by default), leads too, sees the whole team's progress.
+    const overview = can(viewer, "team.overview") ? await teamOverview(viewer, team) : null;
     const own = mine.items.filter((i) => i.stage === team);
     return (
       <div className="space-y-6">

@@ -407,7 +407,8 @@ export type TeamOverviewData = {
 };
 
 export async function teamOverview(user: AppUser, stage: Stage): Promise<TeamOverviewData> {
-  const sc = scopeSql({ ...user, ownWorkOnly: false }, "i");
+  // The whole team, not only the grades or subjects this person works on: it is the team's overview, read only.
+  const sc = scopeSql({ ...user, ownWorkOnly: false, scopes: [] }, "i");
   const week = new Date(Date.now() - 7 * 864e5).toISOString();
   const [rows, people, weekBy, recent, total] = await Promise.all([
     all<{ id: string; code: string; title: string; status: AttemptStatus; cause: string | null; cause_note: string | null; lead_returned: number | null; owner_id: string | null; owner: string | null }>(

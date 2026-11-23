@@ -114,7 +114,7 @@ try {
   check("no balances for a member", (await page.getByText(/left$/).filter({ hasText: /of \d/ }).count()) === 0 && (await page.locator("text=/of \\d+(\\.\\d)? left/").count()) === 0);
   const askHr = page.locator("[data-ask-hr]");
   check("Ask HR is there", await seen(askHr));
-  await askHr.getByLabel("Your message").fill("How many annual days do I have left?");
+  await askHr.getByLabel("Your message", { exact: true }).fill("How many annual days do I have left?");
   await askHr.getByRole("button", { name: "Send to HR" }).click();
   check("the question goes to HR", await toast(page, /Sent to HR/));
   check("and waits there", await seen(askHr.locator('[data-query="open"]')));
