@@ -144,7 +144,7 @@ export const getViewer = cache(async (): Promise<Viewer | null> => {
   }
   if (!session.last_seen_at || Date.now() - Date.parse(session.last_seen_at) > 5 * 60e3)
     await run("UPDATE sessions SET last_seen_at = ?, ip = COALESCE(?, ip) WHERE id = ?", nowIso(), await requestIp(), session.id);
-  // The role switcher only changes presentation; it never grants a role the user lacks.
+  // The role switcher never grants a role the user lacks; with several roles, the chosen one sets the permissions.
   const activeRole =
     session.active_role && user.roles.includes(session.active_role) ? session.active_role : pickDefaultRole(user.roles);
   const preview = jar.get(PREVIEW_COOKIE)?.value;
@@ -155,6 +155,13 @@ export const getViewer = cache(async (): Promise<Viewer | null> => {
       const asRole = role && target.roles.includes(role as Role) ? (role as Role) : pickDefaultRole(target.roles);
       return { ...target, activeRole: asRole, sessionId: session.id, previewBy: { id: user.id, name: user.name } };
     }
+  }
+  // Someone with several roles works as the role chosen in the switcher: its permissions only (and the lead rights of
+  // that team), so Admin switched to Assistant Manager sees and can do exactly what an Assistant Manager can.
+  if (user.roles.length > 1) {
+    const { permsFor } = await import("./users");
+    const leads = user.leads.filter((st) => st === activeRole);
+    return { ...user, perms: await permsFor([activeRole], leads), activeRole, sessionId: session.id };
   }
   return { ...user, activeRole, sessionId: session.id };
 });
