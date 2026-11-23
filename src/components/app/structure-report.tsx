@@ -11,7 +11,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { MultiSelect } from "@/components/app/multi-select";
 import type { StructureRow } from "@/server/structure";
-import { SIMPLE_STATUS_LABELS, STAGE_LABELS, STAGES, type SimpleStatus, type Stage } from "@/lib/domain";
+import { SIMPLE_STATUS_LABELS, STAGE_LABELS, STAGES as ALL_STAGES, type SimpleStatus, type Stage } from "@/lib/domain";
+
+// The teams whose columns show (the Overview shows a production team its own team's only).
+const ShownStages = React.createContext<readonly Stage[]>(ALL_STAGES);
 import { cn } from "@/lib/utils";
 import { tip } from "@/lib/help";
 
@@ -74,8 +77,8 @@ function sortRows(rows: StructureRow[], mode: ReportMode) {
 }
 
 function tally(rows: StructureRow[]) {
-  const out = Object.fromEntries(STAGES.map((s) => [s, { done: 0, in_process: 0, missing: 0, none: 0 }])) as Record<Stage, Record<SimpleStatus, number>>;
-  for (const r of rows) for (const s of STAGES) out[s][r.stages[s]]++;
+  const out = Object.fromEntries(ALL_STAGES.map((s) => [s, { done: 0, in_process: 0, missing: 0, none: 0 }])) as Record<Stage, Record<SimpleStatus, number>>;
+  for (const r of rows) for (const s of ALL_STAGES) out[s][r.stages[s]]++;
   return out;
 }
 
@@ -91,7 +94,9 @@ export function StructureReport({
   defaultView = "table",
   allowViewToggle = true,
   heading,
+  stages,
 }: {
+  stages?: readonly Stage[];
   rows: StructureRow[];
   grades: Opt[];
   subjects: Opt[];
@@ -100,6 +105,7 @@ export function StructureReport({
   allowViewToggle?: boolean;
   heading?: React.ReactNode;
 }) {
+  const STAGES = stages ?? ALL_STAGES;
   const { params, set } = useUrlState();
   const mode = (params.get("mode") as ReportMode) || defaultMode;
   // Phones open in the hierarchy, which needs no sideways scrolling, unless the address says otherwise.
@@ -154,6 +160,7 @@ export function StructureReport({
   };
 
   return (
+    <ShownStages.Provider value={STAGES}>
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
         {heading}
@@ -274,11 +281,13 @@ export function StructureReport({
         <span className="font-medium">-</span> not reached yet.
       </p>
     </div>
+    </ShownStages.Provider>
   );
 }
 
 // Grade (or subject), then subject (or grade), then unit cells span the rows that belong to them.
 function MergedTable({ rows, mode }: { rows: StructureRow[]; mode: ReportMode }) {
+  const STAGES = React.useContext(ShownStages);
   const router = useRouter();
   const [l1, l2] = levels(mode);
   const span = (i: number, key: (r: StructureRow) => string) => {
@@ -383,6 +392,7 @@ function MergedTable({ rows, mode }: { rows: StructureRow[]; mode: ReportMode })
 }
 
 function Summary({ rows }: { rows: StructureRow[] }) {
+  const STAGES = React.useContext(ShownStages);
   const parts = rows.filter((r) => r.partId);
   const t = tally(parts);
   return (
@@ -398,6 +408,7 @@ function Summary({ rows }: { rows: StructureRow[] }) {
 }
 
 function Hierarchy({ rows, mode }: { rows: StructureRow[]; mode: ReportMode }) {
+  const STAGES = React.useContext(ShownStages);
   const [l1, l2] = levels(mode);
   const [open, setOpen] = React.useState<Set<string>>(() => new Set());
   const toggle = (k: string) => setOpen((o) => new Set(o.has(k) ? [...o].filter((x) => x !== k) : [...o, k]));

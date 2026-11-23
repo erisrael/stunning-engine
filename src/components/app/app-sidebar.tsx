@@ -280,6 +280,7 @@ export function AppSidebar({
   brand = {},
   recognition = false,
   support = false,
+  overviewTeam = false,
   callRecords = false,
   studioBooking = "optional",
   legacy = false,
@@ -296,6 +297,8 @@ export function AppSidebar({
   studioBooking?: "off" | "optional" | "required";
   // Recognition switched on (Admin, Recognition): the leaderboard, badges and kudos for everyone.
   recognition?: boolean;
+  // Production, Overview for a team's members (Admin sets which teams each role sees).
+  overviewTeam?: boolean;
   // Customer support: the agent desk for agents and leads (Admin, Support).
   support?: boolean;
   // Call Records (Update 1.2, Phase 9): agents, support leads and the managers Admin allows.
@@ -415,11 +418,10 @@ export function AppSidebar({
     {
       label: "Workflow",
       items: [
-        { href: "/overview", label: "Overview", icon: ListTreeIcon, keepFilters: true, cap: "nav.overview" },
+        ...(has("nav.overview") || overviewTeam ? [{ href: "/overview", label: overviewTeam && !has("nav.overview") ? "Team overview" : "Overview", icon: ListTreeIcon, keepFilters: true }] : []),
         ...(views.length
           ? [{ id: "views", href: views[0]!.href, label: "Work views", icon: LayersIcon, keepFilters: true, also: views.map((v) => v.href), badge: counts.myWork, gather:true, sub:views.map(v=>({href:v.href,label:v.href==="/content"?"List":v.href==="/sheet"?"Sheet":v.href==="/pipeline"?"Board":"Calendar",keepFilters:true})) }]
           : []),
-        ...((["recording", "editing", "uploading"] as Role[]).includes(activeRole) && has("team.overview") ? [{ href: "/team-overview", label: "Team overview", icon: LayoutDashboardIcon }] : []),
         { href: "/handovers", label: "Handovers", icon: PackageCheckIcon, badge: counts.incoming, cap: "nav.handovers", sub: [{ label: "Handovers", href: "/handovers" }, { label: "Rejected", href: "/handovers/rejected" }, { label: "Report", href: "/handovers/report" }] },
         ...(studioBooking !== "off" && (sessionsManager || has("items.plan") || has("team.view") || has("sessions.view") || has("sessions.book") || activeRole === "recording") ? [{ href: "/sessions", label: "Studio sessions", icon: VideoIcon }] : []),
         ...(has("items.plan") || has("hr.access") || has("finance.access") || has("presenters.view") || has("presenters.register") || has("presenters.assign") || ((["recording", "editing", "uploading"] as Role[]).includes(activeRole) && lead)

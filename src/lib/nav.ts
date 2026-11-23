@@ -38,7 +38,6 @@ export const SIDEBAR_ENTRIES: { key: string; label: string; group: string }[] = 
   { key: "/sessions", label: "Studio sessions", group: "Workflow" },
   { key: "/legacy", label: "Legacy catalog", group: "Workflow" },
   { key: "/curriculum", label: "Curriculum", group: "Workflow" },
-  { key: "/team-overview", label: "Team overview (production teams)", group: "Workflow" },
   { key: "/coverage", label: "Coverage", group: "Workflow" },
   { key: "/reports", label: "Reports", group: "Workflow" },
   { key: "/email", label: "Email", group: "Workflow" },
