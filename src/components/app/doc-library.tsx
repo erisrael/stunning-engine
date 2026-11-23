@@ -1,6 +1,7 @@
 "use client";
 
 import { ImportTemplateButton } from "./import-template-button";
+import { LevelBadge, ShareButton } from "./dept-access";
 import { DOCUMENT_IMPORT_TEMPLATE } from "@/lib/dev-import-templates";
 
 // The department's document library (Phase 26): a folder tree, the open folder's folders, documents and files,
@@ -186,6 +187,7 @@ export function DocLibrary({ dept }: { dept: string }) {
                 From Notion
               </Button>
             )}
+            {lib.folder && lib.canShare && <ShareButton dept={dept} kind="folder" id={lib.folder.id} name={lib.folder.name} size="sm" />}
             {lib.folder && (
               <Button size="sm" variant="ghost" onClick={() => window.confirm(`Remove the folder "${lib.folder!.name}"? What is in it moves up.`) && void doIt(() => A.deleteFolderAction(dept, lib.folder!.id), "Folder removed").then(() => go(lib.folder!.parentId))}>
                 <Trash2Icon /> Remove this folder
@@ -239,9 +241,12 @@ export function DocLibrary({ dept }: { dept: string }) {
           <ul className="divide-y rounded-lg border bg-card text-sm" data-library-list>
             {lib.subfolders.map((f) => (
               <li key={f.id}>
-                <button type="button" onClick={() => go(f.id)} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-muted/50" data-folder={f.name}>
-                  <FolderIcon className="size-4 text-[#F9AB00]" /> <span className="font-medium">{f.name}</span>
-                </button>
+                <div className="flex items-center pr-2">
+                  <button type="button" onClick={() => go(f.id)} className="flex flex-1 items-center gap-2 px-3 py-2 text-left hover:bg-muted/50" data-folder={f.name}>
+                    <FolderIcon className="size-4 text-[#F9AB00]" /> <span className="font-medium">{f.name}</span>
+                  </button>
+                  {lib.canShare && <ShareButton dept={dept} kind="folder" id={f.id} name={f.name} />}
+                </div>
               </li>
             ))}
             {lib.docs.map((d) => (
@@ -259,16 +264,20 @@ export function DocLibrary({ dept }: { dept: string }) {
                 <span className="text-xs text-muted-foreground">
                   v{d.version} · {d.status} · {d.author ?? ""} · {d.updatedAt.slice(0, 10)}
                 </span>
+                {!lib.full && <LevelBadge level={d.level} />}
                 <span className="ml-auto flex items-center gap-1">
                   <Button size="icon" variant="ghost" className={cn("size-7", d.pinned && "text-[#1A73E8]")} aria-label={d.pinned ? `Unpin ${d.title}` : `Pin ${d.title}`} aria-pressed={d.pinned} onClick={() => doIt(() => A.togglePinAction(dept, d.id))}>
                     <PinIcon />
                   </Button>
-                  <Button asChild size="icon" variant="ghost" className="size-7" aria-label={`Download ${d.title} as Word`}>
-                    <a href={`/api/dept-docs/${d.id}?dept=${dept}&format=docx`}>
-                      <DownloadIcon />
-                    </a>
-                  </Button>
-                  {lib.notion && (
+                  {d.level === "download" && (
+                    <Button asChild size="icon" variant="ghost" className="size-7" aria-label={`Download ${d.title} as Word`}>
+                      <a href={`/api/dept-docs/${d.id}?dept=${dept}&format=docx`}>
+                        <DownloadIcon />
+                      </a>
+                    </Button>
+                  )}
+                  {lib.canShare && <ShareButton dept={dept} kind="doc" id={d.id} name={d.title} />}
+                  {lib.notion && d.level === "download" && (
                     <Button
                       size="xs"
                       variant="ghost"
@@ -281,7 +290,7 @@ export function DocLibrary({ dept }: { dept: string }) {
                       Notion
                     </Button>
                   )}
-                  {lib.canWrite && (
+                  {lib.canWrite && d.level === "download" && (
                     <>
                       <Button size="icon" variant="ghost" className="size-7" aria-label={`Duplicate ${d.title}`} onClick={() => doIt(() => A.duplicateDocAction(dept, d.id), "Copied")}>
                         <CopyIcon />
@@ -301,6 +310,8 @@ export function DocLibrary({ dept }: { dept: string }) {
                 <span className="text-xs text-muted-foreground">
                   {size(f.size)} · {f.by ?? ""} · {f.createdAt.slice(0, 10)}
                 </span>
+                {!lib.full && <LevelBadge level={f.level} />}
+                {lib.canShare && <ShareButton dept={dept} kind="file" id={f.id} name={f.name} />}
                 {lib.canWrite && (
                   <span className="ml-auto flex items-center gap-1">
                     {moveTo("file", f.id)}

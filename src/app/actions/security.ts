@@ -3,7 +3,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { PREVIEW_COOKIE, realViewer, requireViewer } from "@/server/auth";
+import { PREVIEW_COOKIE, realViewer, requireViewer, secure } from "@/server/auth";
 import { wrap } from "@/server/action-result";
 import { audit } from "@/server/workflow";
 import { can, loadUser } from "@/server/users";
@@ -32,7 +32,7 @@ export async function startPreviewAction(userId: string, role?: Role | null) {
   const target = await loadUser(userId);
   if (!target?.active) return { ok: false as const, error: "Choose an active person." };
   if (target.id === me.id) return { ok: false as const, error: "That is you." };
-  (await cookies()).set(PREVIEW_COOKIE, `${target.id}:${role && target.roles.includes(role) ? role : ""}`, { httpOnly: true, sameSite: "lax", path: "/", maxAge: 4 * 3600 });
+  (await cookies()).set(PREVIEW_COOKIE, `${target.id}:${role && target.roles.includes(role) ? role : ""}`, { httpOnly: true, sameSite: "lax", secure: secure(), path: "/", maxAge: 4 * 3600 });
   await audit({ actor: me }, { action: "user.preview", summary: `${me.name} viewed the app as ${target.name}${role ? ` (${ROLE_LABELS[role]})` : ""}` });
   revalidatePath("/", "layout");
   return { ok: true as const };

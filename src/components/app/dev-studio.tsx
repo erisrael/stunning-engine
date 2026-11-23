@@ -51,6 +51,7 @@ import { deptViewPath } from "@/lib/work";
 import { cn } from "@/lib/utils";
 import { DocLibrary } from "./doc-library";
 import { SpecDocument } from "./spec-document";
+import { LevelBadge, ProtectedView } from "./dept-access";
 import { resolveRepoPath, specDocumentHtml, type SpecDocInput } from "@/lib/spec-doc";
 
 type R = { ok: boolean; error?: string; data?: unknown };
@@ -1148,7 +1149,7 @@ function DocEditor({ dept, id, people, workspace, onBack }: { dept: string; id: 
           </Badge>
         )}
         <div className="inline-flex rounded-md border bg-muted/40 p-0.5" role="group" aria-label="How to show the document" data-doc-modes>
-          {DOC_MODES.map((m) => (
+          {DOC_MODES.filter((m) => m.key === "read" || d.canDownload || d.canEdit).map((m) => (
             <button
               key={m.key}
               type="button"
@@ -1161,7 +1162,8 @@ function DocEditor({ dept, id, people, workspace, onBack }: { dept: string; id: 
             </button>
           ))}
         </div>
-        <span className="ml-auto flex gap-2">
+        {!d.canDownload && <LevelBadge level="view" />}
+        <span className={cn("ml-auto flex gap-2", !d.canDownload && "hidden")}>
           <Button asChild size="sm" variant="outline">
             <a href={`/api/dept-docs/${d.id}?dept=${dept}&format=docx`} data-doc-export="docx">
               <DownloadIcon /> Word
@@ -1190,7 +1192,13 @@ function DocEditor({ dept, id, people, workspace, onBack }: { dept: string; id: 
         )}
         {mode !== "edit" && (
           <div className={cn("rounded-xl bg-muted/40 p-2 sm:p-5", mode === "split" && "lg:h-[calc(100vh-14rem)] lg:overflow-auto")} data-doc-formatted>
-            <SpecDocument doc={spec} />
+            {d.canDownload ? (
+              <SpecDocument doc={spec} />
+            ) : (
+              <ProtectedView dept={dept} targetKind="doc" targetId={d.id} viewer={d.viewer}>
+                <SpecDocument doc={spec} />
+              </ProtectedView>
+            )}
           </div>
         )}
       </div>

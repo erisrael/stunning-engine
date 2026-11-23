@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { safeNext } from "@/lib/safe-path";
 import { revalidatePath } from "next/cache";
 import { requireViewer, setActiveRole, signOut } from "@/server/auth";
 import { afterFirstFactor, newPasswordProblem, passwordSignIn, setPassword } from "@/server/signin";
@@ -15,7 +16,7 @@ export async function loginAction(_prev: { error?: string } | undefined, formDat
   const password = String(formData.get("password") ?? "");
   const next = String(formData.get("next") ?? "/dashboard");
   if (!email || !password) return { error: "Enter your email and password." };
-  let target = next.startsWith("/") && !next.startsWith("//") ? next : "/dashboard";
+  let target = safeNext(next);
   if (target === "/dashboard") {
     const row = await get<{ prefs: string }>("SELECT prefs FROM users WHERE lower(email) = lower(?)", email);
     const landing = (JSON.parse(row?.prefs ?? "{}") as { defaultLanding?: string }).defaultLanding;

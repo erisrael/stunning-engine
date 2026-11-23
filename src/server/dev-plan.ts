@@ -221,7 +221,7 @@ export async function msProjectXml(user: AppUser, d: string, projectId: string |
   const a = await workAccess(user, d);
   const projects = await listProjects(user, a.dept);
   const p = projectId ? projects.find((x) => x.id === projectId) : null;
-  const { tasks } = await listTasks(user, a.dept, { open: false, ...(projectId ? { project: projectId } : {}) });
+  const { tasks } = await listTasks(user, a.dept, { open: false, exportable: true, ...(projectId ? { project: projectId } : {}) });
   const dated = tasks.filter((t) => t.start_date || t.due_date);
   const uidOf = new Map(dated.map((t, i) => [t.id, i + 1]));
   const day = (s: string | null, fb: string) => `${s ?? fb}T08:00:00`;

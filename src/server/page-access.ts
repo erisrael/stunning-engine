@@ -14,6 +14,7 @@ const dept = (key: string, view?: string) => async (u: AppUser) => {
   if (!a) return false;
   if (view === "configure") return a.rights.configure;
   if (view === "team" || view === "analyze") return a.rights.seeAll;
+  if (view === "access") return (await import("./dept-access")).managesAccess(a, u);
   return true;
 };
 

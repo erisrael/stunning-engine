@@ -136,6 +136,7 @@ async function main() {
   write("docs/b.md", "Changed after it was deleted.\n");
   s = await syncRepoDocs({ root });
   check("a deleted document is not brought back", !s.added.includes("docs/b.md") && !(await get("SELECT 1 AS x FROM dept_docs WHERE id = ?", bId)) && Number((await get<{ n: number }>("SELECT COUNT(*) AS n FROM dept_docs WHERE title = 'Beta notes'"))?.n) === 0);
+  check("the project's list shares the handbook with the whole department", (JSON.parse(fs.readFileSync("docs/library.json", "utf8")) as { shareWithTeam?: string[] }).shareWithTeam?.includes("Dev team handbook") === true);
   check("no manifest, nothing to do", (await syncRepoDocs({ root: path.join(root, "nowhere") })).added.length === 0);
   fs.rmSync(root, { recursive: true, force: true });
 

@@ -12,6 +12,7 @@ import { audit, WorkflowError } from "./workflow";
 import type { AppUser } from "./users";
 import { DOC_KINDS, DOC_MAX_CHARS, DOC_STATUS_LABELS, docRef } from "@/lib/dev-docs";
 import { markdownTitle, specDocumentHtml, splitFrontMatter } from "@/lib/spec-doc";
+import { fullAccess, itemLevel, looksLikeScraper, managesAccess, memberScope, noteRead, recordEvent, type Level } from "./dept-access";
 
 const MAX_FILE = 15 * 1024 * 1024;
 const clean = (s: unknown, n: number) => String(s ?? "").replace(/[\\/:*?"<>|\u0000-\u001f]+/g, " ").trim().slice(0, n);
@@ -27,37 +28,56 @@ async function folderOf(dept: string, id: string | null | undefined) {
 
 export async function library(user: AppUser, d: string, folderId: string | null) {
   const a = await workAccess(user, d);
-  const folders = await all<{ id: string; parent_id: string | null; name: string }>("SELECT id, parent_id, name FROM dept_folders WHERE dept = ? ORDER BY name", a.dept);
-  const counts = await all<{ folder_id: string | null; docs: number }>("SELECT folder_id, COUNT(*) AS docs FROM dept_docs WHERE dept = ? GROUP BY folder_id", a.dept);
-  const fcounts = await all<{ folder_id: string | null; files: number }>("SELECT folder_id, COUNT(*) AS files FROM dept_folder_files WHERE dept = ? GROUP BY folder_id", a.dept);
+  const scope = await memberScope(a, user);
+  const allFolders = await all<{ id: string; parent_id: string | null; name: string }>("SELECT id, parent_id, name FROM dept_folders WHERE dept = ? ORDER BY name", a.dept);
+  // Every document and file with its folder and owner, to work out what a member may see.
+  const allDocs = await all<{ id: string; folder_id: string | null; created_by: string | null }>("SELECT id, folder_id, created_by FROM dept_docs WHERE dept = ?", a.dept);
+  const allFiles = await all<{ id: string; folder_id: string | null; uploaded_by: string | null }>("SELECT id, folder_id, uploaded_by FROM dept_folder_files WHERE dept = ?", a.dept);
+  const docLevel = (x: { id: string; folder_id: string | null; created_by: string | null }): Level | null => (scope.full ? "download" : scope.item("doc", x.id, x.folder_id, x.created_by));
+  const fileLevel = (x: { id: string; folder_id: string | null; uploaded_by: string | null }): Level | null => (scope.full ? "download" : scope.item("file", x.id, x.folder_id, x.uploaded_by));
+  const seenDocs = new Map(allDocs.map((x) => [x.id, docLevel(x)] as const).filter(([, l]) => l));
+  const seenFiles = new Map(allFiles.map((x) => [x.id, fileLevel(x)] as const).filter(([, l]) => l));
+  const showFolders = scope.full ? null : scope.visibleFolders([...allDocs.filter((x) => seenDocs.has(x.id)), ...allFiles.filter((x) => seenFiles.has(x.id))]);
+  const folders = showFolders ? allFolders.filter((f) => showFolders.has(f.id)) : allFolders;
+  if (folderId && !folders.some((f) => f.id === folderId)) throw new WorkflowError("FORBIDDEN", "This folder has not been shared with you. Ask your team lead or head.");
   const current = folderId ? (folders.find((f) => f.id === folderId) ?? null) : null;
   const path: { id: string; name: string }[] = [];
   for (let f = current; f; f = folders.find((x) => x.id === f!.parent_id) ?? null) path.unshift({ id: f.id, name: f.name });
-  const docs = await all<{ id: string; kind: string; title: string; status: string; version: number; updated_at: string; author: string | null; pinned: number; source: string | null }>(
-    `SELECT x.id, x.kind, x.title, x.status, x.version, x.updated_at, u.name AS author, CASE WHEN p.doc_id IS NULL THEN 0 ELSE 1 END AS pinned, s.source
-     FROM dept_docs x LEFT JOIN users u ON u.id = x.created_by LEFT JOIN dept_doc_pins p ON p.doc_id = x.id AND p.user_id = ? LEFT JOIN dept_doc_sources s ON s.doc_id = x.id
-     WHERE x.dept = ? AND ${current ? "x.folder_id = ?" : "x.folder_id IS NULL"} ORDER BY x.title`,
-    user.id,
-    a.dept,
-    ...(current ? [current.id] : []),
-  );
-  const files = await all<{ id: string; name: string; mime: string; size: number; created_at: string; by: string | null }>(
-    `SELECT f.id, f.name, f.mime, f.size, f.created_at, u.name AS by FROM dept_folder_files f LEFT JOIN users u ON u.id = f.uploaded_by WHERE f.dept = ? AND ${current ? "f.folder_id = ?" : "f.folder_id IS NULL"} ORDER BY f.name`,
-    a.dept,
-    ...(current ? [current.id] : []),
-  );
-  const pins = await all<{ id: string; title: string; folder_id: string | null }>("SELECT x.id, x.title, x.folder_id FROM dept_doc_pins p JOIN dept_docs x ON x.id = p.doc_id WHERE p.user_id = ? AND x.dept = ? ORDER BY x.title", user.id, a.dept);
-  const recent = await all<{ id: string; title: string; updated_at: string }>("SELECT id, title, updated_at FROM dept_docs WHERE dept = ? ORDER BY updated_at DESC LIMIT 6", a.dept);
+  const docs = (
+    await all<{ id: string; kind: string; title: string; status: string; version: number; updated_at: string; author: string | null; pinned: number; source: string | null }>(
+      `SELECT x.id, x.kind, x.title, x.status, x.version, x.updated_at, u.name AS author, CASE WHEN p.doc_id IS NULL THEN 0 ELSE 1 END AS pinned, s.source
+       FROM dept_docs x LEFT JOIN users u ON u.id = x.created_by LEFT JOIN dept_doc_pins p ON p.doc_id = x.id AND p.user_id = ? LEFT JOIN dept_doc_sources s ON s.doc_id = x.id
+       WHERE x.dept = ? AND ${current ? "x.folder_id = ?" : "x.folder_id IS NULL"} ORDER BY x.title`,
+      user.id,
+      a.dept,
+      ...(current ? [current.id] : []),
+    )
+  ).filter((x) => seenDocs.has(x.id));
+  const files = (
+    await all<{ id: string; name: string; mime: string; size: number; created_at: string; by: string | null }>(
+      `SELECT f.id, f.name, f.mime, f.size, f.created_at, u.name AS by FROM dept_folder_files f LEFT JOIN users u ON u.id = f.uploaded_by WHERE f.dept = ? AND ${current ? "f.folder_id = ?" : "f.folder_id IS NULL"} ORDER BY f.name`,
+      a.dept,
+      ...(current ? [current.id] : []),
+    )
+  ).filter((f) => seenFiles.has(f.id));
+  const pins = (await all<{ id: string; title: string; folder_id: string | null }>("SELECT x.id, x.title, x.folder_id FROM dept_doc_pins p JOIN dept_docs x ON x.id = p.doc_id WHERE p.user_id = ? AND x.dept = ? ORDER BY x.title", user.id, a.dept)).filter((p) => seenDocs.has(p.id));
+  const recent = (await all<{ id: string; title: string; updated_at: string }>("SELECT id, title, updated_at FROM dept_docs WHERE dept = ? ORDER BY updated_at DESC LIMIT 60", a.dept)).filter((r) => seenDocs.has(r.id)).slice(0, 6);
+  // Counts beside each folder: only what this person may see.
+  const count = (fid: string, of: Map<string, Level | null>, rows: { id: string; folder_id: string | null }[]) => rows.filter((x) => x.folder_id === fid && of.has(x.id)).length;
   return {
     folder: current ? { id: current.id, name: current.name, parentId: current.parent_id } : null,
     path,
-    tree: folders.map((f) => ({ id: f.id, parentId: f.parent_id, name: f.name, docs: Number(counts.find((c) => c.folder_id === f.id)?.docs ?? 0), files: Number(fcounts.find((c) => c.folder_id === f.id)?.files ?? 0) })) as Folder[],
+    tree: folders.map((f) => ({ id: f.id, parentId: f.parent_id, name: f.name, docs: count(f.id, seenDocs, allDocs), files: count(f.id, seenFiles, allFiles) })) as Folder[],
     subfolders: folders.filter((f) => f.parent_id === (current?.id ?? null)).map((f) => ({ id: f.id, name: f.name })),
-    docs: docs.map((x) => ({ id: x.id, kind: x.kind, kindLabel: DOC_KINDS.find((k) => k.key === x.kind)?.label ?? "Document", title: x.title, status: DOC_STATUS_LABELS[x.status] ?? x.status, version: Number(x.version), updatedAt: x.updated_at, author: x.author ?? (x.source ? "Repository" : null), pinned: !!Number(x.pinned), source: x.source })),
-    files: files.map((f) => ({ id: f.id, name: f.name, mime: f.mime, size: Number(f.size), createdAt: f.created_at, by: f.by })),
+    docs: docs.map((x) => ({ id: x.id, kind: x.kind, kindLabel: DOC_KINDS.find((k) => k.key === x.kind)?.label ?? "Document", title: x.title, status: DOC_STATUS_LABELS[x.status] ?? x.status, version: Number(x.version), updatedAt: x.updated_at, author: x.author ?? (x.source ? "Repository" : null), pinned: !!Number(x.pinned), source: x.source, level: seenDocs.get(x.id)! })),
+    files: files.map((f) => ({ id: f.id, name: f.name, mime: f.mime, size: Number(f.size), createdAt: f.created_at, by: f.by, level: seenFiles.get(f.id)! })),
     pins: pins.map((p) => ({ id: p.id, title: p.title })),
     recent: recent.map((r) => ({ id: r.id, title: r.title, updatedAt: r.updated_at })),
     canWrite: !a.readOnly,
+    // Heads and leads see everything and share; members see what is theirs or shared with them.
+    full: scope.full,
+    canShare: managesAccess(a, user),
+    folderLevel: current && !scope.full ? scope.folderOf(current.id) : null,
     notion: (await (await import("./notion")).notionStatus()).connected,
   };
 }
@@ -95,6 +115,12 @@ export async function deleteFolder(user: AppUser, d: string, id: string) {
 
 export async function moveItem(user: AppUser, d: string, input: { kind: "doc" | "file"; id: string; folderId: string | null }) {
   const a = await workAccess(user, d, "write");
+  // Members move only their own documents and files, into folders they can reach.
+  if (!fullAccess(a, user)) {
+    const own = await get(`SELECT 1 AS x FROM ${input.kind === "doc" ? "dept_docs WHERE created_by" : "dept_folder_files WHERE uploaded_by"} = ? AND id = ?`, user.id, input.id);
+    if (!own) throw new WorkflowError("FORBIDDEN", "Only heads and leads move what others made.");
+    if (input.folderId && !(await memberScope(a, user)).folderOf?.(input.folderId)) throw new WorkflowError("FORBIDDEN", "That folder has not been shared with you.");
+  }
   const f = await folderOf(a.dept, input.folderId);
   const r = await run(`UPDATE ${input.kind === "doc" ? "dept_docs" : "dept_folder_files"} SET folder_id = ? WHERE id = ? AND dept = ?`, f?.id ?? null, input.id, a.dept);
   if (!r.changes) throw new WorkflowError("NOT_FOUND", "Not found.");
@@ -111,11 +137,24 @@ export async function uploadFile(user: AppUser, d: string, input: { folderId: st
   return id;
 }
 
-export async function readFile(user: AppUser, id: string) {
+// A file, for someone it is shared with. View only: shown in the browser when it can be (images, PDF, text) and
+// never as a download; requests from scraping tools are refused and reported.
+export const VIEWABLE = /^(image\/(png|jpe?g|gif|webp)|application\/pdf|text\/plain)/;
+export async function readFile(user: AppUser, id: string, meta: { download?: boolean; userAgent?: string | null; ip?: string | null } = {}) {
   const f = await get<{ dept: string; name: string; mime: string; data: string }>("SELECT dept, name, mime, data FROM dept_folder_files WHERE id = ?", id);
   if (!f) return null;
-  await workAccess(user, f.dept);
-  return { name: f.name, mime: f.mime, data: Buffer.from(f.data, "base64") };
+  const a = await workAccess(user, f.dept);
+  const level = await itemLevel(user, a, "file", id, "view");
+  // A scraping tool on something that may only be viewed is refused and reported.
+  if (level === "view" && looksLikeScraper(meta.userAgent)) {
+    await recordEvent(user, a.dept, { kind: "scraper_client", targetKind: "file", targetId: id, title: f.name, userAgent: meta.userAgent, ip: meta.ip });
+    throw new WorkflowError("FORBIDDEN", "Open it in the app.");
+  }
+  if (level === "view" && (meta.download || !VIEWABLE.test(f.mime))) {
+    await recordEvent(user, a.dept, { kind: "download_attempt", targetKind: "file", targetId: id, title: f.name, detail: "Download of a view-only file refused", userAgent: meta.userAgent, ip: meta.ip });
+    throw new WorkflowError("FORBIDDEN", "You may only view this file in the app. Ask your team lead or head for download access.");
+  }
+  return { name: f.name, mime: f.mime, data: Buffer.from(f.data, "base64"), level };
 }
 
 export async function deleteFile(user: AppUser, d: string, id: string) {
@@ -135,7 +174,7 @@ export async function renameFile(user: AppUser, d: string, id: string, name: str
 
 export async function togglePin(user: AppUser, d: string, docId: string) {
   const a = await workAccess(user, d);
-  if (!(await get("SELECT 1 AS x FROM dept_docs WHERE id = ? AND dept = ?", docId, a.dept))) throw new WorkflowError("NOT_FOUND", "Document not found.");
+  await itemLevel(user, a, "doc", docId, "view");
   if (await get("SELECT 1 AS x FROM dept_doc_pins WHERE doc_id = ? AND user_id = ?", docId, user.id)) {
     await run("DELETE FROM dept_doc_pins WHERE doc_id = ? AND user_id = ?", docId, user.id);
     return false;
@@ -146,6 +185,8 @@ export async function togglePin(user: AppUser, d: string, docId: string) {
 
 export async function duplicateDoc(user: AppUser, d: string, id: string) {
   const a = await workAccess(user, d, "write");
+  // A copy takes the text away, so it needs download access.
+  await itemLevel(user, a, "doc", id, "download");
   const r = await get<{ kind: string; title: string; body: string; project_id: string | null; folder_id: string | null }>("SELECT kind, title, body, project_id, folder_id FROM dept_docs WHERE id = ? AND dept = ?", id, a.dept);
   if (!r) throw new WorkflowError("NOT_FOUND", "Document not found.");
   const nid = uid("doc_");
@@ -159,15 +200,24 @@ export async function searchLibrary(user: AppUser, d: string, q: string) {
   const term = String(q ?? "").trim();
   if (term.length < 2) return { docs: [], files: [], folders: [] };
   const like = `%${term}%`;
-  const docs = await all<{ id: string; title: string; body: string; folder_id: string | null }>("SELECT id, title, body, folder_id FROM dept_docs WHERE dept = ? AND (title ILIKE ? OR body ILIKE ?) ORDER BY updated_at DESC LIMIT 30", a.dept, like, like);
+  // Only what this person may see: a member's search never shows what was not shared with them.
+  const scope = await memberScope(a, user);
+  const docs = (await all<{ id: string; title: string; body: string; folder_id: string | null; created_by: string | null }>("SELECT id, title, body, folder_id, created_by FROM dept_docs WHERE dept = ? AND (title ILIKE ? OR body ILIKE ?) ORDER BY updated_at DESC LIMIT 200", a.dept, like, like))
+    .filter((x) => scope.full || scope.item("doc", x.id, x.folder_id, x.created_by))
+    .slice(0, 30);
+  const files = (await all<{ id: string; name: string; folder_id: string | null; uploaded_by: string | null }>("SELECT id, name, folder_id, uploaded_by FROM dept_folder_files WHERE dept = ? AND name ILIKE ? ORDER BY name LIMIT 200", a.dept, like))
+    .filter((x) => scope.full || scope.item("file", x.id, x.folder_id, x.uploaded_by))
+    .slice(0, 30);
+  const reach = scope.full ? null : scope.visibleFolders([...docs, ...files]);
+  const folders = (await all<{ id: string; name: string }>("SELECT id, name FROM dept_folders WHERE dept = ? AND name ILIKE ? ORDER BY name LIMIT 100", a.dept, like)).filter((f) => !reach || reach.has(f.id)).slice(0, 20);
   const low = term.toLowerCase();
   return {
     docs: docs.map((x) => {
       const i = x.body.toLowerCase().indexOf(low);
       return { id: x.id, title: x.title, folderId: x.folder_id, snippet: i >= 0 ? `…${x.body.slice(Math.max(0, i - 60), i + 90).replace(/\s+/g, " ")}…` : null };
     }),
-    files: await all<{ id: string; name: string; folder_id: string | null }>("SELECT id, name, folder_id FROM dept_folder_files WHERE dept = ? AND name ILIKE ? ORDER BY name LIMIT 30", a.dept, like),
-    folders: await all<{ id: string; name: string }>("SELECT id, name FROM dept_folders WHERE dept = ? AND name ILIKE ? ORDER BY name LIMIT 20", a.dept, like),
+    files: files.map((f) => ({ id: f.id, name: f.name, folder_id: f.folder_id })),
+    folders,
   };
 }
 
@@ -474,8 +524,14 @@ async function documentLogo() {
   return { uri: svg ? `data:image/svg+xml;base64,${svg.toString("base64")}` : null, word: null };
 }
 
-export async function exportDoc(user: AppUser, d: string, id: string, format: "docx" | "md" | "html") {
+export async function exportDoc(user: AppUser, d: string, id: string, format: "docx" | "md" | "html", meta: { userAgent?: string | null; ip?: string | null } = {}) {
   const a = await workAccess(user, d);
+  // Exports take the document away: download access. A scraping tool on a view-only document is reported as such.
+  if ((await itemLevel(user, a, "doc", id, "view")) === "view" && looksLikeScraper(meta.userAgent)) {
+    await recordEvent(user, a.dept, { kind: "scraper_client", targetKind: "doc", targetId: id, title: (await get<{ title: string }>("SELECT title FROM dept_docs WHERE id = ?", id))?.title ?? null, userAgent: meta.userAgent, ip: meta.ip });
+    throw new WorkflowError("FORBIDDEN", "Open it in the app.");
+  }
+  await itemLevel(user, a, "doc", id, "download");
   const r = await get<{ title: string; body: string; kind: string; version: number; status: string; updated_at: string; approved_at: string | null; reviewers: string; approvals: string; project: string | null; author: string | null; source: string | null }>(
     `SELECT x.title, x.body, x.kind, x.version, x.status, x.updated_at, x.approved_at, x.reviewers, x.approvals, p.name AS project, u.name AS author, s.source
      FROM dept_docs x LEFT JOIN dept_projects p ON p.id = x.project_id LEFT JOIN users u ON u.id = x.created_by LEFT JOIN dept_doc_sources s ON s.doc_id = x.id

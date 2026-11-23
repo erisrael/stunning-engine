@@ -17,7 +17,7 @@ export const PREVIEW_COOKIE = "myseed_preview";
 
 export type Viewer = AppUser & { activeRole: Role; sessionId: string; previewBy?: { id: string; name: string } };
 
-const secure = () => process.env.NODE_ENV === "production" && process.env.MYSEED_INSECURE_COOKIES !== "1";
+export const secure = () => process.env.NODE_ENV === "production" && process.env.MYSEED_INSECURE_COOKIES !== "1";
 
 // The visitor's address as our own proxy saw it (see client-ip.ts): used for sign-in limits, the sign-in log and
 // the office-network check for attendance, so it must not be something the visitor can write.
@@ -164,7 +164,7 @@ export async function setActiveRole(role: Role) {
   // View as: the switcher shows the viewed person's other role (their own session is never touched).
   if (viewer.previewBy) {
     if (!viewer.roles.includes(role)) throw new Error("They do not hold that role.");
-    (await cookies()).set(PREVIEW_COOKIE, `${viewer.id}:${role}`, { httpOnly: true, sameSite: "lax", path: "/", maxAge: 4 * 3600 });
+    (await cookies()).set(PREVIEW_COOKIE, `${viewer.id}:${role}`, { httpOnly: true, sameSite: "lax", secure: secure(), path: "/", maxAge: 4 * 3600 });
     return;
   }
   if (!viewer.roles.includes(role)) throw new Error("You do not hold that role.");

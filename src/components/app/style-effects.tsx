@@ -53,6 +53,25 @@ function spawn(layer: HTMLElement, style: string, x: number, y: number) {
       el.style.setProperty("--dy", `${Math.round(Math.sin(a) * 22)}px`);
       add(el, 420);
     }
+  } else if (style === "terminal") {
+    // Code glyphs float up from the click, and a few square pixels scatter.
+    const glyphs = ["{", "}", ";", "</>", "0", "1", "=>", "()", "[]", "&&"];
+    for (let i = 0; i < 6; i++) {
+      const el = box({});
+      el.className = "fx-glyph";
+      el.style.setProperty("--dx", `${Math.round((Math.random() - 0.5) * 70)}px`);
+      el.style.setProperty("--dy", `${-20 - Math.round(Math.random() * 45)}px`);
+      el.textContent = glyphs[Math.floor(Math.random() * glyphs.length)]!;
+      add(el, 700);
+    }
+    for (let i = 0; i < 6; i++) {
+      const ang = (Math.PI * 2 * i) / 6;
+      const el = box({});
+      el.className = "fx-pixel fx-pixel-term";
+      el.style.setProperty("--dx", `${Math.round(Math.cos(ang) * 18)}px`);
+      el.style.setProperty("--dy", `${Math.round(Math.sin(ang) * 18)}px`);
+      add(el, 420);
+    }
   } else if (style === "studio") {
     const el = box({});
     el.className = "fx-ripple";

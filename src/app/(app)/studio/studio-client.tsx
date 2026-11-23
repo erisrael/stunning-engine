@@ -505,7 +505,7 @@ function ResourceEditor({
     w.document.write(`<!doctype html><title>${esc(f.title)}</title><style>body{font-family:system-ui,sans-serif;max-width:760px;margin:24px auto;line-height:1.5}h1{font-size:22px}.q{margin:18px 0}.o{margin-left:22px}.k{margin-top:40px;page-break-before:always}</style>
 <h1>${esc(f.title)}</h1><p>${f.durationMin ? `Time: ${f.durationMin} minutes. ` : ""}Total: ${total} points.${f.passMark ? ` Pass mark: ${f.passMark}.` : ""}</p><p>${esc(f.instructions)}</p><p>Name: ______________________</p>
 ${examQs.map((q, i) => `<div class="q"><b>${i + 1}.</b> ${esc(q.stem)} <i>(${q.points} pt)</i>${q.options.map((o, j) => `<div class="o">${String.fromCharCode(65 + j)}. ${esc(o.text)}</div>`).join("")}${q.type === "short" ? "<p>____________________________</p>" : q.type === "essay" ? "<p style='height:120px'></p>" : ""}</div>`).join("")}
-<div class="k"><h2>Answer key</h2>${examQs.map((q, i) => `<p>${i + 1}. ${q.type === "mcq" || q.type === "multi" ? q.options.map((o, j) => (o.correct ? String.fromCharCode(65 + j) : "")).filter(Boolean).join(", ") : q.type === "true_false" ? (q.options.find((o) => o.correct)?.text ?? "") : esc(q.answer ?? "")}</p>`).join("")}</div>`);
+<div class="k"><h2>Answer key</h2>${examQs.map((q, i) => `<p>${i + 1}. ${q.type === "mcq" || q.type === "multi" ? q.options.map((o, j) => (o.correct ? String.fromCharCode(65 + j) : "")).filter(Boolean).join(", ") : q.type === "true_false" ? esc(q.options.find((o) => o.correct)?.text ?? "") : esc(q.answer ?? "")}</p>`).join("")}</div>`);
     w.document.close();
     w.print();
   };

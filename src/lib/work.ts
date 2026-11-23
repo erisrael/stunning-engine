@@ -9,7 +9,7 @@ export const isBuiltInWorkDept = (d: string): d is BuiltInWorkDept => (WORK_DEPT
 export const deptPath = (d: string) => (isBuiltInWorkDept(d) ? `/${d}` : `/d/${d}`);
 
 // Each view of a department has its own address: /dev is the dashboard, /dev/board, /dev/list and so on.
-export const DEPT_VIEWS = ["data", "board", "list", "sheet", "overview", "timeline", "calendar", "projects", "team", "report", "repos", "accounting", "configure", "sprint", "roadmap", "docs", "present", "tools", "analyze", "requests"] as const;
+export const DEPT_VIEWS = ["data", "board", "list", "sheet", "overview", "timeline", "calendar", "projects", "team", "report", "repos", "accounting", "configure", "sprint", "roadmap", "docs", "present", "tools", "analyze", "requests", "insights", "access", "dojo"] as const;
 export type DeptView = (typeof DEPT_VIEWS)[number];
 export const DEPT_VIEW_LABELS: Record<DeptView | "dashboard", string> = {
   dashboard: "Home",
@@ -32,6 +32,9 @@ export const DEPT_VIEW_LABELS: Record<DeptView | "dashboard", string> = {
   data: "Data Manager",
   tools: "Tools",
   analyze: "Analyze",
+  insights: "Team overview",
+  access: "Access",
+  dojo: "Dev dojo",
   requests: "Requests",
 };
 export const deptViewPath = (d: string, view: string, query = "") => `${deptPath(d)}${view && view !== "dashboard" ? `/${view}` : ""}${query ? `?${query.replace(/^[?&]/, "")}` : ""}`;

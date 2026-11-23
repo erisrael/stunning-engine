@@ -22,7 +22,7 @@ import { FinanceAccounting } from "./integrations";
 import { DEPT_VIEW_LABELS, DEPT_VIEWS, deptPath, deptViewPath } from "@/lib/work";
 import { flowHome } from "@/server/dept-flow";
 
-const TABS = ["dashboard", "data", "board", "list", "sheet", "overview", "timeline", "team", "report", "projects", "calendar", "configure", "repos", "accounting", "sprint", "roadmap", "docs", "present", "tools", "analyze", "requests"] as const;
+const TABS = ["dashboard", "data", "board", "list", "sheet", "overview", "timeline", "team", "report", "projects", "calendar", "configure", "repos", "accounting", "sprint", "roadmap", "docs", "present", "tools", "analyze", "requests", "insights", "access", "dojo"] as const;
 const SORTS = ["updated", "due", "priority", "code", "title", "status"] as const;
 
 // The Dev and Marketing sections share this page; their vocabulary, workflow and rights come from the configuration.
@@ -146,12 +146,31 @@ export async function WorkPage({ dept, searchParams, view }: { dept: WorkDept; s
   }
   if ((tab === "sprint" && !cfg.features.sprints) || ((tab === "roadmap" || tab === "docs") && !access.view)) redirect(deptViewPath(dept, "board"));
   if (tab === "tools" && !access.view) redirect(deptViewPath(dept, "board"));
-  if (tab === "repos" || tab === "accounting" || tab === "sprint" || tab === "roadmap" || tab === "docs" || tab === "tools" || tab === "analyze") {
+  if (tab === "repos" || tab === "accounting" || tab === "sprint" || tab === "roadmap" || tab === "docs" || tab === "tools" || tab === "analyze" || tab === "insights" || tab === "access" || tab === "dojo") {
     const projects = await listProjects(viewer, dept);
     const ds = await import("@/server/dev-studio");
     const { SprintView, RoadmapView, DocsView } = await import("./dev-studio");
     const panel =
-      tab === "analyze" ? (
+      tab === "dojo" ? (
+        await (async () => {
+          const { DevDojo } = await import("./dev-dojo");
+          return <DevDojo viewerId={viewer.id} name={viewer.name} />;
+        })()
+      ) : tab === "access" ? (
+        await (async () => {
+          const { managesAccess } = await import("@/server/dept-access");
+          if (!managesAccess(access as never, viewer)) redirect(deptViewPath(dept, "board"));
+          const { DeptAccessView } = await import("./dept-access");
+          return <DeptAccessView dept={dept} />;
+        })()
+      ) : tab === "insights" ? (
+        await (async () => {
+          const { deptOverview } = await import("@/server/dept-overview");
+          const { DeptOverview } = await import("./dept-overview");
+          const data = await deptOverview(viewer, dept, { project: sp.project, person: sp.person, type: sp.type, priority: sp.priority, sprint: sp.sprint, period: sp.period ? Number(sp.period) : null });
+          return <DeptOverview dept={dept} data={data} />;
+        })()
+      ) : tab === "analyze" ? (
         await (async () => {
           const { teamInsights } = await import("@/server/team-insights");
           const { aiAvailable } = await import("@/server/assistant-ai");
@@ -246,6 +265,11 @@ export async function WorkPage({ dept, searchParams, view }: { dept: WorkDept; s
           timer={timer}
           extraTabs={extraTabs}
           flow={flow}
+          summary={await (async () => {
+            const { deptOverview } = await import("@/server/dept-overview");
+            const { DeptOverviewStrip } = await import("./dept-overview");
+            return <DeptOverviewStrip dept={dept} data={await deptOverview(viewer, dept, { period: 30 })} />;
+          })()}
           dashboard={<DeptDashboardView viewer={viewer} dept={dept} sp={sp} />}
         />
       </div>

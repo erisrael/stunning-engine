@@ -59,6 +59,14 @@ export const UI_STYLES = [
     swatch: ["#fffbe8", "#111111", "#ffd400", "#e63946"],
     motion: "lively",
   },
+  {
+    key: "terminal",
+    label: "Dev Terminal",
+    vibe: "Developer, alive",
+    description: "A living terminal: phosphor green on black, monospace everywhere, scanlines, typed headings with a blinking cursor, falling code and pixel bursts.",
+    swatch: ["#06100b", "#00ff9c", "#ffcc33", "#0f2a1e"],
+    motion: "lively",
+  },
 ] as const;
 
 export type UiStyleKey = (typeof UI_STYLES)[number]["key"];

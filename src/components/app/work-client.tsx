@@ -100,6 +100,7 @@ export function WorkClient({
   openTaskId,
   showArchived,
   dashboard,
+  summary,
   flow = null,
   extraTabs = [],
   panel,
@@ -115,7 +116,7 @@ export function WorkClient({
   // The saved plan of each task (Tools, Epics and baseline), drawn under its bar on the Timeline.
   baselines?: Record<string, { start: string | null; due: string | null; savedAt: string }>;
   dept: WorkDept;
-  tab: "data" | "dashboard" | "board" | "list" | "sheet" | "overview" | "timeline" | "team" | "report" | "projects" | "calendar" | "repos" | "accounting" | "sprint" | "roadmap" | "docs" | "tools" | "analyze";
+  tab: "data" | "dashboard" | "board" | "list" | "sheet" | "overview" | "timeline" | "team" | "report" | "projects" | "calendar" | "repos" | "accounting" | "sprint" | "roadmap" | "docs" | "tools" | "analyze" | "insights" | "access" | "dojo";
   filter: TaskFilter;
   tasks: Task[];
   projects: Project[];
@@ -126,6 +127,8 @@ export function WorkClient({
   openTaskId: string | null;
   showArchived: boolean;
   dashboard?: React.ReactNode;
+  // The team overview strip, above the flow on Home.
+  summary?: React.ReactNode;
   // Home of a department with a flow: the member's board and the lead desk, above the dashboard.
   flow?: FlowHome | null;
   // Tabs a department adds (GitHub repositories, accounting) and the panel for the open one.
@@ -323,6 +326,7 @@ export function WorkClient({
 
       {tab !== "projects" && tab !== "dashboard" && tab !== "team" && tab !== "report" && !panel && <ViewOptions dept={dept} tab={tab} config={cfg} access={access} views={views} people={people} projects={projects} />}
 
+      {tab === "dashboard" && summary}
       {tab === "dashboard" && flow && <DeptFlowHome data={flow} onOpen={openById} />}
       {tab === "dashboard" && dashboard}
       {panel}

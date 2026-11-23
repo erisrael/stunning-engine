@@ -26,6 +26,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { TaskPromptButton } from "./task-prompt";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -230,6 +231,7 @@ export function TaskDialog({
             {task && <Tone config={cfg} status={task.status} />}
             {pendingRequest && <Badge variant="secondary">Request from {task?.requested_by_name ?? "someone"}</Badge>}
             {task?.parent_code && <Badge variant="outline">Subtask of {task.parent_code}</Badge>}
+            {task && <TaskPromptButton dept={dept} taskId={task.id} code={task.code} />}
           </DialogTitle>
           {task && (
             <DialogDescription className="flex flex-wrap items-center gap-2">

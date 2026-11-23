@@ -75,9 +75,10 @@ export async function listProjects(user: AppUser, d: string, f: { q?: string | n
     params.push(like, like, like);
   }
   // Without "see everyone's tasks", people see the projects they lead or have tasks in.
+  // Projects shared with them by a head or lead count too (src/server/dept-access.ts).
   if (!a.rights.seeAll) {
-    where.push("(p.lead_id = ? OR EXISTS (SELECT 1 FROM dept_tasks t WHERE t.project_id = p.id AND (t.assignee_id = ? OR t.reporter_id = ?)))");
-    params.push(user.id, user.id, user.id);
+    where.push("(p.lead_id = ? OR EXISTS (SELECT 1 FROM dept_tasks t WHERE t.project_id = p.id AND (t.assignee_id = ? OR t.reporter_id = ?)) OR EXISTS (SELECT 1 FROM dept_access_grants g WHERE g.dept = p.dept AND g.target_kind = 'project' AND g.target_id = p.id AND g.user_id IN (?, '*')))");
+    params.push(user.id, user.id, user.id, user.id);
   }
   const today = nowIso().slice(0, 10);
   const rows = await all<Record<string, unknown>>(
@@ -317,6 +318,8 @@ export type TaskFilter = {
   due?: "overdue" | "week" | "none" | null;
   sprint?: string | null; // a sprint id, "current" or "none"
   request?: "pending" | null;
+  // For exports: tasks shared to view only are left out.
+  exportable?: boolean;
   sort?: "updated" | "due" | "priority" | "code" | "title" | "status";
   dir?: "asc" | "desc";
 };
@@ -377,10 +380,14 @@ export async function listTasks(user: AppUser, d: string, f: TaskFilter = {}): P
   const where = ["t.dept = ?"];
   const params: (string | number)[] = [dp];
   if (!a.rights.seeAll) {
-    // People who check a stage of the flow (testers) also see the tasks in it.
+    // People who check a stage of the flow (testers) also see the tasks in it, and everyone sees the tasks of the
+    // projects a head or lead shared with them (for an export, only those shared to view and download).
     const checks = checkedStatuses(a, user);
-    where.push(`(t.assignee_id = ? OR t.reporter_id = ? OR t.reviewer_id = ?${checks.length ? ` OR t.status IN (${placeholders(checks.length)})` : ""})`);
-    params.push(user.id, user.id, user.id, ...checks);
+    const levels = f.exportable ? "('download')" : "('view','download')";
+    where.push(
+      `(t.assignee_id = ? OR t.reporter_id = ? OR t.reviewer_id = ?${checks.length ? ` OR t.status IN (${placeholders(checks.length)})` : ""} OR t.project_id IN (SELECT g.target_id FROM dept_access_grants g WHERE g.dept = t.dept AND g.target_kind = 'project' AND g.user_id IN (?, '*') AND g.level IN ${levels}))`,
+    );
+    params.push(user.id, user.id, user.id, ...checks, user.id);
   }
   if (f.status?.length) {
     where.push(`t.status IN (${placeholders(f.status.length)})`);
@@ -452,7 +459,8 @@ export async function getTask(user: AppUser, d: string, id: string) {
   const a = await workAccess(user, dp);
   const r = await get<TaskRow>(`${TASK_SELECT} WHERE t.id = ? AND t.dept = ?`, id, dp);
   if (!r) throw new WorkflowError("NOT_FOUND", "Task not found.");
-  if (!a.rights.seeAll && ![r.assignee_id, r.reporter_id, r.reviewer_id].includes(user.id) && !checkedStatuses(a, user).includes(r.status)) throw new WorkflowError("FORBIDDEN", "Not your task.");
+  if (!a.rights.seeAll && ![r.assignee_id, r.reporter_id, r.reviewer_id].includes(user.id) && !checkedStatuses(a, user).includes(r.status) && !(r.project_id && (await get("SELECT 1 AS x FROM dept_access_grants WHERE dept = ? AND target_kind = 'project' AND target_id = ? AND user_id IN (?, '*')", dp, r.project_id, user.id))))
+    throw new WorkflowError("FORBIDDEN", "Not your task.");
   return (await withLinks([r]))[0]!;
 }
 

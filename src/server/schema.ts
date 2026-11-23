@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 88;
+export const SCHEMA_VERSION = 89;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -4347,6 +4347,42 @@ CREATE TABLE IF NOT EXISTS dept_doc_sources (
   PRIMARY KEY (dept, source)
 );
 CREATE INDEX IF NOT EXISTS idx_dept_doc_sources_doc ON dept_doc_sources(doc_id);
+-- v89: what members of a department may see (src/server/dept-access.ts). Heads, leads and Admin see everything; a
+-- member sees their own work and what a head or lead shares with them: a folder (and everything in it), a document,
+-- a file or a project's tasks, to view only or to view and download. user_id '*' shares with the whole department.
+CREATE TABLE IF NOT EXISTS dept_access_grants (
+  id TEXT PRIMARY KEY,
+  dept TEXT NOT NULL,
+  target_kind TEXT NOT NULL,
+  target_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  level TEXT NOT NULL DEFAULT 'view',
+  granted_by TEXT,
+  created_at TEXT NOT NULL,
+  UNIQUE (dept, target_kind, target_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_dept_access_grants_user ON dept_access_grants(dept, user_id);
+-- v89: attempts to copy, print, save or scrape what someone may only view, and reading in bulk; the heads and leads
+-- are told and review them in the department's Access page.
+CREATE TABLE IF NOT EXISTS dept_access_events (
+  id TEXT PRIMARY KEY,
+  dept TEXT NOT NULL,
+  user_id TEXT,
+  kind TEXT NOT NULL,
+  target_kind TEXT,
+  target_id TEXT,
+  title TEXT,
+  detail TEXT,
+  user_agent TEXT,
+  ip TEXT,
+  repeats INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  last_at TEXT NOT NULL,
+  reviewed_by TEXT,
+  reviewed_at TEXT,
+  outcome TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_dept_access_events ON dept_access_events(dept, reviewed_at, last_at);
 
 `;
 
@@ -4634,4 +4670,6 @@ export const TABLES = [
   "fun_models",
   "fun_npc_memory",
   "dept_doc_sources",
+  "dept_access_grants",
+  "dept_access_events",
 ] as const;

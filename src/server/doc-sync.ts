@@ -18,6 +18,8 @@ import { markdownTitle } from "@/lib/spec-doc";
 
 export type LibraryManifest = {
   dept?: string;
+  // Top-level folders shared once with the whole department to read (view only), such as the team's handbook.
+  shareWithTeam?: string[];
   documents: { file: string; folder?: string; kind?: string; title?: string }[];
 };
 
@@ -116,6 +118,14 @@ export async function syncRepoDocs(opts: { root?: string; manifest?: string } = 
       await run("UPDATE dept_doc_sources SET file_hash = ?, body_hash = ?, title = ?, synced_at = ? WHERE dept = ? AND source = ?", fileHash, fileHash, title, now, dept, source);
       result.updated.push(source);
     });
+  }
+  // Folders the whole department reads: shared once, view only (a head or lead may change it afterwards).
+  for (const name of manifest.shareWithTeam ?? []) {
+    const folder = await get<{ id: string }>("SELECT id FROM dept_folders WHERE dept = ? AND name = ? AND parent_id IS NULL", dept, name);
+    const flag = `docs_team_share:${dept}:${name}`;
+    if (!folder || (await get("SELECT 1 AS x FROM settings WHERE key = ?", flag))) continue;
+    await run("INSERT INTO dept_access_grants (id, dept, target_kind, target_id, user_id, level, granted_by, created_at) VALUES (?, ?, 'folder', ?, '*', 'view', NULL, ?) ON CONFLICT DO NOTHING", uid("grt_"), dept, folder.id, nowIso());
+    await run("INSERT INTO settings (key, value, updated_at) VALUES (?, 'true', ?) ON CONFLICT (key) DO NOTHING", flag, nowIso());
   }
   if (result.added.length || result.updated.length)
     await audit(

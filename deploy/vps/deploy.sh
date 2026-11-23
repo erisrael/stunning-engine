@@ -14,7 +14,7 @@
 set -euo pipefail
 ROOT="${APP_ROOT:?APP_ROOT is not set}"
 cd "$ROOT"
-KEEP=4
+KEEP=2
 PROJECT=myseed-cm
 
 val() { if [ -f "$ROOT/.env" ]; then grep -m1 "^$1=" "$ROOT/.env" | cut -d= -f2- | sed -e "s/^'\(.*\)'$/\1/" || true; fi; }
@@ -45,7 +45,7 @@ prune() {
   docker image prune -f >/dev/null 2>&1 || true
   # Every build leaves its layers in the build cache (several GB a deploy): keep the newest few GB, which is what
   # the next build reuses, and let the rest go.
-  docker builder prune -af --max-used-space 8gb >/dev/null 2>&1 || docker builder prune -af --filter "until=48h" >/dev/null 2>&1 || true
+  docker builder prune -af --max-used-space 4gb >/dev/null 2>&1 || docker builder prune -af --filter "until=48h" >/dev/null 2>&1 || true
 }
 start_release() {
   local dir="$1" prev="${2:-}"

@@ -38,6 +38,7 @@ import { EthiopianDatePicker } from "@/components/app/ethiopian-picker";
 import { Assistant } from "@/components/app/assistant";
 import { FunMode } from "@/components/app/fun/fun-mode";
 import { StyleEffects } from "@/components/app/style-effects";
+import { TerminalAmbient } from "@/components/app/terminal-ambient";
 import { OfflineCheckinSync } from "@/components/app/attendance/offline-sync";
 import { MobileNav } from "@/components/app/mobile-nav";
 import { GeofenceWatch } from "@/components/app/attendance/geofence-watch";
@@ -97,6 +98,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         })()}
         <ChatKeyBootstrap viewerId={viewer.id} />
         <StyleEffects />
+        <TerminalAmbient />
+        {/* Developers start in the Dev Terminal style unless they chose a style or Admin does not allow it. */}
+        {viewer.roles.includes("developer") && (
+          <script
+            dangerouslySetInnerHTML={{
+              __html: `try{var d=document.documentElement,a=JSON.parse(localStorage.getItem("myseed.appearance")||"{}"),SA=(d.dataset.styleAllowed||"").split(",").filter(Boolean);if(!a.style&&d.dataset.style&&(!SA.length||SA.indexOf("terminal")>=0)){d.dataset.styleDefault="terminal";d.dataset.style="terminal";}}catch(e){}`,
+            }}
+          />
+        )}
         {!viewer.previewBy && <PresencePing />}
         <Localizer defaultCalendar={settings.workspace.calendarDisplay} />
         <EthiopianDatePicker defaultCalendar={settings.workspace.calendarDisplay} />

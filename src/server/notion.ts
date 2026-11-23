@@ -131,6 +131,8 @@ async function appendBlocks(t: string, id: string, blocks: Record<string, unknow
 
 export async function docToNotion(user: AppUser, dept: string, docId: string) {
   const a = await workAccess(user, dept);
+  // Sending to Notion takes the document out of the app: download access.
+  await (await import("./dept-access")).itemLevel(user, a, "doc", docId, "download");
   const d = await get<{ title: string; body: string }>("SELECT title, body FROM dept_docs WHERE id = ? AND dept = ?", docId, a.dept);
   if (!d) throw new WorkflowError("NOT_FOUND", "Document not found.");
   const { token: t, parent } = await token();

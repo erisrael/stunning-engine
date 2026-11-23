@@ -369,3 +369,30 @@ export async function searchLibraryAction(dept: string, q: string) {
 export async function importDocumentAction(dept: string, input: { folderId: string | null; name: string; base64: string }) {
   return wrap(async () => (await import("@/server/dev-library")).importDocument(await requireViewer(), dept, input), { revalidate: false });
 }
+
+// Access: what heads and leads share with members, and alerts when someone tries to take what they may only view
+// (src/server/dept-access.ts).
+export async function listSharesAction(dept: string, kind: "folder" | "doc" | "file" | "project", id: string) {
+  return wrap(async () => (await import("@/server/dept-access")).listShares(await requireViewer(), dept, kind, id), { revalidate: false });
+}
+export async function setShareAction(dept: string, input: { kind: "folder" | "doc" | "file" | "project"; id: string; userId: string; level: "view" | "download" | "none" }) {
+  return wrap(async () => (await import("@/server/dept-access")).setShare(await requireViewer(), dept, input), { revalidate: false });
+}
+export async function accessOverviewAction(dept: string) {
+  return wrap(async () => (await import("@/server/dept-access")).accessOverview(await requireViewer(), dept), { revalidate: false });
+}
+export async function reviewAccessEventAction(dept: string, id: string, outcome: "noted" | "revoke_item" | "revoke_all") {
+  return wrap(async () => (await import("@/server/dept-access")).reviewEvent(await requireViewer(), dept, id, outcome), { revalidate: false });
+}
+export async function reportAccessEventAction(dept: string, input: { kind: string; targetKind?: "doc" | "file" | null; targetId?: string | null; detail?: string | null }) {
+  return wrap(async () => {
+    const { headers } = await import("next/headers");
+    const h = await headers();
+    const { clientIpFrom } = await import("@/server/client-ip");
+    return (await import("@/server/dept-access")).reportFromBrowser(await requireViewer(), dept, input, { userAgent: h.get("user-agent"), ip: clientIpFrom(h) });
+  }, { revalidate: false });
+}
+// A task as a prompt for an AI coding assistant, built in the app with no AI key (src/server/task-prompt.ts).
+export async function taskPromptAction(dept: string, id: string, style: "agent" | "short" | "review") {
+  return wrap(async () => (await import("@/server/task-prompt")).taskPrompt(await requireViewer(), dept, id, style), { revalidate: false });
+}

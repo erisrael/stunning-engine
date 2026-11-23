@@ -1,6 +1,7 @@
 {
   "about": "The repository's documents shown in Dev team, Specs and docs. The server brings them in on every start (src/server/doc-sync.ts); npm run docs:sync does the same locally. Each entry: the Markdown file, the library folder (parent/child), the kind (srs, prd, design, adr, testplan, release, runbook, postmortem, note) and the title. See docs/dev-team/SPEC-GUIDE.md, section 6.",
   "dept": "dev",
+  "shareWithTeam": ["Dev team handbook"],
   "documents": [
     { "file": "docs/project/INDEX.md", "folder": "Myseed Ops documentation/1. Start here", "kind": "note", "title": "Myseed Ops documentation index" },
     { "file": "docs/project/PRODUCT-OVERVIEW.md", "folder": "Myseed Ops documentation/1. Start here", "kind": "prd", "title": "Product overview: Myseed Ops" },

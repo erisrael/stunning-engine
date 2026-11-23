@@ -22,7 +22,7 @@ const rejects = async (p: Promise<unknown>) => p.then(() => false, () => true);
 async function main() {
   // ---------------------------------------------------------------- UI styles
   const css = fs.readFileSync("src/app/ui-styles.css", "utf8");
-  check("seven styles, at least four besides the professional one", UI_STYLES.length === 7 && UI_STYLES.some((s) => s.key === "studio"));
+  check("eight styles, at least four besides the professional one", UI_STYLES.length === 8 && UI_STYLES.some((s) => s.key === "studio"));
   const palettes = UI_STYLES.filter((s) => s.key !== "studio").every((s) => css.includes(`:root[data-style="${s.key}"]:not([data-preset]):not(.dark)`) && css.includes(`:root[data-style="${s.key}"]:not([data-preset]).dark`));
   check("every style but Studio (the app's own colours) has a Light and a Dark palette", palettes);
   check("no style sets the accent colour, so the person's accent always applies", !/data-style="[a-z]+"[^{]*\{[^}]*--primary\s*:/.test(css));

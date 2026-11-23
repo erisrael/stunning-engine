@@ -13,11 +13,12 @@ import { audit, WorkflowError } from "./workflow";
 import { notify } from "./notifications";
 import { deptManagers, deptPeople } from "./departments";
 import { need, workAccess, type WorkAccess } from "./dept-config";
-import { saveTask } from "./work";
+import { listProjects, listTasks, saveTask } from "./work";
 import { can, type AppUser } from "./users";
 import { labelOf, type SprintConfig } from "@/lib/dept-config";
 import { DOC_KINDS, DOC_MAX_CHARS, DOC_TEMPLATES, docRef, requirementIds, type DocKind } from "@/lib/dev-docs";
 import { deptPath } from "@/lib/work";
+import { fullAccess, itemLevel, memberScope, noteRead } from "./dept-access";
 
 const DAY = 864e5;
 const iso = (d: Date) => d.toISOString().slice(0, 10);
@@ -62,12 +63,16 @@ export async function sprintPage(user: AppUser, d: string, sprintId?: string | n
     addedLate: false,
   });
   if (!current) return { cfg, sprints, current: null, tasks: [], backlog: [], capacity: [], burn: null, standups: [], retro: [], velocity: velocityOf([]), people, canPlan: a.rights.projects && !a.readOnly, unit: cfg.unit };
-  const rows = await all<TaskRow>(`${TASKS} WHERE t.dept = ? AND t.sprint_id = ? AND t.status_category <> 'cancelled' ORDER BY t.sort`, a.dept, current.id);
+  // Members see the sprint's tasks that are theirs or shared with them; heads and leads see the whole sprint.
+  const allowed = a.rights.seeAll ? null : new Set((await listTasks(user, a.dept, {})).tasks.map((t) => t.id));
+  const rows = (await all<TaskRow>(`${TASKS} WHERE t.dept = ? AND t.sprint_id = ? AND t.status_category <> 'cancelled' ORDER BY t.sort`, a.dept, current.id)).filter((t) => !allowed || allowed.has(t.id));
   const start = current.start_date;
   const tasks = rows.map((t) => ({ ...card(t), addedLate: !!(start && t.sprint_added_at && t.sprint_added_at.slice(0, 10) > start) }));
   const backlog = (
     await all<TaskRow>(`${TASKS} WHERE t.dept = ? AND t.sprint_id IS NULL AND t.parent_id IS NULL AND t.status_category IN ('open','active','review') ORDER BY t.updated_at DESC LIMIT 300`, a.dept)
-  ).map(card);
+  )
+    .filter((t) => !allowed || allowed.has(t.id))
+    .map(card);
   const rank = (p: string) => {
     const i = a.config.priorities.findIndex((x) => x.key === p);
     return i < 0 ? 99 : i;
@@ -282,7 +287,10 @@ export async function roadmap(user: AppUser, d: string) {
   const live = new Set(a.config.projectStatuses.filter((s) => s.category !== "done" && s.category !== "cancelled").map((s) => s.key));
   const now = today();
   const out = [];
+  // Members see the projects they lead, work in or were shared (as on the Projects page).
+  const reachable = a.rights.seeAll ? null : new Set((await listProjects(user, a.dept)).map((p) => p.id));
   for (const p of projects) {
+    if (reachable && !reachable.has(p.id)) continue;
     const tasks = await all<TaskRow & { project_id: string }>(`${TASKS} WHERE t.project_id = ? AND t.status_category <> 'cancelled'`, p.id);
     const weight = (t: TaskRow) => (cfg.unit === "points" ? num(t.points) : num(t.estimate_hours)) || 1;
     const total = tasks.reduce((n, t) => n + weight(t), 0);
@@ -343,12 +351,15 @@ type DocRow = { id: string; dept: string; project_id: string | null; kind: DocKi
 
 export async function listDocs(user: AppUser, d: string) {
   const a = await workAccess(user, d);
+  const scope = await memberScope(a, user);
   return (
     await all<DocRow & { project: string | null; author: string | null }>(
       "SELECT x.*, p.name AS project, u.name AS author FROM dept_docs x LEFT JOIN dept_projects p ON p.id = x.project_id LEFT JOIN users u ON u.id = x.created_by WHERE x.dept = ? ORDER BY x.updated_at DESC LIMIT 300",
       a.dept,
     )
-  ).map((r) => ({ id: r.id, kind: r.kind, title: r.title, status: r.status, version: Number(r.version), project: r.project, projectId: r.project_id, author: r.author, updatedAt: r.updated_at }));
+  )
+    .filter((r) => scope.full || scope.item("doc", r.id, (r as DocRow & { folder_id?: string | null }).folder_id ?? null, r.created_by))
+    .map((r) => ({ id: r.id, kind: r.kind, title: r.title, status: r.status, version: Number(r.version), project: r.project, projectId: r.project_id, author: r.author, updatedAt: r.updated_at }));
 }
 
 // Heads and Admin can explicitly review their own submission. Other authors need another lead or head.
@@ -366,6 +377,10 @@ export async function getDoc(user: AppUser, d: string, id: string) {
   const a = await workAccess(user, d);
   const r = await get<DocRow>("SELECT * FROM dept_docs WHERE id = ? AND dept = ?", id, a.dept);
   if (!r) throw new WorkflowError("NOT_FOUND", "Document not found.");
+  // Shared with this person at all, and how (src/server/dept-access.ts); opening many in a row is noticed.
+  const level = await itemLevel(user, a, "doc", id, "view");
+  await noteRead(user, a, id, r.title);
+  const full = fullAccess(a, user);
   const links = await all<{ req: string; task_id: string; code: string; title: string; status: string; status_category: string }>(
     "SELECT l.req, l.task_id, t.code, t.title, t.status, t.status_category FROM dept_doc_links l JOIN dept_tasks t ON t.id = l.task_id WHERE l.doc_id = ? ORDER BY l.req",
     id,
@@ -408,7 +423,11 @@ export async function getDoc(user: AppUser, d: string, id: string) {
       "SELECT v.version, v.title, v.status, v.saved_at, u.name AS by FROM dept_doc_versions v LEFT JOIN users u ON u.id = v.saved_by WHERE v.doc_id = ? ORDER BY v.version DESC LIMIT 50",
       id,
     ),
-    canEdit: !a.readOnly,
+    // Members edit what they wrote; heads and leads edit everything.
+    canEdit: !a.readOnly && (full || r.created_by === user.id),
+    level,
+    canDownload: level === "download",
+    viewer: { name: user.name, email: user.email ?? null },
     canSelfReview: reviewOptions.selfReview,
     eligibleReviewers: reviewOptions.eligible,
     canApprove: !a.readOnly && reviewers.includes(user.id) && r.status === "review" && (can(user, "users.manage") || user.roles.includes("admin") || (await deptManagers(a.dept)).includes(user.id)),
@@ -431,10 +450,16 @@ export async function createDoc(user: AppUser, d: string, input: { kind: DocKind
 }
 
 // Saving an approved document starts a new version (the approved one is kept in the history).
+// Members change what they wrote; what was shared with them is read only, however it was shared.
+async function mayEdit(user: AppUser, a: WorkAccess, r: { created_by: string | null }) {
+  if (!fullAccess(a, user) && r.created_by !== user.id) throw new WorkflowError("FORBIDDEN", "This document was shared with you to read. Ask its author or your team lead to change it.");
+}
+
 export async function saveDoc(user: AppUser, d: string, id: string, input: { title: string; body: string; projectId?: string | null }) {
   const a = await workAccess(user, d, "write");
   const r = await get<DocRow>("SELECT * FROM dept_docs WHERE id = ? AND dept = ?", id, a.dept);
   if (!r) throw new WorkflowError("NOT_FOUND", "Document not found.");
+  await mayEdit(user, a, r);
   const title = input.title.trim().slice(0, 160);
   if (!title) throw new WorkflowError("VALIDATION", "Give the document a title.");
   if (input.body.length > DOC_MAX_CHARS) throw new WorkflowError("VALIDATION", `Documents hold up to ${DOC_MAX_CHARS.toLocaleString("en")} characters; this one has ${input.body.length.toLocaleString("en")}. Split it into two.`);
@@ -450,6 +475,7 @@ export async function submitDoc(user: AppUser, d: string, id: string, reviewerId
   const a = await workAccess(user, d, "write");
   const r = await get<DocRow>("SELECT * FROM dept_docs WHERE id = ? AND dept = ?", id, a.dept);
   if (!r) throw new WorkflowError("NOT_FOUND", "Document not found.");
+  await mayEdit(user, a, r);
   if (r.status !== "draft") throw new WorkflowError("INVALID_STATE", "Only a draft is sent for review.");
   const options = await docReviewOptions(user, a);
   const reviewers = [...new Set(reviewerIds)];
@@ -482,7 +508,9 @@ export async function decideDoc(user: AppUser, d: string, id: string, approve: b
 
 export async function linkRequirement(user: AppUser, d: string, docId: string, req: string, taskId: string, on: boolean) {
   const a = await workAccess(user, d, "write");
-  if (!(await get("SELECT 1 AS x FROM dept_docs WHERE id = ? AND dept = ?", docId, a.dept))) throw new WorkflowError("NOT_FOUND", "Document not found.");
+  const doc = await get<{ created_by: string | null }>("SELECT created_by FROM dept_docs WHERE id = ? AND dept = ?", docId, a.dept);
+  if (!doc) throw new WorkflowError("NOT_FOUND", "Document not found.");
+  await mayEdit(user, a, doc);
   if (!/^[A-Z]{1,5}-\d{1,4}$/.test(req)) throw new WorkflowError("VALIDATION", "Requirement IDs look like FR-1 or NFR-3.");
   const t = await get<{ id: string }>("SELECT id FROM dept_tasks WHERE (id = ? OR upper(code) = upper(?)) AND dept = ?", taskId, taskId, a.dept);
   if (!t) throw new WorkflowError("NOT_FOUND", "No task with that code here.");

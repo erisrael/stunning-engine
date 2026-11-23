@@ -72,6 +72,9 @@ import { CompassIcon,
   GraduationCapIcon,
   LifeBuoyIcon,
   PackageIcon,
+  LayoutDashboardIcon,
+  ShieldAlertIcon,
+  GamepadIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { HomeDept } from "@/server/nav";
@@ -157,6 +160,7 @@ const deptViews = (base: string, extra: { label: string; view: string }[] = [], 
   { label: "Projects", href: `${base}/projects` },
   { label: "Team", href: `${base}/team` },
   { label: "Report", href: `${base}/report` },
+  { label: "Team overview", href: `${base}/insights` },
   { label: "Analyze", href: `${base}/analyze` },
   { label: "Requests", href: `${base}/requests` },
   { label: "Data Manager", href: `${base}/data` },
@@ -234,6 +238,7 @@ function homeGroups(h: HomeDept, viewerId: string): { label: string; items: NavI
     {
       label: "Insights",
       items: [
+        { href: `${b}/insights`, label: "Team overview", icon: LayoutDashboardIcon, exact: true },
         { href: `${b}/report`, label: h.seeAll ? "Report" : "My report", icon: ChartColumnIcon, exact: true },
         ...(h.seeAll ? [{ href: `${b}/present`, label: "Present", icon: PresentationIcon, exact: true }] : []),
         ...(h.seeAll ? [{ href: `${b}/team`, label: "Team", icon: UsersIcon, exact: true }] : []),
@@ -247,11 +252,14 @@ function homeGroups(h: HomeDept, viewerId: string): { label: string; items: NavI
         ...(h.studio ? [{ href: `${b}/docs`, label: "Specs and docs", icon: FileTextIcon, exact: true }] : []),
         ...(h.dataManager ? [{ href: `${b}/data`, label: "Data Manager", icon: SheetIcon, exact: true }] : []),
         { href: `${b}/tools`, label: "Releases and quality", icon: WrenchIcon, exact: true },
+        ...(h.studio ? [{ href: `${b}/dojo`, label: "Dev dojo", icon: GamepadIcon, exact: true }] : []),
         ...(h.accounting ? [{ href: `${b}/accounting`, label: "Accounting", icon: CalculatorIcon, exact: true }] : []),
         { href: `${b}/requests`, label: "Requests", icon: InboxIcon, exact: true },
       ],
     },
-    ...(h.configure ? [{ label: "Department", items: [{ href: `${b}/configure`, label: "Configure", icon: Settings2Icon, exact: true }] }] : []),
+    ...(h.configure || h.seeAll
+      ? [{ label: "Department", items: [...(h.seeAll ? [{ href: `${b}/access`, label: "Access", icon: ShieldAlertIcon, exact: true }] : []), ...(h.configure ? [{ href: `${b}/configure`, label: "Configure", icon: Settings2Icon, exact: true }] : [])] }]
+      : []),
   ];
 }
 

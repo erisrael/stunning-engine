@@ -405,6 +405,7 @@ export async function traceability(user: AppUser, d: string, docId: string) {
   const a = await workAccess(user, d);
   const doc = await get<{ body: string; title: string }>("SELECT body, title FROM dept_docs WHERE id = ? AND dept = ?", docId, a.dept);
   if (!doc) throw new WorkflowError("NOT_FOUND", "Document not found.");
+  await (await import("./dept-access")).itemLevel(user, a, "doc", docId, "view");
   const reqs = [...new Set((doc.body.match(/\b(?:FR|NFR|REQ)-\d+\b/g) ?? []))];
   const links = await all<{ req: string; task_id: string }>("SELECT req, task_id FROM dept_doc_links WHERE doc_id = ?", docId);
   const tasks = new Map((await listTasks(user, a.dept, { open: false })).tasks.map((t) => [t.id, t]));
@@ -503,7 +504,7 @@ export async function importFrom(user: AppUser, d: string, source: "jira" | "tre
 
 export async function exportJiraCsv(user: AppUser, d: string) {
   const a = await workAccess(user, d);
-  const ts = (await listTasks(user, a.dept, { open: false })).tasks;
+  const ts = (await listTasks(user, a.dept, { open: false, exportable: true })).tasks;
   const cell = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
   const lab = (list: { key: string; label: string }[], k: string) => list.find((x) => x.key === k)?.label ?? k;
   const head = ["Issue key", "Summary", "Issue Type", "Status", "Priority", "Assignee", "Reporter", "Created", "Updated", "Due Date", "Labels", "Description", "Parent"];
