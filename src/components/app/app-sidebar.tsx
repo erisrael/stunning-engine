@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
+import { NavLink } from "@/components/app/nav-link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { CompassIcon,
@@ -752,7 +752,7 @@ export function AppSidebar({
           <SidebarMenu>
             <SidebarMenuItem>
               <SidebarMenuButton size="lg" asChild tooltip={workspaceName} className="h-10">
-                <Link href="/dashboard" onClick={close}>
+                <NavLink href="/dashboard" onClick={close}>
                   <span className="flex size-8 items-center justify-center rounded-md bg-white shadow-xs ring-1 ring-sidebar-border dark:bg-[#0f2a1a]">
                     <BrandMark logo={identity.logo} version={identity.version} className="size-6" />
                   </span>
@@ -760,7 +760,7 @@ export function AppSidebar({
                     <span className="truncate text-sm font-semibold" data-site-name>{identity.name}</span>
                     {identity.tagline && <span className="truncate text-[11px] text-muted-foreground">{identity.tagline}</span>}
                   </span>
-                </Link>
+                </NavLink>
               </SidebarMenuButton>
             </SidebarMenuItem>
           </SidebarMenu>
@@ -779,7 +779,7 @@ export function AppSidebar({
                 {isMobile ? (
                   <button
                     type="button"
-                    className="flex h-9 w-full items-center justify-between px-2 text-[11px] font-semibold tracking-wide text-sidebar-foreground/70 uppercase"
+                    className="flex h-9 w-full items-center justify-between px-2 text-[11px] font-semibold tracking-wide text-sidebar-foreground/85 uppercase"
                     aria-expanded={!folded}
                     onClick={toggleGroup}
                   >
@@ -789,7 +789,7 @@ export function AppSidebar({
                 ) : (
                   <button data-sidebar="group-label"
                     type="button"
-                    className="group/lbl group-data-[collapsible=icon]:hidden flex h-7 w-full items-center justify-between px-2 text-[11px] font-semibold tracking-wide text-sidebar-foreground/70 uppercase hover:text-sidebar-foreground transition-colors cursor-pointer"
+                    className="group/lbl group-data-[collapsible=icon]:hidden flex h-7 w-full items-center justify-between px-2 text-[11px] font-semibold tracking-wide text-sidebar-foreground/85 uppercase hover:text-sidebar-foreground transition-colors cursor-pointer"
                     aria-expanded={!folded}
                     onClick={toggleGroup}
                   >
@@ -824,11 +824,11 @@ export function AppSidebar({
                             }}
                             className="h-8 min-w-0 flex-1 font-medium text-sidebar-foreground/85 data-[active=true]:bg-sidebar-accent data-[active=true]:font-semibold data-[active=true]:text-sidebar-accent-foreground"
                           >
-                            <Link href={href} onClick={close} className="flex w-full items-center">
+                            <NavLink href={href} onClick={close} className="flex w-full items-center">
                               <AppIcon icon={item.icon} name={brand[keyOf(item)]?.icon} tone={(brand[keyOf(item)]?.tone as Tone | null | undefined) ?? null} />
                               <span className="min-w-0 flex-1 truncate">{item.label}</span>
 
-                            </Link>
+                            </NavLink>
                           </SidebarMenuButton>
                           <div className="flex shrink-0 items-center gap-1 pr-1 group-data-[collapsible=icon]:hidden" data-nav-controls>
                           {!!item.badge && item.badge>0 && <span data-sidebar="menu-badge" data-nav-count={item.badge} title={String(item.badge)} aria-label={`${item.label}: ${item.badge}`} className="pointer-events-none flex h-5 min-w-5 items-center justify-center rounded-full bg-primary/15 text-primary border border-primary/25 px-1.5 text-[10px] font-semibold tabular-nums shadow-xs">{item.badge>99?"99+":item.badge}</span>}
@@ -843,9 +843,9 @@ export function AppSidebar({
                                 return (
                                   <SidebarMenuSubItem key={s.href}>
                                     <SidebarMenuSubButton asChild isActive={on}>
-                                      <Link href={s.keepFilters?s.href+scopeQueryString(search):s.href} onClick={close}>
+                                      <NavLink href={s.keepFilters?s.href+scopeQueryString(search):s.href} onClick={close}>
                                         {s.label}
-                                      </Link>
+                                      </NavLink>
                                     </SidebarMenuSubButton>
                                   </SidebarMenuSubItem>
                                 );
@@ -865,10 +865,10 @@ export function AppSidebar({
           <SidebarMenu>
             <SidebarMenuItem>
               <SidebarMenuButton asChild isActive={pathname === "/profile"} tooltip="Profile: my record, leave, pay and claims, account" className="h-8 font-medium">
-                <Link href="/profile" onClick={close}>
+                <NavLink href="/profile" onClick={close}>
                   <AppIcon icon={CircleUserIcon} />
                   <span>Profile</span>
-                </Link>
+                </NavLink>
               </SidebarMenuButton>
             </SidebarMenuItem>
           </SidebarMenu>

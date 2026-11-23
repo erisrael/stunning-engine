@@ -220,6 +220,11 @@ export type EmployeeDetail = {
   reports: { id: string; name: string; jobTitle: string | null }[];
 };
 
+// An employee page's address: the employee code (EMP-012), never the internal id. Old id links still find them.
+export async function findEmployee(ref: string) {
+  return (await get<{ id: string; code: string }>("SELECT id, code FROM employees WHERE code = ? OR id = ?", ref, ref)) ?? null;
+}
+
 export async function getEmployee(user: AppUser, id: string): Promise<EmployeeDetail | null> {
   const view = await viewOf(user, id);
   if (!view) return null;

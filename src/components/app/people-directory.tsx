@@ -9,7 +9,7 @@ import { COVER_CLASS } from "@/components/app/profile-card";
 import type { Cover } from "@/server/profiles";
 import { cn } from "@/lib/utils";
 
-export function PeopleDirectory({ people }: { people: { id: string; name: string; headline: string | null; avatar: string | null; cover: Cover; skills: string[] }[] }) {
+export function PeopleDirectory({ people }: { people: { id: string; handle: string; name: string; headline: string | null; avatar: string | null; cover: Cover; skills: string[] }[] }) {
   const [q, setQ] = React.useState("");
   const needle = q.trim().toLowerCase();
   const shown = people.filter((p) => !needle || `${p.name} ${p.headline ?? ""} ${p.skills.join(" ")}`.toLowerCase().includes(needle));
@@ -21,7 +21,7 @@ export function PeopleDirectory({ people }: { people: { id: string; name: string
       </div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {shown.map((p) => (
-          <Link key={p.id} href={`/people/${p.id}`} className="overflow-hidden rounded-xl border bg-card transition-shadow hover:shadow-md">
+          <Link key={p.id} href={`/people/${encodeURIComponent(p.handle)}`} className="overflow-hidden rounded-xl border bg-card transition-shadow hover:shadow-md">
             <div className={cn("h-12 bg-gradient-to-r", COVER_CLASS[p.cover])} />
             <div className="-mt-6 space-y-1 px-3 pb-3">
               {p.avatar ? (

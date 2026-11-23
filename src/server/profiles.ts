@@ -290,11 +290,23 @@ export async function readProfileFile(viewer: AppUser, id: string) {
   return { name: f.name, mime: f.mime, data: Buffer.from(f.data, "base64") };
 }
 
-// Small avatars for the people list and the top bar.
+// A profile photo as an address (/api/avatars/<id>?v=<version>), never the picture itself: a photo can be hundreds of
+// KB, and inlined it went into every page (and twice: in the HTML and in the page data). The browser caches it.
+export const avatarUrl = (userId: string, version: string) => `/api/avatars/${encodeURIComponent(userId)}?v=${encodeURIComponent(version)}`;
+
+// Avatars for the people list and the top bar, as addresses.
 export async function avatarsFor(ids: string[]): Promise<Record<string, string>> {
   if (!ids.length) return {};
-  const rows = await all<{ user_id: string; avatar: string | null }>(`SELECT user_id, avatar FROM profiles WHERE avatar IS NOT NULL AND user_id IN (${ids.map(() => "?").join(",")})`, ...ids);
-  return Object.fromEntries(rows.map((r) => [r.user_id, r.avatar!]));
+  const rows = await all<{ user_id: string; updated_at: string }>(`SELECT user_id, updated_at FROM profiles WHERE avatar IS NOT NULL AND user_id IN (${ids.map(() => "?").join(",")})`, ...ids);
+  return Object.fromEntries(rows.map((r) => [r.user_id, avatarUrl(r.user_id, r.updated_at)]));
+}
+
+// The photo itself, for /api/avatars/<id>.
+export async function avatarImage(viewer: AppUser, userId: string): Promise<{ data: Buffer; mime: string } | null> {
+  if (viewer.id !== userId && (await hiddenFrom(viewer)).has(userId)) return null;
+  const r = await get<{ avatar: string | null }>("SELECT avatar FROM profiles WHERE user_id = ?", userId);
+  const m = r?.avatar?.match(/^data:(image\/(?:png|jpe?g|webp));base64,(.+)$/);
+  return m ? { mime: m[1]!, data: Buffer.from(m[2]!, "base64") } : null;
 }
 
 // Everyone in the workspace with a headline and top skills, for the people directory.
@@ -372,12 +384,17 @@ export async function hiddenFrom(viewer: AppUser): Promise<Set<string>> {
   return hidden;
 }
 
+// A profile address: the person's handle (never their internal id). Old id links still find them.
+export async function findPerson(ref: string) {
+  return (await get<{ id: string; handle: string }>("SELECT id, handle FROM users WHERE handle = ? OR id = ?", ref, ref)) ?? null;
+}
+
 export async function directory(viewer?: AppUser) {
   const hidden = viewer ? await hiddenFrom(viewer) : new Set<string>();
-  const rows = (await all<{ id: string; name: string; title: string | null; headline: string | null; avatar: string | null; skills: string | null; cover: string | null }>(
-    "SELECT u.id, u.name, u.title, p.headline, p.avatar, p.skills, p.cover FROM users u LEFT JOIN profiles p ON p.user_id = u.id WHERE u.active = 1 ORDER BY u.name",
+  const rows = (await all<{ id: string; handle: string; name: string; title: string | null; headline: string | null; has_avatar: boolean | null; version: string | null; skills: string | null; cover: string | null }>(
+    "SELECT u.id, u.handle, u.name, u.title, p.headline, (p.avatar IS NOT NULL) AS has_avatar, p.updated_at AS version, p.skills, p.cover FROM users u LEFT JOIN profiles p ON p.user_id = u.id WHERE u.active = 1 ORDER BY u.name",
   )).filter((r) => !hidden.has(r.id));
-  return rows.map((r) => ({ id: r.id, name: r.name, headline: r.headline ?? r.title, avatar: r.avatar, cover: (r.cover ?? "emerald") as Cover, skills: parseJson<Skill[]>(r.skills, []).slice(0, 5).map((s) => s.name) }));
+  return rows.map((r) => ({ id: r.id, handle: r.handle, name: r.name, headline: r.headline ?? r.title, avatar: r.has_avatar && r.version ? avatarUrl(r.id, r.version) : null, cover: (r.cover ?? "emerald") as Cover, skills: parseJson<Skill[]>(r.skills, []).slice(0, 5).map((s) => s.name) }));
 }
 
 // Someone in the same team: a shared production stage, a shared department, or their lead or line manager.
@@ -418,7 +435,7 @@ export type ContactCard = {
 export async function contactCard(viewer: AppUser, userId: string): Promise<ContactCard | null> {
   const u = await loadUser(userId);
   if (!u?.active) return null;
-  const p = await get<{ headline: string | null; avatar: string | null; cover: Cover | null; contact: string | null; location: string | null }>("SELECT headline, avatar, cover, contact, location FROM profiles WHERE user_id = ?", userId);
+  const p = await get<{ headline: string | null; has_avatar: boolean | null; updated_at: string | null; cover: Cover | null; contact: string | null; location: string | null }>("SELECT headline, (avatar IS NOT NULL) AS has_avatar, updated_at, cover, contact, location FROM profiles WHERE user_id = ?", userId);
   const c = { ...CONTACT_DEFAULT, ...parseJson<Partial<Contact>>(p?.contact, {}) };
   const team = await sameTeam(viewer, userId);
   const admin = can(viewer, "users.manage") || can(viewer, "hr.access");
@@ -428,7 +445,7 @@ export async function contactCard(viewer: AppUser, userId: string): Promise<Cont
     userId,
     name: u.name,
     handle: last?.handle ?? u.handle,
-    avatar: p?.avatar ?? null,
+    avatar: p?.has_avatar && p.updated_at ? avatarUrl(userId, p.updated_at) : null,
     cover: p?.cover ?? "emerald",
     headline: p?.headline ?? u.title ?? null,
     roles: u.roles.map((r) => ROLE_LABELS[r]),

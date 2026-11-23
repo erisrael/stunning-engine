@@ -447,7 +447,7 @@ export function ContactSheet({ userId, onClose, onMedia }: { userId: string | nu
                 </Button>
               )}
               <Button size="sm" variant="outline" asChild>
-                <Link href={`/people/${c.userId}`}>
+                <Link href={`/people/${encodeURIComponent(c.handle)}`}>
                   <UserIcon /> Profile
                 </Link>
               </Button>

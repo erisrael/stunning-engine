@@ -120,7 +120,7 @@ export function StructureDashboard({ rows, mode = "grade", timezone = "Africa/Ad
                     return (
                       <td key={s} className="px-2 py-1.5">
                         <div className="relative h-7 overflow-hidden rounded-md bg-muted">
-                          <div className="absolute inset-y-0 left-0 opacity-80" style={{ width: `${p}%`, background: STAGE_COLOR[s] }} />
+                          <div className="absolute inset-y-0 left-0 opacity-55" style={{ width: `${p}%`, background: STAGE_COLOR[s] }} />
                           <span className="relative flex h-full items-center justify-center text-xs font-semibold tabular">
                             {g[s]} · {p}%
                           </span>

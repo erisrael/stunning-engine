@@ -2,11 +2,12 @@
 // - colourful (Google style): each kind of page keeps its own colour everywhere, lighter in dark mode; or one colour;
 // - the pack: Lucide outline (thin, regular or bold strokes), or Phosphor filled or duotone;
 // - Admin (Admin, Branding) can give a sidebar entry another icon from the pack below and another colour.
-// Every style is drawn on the server and the browser shows the chosen one (no flash, nothing loaded later).
+// Lucide is drawn on the server; the Phosphor styles (filled, duotone, soft, bold, sticker) load only for people who
+// chose one (src/components/app/phosphor-twin.tsx), so the default outline style ships no Phosphor icons at all.
 
 import * as React from "react";
 import * as L from "lucide-react";
-import * as P from "@phosphor-icons/react/ssr";
+import { PhosphorTwin } from "./phosphor-twin";
 import { cn } from "@/lib/utils";
 
 const TONES = {
@@ -37,100 +38,99 @@ const TILES: Record<Tone, string> = {
 };
 
 type Svg = React.ComponentType<{ className?: string }> & { displayName?: string };
-type PhSvg = React.ComponentType<{ className?: string; weight?: "fill" | "duotone" | "regular" | "bold" }>;
 
 // The icon pack: each icon in Lucide and Phosphor, with its usual colour. Keys are what Admin saves.
-export const ICONS: Record<string, { label: string; lucide: Svg; ph: PhSvg; tone: Tone }> = {
-  home: { label: "Home", lucide: L.HomeIcon, ph: P.HouseIcon, tone: "blue" },
-  clock: { label: "Clock", lucide: L.ClockIcon, ph: P.ClockIcon, tone: "green" },
-  timer: { label: "Timer", lucide: L.TimerIcon, ph: P.TimerIcon, tone: "orange" },
-  checks: { label: "Approvals", lucide: L.CheckCheckIcon, ph: P.ChecksIcon, tone: "green" },
-  checklist: { label: "Checklist", lucide: L.ListChecksIcon, ph: P.ListChecksIcon, tone: "green" },
-  userCheck: { label: "Person, checked", lucide: L.UserCheckIcon, ph: P.UserCheckIcon, tone: "teal" },
-  users: { label: "People", lucide: L.UsersIcon, ph: P.UsersIcon, tone: "purple" },
-  team: { label: "Team", lucide: L.UsersRoundIcon, ph: P.UsersThreeIcon, tone: "purple" },
-  userCog: { label: "Admin", lucide: L.UserCogIcon, ph: P.UserGearIcon, tone: "purple" },
-  userPlus: { label: "Add person", lucide: L.UserPlusIcon, ph: P.UserPlusIcon, tone: "purple" },
-  contact: { label: "Contacts", lucide: L.ContactIcon, ph: P.AddressBookIcon, tone: "purple" },
-  idCard: { label: "ID card", lucide: L.IdCardIcon, ph: P.IdentificationCardIcon, tone: "purple" },
-  profile: { label: "Profile", lucide: L.CircleUserIcon, ph: P.UserCircleIcon, tone: "blue" },
-  question: { label: "Question", lucide: L.MessageCircleQuestionIcon, ph: P.QuestionIcon, tone: "orange" },
-  chat: { label: "Chat", lucide: L.MessageSquareIcon, ph: P.ChatIcon, tone: "teal" },
-  chats: { label: "Conversations", lucide: L.MessagesSquareIcon, ph: P.ChatsIcon, tone: "teal" },
-  mail: { label: "Email", lucide: L.MailIcon, ph: P.EnvelopeSimpleIcon, tone: "red" },
-  inbox: { label: "Inbox", lucide: L.InboxIcon, ph: P.TrayIcon, tone: "pink" },
-  bell: { label: "Bell", lucide: L.BellIcon, ph: P.BellIcon, tone: "yellow" },
-  tree: { label: "Overview", lucide: L.ListTreeIcon, ph: P.TreeStructureIcon, tone: "blue" },
-  list: { label: "List", lucide: L.ListIcon, ph: P.ListIcon, tone: "blue" },
-  layers: { label: "Layers", lucide: L.LayersIcon, ph: P.StackIcon, tone: "teal" },
-  package: { label: "Package", lucide: L.PackageCheckIcon, ph: P.PackageIcon, tone: "orange" },
-  video: { label: "Video", lucide: L.VideoIcon, ph: P.VideoCameraIcon, tone: "red" },
-  calendar: { label: "Calendar", lucide: L.CalendarIcon, ph: P.CalendarIcon, tone: "blue" },
-  kanban: { label: "Board", lucide: L.KanbanIcon, ph: P.KanbanIcon, tone: "teal" },
-  folder: { label: "Folder", lucide: L.FolderKanbanIcon, ph: P.FolderIcon, tone: "yellow" },
-  sheet: { label: "Sheet", lucide: L.SheetIcon, ph: P.TableIcon, tone: "green" },
-  map: { label: "Map", lucide: L.MapIcon, ph: P.MapTrifoldIcon, tone: "green" },
-  gantt: { label: "Timeline", lucide: L.GanttChartIcon, ph: P.ChartBarHorizontalIcon, tone: "purple" },
-  chart: { label: "Chart", lucide: L.ChartColumnIcon, ph: P.ChartBarIcon, tone: "yellow" },
-  presentation: { label: "Presentation", lucide: L.PresentationIcon, ph: P.PresentationChartIcon, tone: "orange" },
-  branch: { label: "Code branch", lucide: L.GitBranchIcon, ph: P.GitBranchIcon, tone: "purple" },
-  code: { label: "Code", lucide: L.CodeIcon, ph: P.CodeIcon, tone: "blue" },
-  file: { label: "Document", lucide: L.FileTextIcon, ph: P.FileTextIcon, tone: "blue" },
-  filePlus: { label: "New document", lucide: L.FilePlus2Icon, ph: P.FilePlusIcon, tone: "blue" },
-  fileQuestion: { label: "Question bank", lucide: L.FileQuestionIcon, ph: P.QuestionIcon, tone: "orange" },
-  notebook: { label: "Notebook", lucide: L.NotebookTextIcon, ph: P.NotebookIcon, tone: "yellow" },
-  cards: { label: "Cards", lucide: L.GalleryVerticalEndIcon, ph: P.CardsIcon, tone: "pink" },
-  bookOpen: { label: "Open book", lucide: L.BookOpenIcon, ph: P.BookOpenIcon, tone: "teal" },
-  calculator: { label: "Calculator", lucide: L.CalculatorIcon, ph: P.CalculatorIcon, tone: "green" },
-  wallet: { label: "Wallet", lucide: L.WalletIcon, ph: P.WalletIcon, tone: "green" },
-  bank: { label: "Finance", lucide: L.LandmarkIcon, ph: P.BankIcon, tone: "green" },
-  briefcase: { label: "Department", lucide: L.BriefcaseIcon, ph: P.BriefcaseIcon, tone: "orange" },
-  building: { label: "Company", lucide: L.Building2Icon, ph: P.BuildingsIcon, tone: "blue" },
-  crown: { label: "Owners", lucide: L.CrownIcon, ph: P.CrownIcon, tone: "yellow" },
-  megaphone: { label: "Marketing", lucide: L.MegaphoneIcon, ph: P.MegaphoneIcon, tone: "pink" },
-  plane: { label: "Travel", lucide: L.PlaneIcon, ph: P.AirplaneIcon, tone: "teal" },
-  database: { label: "Data", lucide: L.DatabaseIcon, ph: P.DatabaseIcon, tone: "slate" },
-  arrows: { label: "Import and export", lucide: L.ArrowLeftRightIcon, ph: P.ArrowsLeftRightIcon, tone: "teal" },
-  eye: { label: "View", lucide: L.EyeIcon, ph: P.EyeIcon, tone: "purple" },
-  shield: { label: "Security", lucide: L.ShieldCheckIcon, ph: P.ShieldCheckIcon, tone: "blue" },
-  devices: { label: "Devices", lucide: L.MonitorSmartphoneIcon, ph: P.DevicesIcon, tone: "slate" },
-  grid: { label: "Grid", lucide: L.GridIcon, ph: P.GridFourIcon, tone: "blue" },
-  settings: { label: "Settings", lucide: L.SettingsIcon, ph: P.GearIcon, tone: "slate" },
-  sliders: { label: "Configure", lucide: L.Settings2Icon, ph: P.SlidersHorizontalIcon, tone: "slate" },
-  sparkles: { label: "Sparkles", lucide: L.SparklesIcon, ph: P.SparkleIcon, tone: "purple" },
-  rocket: { label: "Rocket", lucide: L.RocketIcon, ph: P.RocketIcon, tone: "orange" },
-  star: { label: "Star", lucide: L.StarIcon, ph: P.StarIcon, tone: "yellow" },
-  heart: { label: "Heart", lucide: L.HeartIcon, ph: P.HeartIcon, tone: "red" },
-  flag: { label: "Flag", lucide: L.FlagIcon, ph: P.FlagIcon, tone: "red" },
-  zap: { label: "Lightning", lucide: L.ZapIcon, ph: P.LightningIcon, tone: "yellow" },
-  camera: { label: "Camera", lucide: L.CameraIcon, ph: P.CameraIcon, tone: "slate" },
-  mic: { label: "Microphone", lucide: L.MicIcon, ph: P.MicrophoneIcon, tone: "red" },
-  palette: { label: "Design", lucide: L.PaletteIcon, ph: P.PaletteIcon, tone: "pink" },
-  pencil: { label: "Pencil", lucide: L.PencilIcon, ph: P.PencilIcon, tone: "orange" },
-  trophy: { label: "Trophy", lucide: L.TrophyIcon, ph: P.TrophyIcon, tone: "yellow" },
-  target: { label: "Target", lucide: L.TargetIcon, ph: P.TargetIcon, tone: "red" },
-  globe: { label: "Globe", lucide: L.GlobeIcon, ph: P.GlobeIcon, tone: "blue" },
-  phone: { label: "Phone", lucide: L.PhoneIcon, ph: P.PhoneIcon, tone: "green" },
-  cart: { label: "Purchasing", lucide: L.ShoppingCartIcon, ph: P.ShoppingCartIcon, tone: "orange" },
-  truck: { label: "Delivery", lucide: L.TruckIcon, ph: P.TruckIcon, tone: "teal" },
-  wrench: { label: "Tools", lucide: L.WrenchIcon, ph: P.WrenchIcon, tone: "slate" },
-  school: { label: "Learning", lucide: L.GraduationCapIcon, ph: P.GraduationCapIcon, tone: "blue" },
-  book: { label: "Book", lucide: L.BookIcon, ph: P.BookIcon, tone: "teal" },
-  film: { label: "Film", lucide: L.FilmIcon, ph: P.FilmStripIcon, tone: "red" },
-  music: { label: "Music", lucide: L.MusicIcon, ph: P.MusicNoteIcon, tone: "pink" },
-  image: { label: "Image", lucide: L.ImageIcon, ph: P.ImageIcon, tone: "green" },
-  lock: { label: "Lock", lucide: L.LockIcon, ph: P.LockIcon, tone: "slate" },
-  key: { label: "Key", lucide: L.KeyIcon, ph: P.KeyIcon, tone: "yellow" },
-  cloud: { label: "Cloud", lucide: L.CloudIcon, ph: P.CloudIcon, tone: "blue" },
-  headset: { label: "Support", lucide: L.HeadsetIcon, ph: P.HeadsetIcon, tone: "teal" },
-  lifebuoy: { label: "Help", lucide: L.LifeBuoyIcon, ph: P.LifebuoyIcon, tone: "red" },
-  sprout: { label: "Growth", lucide: L.SproutIcon, ph: P.PlantIcon, tone: "green" },
-  coffee: { label: "Break", lucide: L.CoffeeIcon, ph: P.CoffeeIcon, tone: "orange" },
-  pin: { label: "Place", lucide: L.MapPinIcon, ph: P.MapPinIcon, tone: "red" },
-  tag: { label: "Tag", lucide: L.TagIcon, ph: P.TagIcon, tone: "purple" },
-  receipt: { label: "Receipt", lucide: L.ReceiptIcon, ph: P.ReceiptIcon, tone: "green" },
-  coins: { label: "Money", lucide: L.CoinsIcon, ph: P.CoinsIcon, tone: "yellow" },
-  handshake: { label: "Partners", lucide: L.HandshakeIcon, ph: P.HandshakeIcon, tone: "orange" },
+export const ICONS: Record<string, { label: string; lucide: Svg; tone: Tone }> = {
+  home: { label: "Home", lucide: L.HomeIcon, tone: "blue" },
+  clock: { label: "Clock", lucide: L.ClockIcon, tone: "green" },
+  timer: { label: "Timer", lucide: L.TimerIcon, tone: "orange" },
+  checks: { label: "Approvals", lucide: L.CheckCheckIcon, tone: "green" },
+  checklist: { label: "Checklist", lucide: L.ListChecksIcon, tone: "green" },
+  userCheck: { label: "Person, checked", lucide: L.UserCheckIcon, tone: "teal" },
+  users: { label: "People", lucide: L.UsersIcon, tone: "purple" },
+  team: { label: "Team", lucide: L.UsersRoundIcon, tone: "purple" },
+  userCog: { label: "Admin", lucide: L.UserCogIcon, tone: "purple" },
+  userPlus: { label: "Add person", lucide: L.UserPlusIcon, tone: "purple" },
+  contact: { label: "Contacts", lucide: L.ContactIcon, tone: "purple" },
+  idCard: { label: "ID card", lucide: L.IdCardIcon, tone: "purple" },
+  profile: { label: "Profile", lucide: L.CircleUserIcon, tone: "blue" },
+  question: { label: "Question", lucide: L.MessageCircleQuestionIcon, tone: "orange" },
+  chat: { label: "Chat", lucide: L.MessageSquareIcon, tone: "teal" },
+  chats: { label: "Conversations", lucide: L.MessagesSquareIcon, tone: "teal" },
+  mail: { label: "Email", lucide: L.MailIcon, tone: "red" },
+  inbox: { label: "Inbox", lucide: L.InboxIcon, tone: "pink" },
+  bell: { label: "Bell", lucide: L.BellIcon, tone: "yellow" },
+  tree: { label: "Overview", lucide: L.ListTreeIcon, tone: "blue" },
+  list: { label: "List", lucide: L.ListIcon, tone: "blue" },
+  layers: { label: "Layers", lucide: L.LayersIcon, tone: "teal" },
+  package: { label: "Package", lucide: L.PackageCheckIcon, tone: "orange" },
+  video: { label: "Video", lucide: L.VideoIcon, tone: "red" },
+  calendar: { label: "Calendar", lucide: L.CalendarIcon, tone: "blue" },
+  kanban: { label: "Board", lucide: L.KanbanIcon, tone: "teal" },
+  folder: { label: "Folder", lucide: L.FolderKanbanIcon, tone: "yellow" },
+  sheet: { label: "Sheet", lucide: L.SheetIcon, tone: "green" },
+  map: { label: "Map", lucide: L.MapIcon, tone: "green" },
+  gantt: { label: "Timeline", lucide: L.GanttChartIcon, tone: "purple" },
+  chart: { label: "Chart", lucide: L.ChartColumnIcon, tone: "yellow" },
+  presentation: { label: "Presentation", lucide: L.PresentationIcon, tone: "orange" },
+  branch: { label: "Code branch", lucide: L.GitBranchIcon, tone: "purple" },
+  code: { label: "Code", lucide: L.CodeIcon, tone: "blue" },
+  file: { label: "Document", lucide: L.FileTextIcon, tone: "blue" },
+  filePlus: { label: "New document", lucide: L.FilePlus2Icon, tone: "blue" },
+  fileQuestion: { label: "Question bank", lucide: L.FileQuestionIcon, tone: "orange" },
+  notebook: { label: "Notebook", lucide: L.NotebookTextIcon, tone: "yellow" },
+  cards: { label: "Cards", lucide: L.GalleryVerticalEndIcon, tone: "pink" },
+  bookOpen: { label: "Open book", lucide: L.BookOpenIcon, tone: "teal" },
+  calculator: { label: "Calculator", lucide: L.CalculatorIcon, tone: "green" },
+  wallet: { label: "Wallet", lucide: L.WalletIcon, tone: "green" },
+  bank: { label: "Finance", lucide: L.LandmarkIcon, tone: "green" },
+  briefcase: { label: "Department", lucide: L.BriefcaseIcon, tone: "orange" },
+  building: { label: "Company", lucide: L.Building2Icon, tone: "blue" },
+  crown: { label: "Owners", lucide: L.CrownIcon, tone: "yellow" },
+  megaphone: { label: "Marketing", lucide: L.MegaphoneIcon, tone: "pink" },
+  plane: { label: "Travel", lucide: L.PlaneIcon, tone: "teal" },
+  database: { label: "Data", lucide: L.DatabaseIcon, tone: "slate" },
+  arrows: { label: "Import and export", lucide: L.ArrowLeftRightIcon, tone: "teal" },
+  eye: { label: "View", lucide: L.EyeIcon, tone: "purple" },
+  shield: { label: "Security", lucide: L.ShieldCheckIcon, tone: "blue" },
+  devices: { label: "Devices", lucide: L.MonitorSmartphoneIcon, tone: "slate" },
+  grid: { label: "Grid", lucide: L.GridIcon, tone: "blue" },
+  settings: { label: "Settings", lucide: L.SettingsIcon, tone: "slate" },
+  sliders: { label: "Configure", lucide: L.Settings2Icon, tone: "slate" },
+  sparkles: { label: "Sparkles", lucide: L.SparklesIcon, tone: "purple" },
+  rocket: { label: "Rocket", lucide: L.RocketIcon, tone: "orange" },
+  star: { label: "Star", lucide: L.StarIcon, tone: "yellow" },
+  heart: { label: "Heart", lucide: L.HeartIcon, tone: "red" },
+  flag: { label: "Flag", lucide: L.FlagIcon, tone: "red" },
+  zap: { label: "Lightning", lucide: L.ZapIcon, tone: "yellow" },
+  camera: { label: "Camera", lucide: L.CameraIcon, tone: "slate" },
+  mic: { label: "Microphone", lucide: L.MicIcon, tone: "red" },
+  palette: { label: "Design", lucide: L.PaletteIcon, tone: "pink" },
+  pencil: { label: "Pencil", lucide: L.PencilIcon, tone: "orange" },
+  trophy: { label: "Trophy", lucide: L.TrophyIcon, tone: "yellow" },
+  target: { label: "Target", lucide: L.TargetIcon, tone: "red" },
+  globe: { label: "Globe", lucide: L.GlobeIcon, tone: "blue" },
+  phone: { label: "Phone", lucide: L.PhoneIcon, tone: "green" },
+  cart: { label: "Purchasing", lucide: L.ShoppingCartIcon, tone: "orange" },
+  truck: { label: "Delivery", lucide: L.TruckIcon, tone: "teal" },
+  wrench: { label: "Tools", lucide: L.WrenchIcon, tone: "slate" },
+  school: { label: "Learning", lucide: L.GraduationCapIcon, tone: "blue" },
+  book: { label: "Book", lucide: L.BookIcon, tone: "teal" },
+  film: { label: "Film", lucide: L.FilmIcon, tone: "red" },
+  music: { label: "Music", lucide: L.MusicIcon, tone: "pink" },
+  image: { label: "Image", lucide: L.ImageIcon, tone: "green" },
+  lock: { label: "Lock", lucide: L.LockIcon, tone: "slate" },
+  key: { label: "Key", lucide: L.KeyIcon, tone: "yellow" },
+  cloud: { label: "Cloud", lucide: L.CloudIcon, tone: "blue" },
+  headset: { label: "Support", lucide: L.HeadsetIcon, tone: "teal" },
+  lifebuoy: { label: "Help", lucide: L.LifeBuoyIcon, tone: "red" },
+  sprout: { label: "Growth", lucide: L.SproutIcon, tone: "green" },
+  coffee: { label: "Break", lucide: L.CoffeeIcon, tone: "orange" },
+  pin: { label: "Place", lucide: L.MapPinIcon, tone: "red" },
+  tag: { label: "Tag", lucide: L.TagIcon, tone: "purple" },
+  receipt: { label: "Receipt", lucide: L.ReceiptIcon, tone: "green" },
+  coins: { label: "Money", lucide: L.CoinsIcon, tone: "yellow" },
+  handshake: { label: "Partners", lucide: L.HandshakeIcon, tone: "orange" },
 };
 
 // From a Lucide icon to its entry (by the icon's own name), so every icon gets its pack twin and colour.
@@ -147,23 +147,21 @@ export function toneOf(name: string | undefined): Tone {
   return ORDER[h % ORDER.length]!;
 }
 
-const entryOf = (icon?: Svg, name?: string | null) => (name && ICONS[name] ? ICONS[name] : icon?.displayName ? ICONS[BY_LUCIDE.get(icon.displayName) ?? ""] : undefined);
+const keyOf = (icon?: Svg, name?: string | null) => (name && ICONS[name] ? name : icon?.displayName ? BY_LUCIDE.get(icon.displayName) : undefined);
+const entryOf = (icon?: Svg, name?: string | null) => ICONS[keyOf(icon, name) ?? ""];
 
 // One icon in every style; CSS (globals.css, data-icon-pack on <html>) shows the chosen one.
 export function AppIcon({ icon, name, tone, className }: { icon?: Svg; name?: string | null; tone?: Tone | null; className?: string }) {
-  const entry = entryOf(icon, name);
+  const key = keyOf(icon, name);
+  const entry = key ? ICONS[key] : undefined;
   const Lu = (name && ICONS[name]?.lucide) || icon || L.CircleIcon;
   const t: Tone = tone ?? entry?.tone ?? toneOf(Lu.displayName);
   const c = cn("app-icon", TONES[t], className);
-  if (!entry) return <Lu className={cn(c, "pk-lucide")} />;
-  const Ph = entry.ph;
+  if (!entry || !key) return <Lu className={cn(c, "pk-lucide")} />;
   return (
     <>
       <Lu className={cn(c, "pk-lucide pk-alt")} />
-      <Ph className={cn(c, "pk-fill")} weight="fill" />
-      <Ph className={cn(c, "pk-duo")} weight="duotone" />
-      <Ph className={cn(c, "pk-soft")} weight="regular" />
-      <Ph className={cn(c, "pk-bold")} weight="bold" />
+      <PhosphorTwin k={key} className={c} />
     </>
   );
 }

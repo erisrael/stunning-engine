@@ -1,9 +1,9 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { ArrowLeftIcon } from "lucide-react";
 import { requireViewer } from "@/server/auth";
 import { all } from "@/server/db";
-import { getEmployee, hrDepartments, listEmployees } from "@/server/hr";
+import { findEmployee, getEmployee, hrDepartments, listEmployees } from "@/server/hr";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/app/primitives";
 import { EmployeeView } from "@/components/app/hr/employee-view";
@@ -16,9 +16,14 @@ import { can } from "@/server/users";
 export const metadata = { title: "Employee" };
 
 // HR sees and edits the full record; the person sees their own; line managers see their team (read only).
+// The address is /hr/people/<employee code>; a link by internal id moves there, so ids never show.
 export default async function EmployeePage({ params }: { params: Promise<{ id: string }> }) {
   const viewer = await requireViewer();
-  const detail = await getEmployee(viewer, (await params).id);
+  const ref = decodeURIComponent((await params).id);
+  const found = await findEmployee(ref);
+  if (!found) notFound();
+  if (ref !== found.code) redirect(`/hr/people/${encodeURIComponent(found.code)}`);
+  const detail = await getEmployee(viewer, found.id);
   if (!detail) notFound();
   const departments = (await hrDepartments()).map((d) => ({ value: d.key, label: d.label }));
   const hr = detail.view === "hr";

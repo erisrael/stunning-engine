@@ -101,14 +101,20 @@ const TITLES: Record<string, string> = {
   checklists: "Checklists",
 };
 
-// A page's place in the address as words: "legacy-cms" is Legacy CMS, "chapa" is Chapa; record ids stay as they are.
+// A page's place in the address as words: "legacy-cms" is Legacy CMS, "chapa" is Chapa. A record id never shows:
+// it reads as what the record is ("Profile" under people, "Details" elsewhere).
+const RECORD_WORD: Record<string, string> = { people: "Profile", employees: "Profile", users: "Profile", items: "Item detail", routines: "Routine", handovers: "Handover" };
 const ACRONYMS: Record<string, string> = { cms: "CMS", api: "API", apis: "APIs", sms: "SMS", ivr: "IVR", kb: "KB", hr: "HR", pdf: "PDF" };
-function crumb(p: string) {
+function isRecordId(s: string) {
+  return /^[a-z]{2,5}_[A-Za-z0-9_-]{6,}$/.test(s) || (/\d/.test(s) && s.length > 14) || /^[0-9a-f-]{20,}$/i.test(s);
+}
+function crumb(p: string, parent?: string) {
   let s = p;
   try {
     s = decodeURIComponent(p);
   } catch {}
-  if (/^[a-z]{2,5}_[A-Za-z0-9]{6,}$/.test(s) || (/\d/.test(s) && s.length > 14)) return s;
+  if (isRecordId(s)) return (parent && RECORD_WORD[parent]) || "Details";
+  if (parent === "people") return "Profile";
   return s
     .split(/[-_]+/)
     .filter(Boolean)
@@ -173,7 +179,7 @@ export function Topbar({ user, activeRole, unread, chatUnread, qrScan, fun = fal
         <BreadcrumbList>
           {parts.map((p, i) => {
             const href = "/" + parts.slice(0, i + 1).join("/");
-            const label = TITLES[p] ?? (parts[i - 1] === "items" ? "Item detail" : parts[i - 1] === "routines" ? "Routine" : parts[i - 1] === "handovers" && /^ho_/.test(p) ? "Handover" : (DEPT_VIEW_LABELS as Record<string, string>)[p] ?? crumb(p));
+            const label = parts[i - 2] === "hr" && parts[i - 1] === "people" ? "Employee" : TITLES[p] ?? (parts[i - 1] === "items" ? "Item detail" : parts[i - 1] === "routines" ? "Routine" : (DEPT_VIEW_LABELS as Record<string, string>)[p] ?? crumb(p, parts[i - 1]));
             const last = i === parts.length - 1;
             return (
               <React.Fragment key={href}>
@@ -190,8 +196,8 @@ export function Topbar({ user, activeRole, unread, chatUnread, qrScan, fun = fal
         <Hint title="Search" tip={NAV_TIPS["top.search"]}>
         <Button variant="outline" size="sm" className="h-8 w-9 justify-start gap-2 px-2 text-muted-foreground sm:w-72" onClick={() => setSearchOpen(true)} aria-label="Search">
           <SearchIcon className="size-4" />
-          <span className="hidden sm:inline">Search code, title, teacher</span>
-          <kbd className="ml-auto hidden rounded border bg-muted px-1 font-mono text-[10px] lg:inline">Ctrl K</kbd>
+          <span className="hidden sm:inline" aria-hidden>Search code, title, teacher</span>
+          <kbd className="ml-auto hidden rounded border bg-muted px-1 font-mono text-[10px] lg:inline" aria-hidden>Ctrl K</kbd>
         </Button>
         </Hint>
         <MobileDetails />
@@ -288,12 +294,15 @@ function UserMenu({ user }: { user: { name: string; email: string; avatar?: stri
     <DropdownMenu>
       <Hint title={user.name} tip={NAV_TIPS["top.account"]}>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="rounded-full" aria-label="Account menu">
+        <Button variant="ghost" size="icon" className="rounded-full">
+          <span className="sr-only">Account menu</span>
           {user.avatar ? (
             // eslint-disable-next-line @next/next/no-img-element -- small data URL photo
             <img src={user.avatar} alt="" className="size-8 rounded-full object-cover" />
           ) : (
-            <UserAvatar name={user.name} size="md" />
+            <span aria-hidden>
+              <UserAvatar name={user.name} size="md" />
+            </span>
           )}
         </Button>
       </DropdownMenuTrigger>
