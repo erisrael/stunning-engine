@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { MultiSelect } from "@/components/app/multi-select";
 import type { StructureRow } from "@/server/structure";
 import { SIMPLE_STATUS_LABELS, STAGE_LABELS, STAGES as ALL_STAGES, type SimpleStatus, type Stage } from "@/lib/domain";
@@ -95,7 +96,10 @@ export function StructureReport({
   allowViewToggle = true,
   heading,
   stages,
+  serverExport = false,
 }: {
+  // The Overview: Export as Excel, a print-ready report and CSV, made on the server with the page's filters.
+  serverExport?: boolean;
   stages?: readonly Stage[];
   rows: StructureRow[];
   grades: Opt[];
@@ -236,9 +240,43 @@ export function StructureReport({
               className="h-8 w-56 pl-7 text-xs"
             />
           </div>
-          <Button variant="outline" size="sm" className="h-8" onClick={download}>
-            <DownloadIcon /> CSV
-          </Button>
+          {serverExport ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="h-8" data-overview-export>
+                  <DownloadIcon /> Export
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-60">
+                <DropdownMenuLabel className="text-xs text-muted-foreground">What you see, with its filters</DropdownMenuLabel>
+                {[
+                  ["xlsx", "Excel workbook", "data-export-xlsx"],
+                  ["report", "PDF report (print-ready)", "data-export-report"],
+                  ["csv", "CSV", "data-export-csv"],
+                ].map(([f, label, attr]) => (
+                  <DropdownMenuItem
+                    key={f}
+                    {...{ [attr!]: "" }}
+                    onSelect={() => {
+                      const p = new URLSearchParams(params.toString());
+                      p.set("format", f!);
+                      if (q.trim()) p.set("q", q.trim());
+                      if (f === "report") {
+                        p.set("print", "1");
+                        window.open(`/api/overview-export?${p.toString()}`, "_blank", "noopener");
+                      } else window.location.href = `/api/overview-export?${p.toString()}`;
+                    }}
+                  >
+                    {label}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+            <Button variant="outline" size="sm" className="h-8" onClick={download}>
+              <DownloadIcon /> CSV
+            </Button>
+          )}
         </div>
       </div>
 

@@ -37,6 +37,21 @@ try {
   let h = await heads(m);
   check("only the Recording team's column", /Recording/i.test(h) && !/Editing|Uploading|Publication/i.test(h), h);
   await m.screenshot({ path: path.join(shots, "member-overview.png"), fullPage: false });
+  // Export: Excel, the PDF report and CSV, with only the member's team.
+  await m.click("[data-overview-export]");
+  check("the member's Export offers Excel, PDF report and CSV", (await m.locator("[data-export-xlsx]").count()) === 1 && (await m.locator("[data-export-report]").count()) === 1 && (await m.locator("[data-export-csv]").count()) === 1);
+  const [x] = await Promise.all([m.waitForEvent("download", { timeout: 15000 }), m.click("[data-export-xlsx]")]);
+  const xf = fs.readFileSync(await x.path());
+  check("the Excel workbook downloads", /\.xlsx$/.test(x.suggestedFilename()) && xf.subarray(0, 2).toString() === "PK", x.suggestedFilename());
+  const csv = await (await m.request.get(`${base}/api/overview-export?format=csv`)).text();
+  const first = csv.split(String.fromCharCode(10))[0];
+  check("the CSV has only the Recording team", /Recording/.test(first) && !/Editing|Uploading/.test(first), first);
+  const rep = await (await m.request.get(`${base}/api/overview-export?format=report`)).text();
+  check("the PDF report is the Recording team overview", /Recording team overview/.test(rep) && rep.includes("/api/branding/logo"));
+  const rp = await m.context().newPage();
+  await rp.goto(`${base}/api/overview-export?format=report`);
+  await rp.screenshot({ path: path.join(shots, "member-report.png") });
+  await rp.close();
   await m.goto(`${base}/team-overview`);
   await m.waitForURL(/\/overview/, { timeout: 10000 }).catch(() => {});
   check("the old address goes to the Overview", /\/overview/.test(m.url()), m.url());

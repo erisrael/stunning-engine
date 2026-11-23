@@ -40,7 +40,7 @@ export default async function OverviewPage() {
         }
       />
       {canConfigureOverview(viewer) && <OverviewTeamsAdmin value={await overviewTeams()} roles={Object.entries(ROLE_LABELS).map(([k, v]) => ({ key: k, label: v }))} />}
-      <StructureReport rows={rows} grades={grades} subjects={subjects} defaultMode="grade" defaultView="table" stages={shown} />
+      <StructureReport rows={rows} grades={grades} subjects={subjects} defaultMode="grade" defaultView="table" stages={shown} serverExport />
     </div>
   );
 }
