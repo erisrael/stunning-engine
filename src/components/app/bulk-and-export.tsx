@@ -269,6 +269,7 @@ export function BulkBar({
   tz,
   rows = [],
   leads = [],
+  roles = [],
 }: {
   selected: string[];
   onClear: () => void;
@@ -277,7 +278,12 @@ export function BulkBar({
   tz: string;
   rows?: ItemListRow[];
   leads?: Stage[];
+  roles?: Role[];
 }) {
+  // Work actions (handoffs, handing over, status) only for people who do production work: a team's members and
+  // leads, planners, managers who override, data admins. Someone who only follows production (the Assistant
+  // Manager, owners) gets Export.
+  const works = perms.includes("items.plan") || perms.includes("items.create") || perms.includes("work.override") || perms.includes("data.manage") || leads.length > 0 || roles.some((r) => (STAGES as readonly string[]).includes(r));
   const router = useRouter();
   const [kind, setKind] = React.useState<BulkKind | null>(null);
   const [edit, setEdit] = React.useState<"rename" | "fill" | "trash" | "status" | "handover" | null>(null);
@@ -355,9 +361,9 @@ export function BulkBar({
           </>
         )}
         {perms.includes("items.create") && <Button size="xs" variant="outline" onClick={() => openKind("release")}>Queue for Recording</Button>}
-        <Button size="xs" variant="outline" onClick={() => openKind("accept")}>Accept handoffs</Button>
-        <Button size="xs" variant="outline" onClick={() => openKind("submit")}>Submit handoffs</Button>
-        {perms.includes("nav.handovers") && <Button size="xs" variant="outline" onClick={() => setEdit("handover")}>Hand over</Button>}
+        {works && <Button size="xs" variant="outline" onClick={() => openKind("accept")}>Accept handoffs</Button>}
+        {works && <Button size="xs" variant="outline" onClick={() => openKind("submit")}>Submit handoffs</Button>}
+        {works && perms.includes("nav.handovers") && <Button size="xs" variant="outline" onClick={() => setEdit("handover")}>Hand over</Button>}
         {(perms.includes("items.plan") || perms.includes("data.manage")) && picked.length > 0 && (
           <>
             <Button size="xs" variant="outline" onClick={() => setEdit("rename")}>Rename</Button>

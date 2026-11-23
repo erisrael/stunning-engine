@@ -95,6 +95,7 @@ async function main() {
   const { templateList } = await import("../../src/server/importer");
   const { curriculumAccess } = await import("../../src/server/curriculum-fix");
   check("no Curriculum by default", !curriculumAccess(am));
+  check("no planning, bulk work or settings", !am.perms.includes("items.plan") && !am.perms.includes("settings.manage") && !am.perms.includes("data.manage") && !am.perms.includes("work.override"));
   check("Admin keeps Curriculum", curriculumAccess(admin));
   check("imports nothing by default", templateList(am).length === 0, templateList(am).map((t) => t.key).join(","));
   {

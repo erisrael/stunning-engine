@@ -467,7 +467,7 @@ export function SheetGrid({
 
   return (
     <div className="space-y-3">
-      {selected.length > 0 && <BulkBar selected={selected} onClear={() => setSelected([])} users={users} perms={viewer.perms} tz={tz} rows={rows} leads={viewer.leads} />}
+      {selected.length > 0 && <BulkBar selected={selected} onClear={() => setSelected([])} users={users} perms={viewer.perms} tz={tz} rows={rows} leads={viewer.leads} roles={viewer.roles} />}
       <div className="flex flex-wrap items-center gap-2">
         <Select value={preset.key} onValueChange={(v) => update({ preset: v } as never, { resetPage: false })}>
           <SelectTrigger size="sm" className="h-8 w-56 text-xs" aria-label="Sheet preset">

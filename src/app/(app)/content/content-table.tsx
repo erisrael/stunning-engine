@@ -326,7 +326,7 @@ export function ContentTable({
           </Button>
         </div>
       </div>
-      <BulkBar selected={selected} onClear={() => setSelected([])} users={users} perms={viewer.perms} tz={ctx.tz} rows={rows} leads={viewer.leads} />
+      <BulkBar selected={selected} onClear={() => setSelected([])} users={users} perms={viewer.perms} tz={ctx.tz} rows={rows} leads={viewer.leads} roles={viewer.roles} />
     </div>
   );
 }
