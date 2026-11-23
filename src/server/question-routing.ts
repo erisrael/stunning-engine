@@ -91,5 +91,17 @@ export async function eligibleQuestionRecipients(sender: AppUser) {
  const leadOnly=new Set(sender.roles.flatMap(r=>config.leadOnlyBySenderRole?.[r]??[]));
  const leads=await all<{user_id:string;stage:string}>("SELECT user_id,stage FROM team_leads");
  const positions=await all<{user_id:string;department:string}>("SELECT user_id,department FROM department_positions WHERE position IN ('lead','head')");
- return (await userDirectory()).filter(u=>u.id!==sender.id && (allowed==="*" || u.roles.some(role=>allowed.includes(role) && (!leadOnly.has(role) || leads.some(l=>l.user_id===u.id&&l.stage===role) || positions.some(p=>p.user_id===u.id&&p.department===(role==="developer"?"dev":role))))));
+ const byMatrix=(u:{id:string;roles:string[]})=>allowed==="*" || u.roles.some(role=>allowed.includes(role) && (!leadOnly.has(role) || leads.some(l=>l.user_id===u.id&&l.stage===role) || positions.some(p=>p.user_id===u.id&&p.department===(role==="developer"?"dev":role))));
+ // Team members (src/server/contact-rules.ts): their team, their own lead or head, and HR, always. Beyond that only
+ // what Admin set for their role in Question routing (another team's lead, for support), never Admin, owners or
+ // managers: those hear from members through Feedback.
+ const memberIds=await (await import("./contact-rules")).memberContactIds(sender);
+ if(memberIds){
+  const saved=await get<{ value: string }>("SELECT value FROM settings WHERE key = 'cfg.question_routing'");
+  const explicit=parseJson<Partial<QuestionRoutingConfig>>(saved?.value ?? "{}", {}).allowedRolesBySenderRole ?? {};
+  const set=sender.roles.some(r=>Array.isArray(explicit[r]));
+  const ABOVE=["admin","owner","manager","assistant_manager"];
+  return (await userDirectory()).filter(u=>u.id!==sender.id && (memberIds.has(u.id) || (set && !u.roles.some(r=>ABOVE.includes(r)) && byMatrix(u))));
+ }
+ return (await userDirectory()).filter(u=>u.id!==sender.id && byMatrix(u));
 }

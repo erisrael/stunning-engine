@@ -45,9 +45,11 @@ import { ChartFrame, LinesChart } from "@/components/app/charts";
 import { CAT } from "@/lib/chart-colors";
 import * as A from "@/app/actions/departments";
 import type { DocView, Roadmap, SprintPage } from "@/server/dev-studio";
+import { InsertDiagramMenu } from "./diagrams";
+import { ProjectRoadmapButtons, RoadmapToolbar } from "./roadmap-tools";
+import { deptViewPath } from "@/lib/work";
 import { DOC_KINDS, DOC_STATUS_LABELS, DOC_TEMPLATES, type DocKind } from "@/lib/dev-docs";
 import { RITUALS } from "@/lib/dept-config";
-import { deptViewPath } from "@/lib/work";
 import { cn } from "@/lib/utils";
 import { DocLibrary } from "./doc-library";
 import { SpecDocument } from "./spec-document";
@@ -913,11 +915,12 @@ const HEALTH: Record<string, { label: string; cls: string }> = {
   done: { label: "Finished", cls: "bg-muted text-muted-foreground" },
 };
 
-export function RoadmapView({ data, dora }: { data: Roadmap; dora: { deploysPerWeek: number; releases: number; leadTimeHours: number | null; changeFailureRate: number | null } }) {
+export function RoadmapView({ dept = "dev", canCreate = false, data, dora }: { dept?: string; canCreate?: boolean; data: Roadmap; dora: { deploysPerWeek: number; releases: number; leadTimeHours: number | null; changeFailureRate: number | null } }) {
   const quarter = (d: string | null) => (d ? `${d.slice(0, 4)} Q${Math.floor((Number(d.slice(5, 7)) - 1) / 3) + 1}` : "No dates");
   const quarters = [...new Set(data.projects.map((p) => quarter(p.due_date ?? p.start_date)))].sort();
   return (
     <div className="space-y-4" data-roadmap>
+      <RoadmapToolbar dept={dept} canCreate={canCreate} projects={data.projects.map((p) => ({ id: p.id, key: p.key, name: p.name, parent_id: p.parent_id }))} />
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label="DORA measures">
         {[
           ["Deployments per week", String(dora.deploysPerWeek), `${dora.releases} releases in 90 days`],
@@ -932,7 +935,7 @@ export function RoadmapView({ data, dora }: { data: Roadmap; dora: { deploysPerW
           </div>
         ))}
       </div>
-      {!data.projects.length && <p className="text-sm text-muted-foreground">No projects yet. Add them in Projects, with start and due dates.</p>}
+      {!data.projects.length && <p className="text-sm text-muted-foreground">No projects yet. Generate a project pack above, or add projects in Projects with start and due dates.</p>}
       {quarters.map((q) => (
         <section key={q} className="space-y-2">
           <h3 className="text-sm font-semibold">{q}</h3>
@@ -947,6 +950,7 @@ export function RoadmapView({ data, dora }: { data: Roadmap; dora: { deploysPerW
                     </p>
                     <span className={cn("rounded px-1.5 py-0.5 text-[11px]", HEALTH[p.health]!.cls)}>{HEALTH[p.health]!.label}</span>
                   </div>
+                  <p className="text-[11px] text-muted-foreground" data-project-type>{p.parent_key ? `Sub-project of ${p.parent_key}` : `Full project${p.parts ? ` · ${p.parts} sub-project${p.parts === 1 ? "" : "s"}` : ""}`}</p>
                   <div className="h-1.5 rounded bg-muted">
                     <div className="h-1.5 rounded bg-primary" style={{ width: `${p.progress}%` }} />
                   </div>
@@ -965,12 +969,13 @@ export function RoadmapView({ data, dora }: { data: Roadmap; dora: { deploysPerW
                       </span>
                     )}
                   </p>
+                  <ProjectRoadmapButtons dept={dept} project={{ id: p.id, key: p.key, name: p.name }} />
                   <div className="pt-2 border-t mt-1.5 flex items-center justify-between text-[11px]">
-                    <a href={`/dev/docs?project=${p.id}`} className="text-primary hover:underline font-medium">
-                      Project Specs &amp; Architecture &rarr;
+                    <a href={deptViewPath(dept, "docs", `project=${p.id}`)} className="text-primary hover:underline font-medium">
+                      Specs and docs &rarr;
                     </a>
-                    <a href={`/dev/board?project=${p.key}`} className="text-muted-foreground hover:underline">
-                      View Board &rarr;
+                    <a href={deptViewPath(dept, "board", `project=${p.key}`)} className="text-muted-foreground hover:underline">
+                      Board &rarr;
                     </a>
                   </div>
                 </div>
@@ -1057,6 +1062,7 @@ function DocEditor({ dept, id, people, workspace, onBack }: { dept: string; id: 
   const [d, setD] = React.useState<DocView | null>(null);
   const [title, setTitle] = React.useState("");
   const [body, setBody] = React.useState("");
+  const bodyRef = React.useRef<HTMLTextAreaElement>(null);
   // Documents open formatted, as the company document; an empty one opens for writing.
   const [mode, setMode] = React.useState<DocMode>("read");
   const opened = React.useRef(false);
@@ -1188,12 +1194,26 @@ function DocEditor({ dept, id, people, workspace, onBack }: { dept: string; id: 
       )}
       <div className={cn(mode === "split" && "grid gap-3 lg:grid-cols-2 lg:items-start")}>
         {mode !== "read" && (
-          <Textarea value={body} onChange={(e) => setBody(e.target.value)} rows={mode === "split" ? 32 : 22} className={cn("font-mono text-sm", mode === "split" && "lg:h-[calc(100vh-14rem)] lg:resize-none")} aria-label="Document" disabled={!d.canEdit} spellCheck={false} />
+          <div className="space-y-2">
+          {d.canEdit && (
+            <InsertDiagramMenu
+              dept={dept}
+              projectId={(d as { projectId?: string | null }).projectId ?? null}
+              onInsert={(text) => {
+                const el = bodyRef.current;
+                const at = el ? el.selectionStart : body.length;
+                const next = `${body.slice(0, at)}${at && body[at - 1] !== "\n" ? "\n\n" : ""}${text}\n\n${body.slice(at)}`;
+                setBody(next);
+              }}
+            />
+          )}
+          <Textarea ref={bodyRef} value={body} onChange={(e) => setBody(e.target.value)} rows={mode === "split" ? 32 : 22} className={cn("font-mono text-sm", mode === "split" && "lg:h-[calc(100vh-14rem)] lg:resize-none")} aria-label="Document" disabled={!d.canEdit} spellCheck={false} />
+          </div>
         )}
         {mode !== "edit" && (
           <div className={cn("rounded-xl bg-muted/40 p-2 sm:p-5", mode === "split" && "lg:h-[calc(100vh-14rem)] lg:overflow-auto")} data-doc-formatted>
             {d.canDownload ? (
-              <SpecDocument doc={spec} />
+              <SpecDocument doc={spec} editable={d.canEdit} />
             ) : (
               <ProtectedView dept={dept} targetKind="doc" targetId={d.id} viewer={d.viewer}>
                 <SpecDocument doc={spec} />

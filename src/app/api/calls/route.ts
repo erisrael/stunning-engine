@@ -1,4 +1,4 @@
-import { getViewer } from "@/server/auth";
+import { getViewerFast as getViewer } from "@/server/auth";
 import { answerCall, declineCall, hangUp, pollCalls, sendSignal, startCall } from "@/server/calls";
 import { WorkflowError } from "@/server/workflow";
 

@@ -247,7 +247,7 @@ export async function setMeta(key: string, value: string) {
 }
 
 // Role and team-lead permission matrix (Admin, Roles and permissions). Missing entries fall back to defaults.
-const MATRIX_VERSION = 15;
+const MATRIX_VERSION = 17;
 // Version 2 made managers view-only, moved item creation to Admin and the Recording lead, and added sidebar switches.
 const V2_MANAGER_REMOVED: Capability[] = ["items.create", "items.plan", "items.close", "work.override", "release.emergency", "import.run", "import.stage"];
 const V2_ADMIN_ADDED: Capability[] = ["items.create", "items.plan", "items.close", "import.tracker"];
@@ -400,6 +400,24 @@ function migrateV15(stored: Partial<PermissionMatrix>): Partial<PermissionMatrix
   return out as Partial<PermissionMatrix>;
 }
 
+// v16: the Assistant Manager imports nothing unless Admin allows it (Roles and permissions, Import progress).
+function migrateV16(stored: Partial<PermissionMatrix>): Partial<PermissionMatrix> {
+  const out: Record<string, Capability[]> = { ...(stored as Record<string, Capability[]>) };
+  if (out.assistant_manager) out.assistant_manager = out.assistant_manager.filter((c) => !c.startsWith("import."));
+  return out as Partial<PermissionMatrix>;
+}
+
+// v17: Curriculum has its own permission. Roles that could open it (Admin, settings or override rights) keep it,
+// except the Assistant Manager, who never has Curriculum unless Admin ticks it.
+function migrateV17(stored: Partial<PermissionMatrix>): Partial<PermissionMatrix> {
+  const out: Record<string, Capability[]> = { ...(stored as Record<string, Capability[]>) };
+  for (const [k, caps] of Object.entries(out)) {
+    if (!Array.isArray(caps) || k === "assistant_manager") continue;
+    if (caps.some((c) => c === "users.manage" || c === "settings.manage" || c === "work.override")) out[k] = [...new Set([...caps, "curriculum.manage" as Capability])];
+  }
+  return out as Partial<PermissionMatrix>;
+}
+
 // Read on every request (signed-in user's permissions), so cached briefly; concurrent callers share one query.
 let matrixCache: { at: number; value: Promise<PermissionMatrix> } | null = null;
 
@@ -434,6 +452,8 @@ async function loadPermissionMatrix(): Promise<PermissionMatrix> {
   if (version < 13) stored = migrateV13(stored);
   if (version < 14) stored = migrateV14(stored);
   if (version < 15) stored = migrateV15(stored);
+  if (version < 16) stored = migrateV16(stored);
+  if (version < 17) stored = migrateV17(stored);
   const keys = [...new Set([...ROLES, ...STAGES.map(leadKey), ...Object.keys(stored).filter(k => /^[a-z][a-z0-9_]{1,39}$/.test(k) && Array.isArray((stored as Record<string, unknown>)[k]))])] as (keyof PermissionMatrix)[];
   const defaults: PermissionMatrix = { ...DEFAULT_PERMISSIONS, ...DEFAULT_LEAD_PERMISSIONS };
   return Object.fromEntries(keys.map((k) => [k, stored[k] ?? defaults[k]])) as PermissionMatrix;
@@ -448,4 +468,5 @@ export async function savePermissionMatrix(matrix: PermissionMatrix, actorId?: s
     actorId ?? null,
   );
   matrixCache = null;
+  (await import("./auth")).forgetFastViewers();
 }

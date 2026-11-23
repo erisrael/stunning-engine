@@ -1,5 +1,6 @@
 "use client";
 
+import { FocusMode } from "./focus-mode";
 import { ICON_PACKS, MOTION_CHOICES } from "@/lib/icon-packs";
 import { MobileDetails } from "./mobile-nav";
 import { QrScanButton } from "@/components/app/attendance/qr-scanner";
@@ -115,7 +116,7 @@ function crumb(p: string) {
     .join(" ");
 }
 
-export function Topbar({ user, activeRole, unread, chatUnread, qrScan, fun = false }: { user: { name: string; email: string; roles: Role[]; avatar?: string | null }; activeRole: Role; unread: number; chatUnread: number; qrScan?: boolean; fun?: boolean }) {
+export function Topbar({ user, activeRole, unread, chatUnread, qrScan, fun = false, assistant = false }: { user: { name: string; email: string; roles: Role[]; avatar?: string | null }; activeRole: Role; unread: number; chatUnread: number; qrScan?: boolean; fun?: boolean; assistant?: boolean }) {
   const pathname = usePathname();
   const parts = pathname.split("/").filter(Boolean);
   const [searchOpen, setSearchOpen] = React.useState(false);
@@ -197,6 +198,12 @@ export function Topbar({ user, activeRole, unread, chatUnread, qrScan, fun = fal
         <RoleSwitcher roles={user.roles} active={activeRole} />
         {qrScan && <QrScanButton compact />}
         {fun && <FunLauncher />}
+        <FocusMode />
+        {assistant && (
+          <Button variant="ghost" size="icon" aria-label="Assistant" title="Assistant (Alt+A)" onClick={() => window.dispatchEvent(new Event("myseed:assistant"))} data-assistant-toggle>
+            <SparklesIcon className="text-[#9334E6] dark:text-[#C58AF9]" />
+          </Button>
+        )}
         <Hint title="Chat" tip={NAV_TIPS["top.chat"]}>
         <Button variant="ghost" size="icon" className={cn("relative hidden md:inline-flex", pathname === "/chat" && "bg-accent")} aria-label={`Chat, ${chat} unread`} asChild>
           <Link href="/chat">

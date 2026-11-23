@@ -40,7 +40,8 @@ export default async function ChatPage({ searchParams }: { searchParams: Promise
       directory={await (async () => {
         // Owners are listed only for people allowed to contact them (an owner can still start a chat with anyone).
         const owners = canContactOwners(viewer) ? new Set<string>() : await ownerIds();
-        return (await userDirectory()).filter((u) => !owners.has(u.id)).map((u) => ({ id: u.id, name: u.name, handle: u.handle, roles: u.roles }));
+        const reach = await (await import("@/server/contact-rules")).contactFilter(viewer);
+        return (await userDirectory()).filter((u) => !owners.has(u.id) && reach(u)).map((u) => ({ id: u.id, name: u.name, handle: u.handle, roles: u.roles }));
       })()}
       timezone={settings.workspace.timezone}
     />

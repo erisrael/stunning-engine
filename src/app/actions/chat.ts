@@ -369,6 +369,10 @@ export async function openDirectAction(userId: string) {
     // Owners are contacted directly only by people allowed to, unless the owner already started the conversation.
     if (!canContactOwners(viewer) && (await ownerIds()).has(userId) && !(await get("SELECT 1 AS x FROM chat_groups WHERE dm_key = ?", dmKey(viewer.id, userId))))
       throw new WorkflowError("FORBIDDEN", "Owners are contacted through your manager. An owner can start a chat with you.");
+    // Team members reach their team, their own lead or head, and HR; anyone can answer a chat someone started with them.
+    const { mayContact, MEMBER_CONTACT_RULE } = await import("@/server/contact-rules");
+    if (!(await mayContact(viewer, userId)) && !(await get("SELECT 1 AS x FROM chat_groups WHERE dm_key = ?", dmKey(viewer.id, userId))))
+      throw new WorkflowError("FORBIDDEN", MEMBER_CONTACT_RULE);
     return await directGroup(viewer.id, userId);
   });
 }

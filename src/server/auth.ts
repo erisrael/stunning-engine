@@ -82,7 +82,30 @@ export async function startSession(userId: string): Promise<{ ok: true; sessionI
   return { ok: true, sessionId: id, deviceId: device };
 }
 
+// The endpoints called several times a second by every open page (Seed Town's live room, call ringing): the same
+// person for a few seconds without asking the database again (a full check is about seven queries). Pages and
+// actions always check in full (getViewer). Signing out, switching role and Admin's changes clear it.
+const fast = new Map<string, { at: number; v: Viewer }>();
+const FAST_MS = 5000;
+export async function getViewerFast(): Promise<Viewer | null> {
+  const jar = await cookies();
+  const id = jar.get(COOKIE)?.value;
+  if (!id) return null;
+  const key = `${id}|${jar.get(PREVIEW_COOKIE)?.value ?? ""}`;
+  const hit = fast.get(key);
+  if (hit && Date.now() - hit.at < FAST_MS) return hit.v;
+  const v = await getViewer();
+  if (fast.size > 20_000) fast.clear();
+  if (v) fast.set(key, { at: Date.now(), v });
+  else fast.delete(key);
+  return v;
+}
+export function forgetFastViewers() {
+  fast.clear();
+}
+
 export async function signOut() {
+  forgetFastViewers();
   const jar = await cookies();
   const id = jar.get(COOKIE)?.value;
   if (id) await run("DELETE FROM sessions WHERE id = ?", id);
@@ -169,6 +192,7 @@ export async function setActiveRole(role: Role) {
   }
   if (!viewer.roles.includes(role)) throw new Error("You do not hold that role.");
   await run("UPDATE sessions SET active_role = ? WHERE id = ?", role, viewer.sessionId);
+  forgetFastViewers();
 }
 
 // The real person behind the session, ignoring View as (for Admin's own actions such as leaving the preview).

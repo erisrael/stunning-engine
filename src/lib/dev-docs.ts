@@ -2,6 +2,8 @@
 // Myseed's own products. Documents are Markdown (plain text with "#" headings reads the same), shown formatted by
 // src/lib/spec-doc.ts; requirements carry IDs such as FR-1 and NFR-2, which link to tasks.
 
+import { packDocBody } from "./project-pack";
+
 export const DOC_KINDS = [
   { key: "srs", label: "Software requirements (SRS)" },
   { key: "prd", label: "Product brief (PRD)" },
@@ -11,6 +13,8 @@ export const DOC_KINDS = [
   { key: "release", label: "Release notes" },
   { key: "runbook", label: "Runbook" },
   { key: "postmortem", label: "Postmortem" },
+  { key: "plan", label: "Project plan (SPMP)" },
+  { key: "manual", label: "User guide" },
   // Notes, guides, handbooks and imported documents: shown simply as "Document" on the cover and in the library.
   { key: "note", label: "Document" },
 ] as const;
@@ -234,5 +238,8 @@ export const DOC_TEMPLATES: { key: string; kind: DocKind; label: string; title: 
   { key: "release", kind: "release", label: "Release notes and checklist", title: "Release notes", body: RELEASE },
   { key: "runbook", kind: "runbook", label: "Runbook", title: "Runbook", body: RUNBOOK },
   { key: "postmortem", kind: "postmortem", label: "Postmortem", title: "Postmortem", body: POSTMORTEM },
+  { key: "plan", kind: "plan", label: "Project management plan (IEEE 16326)", title: "Project management plan", body: packDocBody("plan", { name: "the project", key: "PRJ", type: "full" }) },
+  { key: "design_diagrams", kind: "design", label: "Design with diagrams (IEEE 1016: classes, sequence, data)", title: "Software design description", body: packDocBody("design", { name: "the system", key: "SYS", type: "full" }) },
+  { key: "manual", kind: "manual", label: "User guide (IEEE 1063)", title: "User guide", body: packDocBody("manual", { name: "the system", key: "SYS", type: "full" }) },
   { key: "note", kind: "note", label: "Blank document", title: "Untitled document", body: "" },
 ];

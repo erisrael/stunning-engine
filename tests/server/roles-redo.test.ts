@@ -92,6 +92,19 @@ async function main() {
   await pr.setPresenterDepartment(am, pid, "production");
   check("assigns a presenter", (await get<{ department: string }>("SELECT department FROM presenters WHERE id = ?", pid))?.department === "production");
   check("does not see presenter fees", !!(await throws(() => pr.statements(am, new Date().toISOString().slice(0, 7)))));
+  const { templateList } = await import("../../src/server/importer");
+  const { curriculumAccess } = await import("../../src/server/curriculum-fix");
+  check("no Curriculum by default", !curriculumAccess(am));
+  check("Admin keeps Curriculum", curriculumAccess(admin));
+  check("imports nothing by default", templateList(am).length === 0, templateList(am).map((t) => t.key).join(","));
+  {
+    const m0 = await getPermissionMatrix();
+    await savePermissionMatrix({ ...m0, assistant_manager: [...m0.assistant_manager!, "import.stage"] }, admin.id);
+    const amI = (await loadUser(am.id))!;
+    const keys = templateList(amI).map((t) => t.key);
+    check("imports progress once Admin allows it", keys.includes("progress") && !keys.includes("curriculum") && !keys.includes("users"), keys.join(","));
+    await savePermissionMatrix(m0, admin.id);
+  }
   check("the role is on Admin's list with defaults", JSON.stringify((await getPermissionMatrix()).assistant_manager?.slice().sort()) === JSON.stringify(DEFAULT_PERMISSIONS.assistant_manager.slice().sort()));
 
   // ---------------------------------------------------------------- the boxes are enforced

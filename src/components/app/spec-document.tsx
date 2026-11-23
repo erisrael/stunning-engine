@@ -7,10 +7,14 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { SPEC_CSS, specArticleHtml, type SpecDocInput } from "@/lib/spec-doc";
 import { cn } from "@/lib/utils";
+import { useDiagrams } from "./diagrams";
 
-export function SpecDocument({ doc, className }: { doc: SpecDocInput; className?: string }) {
+export function SpecDocument({ doc, className, editable = false }: { doc: SpecDocInput; className?: string; editable?: boolean }) {
   const router = useRouter();
   const html = React.useMemo(() => specArticleHtml(doc), [doc]);
+  const box = React.useRef<HTMLDivElement>(null);
+  // Mermaid diagrams drawn as pictures; draw.io pictures open in draw.io for people who may edit.
+  const editor = useDiagrams(box, html, editable);
   const onClick = (e: React.MouseEvent<HTMLDivElement>) => {
     const a = (e.target as HTMLElement).closest("a");
     if (!a) return;
@@ -33,7 +37,8 @@ export function SpecDocument({ doc, className }: { doc: SpecDocInput; className?
       <style href="myseed-spec-doc" precedence="medium">
         {SPEC_CSS}
       </style>
-      <div className={cn("min-w-0", className)} data-spec-doc onClick={onClick} dangerouslySetInnerHTML={{ __html: html }} />
+      <div ref={box} className={cn("min-w-0", className)} data-spec-doc onClick={onClick} dangerouslySetInnerHTML={{ __html: html }} />
+      {editor}
     </>
   );
 }

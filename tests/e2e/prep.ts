@@ -200,6 +200,27 @@ const PREPS: Record<string, () => Promise<unknown>> = {
     await passwordOnly();
     return {};
   },
+  // Members' tools: accept or reject work, right-click Ask a question, Focus mode, the assistant put away and back,
+  // the Assistant Manager without imports, and a member's request to Finance going to their team lead first.
+  // Roadmap project packs, infographics, the project book and diagrams in documents (Admin in Dev).
+  async "project-pack"() {
+    await passwordOnly();
+    const seen = JSON.stringify({ tour: { seen: ["member", "lead", "publication", "manager", "owner", "department", "hr", "finance"] } });
+    await run("UPDATE users SET prefs = ? WHERE email = 'admin@demo.local'", seen);
+    return {};
+  },
+  async "member-tools"() {
+    await passwordOnly();
+    const seen = JSON.stringify({ tour: { seen: ["member", "lead", "publication", "manager", "owner", "department", "hr", "finance"] } });
+    await upsertAccount({ name: "Assistant Abeba", email: "am@demo.local", title: "Assistant manager", roles: ["assistant_manager"] as never, password: "Demo-Workflow-2026", mustChangePassword: false });
+    await upsertAccount({ name: "Helen HR", email: "hr@demo.local", title: "HR manager", roles: ["hr_manager"] as never, password: "Demo-Workflow-2026", mustChangePassword: false });
+    for (const e of ["dawit", "hana", "am", "hr", "admin"]) await run("UPDATE users SET prefs = ? WHERE email = ?", seen, `${e}@demo.local`);
+    const wf = await import("../../src/server/workflow");
+    const dawit = (await get<{ id: string }>("SELECT id FROM users WHERE email = 'dawit@demo.local'"))!;
+    const lesson = (await get<{ id: string; grade_id: string; subject_id: string }>("SELECT l.id, u.grade_id, u.subject_id FROM lessons l JOIN units u ON u.id = l.unit_id LIMIT 1"))!;
+    await wf.createItem({ actor: null, source: "seed" }, { lessonId: lesson.id, gradeId: lesson.grade_id, subjectId: lesson.subject_id, title: "Answer me part", owners: { recording: dawit.id } } as never);
+    return {};
+  },
   // Configure whole system: names, report name, logo, motion and icons; the department pages' PDF reports.
   async "system-config"() {
     await passwordOnly();

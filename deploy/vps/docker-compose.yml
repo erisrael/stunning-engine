@@ -18,6 +18,10 @@ services:
       NODE_ENV: production
       PORT: "3000"
       BACKUP_DIR: /backups
+      # Sized for the VPS (2 CPUs, 8 GB): more people at once share 12 database connections instead of 5, and Node
+      # may use 2 GB of its 3 GB before collecting garbage hard.
+      DATABASE_POOL_SIZE: "12"
+      NODE_OPTIONS: "--max-old-space-size=2048"
     volumes:
       - ${APP_ROOT}/backups:/backups
     ports:
@@ -43,6 +47,27 @@ services:
     restart: unless-stopped
     # The last thing the system stops when memory runs short.
     oom_score_adj: -500
+    # Tuned for the VPS (8 GB, SSD): a bigger cache in memory instead of 128 MB, quick plans for short queries (no JIT),
+    # and room for parallel queries.
+    shm_size: 512mb
+    command:
+      - postgres
+      - -c
+      - shared_buffers=768MB
+      - -c
+      - effective_cache_size=3GB
+      - -c
+      - work_mem=8MB
+      - -c
+      - maintenance_work_mem=128MB
+      - -c
+      - random_page_cost=1.1
+      - -c
+      - effective_io_concurrency=200
+      - -c
+      - max_connections=60
+      - -c
+      - jit=off
     environment:
       POSTGRES_USER: myseed
       POSTGRES_DB: myseed

@@ -47,7 +47,7 @@ export const rights = (u: AppUser) => ({
 function need(u: AppUser, r: keyof ReturnType<typeof rights>, what = "do this") {
   if (!rights(u)[r]) throw new WorkflowError("FORBIDDEN", `Finance permission needed to ${what}.`);
 }
-async function financeIds(cap: "finance.approve" | "finance.access" | "finance.owner_approve" | "finance.payroll") {
+export async function financeIds(cap: "finance.approve" | "finance.access" | "finance.owner_approve" | "finance.payroll") {
   return (await listUsers()).filter((u) => u.perms.includes(cap)).map((u) => u.id);
 }
 
@@ -548,7 +548,7 @@ export async function claimReceipt(user: AppUser, id: string) {
 // Purchasing: request, approve, order, receive, bill
 // ---------------------------------------------------------------------------
 
-export async function requestPurchase(user: AppUser, input: { title: string; department?: string; project?: string; lines: InvoiceLine[]; vendorId?: string | null; note?: string }) {
+export async function requestPurchase(user: AppUser, input: { title: string; department?: string; project?: string; lines: InvoiceLine[]; vendorId?: string | null; note?: string; review?: { route: "lead" | "hr"; reviewer: string | null; notifyIds: string[] } | null }) {
   const title = clean(input.title, 120);
   if (!title) throw new WorkflowError("VALIDATION", "Say what you want to buy.");
   const lines = input.lines.map((l) => ({ description: clean(l.description, 200), qty: Math.max(0, Number(l.qty) || 0), price: round2(Number(l.price) || 0) })).filter((l) => l.description && l.qty > 0);
@@ -559,7 +559,7 @@ export async function requestPurchase(user: AppUser, input: { title: string; dep
   const id = uid("pur_");
   const now = nowIso();
   await run(
-    "INSERT INTO fin_purchases (id, number, requester_id, department, project, title, lines, estimate, vendor_id, note, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO fin_purchases (id, number, requester_id, department, project, title, lines, estimate, vendor_id, note, status, route, reviewer_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     id,
     `PR-${year}-${String(n).padStart(4, "0")}`,
     user.id,
@@ -570,10 +570,15 @@ export async function requestPurchase(user: AppUser, input: { title: string; dep
     estimate,
     input.vendorId || null,
     clean(input.note, 500) || null,
+    input.review ? "review" : "submitted",
+    input.review?.route ?? null,
+    input.review?.reviewer ?? null,
     now,
     now,
   );
-  await notify(await financeIds("finance.access"), { type: "approval", title: `Purchase request: ${title}`, body: `${user.name}, about ${estimate}`, link: "/finance?tab=purchasing", groupKey: "fin-purchases" }, now, user.id);
+  if (input.review)
+    await notify(input.review.notifyIds, { type: "approval", title: `Request to review: ${title}`, body: `${user.name}, about ${estimate}. Pass it on to Finance or turn it down.`, link: "/approvals", groupKey: "fin-review" }, now, user.id);
+  else await notify(await financeIds("finance.access"), { type: "approval", title: `Purchase request: ${title}`, body: `${user.name}, about ${estimate}`, link: "/finance?tab=purchasing", groupKey: "fin-purchases" }, now, user.id);
   return id;
 }
 

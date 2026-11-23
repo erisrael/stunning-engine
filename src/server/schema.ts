@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 90;
+export const SCHEMA_VERSION = 93;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -4387,6 +4387,37 @@ CREATE INDEX IF NOT EXISTS idx_dept_access_events ON dept_access_events(dept, re
 -- Projects page shows the major projects with their parts, and their progress adds up.
 ALTER TABLE dept_projects ADD COLUMN IF NOT EXISTS parent_id TEXT;
 CREATE INDEX IF NOT EXISTS idx_dept_projects_parent ON dept_projects(parent_id);
+-- v91: a team member accepts or rejects work assigned to them, with their reason (src/server/assignment-response.ts).
+CREATE TABLE IF NOT EXISTS assignment_responses (
+  id TEXT PRIMARY KEY,
+  item_id TEXT NOT NULL,
+  stage TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  decision TEXT NOT NULL,
+  reason TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_assignment_responses ON assignment_responses(item_id, stage, user_id, created_at);
+-- v92: a team member's request to Finance goes first to their team lead or HR, by type (src/server/finance-routing.ts).
+ALTER TABLE fin_purchases ADD COLUMN IF NOT EXISTS route TEXT;
+ALTER TABLE fin_purchases ADD COLUMN IF NOT EXISTS reviewer_id TEXT;
+ALTER TABLE fin_purchases ADD COLUMN IF NOT EXISTS reviewed_by TEXT;
+ALTER TABLE fin_purchases ADD COLUMN IF NOT EXISTS reviewed_at TEXT;
+ALTER TABLE fin_purchases ADD COLUMN IF NOT EXISTS review_note TEXT;
+-- v93: draw.io diagrams in department documents (src/server/diagrams.ts).
+CREATE TABLE IF NOT EXISTS dept_diagrams (
+  id TEXT PRIMARY KEY,
+  dept TEXT NOT NULL,
+  project_id TEXT,
+  title TEXT NOT NULL,
+  xml TEXT NOT NULL DEFAULT '',
+  svg TEXT NOT NULL DEFAULT '',
+  created_by TEXT,
+  updated_by TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_dept_diagrams ON dept_diagrams(dept, project_id);
 
 `;
 
@@ -4675,5 +4706,7 @@ export const TABLES = [
   "fun_npc_memory",
   "dept_doc_sources",
   "dept_access_grants",
+  "assignment_responses",
+  "dept_diagrams",
   "dept_access_events",
 ] as const;

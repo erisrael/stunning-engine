@@ -218,4 +218,7 @@ export class VoiceMesh {
   take() {
     return this.outbox.splice(0, 30);
   }
+  pending() {
+    return this.outbox.length > 0;
+  }
 }

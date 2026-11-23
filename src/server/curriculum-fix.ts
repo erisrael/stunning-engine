@@ -37,7 +37,9 @@ const planner = (u: AppUser) => can(u, "items.plan") || can(u, "import.run") || 
 
 // Curriculum is for admins, managers and team leads; team members do not see it.
 export function curriculumAccess(u: AppUser) {
-  return u.perms.includes("users.manage") || u.perms.includes("settings.manage") || u.perms.includes("work.override") || u.leads.length > 0;
+  // Its own permission (Roles and permissions, Curriculum): Admin and Managers by default, never the Assistant
+  // Manager unless Admin ticks it; team leads always.
+  return u.perms.includes("curriculum.manage") || u.leads.length > 0;
 }
 
 export async function curriculumRights(u: AppUser) {

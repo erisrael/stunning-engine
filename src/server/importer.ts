@@ -1,3 +1,4 @@
+import { REQUEST_KINDS } from "@/lib/finance-requests";
 import crypto from "node:crypto";
 import { all, get, nowIso, run, tx, uid } from "./db";
 import { getSettings } from "./settings";
@@ -631,6 +632,7 @@ export const TEMPLATES: Record<TemplateKey, TemplateDef> = {
     title: "Finance requests",
     summary: "Requests for devices, subscriptions, budgets, repairs, or replacements sent to Finance.",
     managerOnly: false,
+    cap: ["finance.access", "import.run", "import.stage"],
     modes: ["create"],
     notes: [
       "Department: dev, hr, finance, marketing, or general.",
@@ -638,7 +640,7 @@ export const TEMPLATES: Record<TemplateKey, TemplateDef> = {
     ],
     fields: [
       { key: "department", label: "Department", required: true, type: "string", description: "Department code." },
-      { key: "kind", label: "Request type", required: true, type: "enum", options: () => ["device", "subscription", "budget", "repair", "replacement", "other"], description: "Type of request." },
+      { key: "kind", label: "Request type", required: true, type: "enum", options: () => [...REQUEST_KINDS], description: "Type of request. A team member's work request goes to their team lead first, a personal one (salary advance, allowance, loan, benefit) to HR." },
       { key: "title", label: "Title", required: true, type: "string", description: "What is requested." },
       { key: "description", label: "Description", required: true, type: "string", description: "Justification and details." },
       { key: "amount", label: "Estimated cost", required: false, type: "number", description: "Estimated cost." },
@@ -658,6 +660,8 @@ export function runsStage(user: AppUser, stage: Stage) {
 
 export function canUseTemplate(user: AppUser, t: TemplateDef) {
   if (t.cap) return t.cap.some((c) => can(user, c));
+  // No import permission, no imports (the Assistant Manager until Admin allows it, team members).
+  if (!can(user, "import.stage") && !can(user, "import.run")) return false;
   if (t.stageImport && !can(user, "import.stage") && !can(user, "import.run")) return false;
   if (t.stage) return runsStage(user, t.stage) || (can(user, "import.run") && can(user, "data.manage"));
   return t.stageImport || !t.managerOnly || can(user, "import.run");

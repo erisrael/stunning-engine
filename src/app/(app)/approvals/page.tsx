@@ -14,6 +14,8 @@ import { fmtDateTime } from "@/lib/format";
 import { getSettings } from "@/server/settings";
 import { ApprovalRow } from "./approval-row";
 import { WorkApprovals } from "./work-approvals";
+import { PurchaseReview } from "./purchase-review";
+import { purchasesToReview } from "@/server/finance-routing";
 import { EmptyState, PageHeader } from "@/components/app/primitives";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -60,7 +62,7 @@ export default async function ApprovalsPage() {
     can(viewer, "hr.manage") ? get<{ c: number }>("SELECT COUNT(*) AS c FROM leave_requests WHERE status = 'pending_hr'") : Promise.resolve(null),
   ]);
   const tz = (await getSettings()).workspace.timezone;
-  const [handovers, rejections, toApprove] = await Promise.all([handoversToCheck(viewer, tz), rejectedList(viewer, "to_check"), partsToApprove(viewer)]);
+  const [handovers, rejections, toApprove, finReview] = await Promise.all([handoversToCheck(viewer, tz), rejectedList(viewer, "to_check"), partsToApprove(viewer), purchasesToReview(viewer)]);
   const sections: Section[] = [
     {
       key: "handovers",
@@ -132,7 +134,8 @@ export default async function ApprovalsPage() {
     <div className="space-y-4">
       <PageHeader title="Approvals" description="Everything waiting for your decision, in one place." />
       {toApprove.length > 0 && <WorkApprovals rows={toApprove} />}
-      {!sections.length && !toApprove.length ? (
+      {finReview.length > 0 && <PurchaseReview rows={finReview} />}
+      {!sections.length && !toApprove.length && !finReview.length ? (
         <EmptyState title="Nothing waiting for you" description="Handovers, rejections, work to approve, leave, claims and corrections that need your decision show up here." />
       ) : sections.length ? (
         <div className="grid gap-4 lg:grid-cols-2">

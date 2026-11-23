@@ -127,6 +127,7 @@ export const CAPABILITIES = [
   { key: "cms.sensitive", label: "Noor: see fields marked sensitive", group: "Legacy CMS" },
   { key: "cms.export", label: "Noor: export records", group: "Legacy CMS" },
   { key: "settings.manage", label: "Change workflow settings", group: "Administration" },
+  { key: "curriculum.manage", label: "Fix and edit the curriculum and set auto-assign (team leads always can)", group: "Administration" },
   { key: "users.manage", label: "Manage users, roles, permissions and access", group: "Administration" },
   { key: "data.manage", label: "Empty, import and back up workspace data", group: "Administration" },
 ] as const;
@@ -157,7 +158,8 @@ export const CRUD_AREAS: CrudArea[] = [
   { key: "team", label: "Team, effort and timer corrections", group: "Insights", caps: { v: ["nav.team", "team.view"], u: ["corrections.approve"] } },
   { key: "reports", label: "Reports", group: "Insights", caps: { v: ["reports.view"] } },
   { key: "export", label: "Export (Excel, CSV, JSON, PDF, tracker, audit)", group: "Import and export", caps: { v: ["export.run", "export.report", "export.tracker", "export.audit"] } },
-  { key: "import", label: "Import (planning, stage progress, tracker)", group: "Import and export", caps: { e: ["import.run", "import.stage", "import.tracker"] } },
+  { key: "import-progress", label: "Import progress (work done, recording schedule)", group: "Import and export", caps: { e: ["import.stage"] } },
+  { key: "import", label: "Import planning, curriculum and the tracker", group: "Import and export", caps: { e: ["import.run", "import.tracker"] } },
   { key: "company", label: "Company overview and owners' dashboard", group: "Departments", caps: { v: ["company.view", "owners.view"] } },
   { key: "dev", label: "Dev team section", group: "Departments", caps: { v: ["dev.access"] } },
   { key: "studio", label: "Studio section (notes, exams, flash cards)", group: "Departments", caps: { v: ["studio.access"] } },
@@ -174,6 +176,7 @@ export const CRUD_AREAS: CrudArea[] = [
   { key: "admin-users", label: "People, roles and permissions", group: "Administration", caps: { u: ["users.manage"] } },
   { key: "admin-data", label: "Workspace data (empty, import, back up)", group: "Administration", caps: { d: ["data.manage"] } },
   { key: "admin-settings", label: "Workflow settings", group: "Administration", caps: { u: ["settings.manage"] } },
+  { key: "curriculum", label: "Curriculum (fix, edit, auto-assign)", group: "Production", caps: { u: ["curriculum.manage"] } },
 ];
 
 // Sidebar pages everyone sees unless Admin turns them off for a role.
@@ -193,9 +196,10 @@ export const DEFAULT_PERMISSIONS: Record<Role, Capability[]> = {
   // Publication reviews and releases from the item page, with the release calendar.
   publication: [...STAFF, "nav.calendar", "items.detail"],
   // Managers follow delivery: they view everything but do not edit item data.
-  manager: [...FULL_VIEW, "team.overview", "sessions.view", "presenters.view", "export.run", "export.report", "export.tracker", "export.audit", "reports.view", "team.view", "corrections.approve", "chat.manage", "chat.channels", "chat.contact_owners", "email.send", "questions.ask", "settings.manage", "company.view"],
+  manager: [...FULL_VIEW, "team.overview", "sessions.view", "presenters.view", "export.run", "export.report", "export.tracker", "export.audit", "reports.view", "team.view", "corrections.approve", "chat.manage", "chat.channels", "chat.contact_owners", "email.send", "questions.ask", "settings.manage", "curriculum.manage", "company.view"],
   // Assistant managers follow production read only (no planning, editing or status changes); they run studio
-  // sessions and presenters: book, change and cancel sessions, register presenters and assign them.
+  // sessions and presenters: book, change and cancel sessions, register presenters and assign them. No imports
+  // unless Admin allows them (Roles and permissions, Import progress).
   assistant_manager: [...FULL_VIEW, "team.overview", "reports.view", "team.view", "export.run", "export.report", "questions.ask", "chat.channels", "chat.contact_owners", "email.send", "sessions.view", "sessions.book", "sessions.update", "sessions.cancel", "presenters.view", "presenters.register", "presenters.assign", "presenters.remove"],
   // Department roles see their own section only; Admin can widen this in Roles and permissions.
   owner: ["perf.view_company", "owners.view", "company.view", "finance.view", "finance.owner_approve", "items.detail", "nav.overview", "nav.coverage", "reports.view", "team.view", "export.run", "export.report", "chat.channels", "chat.contact_owners", "email.send"],
@@ -217,6 +221,7 @@ export const DEFAULT_PERMISSIONS: Record<Role, Capability[]> = {
     "users.manage",
     "data.manage",
     "settings.manage",
+    "curriculum.manage",
     "chat.manage",
     "import.run",
     "import.stage",

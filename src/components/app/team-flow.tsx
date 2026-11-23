@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import {
   CheckCircle2Icon,
   CheckIcon,
+  XIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   CircleIcon,
@@ -36,6 +37,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { renameItemAction } from "@/app/actions/curriculum";
+import { respondToAssignmentAction } from "@/app/actions/assignment-response";
 import { EmptyState } from "@/components/app/primitives";
 import { addReviewNoteAction, bulkAction, deleteReviewNoteAction, itemAction, resolveReviewNoteAction, type ItemActionInput } from "@/app/actions/items";
 import { createHandoverAction, decideHandoverAction, verifyChecklistAction } from "@/app/actions/editorial";
@@ -598,6 +600,52 @@ function Card({ item, open, onToggle, children, badge, select }: { item: FlowIte
   );
 }
 
+// Accept or reject work assigned to you, with your reason. Rejecting sends it back to the team lead.
+function Answer({ item }: { item: FlowItem }) {
+  const router = useRouter();
+  const [mode, setMode] = React.useState<"accepted" | "declined" | null>(null);
+  const [reason, setReason] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const send = async () => {
+    if (!mode) return;
+    setBusy(true);
+    const r = await respondToAssignmentAction(item.id, mode, reason);
+    setBusy(false);
+    if (!r.ok) return void toast.error(r.error);
+    toast.success(mode === "declined" ? "Rejected: it is back with your team lead" : "Accepted");
+    setMode(null);
+    router.refresh();
+  };
+  return (
+    <div className="mt-2 rounded-md border border-dashed p-2 text-xs" data-answer={item.id}>
+      <p className="text-muted-foreground">Assigned to you. Can you take it?</p>
+      <div className="mt-1.5 flex flex-wrap gap-1.5">
+        <Button size="sm" onClick={() => setMode("accepted")} data-accept>
+          <CheckIcon /> Accept
+        </Button>
+        <Button size="sm" variant="outline" onClick={() => setMode("declined")} data-reject>
+          <XIcon /> Reject
+        </Button>
+      </div>
+      <Dialog open={!!mode} onOpenChange={(o) => !o && setMode(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{mode === "declined" ? `Reject ${item.code}` : `Accept ${item.code}`}</DialogTitle>
+            <DialogDescription>{mode === "declined" ? "Say why you cannot take it. It goes back to your team lead, who gives it to someone else." : "Add a note for your team lead if you like (when you will do it, what you need)."}</DialogDescription>
+          </DialogHeader>
+          <Textarea rows={3} value={reason} onChange={(e) => setReason(e.target.value)} placeholder={mode === "declined" ? "For example: I am on leave on that day" : "For example: I will record it on Thursday"} aria-label="Your reason" data-answer-reason />
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setMode(null)}>Cancel</Button>
+            <Button disabled={busy || (mode === "declined" && reason.trim().length < 3)} onClick={send} data-answer-send>
+              {mode === "declined" ? "Reject" : "Accept"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Team member's board
 // ---------------------------------------------------------------------------
@@ -694,6 +742,12 @@ export function MyBoard({ items, title = "My work" }: { items: FlowItem[]; title
                       badge={it.redo && col.redo && it.status !== "in_progress" ? <Badge variant="secondary">{it.status === "queued" ? "Not started" : STATUS_LABELS[it.status]}</Badge> : it.status === "paused" || it.status === "blocked" ? <Badge variant="secondary">{STATUS_LABELS[it.status]}</Badge> : null}
                     >
                       {isOpen && (it.draft ? <p className="border-t pt-2 text-xs text-muted-foreground">Press Start when the session begins; then fill in the recording here.</p> : <WorkPanel item={it} canEdit={it.status !== "lead_review"} lead={false} />)}
+                      {it.status === "queued" && !it.redo && it.response?.decision !== "accepted" && <Answer item={it} />}
+                      {it.response?.decision === "accepted" && it.status === "queued" && (
+                        <p className="mt-1.5 text-xs text-[var(--st-done-fg)]" data-accepted>
+                          You accepted this{it.response.reason ? `: ${it.response.reason}` : ""}
+                        </p>
+                      )}
                       <div className="mt-2 flex flex-wrap gap-1.5">
                         {["queued", "paused"].includes(it.status) && (
                           <Button title={tip("action.start")} size="sm" variant="outline" disabled={b("start")} onClick={() => act(it.id, { action: "start", switchFrom: true }, "Started")}>

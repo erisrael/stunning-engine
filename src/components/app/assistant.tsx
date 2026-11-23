@@ -43,6 +43,7 @@ type ShowFlow = Extract<Flow, { kind: "show" }>;
 const guideFlow = (key: string, title: string, steps: ShowStep[]): ShowFlow => ({ key, kind: "show", title, hint: "", audience: ["everyone"], keywords: [], steps });
 type Convo = { id: string; title: string; mode: string; updatedAt: string; count: number };
 const DOCK_KEY = "myseed.assistant.dock";
+const TUCK_KEY = "myseed.assistant.tucked";
 const MODE_KEY = "myseed.assistant.mode";
 const readLocal = (k: string) => {
   try {
@@ -609,6 +610,28 @@ const plain = (s: string) => s.replace(/\*\*(.+?)\*\*/g, "$1");
 export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantContext; ai?: boolean; agent?: boolean }) {
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
+  // Put away with the X on the bubble; the Assistant button in the top bar (or Alt+A) brings it back.
+  const [tucked, setTucked] = React.useState(false);
+  React.useEffect(() => setTucked(readLocal(TUCK_KEY) === "1"), []);
+  const tuckedRef = React.useRef(false);
+  tuckedRef.current = tucked;
+  const tuck = React.useCallback((v: boolean) => {
+    tuckedRef.current = v;
+    setTucked(v);
+    try {
+      localStorage.setItem(TUCK_KEY, v ? "1" : "0");
+    } catch {}
+  }, []);
+  React.useEffect(() => {
+    const onToggle = () => {
+      if (tuckedRef.current) {
+        tuck(false);
+        setOpen(true);
+      } else setOpen((o) => !o);
+    };
+    window.addEventListener("myseed:assistant", onToggle);
+    return () => window.removeEventListener("myseed:assistant", onToggle);
+  }, [tuck]);
   // Docked: a full-height panel on the right that stays open while moving between pages (the page makes room on
   // wide screens). Agent mode: it does the allowed actions itself instead of proposing them.
   const [dock, setDock] = React.useState(false);
@@ -1253,7 +1276,7 @@ export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantCo
       if (!e.altKey || e.ctrlKey || e.metaKey) return;
       if (e.code === "KeyA") {
         e.preventDefault();
-        setOpen((o) => !o);
+        window.dispatchEvent(new Event("myseed:assistant"));
       } else if (e.code === "KeyV") {
         e.preventDefault();
         listenRef.current();
@@ -1311,6 +1334,8 @@ export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantCo
         }
         data-assistant
         data-docked={dock && open ? "1" : undefined}
+        data-tucked={tucked ? "1" : undefined}
+        hidden={tucked}
       >
         {open && (
           <section
@@ -1695,6 +1720,22 @@ export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantCo
           >
             <SparklesIcon />
             {handsFree && <span className="absolute -top-0.5 -right-0.5 size-3 animate-pulse rounded-full border-2 border-background bg-[#1E8E3E]" aria-hidden data-assistant-listening />}
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="size-7 rounded-full text-muted-foreground hover:text-foreground"
+            aria-label="Put the assistant away"
+            title="Put away (bring it back with the Assistant button at the top, or Alt+A)"
+            onClick={() => {
+              if (doing) endDo(false, 0);
+              setOpen(false);
+              tuck(true);
+              toast("Assistant put away", { description: "Bring it back with the Assistant button at the top, or Alt+A." });
+            }}
+            data-assistant-tuck
+          >
+            <XIcon className="size-3.5" />
           </Button>
         </div>
       </div>

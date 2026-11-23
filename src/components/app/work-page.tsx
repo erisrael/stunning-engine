@@ -181,7 +181,7 @@ export async function WorkPage({ dept, searchParams, view }: { dept: WorkDept; s
       ) : tab === "sprint" ? (
         <SprintView dept={dept} data={await ds.sprintPage(viewer, dept, sp.sprint ?? null)} viewerId={viewer.id} />
       ) : tab === "roadmap" ? (
-        <RoadmapView data={await ds.roadmap(viewer, dept)} dora={await ds.doraMeasures(viewer, dept)} />
+        <RoadmapView dept={dept} canCreate={!!access && !access.readOnly && access.rights.seeAll} data={await ds.roadmap(viewer, dept)} dora={await ds.doraMeasures(viewer, dept)} />
       ) : tab === "tools" ? (
         await (async () => {
           const dt = await import("@/server/dev-tools");

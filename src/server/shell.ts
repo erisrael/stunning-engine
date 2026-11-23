@@ -39,7 +39,13 @@ export async function shellCounts(user: AppUser) {
     ),
     // Leave and expense claims waiting for this person as line manager.
     count("SELECT COUNT(*) AS c FROM leave_requests WHERE status = 'pending_lead' AND approver_id = ?", user.id),
-    count("SELECT COUNT(*) AS c FROM fin_claims WHERE status = 'submitted' AND approver_id = ?", user.id),
+    // Expense claims plus members' requests to Finance waiting for this person (their lead) or HR.
+    count(
+      `SELECT (SELECT COUNT(*) FROM fin_claims WHERE status = 'submitted' AND approver_id = ?) + (SELECT COUNT(*) FROM fin_purchases WHERE status = 'review' AND requester_id <> ? AND ((route = 'lead' AND reviewer_id = ?)${can(user, "hr.access") || user.roles.some((r) => r === "hr_manager" || r === "hr_officer") ? " OR route = 'hr'" : ""})) AS c`,
+      user.id,
+      user.id,
+      user.id,
+    ),
     unreadMail(user.id),
   ]);
   // Everything waiting for this person's decision, for the Approvals entry.

@@ -162,11 +162,15 @@ export function renderSpecBody(md: string, opts: RenderOptions = {}) {
       image({ href, title, text }: Tokens.Image) {
         const h = String(href ?? "").trim();
         if (!/^(https?:\/\/|\/(?!\/))/i.test(h)) return escHtml(text);
+        // A draw.io diagram: its picture, with an Edit in draw.io button where the reader may edit.
+        const dg = h.match(/^\/api\/diagrams\/(dgm_[A-Za-z0-9_-]+)/);
+        if (dg) return `<figure class="spec-drawio" data-drawio="${escHtml(dg[1]!)}"><img src="${escHtml(h)}" alt="${escHtml(text)}" loading="lazy">${text ? `<figcaption>${escHtml(text)}</figcaption>` : ""}</figure>`;
         return `<img src="${escHtml(h)}" alt="${escHtml(text)}"${title ? ` title="${escHtml(title)}"` : ""} loading="lazy">`;
       },
       code({ text, lang }: Tokens.Code) {
         const l = (lang ?? "").trim().split(/\s+/)[0] ?? "";
-        if (l.toLowerCase() === "mermaid") return `<figure class="spec-diagram"><figcaption>Diagram (Mermaid source)</figcaption><pre><code>${escHtml(text)}</code></pre></figure>\n`;
+        // Drawn in the browser (src/components/app/diagrams.tsx); the source stays underneath for print without scripts.
+        if (l.toLowerCase() === "mermaid") return `<figure class="spec-diagram" data-mermaid><pre class="spec-mermaid-src"><code>${escHtml(text)}</code></pre></figure>\n`;
         return `<pre class="spec-code"${l ? ` data-lang="${escHtml(l)}"` : ""}><code>${escHtml(text)}</code></pre>\n`;
       },
       blockquote({ tokens }: Tokens.Blockquote) {
@@ -314,6 +318,8 @@ export const SPEC_CSS = `
 .spec-code code,.spec-diagram code{background:none;border:0;padding:0;font-size:inherit;white-space:pre}
 .spec-code[data-lang]::before{content:attr(data-lang);display:block;font:700 10.5px/1 var(--font-mono,ui-monospace,monospace);text-transform:uppercase;letter-spacing:.08em;color:var(--spec-muted);margin-bottom:.55rem}
 .spec-diagram{margin:1rem 0}.spec-diagram figcaption{font-size:12px;color:var(--spec-muted);font-weight:600}
+.spec-diagram.is-drawn pre{display:none}.spec-diagram .spec-mermaid-svg{display:flex;justify-content:center;overflow-x:auto;padding:.5rem;background:#fff;border:1px solid var(--spec-rule);border-radius:10px}.spec-diagram .spec-mermaid-svg svg{max-width:100%;height:auto}
+.spec-drawio{margin:1rem 0;position:relative;text-align:center}.spec-drawio img{max-width:100%;height:auto;background:#fff;border:1px solid var(--spec-rule);border-radius:10px;padding:.5rem}.spec-drawio figcaption{font-size:12px;color:var(--spec-muted);margin-top:.3rem}.spec-drawio .spec-drawio-edit{position:absolute;top:.5rem;right:.5rem;font:600 12px/1 system-ui;padding:.4rem .6rem;border-radius:8px;border:1px solid var(--spec-rule);background:#fff;color:#1f2937;cursor:pointer}@media print{.spec-drawio-edit{display:none}}
 .spec-body blockquote{margin:1rem 0;padding:.7rem 1rem;border-left:4px solid var(--spec-accent);background:var(--spec-soft);border-radius:0 10px 10px 0}
 .spec-body blockquote>:first-child{margin-top:0}.spec-body blockquote>:last-child{margin-bottom:0}
 .spec-callout-note{border-left-color:#2f80ed!important}.spec-callout-tip{border-left-color:#1f9d55!important}.spec-callout-important{border-left-color:#7b68ee!important}.spec-callout-warning{border-left-color:#c27b00!important}.spec-callout-caution{border-left-color:#e2445c!important}

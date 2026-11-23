@@ -140,6 +140,8 @@ type Player = {
   voice: Voice;
   // Which version of each person's look this player already has (looks are sent once, not every tick).
   seen: Map<string, number>;
+  // Updates sent to this player (far people go every fifth).
+  tick?: number;
 };
 type Msg = { id: number; from: string; name: string; ch: "near" | "town" | "room"; room: string | null; x: number; z: number; text: string; at: number };
 type VoiceRoom = { id: string; name: string; owner: string; priv: boolean; code: string; cap: number; kicked: Set<string>; at: number };
@@ -152,6 +154,8 @@ const rooms = new Map<string, VoiceRoom>();
 const fireworks: { x: number; z: number; at: number; by: string }[] = [];
 const STALE = 15_000;
 const NEAR_CHAT = 30;
+// Within this distance (metres) people are sent on every update; further away, about once a second.
+const FAR = 150;
 const NEAR_VOICE = 40;
 
 export type SyncInput = {
@@ -447,12 +451,18 @@ export async function sync(user: AppUser, input: SyncInput) {
   const since = Number(input.since) || 0;
   const myMail = mail.get(p.id) ?? [];
   mail.delete(p.id);
-  const others = [...room.values()].filter((q) => q.id !== user.id);
+  // Near people every update; far ones every fifth (still in town: their ids are in k, so they are kept, not dropped).
+  p.tick = (p.tick ?? 0) + 1;
+  const all = [...room.values()].filter((q) => q.id !== user.id);
+  const farTurn = p.tick % 5 === 0 || !!input.fresh;
+  const others = farTurn ? all : all.filter((q) => Math.hypot(q.x - p!.x, q.z - p!.z) <= FAR || q.voice.room === p!.voice.room && !!q.voice.room);
+  const kept = farTurn ? [] : all.filter((q) => !others.includes(q)).map((q) => q.id);
   const looks: Record<string, Look> = {};
   for (const q of others) if (p.seen.get(q.id) !== q.lookV) (looks[q.id] = q.look), p.seen.set(q.id, q.lookV);
   return {
     t: now,
     me: { voice: p.voice },
+    k: kept,
     p: others.map((q) => [q.id, q.name, rd(q.x), rd(q.y), rd(q.z), rd(q.ry), q.mv, now - q.sayAt < 7000 ? q.say : "", now - q.emoteAt < 3000 ? q.emote : "", q.veh, q.vp, q.act, q.voice.mode === "off" ? "" : q.voice.mode === "near" ? "n" : `r:${q.voice.room}`, q.voice.muted ? 1 : 0] as const),
     looks,
     m: since < 0 ? [] : msgs.filter((m) => m.id > since && (m.from === p.id || m.ch === "town" || (m.ch === "near" && dist(m, p) <= NEAR_CHAT) || (m.ch === "room" && !!m.room && m.room === p.voice.room))).slice(-40).map((m) => ({ id: m.id, from: m.from, name: m.name, ch: m.ch, text: m.text, at: m.at })),

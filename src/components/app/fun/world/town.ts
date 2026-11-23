@@ -1539,8 +1539,22 @@ export class Town {
 
   // ------------------------------------------------------------------------------------------------- the server
 
+  // How often to talk to the server: 5 times a second when people are near, in a match, a race or on the pitch;
+  // less when alone (3 times a second moving, about once a second standing still). Keeps hundreds online smooth.
+  private lastSync = 0;
+  private syncGap() {
+    if (this.fresh || Object.keys(this.outQueue).length || this.voice.pending() || this.raceId || this.soccer || this.activity?.kind === "strike") return 0;
+    const b = this.body;
+    let near = false;
+    for (const p of this.people.values()) if (p.live && Math.hypot(p.group.position.x - b.x, p.group.position.z - b.z) < 80) (near = true);
+    if (near) return 0;
+    return this.keys.size > 0 || Math.hypot(this.joy.x, this.joy.y) > 0.1 || this.car?.driving ? 330 : 950;
+  }
+
   private async sync() {
     if (this.stop || document.visibilityState !== "visible" || this.syncing) return;
+    if (performance.now() - this.lastSync < this.syncGap()) return;
+    this.lastSync = performance.now();
     this.syncing = true;
     const b = this.body;
     const car = this.car?.driving ? this.car : null;
@@ -1610,7 +1624,8 @@ export class Town {
       if (this.soccer && d.pitch.ball && d.pitch.seq > this.ballSeq && d.pitch.by !== this.data.meId && !this.ballMine) this.soccer.setState(d.pitch.ball);
       this.ballSeq = Math.max(this.ballSeq, d.pitch.seq);
     }
-    const seen = new Set<string>();
+    // Far people come about once a second; in between they are listed in k (still in town), so they stay.
+    const seen = new Set<string>((d as { k?: string[] }).k ?? []);
     for (const [id, name, x, y, z, ry, mv, say, emote, veh, vp, act, voice, muted] of d.p) {
       seen.add(id);
       let p = this.people.get(id);

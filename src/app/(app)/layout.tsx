@@ -1,3 +1,4 @@
+import { AskAnywhere } from "@/components/app/ask-anywhere";
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { after } from "next/server";
@@ -53,6 +54,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (!viewer.previewBy) after(() => touchPresence(viewer.id));
   const [counts, cookieStore, settings, users] = await Promise.all([shellCounts(viewer), cookies(), getSettings(), userDirectory()]);
   const sidebarCookie = cookieStore.get("sidebar_state")?.value;
+  const assistantOn = !viewer.mustChangePassword && !viewer.previewBy && !!(viewer.prefs.assistantShown ?? (await (await import("@/server/assistant")).roleOptions(viewer.activeRole)).shown);
   return (
     <ActionCenter
       users={users}
@@ -75,8 +77,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         reportsLink={!can(viewer, "owners.view") && (await reportDepartments(viewer)).length > 0} customDepts={await myCustomDepartments(viewer)} userHidden={viewer.prefs.sidebarHidden ?? []} roleHidden={(await sidebarDefaults())[viewer.activeRole] ?? []} perms={viewer.perms} activeRole={viewer.activeRole} counts={counts} workspaceName={settings.workspace.name} brand={await navBrand()} recognition={(await (await import("@/server/recognition")).recognitionConfig()).enabled} overviewTeam={!!(await (await import("@/server/overview-teams")).overviewStagesFor(viewer))?.length} support={await (await import("@/server/support-desk")).supportNav(viewer)} callRecords={await (await import("@/server/call-records")).canOpenCallRecords(viewer).catch(() => false)} />
       <SidebarInset className="min-w-0">
         {viewer.previewBy && <PreviewBanner name={viewer.name} role={ROLE_LABELS[viewer.activeRole]} />}
-        <Topbar user={{ name: viewer.name, email: viewer.email, roles: viewer.roles, avatar: (await avatarsFor([viewer.id]))[viewer.id] ?? null }} activeRole={viewer.activeRole} unread={counts.notifications} chatUnread={counts.chat} fun={!viewer.previewBy && !viewer.mustChangePassword && !!(await (await import("@/server/fun")).funFor(viewer).catch(() => null))} qrScan={await (async () => { const c = await (await import("@/server/attendance-capture")).captureConfig(); return c.methods.qr && !!c.methods.scanner; })()} />
+        <Topbar user={{ name: viewer.name, email: viewer.email, roles: viewer.roles, avatar: (await avatarsFor([viewer.id]))[viewer.id] ?? null }} activeRole={viewer.activeRole} unread={counts.notifications} chatUnread={counts.chat} assistant={assistantOn} fun={!viewer.previewBy && !viewer.mustChangePassword && !!(await (await import("@/server/fun")).funFor(viewer).catch(() => null))} qrScan={await (async () => { const c = await (await import("@/server/attendance-capture")).captureConfig(); return c.methods.qr && !!c.methods.scanner; })()} />
         <OfflineCheckinSync />
+        {!viewer.previewBy && <AskAnywhere />}
         <GeofenceWatch />
         {viewer.mustChangePassword && (
           <div className="border-b bg-[var(--st-paused-bg)] px-4 py-2 text-sm text-[var(--st-paused-fg)] no-print">
@@ -112,7 +115,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         {!viewer.previewBy && <PresencePing />}
         <Localizer defaultCalendar={settings.workspace.calendarDisplay} />
         <EthiopianDatePicker defaultCalendar={settings.workspace.calendarDisplay} />
-        {!viewer.mustChangePassword && !viewer.previewBy && (viewer.prefs.assistantShown ?? (await (await import("@/server/assistant")).roleOptions(viewer.activeRole)).shown) && <Assistant ctx={await assistantContext(viewer)} ai={await aiAvailable(viewer)} agent={await agentAvailable(viewer)} />}
+        {assistantOn && <Assistant ctx={await assistantContext(viewer)} ai={await aiAvailable(viewer)} agent={await agentAvailable(viewer)} />}
         {!viewer.previewBy && !viewer.mustChangePassword && (await (await import("@/server/fun")).funFor(viewer).catch(() => null)) && <FunMode />}
         {!viewer.previewBy && await privacyToAccept(viewer).then((p) => (p ? <PrivacyGate notice={p.notice} version={p.version} updatedAt={p.updatedAt} /> : null))}
         {!viewer.mustChangePassword && <GetStarted audience={audienceFor(viewer.activeRole, viewer.leads)} tour={viewer.prefs.tour ?? {}} />}

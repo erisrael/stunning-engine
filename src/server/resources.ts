@@ -5,6 +5,8 @@ import { customDepartments, deptAccess, requireDept } from "./departments";
 import { DEPARTMENTS, DEPARTMENT_LABELS } from "@/lib/domain";
 import { rights, listPurchases, requestPurchase, listBudgets } from "./finance";
 import { WorkflowError, audit } from "./workflow";
+import { routeFor } from "./finance-routing";
+import { REQUEST_KINDS, REQUEST_KIND_LABELS, type RequestKind } from "@/lib/finance-requests";
 
 export const EQUIPMENT_STATUSES = ["available","assigned","issued","repair","repair_needed","under_repair","replacement_needed","retired","lost"] as const;
 export type Equipment = { id:string; tag:string; name:string; department:string; category:string; ownership:string; owner_id:string|null; assigned_to:string|null; status:string; quantity:number; reorder_level:number; purchase_cost:number; repair_cost:number; repairs:number; maintenance_due:string|null; warranty_until:string|null; notes:string; assigned_name?:string; owner_name?:string; updated_at:string };
@@ -33,7 +35,7 @@ export async function resourceView(user:AppUser) {
       FROM fin_purchases pr 
       LEFT JOIN users u ON u.id = pr.requester_id 
       LEFT JOIN fin_parties v ON v.id = pr.vendor_id
-      ORDER BY CASE pr.status WHEN 'submitted' THEN 0 WHEN 'approved' THEN 1 WHEN 'ordered' THEN 2 WHEN 'received' THEN 3 ELSE 4 END, pr.created_at DESC LIMIT 500`
+      ORDER BY CASE pr.status WHEN 'review' THEN 0 WHEN 'submitted' THEN 0 WHEN 'approved' THEN 1 WHEN 'ordered' THEN 2 WHEN 'received' THEN 3 ELSE 4 END, pr.created_at DESC LIMIT 500`
    );
 
    const leadDepts = new Set<string>();
@@ -57,8 +59,10 @@ export async function resourceView(user:AppUser) {
 }
 export async function resourceRequest(user:AppUser,input:{department:string;kind:string;title:string;description:string;amount:number;quantity:number}) {
  if(!finance(user) && input.department !== "general") await requireDept(user,input.department,"write");
- if(!["device","subscription","budget","repair","replacement","other"].includes(input.kind) || !Number.isFinite(input.amount) || input.amount<0 || !Number.isInteger(input.quantity) || input.quantity<1) throw new WorkflowError("VALIDATION","Choose a valid request type, cost and quantity.");
- return requestPurchase(user,{department:input.department,title:`${input.kind}: ${input.title}`,note:input.description,lines:[{description:input.title,qty:input.quantity,price:input.amount}]});
+ if(!(REQUEST_KINDS as readonly string[]).includes(input.kind) || !Number.isFinite(input.amount) || input.amount<0 || !Number.isInteger(input.quantity) || input.quantity<1) throw new WorkflowError("VALIDATION","Choose a valid request type, cost and quantity.");
+ // Team members: work things go to their team lead first, personal money matters to HR (src/server/finance-routing.ts).
+ const review=await routeFor(user,input.kind);
+ return requestPurchase(user,{department:input.department,title:`${REQUEST_KIND_LABELS[input.kind as RequestKind]}: ${input.title}`,note:input.description,lines:[{description:input.title,qty:input.quantity,price:input.amount}],review});
 }
 export async function resourceComment(user:AppUser,id:string,body:string) {
  const purchase=await get<{requester_id:string;department:string}>("SELECT requester_id,department FROM fin_purchases WHERE id=?",id);

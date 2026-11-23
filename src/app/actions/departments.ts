@@ -316,6 +316,28 @@ export async function retroToTaskAction(dept: string, id: string, assigneeId: st
 export async function createDocAction(dept: string, input: Parameters<typeof import("@/server/dev-studio").createDoc>[2]) {
   return wrap(async () => (await import("@/server/dev-studio")).createDoc(await requireViewer(), dept, input));
 }
+// draw.io diagrams and project packs (src/server/diagrams.ts, src/server/project-pack.ts).
+export async function createDiagramAction(dept: string, input: { title?: string | null; projectId?: string | null; starter?: string | null }) {
+  return wrap(async () => (await import("@/server/diagrams")).createDiagram(await requireViewer(), dept, input), { revalidate: false });
+}
+export async function loadDiagramAction(id: string) {
+  return wrap(async () => {
+    const d = await (await import("@/server/diagrams")).getDiagram(await requireViewer(), id);
+    return { id: d.id, title: d.title, xml: d.xml };
+  }, { revalidate: false });
+}
+export async function saveDiagramAction(id: string, input: { xml: string; svg: string; title?: string | null }) {
+  return wrap(async () => (await import("@/server/diagrams")).saveDiagram(await requireViewer(), id, input));
+}
+export async function projectGraphicAction(dept: string, projectId: string) {
+  return wrap(async () => (await import("@/server/project-pack")).projectGraphic(await requireViewer(), dept, projectId), { revalidate: false });
+}
+export async function portfolioGraphicAction(dept: string) {
+  return wrap(async () => (await import("@/server/project-pack")).portfolioGraphic(await requireViewer(), dept), { revalidate: false });
+}
+export async function generatePackAction(dept: string, input: Parameters<typeof import("@/server/project-pack").generatePack>[2]) {
+  return wrap(async () => (await import("@/server/project-pack")).generatePack(await requireViewer(), dept, input));
+}
 export async function getDocAction(dept: string, id: string) {
   return wrap(async () => (await import("@/server/dev-studio")).getDoc(await requireViewer(), dept, id), { revalidate: false });
 }

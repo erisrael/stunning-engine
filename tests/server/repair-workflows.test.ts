@@ -60,7 +60,10 @@ async function main(){
  await assert.rejects(()=>requireCmsCategories(dev,["invoices"]),/access/);
  await saveUserCmsOverride(admin,{userId:dev.id,allowedTabs:[]});assert.deepEqual(await allowedCategoriesForUser("developer",dev.id),[]);
  console.log("PASS Custom-role assignment, encrypted per-user CMS credentials and deny-all tab access");
- let recipients=await eligibleQuestionRecipients(support);assert.ok(recipients.some(r=>r.id===lead.id));assert.ok(!recipients.some(r=>r.id===dev.id));
+ // Members reach other teams only where Admin routes them (support to the Dev lead), never Admin.
+ let recipients=await eligibleQuestionRecipients(support);assert.ok(!recipients.some(r=>r.id===lead.id));
+ await saveQuestionRoutingConfig(admin,{allowedRolesBySenderRole:{support:["developer","admin"]},leadOnlyBySenderRole:{support:["developer"]}});
+ recipients=await eligibleQuestionRecipients(support);assert.ok(recipients.some(r=>r.id===lead.id));assert.ok(!recipients.some(r=>r.id===dev.id));assert.ok(!recipients.some(r=>r.id===admin.id));
  await saveQuestionRoutingConfig(admin,{allowedRolesBySenderRole:{support:[]}});assert.equal((await eligibleQuestionRecipients(support)).length,0);
  await saveGithubSettings(lead,"dev",{repos:[{fullName:"example/repository",members:[dev.id]}]});
  assert.equal((await githubSettings(dev,"dev")).repos.length,1);assert.equal((await githubSettings(peer,"dev")).repos.length,0);

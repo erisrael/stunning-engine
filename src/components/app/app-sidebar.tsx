@@ -428,7 +428,7 @@ export function AppSidebar({
           ? [{ href: "/presenters", label: "Presenters", icon: MicIcon, sub: has("hr.access") || has("finance.access") ? [{ label: "Presenters", href: "/presenters" }, { label: "Fees", href: "/presenters?tab=fees" }] : undefined }]
           : []),
         ...(legacy && (has("items.plan") || has("import.run") || has("data.manage") || activeRole === "recording") ? [{ href: "/legacy", label: "Legacy catalog", icon: FilmIcon }] : []),
-        ...(lead || has("users.manage") || has("settings.manage") || has("work.override") ? [{ href: "/curriculum", label: "Curriculum", icon: ListChecksIcon, sub: [{ label: "Fix", href: "/curriculum" }, { label: "Browse and edit", href: "/curriculum?tab=browse" }, { label: "Auto-assign", href: "/curriculum?tab=auto" }, { label: "Changes", href: "/curriculum?tab=changes" }] }] : []),
+        ...(lead || has("curriculum.manage") ? [{ href: "/curriculum", label: "Curriculum", icon: ListChecksIcon, sub: [{ label: "Fix", href: "/curriculum" }, { label: "Browse and edit", href: "/curriculum?tab=browse" }, { label: "Auto-assign", href: "/curriculum?tab=auto" }, { label: "Changes", href: "/curriculum?tab=changes" }] }] : []),
         { href: "/coverage", label: "Coverage", icon: GridIcon, keepFilters: true, cap: "nav.coverage" },
         { href: "/reports", label: "Reports", icon: ChartColumnIcon, keepFilters: true, cap: "reports.view" },
         ...(lead ? [{ href: "/team", label: "Team", icon: UsersIcon, badge: has("corrections.approve") ? counts.corrections : 0, cap: "team.view" as Capability }] : []),
@@ -590,7 +590,7 @@ export function AppSidebar({
               ...(studioBooking !== "off" ? [{ label: "Studio sessions", href: "/sessions" }] : []),
               { label: "Presenters", href: "/presenters" },
               ...(legacy ? [{ label: "Legacy catalog", href: "/legacy" }] : []),
-              { label: "Curriculum", href: "/curriculum" },
+              ...(lead || has("curriculum.manage") ? [{ label: "Curriculum", href: "/curriculum" }] : []),
               { label: "Coverage", href: "/coverage" },
               { label: "Reports", href: "/reports" },
               { label: "Team", href: "/team" },

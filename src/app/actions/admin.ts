@@ -296,6 +296,7 @@ export async function signOutUserAction(userId: string) {
   return wrap(async () => {
     const viewer = await requireCapability("users.manage");
     const n = await run("DELETE FROM sessions WHERE user_id = ? AND id <> ?", userId, viewer.sessionId);
+    (await import("@/server/auth")).forgetFastViewers();
     const name = (await get<{ name: string }>("SELECT name FROM users WHERE id = ?", userId))?.name;
     await audit({ actor: viewer }, { action: "user.signed_out", summary: `${viewer.name} signed ${name} out of ${n.changes} session(s)` });
     return { sessions: n.changes };

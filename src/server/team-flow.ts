@@ -54,6 +54,8 @@ export type FlowItem = {
   // The next studio session booked for this part.
   session: { start: string; room: string | null } | null;
   changes: { returnedAt: string; reason: string | null; changes: { summary: string; at: string }[] } | null;
+  // The person's answer to this assignment (accepted or rejected, with the reason), if they gave one.
+  response?: { decision: "accepted" | "declined"; reason: string | null; at: string } | null;
 };
 
 type Row = {
@@ -214,7 +216,10 @@ export async function myWork(user: AppUser) {
         ...sc.params,
       )
     : [];
-  return { items: [...(await hydrate(rows, user)), ...(await hydrate(drafts, user))], stages };
+  const items = [...(await hydrate(rows, user)), ...(await hydrate(drafts, user))];
+  const answers = await (await import("./assignment-response")).latestResponses(user.id, items.map((i) => i.id));
+  for (const it of items) it.response = answers.get(it.id) ?? null;
+  return { items, stages };
 }
 
 // The number on My work (sidebar and tab): the person's own parts still to do, by the same rule as the board (their
