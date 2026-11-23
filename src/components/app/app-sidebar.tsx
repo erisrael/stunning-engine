@@ -346,6 +346,7 @@ export function AppSidebar({
   const adminSub = [
     ...(has("users.manage")
       ? [
+          { label: "Configure whole system", href: "/admin/configure" },
           { label: "People & Teams", href: "/admin?tab=people" },
           { label: "Departments", href: "/admin?tab=departments" },
           { label: "Roles & permissions", href: "/admin?tab=permissions" },

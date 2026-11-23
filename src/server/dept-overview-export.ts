@@ -5,7 +5,6 @@
 import { workAccess } from "./dept-config";
 import { deptOverview, type OverviewFilter } from "./dept-overview";
 import { listTasks } from "./work";
-import { getSettings } from "./settings";
 import { SPEC_CSS, escHtml } from "@/lib/spec-doc";
 import type { AppUser } from "./users";
 
@@ -37,7 +36,8 @@ export async function overviewCsv(user: AppUser, d: string, f: OverviewFilter) {
 export async function overviewReportHtml(user: AppUser, d: string, f: OverviewFilter) {
   const a = await workAccess(user, d);
   const data = await deptOverview(user, d, f);
-  const workspace = (await getSettings()).workspace.name || "Myseed";
+  const brand = await (await import("./report-doc")).reportBrand();
+  const workspace = brand.name;
   const unit = data.unit === "points" ? "pts" : "h";
   const t = data.tiles;
   const period = data.period ? `the last ${data.period === 365 ? "year" : `${data.period} days`}` : "all time";
@@ -104,5 +104,6 @@ ${SPEC_CSS}
 .ov-tile{border:1px solid var(--spec-rule);border-radius:10px;padding:.5rem .75rem;break-inside:avoid}
 .ov-l{margin:0;font-size:11px;color:var(--spec-muted)}.ov-v{margin:.15rem 0 0;font-size:18px;font-weight:700}
 .spec-table td,.spec-table th{min-width:0}
-</style></head><body><article class="spec-doc spec-print"><div class="spec-cover"><div class="spec-band"></div><header class="spec-head"><div class="spec-brand"><span>${escHtml(workspace)}</span></div><div class="spec-ref">Team report<br>${escHtml(ref)}</div></header><section class="spec-titleblock"><p class="spec-kind">Team report</p><h1 class="spec-title">${escHtml(title)}</h1>${control}</section></div>${toc}<div class="spec-body">${body}</div><footer class="spec-foot"><span>${escHtml(workspace)} · Internal report</span><span>${escHtml(ref)}</span></footer></article><script>window.addEventListener("load",()=>{if(new URLSearchParams(location.search).get("print")==="1")setTimeout(()=>window.print(),300)})</script></body></html>`;
+.spec-band{background:${brand.color}}.rep-brand{display:flex;align-items:center;gap:.6rem}.rep-brand img{width:34px;height:34px;object-fit:contain}
+</style></head><body><article class="spec-doc spec-print"><div class="spec-cover"><div class="spec-band"></div><header class="spec-head"><div class="spec-brand rep-brand"><img src="${escHtml(brand.logo)}" alt=""><span>${escHtml(workspace)}</span></div><div class="spec-ref">Team report<br>${escHtml(ref)}</div></header><section class="spec-titleblock"><p class="spec-kind">Team report</p><h1 class="spec-title">${escHtml(title)}</h1>${control}</section></div>${toc}<div class="spec-body">${body}</div><footer class="spec-foot"><span>${escHtml(workspace)} · Internal report</span><span>${escHtml(ref)}</span></footer></article><script>window.addEventListener("load",()=>{if(new URLSearchParams(location.search).get("print")==="1")setTimeout(()=>window.print(),300)})</script></body></html>`;
 }

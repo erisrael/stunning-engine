@@ -12,7 +12,7 @@ const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH 
 let fails = 0;
 const check = (label, ok, extra) => (console.log(`${ok ? "PASS" : "FAIL"} ${label}${!ok && extra !== undefined ? " " + String(extra).slice(0, 300) : ""}`), ok || fails++);
 const seen = (loc, ms = 10000) => loc.waitFor({ timeout: ms }).then(() => true, () => false);
-const STYLES = ["studio", "zen", "classic", "sakura", "sunset", "tactical", "comic"];
+const STYLES = ["studio", "zen", "classic", "sakura", "sunset", "tactical", "comic", "terminal"];
 
 try {
   const ctx = await browser.newContext({ viewport: { width: 1360, height: 900 } });

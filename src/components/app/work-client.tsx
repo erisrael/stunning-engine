@@ -62,7 +62,8 @@ import {
 } from "@/app/actions/departments";
 import type { DeptView, Project, Task, TaskFilter } from "@/server/work";
 import { POSITION_LABELS, type Position } from "@/lib/domain";
-import { deptViewPath, type WorkDept } from "@/lib/work";
+import { deptViewPath, hasReport, type WorkDept } from "@/lib/work";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { fieldRequired, fieldShown, formatField, labelOf, statusOf, type DeptConfig, type DeptField, type FieldValue, type Rights } from "@/lib/dept-config";
 import { cn } from "@/lib/utils";
 import { today, usable, type Access, type Person } from "./work-shared";
@@ -262,10 +263,41 @@ export function WorkClient({
               <ImportTemplateButton template={taskImportTemplate(dept, cfg)} hint="Replace the example row. Dates: YYYY-MM-DD. Use existing assignee emails and project keys; fill required custom fields." />
             </>
           )}
-          {tab !== "dashboard" && !panel && (
-            <Button size="sm" variant="outline" onClick={() => exportCsv(tasks)} disabled={!tasks.length}>
-              <DownloadIcon /> Export
-            </Button>
+          {tab !== "dashboard" && tab !== "insights" && (hasReport(tab) || !panel) && (
+            // Export: the page as a print-ready report in the company format (Save as PDF), and the tasks as CSV.
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm" variant="outline" data-page-export>
+                  <DownloadIcon /> Export
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-64">
+                <DropdownMenuLabel className="text-xs text-muted-foreground">This page, with its filters</DropdownMenuLabel>
+                {hasReport(tab) && (
+                  <DropdownMenuItem
+                    data-export-pdf
+                    onSelect={() => {
+                      const q = new URLSearchParams(window.location.search);
+                      q.delete("task");
+                      q.set("view", tab);
+                      q.set("print", "1");
+                      window.open(`/api/dept-report/${dept}?${q.toString()}`, "_blank", "noopener");
+                    }}
+                  >
+                    <FileTextIcon /> PDF report
+                    <span className="ml-auto text-[10px] text-muted-foreground">print-ready</span>
+                  </DropdownMenuItem>
+                )}
+                {!panel && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem data-export-csv disabled={!tasks.length} onSelect={() => exportCsv(tasks)}>
+                      <SheetIcon /> Spreadsheet (CSV)
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
           {writable && access.rights.projects && (
             <Button size="sm" variant="outline" onClick={() => setProjectDialog("new")}>
@@ -346,7 +378,7 @@ export function WorkClient({
       {editing && (
         <TaskDialog dept={dept} config={cfg} task={"id" in editing ? editing : null} preset={"id" in editing ? {} : editing} people={people} projects={projects} tasks={tasks} sprints={sprints} access={access} viewerId={viewerId} onClose={closeTask} />
       )}
-      {projectDialog && <ProjectDialog dept={dept} config={cfg} project={projectDialog === "new" ? null : projectDialog} people={people} onClose={() => setProjectDialog(null)} />}
+      {projectDialog && <ProjectDialog dept={dept} config={cfg} project={projectDialog === "new" ? null : projectDialog} people={people} projects={projects} onClose={() => setProjectDialog(null)} />}
     </div>
   );
 }
@@ -459,21 +491,15 @@ function Projects({
 }) {
   const kpis = cfg.features.kpis ? cfg.kpis.filter((k) => k.active) : [];
   const [kpiFor, setKpiFor] = React.useState<Project | null>(null);
-  return (
-    <div className="space-y-3">
-      <label className="flex items-center gap-2 text-sm">
-        <Switch checked={showArchived} onCheckedChange={(v) => go({ archived: v ? "1" : null })} /> Show archived
-      </label>
-      {!projects.length ? (
-        <EmptyState
-          icon={<FolderKanbanIcon className="size-5" />}
-          title={`No ${cfg.names.projects.toLowerCase()}`}
-          description={access.rights.projects ? `Create one with New ${cfg.names.project.toLowerCase()}.` : "Heads and leads create them."}
-        />
-      ) : (
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {projects.map((p) => (
-            <Card key={p.id} className={cn(p.archived && "opacity-60")}>
+  // Main projects with their sub-projects (one level). A sub-project whose parent this person cannot see stands alone.
+  const visible = new Set(projects.map((p) => p.id));
+  const partsOf = (id: string) => projects.filter((p) => p.parent_id === id);
+  const tops = projects.filter((p) => !p.parent_id || !visible.has(p.parent_id));
+  const groups = tops.filter((p) => partsOf(p.id).length);
+  const singles = tops.filter((p) => !partsOf(p.id).length);
+  const [closed, setClosed] = React.useState<Set<string>>(new Set());
+  const card = (p: Project) => (
+<Card key={p.id} className={cn(p.archived && "opacity-60")}>
               <CardHeader className="pb-2">
                 <div className="flex items-start gap-2">
                   <span className="mt-1 size-3 shrink-0 rounded-full" style={{ background: p.color ?? "#7b68ee" }} />
@@ -554,7 +580,71 @@ function Projects({
                 </Button>
               </CardContent>
             </Card>
-          ))}
+  );
+  return (
+    <div className="space-y-3">
+      <label className="flex items-center gap-2 text-sm">
+        <Switch checked={showArchived} onCheckedChange={(v) => go({ archived: v ? "1" : null })} /> Show archived
+      </label>
+      {!projects.length ? (
+        <EmptyState
+          icon={<FolderKanbanIcon className="size-5" />}
+          title={`No ${cfg.names.projects.toLowerCase()}`}
+          description={access.rights.projects ? `Create one with New ${cfg.names.project.toLowerCase()}.` : "Heads and leads create them."}
+        />
+      ) : (
+        <div className="space-y-4">
+          {groups.map((g) => {
+            const parts = partsOf(g.id);
+            const r = g.rollup ?? g;
+            const open = !closed.has(g.id);
+            return (
+              <section key={g.id} className="space-y-3 rounded-2xl border bg-muted/20 p-3" data-project-group={g.key}>
+                <div className="flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                    aria-expanded={open}
+                    onClick={() => setClosed((c) => { const n = new Set(c); if (n.has(g.id)) n.delete(g.id); else n.add(g.id); return n; })}
+                  >
+                    <ChevronRightIcon className={cn("size-4 shrink-0 transition-transform", open && "rotate-90")} />
+                    <span className="size-3 shrink-0 rounded-full" style={{ background: g.color ?? "#7b68ee" }} />
+                    <span className="min-w-0">
+                      <span className="block truncate font-semibold">
+                        <span className="font-mono text-xs text-muted-foreground">{g.key}</span> {g.name}
+                      </span>
+                      <span className="block text-xs text-muted-foreground">
+                        {parts.length} sub-project{parts.length === 1 ? "" : "s"} · {labelOf(cfg.projectStatuses, g.status)}
+                        {g.lead_name && ` · ${g.lead_name}`}
+                      </span>
+                    </span>
+                  </button>
+                  <div className="w-full max-w-xs space-y-1 sm:w-56">
+                    <div className="flex justify-between text-xs">
+                      <span>{r.progress}% done</span>
+                      <span className="text-muted-foreground tabular">
+                        {r.done}/{r.total}
+                        {r.overdue ? ` · ${r.overdue} overdue` : ""}
+                      </span>
+                    </div>
+                    <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                      <div className="h-full bg-primary" style={{ width: `${r.progress}%` }} />
+                    </div>
+                  </div>
+                  <Button size="xs" variant="ghost" onClick={() => go({ tab: "list", project: g.id })}>
+                    All its {cfg.names.tasks.toLowerCase()}
+                  </Button>
+                  {access.rights.projects && !access.readOnly && (
+                    <Button size="icon-xs" variant="ghost" aria-label={`Edit ${g.name}`} onClick={() => onEdit(g)}>
+                      <PencilIcon />
+                    </Button>
+                  )}
+                </div>
+                {open && <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{(g.total ? [g, ...parts] : parts).map(card)}</div>}
+              </section>
+            );
+          })}
+          {singles.length > 0 && <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{singles.map(card)}</div>}
         </div>
       )}
       {kpiFor && <KpiDialog dept={dept} config={cfg} project={kpiFor} access={access} onClose={() => setKpiFor(null)} />}
@@ -562,7 +652,7 @@ function Projects({
   );
 }
 
-function ProjectDialog({ dept, config: cfg, project, people, onClose }: { dept: WorkDept; config: DeptConfig; project: Project | null; people: Person[]; onClose: () => void }) {
+function ProjectDialog({ dept, config: cfg, project, people, projects, onClose }: { dept: WorkDept; config: DeptConfig; project: Project | null; people: Person[]; projects: Project[]; onClose: () => void }) {
   const router = useRouter();
   const kpis = cfg.features.kpis ? cfg.kpis.filter((k) => k.active || project?.meta.kpiTargets?.[k.key]) : [];
   const [f, setF] = React.useState({
@@ -577,6 +667,7 @@ function ProjectDialog({ dept, config: cfg, project, people, onClose }: { dept: 
     budget: project?.budget != null ? String(project.budget) : "",
     channel: project?.meta.channel ?? "",
     archived: project?.archived ?? false,
+    parentId: project?.parent_id ?? "",
     targets: Object.fromEntries(kpis.map((m) => [m.key, project?.meta.kpiTargets?.[m.key] ? String(project.meta.kpiTargets[m.key]) : ""])) as Record<string, string>,
   });
   const [ms, setMs] = React.useState({ name: "", due: "" });
@@ -597,6 +688,7 @@ function ProjectDialog({ dept, config: cfg, project, people, onClose }: { dept: 
       budget: f.budget ? Number(f.budget) : null,
       meta: { ...project?.meta, ...(kpis.length ? { kpiTargets: targets, channel: f.channel || undefined } : {}) },
       archived: f.archived,
+      parentId: f.parentId || null,
     });
     setBusy(false);
     if (!r.ok) return toast.error(r.error);
@@ -627,6 +719,30 @@ function ProjectDialog({ dept, config: cfg, project, people, onClose }: { dept: 
           <Label>Description</Label>
           <Textarea rows={2} value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} />
         </div>
+        {(() => {
+          // Sub-projects: a main project (one without a parent) other than this one. A project with parts stays main.
+          const mains = projects.filter((x) => !x.parent_id && x.id !== project?.id && !x.archived);
+          const hasParts = !!project && projects.some((x) => x.parent_id === project.id);
+          return (
+            <div className="space-y-1.5" data-project-parent>
+              <Label>Part of</Label>
+              <Select value={f.parentId || "none"} disabled={hasParts} onValueChange={(v) => setF({ ...f, parentId: v === "none" ? "" : v })}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Nothing: a main {cfg.names.project.toLowerCase()}</SelectItem>
+                  {mains.map((x) => (
+                    <SelectItem key={x.id} value={x.id}>
+                      {x.key} {x.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">{hasParts ? "It has sub-projects of its own, so it stays a main project." : "Put it inside a main project to show it as one of its parts; their progress adds up."}</p>
+            </div>
+          );
+        })()}
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-1.5">
             <Label>Status</Label>

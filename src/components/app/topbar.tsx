@@ -1,5 +1,6 @@
 "use client";
 
+import { ICON_PACKS, MOTION_CHOICES } from "@/lib/icon-packs";
 import { MobileDetails } from "./mobile-nav";
 import { QrScanButton } from "@/components/app/attendance/qr-scanner";
 import * as React from "react";
@@ -10,7 +11,7 @@ import { toast } from "sonner";
 import { BellIcon, CheckCheckIcon, ClockIcon, FlagIcon, HelpCircleIcon, IdCardIcon, LogOutIcon, MessageSquareHeartIcon, MessageCircleIcon, MonitorIcon, MoonIcon, PaletteIcon,
   TypeIcon,
   LanguagesIcon, SearchIcon, SettingsIcon, SparklesIcon, SquareIcon, SunIcon, UserIcon } from "lucide-react";
-import { ACCENTS, FONTS, allowedStyles, useAppearance } from "@/components/app/appearance";
+import { ACCENTS, FONTS, allowedStyles, cinematicAllowed, useAppearance } from "@/components/app/appearance";
 import { THEME_PRESETS } from "@/lib/themes";
 import { UI_STYLES } from "@/lib/ui-styles";
 import { FunLauncher } from "@/components/app/fun/fun-mode";
@@ -407,10 +408,22 @@ function UserMenu({ user }: { user: { name: string; email: string; avatar?: stri
             </DropdownMenuRadioGroup>
             <DropdownMenuSeparator />
             <DropdownMenuLabel className="text-xs text-muted-foreground">Icon pack</DropdownMenuLabel>
-            <DropdownMenuRadioGroup value={look.iconPack} onValueChange={(v) => setLook({ iconPack: v })}>
-              <DropdownMenuRadioItem value="lucide">Outline (Lucide)</DropdownMenuRadioItem>
-              <DropdownMenuRadioItem value="fill">Filled (Phosphor)</DropdownMenuRadioItem>
-              <DropdownMenuRadioItem value="duotone">Duotone (Phosphor)</DropdownMenuRadioItem>
+            <DropdownMenuRadioGroup value={look.iconPack || "default"} onValueChange={(v) => setLook({ iconPack: v })}>
+              <DropdownMenuRadioItem value="default">Workspace default</DropdownMenuRadioItem>
+              {ICON_PACKS.map((p) => (
+                <DropdownMenuRadioItem key={p.value} value={p.value}>
+                  {p.label}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="text-xs text-muted-foreground">Motion</DropdownMenuLabel>
+            <DropdownMenuRadioGroup value={look.motion || "auto"} onValueChange={(v) => setLook({ motion: v })}>
+              {MOTION_CHOICES.filter((m) => m.value !== "cinematic" || cinematicAllowed()).map((m) => (
+                <DropdownMenuRadioItem key={m.value} value={m.value} data-motion-choice={m.value}>
+                  {m.value === "auto" ? "Workspace default" : m.label}
+                </DropdownMenuRadioItem>
+              ))}
             </DropdownMenuRadioGroup>
             <DropdownMenuSeparator />
             <DropdownMenuLabel className="text-xs text-muted-foreground">Outline strokes</DropdownMenuLabel>

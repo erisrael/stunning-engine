@@ -1,5 +1,6 @@
 "use client";
 
+import { ICON_PACKS, MOTION_CHOICES } from "@/lib/icon-packs";
 import * as React from "react";
 import Link from "next/link";
 import { useTheme } from "next-themes";
@@ -9,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { ACCENTS, FONTS, useAppearance } from "@/components/app/appearance";
+import { ACCENTS, FONTS, cinematicAllowed, useAppearance } from "@/components/app/appearance";
 import { THEME_PRESETS } from "@/lib/themes";
 import { UiStylePicker } from "@/components/app/ui-style-picker";
 import { PushToggle } from "@/components/app/push-toggle";
@@ -177,7 +178,8 @@ export function PersonalSettings({ muted, emailed, geofence, assistant }: { mute
         <Choice id="contrast" label="Contrast" value={look.contrast} onChange={(v) => setLook({ contrast: v })} options={[{ value: "normal", label: "Normal" }, { value: "high", label: "High contrast" }]} />
         <Choice id="radius" label="Corners" value={look.radius} onChange={(v) => setLook({ radius: v })} options={[{ value: "sharp", label: "Sharp" }, { value: "default", label: "Default" }, { value: "round", label: "Rounded" }]} />
         <Choice id="icons" label="Icons" value={look.icons} onChange={(v) => setLook({ icons: v })} options={[{ value: "colour", label: "Colourful" }, { value: "plain", label: "One colour" }]} />
-        <Choice id="iconPack" label="Icon style" value={look.iconPack} onChange={(v) => setLook({ iconPack: v })} options={[{ value: "lucide", label: "Outline" }, { value: "fill", label: "Filled" }, { value: "duotone", label: "Duotone" }]} />
+        <Choice id="iconPack" label="Icon style" value={look.iconPack || "default"} onChange={(v) => setLook({ iconPack: v })} options={[{ value: "default", label: "Workspace default" }, ...ICON_PACKS.map((p) => ({ value: p.value, label: p.label }))]} />
+        <Choice id="motion" label="Motion" value={look.motion || "auto"} onChange={(v) => setLook({ motion: v })} options={MOTION_CHOICES.filter((m) => m.value !== "cinematic" || cinematicAllowed()).map((m) => ({ value: m.value, label: m.value === "auto" ? "Workspace default" : m.label }))} />
         <Choice id="iconWeight" label="Outline strokes" value={look.iconWeight} onChange={(v) => setLook({ iconWeight: v })} options={[{ value: "thin", label: "Thin" }, { value: "regular", label: "Regular" }, { value: "bold", label: "Bold" }]} />
         <Choice id="lite" label="Slow connection" value={look.lite} onChange={(v) => setLook({ lite: v })} options={[{ value: "off", label: "Normal" }, { value: "on", label: "Light mode: no animations, fewer refreshes" }]} />
       </Section>

@@ -37,7 +37,7 @@ const TILES: Record<Tone, string> = {
 };
 
 type Svg = React.ComponentType<{ className?: string }> & { displayName?: string };
-type PhSvg = React.ComponentType<{ className?: string; weight?: "fill" | "duotone" }>;
+type PhSvg = React.ComponentType<{ className?: string; weight?: "fill" | "duotone" | "regular" | "bold" }>;
 
 // The icon pack: each icon in Lucide and Phosphor, with its usual colour. Keys are what Admin saves.
 export const ICONS: Record<string, { label: string; lucide: Svg; ph: PhSvg; tone: Tone }> = {
@@ -162,6 +162,8 @@ export function AppIcon({ icon, name, tone, className }: { icon?: Svg; name?: st
       <Lu className={cn(c, "pk-lucide pk-alt")} />
       <Ph className={cn(c, "pk-fill")} weight="fill" />
       <Ph className={cn(c, "pk-duo")} weight="duotone" />
+      <Ph className={cn(c, "pk-soft")} weight="regular" />
+      <Ph className={cn(c, "pk-bold")} weight="bold" />
     </>
   );
 }

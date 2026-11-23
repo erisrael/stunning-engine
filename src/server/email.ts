@@ -351,11 +351,12 @@ export async function testSmtp(user: AppUser, senderId: string | null, to: strin
   const t = await transportFor(sender);
   try {
     await t.transporter.verify();
+    const system = (await (await import("./settings")).getSettings()).workspace.name;
     await t.transporter.sendMail({
       from: { name: t.fromName, address: t.fromAddress },
       to,
-      subject: "Myseed email test",
-      text: `This is a test from Myseed Content Manager, sent by ${user.name} as ${t.fromAddress}. Email is working.`,
+      subject: `${system} email test`,
+      text: `This is a test from ${system}, sent by ${user.name} as ${t.fromAddress}. Email is working.`,
     });
   } catch (err) {
     throw new WorkflowError("INVALID_STATE", explainSmtpError(err, t.host, t.port));

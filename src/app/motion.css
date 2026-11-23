@@ -1,0 +1,122 @@
+/* Motion (account menu, Motion; Admin, Configure whole system). <html data-motion> is off, subtle or cinematic.
+   Off stops every animation. Subtle is the app as it always was. Cinematic plays the app like a film:
+   - a scene cut between pages: letterbox bars close and open while the new page dollies in from a soft focus;
+   - the page title wipes in like a title card, cards and rows glide in one after another, progress bars fill;
+   - dialogs open like a zoom-in shot over a blurred background; cards lift with a light sweep on hover;
+   - icons act out what they mean on hover: the bell rings, refresh turns, download drops, send flies, bin shakes.
+   People who ask their computer for less motion get none of it. MotionDirector marks a scene cut with data-scene. */
+
+:root[data-motion="off"] *,
+:root[data-motion="off"] *::before,
+:root[data-motion="off"] *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  scroll-behavior: auto !important;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* ---- The scene cut ---- */
+  :root[data-motion="cinematic"] body::before,
+  :root[data-motion="cinematic"] body::after {
+    content: "";
+    position: fixed;
+    left: 0;
+    right: 0;
+    height: 0;
+    background: #050507;
+    z-index: 60;
+    pointer-events: none;
+  }
+  :root[data-motion="cinematic"] body::before { top: 0; }
+  :root[data-motion="cinematic"] body::after { bottom: 0; }
+  :root[data-motion="cinematic"][data-scene="cut"] body::before,
+  :root[data-motion="cinematic"][data-scene="cut"] body::after { animation: cine-bars 900ms cubic-bezier(0.65, 0, 0.35, 1) both; }
+
+  :root[data-motion="cinematic"][data-scene="cut"] main { animation: cine-dolly 750ms cubic-bezier(0.2, 0.7, 0.1, 1) both; }
+  :root[data-motion="cinematic"][data-scene="cut"] main h1 { animation: cine-title 900ms 120ms cubic-bezier(0.2, 0.7, 0.1, 1) both; }
+
+  /* Cards, sections and rows glide in, one after another. */
+  :root[data-motion="cinematic"][data-scene="cut"] main :is([data-slot="card"], section, li[data-project], tr):nth-child(-n + 14) { animation: cine-rise 620ms cubic-bezier(0.2, 0.7, 0.1, 1) both; }
+  :root[data-motion="cinematic"][data-scene="cut"] main :is([data-slot="card"], section, tr):nth-child(2) { animation-delay: 60ms; }
+  :root[data-motion="cinematic"][data-scene="cut"] main :is([data-slot="card"], section, tr):nth-child(3) { animation-delay: 120ms; }
+  :root[data-motion="cinematic"][data-scene="cut"] main :is([data-slot="card"], section, tr):nth-child(4) { animation-delay: 170ms; }
+  :root[data-motion="cinematic"][data-scene="cut"] main :is([data-slot="card"], section, tr):nth-child(5) { animation-delay: 220ms; }
+  :root[data-motion="cinematic"][data-scene="cut"] main :is([data-slot="card"], section, tr):nth-child(6) { animation-delay: 260ms; }
+  :root[data-motion="cinematic"][data-scene="cut"] main :is([data-slot="card"], section, tr):nth-child(n + 7) { animation-delay: 300ms; }
+
+  /* Progress bars fill from empty. */
+  :root[data-motion="cinematic"][data-scene="cut"] main :is(.h-full.bg-primary, [data-slot="progress-indicator"]) { transform-origin: left; animation: cine-fill 1100ms 250ms cubic-bezier(0.2, 0.7, 0.1, 1) both; }
+
+  /* Dialogs: a zoom-in shot; the room behind goes out of focus. */
+  :root[data-motion="cinematic"] :is([data-slot="dialog-content"], [data-slot="alert-dialog-content"])[data-state="open"] { animation: cine-zoom 420ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+  :root[data-motion="cinematic"] :is([data-slot="dialog-overlay"], [data-slot="alert-dialog-overlay"], [data-slot="sheet-overlay"])[data-state="open"] { backdrop-filter: blur(5px) saturate(0.8); }
+
+  /* Cards lift, and a soft light sweeps across them. */
+  :root[data-motion="cinematic"] main [data-slot="card"] {
+    transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.35s;
+    background-image: linear-gradient(110deg, transparent 35%, color-mix(in oklab, var(--primary) 9%, transparent) 50%, transparent 65%);
+    background-size: 260% 100%;
+    background-position: 120% 0;
+    background-repeat: no-repeat;
+  }
+  :root[data-motion="cinematic"] main [data-slot="card"]:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 14px 34px -18px rgb(0 0 0 / 0.35);
+    animation: cine-sheen 900ms ease both;
+  }
+  :root[data-motion="cinematic"] :is(button, [role="button"]):active:not(:disabled) { transform: scale(0.97); transition: transform 80ms; }
+
+  /* ---- Icons act out their meaning (hover or focus on what holds them) ---- */
+  :root[data-motion="cinematic"] :is(button, a, [role="menuitem"], [role="tab"], [data-slot="card"]):is(:hover, :focus-visible) :is(
+      .lucide-bell, .lucide-bell-ring) { animation: ic-ring 0.9s ease both; transform-origin: 50% 10%; }
+  :root[data-motion="cinematic"] :is(button, a, [role="menuitem"], [role="tab"], [data-slot="card"]):is(:hover, :focus-visible) :is(
+      [class*="lucide-refresh"], [class*="lucide-rotate"], .lucide-loader, .lucide-settings, .lucide-settings-2, .lucide-cog, .lucide-sun) { animation: ic-spin 0.9s cubic-bezier(0.3, 0.7, 0.3, 1) both; }
+  :root[data-motion="cinematic"] :is(button, a, [role="menuitem"], [role="tab"]):is(:hover, :focus-visible) :is(.lucide-download, .lucide-arrow-down, .lucide-file-down, .lucide-import) { animation: ic-drop 0.7s ease both; }
+  :root[data-motion="cinematic"] :is(button, a, [role="menuitem"], [role="tab"]):is(:hover, :focus-visible) :is(.lucide-upload, .lucide-arrow-up, .lucide-file-up, .lucide-share, .lucide-share-2) { animation: ic-lift 0.7s ease both; }
+  :root[data-motion="cinematic"] :is(button, a, [role="menuitem"], [role="tab"]):is(:hover, :focus-visible) :is(.lucide-send, .lucide-send-horizontal, .lucide-mail, .lucide-plane, .lucide-rocket) { animation: ic-fly 0.8s ease both; }
+  :root[data-motion="cinematic"] :is(button, a, [role="menuitem"], [role="tab"]):is(:hover, :focus-visible) :is(.lucide-trash, .lucide-trash-2, .lucide-x, .lucide-circle-x, .lucide-lock) { animation: ic-shake 0.55s ease both; }
+  :root[data-motion="cinematic"] :is(button, a, [role="menuitem"], [role="tab"]):is(:hover, :focus-visible) :is(.lucide-check, .lucide-check-check, .lucide-circle-check, .lucide-badge-check, .lucide-thumbs-up) { animation: ic-pop 0.5s cubic-bezier(0.3, 1.6, 0.5, 1) both; }
+  :root[data-motion="cinematic"] :is(button, a, [role="menuitem"], [role="tab"]):is(:hover, :focus-visible) :is(.lucide-plus, .lucide-circle-plus, .lucide-square-plus) { animation: ic-turn 0.5s ease both; }
+  :root[data-motion="cinematic"] :is(button, a, [role="menuitem"], [role="tab"]):is(:hover, :focus-visible) :is(.lucide-search, .lucide-zoom-in, .lucide-scan-search, .lucide-eye) { animation: ic-zoom 0.6s ease both; }
+  :root[data-motion="cinematic"] :is(button, a, [role="menuitem"], [role="tab"]):is(:hover, :focus-visible) :is(.lucide-chevron-right, .lucide-arrow-right, .lucide-external-link, .lucide-log-out, .lucide-move-right) { animation: ic-nudge 0.6s ease both; }
+  :root[data-motion="cinematic"] :is(button, a, [role="menuitem"], [role="tab"]):is(:hover, :focus-visible) :is(.lucide-chevron-left, .lucide-arrow-left) { animation: ic-nudge-back 0.6s ease both; }
+  :root[data-motion="cinematic"] :is(button, a, [role="menuitem"], [role="tab"]):is(:hover, :focus-visible) :is(.lucide-play, .lucide-circle-play, .lucide-heart, .lucide-activity, .lucide-mic, .lucide-video) { animation: ic-beat 0.8s ease both; }
+  :root[data-motion="cinematic"] :is(button, a, [role="menuitem"], [role="tab"]):is(:hover, :focus-visible) :is(.lucide-star, .lucide-sparkles, .lucide-sparkle, .lucide-wand-sparkles, .lucide-award, .lucide-trophy, .lucide-gift) { animation: ic-twinkle 0.9s ease both; }
+  :root[data-motion="cinematic"] :is(button, a, [role="menuitem"], [role="tab"]):is(:hover, :focus-visible) :is(.lucide-pencil, .lucide-pen, .lucide-pen-line, .lucide-square-pen, .lucide-pencil-line) { animation: ic-write 0.7s ease both; }
+  :root[data-motion="cinematic"] :is(button, a, [role="menuitem"], [role="tab"]):is(:hover, :focus-visible) :is(.lucide-clock, .lucide-timer, .lucide-hourglass, .lucide-alarm-clock) { animation: ic-tick 0.8s steps(4) both; }
+  :root[data-motion="cinematic"] :is(button, a, [role="menuitem"], [role="tab"]):is(:hover, :focus-visible) :is([class*="lucide-chart"], .lucide-trending-up, .lucide-gantt-chart, .lucide-kanban) { animation: ic-grow 0.7s ease both; transform-origin: 50% 100%; }
+  :root[data-motion="cinematic"] :is(button, a, [role="menuitem"], [role="tab"]):is(:hover, :focus-visible) :is([class*="lucide-folder"], .lucide-inbox, .lucide-package, .lucide-archive, .lucide-copy, .lucide-clipboard) { animation: ic-bump 0.5s ease both; }
+  :root[data-motion="cinematic"] :is(button, a, [role="menuitem"], [role="tab"]):is(:hover, :focus-visible) :is([class*="lucide-message"], .lucide-messages-square, .lucide-phone, .lucide-users, .lucide-user) { animation: ic-wave 0.8s ease both; transform-origin: 50% 100%; }
+  :root[data-motion="cinematic"] :is(button, a, [role="menuitem"], [role="tab"]):is(:hover, :focus-visible) :is(.lucide-calendar, .lucide-calendar-days, .lucide-file-text, .lucide-book-open, .lucide-notebook) { animation: ic-flip 0.7s ease both; }
+  :root[data-motion="cinematic"] :is(button, a, [role="menuitem"], [role="tab"]):is(:hover, :focus-visible) .app-icon { animation: ic-pop 0.45s cubic-bezier(0.3, 1.6, 0.5, 1) both; }
+}
+
+@keyframes cine-bars { 0% { height: 0; } 35% { height: 7vh; } 65% { height: 7vh; } 100% { height: 0; } }
+@keyframes cine-dolly { from { opacity: 0; transform: scale(1.035) translateY(8px); filter: blur(8px) brightness(1.08); } to { opacity: 1; transform: none; filter: none; } }
+@keyframes cine-title { from { clip-path: inset(0 100% 0 0); letter-spacing: 0.12em; opacity: 0.2; } to { clip-path: inset(0 0 0 0); letter-spacing: normal; opacity: 1; } }
+@keyframes cine-rise { from { opacity: 0; transform: translateY(14px) rotateX(6deg); } to { opacity: 1; transform: none; } }
+@keyframes cine-fill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+/* Dialogs are centred with the `translate` property, so the shot zooms with `scale` and leaves translate alone. */
+@keyframes cine-zoom { from { opacity: 0; scale: 0.86; filter: blur(6px); } to { opacity: 1; scale: 1; filter: none; } }
+@keyframes cine-sheen { from { background-position: 120% 0; } to { background-position: -40% 0; } }
+
+@keyframes ic-ring { 0%, 100% { transform: rotate(0); } 15% { transform: rotate(18deg); } 30% { transform: rotate(-16deg); } 45% { transform: rotate(12deg); } 60% { transform: rotate(-8deg); } 75% { transform: rotate(4deg); } }
+@keyframes ic-spin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
+@keyframes ic-drop { 0%, 100% { transform: none; } 40% { transform: translateY(3px); } 60% { transform: translateY(-1px); } }
+@keyframes ic-lift { 0%, 100% { transform: none; } 40% { transform: translateY(-3px); } 60% { transform: translateY(1px); } }
+@keyframes ic-fly { 0% { transform: none; opacity: 1; } 45% { transform: translate(8px, -8px) scale(0.8); opacity: 0; } 46% { transform: translate(-8px, 8px) scale(0.8); opacity: 0; } 100% { transform: none; opacity: 1; } }
+@keyframes ic-shake { 0%, 100% { transform: none; } 20% { transform: translateX(-2px) rotate(-6deg); } 40% { transform: translateX(2px) rotate(6deg); } 60% { transform: translateX(-1px) rotate(-3deg); } 80% { transform: translateX(1px); } }
+@keyframes ic-pop { 0% { transform: scale(1); } 40% { transform: scale(1.3); } 100% { transform: scale(1); } }
+@keyframes ic-turn { from { transform: rotate(0); } to { transform: rotate(90deg); } }
+@keyframes ic-zoom { 0%, 100% { transform: none; } 50% { transform: scale(1.25); } }
+@keyframes ic-nudge { 0%, 100% { transform: none; } 50% { transform: translateX(3px); } }
+@keyframes ic-nudge-back { 0%, 100% { transform: none; } 50% { transform: translateX(-3px); } }
+@keyframes ic-beat { 0%, 100% { transform: scale(1); } 20% { transform: scale(1.2); } 40% { transform: scale(0.95); } 60% { transform: scale(1.12); } }
+@keyframes ic-twinkle { 0%, 100% { transform: none; filter: none; } 30% { transform: rotate(-15deg) scale(1.2); filter: drop-shadow(0 0 4px currentColor); } 60% { transform: rotate(10deg) scale(1.05); } }
+@keyframes ic-write { 0%, 100% { transform: none; } 25% { transform: rotate(-12deg) translate(-1px, 1px); } 50% { transform: rotate(6deg) translate(1px, 0); } 75% { transform: rotate(-6deg); } }
+@keyframes ic-tick { from { transform: rotate(0); } to { transform: rotate(360deg); } }
+@keyframes ic-grow { 0% { transform: scaleY(1); } 35% { transform: scaleY(0.6); } 100% { transform: scaleY(1); } }
+@keyframes ic-bump { 0%, 100% { transform: none; } 40% { transform: translateY(-3px) scale(1.08); } }
+@keyframes ic-wave { 0%, 100% { transform: none; } 25% { transform: rotate(-10deg); } 50% { transform: rotate(8deg); } 75% { transform: rotate(-4deg); } }
+@keyframes ic-flip { 0% { transform: perspective(60px) rotateY(0); } 50% { transform: perspective(60px) rotateY(180deg); } 100% { transform: perspective(60px) rotateY(360deg); } }

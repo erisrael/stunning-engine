@@ -1,7 +1,7 @@
 import { roleCatalog } from "@/server/role-catalog";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { DatabaseIcon } from "lucide-react";
+import { DatabaseIcon, Settings2Icon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { requireViewer } from "@/server/auth";
 import { all, get, databaseLabel } from "@/server/db";
@@ -242,6 +242,17 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
       />
       <div className="space-y-3">
         <AdminSearch rights={{ users: manageUsers, data: manageData, settings: can(viewer, "settings.manage") }} />
+        {manageUsers && (
+          <Link href="/admin/configure" className="flex items-center gap-3 rounded-xl border bg-gradient-to-r from-primary/10 to-transparent p-3 transition-colors hover:border-primary/50" data-configure-system>
+            <span className="flex size-9 items-center justify-center rounded-lg bg-primary/15 text-primary">
+              <Settings2Icon className="size-5" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-semibold">Configure whole system</span>
+              <span className="block text-xs text-muted-foreground">Rename the system and its reports, change the logo, motion and icons. Confirmed before anything changes.</span>
+            </span>
+          </Link>
+        )}
         {ADMIN_TAB_GROUPS.length > 1 && (
           <div className="flex flex-wrap items-center gap-1.5 border-b border-border/60 pb-2.5">
             {ADMIN_TAB_GROUPS.map((g) => {

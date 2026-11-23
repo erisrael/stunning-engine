@@ -280,8 +280,8 @@ export async function retroToTask(user: AppUser, d: string, id: string, assignee
 export async function roadmap(user: AppUser, d: string) {
   const a = await workAccess(user, d);
   const cfg = a.config.sprint;
-  const projects = await all<{ id: string; key: string; name: string; status: string; start_date: string | null; due_date: string | null; lead: string | null; color: string | null }>(
-    "SELECT p.id, p.key, p.name, p.status, p.start_date, p.due_date, u.name AS lead, p.color FROM dept_projects p LEFT JOIN users u ON u.id = p.lead_id WHERE p.dept = ? AND p.archived = 0 ORDER BY COALESCE(p.start_date, p.due_date, p.created_at)",
+  const projects = await all<{ id: string; key: string; name: string; status: string; start_date: string | null; due_date: string | null; lead: string | null; color: string | null; parent_id: string | null }>(
+    "SELECT p.id, p.key, p.name, p.status, p.start_date, p.due_date, u.name AS lead, p.color, p.parent_id FROM dept_projects p LEFT JOIN users u ON u.id = p.lead_id WHERE p.dept = ? AND p.archived = 0 ORDER BY COALESCE(p.start_date, p.due_date, p.created_at)",
     a.dept,
   );
   const live = new Set(a.config.projectStatuses.filter((s) => s.category !== "done" && s.category !== "cancelled").map((s) => s.key));
@@ -291,7 +291,8 @@ export async function roadmap(user: AppUser, d: string) {
   const reachable = a.rights.seeAll ? null : new Set((await listProjects(user, a.dept)).map((p) => p.id));
   for (const p of projects) {
     if (reachable && !reachable.has(p.id)) continue;
-    const tasks = await all<TaskRow & { project_id: string }>(`${TASKS} WHERE t.project_id = ? AND t.status_category <> 'cancelled'`, p.id);
+    // A main project's progress includes its sub-projects' work.
+    const tasks = await all<TaskRow & { project_id: string }>(`${TASKS} WHERE (t.project_id = ? OR t.project_id IN (SELECT id FROM dept_projects WHERE parent_id = ? AND archived = 0)) AND t.status_category <> 'cancelled'`, p.id, p.id);
     const weight = (t: TaskRow) => (cfg.unit === "points" ? num(t.points) : num(t.estimate_hours)) || 1;
     const total = tasks.reduce((n, t) => n + weight(t), 0);
     const doneW = tasks.filter((t) => t.status_category === "done").reduce((n, t) => n + weight(t), 0);
@@ -306,6 +307,8 @@ export async function roadmap(user: AppUser, d: string) {
     }
     out.push({
       ...p,
+      parent_key: p.parent_id ? (projects.find((x) => x.id === p.parent_id)?.key ?? null) : null,
+      parts: projects.filter((x) => x.parent_id === p.id).length,
       status: labelOf(a.config.projectStatuses, p.status),
       progress,
       tasks: tasks.length,

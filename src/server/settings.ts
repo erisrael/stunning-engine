@@ -32,6 +32,11 @@ export type Settings = {
     // The UI style for everyone who has not chosen one, and the styles people may pick (empty: all); src/lib/ui-styles.ts.
     uiStyle?: string;
     uiStyles?: string[];
+    // Motion for everyone who has not chosen (Configure whole system): off, subtle or cinematic, and whether people
+    // may turn the cinematic mode on for themselves. The icon pack for everyone who has not chosen one.
+    motionDefault?: "off" | "subtle" | "cinematic";
+    cinematicAllowed?: boolean;
+    iconPack?: string;
   };
   calendar: {
     workdays: number[];
@@ -89,6 +94,9 @@ export const DEFAULT_SETTINGS: Settings = {
     themePreset: "",
     uiStyle: "studio",
     uiStyles: [],
+    motionDefault: "subtle",
+    cinematicAllowed: true,
+    iconPack: "lucide",
   },
   calendar: {
     workdays: [1, 2, 3, 4, 5],

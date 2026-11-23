@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 89;
+export const SCHEMA_VERSION = 90;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -4383,6 +4383,10 @@ CREATE TABLE IF NOT EXISTS dept_access_events (
   outcome TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_dept_access_events ON dept_access_events(dept, reviewed_at, last_at);
+-- v90: sub-projects. A project may sit inside one parent project of the same department (one level deep), so the
+-- Projects page shows the major projects with their parts, and their progress adds up.
+ALTER TABLE dept_projects ADD COLUMN IF NOT EXISTS parent_id TEXT;
+CREATE INDEX IF NOT EXISTS idx_dept_projects_parent ON dept_projects(parent_id);
 
 `;
 

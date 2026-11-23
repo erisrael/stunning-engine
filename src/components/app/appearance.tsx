@@ -7,7 +7,7 @@ import { effectiveStyle } from "@/lib/ui-styles";
 
 // Colour theme preset, accent colour, corner style, text size and colourful or plain icons. Stored per browser; applied
 // to <html> before paint. preset: "" follows the workspace's (Admin), "none" is plain Light or Dark.
-export type Appearance = { style: string; preset: string; accent: string; radius: string; text: string; icons: string; iconPack: string; iconWeight: string; font: string; contrast: string; lite: string; lang: string; calendar: string; helpLinks: string; tips: string };
+export type Appearance = { style: string; preset: string; accent: string; radius: string; text: string; icons: string; iconPack: string; iconWeight: string; motion: string; font: string; contrast: string; lite: string; lang: string; calendar: string; helpLinks: string; tips: string };
 
 export const FONTS = [
   { key: "app", label: "Jakarta (default)" },
@@ -34,7 +34,7 @@ export const ACCENTS = [
 ];
 
 const KEY = APPEARANCE_KEY;
-const DEFAULTS: Appearance = { style: "", preset: "", accent: "violet", radius: "default", text: "normal", icons: "colour", iconPack: "lucide", iconWeight: "regular", font: "app", contrast: "normal", lite: "off", lang: "en", calendar: "", helpLinks: "on", tips: "on" };
+const DEFAULTS: Appearance = { style: "", preset: "", accent: "violet", radius: "default", text: "normal", icons: "colour", iconPack: "default", iconWeight: "regular", motion: "auto", font: "app", contrast: "normal", lite: "off", lang: "en", calendar: "", helpLinks: "on", tips: "on" };
 
 export function readAppearance(): Appearance {
   try {
@@ -64,6 +64,14 @@ function applyStyle(el: HTMLElement, chosen: string) {
   el.dataset.style = effectiveStyle(chosen, el.dataset.styleDefault, allowed);
 }
 
+// The motion in effect: the person's choice, else the workspace's; cinematic only where Admin allows it.
+export function effectiveMotion(chosen: string | undefined, el: HTMLElement) {
+  let m = !chosen || chosen === "auto" ? el.dataset.motionDefault || "subtle" : chosen;
+  if (m === "cinematic" && el.dataset.motionAllowed === "0") m = "subtle";
+  return m;
+}
+export const cinematicAllowed = () => typeof document === "undefined" || document.documentElement.dataset.motionAllowed !== "0";
+
 // The styles this person may pick (Admin, Settings, Workspace), read from <html>.
 export function allowedStyles(): string[] {
   if (typeof document === "undefined") return [];
@@ -78,7 +86,9 @@ function apply(a: Appearance) {
   el.dataset.radius = a.radius;
   el.dataset.text = a.text;
   el.dataset.icons = a.icons;
-  el.dataset.iconPack = a.iconPack;
+  // "default" and "auto" follow the workspace (Admin, Configure whole system), read from <html>.
+  el.dataset.iconPack = !a.iconPack || a.iconPack === "default" ? (el.dataset.iconPackDefault || "lucide") : a.iconPack;
+  el.dataset.motion = effectiveMotion(a.motion, el);
   el.dataset.iconWeight = a.iconWeight;
   el.dataset.font = a.font;
   el.dataset.contrast = a.contrast;

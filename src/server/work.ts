@@ -57,6 +57,11 @@ export type Project = {
   progress: number;
   milestones: { id: string; name: string; due_date: string | null; status: string; total: number; done: number }[];
   metrics: Record<string, number>;
+  // Sub-projects (v90): the parent this project sits in, and for a parent, its parts' work added to its own.
+  parent_id: string | null;
+  parent_key: string | null;
+  children: number;
+  rollup: { total: number; done: number; open: number; overdue: number; progress: number } | null;
 };
 
 export async function listProjects(user: AppUser, d: string, f: { q?: string | null; status?: string | null; archived?: boolean } = {}): Promise<Project[]> {
@@ -107,11 +112,29 @@ export async function listProjects(user: AppUser, d: string, f: { q?: string | n
   // Finished projects go after the live ones.
   const live = liveProjectStatuses(a.config);
   const ended = (r: Record<string, unknown>) => Number(!live.includes(r.status as string));
+  // A parent's numbers include its sub-projects' (all of them, as the parent's own page shows the whole).
+  const keyOf = new Map(
+    (await all<{ id: string; key: string }>("SELECT id, key FROM dept_projects WHERE dept = ?", dp)).map((x) => [x.id, x.key]),
+  );
+  const kids = await all<{ parent_id: string; n: number; total: number; done: number; open: number; overdue: number }>(
+    `SELECT c.parent_id, COUNT(DISTINCT c.id) AS n,
+       COUNT(t.id) FILTER (WHERE t.status_category <> 'cancelled') AS total,
+       COUNT(t.id) FILTER (WHERE t.status_category = 'done') AS done,
+       COUNT(t.id) FILTER (WHERE t.status_category IN (${OPEN_SQL})) AS open,
+       COUNT(t.id) FILTER (WHERE t.status_category IN (${OPEN_SQL}) AND t.due_date < ?) AS overdue
+     FROM dept_projects c LEFT JOIN dept_tasks t ON t.project_id = c.id
+     WHERE c.dept = ? AND c.parent_id IS NOT NULL AND c.archived = 0 GROUP BY c.parent_id`,
+    today,
+    dp,
+  );
   return rows
     .sort((x, y) => Number(!!x.archived) - Number(!!y.archived) || ended(x) - ended(y))
     .map((r) => {
       const total = Number(r.total);
       const done = Number(r.done);
+      const k = kids.find((x) => x.parent_id === r.id);
+      const rt = k ? total + Number(k.total) : 0;
+      const rd = k ? done + Number(k.done) : 0;
       return {
         id: r.id as string,
         key: r.key as string,
@@ -133,8 +156,24 @@ export async function listProjects(user: AppUser, d: string, f: { q?: string | n
         progress: total ? Math.round((done / total) * 100) : 0,
         milestones: ms.filter((m) => m.project_id === r.id).map((m) => ({ ...m, total: Number(m.total), done: Number(m.done) })),
         metrics: Object.fromEntries(metrics.filter((m) => m.project_id === r.id).map((m) => [m.metric, Number(m.total)])),
+        parent_id: (r.parent_id as string) ?? null,
+        parent_key: r.parent_id ? (keyOf.get(r.parent_id as string) ?? null) : null,
+        children: k ? Number(k.n) : 0,
+        rollup: k ? { total: rt, done: rd, open: Number(r.open) + Number(k.open), overdue: Number(r.overdue) + Number(k.overdue), progress: rt ? Math.round((rd / rt) * 100) : 0 } : null,
       };
     });
+}
+
+// One level of nesting: the parent is a top-level project of the same department, and a project with parts of its
+// own cannot become a part.
+async function checkParent(dp: string, id: string | undefined, parentId: string | null | undefined) {
+  if (!parentId) return null;
+  if (parentId === id) throw new WorkflowError("VALIDATION", "A project cannot be its own parent.");
+  const parent = await get<{ id: string; parent_id: string | null }>("SELECT id, parent_id FROM dept_projects WHERE id = ? AND dept = ?", parentId, dp);
+  if (!parent) throw new WorkflowError("VALIDATION", "The parent project was not found.");
+  if (parent.parent_id) throw new WorkflowError("VALIDATION", "Choose a main project as the parent: sub-projects cannot have their own parts.");
+  if (id && (await get("SELECT 1 AS x FROM dept_projects WHERE parent_id = ?", id))) throw new WorkflowError("VALIDATION", "This project has sub-projects of its own, so it stays a main project.");
+  return parent.id;
 }
 
 export type ProjectInput = {
@@ -150,6 +189,8 @@ export type ProjectInput = {
   budget?: number | null;
   meta?: Project["meta"];
   archived?: boolean;
+  // undefined keeps the current parent; null makes it a top-level project.
+  parentId?: string | null;
 };
 
 export async function saveProject(user: AppUser, d: string, input: ProjectInput) {
@@ -165,11 +206,12 @@ export async function saveProject(user: AppUser, d: string, input: ProjectInput)
   if (clash && clash.id !== input.id) throw new WorkflowError("VALIDATION", `The key ${key} is already used.`);
   const now = nowIso();
   if (input.id) {
-    const old = await get<{ key: string }>("SELECT key FROM dept_projects WHERE id = ? AND dept = ?", input.id, dp);
+    const old = await get<{ key: string; parent_id: string | null }>("SELECT key, parent_id FROM dept_projects WHERE id = ? AND dept = ?", input.id, dp);
     if (!old) throw new WorkflowError("NOT_FOUND", "Not found.");
+    const parent = input.parentId === undefined ? old.parent_id : await checkParent(dp, input.id, input.parentId);
     await tx(async () => {
       await run(
-        "UPDATE dept_projects SET key = ?, name = ?, description = ?, status = ?, lead_id = ?, start_date = ?, due_date = ?, color = ?, budget = ?, meta = ?, archived = ?, updated_at = ? WHERE id = ?",
+        "UPDATE dept_projects SET key = ?, name = ?, description = ?, status = ?, lead_id = ?, start_date = ?, due_date = ?, color = ?, budget = ?, meta = ?, archived = ?, parent_id = ?, updated_at = ? WHERE id = ?",
         key,
         input.name.trim(),
         input.description?.trim() || null,
@@ -181,6 +223,7 @@ export async function saveProject(user: AppUser, d: string, input: ProjectInput)
         input.budget ?? null,
         JSON.stringify(input.meta ?? {}),
         input.archived ? 1 : 0,
+        parent,
         now,
         input.id,
       );
@@ -191,8 +234,9 @@ export async function saveProject(user: AppUser, d: string, input: ProjectInput)
     return input.id;
   }
   const id = uid("prj_");
+  const parent = await checkParent(dp, undefined, input.parentId);
   await run(
-    "INSERT INTO dept_projects (id, dept, key, name, description, status, lead_id, start_date, due_date, color, budget, meta, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO dept_projects (id, dept, key, name, description, status, lead_id, start_date, due_date, color, budget, meta, parent_id, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     id,
     dp,
     key,
@@ -205,6 +249,7 @@ export async function saveProject(user: AppUser, d: string, input: ProjectInput)
     input.color || null,
     input.budget ?? null,
     JSON.stringify(input.meta ?? {}),
+    parent,
     user.id,
     now,
     now,
@@ -222,6 +267,8 @@ export async function deleteProject(user: AppUser, d: string, id: string) {
   // Tasks stay, without a project; their codes move to the department prefix.
   await tx(async () => {
     for (const t of await all<{ id: string }>("SELECT id FROM dept_tasks WHERE project_id = ?", id)) await run("UPDATE dept_tasks SET code = ? WHERE id = ?", await nextLooseCode(dp, a.config), t.id);
+    // Its sub-projects stay, as main projects.
+    await run("UPDATE dept_projects SET parent_id = NULL WHERE parent_id = ?", id);
     await run("DELETE FROM dept_projects WHERE id = ?", id);
   });
   await audit({ actor: user }, { action: `${dp}.project`, summary: `${user.name} deleted ${a.config.names.project.toLowerCase()} ${p.key}` });
@@ -404,8 +451,9 @@ export async function listTasks(user: AppUser, d: string, f: TaskFilter = {}): P
   }
   if (f.project === "none") where.push("t.project_id IS NULL");
   else if (f.project) {
-    where.push("t.project_id = ?");
-    params.push(f.project);
+    // A main project's tasks include its sub-projects'.
+    where.push("(t.project_id = ? OR t.project_id IN (SELECT id FROM dept_projects WHERE parent_id = ?))");
+    params.push(f.project, f.project);
   }
   if (f.type) {
     where.push("t.type = ?");

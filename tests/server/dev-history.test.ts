@@ -58,7 +58,11 @@ async function main() {
   const map = await roadmap(kidus, "dev");
   const core = map.projects.find((p) => p.key === "CORE");
   const m = map.projects.find((p) => p.key === "MAINT");
-  const ongoing = ["MAINT", "WEB", "SCHOOL", "VERIFY"];
+  const ongoing = ["OPS", "MAINT", "WEB", "SCHOOL", "VERIFY"];
+  // Four main projects; Myseed Ops holds its 13 parts and adds up their progress.
+  const opsRow = map.projects.find((p) => p.key === "OPS");
+  check("four main projects; the Ops parts sit in Myseed Ops", map.projects.filter((p) => !p.parent_key).map((p) => p.key).sort().join() === "OPS,SCHOOL,VERIFY,WEB" && map.projects.filter((p) => p.parent_key === "OPS").length === 13 && opsRow?.parts === 13, map.projects.map((p) => [p.key, p.parent_key]));
+  check("Myseed Ops adds up its parts: nearly all done, still open for maintenance", !!opsRow && opsRow.progress > 80 && opsRow.progress < 100 && opsRow.health !== "done", opsRow && [opsRow.progress, opsRow.health]);
   check("delivered projects are done at 100 % with Kidus on the team", !!core && core.progress === 100 && core.health === "done" && core.team.includes("Kidus Sebsibe") && map.projects.filter((p) => !ongoing.includes(p.key)).every((p) => p.progress === 100 && p.health === "done"), map.projects.map((p) => [p.key, p.progress, p.health]));
   const web = map.projects.find((p) => p.key === "WEB");
   check("the website is mostly done; SchoolHub and Transaction Verify are part way", !!web && web.progress >= 60 && web.progress < 100 && ["SCHOOL", "VERIFY"].every((k) => { const p = map.projects.find((x) => x.key === k); return !!p && p.progress > 30 && p.progress < 100 && p.health !== "done"; }), map.projects.filter((p) => ongoing.includes(p.key)).map((p) => [p.key, p.progress, p.health]));
@@ -79,7 +83,9 @@ async function main() {
   await run("UPDATE dept_tasks SET title = 'Renamed in the app' WHERE code = 'CORE-1'");
   const again = await applyDevHistory();
   check("running again with the same file does nothing", !again.applied && again.reason === "already applied");
+  await run("UPDATE dept_projects SET parent_id = NULL WHERE dept = 'dev' AND key = 'FUN'");
   const forced = await applyDevHistory({ force: true });
+  check("a part moved out of its main project stays out", !(await get<{ p: string | null }>("SELECT parent_id AS p FROM dept_projects WHERE dept = 'dev' AND key = 'FUN'"))?.p);
   check("forcing adds nothing new and keeps edits", forced.applied && forced.tasks === 0 && forced.projects === 0 && forced.skipped === codes.length && (await get<{ title: string }>("SELECT title FROM dept_tasks WHERE code = 'CORE-1'"))?.title === "Renamed in the app", forced);
   check("no project twice", Number((await get<{ n: number }>("SELECT COUNT(*) AS n FROM dept_projects WHERE dept = 'dev' AND key = 'CORE'"))?.n) === 1);
 

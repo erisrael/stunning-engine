@@ -6,6 +6,7 @@ import { VersionWatch } from "@/components/app/version-watch";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import "./globals.css";
 import "./ui-styles.css";
+import "./motion.css";
 import { appearanceScript } from "@/lib/appearance-script";
 import { ErrorReporter } from "@/components/app/error-reporter";
 
@@ -68,7 +69,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html lang="en" suppressHydrationWarning className={`${FONT_VARS} h-full antialiased`}>
       <head>
-        <script dangerouslySetInnerHTML={{ __html: appearanceScript(preset, { style: ws?.uiStyle ?? "", allowed: ws?.uiStyles ?? [] }) }} />
+        <script dangerouslySetInnerHTML={{ __html: appearanceScript(preset, { style: ws?.uiStyle ?? "", allowed: ws?.uiStyles ?? [], motion: ws?.motionDefault, cinematic: ws?.cinematicAllowed !== false, iconPack: ws?.iconPack }) }} />
       </head>
       <body className="min-h-full">
         <ErrorReporter />

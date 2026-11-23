@@ -22,8 +22,9 @@
     { "name": "v1.5.0", "version": "1.5.0", "date": "2026-11-23", "commit": "73c09c3", "notes": "Specs and docs as formatted company documents, Markdown kept as written, the project's documentation and the Dev team handbook in the library, and Seed Town Offline." }
   ],
   "projects": [
+    {"key": "OPS", "name": "Myseed Ops (ops.myseed.com.et)", "color": "#7b68ee", "status": "active", "start": "2026-10-28", "due": null, "description": "The operations platform: production workflow, departments, HR, finance, support, Dev studio and the apps. Its parts are the sub-projects below; Maintenance and improvements carries the open work.", "milestones": [], "tasks": []},
     {
-      "key": "CORE", "name": "Production workflow and core platform", "color": "#7b68ee", "status": "done", "start": "2026-10-28", "due": "2026-11-20",
+      "key": "CORE", "parent": "OPS", "name": "Production workflow and core platform", "color": "#7b68ee", "status": "done", "start": "2026-10-28", "due": "2026-11-20",
       "description": "The curriculum and the four production stages (Recording, Editing, Uploading, Publication) with evidence and handovers; departments with their own flows; Myseed's own needs; roles and permissions.",
       "milestones": [{ "name": "First release", "due": "2026-10-31" }, { "name": "Department flows", "due": "2026-11-01" }, { "name": "Update 1.0", "due": "2026-11-14" }, { "name": "Redo and the permission grid", "due": "2026-11-20" }],
       "tasks": [
@@ -45,7 +46,7 @@
       ]
     },
     {
-      "key": "COMM", "name": "Communication: chat, calls and mail", "color": "#1fa7e0", "status": "done", "start": "2026-10-30", "due": "2026-11-09",
+      "key": "COMM", "parent": "OPS", "name": "Communication: chat, calls and mail", "color": "#1fa7e0", "status": "done", "start": "2026-10-30", "due": "2026-11-09",
       "description": "Team chat, voice and video calls, email from the app, the company inbox and announcements.",
       "milestones": [{ "name": "Chat and calls", "due": "2026-10-31" }, { "name": "Company inbox", "due": "2026-11-03" }],
       "tasks": [
@@ -59,7 +60,7 @@
       ]
     },
     {
-      "key": "PEOPLE", "name": "HR, attendance and payroll", "color": "#1f9d55", "status": "done", "start": "2026-10-30", "due": "2026-11-09",
+      "key": "PEOPLE", "parent": "OPS", "name": "HR, attendance and payroll", "color": "#1f9d55", "status": "done", "start": "2026-10-30", "due": "2026-11-09",
       "description": "Employee records, leave, hiring and performance cases; attendance at the kiosk by QR, PIN, badge and face; payroll for everyone and recognition.",
       "milestones": [{ "name": "HR", "due": "2026-10-30" }, { "name": "Attendance", "due": "2026-10-31" }, { "name": "Payroll and recognition", "due": "2026-11-03" }],
       "tasks": [
@@ -76,7 +77,7 @@
       ]
     },
     {
-      "key": "FIN", "name": "Finance and Chapa", "color": "#f2a100", "status": "done", "start": "2026-10-31", "due": "2026-11-19",
+      "key": "FIN", "parent": "OPS", "name": "Finance and Chapa", "color": "#f2a100", "status": "done", "start": "2026-10-31", "due": "2026-11-19",
       "description": "Accounts, bills, invoices, claims, purchasing, budgets, payroll and reports; Chapa payments for every business, synced in full and reconciled.",
       "milestones": [{ "name": "Finance", "due": "2026-10-31" }, { "name": "Chapa sync and reconciliation", "due": "2026-11-18" }],
       "tasks": [
@@ -89,7 +90,7 @@
       ]
     },
     {
-      "key": "SUP", "name": "Customer support and contact center", "color": "#e2445c", "status": "done", "start": "2026-11-03", "due": "2026-11-20",
+      "key": "SUP", "parent": "OPS", "name": "Customer support and contact center", "color": "#e2445c", "status": "done", "start": "2026-11-03", "due": "2026-11-20",
       "description": "The support desk, live chat, Telegram bots and Mini App, the widget and support app, browser calls with an IVR, call records, the knowledge base and requests with approvals.",
       "milestones": [{ "name": "Support desk", "due": "2026-11-03" }, { "name": "Update 1.1", "due": "2026-11-14" }, { "name": "Contact center (Update 1.2)", "due": "2026-11-18" }],
       "tasks": [
@@ -114,7 +115,7 @@
       ]
     },
     {
-      "key": "NOOR", "name": "Legacy CMS (Noor)", "color": "#0e7490", "status": "done", "start": "2026-11-06", "due": "2026-11-19",
+      "key": "NOOR", "parent": "OPS", "name": "Legacy CMS (Noor)", "color": "#0e7490", "status": "done", "start": "2026-11-06", "due": "2026-11-19",
       "description": "Noor's data read safely, mirrored and reported on; the academic content manager; every Noor request gated and paced.",
       "milestones": [{ "name": "Noor reader and mirror", "due": "2026-11-08" }, { "name": "Field registry and filtering", "due": "2026-11-17" }, { "name": "Noor protection", "due": "2026-11-19" }],
       "tasks": [
@@ -131,7 +132,7 @@
       ]
     },
     {
-      "key": "DEVS", "name": "Dev studio and documents", "color": "#4b3bc4", "status": "done", "start": "2026-11-01", "due": "2026-11-23",
+      "key": "DEVS", "parent": "OPS", "name": "Dev studio and documents", "color": "#4b3bc4", "status": "done", "start": "2026-11-01", "due": "2026-11-23",
       "description": "Sprints, the roadmap and Gantt, specs and docs with review and traceability, releases, incidents, DORA, the document library and integrations; documents as formatted company specs.",
       "milestones": [{ "name": "Dev studio", "due": "2026-11-03" }, { "name": "Document library", "due": "2026-11-03" }, { "name": "Documentation and handbook", "due": "2026-11-23" }],
       "tasks": [
@@ -148,7 +149,7 @@
       ]
     },
     {
-      "key": "AI", "name": "Assistant", "color": "#a855f7", "status": "done", "start": "2026-11-01", "due": "2026-11-19",
+      "key": "AI", "parent": "OPS", "name": "Assistant", "color": "#a855f7", "status": "done", "start": "2026-11-01", "due": "2026-11-19",
       "description": "The assistant on every page, by role, in English and Amharic; agent mode and autopilot; several AI providers.",
       "milestones": [{ "name": "Assistant in every page", "due": "2026-11-03" }, { "name": "Autopilot", "due": "2026-11-19" }],
       "tasks": [
@@ -163,7 +164,7 @@
       ]
     },
     {
-      "key": "PLAN", "name": "Planning, performance and presentations", "color": "#f47e45", "status": "done", "start": "2026-11-01", "due": "2026-11-03",
+      "key": "PLAN", "parent": "OPS", "name": "Planning, performance and presentations", "color": "#f47e45", "status": "done", "start": "2026-11-01", "due": "2026-11-03",
       "description": "Presentations for every department, performance management, the team analyzer and strategic planning with monitoring and evaluation.",
       "milestones": [{ "name": "Planning and performance", "due": "2026-11-03" }],
       "tasks": [
@@ -175,7 +176,7 @@
       ]
     },
     {
-      "key": "FUN", "name": "Fun mode and Seed Town", "color": "#e45d8d", "status": "done", "start": "2026-11-20", "due": "2026-11-21",
+      "key": "FUN", "parent": "OPS", "name": "Fun mode and Seed Town", "color": "#e45d8d", "status": "done", "start": "2026-11-20", "due": "2026-11-21",
       "description": "UI styles and Fun mode, games and the pet; Seed Town as a 3D city with racing, archery, football, Seed Strike and Seed Core; the guest arcade and Seed Town Offline.",
       "milestones": [{ "name": "Fun mode", "due": "2026-11-20" }, { "name": "Seed Town and the arcade", "due": "2026-11-21" }],
       "tasks": [
@@ -192,7 +193,7 @@
       ]
     },
     {
-      "key": "APPS", "name": "Apps, devices and kiosks", "color": "#3fc4c4", "status": "done", "start": "2026-11-03", "due": "2026-11-20",
+      "key": "APPS", "parent": "OPS", "name": "Apps, devices and kiosks", "color": "#3fc4c4", "status": "done", "start": "2026-11-03", "due": "2026-11-20",
       "description": "The installable app shell, phone layouts and the Windows app.",
       "milestones": [{ "name": "Phones and the app shell", "due": "2026-11-04" }, { "name": "Windows app", "due": "2026-11-20" }],
       "tasks": [
@@ -202,7 +203,7 @@
       ]
     },
     {
-      "key": "INFRA", "name": "Infrastructure, security and operations", "color": "#656f7d", "status": "done", "start": "2026-10-28", "due": "2026-11-19",
+      "key": "INFRA", "parent": "OPS", "name": "Infrastructure, security and operations", "color": "#656f7d", "status": "done", "start": "2026-10-28", "due": "2026-11-19",
       "description": "Sign-in and security, scheduled jobs, backups, CI, the platform pages, the VPS with auto deploy, the live domain and the watchdog.",
       "milestones": [{ "name": "Foundations", "due": "2026-10-31" }, { "name": "VPS and auto deploy", "due": "2026-11-04" }, { "name": "Hardening", "due": "2026-11-19" }],
       "tasks": [
@@ -223,7 +224,7 @@
       ]
     },
     {
-      "key": "MAINT", "name": "Maintenance and improvements", "color": "#14b8a6", "status": "active", "start": "2026-11-23", "due": null,
+      "key": "MAINT", "parent": "OPS", "name": "Maintenance and improvements", "color": "#14b8a6", "status": "active", "start": "2026-11-23", "due": null,
       "description": "Ongoing: maintenance requests, bugs, live checks and the improvements still open on the roadmap. New requests from other departments are added here and planned into sprints.",
       "milestones": [{ "name": "Sprint 3 follow-ups", "due": "2026-12-06", "status": "open" }, { "name": "Open roadmap items", "due": null, "status": "open" }],
       "tasks": [

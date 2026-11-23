@@ -22,6 +22,8 @@ export type DevHistory = {
   releases: { name: string; version: string; date: string; commit: string; notes: string }[];
   projects: {
     key: string;
+    // The main project this one is part of (sub-projects, v90).
+    parent?: string;
     name: string;
     color: string;
     status: string;
@@ -32,7 +34,7 @@ export type DevHistory = {
     tasks: (DoneTask | OpenTask)[];
   }[];
 };
-export type HistoryResult = { applied: boolean; reason?: string; owner?: string; projects: number; sprints: number; releases: number; tasks: number; skipped: number };
+export type HistoryResult = { applied: boolean; reason?: string; owner?: string; projects: number; sprints: number; releases: number; tasks: number; skipped: number; nested?: number };
 
 const at = (day: string, hour: number) => `${day}T${String(hour).padStart(2, "0")}:00:00.000Z`;
 
@@ -192,6 +194,19 @@ export async function applyDevHistory(opts: { root?: string; file?: string; forc
       await run("UPDATE dept_projects SET next_number = GREATEST(next_number, ?) WHERE id = ?", highest + 1, project.id);
     }
 
+    // Sub-projects: each part goes into its main project once. Someone who later moves it out keeps it out.
+    for (const p of h.projects) {
+      if (!p.parent) continue;
+      const flag = `dev_history_parent:${dept}:${p.key}`;
+      if (await get("SELECT 1 AS x FROM settings WHERE key = ?", flag)) continue;
+      const parent = await get<{ id: string }>("SELECT id FROM dept_projects WHERE dept = ? AND key = ? AND parent_id IS NULL", dept, p.parent);
+      const child = await get<{ id: string }>("SELECT id FROM dept_projects WHERE dept = ? AND key = ? AND parent_id IS NULL", dept, p.key);
+      if (parent && child && parent.id !== child.id && !(await get("SELECT 1 AS x FROM dept_projects WHERE parent_id = ?", child.id))) {
+        await run("UPDATE dept_projects SET parent_id = ? WHERE id = ?", parent.id, child.id);
+        result.nested = (result.nested ?? 0) + 1;
+      }
+      await run("INSERT INTO settings (key, value, updated_at) VALUES (?, 'true', ?) ON CONFLICT (key) DO NOTHING", flag, nowIso());
+    }
     // Each release's task count, and each closed sprint's planned and finished points with its review.
     for (const r of releaseIds.values()) await run("UPDATE dept_releases SET task_count = (SELECT COUNT(*) FROM dept_tasks WHERE release_id = ?) WHERE id = ?", r.id, r.id);
     for (const s of h.sprints) {
@@ -205,7 +220,7 @@ export async function applyDevHistory(opts: { root?: string; file?: string; forc
     }
     await run("INSERT INTO settings (key, value, updated_at) VALUES ('dev_history_hash', ?, ?) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at", JSON.stringify(hash), nowIso());
   });
-  if (result.projects || result.tasks || result.releases || result.sprints)
+  if (result.projects || result.tasks || result.releases || result.sprints || result.nested)
     await audit({ actor: null, source: "system" }, { action: `${dept}.history`, summary: `Dev team record: ${result.projects} projects, ${result.sprints} sprints, ${result.releases} releases and ${result.tasks} tasks added, assigned to ${who.name}` });
   return { ...result, applied: true };
 }

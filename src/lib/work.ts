@@ -37,6 +37,9 @@ export const DEPT_VIEW_LABELS: Record<DeptView | "dashboard", string> = {
   dojo: "Dev dojo",
   requests: "Requests",
 };
+// Pages with a "PDF report" (src/server/dept-page-report.ts); the others have nothing to print.
+export const REPORT_VIEWS = ["board", "list", "sheet", "data", "calendar", "overview", "timeline", "projects", "requests", "sprint", "roadmap", "team", "report", "insights", "analyze", "tools", "docs", "access"] as const;
+export const hasReport = (view: string) => (REPORT_VIEWS as readonly string[]).includes(view);
 export const deptViewPath = (d: string, view: string, query = "") => `${deptPath(d)}${view && view !== "dashboard" ? `/${view}` : ""}${query ? `?${query.replace(/^[?&]/, "")}` : ""}`;
 // Keys of new departments: lowercase letters, digits and dashes, not clashing with pages or built-in departments.
 export const RESERVED_DEPT_KEYS = ["dev", "marketing", "studio", "production", "owners", "company", "admin", "new"];

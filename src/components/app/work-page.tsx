@@ -268,7 +268,26 @@ export async function WorkPage({ dept, searchParams, view }: { dept: WorkDept; s
           summary={await (async () => {
             const { deptOverview } = await import("@/server/dept-overview");
             const { DeptOverviewStrip } = await import("./dept-overview");
-            return <DeptOverviewStrip dept={dept} data={await deptOverview(viewer, dept, { period: 30 })} />;
+            const strip = <DeptOverviewStrip dept={dept} data={await deptOverview(viewer, dept, { period: 30 })} />;
+            if (dept !== "dev") return strip;
+            // The Dev dojo on the Dev home, so it is found (it also sits in the sidebar under Tools).
+            const Link = (await import("next/link")).default;
+            const { Gamepad2Icon: GamepadIcon } = await import("lucide-react");
+            return (
+              <div className="space-y-3">
+                {strip}
+                <Link href={deptViewPath(dept, "dojo")} className="group flex items-center gap-3 rounded-xl border bg-gradient-to-r from-emerald-500/10 via-transparent to-violet-500/10 p-3 transition-colors hover:border-primary/50" data-dojo-card>
+                  <span className="flex size-10 items-center justify-center rounded-lg bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" aria-hidden>
+                    <GamepadIcon className="size-5" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-semibold">Dev dojo: 5-minute games that teach real development</span>
+                    <span className="block text-xs text-muted-foreground">Bug hunt, regex lab, Git, complexity and security quizzes. Keep your streak.</span>
+                  </span>
+                  <span className="text-sm font-medium text-primary group-hover:underline">Play →</span>
+                </Link>
+              </div>
+            );
           })()}
           dashboard={<DeptDashboardView viewer={viewer} dept={dept} sp={sp} />}
         />

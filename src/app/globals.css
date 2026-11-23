@@ -305,9 +305,14 @@
 :root[data-icons="plain"] .app-tile { background: color-mix(in oklab, var(--primary) 10%, transparent); color: var(--primary); }
 
 /* Icon pack and stroke (account menu): every icon is drawn in each style; the chosen one shows. */
-.pk-fill, .pk-duo { display: none; }
-:root[data-icon-pack="fill"] .pk-fill, :root[data-icon-pack="duotone"] .pk-duo { display: block; }
-:root[data-icon-pack="fill"] .pk-alt, :root[data-icon-pack="duotone"] .pk-alt { display: none; }
+.pk-fill, .pk-duo, .pk-soft, .pk-bold { display: none; }
+:root[data-icon-pack="fill"] .pk-fill, :root[data-icon-pack="sticker"] .pk-fill, :root[data-icon-pack="duotone"] .pk-duo, :root[data-icon-pack="soft"] .pk-soft, :root[data-icon-pack="bold"] .pk-bold { display: block; }
+:root:is([data-icon-pack="fill"], [data-icon-pack="duotone"], [data-icon-pack="soft"], [data-icon-pack="bold"], [data-icon-pack="sticker"]) .pk-alt { display: none; }
+/* Neon: every icon glows in its own colour. Sticker: filled icons with a white edge and a small shadow. Pixel: square,
+   crisp strokes. These three restyle the icons, including the plain ones in buttons. */
+:root[data-icon-pack="neon"] :is(.app-icon, .lucide) { filter: drop-shadow(0 0 1.5px currentColor) drop-shadow(0 0 5px color-mix(in oklab, currentColor 55%, transparent)); }
+:root[data-icon-pack="sticker"] .pk-fill { filter: drop-shadow(1px 0 0 #fff) drop-shadow(-1px 0 0 #fff) drop-shadow(0 1px 0 #fff) drop-shadow(0 -1px 0 #fff) drop-shadow(0 2px 2px rgb(0 0 0 / 0.22)); }
+:root[data-icon-pack="pixel"] :is(.pk-lucide, .lucide) { shape-rendering: crispEdges; stroke-linecap: square; stroke-linejoin: miter; stroke-width: 2.4; }
 :root[data-icon-weight="thin"] .pk-lucide { stroke-width: 1.4; }
 :root[data-icon-weight="bold"] .pk-lucide { stroke-width: 2.6; }
 

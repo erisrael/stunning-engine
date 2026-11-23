@@ -39,6 +39,7 @@ import { Assistant } from "@/components/app/assistant";
 import { FunMode } from "@/components/app/fun/fun-mode";
 import { StyleEffects } from "@/components/app/style-effects";
 import { TerminalAmbient } from "@/components/app/terminal-ambient";
+import { MotionDirector } from "@/components/app/motion-director";
 import { OfflineCheckinSync } from "@/components/app/attendance/offline-sync";
 import { MobileNav } from "@/components/app/mobile-nav";
 import { GeofenceWatch } from "@/components/app/attendance/geofence-watch";
@@ -99,6 +100,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <ChatKeyBootstrap viewerId={viewer.id} />
         <StyleEffects />
         <TerminalAmbient />
+        <MotionDirector />
         {/* Developers start in the Dev Terminal style unless they chose a style or Admin does not allow it. */}
         {viewer.roles.includes("developer") && (
           <script
