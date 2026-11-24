@@ -15,6 +15,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import * as A from "@/app/actions/support-desk";
+import { gathered, trickle } from "@/lib/call-ice";
+import { ProximityShade, RouteToggle, useAudioRoute } from "@/components/app/audio-route";
 import type { CallHistoryRow } from "@/server/support-calls";
 import { cn } from "@/lib/utils";
 
@@ -56,17 +58,12 @@ export function CallProvider({ record, children }: { record: boolean; children: 
   );
 }
 
-async function gathered(pc: RTCPeerConnection, ms = 3000) {
-  if (pc.iceGatheringState === "complete") return;
-  await new Promise<void>((resolve) => {
-    const t = window.setTimeout(resolve, ms);
-    pc.addEventListener("icegatheringstatechange", () => pc.iceGatheringState === "complete" && (window.clearTimeout(t), resolve()));
-  });
-}
 
 type Leg = { id: string; status: string; name: string | null };
 type Parts = {
   pc?: RTCPeerConnection;
+  /** This side's network addresses to the customer, and theirs into the call (lib/call-ice). */
+  ice?: ReturnType<typeof trickle>;
   mic?: MediaStream;
   sender?: RTCRtpSender;
   remote: MediaStream;
@@ -197,8 +194,9 @@ function CallPanel({ call, record, onDone, onEnded }: { call: Exclude<ActiveCall
       p.current.poll = window.setInterval(async () => {
         const s = await A.agentPollCallAction(p.current.callId!);
         if (!s.ok) return;
-        const d = s.data as { status: string; onHold: boolean; legs: Leg[] };
+        const d = s.data as { status: string; onHold: boolean; legs: Leg[]; ice?: unknown[] };
         setLegs(d.legs ?? []);
+        if (d.ice?.length) void p.current.ice?.add(d.ice);
         if (["ended", "missed", "declined"].includes(d.status)) {
           toast.message(staffLeg ? "The call has ended." : "The customer hung up.");
           await hangUp(false);
@@ -214,7 +212,10 @@ function CallPanel({ call, record, onDone, onEnded }: { call: Exclude<ActiveCall
     (async () => {
       try {
         const ice = await A.iceAction();
-        const pc = new RTCPeerConnection({ iceServers: ice.ok ? ((ice.data as { iceServers: RTCIceServer[] }).iceServers ?? []) : [] });
+        const servers = ice.ok ? ((ice.data as { iceServers: RTCIceServer[] }).iceServers ?? []) : [];
+        const pc = new RTCPeerConnection({ iceServers: servers });
+        const tr = trickle(pc, (candidate) => (p.current.callId ? A.agentIceAction(p.current.callId, candidate) : Promise.resolve()));
+        p.current.ice = tr;
         // What this browser sees of the audio goes into the call's lifecycle (Update 1.2).
         pc.onconnectionstatechange = () => {
           const st = pc.connectionState === "connected" ? "connected" : pc.connectionState === "failed" ? "failed" : null;
@@ -234,7 +235,7 @@ function CallPanel({ call, record, onDone, onEnded }: { call: Exclude<ActiveCall
           p.current.callId = call.ring.id;
           await pc.setRemoteDescription(JSON.parse(call.ring.offer) as RTCSessionDescriptionInit);
           await pc.setLocalDescription(await pc.createAnswer());
-          await gathered(pc);
+          await gathered(pc, servers);
           if (cancelled) return;
           const r = await A.answerCallAction(call.ring.id, JSON.stringify(pc.localDescription));
           if (!r.ok) {
@@ -243,11 +244,13 @@ function CallPanel({ call, record, onDone, onEnded }: { call: Exclude<ActiveCall
             onDone();
             return;
           }
+          tr.start();
+          void tr.add((r.data as { customerIce?: unknown[] } | undefined)?.customerIce);
           // Both voices are recorded after the customer agreed (they did, to start the call). Not a colleague's leg.
           goLive(record && !staffLeg && !!call.ring.consent);
         } else {
           await pc.setLocalDescription(await pc.createOffer());
-          await gathered(pc);
+          await gathered(pc, servers);
           if (cancelled) return;
           const r = await A.dialCustomerAction(call.ticketId, JSON.stringify(pc.localDescription));
           if (!r.ok) {
@@ -258,14 +261,16 @@ function CallPanel({ call, record, onDone, onEnded }: { call: Exclude<ActiveCall
           }
           const d = r.data as { callId: string; record: boolean };
           p.current.callId = d.callId;
+          tr.start();
           setPhase("ringing");
           p.current.poll = window.setInterval(async () => {
             const s = await A.agentPollCallAction(d.callId);
             if (!s.ok) return;
-            const k = s.data as { status: string; answer: string | null };
+            const k = s.data as { status: string; answer: string | null; ice?: unknown[] };
             if (k.status === "answered" && k.answer && pc.signalingState === "have-local-offer") {
               window.clearInterval(p.current.poll);
               await pc.setRemoteDescription(JSON.parse(k.answer) as RTCSessionDescriptionInit);
+              void tr.add(k.ice);
               goLive(d.record);
             } else if (["missed", "declined", "ended"].includes(k.status)) {
               toast.message(k.status === "declined" ? "The customer declined the call." : "The customer did not answer.");
@@ -334,7 +339,7 @@ function CallPanel({ call, record, onDone, onEnded }: { call: Exclude<ActiveCall
       };
       x.staff = { pc: spc, userId: target, name };
       await spc.setLocalDescription(await spc.createOffer());
-      await gathered(spc);
+      await gathered(spc, ice.ok ? ((ice.data as { iceServers: RTCIceServer[] }).iceServers ?? []) : []);
       const r = await A.inviteToCallAction(x.callId!, target, JSON.stringify(spc.localDescription));
       if (!r.ok) {
         toast.error(r.error);
@@ -373,8 +378,11 @@ function CallPanel({ call, record, onDone, onEnded }: { call: Exclude<ActiveCall
   const joined = legs.find((l) => l.status === "answered");
   const asking = legs.find((l) => l.status === "ringing");
   const live = phase === "live";
+  // An agent on a phone: the earpiece or the loudspeaker, and the ear guard (the cheek presses nothing; audio-route).
+  const route = useAudioRoute(live, "voice");
   return (
     <Card className="border-[#188038]/40" data-call-panel={phase}>
+      <ProximityShade near={route.near} locked={route.locked} />
       <CardContent className="space-y-2 py-3 text-sm">
         <div className="flex flex-wrap items-center gap-2">
           <HeadphonesIcon className="size-5 text-[#188038]" aria-hidden />
@@ -393,10 +401,19 @@ function CallPanel({ call, record, onDone, onEnded }: { call: Exclude<ActiveCall
               <MicIcon className="size-3" aria-hidden /> {recState === "recording" ? "Recording" : recState === "saving" ? "Saving the recording…" : recState === "saved" ? "Recording saved" : "Recording failed"}
             </span>
           )}
-          <audio ref={audio} autoPlay />
-          <audio ref={staffAudio} autoPlay />
+          <audio ref={audio} autoPlay data-call-audio />
+          <audio ref={staffAudio} autoPlay data-call-audio />
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
+          {live && (
+            <RouteToggle route={route.route} onToggle={route.toggle} realOutputs={route.realOutputs}>
+              {(icon, label) => (
+                <Button size="sm" variant="outline" className="md:hidden" onClick={route.toggle} aria-label={label} title={label} data-audio-route={route.route}>
+                  {icon} {route.route === "ear" ? "Earpiece" : "Speaker"}
+                </Button>
+              )}
+            </RouteToggle>
+          )}
           {(live || phase === "ringing") && (
             <Button size="sm" variant={muted ? "default" : "outline"} onClick={toggleMute} data-mute aria-pressed={muted}>
               {muted ? <MicOffIcon /> : <MicIcon />} {muted ? "Unmute" : "Mute"}

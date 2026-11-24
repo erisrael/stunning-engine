@@ -315,3 +315,68 @@ export type IvrScreen = {
   ask: null | { kind: "choice" | "digits"; options: { key: string; label: string }[]; maxDigits?: number; timeoutSec: number };
   done: null | { action: "queue" | "agent" | "voicemail" | "callback" | "end"; queueId?: string | null; agentId?: string | null; maxSec?: number; category?: string | null };
 };
+
+// A ready-made phone menu to start from (Support setup, Phone menu, "Ready-made menu"): a welcome, the language
+// (1 English, 2 Amharic), the topics (1 payments, 2 the app and the account, 3 lessons and videos, 0 call me back),
+// each into the waiting line of the queue whose name or keywords match the topic (else the first queue), and a voice
+// message when every agent is busy. Saved as a draft; Admin can change any step before publishing.
+export function starterIvrGraph(): IvrGraph {
+  const t = (en: string, am: string): IvrText => ({ en, am });
+  const queue = (id: string, x: number, y: number, category: string): IvrNode => ({
+    id,
+    type: "queue",
+    x,
+    y,
+    name: `Waiting line: ${category}`,
+    text: t("Please hold. The next free agent will answer you.", "እባክዎ ይጠብቁ። ቀጣዩ ነፃ ወኪል ይመልስልዎታል።"),
+    next: { full: "busy" },
+    config: { category },
+  });
+  return {
+    start: "welcome",
+    nodes: [
+      { id: "welcome", type: "welcome", x: 40, y: 40, name: "Welcome", text: t("Welcome to Myseed support.", "ወደ ማይሲድ ድጋፍ እንኳን በደህና መጡ።"), next: { next: "lang" } },
+      {
+        id: "lang",
+        type: "language",
+        x: 40,
+        y: 180,
+        name: "Language",
+        text: t("For English, press 1.", "ለአማርኛ 2 ይጫኑ።"),
+        options: [
+          { key: "1", label: t("English", "እንግሊዝኛ"), lang: "en" },
+          { key: "2", label: t("Amharic", "አማርኛ"), lang: "am" },
+        ],
+        next: { "opt:1": "topics", "opt:2": "topics", fail: "general" },
+      },
+      {
+        id: "topics",
+        type: "menu",
+        x: 40,
+        y: 340,
+        name: "Topics",
+        text: t("For payments, press 1. For the app or your account, press 2. For lessons and videos, press 3. To be called back, press 0.", "ለክፍያ 1፣ ለመተግበሪያው ወይም ለመለያዎ 2፣ ለትምህርቶች እና ቪዲዮዎች 3፣ መልሰን እንድንደውልልዎ 0 ይጫኑ።"),
+        options: [
+          { key: "1", label: t("Payments", "ክፍያ"), category: "payment" },
+          { key: "2", label: t("App and account", "መተግበሪያ እና መለያ"), category: "account" },
+          { key: "3", label: t("Lessons and videos", "ትምህርቶች እና ቪዲዮዎች"), category: "lesson" },
+          { key: "0", label: t("Call me back", "መልሰው ይደውሉልኝ") },
+        ],
+        next: { "opt:1": "q-pay", "opt:2": "q-app", "opt:3": "q-lesson", "opt:0": "callback", fail: "general" },
+      },
+      queue("q-pay", 360, 200, "payment"),
+      queue("q-app", 360, 340, "account"),
+      queue("q-lesson", 360, 480, "lesson"),
+      queue("general", 360, 620, "general"),
+      { id: "callback", type: "callback", x: 680, y: 340, name: "Call me back", text: t("We will call you back soon. Thank you.", "በቅርቡ መልሰን እንደውልልዎታለን። እናመሰግናለን።"), next: {} },
+      { id: "busy", type: "voicemail", x: 680, y: 520, name: "Everyone is busy", text: t("All our agents are busy. Leave a message after the tone and we will call you back.", "ሁሉም ወኪሎቻችን ተይዘዋል። ከድምፁ በኋላ መልእክት ይተዉ፣ መልሰን እንደውልልዎታለን።"), next: {}, config: { maxSec: 120 } },
+    ],
+    settings: {
+      timeoutSec: 8,
+      maxRetries: 3,
+      invalid: t("Sorry, that is not one of the choices.", "ይቅርታ፣ ያ ከምርጫዎቹ አንዱ አይደለም።"),
+      noInput: t("We did not hear a choice.", "ምርጫ አልሰማንም።"),
+      announcement: { on: false, text: {} },
+    },
+  };
+}

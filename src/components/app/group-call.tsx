@@ -211,7 +211,7 @@ export function GroupCallRoom({ callId, me }: { callId: string; me: Peer }) {
         ))}
       </section>
       {tiles.length === 1 && state === "in" && <p className="pt-3 text-center text-sm text-[#a9a6c9]">Waiting for others to join from the group chat.</p>}
-      <ProximityShade near={audio.near} />
+      <ProximityShade near={audio.near} locked={audio.locked} />
       <footer className="flex flex-wrap justify-center gap-3 py-5">
         <Button size="lg" variant="secondary" onClick={toggleMic} aria-pressed={!micOn} aria-label={micOn ? "Mute" : "Unmute"}>
           {micOn ? <MicIcon /> : <MicOffIcon />} {micOn ? "Mute" : "Unmute"}

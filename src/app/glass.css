@@ -182,10 +182,7 @@
 
 /* Room for the tab bar: pages, toasts and the chat list stop above it. */
 @media (max-width: 1023px) {
-  [data-sonner-toaster] {
-    --mobile-offset-bottom: calc(var(--tabbar-space) + 4px) !important;
-    --offset-bottom: calc(var(--tabbar-space) + 4px) !important;
-  }
+  /* Toasts are at the top (layout.tsx, toasts.css); nothing to keep clear of the tab bar. */
 }
 @media (max-width: 767px) {
   html.in-chat:not(.in-thread) [data-chat-shell] > aside {
@@ -480,5 +477,42 @@
 @media (min-width: 1024px) {
   :is(html:has([data-support-shell]), html.in-chat) [data-assistant]:not([data-docked]):not([style*="top"]) {
     bottom: 7.5rem !important;
+  }
+}
+
+/* ------------------------------------------------------------------ The customers' support app (website widget and
+   Telegram Mini App): the same Liquid Glass. A soft field of the app's colour behind the pages; groups, tiles and the
+   header are glass (look.tsx, widget.tsx); the message box floats as glass. Solid with Reduce Transparency. */
+[data-widget] {
+  position: relative;
+  isolation: isolate;
+  background: transparent !important;
+}
+[data-widget]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(70% 45% at 0% 0%, color-mix(in oklab, var(--primary) 22%, transparent), transparent 72%),
+    radial-gradient(60% 40% at 100% 20%, rgb(93 186 71 / 0.18), transparent 72%),
+    radial-gradient(70% 50% at 80% 100%, rgb(66 133 244 / 0.16), transparent 72%),
+    var(--background);
+}
+[data-widget] [data-composer] {
+  background: var(--glass-tint-strong);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(185%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(185%);
+  border-top: 0.5px solid var(--glass-ring);
+}
+@media (prefers-reduced-transparency: reduce) {
+  [data-widget]::before {
+    background: var(--background);
+  }
+  [data-widget] [data-composer] {
+    background: var(--background);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
   }
 }

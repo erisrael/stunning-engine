@@ -10,6 +10,7 @@ import { ProximityShade, RouteToggle, useAudioRoute } from "@/components/app/aud
 import { Input } from "@/components/ui/input";
 import type { IvrScreen } from "@/lib/support-ivr";
 import type { Api, Session } from "./widget";
+import { gathered, trickle } from "@/lib/call-ice";
 
 // Telegram's Mini App controls used during a call (each only where this Telegram version has it).
 type TgCallApp = {
@@ -80,78 +81,166 @@ function tone(kind: "ring" | "end") {
   } catch {}
 }
 
-async function gathered(pc: RTCPeerConnection, ms = 3000) {
-  if (pc.iceGatheringState === "complete") return;
-  await new Promise<void>((resolve) => {
-    const t = window.setTimeout(resolve, ms);
-    pc.addEventListener("icegatheringstatechange", () => pc.iceGatheringState === "complete" && (window.clearTimeout(t), resolve()));
-  });
-}
 
 type Ivr = { on: boolean; message: string; lang: string; audio: string | null; music: boolean; repeatSec: number; position: boolean };
 
-// What the caller hears until an agent answers: the recording Admin uploaded, or the message spoken in their browser,
-// with their place in line, then soft hold music; repeated. It stops the moment the call is answered or ends.
+// One sound output for everything the caller hears before an agent answers. Phones (and Telegram's in-app browser)
+// only play sound that a tap started, and the waiting sound starts later (when the server says the call is waiting),
+// so the Call tap unlocks this output first (unlockCallAudio) and every waiting sound goes through it.
+let callAudio: AudioContext | null = null;
+export function unlockCallAudio() {
+  try {
+    const C = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (C) {
+      callAudio ??= new C();
+      void callAudio.resume().catch(() => {});
+      // A silent blip makes iPhones treat the output as started by the tap.
+      const b = callAudio.createBuffer(1, 1, 22050);
+      const src = callAudio.createBufferSource();
+      src.buffer = b;
+      src.connect(callAudio.destination);
+      src.start(0);
+    }
+    // The spoken message too (iPhone speaks only after a tap has spoken once).
+    window.speechSynthesis?.speak(new SpeechSynthesisUtterance(""));
+  } catch {}
+}
+const audioOut = () => {
+  if (!callAudio) {
+    const C = typeof window === "undefined" ? null : (window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext);
+    if (C) callAudio = new C();
+  }
+  void callAudio?.resume().catch(() => {});
+  return callAudio;
+};
+
+// What the caller hears until an agent answers (Support setup, Waiting message for callers):
+// - the recording Admin uploaded, or the message spoken (where the phone has a voice for it), with the place in line
+//   and the expected wait, then soft hold music; repeated every few seconds as set;
+// - a phone that cannot speak it (Telegram's browser, many Android apps) hears the hold music at once instead of silence;
+// - with the waiting message switched off, the ringing tone of a phone call.
+// It stops the moment the call is answered or ends.
 function useWaitingMessage(active: boolean) {
   const cfg = React.useRef<Ivr | null>(null);
   const [position, setPosition] = React.useState<number | null>(null);
   const said = React.useRef(0);
-  // The latest wait estimate, read when the menu speaks (Admin, Support: tell callers the expected wait).
+  // The latest wait estimate, read when the message is spoken (Admin, Support: tell callers the expected wait).
   const waitRef = React.useRef<number | null>(null);
-  const ctx = React.useRef<AudioContext | null>(null);
   const tune = React.useRef<number | null>(null);
-  const player = React.useRef<HTMLAudioElement | null>(null);
+  const tuneKind = React.useRef<"music" | "ring" | null>(null);
+  const nodes = React.useRef(new Set<AudioScheduledSourceNode>());
+  const recording = React.useRef<{ url: string; buf: Promise<AudioBuffer | null> } | null>(null);
+  const silenceTimer = React.useRef<number | null>(null);
+  const play = (n: AudioScheduledSourceNode, at: number, until: number) => {
+    nodes.current.add(n);
+    n.onended = () => nodes.current.delete(n);
+    n.start(at);
+    n.stop(until);
+  };
+  const stopSounds = React.useCallback(() => {
+    if (tune.current) window.clearInterval(tune.current);
+    tune.current = null;
+    tuneKind.current = null;
+    if (silenceTimer.current) window.clearTimeout(silenceTimer.current);
+    silenceTimer.current = null;
+    for (const n of nodes.current) {
+      try {
+        n.onended = null;
+        n.stop();
+      } catch {}
+    }
+    nodes.current.clear();
+  }, []);
   const stopAll = React.useCallback(() => {
     try {
       window.speechSynthesis?.cancel();
     } catch {}
-    if (tune.current) window.clearInterval(tune.current);
-    tune.current = null;
-    player.current?.pause();
-    player.current = null;
-    void ctx.current?.close().catch(() => {});
-    ctx.current = null;
+    stopSounds();
     said.current = 0;
-  }, []);
+  }, [stopSounds]);
   // Soft hold music: a slow chord pattern from the browser, no file needed.
   const music = React.useCallback(() => {
-    if (tune.current || !cfg.current?.music) return;
-    const C = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    if (!C) return;
-    const ac = (ctx.current ??= new C());
+    if (tuneKind.current === "music") return;
+    stopSounds();
+    const ac = audioOut();
+    if (!ac) return;
     const notes = [261.6, 329.6, 392, 329.6, 293.7, 349.2, 440, 349.2];
     let i = 0;
-    const play = () => {
+    const note = () => {
       const o = ac.createOscillator();
       const g = ac.createGain();
       o.type = "sine";
       o.frequency.value = notes[i++ % notes.length]!;
       g.gain.setValueAtTime(0.0001, ac.currentTime);
-      g.gain.exponentialRampToValueAtTime(0.05, ac.currentTime + 0.05);
+      g.gain.exponentialRampToValueAtTime(0.06, ac.currentTime + 0.05);
       g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + 0.9);
       o.connect(g).connect(ac.destination);
-      o.start();
-      o.stop(ac.currentTime + 1);
+      play(o, ac.currentTime, ac.currentTime + 1);
     };
-    play();
-    tune.current = window.setInterval(play, 1000);
-  }, []);
+    note();
+    tuneKind.current = "music";
+    tune.current = window.setInterval(note, 1000);
+  }, [stopSounds]);
+  // The ringing tone of a phone call (425 Hz, one second on, four off), when there is no waiting message.
+  const ring = React.useCallback(() => {
+    if (tuneKind.current === "ring") return;
+    stopSounds();
+    const ac = audioOut();
+    if (!ac) return;
+    const burst = () => {
+      const o = ac.createOscillator();
+      const g = ac.createGain();
+      o.type = "sine";
+      o.frequency.value = 425;
+      g.gain.setValueAtTime(0.0001, ac.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.07, ac.currentTime + 0.03);
+      g.gain.setValueAtTime(0.07, ac.currentTime + 0.95);
+      g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + 1);
+      o.connect(g).connect(ac.destination);
+      play(o, ac.currentTime, ac.currentTime + 1.05);
+    };
+    burst();
+    tuneKind.current = "ring";
+    tune.current = window.setInterval(burst, 5000);
+  }, [stopSounds]);
+  // After the message: the hold music, or the ringing tone when Admin switched the music off.
+  const after = React.useCallback(() => (cfg.current?.music === false ? ring() : music()), [music, ring]);
   const speak = React.useCallback(
     (pos: number | null) => {
       const c = cfg.current;
       if (!c?.on) return;
       said.current = Date.now();
-      if (tune.current) window.clearInterval(tune.current);
-      tune.current = null;
+      stopSounds();
+      // The uploaded recording, through the unlocked output.
       if (c.audio) {
-        const a = (player.current ??= new Audio(c.audio));
-        a.currentTime = 0;
-        a.onended = () => music();
-        void a.play().catch(() => music());
+        const ac = audioOut();
+        if (!ac) return after();
+        if (recording.current?.url !== c.audio)
+          recording.current = {
+            url: c.audio,
+            buf: fetch(c.audio)
+              .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(String(r.status)))))
+              .then((b) => ac.decodeAudioData(b))
+              .catch(() => null),
+          };
+        void recording.current.buf.then((buf) => {
+          if (!buf || cfg.current !== c) return void (buf ? null : after());
+          const src = ac.createBufferSource();
+          src.buffer = buf;
+          src.connect(ac.destination);
+          nodes.current.add(src);
+          src.onended = () => {
+            nodes.current.delete(src);
+            if (cfg.current === c) after();
+          };
+          src.start();
+        });
         return;
       }
+      // The message spoken, where this phone has a voice for it.
       const synth = window.speechSynthesis;
-      if (!synth) return music();
+      const voices = synth?.getVoices?.() ?? [];
+      if (!synth || (voices.length === 0 && /Android|Telegram/i.test(navigator.userAgent))) return after();
       const est = waitRef.current;
       const am = c.lang?.startsWith("am");
       const waitText = est ? (am ? ` ወኪል ለማግኘት በግምት ${Math.max(1, Math.round(est / 60))} ደቂቃ ይጠብቁ።` : ` The expected wait is about ${est < 90 ? "one minute" : `${Math.round(est / 60)} minutes`}.`) : "";
@@ -159,12 +248,16 @@ function useWaitingMessage(active: boolean) {
       const u = new SpeechSynthesisUtterance(text);
       u.lang = c.lang;
       u.rate = 0.95;
-      u.onend = () => music();
-      u.onerror = () => music();
+      let started = false;
+      u.onstart = () => (started = true);
+      u.onend = () => after();
+      u.onerror = () => after();
       synth.cancel();
       synth.speak(u);
+      // A phone that says nothing (no voice for the language): the music instead of silence.
+      silenceTimer.current = window.setTimeout(() => !started && after(), 1500);
     },
-    [music],
+    [after, stopSounds],
   );
   React.useEffect(() => {
     if (!active) stopAll();
@@ -174,7 +267,9 @@ function useWaitingMessage(active: boolean) {
     cfg.current = ivr;
     waitRef.current = estimateSec;
     setPosition(pos);
-    if (!ivr?.on || !active) return;
+    if (!active) return;
+    // No waiting message: the ringing tone, as on a phone.
+    if (!ivr?.on) return ring();
     if (!said.current || Date.now() - said.current > ivr.repeatSec * 1000) speak(pos);
   };
   return { update, position };
@@ -184,11 +279,12 @@ function useWaitingMessage(active: boolean) {
 function useHoldTone(active: boolean) {
   React.useEffect(() => {
     if (!active) return;
-    const C = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    if (!C) return;
-    const ac = new C();
+    // Through the output the Call tap unlocked (phones and Telegram play nothing else).
+    const ac = audioOut();
+    if (!ac) return;
     const notes = [261.6, 329.6, 392, 329.6, 293.7, 349.2, 440, 349.2];
     let i = 0;
+    const playing = new Set<OscillatorNode>();
     const play = () => {
       const o = ac.createOscillator();
       const g = ac.createGain();
@@ -198,6 +294,8 @@ function useHoldTone(active: boolean) {
       g.gain.exponentialRampToValueAtTime(0.05, ac.currentTime + 0.05);
       g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + 0.9);
       o.connect(g).connect(ac.destination);
+      playing.add(o);
+      o.onended = () => playing.delete(o);
       o.start();
       o.stop(ac.currentTime + 1);
     };
@@ -205,13 +303,17 @@ function useHoldTone(active: boolean) {
     const t = window.setInterval(play, 1000);
     return () => {
       window.clearInterval(t);
-      void ac.close().catch(() => {});
+      for (const o of playing) {
+        try {
+          o.stop();
+        } catch {}
+      }
     };
   }, [active]);
 }
 
 type CallState = "idle" | "consent" | "callback" | "ringing" | "live" | "ended";
-type Poll = { status: string; answer: string | null; agent: string | null; position?: number; estimateSec?: number | null; announcement?: string | null; callbackOffer?: boolean; ivr?: Ivr | null; onHold?: boolean; transferTo?: string | null };
+type Poll = { status: string; answer: string | null; agent: string | null; position?: number; estimateSec?: number | null; announcement?: string | null; callbackOffer?: boolean; ivr?: Ivr | null; onHold?: boolean; transferTo?: string | null; ice?: unknown[] };
 type Begin = { ticketId: string | null; consent: boolean; onTicket: ((id: string) => void) | null; lang: string };
 
 // One call from the widget: calling out (and calling again to follow a transfer), or answering an agent's call;
@@ -223,7 +325,7 @@ function useCustomerCall(api: Api) {
   const [held, setHeld] = React.useState(false);
   // The microphone was refused (Telegram's in-app browser does this on some phones): offer the browser or a call-back.
   const [micBlocked, setMicBlocked] = React.useState(false);
-  const ref = React.useRef<{ pc?: RTCPeerConnection; mic?: MediaStream; poll?: number; timer?: number; callId?: string; consent?: boolean; ticketId?: string | null; begin?: Begin; connectTimer?: number }>({});
+  const ref = React.useRef<{ pc?: RTCPeerConnection; mic?: MediaStream; poll?: number; timer?: number; callId?: string; consent?: boolean; ticketId?: string | null; begin?: Begin; connectTimer?: number; servers?: RTCIceServer[]; ice?: ReturnType<typeof trickle> }>({});
   // The phone menu (IVR) before the call, and what the queue tells a waiting caller.
   const [ivr, setIvr] = React.useState<IvrScreen | null>(null);
   const [queue, setQueue] = React.useState<{ estimateSec: number | null; announcement: string | null; callbackOffer: boolean } | null>(null);
@@ -312,7 +414,8 @@ function useCustomerCall(api: Api) {
       if (p.connectTimer) window.clearTimeout(p.connectTimer);
       if (id) tone("end");
       if (tell && id) await api(`calls/${id}/end`, {}).catch(() => {});
-      setState("ended");
+      // Nothing was calling (the widget closing, a menu left): back to the start, not "Call ended".
+      setState(id ? "ended" : "idle");
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [api],
@@ -322,6 +425,9 @@ function useCustomerCall(api: Api) {
   const newPc = async () => {
     const ice = await api<{ iceServers: RTCIceServer[] }>("ice");
     const pc = new RTCPeerConnection({ iceServers: ice.iceServers });
+    // Addresses found after the offer or answer go to the agent through the server (see lib/call-ice).
+    const tr = trickle(pc, (candidate) => (ref.current.callId && ref.current.pc === pc ? api(`calls/${ref.current.callId}/ice`, { candidate }) : Promise.resolve()));
+    Object.assign(ref.current, { servers: ice.iceServers, ice: tr });
     // What this browser sees of the audio goes into the call's lifecycle on the server.
     pc.onconnectionstatechange = () => {
       const id = ref.current.callId;
@@ -373,6 +479,8 @@ function useCustomerCall(api: Api) {
   // While connected: hold, a transfer (call again, to the new agent), the end.
   const follow = (callId: string, pc: RTCPeerConnection, outgoing: boolean) => {
     ref.current.callId = callId;
+    const tr = ref.current.ice;
+    tr?.start();
     ref.current.poll = window.setInterval(async () => {
       const k = await api<Poll>(`calls/${callId}`).catch(() => null);
       if (!k || ref.current.callId !== callId) return;
@@ -384,6 +492,8 @@ function useCustomerCall(api: Api) {
         await pc.setRemoteDescription(JSON.parse(k.answer) as RTCSessionDescriptionInit);
         live(k.agent);
       }
+      // The agent's addresses found after their answer or offer.
+      if (k.status === "answered" && k.ice?.length) void tr?.add(k.ice);
       if (k.status === "answered") {
         const h = !!k.onHold;
         setHeld(h);
@@ -408,7 +518,7 @@ function useCustomerCall(api: Api) {
     try {
       const pc = await newPc();
       await pc.setLocalDescription(await pc.createOffer());
-      await gathered(pc);
+      await gathered(pc, ref.current.servers);
       setState("ringing");
       const r = await api<{ callId: string; ticketId: string }>("calls", { ticketId, offer: JSON.stringify(pc.localDescription), consent, transferFrom, ivrSession });
       Object.assign(ref.current, { consent, ticketId: r.ticketId });
@@ -423,11 +533,12 @@ function useCustomerCall(api: Api) {
   };
 
   const accept = async (c: Incoming) => {
+    unlockCallAudio();
     try {
       const pc = await newPc();
       await pc.setRemoteDescription(JSON.parse(c.offer) as RTCSessionDescriptionInit);
       await pc.setLocalDescription(await pc.createAnswer());
-      await gathered(pc);
+      await gathered(pc, ref.current.servers);
       ref.current.callId = c.id;
       await api(`calls/${c.id}/accept`, { answer: JSON.stringify(pc.localDescription), consent: true });
       void api(`calls/${c.id}/state`, { state: "connecting" }).catch(() => {});
@@ -444,6 +555,7 @@ function useCustomerCall(api: Api) {
 
   // Tapping Call: the active phone menu first (when there is one), then the call to the queue it chose.
   const begin = async (b: Begin) => {
+    unlockCallAudio();
     ref.current.begin = b;
     setInfo(null);
     const sc = await api<IvrScreen | null>("ivr", { lang: b.lang }).catch(() => null);
@@ -498,7 +610,7 @@ function CallBar({ c, onOk, onCallback }: { c: ReturnType<typeof useCustomerCall
           Tap to hear the agent
         </Button>
       )}
-      <ProximityShade near={route.near} />
+      <ProximityShade near={route.near} locked={route.locked} />
       {state === "live" && c.quality && (
         <span title="Connection quality" aria-label={`Connection ${c.quality}`} data-call-quality={c.quality}>
           {c.quality === "good" ? <SignalHighIcon className="size-4 text-emerald-600" /> : c.quality === "fair" ? <SignalMediumIcon className="size-4 text-amber-500" /> : <SignalLowIcon className="size-4 text-red-500" />}
@@ -760,10 +872,26 @@ function CallbackForm({ api, ticketId, color, onClose }: { api: Api; ticketId: s
 type Call = ReturnType<typeof useCustomerCall>;
 const CallCtx = React.createContext<Call | null>(null);
 
-export function CallButton({ api, s, ticketId, color, onTicket, lang = "en" }: { api: Api; s: Session; ticketId: string | null; color: string; onTicket: (id: string) => void; lang?: string }) {
+// In a conversation (compact) it shows nothing until the phone button in the header is tapped, as in a chat app:
+// then the recording question, the call itself, or "Call me back" when nobody is online.
+export const CALL_EVENT = "myseed:support-call";
+export function CallButton({ api, s, ticketId, color, onTicket, lang = "en", compact = false }: { api: Api; s: Session; ticketId: string | null; color: string; onTicket: (id: string) => void; lang?: string; compact?: boolean }) {
   const c = React.useContext(CallCtx)!;
   const [agree, setAgree] = React.useState(false);
   const [mode, setMode] = React.useState<"idle" | "consent" | "callback">("idle");
+  const start = React.useRef<() => void>(() => {});
+  start.current = () => {
+    if (c.state !== "idle" || c.ivr) return;
+    if (!s.online) return setMode("callback");
+    if (s.recordCalls) return setMode("consent");
+    void c.begin({ ticketId, consent: true, onTicket, lang });
+  };
+  React.useEffect(() => {
+    if (!compact) return;
+    const on = () => start.current();
+    window.addEventListener(CALL_EVENT, on);
+    return () => window.removeEventListener(CALL_EVENT, on);
+  }, [compact]);
   if (s.channels?.calls === false) return null;
   if (s.callEngine?.engine === "phone")
     return mode === "callback" ? (
@@ -784,6 +912,7 @@ export function CallButton({ api, s, ticketId, color, onTicket, lang = "en" }: {
     );
   if (c.state === "idle" && mode === "callback") return <CallbackForm api={api} ticketId={ticketId} color={color} onClose={() => setMode("idle")} />;
   if (c.ivr) return null;
+  if (c.state === "idle" && mode === "idle" && compact) return null;
   if (c.state === "idle" && mode === "idle")
     return (
       <div className="flex gap-2">

@@ -25,6 +25,7 @@ import {
   type IvrNode,
   type IvrNodeType,
   type IvrScreen,
+  starterIvrGraph,
 } from "@/lib/support-ivr";
 import { DAY_NAMES } from "@/lib/support-queues";
 
@@ -205,6 +206,23 @@ export function IvrBuilder({ flows: firstFlows, detail: first, queues, departmen
               ))}
               <option value="">+ New flow</option>
             </select>
+            {/* A complete menu to start from: welcome, language, topics into the waiting lines, call me back. */}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                if (dirty && !window.confirm("Replace the unsaved changes with the ready-made menu?")) return;
+                setD(null);
+                setG(starterIvrGraph());
+                setMeta({ name: "Main menu", appId: "", lang: "", category: "" });
+                setSel(null);
+                setDirty(true);
+                toast.message("Ready-made menu loaded. Check the steps, then save and publish it.");
+              }}
+              data-ivr-starter
+            >
+              <CirclePlayIcon /> Ready-made menu
+            </Button>
             {d && (
               <label className="flex items-center gap-2 text-sm" data-ivr-active>
                 <Switch checked={d.flow.active} onCheckedChange={(v) => void toggle(v)} /> {d.flow.active ? "Answering callers" : "Switched off"}

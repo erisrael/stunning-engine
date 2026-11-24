@@ -2,6 +2,9 @@ package et.com.myseed.ops;
 
 import android.app.DownloadManager;
 import android.content.ContentValues;
+import android.media.AudioDeviceInfo;
+import android.media.AudioManager;
+import android.os.PowerManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -68,8 +71,64 @@ public class MainActivity extends BridgeActivity {
     });
   }
 
-  // Saves a file the page made (base64) to Downloads.
+  // During a voice call: the proximity sensor turns the screen off (and its touches with it) while the phone is at the
+  // ear, as in a phone call, and the sound goes to the earpiece or the loudspeaker for real (audio-route.tsx).
+  private PowerManager.WakeLock proximity;
+
+  private void setSpeaker(boolean on) {
+    AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
+    if (am == null) return;
+    if (Build.VERSION.SDK_INT >= 31) {
+      int want = on ? AudioDeviceInfo.TYPE_BUILTIN_SPEAKER : AudioDeviceInfo.TYPE_BUILTIN_EARPIECE;
+      for (AudioDeviceInfo d : am.getAvailableCommunicationDevices()) {
+        if (d.getType() == want) {
+          am.setCommunicationDevice(d);
+          return;
+        }
+      }
+    } else {
+      am.setSpeakerphoneOn(on);
+    }
+  }
+
+  // The page's bridge to the phone (window.MyseedAndroid): saving files, and the call controls.
   private class Saver {
+    @JavascriptInterface
+    public boolean callProximity(boolean on) {
+      try {
+        PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
+        AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
+        if (on) {
+          if (am != null) am.setMode(AudioManager.MODE_IN_COMMUNICATION);
+          if (pm == null || !pm.isWakeLockLevelSupported(PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK)) return false;
+          synchronized (MainActivity.this) {
+            if (proximity == null) proximity = pm.newWakeLock(PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK, "myseed:call");
+            if (!proximity.isHeld()) proximity.acquire(4 * 60 * 60 * 1000L);
+          }
+          return true;
+        }
+        synchronized (MainActivity.this) {
+          if (proximity != null && proximity.isHeld()) proximity.release(PowerManager.RELEASE_FLAG_WAIT_FOR_NO_PROXIMITY);
+        }
+        if (am != null) {
+          if (Build.VERSION.SDK_INT >= 31) am.clearCommunicationDevice();
+          else am.setSpeakerphoneOn(false);
+          am.setMode(AudioManager.MODE_NORMAL);
+        }
+        return true;
+      } catch (Exception e) {
+        return false;
+      }
+    }
+
+    @JavascriptInterface
+    public void callSpeaker(boolean on) {
+      try {
+        setSpeaker(on);
+      } catch (Exception ignored) {
+      }
+    }
+
     @JavascriptInterface
     public void save(String base64, String name, String mime) {
       String file = (name == null || name.trim().isEmpty()) ? "download" : name.replaceAll("[\\\\/:*?\"<>|]", "_");
@@ -99,6 +158,17 @@ public class MainActivity extends BridgeActivity {
         runOnUiThread(() -> Toast.makeText(MainActivity.this, "The file could not be saved.", Toast.LENGTH_LONG).show());
       }
     }
+  }
+
+  @Override
+  public void onDestroy() {
+    // A call screen closed with the app: give the screen and the sound back.
+    synchronized (this) {
+      if (proximity != null && proximity.isHeld()) proximity.release();
+    }
+    AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
+    if (am != null) am.setMode(AudioManager.MODE_NORMAL);
+    super.onDestroy();
   }
 
   @Override

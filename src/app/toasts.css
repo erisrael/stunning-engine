@@ -1,0 +1,338 @@
+/* Toasts (sonner): at the top, in Liquid Glass, in the colours of the person's theme, and dressed for their UI style
+   (src/lib/ui-styles.ts): Studio glass; Zen quiet; Classic Desk a pixel window; Sakura Pop petals; Sunset City neon;
+   Tactical a HUD panel; Comic Pop a POW burst; Dev Terminal a console line. Each type (success, error, warning, info)
+   tints the glass and its icon. Motion only without reduced motion and outside Lite mode. */
+
+/* ------------------------------------------------------------------ every style */
+[data-sonner-toaster] {
+  --toast-tint: var(--primary);
+}
+[data-sonner-toaster] [data-sonner-toast][data-styled="true"] {
+  --toast-tint: var(--primary);
+  background: color-mix(in oklab, var(--glass-tint-strong) 88%, var(--toast-tint)) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(185%);
+  backdrop-filter: blur(24px) saturate(185%);
+  color: var(--foreground) !important;
+  border: 0.5px solid var(--glass-ring) !important;
+  border-radius: 1.35rem !important;
+  box-shadow:
+    inset 0 1px 0 0 var(--glass-edge),
+    0 0 0 0.5px var(--glass-ring),
+    0 14px 40px -14px rgb(0 0 0 / 0.35) !important;
+  padding: 12px 14px !important;
+  gap: 10px !important;
+  font-size: 14px;
+  overflow: hidden;
+}
+[data-sonner-toast][data-type="success"] {
+  --toast-tint: #16a34a;
+}
+[data-sonner-toast][data-type="error"] {
+  --toast-tint: #dc2626;
+}
+[data-sonner-toast][data-type="warning"] {
+  --toast-tint: #d97706;
+}
+[data-sonner-toast][data-type="info"] {
+  --toast-tint: #2563eb;
+}
+[data-sonner-toast][data-styled="true"] [data-icon],
+[data-sonner-toast][data-styled="true"] [data-icon] svg {
+  color: var(--toast-tint) !important;
+}
+[data-sonner-toast][data-styled="true"] [data-title] {
+  font-weight: 600;
+}
+[data-sonner-toast][data-styled="true"] [data-description] {
+  color: var(--muted-foreground) !important;
+}
+[data-sonner-toast][data-styled="true"] [data-button] {
+  border-radius: 999px !important;
+  background: var(--toast-tint) !important;
+  color: #fff !important;
+}
+[data-sonner-toast][data-styled="true"] [data-close-button] {
+  background: var(--glass-tint-strong) !important;
+  border-color: var(--glass-ring) !important;
+  color: var(--foreground) !important;
+}
+/* A light sweep across the glass as it arrives. */
+[data-sonner-toast][data-styled="true"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background: linear-gradient(115deg, transparent 30%, rgb(255 255 255 / 0.35) 45%, transparent 60%);
+  transform: translateX(-120%);
+  opacity: 0;
+}
+@keyframes toast-sweep {
+  from { transform: translateX(-120%); opacity: 1; }
+  to { transform: translateX(120%); opacity: 1; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-lite="on"]) [data-sonner-toast][data-styled="true"][data-mounted="true"]::after {
+    animation: toast-sweep 0.9s ease-out 0.15s 1 both;
+  }
+}
+:root[data-lite="on"] [data-sonner-toast][data-styled="true"] {
+  background: var(--popover) !important;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+@media (prefers-reduced-transparency: reduce) {
+  [data-sonner-toast][data-styled="true"] {
+    background: var(--popover) !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+}
+
+/* ------------------------------------------------------------------ Zen: quiet */
+:root[data-style="zen"] [data-sonner-toast][data-styled="true"] {
+  background: var(--popover) !important;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  border-radius: 0.5rem !important;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08) !important;
+  border-left: 2px solid var(--toast-tint) !important;
+}
+:root[data-style="zen"] [data-sonner-toast]::after {
+  display: none;
+}
+
+/* ------------------------------------------------------------------ Classic Desk: a pixel window */
+:root[data-style="classic"] [data-sonner-toast][data-styled="true"] {
+  background: var(--card) !important;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  border-radius: 0 !important;
+  border: 2px solid !important;
+  border-color: var(--bevel-hi, #fff) var(--bevel-dark, #404040) var(--bevel-dark, #404040) var(--bevel-hi, #fff) !important;
+  box-shadow: 4px 4px 0 0 rgb(0 0 0 / 0.55) !important;
+  padding-top: 26px !important;
+  font-family: Tahoma, Verdana, "Segoe UI", sans-serif;
+  image-rendering: pixelated;
+}
+/* The title bar. */
+:root[data-style="classic"] [data-sonner-toast][data-styled="true"]::before {
+  content: "Message";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 20px;
+  padding: 0 6px;
+  font: 400 16px/20px var(--font-vt323), monospace;
+  color: #fff;
+  background: linear-gradient(90deg, var(--toast-tint), color-mix(in oklab, var(--toast-tint) 40%, var(--card)));
+}
+:root[data-style="classic"] [data-sonner-toast]::after {
+  display: none;
+}
+@keyframes toast-pixel {
+  0% { clip-path: inset(0 100% 100% 0); }
+  25% { clip-path: inset(0 66% 66% 0); }
+  50% { clip-path: inset(0 33% 33% 0); }
+  75% { clip-path: inset(0 10% 10% 0); }
+  100% { clip-path: inset(0 0 0 0); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-style="classic"]:not([data-lite="on"]) [data-sonner-toast][data-mounted="true"] {
+    animation: toast-pixel 0.32s steps(1) both;
+  }
+}
+
+/* ------------------------------------------------------------------ Dev Terminal: a console line */
+:root[data-style="terminal"] [data-sonner-toast][data-styled="true"] {
+  background: rgb(4 12 6 / 0.92) !important;
+  color: #4ade80 !important;
+  border: 1px solid rgb(74 222 128 / 0.5) !important;
+  border-radius: 4px !important;
+  box-shadow: 0 0 18px -4px rgb(74 222 128 / 0.45) !important;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+}
+:root[data-style="terminal"] [data-sonner-toast][data-styled="true"] [data-title]::before {
+  content: "$ ";
+  color: #86efac;
+}
+:root[data-style="terminal"] [data-sonner-toast][data-styled="true"] [data-title]::after {
+  content: "_";
+  margin-left: 2px;
+  animation: ui-blink 1s steps(1) infinite;
+}
+:root[data-style="terminal"] [data-sonner-toast][data-type="error"][data-styled="true"] {
+  color: #f87171 !important;
+  border-color: rgb(248 113 113 / 0.55) !important;
+}
+:root[data-style="terminal"] [data-sonner-toast][data-styled="true"] [data-description] {
+  color: rgb(134 239 172 / 0.75) !important;
+}
+:root[data-style="terminal"] [data-sonner-toast]::after {
+  background: repeating-linear-gradient(0deg, rgb(0 0 0 / 0.18) 0 1px, transparent 1px 3px);
+  transform: none;
+  opacity: 1;
+  animation: none !important;
+}
+
+/* ------------------------------------------------------------------ Comic Pop: a POW burst */
+:root[data-style="comic"] [data-sonner-toast][data-styled="true"] {
+  background:
+    radial-gradient(circle at 1px 1px, rgb(0 0 0 / 0.14) 1px, transparent 1.5px) 0 0 / 7px 7px,
+    #fffdf2 !important;
+  color: #111 !important;
+  border: 3px solid #111 !important;
+  border-radius: 14px !important;
+  box-shadow: 5px 5px 0 0 #111 !important;
+  font-family: var(--font-comic), "Comic Sans MS", cursive;
+  rotate: -1deg;
+  overflow: visible !important;
+}
+:root[data-style="comic"] [data-sonner-toast][data-styled="true"] [data-title] {
+  font-family: var(--font-bangers), Impact, sans-serif;
+  font-weight: 400;
+  font-size: 1.15em;
+  letter-spacing: 0.04em;
+}
+:root[data-style="comic"] [data-sonner-toast][data-styled="true"] [data-description] {
+  color: #333 !important;
+}
+:root[data-style="comic"] [data-sonner-toast][data-styled="true"]::after {
+  content: "POW!";
+  inset: auto -6px auto auto;
+  top: -10px;
+  width: 64px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  font: 400 15px/1 var(--font-bangers), Impact, sans-serif;
+  color: #111;
+  background: #ffd43b;
+  clip-path: polygon(50% 0, 61% 30%, 98% 16%, 72% 45%, 100% 70%, 64% 66%, 56% 100%, 44% 70%, 6% 88%, 30% 56%, 0 30%, 38% 34%);
+  transform: scale(0) rotate(-20deg);
+  opacity: 1;
+}
+:root[data-style="comic"] [data-sonner-toast][data-type="error"]::after {
+  content: "OOF!";
+  background: #ff6b6b;
+}
+:root[data-style="comic"] [data-sonner-toast][data-type="success"]::after {
+  content: "YES!";
+  background: #8ce99a;
+}
+@keyframes toast-pow {
+  0% { transform: scale(0) rotate(-20deg); }
+  60% { transform: scale(1.25) rotate(8deg); }
+  100% { transform: scale(1) rotate(0); }
+}
+@keyframes toast-jolt {
+  0% { translate: 0 -10px; }
+  50% { translate: 0 3px; }
+  100% { translate: 0 0; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-style="comic"]:not([data-lite="on"]) [data-sonner-toast][data-mounted="true"]::after {
+    animation: toast-pow 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) 0.1s both;
+  }
+  :root[data-style="comic"]:not([data-lite="on"]) [data-sonner-toast][data-mounted="true"] {
+    animation: toast-jolt 0.35s ease-out both;
+  }
+}
+:root[data-style="comic"]:not([data-lite="on"]) [data-sonner-toast][data-mounted="true"]::after {
+  transform: scale(1);
+}
+
+/* ------------------------------------------------------------------ Sakura Pop: soft and pink, with petals */
+:root[data-style="sakura"] [data-sonner-toast][data-styled="true"] {
+  background: linear-gradient(135deg, color-mix(in oklab, var(--glass-tint-strong) 80%, #ff9ecb), color-mix(in oklab, var(--glass-tint-strong) 85%, #b28dff)) !important;
+  border: 1px solid color-mix(in oklab, #ff9ecb 45%, transparent) !important;
+  border-radius: 999px !important;
+  padding-inline: 18px !important;
+  box-shadow: 0 12px 30px -12px color-mix(in oklab, #ff6fae 60%, transparent) !important;
+  font-family: var(--font-fredoka), var(--font-app), sans-serif;
+}
+:root[data-style="sakura"] [data-sonner-toast][data-styled="true"]::after {
+  inset: -4px;
+  transform: none;
+  opacity: 0;
+  background:
+    radial-gradient(ellipse 5px 3.5px at 12% 0%, rgb(255 158 196 / 0.9) 60%, transparent 62%),
+    radial-gradient(ellipse 4px 3px at 38% 0%, rgb(255 190 220 / 0.9) 60%, transparent 62%),
+    radial-gradient(ellipse 5px 3.5px at 64% 0%, rgb(255 158 196 / 0.9) 60%, transparent 62%),
+    radial-gradient(ellipse 4px 3px at 88% 0%, rgb(255 190 220 / 0.9) 60%, transparent 62%);
+  background-repeat: no-repeat;
+}
+@keyframes toast-petals {
+  0% { opacity: 1; background-position: 0 -10px, 0 -10px, 0 -10px, 0 -10px; }
+  100% { opacity: 0; background-position: 14px 70px, -10px 80px, 12px 75px, -14px 85px; }
+}
+@keyframes toast-float {
+  0% { translate: 0 -8px; scale: 0.96; }
+  100% { translate: 0 0; scale: 1; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-style="sakura"]:not([data-lite="on"]) [data-sonner-toast][data-mounted="true"]::after {
+    animation: toast-petals 1.6s ease-in 0.1s both;
+  }
+  :root[data-style="sakura"]:not([data-lite="on"]) [data-sonner-toast][data-mounted="true"] {
+    animation: toast-float 0.5s cubic-bezier(0.34, 1.4, 0.64, 1) both;
+  }
+}
+
+/* ------------------------------------------------------------------ Sunset City: neon */
+:root[data-style="sunset"] [data-sonner-toast][data-styled="true"] {
+  background: color-mix(in oklab, rgb(20 8 36 / 0.85) 85%, var(--toast-tint)) !important;
+  color: #fde7ff !important;
+  border: 1px solid #ff5fd2 !important;
+  box-shadow:
+    0 0 0 1px rgb(80 220 255 / 0.4),
+    0 0 18px -2px #ff5fd2,
+    0 0 30px -8px #50dcff !important;
+}
+:root[data-style="sunset"] [data-sonner-toast][data-styled="true"] [data-title] {
+  text-shadow: 0 0 8px #ff5fd2;
+}
+:root[data-style="sunset"] [data-sonner-toast][data-styled="true"] [data-description] {
+  color: rgb(253 231 255 / 0.75) !important;
+}
+@keyframes toast-neon {
+  0%, 18%, 22%, 26%, 100% { filter: brightness(1); }
+  20%, 24% { filter: brightness(0.45); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-style="sunset"]:not([data-lite="on"]) [data-sonner-toast][data-mounted="true"] {
+    animation: toast-neon 0.9s linear both;
+  }
+}
+
+/* ------------------------------------------------------------------ Tactical: a HUD panel */
+:root[data-style="tactical"] [data-sonner-toast][data-styled="true"] {
+  background: rgb(10 16 14 / 0.88) !important;
+  color: #d7ffe9 !important;
+  border: 1px solid color-mix(in oklab, var(--toast-tint) 70%, #6ee7b7) !important;
+  border-radius: 0 !important;
+  clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px);
+  font-family: var(--font-rajdhani), var(--font-app), sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+:root[data-style="tactical"] [data-sonner-toast][data-styled="true"] [data-description] {
+  color: rgb(215 255 233 / 0.7) !important;
+  text-transform: none;
+  letter-spacing: 0;
+}
+:root[data-style="tactical"] [data-sonner-toast][data-styled="true"]::after {
+  background: linear-gradient(180deg, transparent, rgb(110 231 183 / 0.35), transparent);
+  height: 30%;
+  inset: auto 0 auto 0;
+  top: 0;
+  transform: translateY(-100%);
+}
+@keyframes toast-scan {
+  from { transform: translateY(-100%); opacity: 1; }
+  to { transform: translateY(380%); opacity: 1; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-style="tactical"]:not([data-lite="on"]) [data-sonner-toast][data-mounted="true"]::after {
+    animation: toast-scan 0.8s linear 0.1s both;
+  }
+}

@@ -8,6 +8,7 @@ import "./globals.css";
 import "./ui-styles.css";
 import "./motion.css";
 import "./glass.css";
+import "./toasts.css";
 import { appearanceScript } from "@/lib/appearance-script";
 import { ErrorReporter } from "@/components/app/error-reporter";
 import { AndroidBridge } from "@/components/app/android-bridge";
@@ -84,7 +85,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
           <TooltipProvider delayDuration={250}>
             {children}
-            <Toaster position="bottom-right" richColors closeButton />
+            {/* At the top, in the person's UI style (toasts.css), clear of the status bar and the notch. */}
+            <Toaster position="top-center" closeButton offset={{ top: 16 }} mobileOffset={{ top: "calc(env(safe-area-inset-top) + 10px)", left: 12, right: 12 }} />
           </TooltipProvider>
         </ThemeProvider>
       </body>

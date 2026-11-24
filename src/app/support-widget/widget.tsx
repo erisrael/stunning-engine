@@ -38,7 +38,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { LiveThread, words, type Lang } from "./live-thread";
-import { CallButton, CallLayer } from "./calls";
+import { CALL_EVENT, CallButton, CallLayer } from "./calls";
 import { ArticleBody, type PublicArticle } from "@/components/help/article-body";
 import { haptic, startParam, tgWebApp, useBackButton, useMainButton, useTelegram, type TgWebApp } from "./tg";
 import { AppearancePage, Group, LOOK_WORDS, Row, Tile, useLook } from "./look";
@@ -381,13 +381,27 @@ export function SupportWidget({ appKey: givenKey, initialUser, waitForParent, te
           </p>
         </header>
       ) : (
-        <header className="sticky top-0 z-10 flex items-center gap-2 border-b bg-background/85 px-3 py-2.5 backdrop-blur" data-header="page">
+        <header className="glass glass-strong sticky top-0 z-10 flex items-center gap-2 px-3 py-2.5" data-header="page">
           {stack.length > 1 && !own && (
             <button type="button" aria-label={w.back} className="-ml-1 rounded-full p-1.5 text-primary hover:bg-muted" onClick={back}>
               <ArrowLeftIcon className="size-5" />
             </button>
           )}
           <p className="min-w-0 flex-1 truncate text-[17px] font-semibold">{title ?? `${s.app.name} ${w.support}`}</p>
+          {/* In a conversation: call from here, as in a chat app (calls.tsx, CallButton compact). */}
+          {page.startsWith("t:") && s.channels?.calls !== false && s.callEngine?.engine !== "phone" && !callBusy && (
+            <button
+              type="button"
+              aria-label={s.online ? w.callTitle : am ? "መልሰው ይደውሉልኝ" : "Call me back"}
+              title={s.online ? w.callTitle : am ? "መልሰው ይደውሉልኝ" : "Call me back"}
+              className="glass relative flex size-10 shrink-0 items-center justify-center rounded-full text-[#16a34a] transition-transform active:scale-90"
+              onClick={() => window.dispatchEvent(new Event(CALL_EVENT))}
+              data-call-us
+            >
+              <PhoneIcon className="size-[18px]" />
+              {s.online && <span aria-hidden className="absolute top-1.5 right-1.5 size-2 rounded-full bg-[#16a34a] ring-2 ring-background" />}
+            </button>
+          )}
           {langButton}
         </header>
       )}
@@ -588,7 +602,7 @@ export function SupportWidget({ appKey: givenKey, initialUser, waitForParent, te
           {page === "new" && <NewQuestion api={api} tg={tg} color={color} hideMain={callBusy} topic={s.content?.topics.find((t) => t.key === topic) ?? null} am={am} onDone={(id) => (haptic("success"), setTopic(null), replace(`t:${id}`), void reload())} onArticle={(id) => go(`a:${id}`)} />}
           {page.startsWith("a:") && <ArticleView api={api} id={page.slice(2)} onAsk={() => go("new")} />}
           {page.startsWith("t:") && (
-            <LiveThread key={page} api={api} appKey={appKey} token={s.token} id={page.slice(2)} color={color} lang={lang} online={s.online} callButton={(rl) => <CallButton api={api} s={s} ticketId={page.slice(2)} color={color} lang={lang} onTicket={rl} />} />
+            <LiveThread key={page} api={api} appKey={appKey} token={s.token} id={page.slice(2)} color={color} lang={lang} online={s.online} callButton={(rl) => <CallButton compact={s.callEngine?.engine !== "phone"} api={api} s={s} ticketId={page.slice(2)} color={color} lang={lang} onTicket={rl} />} />
           )}
         </main>
       </CallLayer>

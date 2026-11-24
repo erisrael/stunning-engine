@@ -117,7 +117,7 @@ export function Group({ title, children, className, ...rest }: { title?: React.R
   return (
     <section className={cn("space-y-1.5", className)} {...rest}>
       {title && <p className="px-3 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">{title}</p>}
-      <div className="overflow-hidden rounded-[calc(var(--radius)+6px)] border bg-card shadow-xs [&>*+*]:border-t">{children}</div>
+      <div className="glass overflow-hidden rounded-[calc(var(--radius)+6px)] [&>*+*]:border-t [&>*+*]:border-[var(--glass-ring)]">{children}</div>
     </section>
   );
 }
@@ -156,7 +156,7 @@ export function Tile({ icon: Icon, label, sub, onClick, tint, ...rest }: { icon:
     <button
       type="button"
       onClick={onClick}
-      className="group relative flex flex-col items-start gap-2 overflow-hidden rounded-[calc(var(--radius)+8px)] border bg-card p-3 text-left shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-md active:scale-[0.97] motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2"
+      className="glass group relative flex flex-col items-start gap-2 overflow-hidden rounded-[calc(var(--radius)+8px)] p-3 text-left shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-md active:scale-[0.97] motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2"
       style={{ backgroundImage: `linear-gradient(135deg, color-mix(in oklab, ${tint ?? "var(--primary)"} 9%, transparent), transparent 60%)` }}
       {...rest}
     >

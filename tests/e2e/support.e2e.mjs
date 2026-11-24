@@ -75,6 +75,8 @@ try {
   const row = sara.locator("[data-ticket-row]").first();
   check("the ticket is Sara's at once", await visible(row));
   await row.click();
+  // The customer's details open beside the conversation from its info button (closed at first below 1536 px wide).
+  if (!(await sara.locator("[data-customer-panel]").count())) await sara.locator("[data-customer-panel-open]").click();
   check("the customer's details are beside it", await visible(sara.getByText("abebe@example.com")));
   await sara.getByLabel("Reply", { exact: true }).fill("Selam Abebe, I sent you a new code.");
   await sara.getByRole("button", { name: "Send", exact: true }).click();
@@ -95,6 +97,9 @@ try {
   await sara.locator("[data-ringing]").first().click();
   check("the agent is on the call", await visible(sara.locator('[data-call-panel="live"]'), 20000));
   check("the customer is connected", await visible(w.locator('[data-call-state="live"]'), 20000));
+  // The sound path really connects (the network addresses are exchanged while the call starts: lib/call-ice).
+  await site.waitForTimeout(6000);
+  check("the call stays connected", (await w.locator('[data-call-state="live"]').count()) > 0 && (await w.getByText(/could not connect|lost its connection/i).count()) === 0);
   check("it is recording", await visible(sara.locator('[data-recording="recording"]'), 10000));
   await sara.waitForTimeout(3000);
   await sara.screenshot({ path: path.join(shots, "3-call.png") });

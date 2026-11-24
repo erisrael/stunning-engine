@@ -599,7 +599,7 @@ export function CallLayer({ children, disabled = false }: { children: React.Reac
             data-call-audio
             className={cn("absolute inset-0 size-full bg-black object-contain", !showRemoteVideo && "invisible")}
           />
-          <ProximityShade near={audio.near} />
+          <ProximityShade near={audio.near} locked={audio.locked} />
           {!showRemoteVideo && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4 text-center">
               <span
