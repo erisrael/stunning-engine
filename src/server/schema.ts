@@ -3605,6 +3605,8 @@ CREATE TABLE IF NOT EXISTS sup_bot_content (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_sup_bot_content ON sup_bot_content(bot, created_at);
+-- Telegram's own ID for a file the bot already sent once, so it is not uploaded again (a new file clears it).
+ALTER TABLE sup_bot_content ADD COLUMN IF NOT EXISTS tg_file_id TEXT;
 CREATE TABLE IF NOT EXISTS sup_bot_pushes (
   id TEXT PRIMARY KEY,
   bot TEXT NOT NULL,

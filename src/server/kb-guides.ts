@@ -18,7 +18,24 @@ export const IMPORT_MAX = 5 * 1024 * 1024;
 const MAX_ROWS = 500;
 
 export type Video = { id: string; title: string | null };
-export type Step = { title: string; body: string; video: Video | null };
+// A step can have its own video, or point into the guide's one video: `at` is where its part starts (seconds).
+export type Step = { title: string; body: string; video: Video | null; at?: number | null };
+
+/** "1:23", "01:02:03", "83" or 83 as seconds; null when empty or not a time. */
+export function secondsOf(v: unknown): number | null {
+  if (typeof v === "number") return Number.isFinite(v) && v >= 0 ? Math.round(v) : null;
+  const t = String(v ?? "").trim();
+  if (!t) return null;
+  if (!/^\d{1,3}(:\d{1,2}){0,2}$/.test(t)) return null;
+  return t.split(":").reduce((n, part) => n * 60 + Number(part), 0);
+}
+/** Seconds as 1:23 or 1:02:03. */
+export const clockOf = (s: number) => {
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = String(s % 60).padStart(2, "0");
+  return h ? `${h}:${String(m).padStart(2, "0")}:${sec}` : `${m}:${sec}`;
+};
 export type ArticleKind = "article" | "guide";
 export type FullArticle = {
   id: string;
@@ -142,7 +159,7 @@ export async function listKb(user: AppUser, f: { q?: string | null; status?: str
   return rows;
 }
 
-export type ArticleInput = { id?: string | null; kind?: string; title: string; intro?: string | null; body?: string | null; category?: string | null; keywords?: string | null; published?: boolean; videoUrl?: string | null; steps?: { title?: string; body?: string; videoUrl?: string | null; video?: Video | null }[] };
+export type ArticleInput = { id?: string | null; kind?: string; title: string; intro?: string | null; body?: string | null; category?: string | null; keywords?: string | null; published?: boolean; videoUrl?: string | null; video?: Video | null; steps?: { title?: string; body?: string; videoUrl?: string | null; video?: Video | null; at?: number | string | null }[] };
 
 // Validates and shapes one article or guide (checking its videos); throws with a plain reason.
 async function shape(input: ArticleInput, opts: { checkVideos: boolean }) {
@@ -169,13 +186,16 @@ async function shape(input: ArticleInput, opts: { checkVideos: boolean }) {
       const st = clean(s.title, 160);
       const sb = clean(s.body, 6000);
       const video = await vid(s.videoUrl, s.video, `Step ${i + 1}`);
+      const at = secondsOf(s.at);
+      if (s.at != null && String(s.at).trim() && at === null) throw new WorkflowError("VALIDATION", `Step ${i + 1}: write the start time like 1:23.`);
       if (!st && !sb && !video) continue;
-      steps.push({ title: st || `Step ${steps.length + 1}`, body: sb, video });
+      steps.push({ title: st || `Step ${steps.length + 1}`, body: sb, video, at: video ? null : at });
     }
     if (!steps.length) throw new WorkflowError("VALIDATION", "A guide needs at least one step.");
     if (steps.length > 40) throw new WorkflowError("VALIDATION", "A guide has at most 40 steps.");
   } else if (!intro) throw new WorkflowError("VALIDATION", "Give the title and the answer.");
-  const video = kind === "article" ? await vid(input.videoUrl, null, "Video") : null;
+  // An article's video, or a guide's one video for all its steps (each step can start it at its own time).
+  const video = await vid(input.videoUrl, input.video ?? null, kind === "guide" ? "Guide video" : "Video");
   // Every word, for search and snippets.
   const body = kind === "guide" ? [intro, ...steps.map((s, i) => `${i + 1}. ${s.title}\n${s.body}`)].filter(Boolean).join("\n\n").slice(0, 40000) : intro;
   return { kind, title, intro, body, steps, video, category: clean(input.category, 60) || null, keywords: clean(input.keywords, 300) };
@@ -188,7 +208,7 @@ export async function saveKbArticle(user: AppUser, input: ArticleInput) {
   // A save that sends no steps (the plain article form) keeps the guide's stored steps.
   if (input.id && input.steps === undefined && input.kind === "guide") {
     const old = await get<{ steps: string | null }>("SELECT steps FROM sup_articles WHERE id = ?", input.id);
-    input = { ...input, steps: parseJson<Step[]>(old?.steps ?? null, []).map((s) => ({ title: s.title, body: s.body, video: s.video })) };
+    input = { ...input, steps: parseJson<Step[]>(old?.steps ?? null, []).map((s) => ({ title: s.title, body: s.body, video: s.video, at: s.at ?? null })) };
   }
   const a = await shape(input, { checkVideos: true });
   const now = nowIso();
@@ -215,7 +235,7 @@ export async function publicArticle(id: string) {
   await run("UPDATE sup_articles SET views = views + 1 WHERE id = ?", id);
   const a = fullOf(r);
   const v = (x: Video | null) => (x ? { ...x, url: watchUrl(x.id), thumbnail: thumbnail(x.id), embed: `https://www.youtube-nocookie.com/embed/${x.id}` } : null);
-  return { id: a.id, kind: a.kind, title: a.title, category: a.category, updated_at: a.updated_at, body: a.kind === "guide" ? a.intro : a.body, intro: a.intro, video: v(a.video), steps: a.steps.map((s) => ({ title: s.title, body: s.body, video: v(s.video) })) };
+  return { id: a.id, kind: a.kind, title: a.title, category: a.category, updated_at: a.updated_at, body: a.kind === "guide" ? a.intro : a.body, intro: a.intro, video: v(a.video), steps: a.steps.map((s) => ({ title: s.title, body: s.body, video: v(s.video), at: s.video ? null : (s.at ?? null) })) };
 }
 
 // "How to" in the customers' app: the published step-by-step guides and the articles with a video, newest first,
@@ -251,7 +271,9 @@ export async function guideMessages(id: string) {
   const a = await publicArticle(id);
   const out = [[`${a.title}`, a.intro].filter(Boolean).join("\n\n")];
   if (a.kind === "article" && a.video) out[0] += `\n\n${a.video.url}`;
-  a.steps.forEach((s, i) => out.push([`${i + 1}. ${s.title}`, s.body, s.video?.url].filter(Boolean).join("\n\n")));
+  if (a.kind === "guide" && a.video) out[0] += `\n\n${a.video.url}`;
+  // Each step with its own video, or the guide's video at the step's moment.
+  a.steps.forEach((s, i) => out.push([`${i + 1}. ${s.title}`, s.body, s.video?.url ?? (a.video && s.at != null ? `${a.video.url}&t=${s.at}s (${clockOf(s.at)})` : null)].filter(Boolean).join("\n\n")));
   return out.map((m) => m.replace(/\*\*(.+?)\*\*/g, "$1").replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, "$1 ($2)").slice(0, 4000));
 }
 

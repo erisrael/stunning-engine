@@ -184,10 +184,19 @@ export function setTelegramPoster(p: Poster) {
   poster = p;
 }
 // Files agents send go to Telegram as a form upload (replaced in tests).
-type Uploader = (method: string, token: string, form: FormData) => Promise<{ ok: boolean; description?: string }>;
+type Uploader = (method: string, token: string, form: FormData) => Promise<{ ok: boolean; description?: string; result?: unknown }>;
 let uploader: Uploader = async (method, token, form) => (await trackedFetch("telegram", `https://api.telegram.org/bot${token}/${method}`, { method: "POST", body: form })).json() as Promise<{ ok: boolean; description?: string }>;
 export function setTelegramUploader(u: Uploader) {
   uploader = u;
+}
+/** Uploads a file to the bot that is answering (bot manager resources: videos up to 50 MB, Telegram's limit). */
+export async function botUpload(method: string, fields: Record<string, string>, field: string, file: { data: Buffer; name: string; mime: string }) {
+  const token = await botToken();
+  if (!token) return { ok: false, description: "No bot is set up." };
+  const form = new FormData();
+  for (const [k, v] of Object.entries(fields)) form.append(k, v);
+  form.append(field, new Blob([new Uint8Array(file.data)], { type: file.mime }), file.name);
+  return uploader(method, token, form);
 }
 // Files customers send are downloaded from Telegram's file server (replaced in tests).
 type Downloader = (url: string) => Promise<Buffer>;

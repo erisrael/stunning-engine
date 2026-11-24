@@ -42,6 +42,14 @@ async function main() {
     if (blocked.has(String(b.chat_id))) return { ok: false, error_code: 403, description: "Forbidden: bot was blocked by the user" };
     return { ok: true, result: { username: "academy_help_bot", message_id: posts.length } };
   });
+  // Files go up to Telegram as an upload the first time (then by Telegram's file ID).
+  ch.setTelegramUploader(async (method, token, form) => {
+    const b: Record<string, unknown> = {};
+    form.forEach((v, k) => (b[k] = typeof v === "string" ? v : "(file)"));
+    posts.push({ url: `https://api.telegram.org/bot${token}/${method}`, body: b });
+    if (blocked.has(String(b.chat_id))) return { ok: false, description: "Forbidden: bot was blocked by the user" };
+    return { ok: true, result: { message_id: posts.length, document: { file_id: "tg-doc-1" }, video: method === "sendVideo" ? { file_id: "tg-vid-1" } : undefined } };
+  });
   const TOKEN = "888000:AAbotManagerTokenForTests_xyz";
   await ch.connectSystemBot(admin, app.id, TOKEN, "https://cm.example");
   const secret = (await get<{ tg_secret: string }>("SELECT tg_secret FROM sup_apps WHERE id = ?", app.id))!.tg_secret;
@@ -68,7 +76,7 @@ async function main() {
   // Content.
   check("content needs a file or a link", /file or a link/.test((await err(() => bm.saveContent(admin, app.id, { title: "Nothing" }))) ?? ""));
   check("a bad link is refused", /http/.test((await err(() => bm.saveContent(admin, app.id, { title: "Bad", url: "javascript:alert(1)" }))) ?? ""));
-  check("files over 20 MB are refused", /20 MB/.test((await err(() => bm.saveContent(admin, app.id, { title: "Big", file: { name: "big.mp4", mime: "video/mp4", data: Buffer.alloc(bm.BOT_FILE_MAX + 1) } }))) ?? ""));
+  check("files over 50 MB are refused", /50 MB/.test((await err(() => bm.saveContent(admin, app.id, { title: "Big", file: { name: "big.mp4", mime: "video/mp4", data: Buffer.alloc(bm.BOT_FILE_MAX + 1) } }))) ?? ""));
   const pdf = await bm.saveContent(admin, app.id, { title: "Grade 6 guide", caption: "Read before the exam", file: { name: "guide.pdf", mime: "application/pdf", data: Buffer.from("%PDF-1.4 test") } });
   const yt = await bm.saveContent(admin, app.id, { title: "How to log in", url: "https://youtu.be/abc123" });
   const lib = await bm.listContent(admin, app.id);
@@ -85,7 +93,9 @@ async function main() {
   posts.length = 0;
   await press(1001, `r:${pdf.id}`);
   const doc = posts.find((p) => p.url.endsWith("/sendDocument"));
-  check("a PDF is sent as a document by its link", !!doc && String(doc.body.document) === `https://cm.example/api/support/bot-file/${pdf.id}?k=${pub}` && String(doc.body.caption).includes("Read before the exam"), doc);
+  // The file itself goes up to Telegram (up to 50 MB; a link only reaches 20 MB), then by Telegram's file ID.
+  check("a PDF is sent as the file itself", !!doc && String(doc.body.document) === "(file)" && String(doc.body.caption).includes("Read before the exam"), doc);
+  void pub;
   check("through the system's own bot", !!doc && doc.url.includes(TOKEN));
   posts.length = 0;
   await press(1001, `r:${yt.id}`);

@@ -10,7 +10,8 @@ import type { AppUser } from "./users";
 import * as ch from "./support-channels";
 
 const clean = (v: unknown, max: number) => String(v ?? "").trim().slice(0, max);
-export const BOT_FILE_MAX = 20 * 1024 * 1024;
+// Telegram takes up to 50 MB from a bot's upload (20 MB from a link), so files are uploaded to it directly.
+export const BOT_FILE_MAX = 50 * 1024 * 1024;
 export const CONTENT_KINDS = ["video", "pdf", "document", "image", "link"] as const;
 export type ContentKind = (typeof CONTENT_KINDS)[number];
 export type QuestionType = "text" | "choice" | "rating";
@@ -93,7 +94,7 @@ export async function saveContent(user: AppUser, botKey: string, input: { id?: s
   const caption = clean(input.caption, 900) || null;
   const url = clean(input.url, 500) || null;
   if (url && !/^https?:\/\/[^\s]+$/i.test(url)) throw new WorkflowError("VALIDATION", "The link must start with http:// or https://.");
-  if (input.file && input.file.data.length > BOT_FILE_MAX) throw new WorkflowError("VALIDATION", "The file is larger than 20 MB, the most Telegram takes from a link. Upload it to YouTube or a drive and add the link instead.");
+  if (input.file && input.file.data.length > BOT_FILE_MAX) throw new WorkflowError("VALIDATION", "The file is larger than 50 MB, the most a Telegram bot can send. Shorten or compress the video, or add only its YouTube link.");
   if (input.file && !input.file.data.length) throw new WorkflowError("VALIDATION", "The file is empty.");
   const now = nowIso();
   if (input.id) {
@@ -105,8 +106,13 @@ export async function saveContent(user: AppUser, botKey: string, input: { id?: s
       const f = input.file;
       const name = clean(f.name, 160).replace(/[\\/]/g, "_") || "file";
       const mime = clean(f.mime, 100) || "application/octet-stream";
-      await run("UPDATE sup_bot_content SET kind = ?, file_name = ?, mime = ?, size = ?, data = ?, url = NULL, pub = ? WHERE id = ?", kindOf(mime, name), name, mime, f.data.length, f.data.toString("base64"), crypto.randomBytes(18).toString("hex"), cur.id);
-    } else if (url) await run("UPDATE sup_bot_content SET url = ?, kind = 'link', file_name = NULL, mime = NULL, size = 0, data = NULL WHERE id = ?", url, cur.id);
+      await run("UPDATE sup_bot_content SET kind = ?, file_name = ?, mime = ?, size = ?, data = ?, url = COALESCE(?, url), pub = ?, tg_file_id = NULL WHERE id = ?", kindOf(mime, name), name, mime, f.data.length, f.data.toString("base64"), url, crypto.randomBytes(18).toString("hex"), cur.id);
+    } else if (url) {
+      // A link beside the file (a video and its YouTube page), or the link alone when there is no file.
+      const has = await get<{ data: string | null }>("SELECT data FROM sup_bot_content WHERE id = ?", cur.id);
+      if (has?.data) await run("UPDATE sup_bot_content SET url = ? WHERE id = ?", url, cur.id);
+      else await run("UPDATE sup_bot_content SET url = ?, kind = 'link', file_name = NULL, mime = NULL, size = 0, data = NULL WHERE id = ?", url, cur.id);
+    }
     await audit({ actor: user }, { action: "support.bot", summary: `${user.name} changed bot content "${title}"` });
     return { id: cur.id };
   }
@@ -122,7 +128,7 @@ export async function saveContent(user: AppUser, botKey: string, input: { id?: s
     title,
     f ? kindOf(mime!, name!) : "link",
     caption,
-    f ? null : url,
+    url,
     name,
     mime,
     f ? f.data.length : 0,
@@ -176,17 +182,52 @@ export async function staffContentFile(user: AppUser, id: string) {
   return f?.data ? { name: f.file_name, mime: f.mime, data: Buffer.from(f.data, "base64") } : null;
 }
 
-type Sendable = { id: string; title: string; kind: ContentKind; caption: string | null; url: string | null; pub: string; data: string | null };
+type Sendable = { id: string; title: string; kind: ContentKind; caption: string | null; url: string | null; pub: string; data: string | null; file_name?: string | null; mime?: string | null; tg_file_id?: string | null };
 
 // One item to one chat: a file goes by its link (Telegram fetches it; needs a public https address), a link as text.
+// A resource to one chat. A file (above all a video) goes as the file itself, played in Telegram, with its link in
+// the caption; uploaded to Telegram the first time (up to 50 MB) and sent by Telegram's own ID after that. A YouTube
+// link alone goes with Telegram's large preview, which plays the video in the chat.
 async function sendItem(chat: string, c: Sendable, origin: string | null) {
   const text = [c.title, c.caption].filter(Boolean).join("\n\n");
-  if (!c.data) return ch.botApi("sendMessage", { chat_id: chat, text: `${text}\n\n${c.url ?? ""}`.trim().slice(0, 4000) });
-  const fileUrl = origin ? `${origin}/api/support/bot-file/${c.id}?k=${c.pub}` : null;
-  if (!fileUrl || !/^https:\/\//.test(fileUrl)) return ch.botApi("sendMessage", { chat_id: chat, text: `${text}\n\n${fileUrl ?? "(the file needs a public https address to reach Telegram)"}`.slice(0, 4000) });
+  if (!c.data) {
+    const yt = c.url && /(^|\.)(youtube\.com|youtu\.be)\//i.test(c.url.replace(/^https?:\/\//, ""));
+    return ch.botApi("sendMessage", {
+      chat_id: chat,
+      text: `${text}\n\n${c.url ?? ""}`.trim().slice(0, 4000),
+      ...(yt ? { link_preview_options: { url: c.url, prefer_large_media: true, show_above_text: true } } : {}),
+    });
+  }
+  const caption = [text, c.url].filter(Boolean).join("\n\n").slice(0, 1000);
   const method = c.kind === "image" ? "sendPhoto" : c.kind === "video" ? "sendVideo" : "sendDocument";
   const field = c.kind === "image" ? "photo" : c.kind === "video" ? "video" : "document";
-  return ch.botApi(method, { chat_id: chat, [field]: fileUrl, caption: text.slice(0, 1000) });
+  const extra = c.kind === "video" ? { supports_streaming: true } : {};
+  // Sent before: Telegram's own ID, nothing uploaded again.
+  // (Read fresh: when sending to every subscriber, the first send stores the ID and the rest use it.)
+  const fid = c.tg_file_id ?? (await get<{ tg_file_id: string | null }>("SELECT tg_file_id FROM sup_bot_content WHERE id = ?", c.id))?.tg_file_id ?? null;
+  if (fid) {
+    const r = await ch.botApi(method, { chat_id: chat, [field]: fid, caption, ...extra });
+    // A person who blocked the bot is not a reason to upload again; a file ID Telegram no longer knows is.
+    if (r.ok || !/file|identifier/i.test(String(r.description ?? ""))) return r;
+    await run("UPDATE sup_bot_content SET tg_file_id = NULL WHERE id = ?", c.id);
+  }
+  const full = await get<{ data: string | null; file_name: string | null; mime: string | null }>("SELECT data, file_name, mime FROM sup_bot_content WHERE id = ?", c.id);
+  if (!full?.data) return ch.botApi("sendMessage", { chat_id: chat, text: `${text}\n\n${c.url ?? ""}`.trim().slice(0, 4000) });
+  const r = await ch.botUpload(method, { chat_id: chat, caption, ...(c.kind === "video" ? { supports_streaming: "true" } : {}) }, field, {
+    data: Buffer.from(full.data, "base64"),
+    name: full.file_name ?? "file",
+    mime: full.mime ?? "application/octet-stream",
+  });
+  if (r.ok) {
+    const res = r.result as { video?: { file_id?: string }; document?: { file_id?: string }; photo?: { file_id?: string }[] } | undefined;
+    const id = res?.video?.file_id ?? res?.document?.file_id ?? res?.photo?.at(-1)?.file_id ?? null;
+    if (id) await run("UPDATE sup_bot_content SET tg_file_id = ? WHERE id = ?", id, c.id);
+    return r;
+  }
+  // The upload did not go through: the file's public address, as before (Telegram fetches up to 20 MB itself).
+  const fileUrl = origin ? `${origin}/api/support/bot-file/${c.id}?k=${c.pub}` : null;
+  if (!fileUrl || !/^https:\/\//.test(fileUrl)) return r;
+  return ch.botApi(method, { chat_id: chat, [field]: fileUrl, caption, ...extra });
 }
 
 // ---------------------------------------------------------------------------
@@ -245,7 +286,7 @@ export async function runPushes(now = nowIso()) {
     // Claimed first, so two runs never send the same push twice.
     const claimed = await get<{ id: string }>("UPDATE sup_bot_pushes SET status = 'sending' WHERE id = ? AND status = 'scheduled' RETURNING id", p.id);
     if (!claimed) continue;
-    const item = p.content_id ? await get<Sendable>("SELECT id, title, kind, caption, url, pub, data FROM sup_bot_content WHERE id = ?", p.content_id) : null;
+    const item = p.content_id ? await get<Sendable>("SELECT id, title, kind, caption, url, pub, (data IS NOT NULL) AS data, tg_file_id FROM sup_bot_content WHERE id = ?", p.content_id) : null;
     const form = p.form_id ? await get<{ id: string; title: string; intro: string | null }>("SELECT id, title, intro FROM sup_bot_forms WHERE id = ? AND active = 1", p.form_id) : null;
     let sent = 0;
     let failed = 0;
@@ -447,7 +488,7 @@ export async function button(bot: string, chat: string, customerId: string, data
     return true;
   }
   if (data.startsWith("r:")) {
-    const item = await get<Sendable>("SELECT id, title, kind, caption, url, pub, data FROM sup_bot_content WHERE id = ? AND bot = ? AND active = 1", data.slice(2), bot);
+    const item = await get<Sendable>("SELECT id, title, kind, caption, url, pub, (data IS NOT NULL) AS data, tg_file_id FROM sup_bot_content WHERE id = ? AND bot = ? AND active = 1", data.slice(2), bot);
     if (!item) return void (await send(am(x) ? "ይህ መረጃ ከእንግዲህ የለም።" : "This is no longer available.")), true;
     const r = await sendItem(chat, item, await ch.botOrigin());
     if (r.ok) await run("UPDATE sup_bot_content SET sends = sends + 1 WHERE id = ?", item.id);

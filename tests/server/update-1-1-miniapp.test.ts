@@ -187,10 +187,11 @@ async function main() {
   check("the new file is served", (await bm.contentFile(pdf.id, newPub))?.data.toString() === "mp4data");
   await bm.saveContent(admin, app.id, { id: pdf.id, title: "Exam guide 2026", url: "https://drive.example/guide" });
   item = (await bm.listContent(admin, app.id)).find((c) => c.id === pdf.id)!;
-  check("a file can become a link", item.kind === "link" && item.url === "https://drive.example/guide" && !item.fileName);
+  // A link given to a file item goes beside the file (a video and its YouTube page), not in its place.
+  check("a link is kept beside the file", item.kind !== "link" && item.url === "https://drive.example/guide" && !!item.fileName);
   await bm.saveContent(admin, app.id, { id: link.id, title: "How to sign in", file: { name: "signin.png", mime: "image/png", data: Buffer.from("png") } });
   item = (await bm.listContent(admin, app.id)).find((c) => c.id === link.id)!;
-  check("and a link a file", item.kind === "image" && item.title === "How to sign in" && !item.url);
+  check("and a file added to a link keeps the link", item.kind === "image" && item.title === "How to sign in" && !!item.url);
   check("members cannot edit", !!(await err(() => bm.saveContent(sara, app.id, { id: link.id, title: "x" }))));
   await bm.schedulePush(admin, app.id, { contentId: link.id, sendAt: new Date(Date.now() + 864e5).toISOString() }, "https://academy.example");
   await bm.deleteContent(admin, link.id);

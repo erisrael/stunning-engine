@@ -87,6 +87,28 @@ async function main() {
   const views = (await get<{ views: number }>("SELECT views FROM sup_articles WHERE id = ?", gid))!.views;
   check("reading counts a view", Number(views) === 1);
 
+  // One video for the whole guide: each step starts it at its own moment.
+  check("times read as seconds", kb.secondsOf("1:23") === 83 && kb.secondsOf("01:02:03") === 3723 && kb.secondsOf("45") === 45 && kb.secondsOf("") === null && kb.secondsOf("soon") === null);
+  check("a step time that is not a time is refused, naming the step", /Step 2: write the start time/.test((await err(() => kb.saveKbArticle(admin, { kind: "guide", title: "Timed", videoUrl: `https://youtu.be/${GOOD}`, steps: [{ title: "One", at: "0:00" }, { title: "Two", at: "soon" }] }))) ?? ""));
+  const tid = await kb.saveKbArticle(admin, {
+    kind: "guide",
+    title: "Pay in the app, one video",
+    published: true,
+    videoUrl: `https://youtu.be/${GOOD}`,
+    steps: [
+      { title: "Open Payments", at: "0:05" },
+      { title: "Choose the month", at: "1:23" },
+      { title: "With its own video", at: "2:00", videoUrl: `https://youtu.be/${GOOD2}` },
+    ],
+  });
+  const timed = await kb.publicArticle(tid);
+  check("the guide keeps its one video", timed.video?.id === GOOD, timed.video);
+  check("each step knows where its part starts", timed.steps[0]!.at === 5 && timed.steps[1]!.at === 83, timed.steps);
+  check("a step with its own video plays that, not a time", timed.steps[2]!.video?.id === GOOD2 && timed.steps[2]!.at === null);
+  const tmsg = await kb.guideMessages(tid);
+  check("in Telegram, each step links to its moment in the video", tmsg[2]!.includes(`watch?v=${GOOD}&t=83s`) && tmsg[2]!.includes("1:23"), tmsg);
+  check("How to lists it with its video", (await kb.howToList(null)).some((h) => h.id === tid && h.videos === 2 && !!h.thumbnail));
+
   // A plain answer with a video.
   check("a bad article video is refused", /embedding is off/.test((await err(() => kb.saveKbArticle(admin, { title: "With video", body: "Watch this.", videoUrl: `https://youtu.be/${NOEMBED}` }))) ?? ""));
   const aid = await kb.saveKbArticle(admin, { title: "Watch: opening the app", body: "Tap the MySeed icon.", category: "Payments", videoUrl: `https://youtu.be/${GOOD2}`, published: true });

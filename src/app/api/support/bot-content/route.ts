@@ -6,7 +6,7 @@ export async function POST(request: Request) {
   const viewer = await getViewer();
   if (!viewer) return Response.json({ error: "Sign in required" }, { status: 401 });
   const u = new URL(request.url);
-  if (Number(request.headers.get("content-length") ?? 0) > BOT_FILE_MAX) return Response.json({ error: "The file is larger than 20 MB." }, { status: 400 });
+  if (Number(request.headers.get("content-length") ?? 0) > BOT_FILE_MAX) return Response.json({ error: "The file is larger than 50 MB, the most a Telegram bot can send." }, { status: 400 });
   const data = Buffer.from(await request.arrayBuffer());
   try {
     const r = await saveContent(viewer, u.searchParams.get("bot") ?? "", {
@@ -15,6 +15,8 @@ export async function POST(request: Request) {
       active: u.searchParams.get("active") !== "0",
       title: u.searchParams.get("title") ?? "",
       caption: u.searchParams.get("caption"),
+      // The video's YouTube link, kept beside the file (sent in its caption).
+      url: u.searchParams.get("url"),
       file: { name: u.searchParams.get("name") ?? "file", mime: request.headers.get("content-type") ?? "application/octet-stream", data },
     });
     return Response.json(r);

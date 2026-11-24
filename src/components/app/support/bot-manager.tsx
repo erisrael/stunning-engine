@@ -132,7 +132,7 @@ function ContentEditor({ bot, item, onClose }: { bot: string; item: ContentItem;
     try {
       let error: string | null = null;
       if (file) {
-        if (file.size > 20 * 1048576) error = "The file is larger than 20 MB. Upload it to YouTube or a drive and add the link instead.";
+        if (file.size > 50 * 1048576) error = "The file is larger than 50 MB, the most a Telegram bot can send. Compress the video, or add only its YouTube link.";
         else {
           const q = new URLSearchParams({ bot, id: item.id, title, caption, name: file.name, active: item.active ? "1" : "0" });
           const r = await fetch(`/api/support/bot-content?${q}`, { method: "POST", headers: { "Content-Type": file.type || "application/octet-stream" }, body: file }).then((x) => x.json().catch(() => ({ error: "Upload failed" })));
@@ -194,9 +194,9 @@ function ContentSection({ bot, content, pushes }: { bot: string; content: Conten
   const fileRef = React.useRef<HTMLInputElement>(null);
   const add = async () => {
     if (file) {
-      if (file.size > 20 * 1048576) return void toast.error("The file is larger than 20 MB. Upload it to YouTube or a drive and add the link instead.");
+      if (file.size > 50 * 1048576) return void toast.error("The file is larger than 50 MB, the most a Telegram bot can send. Compress the video, or add only its YouTube link.");
       setUploading(true);
-      const q = new URLSearchParams({ bot, title, caption, name: file.name });
+      const q = new URLSearchParams({ bot, title, caption, name: file.name, ...(url.trim() ? { url: url.trim() } : {}) });
       const r = await fetch(`/api/support/bot-content?${q}`, { method: "POST", headers: { "Content-Type": file.type || "application/octet-stream" }, body: file }).then((x) => x.json().catch(() => ({ error: "Upload failed" })));
       setUploading(false);
       if (r.error) return void toast.error(r.error);
@@ -217,7 +217,7 @@ function ContentSection({ bot, content, pushes }: { bot: string; content: Conten
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Add content</CardTitle>
-          <CardDescription>A video, PDF, document or image up to 20 MB, or a link (a YouTube video, a drive folder). Customers open it from Resources in the bot&apos;s menu, and you can send it to every subscriber.</CardDescription>
+          <CardDescription>A video, PDF, document or image up to 50 MB, a link (a YouTube video, a drive folder), or both: add the video file and its YouTube link, and the bot sends the video itself, played in Telegram, with the link under it. A YouTube link alone is sent with Telegram's player. Customers open it from Resources in the bot&apos;s menu, and you can send it to every subscriber.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-1">
@@ -226,7 +226,7 @@ function ContentSection({ bot, content, pushes }: { bot: string; content: Conten
           </div>
           <div className="space-y-1">
             <Label htmlFor="bc-url">Link</Label>
-            <Input id="bc-url" value={url} disabled={!!file} onChange={(e) => setUrl(e.target.value)} placeholder="https://youtu.be/..." />
+            <Input id="bc-url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://youtu.be/..." />
           </div>
           <div className="space-y-1 sm:col-span-2">
             <Label htmlFor="bc-caption">Caption</Label>
