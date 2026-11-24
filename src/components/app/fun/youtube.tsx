@@ -208,7 +208,7 @@ function Dock({ src, mode, setMode, onClose, onHistory }: { src: Src; mode: "min
       onKeyDown={onKey}
       className={cn(
         "fixed z-[70] flex flex-col overflow-hidden rounded-xl border bg-[#0b0b0f] text-white shadow-2xl outline-none no-print",
-        full ? "inset-0 rounded-none" : mode === "mini" ? "bottom-20 left-3 w-72 md:bottom-4 md:left-[calc(var(--sidebar-width,16rem)+0.75rem)]" : "right-3 bottom-3 w-[min(640px,calc(100vw-1.5rem))] sm:right-[440px]",
+        full ? "inset-0 rounded-none" : mode === "mini" ? "bottom-[calc(var(--tabbar-space)+0.5rem)] left-3 w-72 lg:bottom-4 lg:left-[calc(var(--sidebar-width,16rem)+0.75rem)]" : "right-3 bottom-3 w-[min(640px,calc(100vw-1.5rem))] sm:right-[440px]",
       )}
       role="region"
       aria-label="YouTube player"

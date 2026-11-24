@@ -787,7 +787,7 @@ function ReadyView({ rows, lead }: { rows: ReadyRow[]; lead: boolean }) {
         </div>
       )}
       {chosen.length > 0 && (
-        <div className="sticky bottom-20 z-20 mx-auto flex w-fit max-w-full items-center gap-2 rounded-xl border bg-popover px-3 py-2 shadow-lg md:bottom-3" data-ready-bar>
+        <div className="sticky bottom-[calc(var(--tabbar-space)+0.5rem)] z-20 mx-auto flex w-fit max-w-full items-center gap-2 rounded-xl border bg-popover px-3 py-2 shadow-lg lg:bottom-3" data-ready-bar>
           <span className="text-sm font-medium tabular">{chosen.length} selected</span>
           <Button
             size="sm"

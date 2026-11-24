@@ -1,0 +1,19 @@
+{
+  "appId": "et.com.myseed.ops",
+  "appName": "Myseed Ops",
+  "webDir": "www",
+  "server": {
+    "url": "https://ops.myseed.com.et/dashboard",
+    "allowNavigation": ["ops.myseed.com.et"],
+    "cleartext": false,
+    "errorPath": "offline.html"
+  },
+  "android": {
+    "allowMixedContent": false,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": false,
+    "backgroundColor": "#ffffff",
+    "appendUserAgent": "MyseedOpsAndroid/1.0",
+    "adjustMarginsForEdgeToEdge": "force"
+  }
+}

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Myseed Ops</string>
+    <string name="title_activity_main">Myseed Ops</string>
+    <string name="package_name">et.com.myseed.ops</string>
+    <string name="custom_url_scheme">et.com.myseed.ops</string>
+</resources>

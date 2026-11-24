@@ -1319,7 +1319,7 @@ export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantCo
         ref={containerRef}
         className={cn(
           "no-print fixed z-50 flex flex-col items-end gap-2",
-          dock && open ? "inset-y-0 right-0" : pos ? "" : "right-4 bottom-20 md:bottom-4"
+          dock && open ? "inset-y-0 right-0" : pos ? "" : "right-4 bottom-[calc(var(--tabbar-space)+0.5rem)] lg:bottom-4"
         )}
         style={
           pos && (!dock || !open)

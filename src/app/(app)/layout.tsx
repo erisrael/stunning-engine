@@ -85,7 +85,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             .
           </div>
         )}
-        <main data-app-main className="mx-auto w-full max-w-[1600px] min-w-0 flex-1 px-3 pt-4 pb-24 sm:px-6 sm:py-6 md:pb-6">
+        <main data-app-main className="mx-auto w-full max-w-[1600px] min-w-0 flex-1 px-3 pt-4 pb-[calc(var(--tabbar-space)+1rem)] sm:px-6 sm:pt-6 lg:pb-6">
           {!viewer.mustChangePassword && <AnnouncementStrip pending={await pendingAnnouncements(viewer)} />}
           <SectionBanner banners={await bannerMap()} />
           <CollapsedSectionTabs />
@@ -93,7 +93,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </main>
         {await (async () => {
           const h = await homeDepartment(viewer);
-          return <MobileNav work={h ? { href: h.base, label: h.kind === "studio" ? "Studio" : "Work" } : (viewer.leads.length || viewer.roles.some((r) => ["recording", "editing", "uploading", "publication"].includes(r))) ? { href: "/my-work", label: "My work" } : null} chat={counts.chat} alerts={counts.notifications} approvals={counts.approvals} />;
+          return <MobileNav work={h ? { href: h.base, label: h.kind === "studio" ? "Studio" : "Work" } : (viewer.leads.length || viewer.roles.some((r) => ["recording", "editing", "uploading", "publication"].includes(r))) ? { href: "/my-work", label: "My work" } : null} chat={counts.chat} alerts={counts.notifications} approvals={counts.approvals} appName={(await (await import("@/server/identity")).identity()).shortName} />;
         })()}
         <ChatKeyBootstrap viewerId={viewer.id} />
         <StyleEffects />

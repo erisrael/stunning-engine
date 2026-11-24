@@ -211,7 +211,7 @@ export function Topbar({ user, activeRole, unread, chatUnread, qrScan, fun = fal
           </Button>
         )}
         <Hint title="Chat" tip={NAV_TIPS["top.chat"]}>
-        <Button variant="ghost" size="icon" className={cn("relative hidden md:inline-flex", pathname === "/chat" && "bg-accent")} aria-label={`Chat, ${chat} unread`} asChild>
+        <Button variant="ghost" size="icon" className={cn("relative hidden lg:inline-flex", pathname === "/chat" && "bg-accent")} aria-label={`Chat, ${chat} unread`} asChild>
           <Link href="/chat">
             <MessageCircleIcon />
             {chat > 0 && (

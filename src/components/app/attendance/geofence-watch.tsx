@@ -110,7 +110,7 @@ export function GeofenceWatch() {
 
   if (!asking) return null;
   return (
-    <div data-geofence-ask className="no-print fixed inset-x-3 bottom-20 z-[60] mx-auto max-w-md rounded-2xl border bg-popover p-3 text-sm shadow-xl md:bottom-4">
+    <div data-geofence-ask className="no-print fixed inset-x-3 bottom-[calc(var(--tabbar-space)+0.5rem)] z-[60] mx-auto max-w-md rounded-2xl border bg-popover p-3 text-sm shadow-xl lg:bottom-4">
       <p className="flex items-center gap-2 font-medium">
         <MapPinIcon className="size-4 text-primary" /> Check you out when you leave?
       </p>

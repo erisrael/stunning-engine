@@ -7,8 +7,10 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import "./globals.css";
 import "./ui-styles.css";
 import "./motion.css";
+import "./glass.css";
 import { appearanceScript } from "@/lib/appearance-script";
 import { ErrorReporter } from "@/components/app/error-reporter";
+import { AndroidBridge } from "@/components/app/android-bridge";
 
 const sans = Plus_Jakarta_Sans({ variable: "--font-app", subsets: ["latin"] });
 const mono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
@@ -45,7 +47,8 @@ export async function generateMetadata(): Promise<Metadata> {
     applicationName: name,
     // Installable app (Add to Home Screen), needed for push notifications on iPhone and iPad.
     manifest: "/manifest.webmanifest",
-    icons: { icon, apple: icon, shortcut: icon },
+    // iPhone and iPad need a PNG for the home screen (180 px, Apple's size).
+    icons: { icon, apple: [{ url: `/api/branding/app-icon?size=180&v=${id?.version ?? "0"}`, sizes: "180x180", type: "image/png" }], shortcut: icon },
     appleWebApp: { capable: true, title: id?.shortName ?? "Myseed", statusBarStyle: "default" },
   };
 }
@@ -74,6 +77,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body className="min-h-full">
         <ErrorReporter />
         <VersionWatch />
+        <AndroidBridge />
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
           <TooltipProvider delayDuration={250}>
             {children}

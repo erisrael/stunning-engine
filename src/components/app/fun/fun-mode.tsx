@@ -188,7 +188,7 @@ function FunWindow({ standalone = false }: { standalone?: boolean }) {
     <>
       {/* Music keeps playing with the window closed: a small player at the bottom left. */}
       {!open && player?.current && (
-        <div className="fixed bottom-20 left-3 z-40 w-64 rounded-xl border bg-background/95 p-2 shadow-lg backdrop-blur md:bottom-4 md:left-[calc(var(--sidebar-width,16rem)+0.75rem)] no-print" data-fun-mini>
+        <div className="fixed bottom-[calc(var(--tabbar-space)+0.5rem)] left-3 z-40 w-64 rounded-xl border bg-background/95 p-2 shadow-lg backdrop-blur lg:bottom-4 lg:left-[calc(var(--sidebar-width,16rem)+0.75rem)] no-print" data-fun-mini>
           <button type="button" className="absolute -top-2 -right-2 rounded-full border bg-background p-0.5" aria-label="Open Fun mode" onClick={() => show("music")}>
             <SparklesIcon className="size-3.5 text-primary" />
           </button>
