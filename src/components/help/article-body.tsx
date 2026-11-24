@@ -14,7 +14,14 @@ export function YouTube({ v }: { v: PublicVideo }) {
   return (
     <div className="overflow-hidden rounded-lg border bg-black" data-youtube={v.id}>
       {play ? (
-        <iframe className="aspect-video w-full" src={`${v.embed}?autoplay=1&rel=0`} title={v.title ?? "Video"} allow="autoplay; encrypted-media; picture-in-picture" allowFullScreen />
+        <iframe
+          className="aspect-video w-full"
+          src={`${v.embed}?autoplay=1&rel=0&playsinline=1&modestbranding=1`}
+          title={v.title ?? "Video"}
+          allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+          referrerPolicy="strict-origin-when-cross-origin"
+          allowFullScreen
+        />
       ) : (
         <button type="button" className="group relative block aspect-video w-full" onClick={() => setPlay(true)} aria-label={`Play ${v.title ?? "the video"}`}>
           {/* eslint-disable-next-line @next/next/no-img-element */}

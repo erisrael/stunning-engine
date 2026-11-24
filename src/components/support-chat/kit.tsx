@@ -35,6 +35,8 @@ import {
   XIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { youtubeIdOf, youtubeVideo } from "@/lib/youtube";
+import { YouTube } from "@/components/help/article-body";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@/components/ui/context-menu";
 
 // ---------------------------------------------------------------------------
@@ -131,10 +133,12 @@ function dayLabel(iso: string, w: KitWords) {
   return d.toLocaleDateString([], { weekday: Date.now() - d.getTime() < 6 * 864e5 ? "long" : undefined, day: "numeric", month: "short", year: d.getFullYear() === today.getFullYear() ? undefined : "numeric" });
 }
 
-// Links clickable, text kept as text.
+// Links clickable, text kept as text. A YouTube link also shows its video, which plays here in the chat.
 function Text({ text, out }: { text: string; out: boolean }) {
   const parts = text.split(/(https?:\/\/[^\s<>"']+)/g);
+  const yt = parts.map((p) => (/^https?:\/\//.test(p) ? youtubeIdOf(p) : null)).find(Boolean) ?? null;
   return (
+    <>
     <p className="break-words whitespace-pre-wrap">
       {parts.map((p, i) =>
         /^https?:\/\//.test(p) ? (
@@ -146,6 +150,12 @@ function Text({ text, out }: { text: string; out: boolean }) {
         ),
       )}
     </p>
+    {yt && (
+      <div className="mt-1.5 w-72 max-w-full" data-chat-youtube>
+        <YouTube v={youtubeVideo(yt)} />
+      </div>
+    )}
+    </>
   );
 }
 

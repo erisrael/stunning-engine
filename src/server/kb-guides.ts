@@ -218,6 +218,34 @@ export async function publicArticle(id: string) {
   return { id: a.id, kind: a.kind, title: a.title, category: a.category, updated_at: a.updated_at, body: a.kind === "guide" ? a.intro : a.body, intro: a.intro, video: v(a.video), steps: a.steps.map((s) => ({ title: s.title, body: s.body, video: v(s.video) })) };
 }
 
+// "How to" in the customers' app: the published step-by-step guides and the articles with a video, newest first,
+// each with its first video's thumbnail. In the customer's language where the article says which it is.
+export async function howToList(lang: "en" | "am" | null = null) {
+  const { articleLang } = await import("./support-starter");
+  const rows = await all<Row>("SELECT * FROM sup_articles WHERE published = 1 ORDER BY updated_at DESC LIMIT 400");
+  return rows
+    .map(fullOf)
+    .filter((a) => {
+      const l = articleLang(a.keywords);
+      return !lang || !l || l === lang;
+    })
+    .map((a) => {
+      const videos = [a.video, ...a.steps.map((s) => s.video)].filter((v): v is Video => !!v);
+      return { a, videos };
+    })
+    .filter(({ a, videos }) => a.kind === "guide" || videos.length > 0)
+    .map(({ a, videos }) => ({
+      id: a.id,
+      kind: a.kind,
+      title: a.title,
+      category: a.category,
+      steps: a.steps.length,
+      videos: videos.length,
+      thumbnail: videos[0] ? thumbnail(videos[0].id) : null,
+      intro: (a.kind === "guide" ? a.intro : a.body).replace(/[#*_`>\[\]]/g, "").slice(0, 140),
+    }));
+}
+
 // A guide as Telegram messages: the intro, then each step with its video link (Telegram shows the preview).
 export async function guideMessages(id: string) {
   const a = await publicArticle(id);

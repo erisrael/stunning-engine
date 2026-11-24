@@ -581,6 +581,8 @@ async function menuParts(x: TelegramTexts) {
     if (sc.callsEnabled !== false && (await channelOn(currentBot() === "default" ? null : currentBot(), "calls")))
       parts.call.unshift(sc.checkAgentsFirst === false ? { text: L(x, "Call support now", "አሁን ወደ ድጋፍ ይደውሉ"), web_app: { url: supportAppUrl(origin, currentBot(), "&call=1")! } } : { text: L(x, "Call support now", "አሁን ወደ ድጋፍ ይደውሉ"), callback_data: "cn" });
   }
+  // How-to guides and their videos, opened in the support app (videos play there).
+  if (appUrl && x.miniApp) parts.help.push({ text: L(x, "How to (videos)", "እንዴት (ቪዲዮዎች)"), web_app: { url: supportAppUrl(origin, currentBot(), "&page=howto")! } });
   parts.settings.unshift({ text: PHONE_BUTTON(x), callback_data: "ph" });
   if (!parts.settings.some((b) => b.callback_data === "lang")) parts.settings.splice(1, 0, { text: await btn(x, "button.language"), callback_data: "lang" });
   return { parts, appUrl: appUrl && x.miniApp ? appUrl : null };

@@ -114,6 +114,7 @@ async function handle(request: Request, ctx: Ctx, method: "GET" | "POST") {
     else if (a === "profile" && !id && method === "POST") out = await (await import("@/server/support-customer")).customerSaveProfile(app, token, { name: typeof body.name === "string" ? body.name : undefined, lang: typeof body.lang === "string" ? body.lang : undefined });
     else if (a === "faq" && !id && method === "GET") out = await (await import("@/server/support-customer")).customerFaq(app, token, langOf(request));
     else if (a === "resources" && !id && method === "GET") out = await (await import("@/server/bot-manager")).customerResources(app, token);
+    else if (a === "howto" && !id && method === "GET") out = await (await import("@/server/kb-guides")).howToList(langOf(request));
     else if (a === "articles" && !id && method === "GET") out = await (await import("@/server/support-channels")).searchArticles(new URL(request.url).searchParams.get("q") ?? "", 8, langOf(request));
     else if (a === "articles" && id && !b && method === "GET") out = await (await import("@/server/support-channels")).readArticle(id);
     else if (a === "articles" && id && b === "vote" && method === "POST") out = (await (await import("@/server/support-channels")).voteArticle(id, body.helpful === true), { ok: true });

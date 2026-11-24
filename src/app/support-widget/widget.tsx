@@ -26,6 +26,8 @@ import {
   MessageCircleQuestionIcon,
   PhoneCallIcon,
   PhoneIcon,
+  PlayCircleIcon,
+  PlayIcon,
   PhoneIncomingIcon,
   PhoneMissedIcon,
   PhoneOutgoingIcon,
@@ -74,6 +76,7 @@ const W = {
     reqConv: "Open the conversation", reqSteps: "Progress", reqResolution: "Outcome", reqType: "Type", reqOpened: "Opened",
     callTitle: "Call support", callIntro: "Talk to our team in this app. You need a microphone.", callHistory: "Call history", noCalls: "No calls yet.",
     incoming: "Incoming", outgoing: "Outgoing", missed: "Missed", completed: "Completed", requested: "Call-back requested", cancelled: "Cancelled",
+    howTo: "How to", howToIntro: "Short guides and videos that show how to do things in the app.", noHowTo: "No guides yet.",
     faq: "FAQ", faqIntro: "Answers to the questions we are asked most.", noFaq: "No answers have been published yet.", notifications: "Notifications", noNotes: "Nothing new.", profile: "Profile", language: "Language", info: "Support information",
     name: "Name", email: "Email", phone: "Phone", save: "Save", saved: "Saved", since: "With us since", fromApp: "From your account in the app", fromTg: "From Telegram", sharePhone: "Share", phoneHint: "So we can call you back",
     hours: "Opening hours", status: "Right now", away: "When we are away", channels: "Ways to reach us", policy: "Support policy", privacy: "Privacy", recording: "Call recording",
@@ -89,6 +92,7 @@ const W = {
     reqConv: "ውይይቱን ይክፈቱ", reqSteps: "ሂደት", reqResolution: "ውጤት", reqType: "ዓይነት", reqOpened: "የተከፈተው",
     callTitle: "ወደ ድጋፍ ይደውሉ", callIntro: "በዚህ መተግበሪያ ውስጥ ከቡድናችን ጋር ይነጋገሩ። ማይክሮፎን ያስፈልጋል።", callHistory: "የጥሪ ታሪክ", noCalls: "እስካሁን ጥሪ የለም።",
     incoming: "ገቢ", outgoing: "ወጪ", missed: "ያመለጠ", completed: "የተጠናቀቀ", requested: "እንዲደወልልዎ የተጠየቀ", cancelled: "የተሰረዘ",
+    howTo: "እንዴት እንደሚደረግ", howToIntro: "በመተግበሪያው ውስጥ ነገሮችን እንዴት እንደሚሰሩ የሚያሳዩ አጫጭር መመሪያዎች እና ቪዲዮዎች።", noHowTo: "እስካሁን መመሪያ የለም።",
     faq: "ተደጋግመው የሚጠየቁ", faqIntro: "በብዛት ለሚጠየቁ ጥያቄዎች መልሶች።", noFaq: "እስካሁን መልስ አልታተመም።", notifications: "ማሳወቂያዎች", noNotes: "አዲስ ነገር የለም።", profile: "መገለጫ", language: "ቋንቋ", info: "የድጋፍ መረጃ",
     name: "ስም", email: "ኢሜይል", phone: "ስልክ", save: "አስቀምጥ", saved: "ተቀምጧል", since: "ከእኛ ጋር ከ", fromApp: "በመተግበሪያው መለያዎ", fromTg: "ከቴሌግራም", sharePhone: "አጋራ", phoneHint: "መልሰን እንድንደውልልዎ",
     hours: "የሥራ ሰዓት", status: "አሁን", away: "በሌለንበት ጊዜ", channels: "የምናገኝባቸው መንገዶች", policy: "የድጋፍ መመሪያ", privacy: "ግላዊነት", recording: "የጥሪ ቀረጻ",
@@ -102,7 +106,7 @@ const TABS = ["home", "chats", "requests", "calls", "more"] as const;
 type Tab = (typeof TABS)[number];
 const TAB_ICON: Record<Tab, React.ComponentType<{ className?: string }>> = { home: HomeIcon, chats: MessageCircleIcon, requests: ClipboardListIcon, calls: PhoneIcon, more: MenuIcon };
 // The pages a deep link may name (startapp=<page>, or t_<conversation>, r_<request>, a_<article>).
-const NAMED = ["home", "chats", "requests", "calls", "more", "new", "faq", "notifications", "profile", "language", "info", "appearance"];
+const NAMED = ["home", "chats", "requests", "calls", "more", "new", "faq", "howto", "notifications", "profile", "language", "info", "appearance"];
 function deepPage(p: string | null | undefined): string | null {
   if (!p) return null;
   if (NAMED.includes(p)) return p;
@@ -291,7 +295,7 @@ export function SupportWidget({ appKey: givenKey, initialUser, waitForParent, te
     const p = deepPage(linkPage) ?? deepPage(startParam());
     if (!p) return;
     linked.current = true;
-    setStack(p === "home" || (TABS as readonly string[]).includes(p) ? [p] : [p.startsWith("t:") ? "chats" : p.startsWith("r:") ? "requests" : p.startsWith("a:") || ["faq", "notifications", "profile", "language", "info", "appearance"].includes(p) ? "more" : "home", p]);
+    setStack(p === "home" || (TABS as readonly string[]).includes(p) ? [p] : [p.startsWith("t:") ? "chats" : p.startsWith("r:") ? "requests" : p.startsWith("a:") || ["faq", "howto", "notifications", "profile", "language", "info", "appearance"].includes(p) ? "more" : "home", p]);
   }, [s, linkPage, tg]);
 
   const reload = React.useCallback(async () => {
@@ -503,6 +507,16 @@ export function SupportWidget({ appKey: givenKey, initialUser, waitForParent, te
                 <Tile icon={MessageCircleIcon} tint="#2563eb" label={w.chats} sub={openTickets.length ? `${openTickets.length} ${w.active.toLowerCase()}` : w.history} onClick={() => go("chats")} data-quick="chats" />
                 <Tile icon={BookOpenIcon} tint="#e8590c" label={w.faq} sub={am ? "መልሶች" : "Answers"} onClick={() => go("faq")} data-quick="faq" />
               </div>
+              <button type="button" onClick={() => go("howto")} className="glass flex w-full items-center gap-3 rounded-[calc(var(--radius)+8px)] p-3 text-left transition active:scale-[0.98]" data-quick="howto">
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[#ef4444] to-[#b91c1c] text-white shadow-sm">
+                  <PlayCircleIcon className="size-5" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold">{w.howTo}</span>
+                  <span className="block truncate text-[11px] text-muted-foreground">{am ? "መመሪያዎች እና ቪዲዮዎች" : "Guides and videos"}</span>
+                </span>
+                <ChevronRightIcon className="size-4 text-muted-foreground" />
+              </button>
               {/* First visit: share the phone number once (Telegram's one-tap share), so nobody types it for a call-back. */}
               {!s.customer.phone && !phoneAsked && (
                 <div className="glass space-y-2 rounded-[calc(var(--radius)+8px)] p-3" data-share-phone-card>
@@ -649,6 +663,7 @@ export function SupportWidget({ appKey: givenKey, initialUser, waitForParent, te
             <nav className="space-y-5 p-4" aria-label={w.more} data-page-more>
               <Group>
                 <Row icon={BellIcon} tint="#ef4444" label={w.notifications} badge={unseen} onClick={() => go("notifications")} data-more="notifications" />
+                <Row icon={PlayCircleIcon} tint="#dc2626" label={w.howTo} onClick={() => go("howto")} data-more="howto" />
                 <Row icon={MessageCircleQuestionIcon} tint="#e8590c" label={w.faq} onClick={() => go("faq")} data-more="faq" />
               </Group>
               <Group>
@@ -665,6 +680,7 @@ export function SupportWidget({ appKey: givenKey, initialUser, waitForParent, te
           {page === "appearance" && <AppearancePage look={look} setLook={setLook} am={am} brand={s.app.color} />}
 
           {page === "faq" && <FaqPage api={api} w={w} onOpen={(id) => go(`a:${id}`)} />}
+          {page === "howto" && <HowToPage api={api} w={w} color={color} onOpen={(id) => go(`a:${id}`)} />}
           {page === "notifications" && (
             <div className="space-y-2 p-4" data-page-notifications>
               {updates.map((u) => (
@@ -1106,6 +1122,56 @@ function HelpSearch({ api, onOpen, placeholder = "Search help articles" }: { api
           <span className="block truncate text-xs text-muted-foreground">{a.snippet}</span>
         </button>
       ))}
+    </div>
+  );
+}
+
+// "How to": the guides and the articles with videos, as cards with the video's picture. Opening one shows its steps,
+// and its videos play here in the app (components/help/article-body YouTube), not in a separate YouTube app.
+type HowTo = { id: string; kind: "article" | "guide"; title: string; category: string | null; steps: number; videos: number; thumbnail: string | null; intro: string };
+function HowToPage({ api, w, color, onOpen }: { api: Api; w: Words; color: string; onOpen: (id: string) => void }) {
+  const [list, setList] = React.useState<HowTo[] | null>(null);
+  const [q, setQ] = React.useState("");
+  React.useEffect(() => void api<HowTo[]>("howto").then(setList).catch(() => setList([])), [api]);
+  if (!list) return <Loading />;
+  const shown = q.trim() ? list.filter((h) => `${h.title} ${h.category ?? ""} ${h.intro}`.toLowerCase().includes(q.trim().toLowerCase())) : list;
+  return (
+    <div className="space-y-3 p-4" data-page-howto>
+      <p className="text-sm text-muted-foreground">{w.howToIntro}</p>
+      {list.length > 4 && <Input aria-label={w.howTo} placeholder={w.searchHelp} value={q} onChange={(e) => setQ(e.target.value)} className="rounded-full" />}
+      {shown.length === 0 ? (
+        <Empty icon={PlayCircleIcon} text={w.noHowTo} />
+      ) : (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {shown.map((h) => (
+            <button key={h.id} type="button" onClick={() => onOpen(h.id)} className="glass group overflow-hidden rounded-[calc(var(--radius)+8px)] text-left transition active:scale-[0.98]" data-howto={h.id}>
+              <span className="relative block aspect-video w-full bg-muted">
+                {h.thumbnail ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={h.thumbnail} alt="" loading="lazy" className="size-full object-cover" />
+                ) : (
+                  <span className="flex size-full items-center justify-center text-white" style={{ background: `linear-gradient(135deg, ${color}, color-mix(in oklab, ${color} 55%, #000))` }}>
+                    <BookOpenIcon className="size-8 opacity-80" />
+                  </span>
+                )}
+                {h.videos > 0 && (
+                  <span className="absolute inset-0 flex items-center justify-center">
+                    <span className="flex size-12 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-sm transition-transform group-active:scale-90">
+                      <PlayIcon className="size-5 fill-current" />
+                    </span>
+                  </span>
+                )}
+              </span>
+              <span className="block space-y-0.5 p-3">
+                <span className="block text-sm leading-snug font-semibold">{h.title}</span>
+                <span className="block text-[11px] text-muted-foreground">
+                  {[h.category, h.kind === "guide" && h.steps ? `${h.steps} steps` : null, h.videos ? `${h.videos} video${h.videos === 1 ? "" : "s"}` : null].filter(Boolean).join(" · ")}
+                </span>
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
