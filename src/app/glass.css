@@ -126,18 +126,43 @@
   }
 }
 
-/* Phones and tablets: the top bar, the More menu and the Tools sheet are glass too. */
+/* A glass layer drawn behind a surface (::before), not on the surface itself: a backdrop blur on an element makes it
+   the frame for everything fixed inside it, so its own menus (the account menu's side menus, a scanner overlay)
+   would be placed inside it and cut off. The surface stays transparent; the layer carries the tint and the blur. The
+   surface must be positioned with a z-index (sticky, fixed, or the rules below), so the layer stays behind its content. */
 @media (max-width: 1023px) {
-  header[data-topbar] {
-    background: var(--glass-tint-strong) !important;
+  :root:not([data-lite="on"]) :is(header[data-topbar], [data-slot="sidebar"][data-mobile="true"])::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    pointer-events: none;
+    background: var(--glass-tint-strong);
     -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(185%);
     backdrop-filter: blur(var(--glass-blur)) saturate(185%);
+  }
+}
+:root[data-style="studio"]:not([data-lite="on"]):not([data-contrast="high"]) header[data-topbar]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  background: var(--glass-tint-strong);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(185%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(185%);
+}
+
+/* Phones and tablets: the top bar, the More menu and the Tools sheet are glass too. */
+@media (max-width: 1023px) {
+  :root:not([data-lite="on"]) header[data-topbar] {
+    background: transparent !important;
     border-bottom: 0.5px solid var(--glass-ring);
   }
-  [data-slot="sidebar"][data-mobile="true"] {
-    background: var(--glass-tint-strong) !important;
-    -webkit-backdrop-filter: blur(28px) saturate(185%);
-    backdrop-filter: blur(28px) saturate(185%);
+  :root:not([data-lite="on"]) [data-slot="sidebar"][data-mobile="true"] {
+    background: transparent !important;
     border-right: 0.5px solid var(--glass-ring);
     box-shadow: var(--glass-shadow);
   }
@@ -190,8 +215,12 @@
     -webkit-backdrop-filter: none !important;
     backdrop-filter: none !important;
   }
-  .glass::before {
-    display: none;
+  .glass::before,
+  header[data-topbar]::before,
+  [data-slot="sidebar"][data-mobile="true"]::before,
+  [data-slot]::before {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
   }
 }
 :root[data-lite="on"] :is(.glass, .glass-strong, header[data-topbar], [data-slot="sidebar"][data-mobile="true"]) {
@@ -283,25 +312,53 @@
 :root[data-style="studio"]:not([data-lite="on"]):not([data-contrast="high"])
   :is([data-slot="dialog-content"], [data-slot="alert-dialog-content"], [data-slot="popover-content"], [data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"], [data-slot="select-content"], [data-slot="context-menu-content"], [data-slot="hover-card-content"], [data-slot="sheet-content"], [data-slot="command-dialog"] [data-slot="dialog-content"]) {
   background: var(--glass-tint-strong) !important;
-  -webkit-backdrop-filter: blur(30px) saturate(185%);
-  backdrop-filter: blur(30px) saturate(185%);
   border-color: var(--glass-ring);
   box-shadow:
     inset 0 1px 0 0 var(--glass-edge),
     0 0 0 0.5px var(--glass-ring),
     var(--glass-shadow);
 }
+/* Dialogs and sheets blur on themselves (their menus open outside them). Menus blur on a layer behind them, so a
+   side menu inside a menu (the account menu) is not cut off; they sit static in their positioner, so get a position. */
+:root[data-style="studio"]:not([data-lite="on"]):not([data-contrast="high"]) :is([data-slot="dialog-content"], [data-slot="alert-dialog-content"], [data-slot="sheet-content"]) {
+  -webkit-backdrop-filter: blur(30px) saturate(185%);
+  backdrop-filter: blur(30px) saturate(185%);
+}
+:root[data-style="studio"]:not([data-lite="on"]):not([data-contrast="high"])
+  :is([data-slot="popover-content"], [data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"], [data-slot="select-content"], [data-slot="context-menu-content"], [data-slot="hover-card-content"]) {
+  position: relative;
+  z-index: 50;
+}
+:root[data-style="studio"]:not([data-lite="on"]):not([data-contrast="high"])
+  :is([data-slot="popover-content"], [data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"], [data-slot="select-content"], [data-slot="context-menu-content"], [data-slot="hover-card-content"])::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  -webkit-backdrop-filter: blur(30px) saturate(185%);
+  backdrop-filter: blur(30px) saturate(185%);
+}
 :root[data-style="studio"]:not([data-lite="on"]):not([data-contrast="high"]) :is([data-slot="dialog-content"], [data-slot="alert-dialog-content"]) {
   border-radius: 1.5rem;
 }
 /* The top bar and the desktop sidebar. */
 :root[data-style="studio"]:not([data-lite="on"]):not([data-contrast="high"]) header[data-topbar] {
-  background: var(--glass-tint-strong) !important;
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(185%);
-  backdrop-filter: blur(var(--glass-blur)) saturate(185%);
+  background: transparent !important;
   border-bottom: 0.5px solid var(--glass-ring);
 }
 :root[data-style="studio"]:not([data-lite="on"]):not([data-contrast="high"]) [data-slot="sidebar-inner"] {
+  position: relative;
+  z-index: 0;
+  background: transparent;
+}
+:root[data-style="studio"]:not([data-lite="on"]):not([data-contrast="high"]) [data-slot="sidebar-inner"]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
   background: color-mix(in oklab, var(--sidebar) 62%, transparent);
   -webkit-backdrop-filter: blur(24px) saturate(185%);
   backdrop-filter: blur(24px) saturate(185%);
@@ -315,8 +372,6 @@
 }
 :root[data-style="studio"]:not([data-lite="on"]):not([data-contrast="high"]) [data-slot="tabs-list"] {
   background: color-mix(in oklab, var(--muted) 60%, transparent);
-  -webkit-backdrop-filter: blur(12px);
-  backdrop-filter: blur(12px);
 }
 :root[data-style="studio"]:not([data-lite="on"]):not([data-contrast="high"]) [data-slot="tabs-trigger"][data-state="active"] {
   box-shadow:
@@ -334,9 +389,12 @@
   :root[data-style="studio"] body::before {
     display: none;
   }
-  :root[data-style="studio"] :is([data-slot="card"], [data-slot="dialog-content"], [data-slot="popover-content"], [data-slot="dropdown-menu-content"], [data-slot="select-content"], [data-slot="sheet-content"], [data-slot="sidebar-inner"], header[data-topbar]) {
+  :root[data-style="studio"] :is([data-slot="card"], [data-slot="dialog-content"], [data-slot="alert-dialog-content"], [data-slot="popover-content"], [data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"], [data-slot="select-content"], [data-slot="sheet-content"], [data-slot="sidebar-inner"], header[data-topbar]) {
     background: var(--card) !important;
     -webkit-backdrop-filter: none !important;
     backdrop-filter: none !important;
+  }
+  :root[data-style="studio"] :is([data-slot="dialog-content"], [data-slot="alert-dialog-content"], [data-slot="popover-content"], [data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"], [data-slot="select-content"], [data-slot="sheet-content"], [data-slot="sidebar-inner"], header[data-topbar])::before {
+    display: none;
   }
 }
