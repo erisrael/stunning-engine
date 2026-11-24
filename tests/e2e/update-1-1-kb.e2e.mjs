@@ -50,6 +50,9 @@ try {
   await form.getByLabel("Article title").fill("How to pay with telebirr");
   await form.getByLabel("Category").fill("Payments");
   await form.getByLabel("Introduction").fill("Pay your fees from your phone in **two minutes**.");
+  // New guides start with one video for the whole guide; this one has a video per step.
+  check("a new guide starts with one video for the whole guide", (await form.locator('[data-video-mode="one"]').getAttribute("aria-checked")) === "true" && (await form.locator("[data-step-at]").count()) > 0);
+  await form.locator('[data-video-mode="steps"]').click();
   await form.getByLabel("Step 1 title").fill("Open Payments");
   await form.getByLabel("Step 1 text").fill("Press the wallet at the bottom.");
   await form.getByLabel("Step 1 video").fill(`https://youtu.be/${PRIVATE}`);

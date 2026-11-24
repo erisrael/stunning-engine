@@ -17,7 +17,9 @@ import type { FullArticle, ImportLine } from "@/server/kb-guides";
 const select = "h-9 rounded-md border bg-background px-2 text-sm";
 type Filters = { q: string; status: string; category: string; kind: string };
 type VideoField = { url: string; checked: { id: string; title: string | null } | null; error: string | null };
-type Draft = { id: string | null; kind: "article" | "guide"; title: string; intro: string; category: string; keywords: string; published: boolean; video: VideoField; steps: { title: string; body: string; video: VideoField; at: string }[] };
+// A guide's videos: one for the whole guide (each step gives where its part starts), one per step, or none.
+type VideoMode = "one" | "steps" | "none";
+type Draft = { id: string | null; kind: "article" | "guide"; title: string; intro: string; category: string; keywords: string; published: boolean; video: VideoField; videoMode: VideoMode; steps: { title: string; body: string; video: VideoField; at: string }[] };
 
 const ytUrl = (id: string) => `https://www.youtube.com/watch?v=${id}`;
 const vf = (v: { id: string; title: string | null } | null): VideoField => ({ url: v ? ytUrl(v.id) : "", checked: v, error: null });
@@ -25,8 +27,10 @@ const blankStep = () => ({ title: "", body: "", video: vf(null), at: "" });
 const clock = (s: number | null | undefined) => (s == null ? "" : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`);
 
 function draftOf(a: FullArticle | null, kind: "article" | "guide"): Draft {
-  if (!a) return { id: null, kind, title: "", intro: "", category: "", keywords: "", published: false, video: vf(null), steps: kind === "guide" ? [blankStep(), blankStep()] : [] };
-  return { id: a.id, kind: a.kind, title: a.title, intro: a.kind === "guide" ? a.intro : a.body, category: a.category ?? "", keywords: a.keywords, published: a.published, video: vf(a.video), steps: a.steps.map((s) => ({ title: s.title, body: s.body, video: vf(s.video), at: clock(s.at) })) };
+  if (!a) return { id: null, kind, title: "", intro: "", category: "", keywords: "", published: false, video: vf(null), videoMode: "one", steps: kind === "guide" ? [blankStep(), blankStep()] : [] };
+  // An existing guide opens the way it was made.
+  const videoMode: VideoMode = a.video ? "one" : a.steps.some((s) => s.video) ? "steps" : a.kind === "guide" ? "none" : "one";
+  return { id: a.id, kind: a.kind, title: a.title, intro: a.kind === "guide" ? a.intro : a.body, category: a.category ?? "", keywords: a.keywords, published: a.published, video: vf(a.video), videoMode, steps: a.steps.map((s) => ({ title: s.title, body: s.body, video: vf(s.video), at: clock(s.at) })) };
 }
 
 // A YouTube link with a Check button: shows the thumbnail and title YouTube gives, or why it cannot be used.
@@ -85,8 +89,16 @@ function Editor({ d0, lead, onClose }: { d0: Draft; lead: boolean; onClose: () =
       category: d.category,
       keywords: d.keywords,
       published: d.published,
-      videoUrl: d.video.checked ? ytUrl(d.video.checked.id) : d.video.url.trim() || null,
-      steps: d.kind === "guide" ? d.steps.map((s) => ({ title: s.title, body: s.body, ...vid(s.video), at: s.at.trim() || null })) : [],
+      videoUrl: d.kind === "guide" && d.videoMode !== "one" ? null : d.video.checked ? ytUrl(d.video.checked.id) : d.video.url.trim() || null,
+      steps:
+        d.kind === "guide"
+          ? d.steps.map((s) => ({
+              title: s.title,
+              body: s.body,
+              ...(d.videoMode === "steps" ? vid(s.video) : { video: null, videoUrl: null }),
+              at: d.videoMode === "one" ? s.at.trim() || null : null,
+            }))
+          : [],
     });
     setBusy(false);
     if (!r.ok) return void toast.error(r.error ?? "Could not save.");
@@ -109,10 +121,36 @@ function Editor({ d0, lead, onClose }: { d0: Draft; lead: boolean; onClose: () =
         <Textarea aria-label={d.kind === "guide" ? "Introduction" : "Answer"} className={d.kind === "guide" ? "min-h-20" : "min-h-40"} placeholder={d.kind === "guide" ? "What this guide helps with (optional)" : "The answer"} value={d.intro} onChange={(e) => setD({ ...d, intro: e.target.value })} />
         {d.kind === "article" && <VideoInput label="Video" v={d.video} onChange={(video) => setD({ ...d, video })} />}
         {d.kind === "guide" && (
-          <div className="space-y-1 rounded-lg border border-dashed p-3" data-guide-video>
-            <p className="text-xs font-medium">One video for the whole guide (optional)</p>
-            <p className="text-xs text-muted-foreground">Then give each step the time its part starts (like 1:23): customers press the step to play the video from there. A step can still have its own video instead.</p>
-            <VideoInput label="Guide video" v={d.video} onChange={(video) => setD({ ...d, video })} />
+          <div className="space-y-2 rounded-lg border p-3" data-guide-video>
+            <p className="text-xs font-medium">Video</p>
+            <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Guide video">
+              {(
+                [
+                  ["one", "One video for the whole guide"],
+                  ["steps", "A video for each step"],
+                  ["none", "No video"],
+                ] as const
+              ).map(([k, label]) => (
+                <button
+                  key={k}
+                  type="button"
+                  role="radio"
+                  aria-checked={d.videoMode === k}
+                  onClick={() => setD({ ...d, videoMode: k })}
+                  className={`rounded-full border px-3 py-1 text-xs transition ${d.videoMode === k ? "border-primary bg-primary text-primary-foreground" : "hover:bg-muted"}`}
+                  data-video-mode={k}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {d.videoMode === "one" && (
+              <>
+                <p className="text-xs text-muted-foreground">Paste the guide&apos;s YouTube video, then give each step the time its part starts (like 1:23). Customers press a step to play the video from there.</p>
+                <VideoInput label="Guide video" v={d.video} onChange={(video) => setD({ ...d, video })} />
+              </>
+            )}
+            {d.videoMode === "steps" && <p className="text-xs text-muted-foreground">Each step below gets its own YouTube link.</p>}
           </div>
         )}
         {d.kind === "guide" && (
@@ -133,13 +171,13 @@ function Editor({ d0, lead, onClose }: { d0: Draft; lead: boolean; onClose: () =
                   </Button>
                 </div>
                 <Textarea aria-label={`Step ${i + 1} text`} className="min-h-16" placeholder="Details (optional)" value={s.body} onChange={(e) => setStep(i, { body: e.target.value })} />
-                {(d.video.checked || d.video.url.trim()) && !s.video.url.trim() && (
+                {d.videoMode === "one" && (
                   <label className="flex items-center gap-2 text-xs" data-step-at>
-                    <span className="shrink-0 text-muted-foreground">Starts in the guide video at</span>
+                    <span className="shrink-0 text-muted-foreground">Starts in the video at</span>
                     <Input aria-label={`Step ${i + 1} starts at`} placeholder="1:23" inputMode="numeric" className="h-8 w-24" value={s.at} onChange={(e) => setStep(i, { at: e.target.value })} />
                   </label>
                 )}
-                <VideoInput label={`Step ${i + 1} video (its own, optional)`} v={s.video} onChange={(video) => setStep(i, { video })} />
+                {d.videoMode === "steps" && <VideoInput label={`Step ${i + 1} video`} v={s.video} onChange={(video) => setStep(i, { video })} />}
               </li>
             ))}
             <Button type="button" size="sm" variant="outline" disabled={d.steps.length >= 40} onClick={() => setD({ ...d, steps: [...d.steps, blankStep()] })}>
