@@ -86,7 +86,7 @@ export function SupportContentManager({ bots }: { bots: { key: string; name: str
       </div>
       {bot !== "default" && <StatusStrip>Anything this bot has no item for is said as the default bot says it.</StatusStrip>}
       <div className="grid gap-4 lg:grid-cols-[14rem_1fr_20rem]">
-        <nav className="flex gap-1 overflow-x-auto lg:flex-col" aria-label="Kinds of content">
+        <nav data-wrap-tabs className="flex gap-1 overflow-x-auto lg:flex-col" aria-label="Kinds of content">
           {data.kinds.map((k) => (
             <button key={k.key} type="button" onClick={() => setKind(k.key)} className={cn("flex shrink-0 items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-sm", kind === k.key ? "bg-muted font-medium" : "text-muted-foreground hover:bg-muted/50")}>
               {k.label}

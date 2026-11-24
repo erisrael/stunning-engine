@@ -37,7 +37,7 @@ export function ViewSwitcher({ current, labels, extra = [] }: { current: string;
     return q ? `${pathname}?${q}` : pathname;
   };
   return (
-    <nav aria-label="Department" className="flex w-full gap-1 overflow-x-auto rounded-xl border bg-muted/40 p-1">
+    <nav data-wrap-tabs aria-label="Department" className="flex w-full gap-1 overflow-x-auto rounded-xl border bg-muted/40 p-1">
       {[...COMPANY_VIEWS.map((v) => ({ key: v.key as string, label: v.label as string })), ...extra].map((v) => {
         const Icon = ICONS[v.key as CompanyView] ?? Building2Icon;
         return (

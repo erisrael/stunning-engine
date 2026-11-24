@@ -72,7 +72,7 @@ export default async function IntegrationsHubPage({ searchParams }: { searchPara
   return (
     <div className="space-y-4">
       <PageHeader title="Integrations hub" description="Payments, messaging, email, AI, Telegram, attendance devices and Noor CMS: their health, every call and callback, and their setup." />
-      <nav className="flex gap-1 overflow-x-auto border-b" aria-label="Integrations hub">
+      <nav data-wrap-tabs className="flex gap-1 overflow-x-auto border-b" aria-label="Integrations hub">
         {TABS.map((t) => (
           <Link
             key={t.key}

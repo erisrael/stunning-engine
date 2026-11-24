@@ -67,10 +67,10 @@ export default async function SupportPage({ searchParams }: { searchParams: Prom
     const backHref = `/support?view=${encodeURIComponent(view)}${sp.q ? `&q=${encodeURIComponent(sp.q)}` : ""}${sp.pri ? `&pri=${sp.pri}` : ""}${sp.ch ? `&ch=${sp.ch}` : ""}`;
     return (
       <Desk bar={false} status={myStatus} record={cfg.recordCalls}>
-        <div data-support-shell className="-mx-3 -my-4 flex h-[calc(100dvh-3.5rem)] flex-col overflow-hidden border-t bg-card sm:-mx-6 sm:-my-6">
+        <div data-support-shell data-ticket-open={detail ? "" : undefined} className="-mx-3 -my-4 flex h-[calc(100dvh-3.5rem)] flex-col overflow-hidden border-t bg-card sm:-mx-6 sm:-my-6">
           <div className="flex items-center gap-2 border-b px-3">
-            <h1 className="shrink-0 py-2 text-sm font-semibold">Customer support</h1>
-            <nav className="flex min-w-0 flex-1 gap-0.5 overflow-x-auto [scrollbar-width:none]" aria-label="Support">
+            <h1 className="hidden shrink-0 py-2 text-sm font-semibold md:block">Customer support</h1>
+            <nav data-wrap-tabs className="flex min-w-0 flex-1 gap-0.5 overflow-x-auto [scrollbar-width:none]" aria-label="Support">
               {tabs.map((t) => (
                 <Link key={t} href={`/support?tab=${t}`} aria-current={tab === t ? "page" : undefined} className={cn("shrink-0 border-b-2 px-2.5 py-2.5 text-xs whitespace-nowrap", tab === t ? "border-primary font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}>
                   {LABELS[t]}
@@ -296,7 +296,7 @@ export default async function SupportPage({ searchParams }: { searchParams: Prom
           </div>
         }
       />
-      <nav className="flex gap-1 overflow-x-auto border-b" aria-label="Support">
+      <nav data-wrap-tabs className="flex gap-1 overflow-x-auto border-b [scrollbar-width:none]" aria-label="Support">
         {tabs.map((t) => (
           <Link key={t} href={`/support?tab=${t}`} className={cn("-mb-px shrink-0 border-b-2 px-3 py-2 text-sm whitespace-nowrap", tab === t ? "border-primary font-medium" : "border-transparent text-muted-foreground hover:text-foreground")}>
             {LABELS[t]}

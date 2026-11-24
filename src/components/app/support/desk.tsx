@@ -71,7 +71,7 @@ function Sla({ r }: { r: Row }) {
   const left = Math.round((Date.parse(due) - Date.now()) / 60e3);
   const tone = r.breached || left < 0 ? "text-[#D93025]" : left < 30 ? "text-[#E8710A]" : "text-muted-foreground";
   return (
-    <span className={cn("text-xs tabular-nums", tone)} title={r.first_response_at ? "Time left to solve" : "Time left to answer"}>
+    <span className={cn("text-xs tabular-nums", tone)} title={r.first_response_at ? "Time left to solve" : "Time left to answer"} suppressHydrationWarning>
       {left < 0 ? `${ago(due)} late` : `${left < 60 ? `${left} min` : `${Math.round(left / 60)} h`} left`}
     </span>
   );
@@ -147,6 +147,10 @@ export function Inbox({ rows, view, views, q, openId, base = "/support?", pri = 
   const join = base.includes("?") ? (base.endsWith("?") ? base : `${base}&`) : `${base}?`;
   const keep = (p: string, c: string) => `${p ? `&pri=${p}` : ""}${c ? `&ch=${c}` : ""}`;
   const href = (v: string, extra = "") => `${join}view=${encodeURIComponent(v)}${search ? `&q=${encodeURIComponent(search)}` : ""}${keep(pri, ch)}${extra}`;
+  // The everyday lists stay as chips; the others (and each queue) are in "More lists".
+  const PRIMARY = ["mine", "unassigned", "waiting", "escalated", "breached"];
+  const primary = views.filter((v) => PRIMARY.includes(v.key));
+  const more = views.filter((v) => !PRIMARY.includes(v.key));
   // The list of conversations, laid out like Team chat: search, the lists as chips, then one row per conversation.
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-inbox>
@@ -155,13 +159,30 @@ export function Inbox({ rows, view, views, q, openId, base = "/support?", pri = 
           <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input aria-label="Search tickets" placeholder="Search number, customer, phone or words" value={search} onChange={(e) => setSearch(e.target.value)} className="h-9 rounded-full bg-muted/60 pl-8" />
         </form>
-        <nav aria-label="Conversation lists" className="-mx-3 flex gap-1 overflow-x-auto px-3 pb-0.5 [scrollbar-width:none]">
-          {views.map((v) => (
+        {/* The main lists as chips (with counts), the rest in one picker: no row to scroll sideways. */}
+        <nav aria-label="Conversation lists" data-inbox-lists className="flex flex-wrap items-center gap-1">
+          {primary.map((v) => (
             <Link key={v.key} href={href(v.key)} aria-current={view === v.key ? "page" : undefined} className={cn("shrink-0 rounded-full border px-2.5 py-1 text-xs whitespace-nowrap", view === v.key ? "border-primary bg-primary/10 font-medium text-foreground" : "text-muted-foreground hover:bg-muted")} data-view={v.key}>
               {v.label}
               {v.count ? <span className="ml-1 rounded-full bg-primary px-1.5 text-[10px] font-semibold text-primary-foreground">{v.count}</span> : null}
             </Link>
           ))}
+          {more.length > 0 && (
+            <select
+              aria-label="More lists"
+              className={cn(select, "h-7 max-w-[11rem] min-w-0 rounded-full px-2.5 text-xs", more.some((v) => v.key === view) && "border-primary bg-primary/10 font-medium text-foreground")}
+              value={more.some((v) => v.key === view) ? view : ""}
+              onChange={(e) => e.target.value && router.push(href(e.target.value))}
+            >
+              <option value="">More lists…</option>
+              {more.map((v) => (
+                <option key={v.key} value={v.key}>
+                  {v.label}
+                  {v.count ? ` (${v.count})` : ""}
+                </option>
+              ))}
+            </select>
+          )}
         </nav>
         <div className="flex gap-1" aria-label="Filters">
           <select aria-label="Priority filter" className={cn(select, "h-7 min-w-0 flex-1 rounded-full text-xs")} value={pri} onChange={(e) => router.push(`${join}view=${encodeURIComponent(view)}${search ? `&q=${encodeURIComponent(search)}` : ""}${keep(e.target.value, ch)}`)}>
@@ -187,7 +208,7 @@ export function Inbox({ rows, view, views, q, openId, base = "/support?", pri = 
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-1">
                     <span className={cn("truncate", unread ? "font-semibold" : "font-medium")}>{r.customer ?? "Customer"}</span>
-                    <span className="ml-auto shrink-0 text-[11px] text-muted-foreground">{ago(r.updated_at)}</span>
+                    <span className="ml-auto shrink-0 text-[11px] text-muted-foreground" suppressHydrationWarning>{ago(r.updated_at)}</span>
                   </span>
                   <span className="flex items-center gap-2">
                     <span className={cn("truncate text-sm", unread ? "text-foreground" : "text-muted-foreground")}>
@@ -370,8 +391,8 @@ export function TicketView({ d, agents, queues, canned, me, lead, articles = [],
             <InfoIcon />
           </Button>
         </header>
-        {/* The conversation's state and actions in one slim row that scrolls sideways on small screens. */}
-        <div className="flex items-center gap-1.5 overflow-x-auto border-b bg-muted/20 px-3 py-1.5 text-sm [scrollbar-width:thin]" data-ticket-tools>
+        {/* The conversation's state and actions in one slim row; on small screens it wraps onto more lines. */}
+        <div className="flex flex-wrap items-center gap-1.5 border-b bg-muted/20 px-3 py-1.5 text-sm" data-ticket-tools>
           <select aria-label="Status" className={sel} value={t.status} disabled={busy} onChange={(e) => act(() => A.setTicketStatusAction(t.id, e.target.value as TicketStatus), "Status changed")}>
             {TICKET_STATUSES.map((s) => (
               <option key={s} value={s}>

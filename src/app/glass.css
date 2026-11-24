@@ -398,3 +398,72 @@
     display: none;
   }
 }
+
+/* ------------------------------------------------------------------ Tabs everywhere
+   A row of tabs never hides tabs off to the side. Computers and tablets: the tabs wrap onto a second line. Phones: a
+   swipeable strip that snaps, with the chosen tab brought into view (mobile-nav.tsx). Covers the shared tab lists,
+   page and section tabs, and other tab rows marked data-wrap-tabs. */
+@media (min-width: 768px) {
+  :is([data-slot="tabs-list"], [data-page-tabs], [data-section-tabs], [data-wrap-tabs]):not([data-orientation="vertical"]) {
+    flex-wrap: wrap;
+    overflow-x: visible !important;
+    height: auto !important;
+    row-gap: 2px;
+  }
+  [data-slot="tabs-list"]:not([data-orientation="vertical"]) [data-slot="tabs-trigger"] {
+    min-height: 1.75rem;
+    flex: 0 1 auto;
+  }
+}
+@media (max-width: 767px) {
+  :is([data-slot="tabs-list"], [data-page-tabs], [data-section-tabs], [data-wrap-tabs]) {
+    scroll-snap-type: x proximity;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    touch-action: pan-x pan-y;
+  }
+  :is([data-slot="tabs-list"], [data-page-tabs], [data-section-tabs], [data-wrap-tabs]) > * {
+    scroll-snap-align: start;
+  }
+}
+
+/* ------------------------------------------------------------------ Customer support desk on phones and tablets
+   Laid out like Chat: the desk fills the screen under the top bar. Phones: in the list the tab bar floats over the
+   bottom and the list keeps room for it; inside a conversation the tab bar and the assistant step aside (the reply
+   box is at the bottom, Back returns to the list) and the desk follows the keyboard. Tablets: two columns, no tab
+   bar (the menu button in the top bar still opens everything). */
+@media (max-width: 1023px) {
+  html:has([data-support-shell]) main[data-app-main] {
+    padding-bottom: 0 !important;
+  }
+  [data-support-shell] {
+    height: calc(var(--vvh, 100dvh) - 3.5rem) !important;
+  }
+  html:has([data-support-shell]) body {
+    overscroll-behavior: none;
+  }
+}
+@media (max-width: 767px) {
+  [data-support-shell]:not([data-ticket-open]) [data-inbox] > ul {
+    padding-bottom: var(--tabbar-space);
+  }
+  html:has([data-support-shell][data-ticket-open]) [data-mobile-nav],
+  html:has([data-support-shell][data-ticket-open]) [data-assistant]:not([data-docked]) {
+    display: none !important;
+  }
+}
+@media (min-width: 768px) and (max-width: 1023px) {
+  html:has([data-support-shell]) [data-mobile-nav] {
+    display: none !important;
+  }
+}
+/* Phones, inside a conversation: just the conversation (Back returns to the list and the tabs). */
+@media (max-width: 767px) {
+  [data-support-shell][data-ticket-open] > :first-child {
+    display: none;
+  }
+  :is([data-ticket-tools], [data-inbox-lists], [data-inbox] [aria-label="Filters"]) select {
+    font-size: 14px !important;
+    height: 2rem;
+  }
+}

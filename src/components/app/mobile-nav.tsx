@@ -46,7 +46,7 @@ function useViewport() {
       el.classList.toggle("kb-open", open);
       el.style.setProperty("--vvh", `${Math.round(vv.height)}px`);
       // iOS scrolls the page up under the keyboard; keep the top at the top.
-      if (open && el.classList.contains("in-chat")) window.scrollTo(0, 0);
+      if (open && (el.classList.contains("in-chat") || document.querySelector("[data-support-shell]"))) window.scrollTo(0, 0);
     };
     on();
     // iPhone and iPad Safari ignore the viewport's no-zoom: stop the pinch gesture itself (phones and tablets).
@@ -60,6 +60,35 @@ function useViewport() {
       vv.removeEventListener("scroll", on);
     };
   }, []);
+}
+
+// Phones: a strip of tabs scrolls sideways; the chosen tab is brought into view when a page opens and after a tap.
+const TAB_ROWS = '[data-slot="tabs-list"], [data-page-tabs], [data-section-tabs], [data-wrap-tabs]';
+const CHOSEN = '[aria-current="page"], [data-state="active"], [aria-selected="true"]';
+function useChosenTabInView(pathname: string) {
+  React.useEffect(() => {
+    if (window.innerWidth >= 768) return;
+    const bring = () => {
+      for (const row of document.querySelectorAll<HTMLElement>(TAB_ROWS)) {
+        if (row.scrollWidth <= row.clientWidth + 2) continue;
+        const on = row.querySelector<HTMLElement>(CHOSEN);
+        if (!on) continue;
+        const r = row.getBoundingClientRect();
+        const b = on.getBoundingClientRect();
+        const left = row.scrollLeft + (b.left - r.left) - row.clientWidth / 2 + b.width / 2;
+        row.scrollTo({ left: Math.max(0, left), behavior: "smooth" });
+      }
+    };
+    const t = window.setTimeout(bring, 250);
+    const onClick = (e: MouseEvent) => {
+      if ((e.target as Element | null)?.closest?.(TAB_ROWS)) window.setTimeout(bring, 300);
+    };
+    document.addEventListener("click", onClick);
+    return () => {
+      window.clearTimeout(t);
+      document.removeEventListener("click", onClick);
+    };
+  }, [pathname]);
 }
 
 const press = (init: KeyboardEventInit) => window.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, ...init }));
@@ -121,6 +150,7 @@ export function MobileNav({ work, chat, alerts, approvals = 0, appName = "the ap
   const map = useRefraction(shell);
   const { mode: installMode, install } = useInstall();
   useViewport();
+  useChosenTabInView(pathname);
   React.useEffect(() => setTools(false), [pathname]);
   const items = [
     { href: "/dashboard", label: "Home", icon: HomeIcon, badge: 0 },
