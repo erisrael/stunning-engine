@@ -13,7 +13,7 @@
     "captureInput": true,
     "webContentsDebuggingEnabled": false,
     "backgroundColor": "#ffffff",
-    "appendUserAgent": "MyseedOpsAndroid/1.0",
+    "appendUserAgent": "MyseedOpsAndroid/1.1",
     "adjustMarginsForEdgeToEdge": "force"
   }
 }

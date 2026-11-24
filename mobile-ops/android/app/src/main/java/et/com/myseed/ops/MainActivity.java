@@ -14,7 +14,9 @@ import java.io.FileOutputStream;
 import java.io.OutputStream;
 import android.webkit.CookieManager;
 import android.webkit.URLUtil;
+import android.webkit.WebSettings;
 import android.webkit.WebView;
+import android.view.View;
 import android.widget.Toast;
 import com.getcapacitor.BridgeActivity;
 
@@ -28,6 +30,17 @@ public class MainActivity extends BridgeActivity {
   public void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
     WebView web = getBridge().getWebView();
+    // The page always fits the screen: no pinch or zoom buttons, and the phone's font size does not stretch the page
+    // wider than the screen (people set the text size in the app's Settings instead).
+    WebSettings s = web.getSettings();
+    s.setSupportZoom(false);
+    s.setBuiltInZoomControls(false);
+    s.setDisplayZoomControls(false);
+    s.setUseWideViewPort(true);
+    s.setLoadWithOverviewMode(false);
+    s.setTextZoom(100);
+    web.setOverScrollMode(View.OVER_SCROLL_NEVER);
+    web.setHorizontalScrollBarEnabled(false);
     CookieManager.getInstance().setAcceptCookie(true);
     CookieManager.getInstance().setAcceptThirdPartyCookies(web, true);
     web.addJavascriptInterface(new Saver(), "MyseedAndroid");

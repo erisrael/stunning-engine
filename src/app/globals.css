@@ -427,7 +427,8 @@ html[data-helplinks="off"] [data-help-link] {
     z-index: 30;
     padding-top: env(safe-area-inset-top);
   }
-  main {
+  /* The page content only: the outer <main> (the sidebar inset, which holds the top bar) stays edge to edge. */
+  main[data-app-main] {
     padding-left: max(0.75rem, env(safe-area-inset-left)) !important;
     padding-right: max(0.75rem, env(safe-area-inset-right)) !important;
   }

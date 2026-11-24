@@ -49,9 +49,13 @@ function useViewport() {
       if (open && el.classList.contains("in-chat")) window.scrollTo(0, 0);
     };
     on();
+    // iPhone and iPad Safari ignore the viewport's no-zoom: stop the pinch gesture itself (phones and tablets).
+    const noPinch = (e: Event) => window.innerWidth < 1024 && e.preventDefault();
+    document.addEventListener("gesturestart", noPinch);
     vv.addEventListener("resize", on);
     vv.addEventListener("scroll", on);
     return () => {
+      document.removeEventListener("gesturestart", noPinch);
       vv.removeEventListener("resize", on);
       vv.removeEventListener("scroll", on);
     };

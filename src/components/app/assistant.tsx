@@ -643,6 +643,18 @@ export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantCo
   // Movable Floating Widget State (PC / Desktop Draggable)
   const [pos, setPos] = React.useState<{ x: number; y: number } | null>(null);
   const containerRef = React.useRef<HTMLDivElement>(null);
+  // Phones and tablets: the assistant stays at the bottom right above the tab bar (a moved spot from a wider screen
+  // could put it, or its open panel, past the edge and make the page wider than the screen). Moving it is for desktops.
+  const [wide, setWide] = React.useState(false);
+  React.useEffect(() => {
+    const mq = window.matchMedia("(min-width: 1024px)");
+    const on = () => setWide(mq.matches);
+    on();
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, []);
+  // The bar's real width (with the microphone it is wider than the round button), so a moved bar stays on screen.
+  const barWidth = () => (containerRef.current?.offsetWidth || 160) + 12;
   const isDraggingRef = React.useRef(false);
   const dragStartRef = React.useRef({ mouseX: 0, mouseY: 0, startX: 0, startY: 0 });
 
@@ -652,7 +664,7 @@ export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantCo
       if (saved) {
         const parsed = JSON.parse(saved);
         if (typeof parsed?.x === "number" && typeof parsed?.y === "number") {
-          const clampedX = Math.min(Math.max(12, parsed.x), Math.max(12, window.innerWidth - 80));
+          const clampedX = Math.min(Math.max(12, parsed.x), Math.max(12, window.innerWidth - barWidth()));
           const clampedY = Math.min(Math.max(12, parsed.y), Math.max(12, window.innerHeight - 80));
           setPos({ x: clampedX, y: clampedY });
         }
@@ -662,7 +674,7 @@ export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantCo
     const handleResize = () => {
       setPos((prev) => {
         if (!prev) return null;
-        const clampedX = Math.min(Math.max(12, prev.x), Math.max(12, window.innerWidth - 80));
+        const clampedX = Math.min(Math.max(12, prev.x), Math.max(12, window.innerWidth - barWidth()));
         const clampedY = Math.min(Math.max(12, prev.y), Math.max(12, window.innerHeight - 80));
         return { x: clampedX, y: clampedY };
       });
@@ -673,6 +685,7 @@ export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantCo
 
   const handlePointerDown = (e: React.PointerEvent) => {
     if (dock && open) return;
+    if (!wide) return; // Fixed in place on phones and tablets.
     if (e.button !== 0) return; // Left click only
     const target = e.target as HTMLElement;
     if (target.closest("button, input, select, textarea, a, [role='button']")) return;
@@ -1319,10 +1332,10 @@ export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantCo
         ref={containerRef}
         className={cn(
           "no-print fixed z-50 flex flex-col items-end gap-2",
-          dock && open ? "inset-y-0 right-0" : pos ? "" : "right-4 bottom-[calc(var(--tabbar-space)+0.5rem)] lg:bottom-4"
+          dock && open ? "inset-y-0 right-0" : pos && wide ? "" : "right-[max(0.75rem,env(safe-area-inset-right))] bottom-[calc(var(--tabbar-space)+0.5rem)] lg:right-4 lg:bottom-4"
         )}
         style={
-          pos && (!dock || !open)
+          pos && wide && (!dock || !open)
             ? {
                 left: `${pos.x}px`,
                 top: `${pos.y}px`,
@@ -1343,7 +1356,7 @@ export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantCo
             aria-label="Assistant"
             className={cn(
               "flex flex-col overflow-hidden bg-popover",
-              dock ? "h-dvh w-screen border-l shadow-xl sm:w-[26rem]" : "max-h-[min(40rem,calc(100vh-6rem))] w-[24rem] max-w-[calc(100vw-2rem)] rounded-2xl border shadow-2xl",
+              dock ? "h-dvh w-screen border-l shadow-xl sm:w-[26rem]" : "glass glass-strong max-h-[min(40rem,calc(100dvh-var(--tabbar-space)-6rem))] w-[24rem] max-w-[calc(100vw-1.5rem)] rounded-[1.6rem] border-0 shadow-2xl",
             )}
           >
             <header
@@ -1687,13 +1700,13 @@ export function Assistant({ ctx, ai = false, agent = false }: { ctx: AssistantCo
           </section>
         )}
         <div
-          className="flex items-center gap-1.5 p-1 rounded-full bg-background/85 backdrop-blur-xs border border-border/70 shadow-lg select-none"
+          className="glass relative flex items-center gap-1.5 rounded-full p-1 select-none"
         >
           {/* Subtle drag grip handle */}
           <div
             onPointerDown={handlePointerDown}
             onDoubleClick={handleResetPos}
-            className="cursor-grab active:cursor-grabbing px-1 py-2 text-muted-foreground/60 hover:text-foreground transition-colors touch-none"
+            className="hidden cursor-grab active:cursor-grabbing px-1 py-2 text-muted-foreground/60 hover:text-foreground transition-colors touch-none lg:block"
             title="Drag to reposition anywhere on PC (Double-click to reset)"
           >
             <GripVerticalIcon className="size-3.5" />

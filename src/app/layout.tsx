@@ -56,6 +56,9 @@ export async function generateMetadata(): Promise<Metadata> {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  // An app, not a document: the page always fits the screen, so pinch zoom is off (text size is under Settings).
+  maximumScale: 1,
+  userScalable: false,
   // The keyboard makes the page shorter (Chrome on Android), so a message box stays above it.
   interactiveWidget: "resizes-content",
   viewportFit: "cover",
