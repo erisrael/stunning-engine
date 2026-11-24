@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils";
 import { CHANNEL_LABELS } from "@/lib/support";
 import { DEPARTMENTS, DEPARTMENT_LABELS } from "@/lib/domain";
 import { Button } from "@/components/ui/button";
+import { ResizablePane } from "@/components/app/resizable-pane";
 import { MessageCircleIcon, MessagesSquareIcon, PhoneCallIcon, SearchIcon } from "lucide-react";
 
 export const metadata = { title: "Customer support" };
@@ -83,7 +84,8 @@ export default async function SupportPage({ searchParams }: { searchParams: Prom
             </span>
           </div>
           <div className="flex min-h-0 flex-1">
-            <aside className={cn("flex w-full shrink-0 flex-col border-r md:w-80 lg:w-96", detail && "hidden md:flex")} aria-label="Conversations">
+            {/* The list can be resized with the slider beside it and folded away for more room to chat (kept per device). */}
+            <ResizablePane side="left" storageKey="support-list" label="Conversations" initial={340} min={260} max={520} className={cn("flex w-full shrink-0 flex-col border-r", detail && "hidden md:flex")}>
               <div className="flex items-center gap-1.5 border-b px-3 py-2">
                 <AgentBar compact status={myStatus} />
                 <span className="ml-auto flex shrink-0 items-center gap-1">
@@ -92,7 +94,7 @@ export default async function SupportPage({ searchParams }: { searchParams: Prom
                 </span>
               </div>
               <Inbox rows={rows} view={view} views={views} q={sp.q ?? ""} openId={sp.ticket ?? null} pri={sp.pri ?? ""} ch={sp.ch ?? ""} channels={Object.entries(CHANNEL_LABELS).map(([key, label]) => ({ key, label }))} />
-            </aside>
+            </ResizablePane>
             <section className={cn("min-w-0 flex-1 flex-col", detail ? "flex" : "hidden md:flex")} aria-label="Conversation">
               {detail ? (
                 <TicketView backHref={backHref} d={detail as Parameters<typeof TicketView>[0]["d"]} agents={agents} queues={queues.map((q) => ({ id: q.id, name: q.name }))} canned={await sd.cannedReplies()} me={viewer.id} lead={lead} articles={(await ch.listArticles(viewer)).filter((x) => x.published).map((x) => ({ id: x.id, title: x.title }))} origin={await appOrigin()} />

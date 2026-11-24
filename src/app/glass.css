@@ -467,3 +467,10 @@
     height: 2rem;
   }
 }
+/* Computers: in the support desk and Team chat the reply box is at the bottom right, so the assistant's button sits
+   above it instead of covering Send (unless the person moved it somewhere themselves). */
+@media (min-width: 1024px) {
+  :is(html:has([data-support-shell]), html.in-chat) [data-assistant]:not([data-docked]):not([style*="top"]) {
+    bottom: 7.5rem !important;
+  }
+}

@@ -22,6 +22,7 @@ import { CustomerPresence, DeskLive, TranscriptLink, seenBy, useAgentTyping, use
 import { ChatTimeline, Composer, type ComposerHandle, type KitCall, type KitMenuItem, type KitMsg, type KitQuote, type KitReaction } from "@/components/support-chat/kit";
 import { StudentLookupDialog } from "./student-lookup-dialog";
 import { UserAvatar } from "@/components/app/primitives";
+import { ResizablePane } from "@/components/app/resizable-pane";
 
 type Res = { ok: boolean; error?: string; data?: unknown };
 type Row = { id: string; number: number; subject: string; status: TicketStatus; priority: Priority; channel: string; queue: string | null; customer: string | null; assignee: string | null; assignee_id: string | null; updated_at: string; sla_first_due: string | null; sla_resolve_due: string | null; first_response_at: string | null; breached: number; unread?: number; escalated_at?: string | null };
@@ -274,7 +275,24 @@ export function TicketView({ d, agents, queues, canned, me, lead, articles = [],
   const [detailsFor, setDetailsFor] = React.useState<string | null>(null);
   const [panel, setPanel] = React.useState(false);
   // The customer panel: a column on wide screens (shown until closed), a sheet on narrower ones.
-  const [info, setInfo] = React.useState(true);
+  // The customer details beside the conversation (wide screens): open on very wide screens, otherwise as the person
+  // last left it, so the conversation gets the room. Narrower screens open them as a sheet.
+  const [info, setInfoState] = React.useState(false);
+  React.useEffect(() => {
+    let v: string | null = null;
+    try {
+      v = localStorage.getItem("myseed.desk.customerPanel");
+    } catch {}
+    setInfoState(v === null ? window.matchMedia("(min-width: 1536px)").matches : v === "1");
+  }, []);
+  const setInfo = (next: boolean | ((v: boolean) => boolean)) =>
+    setInfoState((cur) => {
+      const v = typeof next === "function" ? next(cur) : next;
+      try {
+        localStorage.setItem("myseed.desk.customerPanel", v ? "1" : "0");
+      } catch {}
+      return v;
+    });
   const openInfo = () => (window.matchMedia("(min-width: 1280px)").matches ? setInfo((v) => !v) : setPanel(true));
   const [body, setBody] = React.useState("");
   const [internal, setInternal] = React.useState(false);
@@ -627,9 +645,9 @@ export function TicketView({ d, agents, queues, canned, me, lead, articles = [],
       </div>
 
       {info && (
-        <aside className="hidden w-80 shrink-0 flex-col overflow-y-auto border-l bg-card text-sm xl:flex 2xl:w-96" data-customer-panel>
+        <ResizablePane side="right" from="xl" storageKey="support-customer" label="Customer details" initial={320} min={260} max={480} onCollapse={() => setInfo(false)} className="hidden shrink-0 flex-col overflow-y-auto border-l bg-card text-sm xl:flex" data-customer-panel>
           {side()}
-        </aside>
+        </ResizablePane>
       )}
       <Sheet open={panel} onOpenChange={setPanel}>
         <SheetContent side="right" className="w-full overflow-y-auto p-0 sm:max-w-md">
