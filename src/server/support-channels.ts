@@ -464,15 +464,18 @@ async function callNow(chat: string, x: TelegramTexts) {
   if (cfg.callsEnabled === false || !(await channelOn(bot === "default" ? null : bot, "calls")))
     return telegramSend(chat, L2(x, "Calls are switched off right now. Write your question here and an agent will answer.", "ጥሪዎች አሁን ተዘግተዋል። ጥያቄዎን እዚህ ይጻፉ፤ ወኪል ይመልሳል።"), { reply_markup: { inline_keyboard: [[back]] } });
   const online = (await sd.availableAgents(null, cfg, { ignoreLimit: true })).length;
-  if (!online)
-    return telegramSend(chat, L2(x, `No agent is online right now. ${cfg.hours ? `We answer calls ${cfg.hours}. ` : ""}Ask us to call you back, or write your question here.`, `አሁን በመስመር ላይ ያለ ወኪል የለም። ${cfg.hours ? `የስራ ሰዓት፦ ${cfg.hours}። ` : ""}መልሰን እንድንደውል ይጠይቁ ወይም ጥያቄዎን እዚህ ይጻፉ።`), { reply_markup: { inline_keyboard: [[callback], [back]] } });
+  // Nobody online yet is not a dead end: the customer can call and wait in line (with the waiting message) until an
+  // agent is free or comes online, or ask to be called back.
+  const noneYet = online === 0;
   const busy = Number((await get<{ n: number }>("SELECT COUNT(*) AS n FROM sup_calls WHERE status = 'answered' AND ended_at IS NULL AND kind = 'web'"))?.n ?? 0);
   const waiting = Number((await get<{ n: number }>("SELECT COUNT(*) AS n FROM sup_calls WHERE status = 'ringing' AND direction = 'inbound' AND kind = 'web'"))?.n ?? 0);
   const free = Math.max(0, online - busy);
-  const mins = free > waiting ? 0 : Math.max(1, Math.round(((waiting + 1 - free) * (cfg.defaultHandleSec || 240)) / online / 60));
+  const mins = noneYet ? 0 : free > waiting ? 0 : Math.max(1, Math.round(((waiting + 1 - free) * (cfg.defaultHandleSec || 240)) / online / 60));
   const url = supportAppUrl(await botOrigin(), bot, "&call=1");
   if (!url) return telegramSend(chat, L2(x, "Calling needs the support app, which is not set up yet. Write your question here.", "መደወል የድጋፍ መተግበሪያውን ይፈልጋል። ጥያቄዎን እዚህ ይጻፉ።"), { reply_markup: { inline_keyboard: [[back]] } });
-  const note = mins ? L2(x, `All agents are busy. About ${mins} minute${mins === 1 ? "" : "s"} wait; you will hear your place in line.`, `ሁሉም ወኪሎች ተይዘዋል። በግምት ${mins} ደቂቃ ይጠብቃሉ።`) : L2(x, "An agent is free now.", "አሁን ነጻ ወኪል አለ።");
+  const note = noneYet
+    ? L2(x, `No agent is free yet. You can call and wait in line: you will hear your place, and the first agent free answers.${cfg.hours ? ` We answer calls ${cfg.hours}.` : ""} Or ask us to call you back.`, `አሁን ነፃ ወኪል የለም። ደውለው በመስመር መጠበቅ ይችላሉ፤ ቦታዎን ይሰማሉ፣ የመጀመሪያው ነፃ ወኪል ይመልስልዎታል።${cfg.hours ? ` የስራ ሰዓት፦ ${cfg.hours}።` : ""} ወይም መልሰን እንድንደውል ይጠይቁ።`)
+    : mins ? L2(x, `All agents are busy. About ${mins} minute${mins === 1 ? "" : "s"} wait; you will hear your place in line.`, `ሁሉም ወኪሎች ተይዘዋል። በግምት ${mins} ደቂቃ ይጠብቃሉ።`) : L2(x, "An agent is free now.", "አሁን ነጻ ወኪል አለ።");
   return telegramSend(chat, `${note}
 ${L2(x, "Tap to call. Allow the microphone when asked.", "ለመደወል ይጫኑ። ማይክሮፎን ሲጠየቁ ይፍቀዱ።")}`, { reply_markup: { inline_keyboard: [[{ text: L(x, "Call now", "አሁን ይደውሉ"), web_app: { url } }], [callback], [back]] } });
 }

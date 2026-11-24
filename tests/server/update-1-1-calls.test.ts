@@ -107,7 +107,8 @@ async function main() {
   check("the overflow agent does not hear it yet", !(await sd.ringingFor(abel)).some((r) => r.id === c3.callId));
   await run("UPDATE sup_calls SET started_at = ? WHERE id = ?", ago(22), c3.callId);
   check("then the overflow queue hears it", (await sd.ringingFor(abel)).some((r) => r.id === c3.callId));
-  await run("UPDATE sup_calls SET started_at = ? WHERE id = ?", ago(61), c3.callId);
+  // A caller in a line waits five minutes (no wait set on the queue).
+  await run("UPDATE sup_calls SET started_at = ? WHERE id = ?", ago(361), c3.callId);
   await sd.ringingFor(abel);
   check("unanswered, it is missed", (await get<{ status: string }>("SELECT status FROM sup_calls WHERE id = ?", c3.callId))?.status === "missed");
   await sd.saveSupportConfig(admin, { callOverflowQueue: null });

@@ -564,6 +564,7 @@ export function TicketView({ d, agents, queues, canned, me, lead, articles = [],
             <ChatTimeline
               messages={kitMsgs}
               calls={kitCalls}
+              onCallAgain={(c) => window.dispatchEvent(new CustomEvent("myseed:desk-call-again", { detail: { ticketId: t.id, kind: c.kind } }))}
               typing={live?.typing ? (d.customer?.name ?? "The customer").split(" ")[0]! : null}
               onReply={(m) => setReply({ id: m.id, author: m.side === "in" ? (d.customer?.name ?? "Customer") : (m.author ?? "Support"), body: m.body })}
               onReact={(m, e) => void act(() => A.reactAction(m.id, e))}

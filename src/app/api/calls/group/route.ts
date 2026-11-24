@@ -1,5 +1,5 @@
 import { getViewer } from "@/server/auth";
-import { joinGroupCall, leaveGroupCall, pollGroupCall, signalGroupCall, startGroupCall } from "@/server/group-calls";
+import { activeGroupCallFor, joinGroupCall, leaveGroupCall, pollGroupCall, signalGroupCall, startGroupCall } from "@/server/group-calls";
 import { WorkflowError } from "@/server/workflow";
 
 // Group calls: start, join, poll (participants and setup messages for me), signal one person, leave.
@@ -25,6 +25,10 @@ export async function POST(req: Request) {
     switch (body.op) {
       case "start":
         data = await startGroupCall(viewer, String(body.groupId ?? ""), body.media === "video" ? "video" : "audio");
+        break;
+      // The call going on in a group now (the chat's Join bar).
+      case "active":
+        data = await activeGroupCallFor(viewer, String(body.groupId ?? ""));
         break;
       case "join":
         data = await joinGroupCall(viewer, id);

@@ -32,7 +32,24 @@ export type TgWebApp = {
   onEvent?: (e: string, f: () => void) => void;
   offEvent?: (e: string, f: () => void) => void;
   setHeaderColor?: (c: string) => void;
+  requestContact?: (cb?: (shared: boolean, res?: { responseUnsafe?: { contact?: { phone_number?: string } } }) => void) => void;
 };
+
+/** Telegram's own "Share my phone number" (Bot API 6.9+): the number, or null when declined or not available. */
+export function shareTelegramPhone(): Promise<string | null> {
+  const tg = tgWebApp();
+  if (!tg?.requestContact) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    try {
+      tg.requestContact!((shared, res) => {
+        const n = res?.responseUnsafe?.contact?.phone_number ?? null;
+        resolve(shared && n ? (n.startsWith("+") ? n : `+${n}`) : null);
+      });
+    } catch {
+      resolve(null);
+    }
+  });
+}
 
 export const tgWebApp = (): TgWebApp | null => (typeof window === "undefined" ? null : ((window as unknown as { Telegram?: { WebApp?: TgWebApp } }).Telegram?.WebApp ?? null));
 // Inside the Telegram app itself (Telegram's script in a plain browser reports the platform "unknown").

@@ -120,6 +120,12 @@ export async function leaveGroupCall(user: AppUser, id: string) {
   await sweep(id);
 }
 
+// The group's call going on now, for a member (the chat's Join bar asks every few seconds).
+export async function activeGroupCallFor(user: AppUser, groupId: string) {
+  if (!groupId || !(await member(user.id, groupId))) return null;
+  return activeGroupCall(groupId);
+}
+
 // The group's call going on now, for the chat's Join banner.
 export async function activeGroupCall(groupId: string) {
   const c = await get<{ id: string; media: string }>("SELECT id, media FROM group_calls WHERE group_id = ? AND status = 'active' ORDER BY created_at DESC LIMIT 1", groupId);

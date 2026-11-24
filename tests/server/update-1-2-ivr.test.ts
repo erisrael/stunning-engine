@@ -134,7 +134,8 @@ async function main() {
   await sd.ringingFor(sara);
   const w1r = await get<{ status: string; ring_queue: string | null }>("SELECT status, ring_queue FROM sup_calls WHERE id = ?", w1.callId);
   check("past the queue's maximum wait the call moves to the overflow queue", w1r?.status === "ringing" && w1r.ring_queue === payment, w1r);
-  await run("UPDATE sup_calls SET queued_at = ?, started_at = ? WHERE id = ?", ago(120), ago(150), w1.callId);
+  // The overflow queue sets no wait of its own: five minutes.
+  await run("UPDATE sup_calls SET queued_at = ?, started_at = ? WHERE id = ?", ago(320), ago(350), w1.callId);
   await sd.ringingFor(sara);
   check("past the overflow queue's wait too, the call is missed and logged", (await get<{ status: string }>("SELECT status FROM sup_calls WHERE id = ?", w1.callId))?.status === "missed" && !!(await get("SELECT 1 AS x FROM sup_queue_events WHERE call_id = ? AND kind = 'timeout'", w1.callId)));
   await Q.saveQueueSettings(admin, general, { maxWaitS: null, overflowQueue: null });

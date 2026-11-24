@@ -68,7 +68,7 @@ import { PushToggle } from "@/components/app/push-toggle";
 import {
   AttachButton,
   Attachment,
-  CallButton,
+  CallButton, GroupCallBar,
   CallCard,
   DiscoverChannelsDialog,
   EmojiPicker,
@@ -694,6 +694,8 @@ function Conversation({
           </DropdownMenuContent>
         </DropdownMenu>
       </header>
+      {/* A call going on in this group: who is in it, and Join (chat-extras GroupCallBar). */}
+      {member && group.kind !== "direct" && <GroupCallBar groupId={group.id} />}
 
       {pinned && (
         <button

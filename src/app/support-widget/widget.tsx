@@ -12,6 +12,7 @@ import {
   BookOpenIcon,
   ChevronRightIcon,
   ClipboardListIcon,
+  EllipsisVerticalIcon,
   ExternalLinkIcon,
   FileIcon,
   HomeIcon,
@@ -23,6 +24,7 @@ import {
   MenuIcon,
   MessageCircleIcon,
   MessageCircleQuestionIcon,
+  PhoneCallIcon,
   PhoneIcon,
   PhoneIncomingIcon,
   PhoneMissedIcon,
@@ -33,12 +35,13 @@ import {
   UserIcon,
   VideoIcon,
 } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { LiveThread, words, type Lang } from "./live-thread";
-import { CALL_EVENT, CallButton, CallLayer } from "./calls";
+import { CALL_EVENT, CallButton, CallLayer, SharePhone } from "./calls";
 import { ArticleBody, type PublicArticle } from "@/components/help/article-body";
 import { haptic, startParam, tgWebApp, useBackButton, useMainButton, useTelegram, type TgWebApp } from "./tg";
 import { AppearancePage, Group, LOOK_WORDS, Row, Tile, useLook } from "./look";
@@ -140,6 +143,15 @@ export function SupportWidget({ appKey: givenKey, initialUser, waitForParent, te
   const [appKey, setAppKey] = React.useState(preset?.key ?? givenKey);
   const [user, setUser] = React.useState<User | null>(initialUser);
   const [s, setS] = React.useState<Session | null>(preset?.session ?? null);
+  // "Share your phone number" was answered with "Not now" on this phone.
+  const [phoneAsked, setPhoneAsked] = React.useState(true);
+  React.useEffect(() => {
+    try {
+      setPhoneAsked(localStorage.getItem("myseed-support-phone-asked") === "1");
+    } catch {
+      setPhoneAsked(false);
+    }
+  }, []);
   const [error, setError] = React.useState<string | null>(null);
   const [tickets, setTickets] = React.useState<Ticket[]>([]);
   const [calls, setCalls] = React.useState<CallRecord[]>([]);
@@ -381,29 +393,90 @@ export function SupportWidget({ appKey: givenKey, initialUser, waitForParent, te
           </p>
         </header>
       ) : (
+        page.startsWith("t:") ? (
+          // A conversation, laid out like a chat app's (Telegram): back, the team with its status, then call and more.
+          <header className="sticky top-0 z-10 flex items-center gap-2 px-2.5 pt-2.5 pb-1.5" data-header="page" data-chat-header>
+            {stack.length > 1 && !own && (
+              <button type="button" aria-label={w.back} className="glass flex size-11 shrink-0 items-center justify-center rounded-full text-foreground active:scale-95" onClick={back}>
+                <ArrowLeftIcon className="size-5" />
+              </button>
+            )}
+            <div className="glass flex h-11 min-w-0 flex-1 items-center gap-2.5 rounded-full pr-4 pl-1.5">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-full text-sm font-semibold text-white" style={{ background: color }} aria-hidden>
+                {(s.app.name || "S").slice(0, 1).toUpperCase()}
+              </span>
+              <span className="min-w-0 leading-tight">
+                <span className="block truncate text-[15px] font-semibold">
+                  {s.app.name} {w.support}
+                </span>
+                <span className={cn("block truncate text-xs", s.online ? "text-[#16a34a]" : "text-muted-foreground")}>{s.online ? w.online : am ? "በቅርቡ ይመልሳል" : "replies soon"}</span>
+              </span>
+            </div>
+            <div className="glass flex h-11 shrink-0 items-center gap-0.5 rounded-full px-1">
+              {s.channels?.calls !== false && s.callEngine?.engine !== "phone" && !callBusy && (
+                <button
+                  type="button"
+                  aria-label={w.callTitle}
+                  title={w.callTitle}
+                  className="flex size-9 items-center justify-center rounded-full text-[#16a34a] active:scale-90"
+                  onClick={() => window.dispatchEvent(new Event(CALL_EVENT))}
+                  data-call-us
+                >
+                  <PhoneIcon className="size-[19px]" />
+                </button>
+              )}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button type="button" aria-label={am ? "ተጨማሪ" : "More"} className="flex size-9 items-center justify-center rounded-full active:scale-90" data-chat-menu>
+                    <EllipsisVerticalIcon className="size-5" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-60">
+                  {s.channels?.calls !== false && s.callEngine?.engine !== "phone" && (
+                    <DropdownMenuItem onSelect={() => window.dispatchEvent(new Event(CALL_EVENT))} disabled={callBusy}>
+                      <PhoneIcon /> {w.callTitle}
+                    </DropdownMenuItem>
+                  )}
+                  {s.channels?.calls !== false && (
+                    <DropdownMenuItem onSelect={() => go("calls")}>
+                      <PhoneCallIcon /> {am ? "መልሰው ይደውሉልኝ" : "Call me back"}
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuItem onSelect={() => go("faq")}>
+                    <BookOpenIcon /> {w.faq}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => setLang(am ? "en" : "am")}>
+                    <LanguagesIcon /> {am ? "English" : "አማርኛ"}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          </header>
+        ) : (
         <header className="glass glass-strong sticky top-0 z-10 flex items-center gap-2 px-3 py-2.5" data-header="page">
-          {stack.length > 1 && !own && (
-            <button type="button" aria-label={w.back} className="-ml-1 rounded-full p-1.5 text-primary hover:bg-muted" onClick={back}>
-              <ArrowLeftIcon className="size-5" />
-            </button>
-          )}
-          <p className="min-w-0 flex-1 truncate text-[17px] font-semibold">{title ?? `${s.app.name} ${w.support}`}</p>
-          {/* In a conversation: call from here, as in a chat app (calls.tsx, CallButton compact). */}
-          {page.startsWith("t:") && s.channels?.calls !== false && s.callEngine?.engine !== "phone" && !callBusy && (
-            <button
-              type="button"
-              aria-label={s.online ? w.callTitle : am ? "መልሰው ይደውሉልኝ" : "Call me back"}
-              title={s.online ? w.callTitle : am ? "መልሰው ይደውሉልኝ" : "Call me back"}
-              className="glass relative flex size-10 shrink-0 items-center justify-center rounded-full text-[#16a34a] transition-transform active:scale-90"
-              onClick={() => window.dispatchEvent(new Event(CALL_EVENT))}
-              data-call-us
-            >
-              <PhoneIcon className="size-[18px]" />
-              {s.online && <span aria-hidden className="absolute top-1.5 right-1.5 size-2 rounded-full bg-[#16a34a] ring-2 ring-background" />}
-            </button>
-          )}
-          {langButton}
-        </header>
+            {stack.length > 1 && !own && (
+              <button type="button" aria-label={w.back} className="-ml-1 rounded-full p-1.5 text-primary hover:bg-muted" onClick={back}>
+                <ArrowLeftIcon className="size-5" />
+              </button>
+            )}
+            <p className="min-w-0 flex-1 truncate text-[17px] font-semibold">{title ?? `${s.app.name} ${w.support}`}</p>
+            {/* In a conversation: call from here, as in a chat app (calls.tsx, CallButton compact). */}
+            {page.startsWith("t:") && s.channels?.calls !== false && s.callEngine?.engine !== "phone" && !callBusy && (
+              <button
+                type="button"
+                aria-label={s.online ? w.callTitle : am ? "መልሰው ይደውሉልኝ" : "Call me back"}
+                title={s.online ? w.callTitle : am ? "መልሰው ይደውሉልኝ" : "Call me back"}
+                className="glass relative flex size-10 shrink-0 items-center justify-center rounded-full text-[#16a34a] transition-transform active:scale-90"
+                onClick={() => window.dispatchEvent(new Event(CALL_EVENT))}
+                data-call-us
+              >
+                <PhoneIcon className="size-[18px]" />
+                {s.online && <span aria-hidden className="absolute top-1.5 right-1.5 size-2 rounded-full bg-[#16a34a] ring-2 ring-background" />}
+              </button>
+            )}
+            {langButton}
+          </header>
+        )
       )}
       <CallLayer api={api} s={s} openedForCall={incomingCall} onBusy={setCallBusy}>
         <main className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
@@ -430,6 +503,26 @@ export function SupportWidget({ appKey: givenKey, initialUser, waitForParent, te
                 <Tile icon={MessageCircleIcon} tint="#2563eb" label={w.chats} sub={openTickets.length ? `${openTickets.length} ${w.active.toLowerCase()}` : w.history} onClick={() => go("chats")} data-quick="chats" />
                 <Tile icon={BookOpenIcon} tint="#e8590c" label={w.faq} sub={am ? "መልሶች" : "Answers"} onClick={() => go("faq")} data-quick="faq" />
               </div>
+              {/* First visit: share the phone number once (Telegram's one-tap share), so nobody types it for a call-back. */}
+              {!s.customer.phone && !phoneAsked && (
+                <div className="glass space-y-2 rounded-[calc(var(--radius)+8px)] p-3" data-share-phone-card>
+                  <p className="text-sm font-semibold">{am ? "ስልክ ቁጥርዎን ያጋሩ" : "Share your phone number"}</p>
+                  <p className="text-xs text-muted-foreground">{am ? "መልሰን ለመደወል እና መለያዎን ለማግኘት። አንድ ጊዜ ብቻ።" : "So we can call you back and find your account. Only once."}</p>
+                  <SharePhone api={api} color={color} onShared={(phone) => setS((cur) => (cur ? { ...cur, customer: { ...cur.customer, phone } } : cur))} />
+                  <button
+                    type="button"
+                    className="text-xs text-muted-foreground underline underline-offset-2"
+                    onClick={() => {
+                      setPhoneAsked(true);
+                      try {
+                        localStorage.setItem("myseed-support-phone-asked", "1");
+                      } catch {}
+                    }}
+                  >
+                    {am ? "አሁን አይደለም" : "Not now"}
+                  </button>
+                </div>
+              )}
               {!!s.content?.topics.length && (
                 <section className="space-y-2" aria-label={w.topics}>
                   <p className="px-1 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">{w.topics}</p>

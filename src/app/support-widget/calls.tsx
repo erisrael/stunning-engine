@@ -10,6 +10,7 @@ import { ProximityShade, RouteToggle, useAudioRoute } from "@/components/app/aud
 import { Input } from "@/components/ui/input";
 import type { IvrScreen } from "@/lib/support-ivr";
 import type { Api, Session } from "./widget";
+import { shareTelegramPhone } from "./tg";
 import { gathered, trickle } from "@/lib/call-ice";
 
 // Telegram's Mini App controls used during a call (each only where this Telegram version has it).
@@ -823,8 +824,8 @@ function VoiceMessage({ api, sessionId, maxSec, color, prompt, onClose }: { api:
 }
 
 // "Ask us to call you": a phone number, and a waiting call-back for the team.
-function CallbackForm({ api, ticketId, color, onClose }: { api: Api; ticketId: string | null; color: string; onClose: () => void }) {
-  const [phone, setPhone] = React.useState("");
+function CallbackForm({ api, ticketId, color, onClose, knownPhone = null }: { api: Api; ticketId: string | null; color: string; onClose: () => void; knownPhone?: string | null }) {
+  const [phone, setPhone] = React.useState(knownPhone ?? "");
   const [msg, setMsg] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
   return (
@@ -833,8 +834,9 @@ function CallbackForm({ api, ticketId, color, onClose }: { api: Api; ticketId: s
         <p>{msg}</p>
       ) : (
         <>
-          <p>Leave your number and we will call you.</p>
-          <Input aria-label="Your phone number" inputMode="tel" placeholder="+251 9..." value={phone} onChange={(e) => setPhone(e.target.value)} />
+          <p>{phone ? "We will call you on this number." : "Share your number and we will call you."}</p>
+          <SharePhone api={api} color={color} onShared={setPhone} compact />
+          <Input aria-label="Your phone number" type="tel" inputMode="tel" autoComplete="tel" placeholder="+251 9..." value={phone} onChange={(e) => setPhone(e.target.value)} />
         </>
       )}
       <div className="flex gap-2">
@@ -867,6 +869,55 @@ function CallbackForm({ api, ticketId, color, onClose }: { api: Api; ticketId: s
   );
 }
 
+// "Share my phone number": in Telegram its own one-tap prompt; elsewhere the phone's number from autofill. Saved
+// on the customer (POST phone), so call-backs and the agents have it and nobody types it again.
+export function SharePhone({ api, color, onShared, compact = false }: { api: Api; color: string; onShared: (phone: string) => void; compact?: boolean }) {
+  const [busy, setBusy] = React.useState(false);
+  const [typed, setTyped] = React.useState("");
+  const [err, setErr] = React.useState<string | null>(null);
+  const tg = typeof window !== "undefined" && !!(window as unknown as { Telegram?: { WebApp?: { requestContact?: unknown } } }).Telegram?.WebApp?.requestContact;
+  const save = async (n: string) => {
+    setBusy(true);
+    setErr(null);
+    try {
+      const r = await api<{ phone: string }>("phone", { phone: n });
+      onShared(r.phone);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Could not save the number.");
+    }
+    setBusy(false);
+  };
+  if (tg)
+    return (
+      <div className="space-y-1">
+        <Button
+          size={compact ? "sm" : "default"}
+          className="w-full text-white"
+          style={{ background: color }}
+          disabled={busy}
+          onClick={async () => {
+            const n = await shareTelegramPhone();
+            if (n) await save(n);
+          }}
+          data-share-phone
+        >
+          <PhoneIcon /> Share my phone number
+        </Button>
+        {err && <p className="text-xs text-[#D93025]">{err}</p>}
+      </div>
+    );
+  if (compact) return null;
+  return (
+    <form className="flex gap-2" onSubmit={(e) => (e.preventDefault(), void save(typed))}>
+      <Input aria-label="Your phone number" type="tel" inputMode="tel" autoComplete="tel" placeholder="+251 9..." value={typed} onChange={(e) => setTyped(e.target.value)} className="flex-1" />
+      <Button type="submit" className="text-white" style={{ background: color }} disabled={busy || typed.trim().length < 9} data-share-phone>
+        Save
+      </Button>
+      {err && <p className="text-xs text-[#D93025]">{err}</p>}
+    </form>
+  );
+}
+
 // Calling an agent: the browser asks for the microphone, the call rings in the desk, and the agent answers there.
 // When the system takes calls on a phone number instead, the number and "Ask us to call you".
 type Call = ReturnType<typeof useCustomerCall>;
@@ -882,7 +933,8 @@ export function CallButton({ api, s, ticketId, color, onTicket, lang = "en", com
   const start = React.useRef<() => void>(() => {});
   start.current = () => {
     if (c.state !== "idle" || c.ivr) return;
-    if (!s.online) return setMode("callback");
+    // A closed line: ask to be called back; otherwise call and wait in the line.
+    if (s.schedule && !s.schedule.status.open) return setMode("callback");
     if (s.recordCalls) return setMode("consent");
     void c.begin({ ticketId, consent: true, onTicket, lang });
   };
@@ -895,7 +947,7 @@ export function CallButton({ api, s, ticketId, color, onTicket, lang = "en", com
   if (s.channels?.calls === false) return null;
   if (s.callEngine?.engine === "phone")
     return mode === "callback" ? (
-      <CallbackForm api={api} ticketId={ticketId} color={color} onClose={() => setMode("idle")} />
+      <CallbackForm api={api} ticketId={ticketId} color={color} knownPhone={s.customer.phone ?? null} onClose={() => setMode("idle")} />
     ) : (
       <div className="flex gap-2" data-call-phone-engine>
         {s.callEngine.phone && (
@@ -910,18 +962,18 @@ export function CallButton({ api, s, ticketId, color, onTicket, lang = "en", com
         </Button>
       </div>
     );
-  if (c.state === "idle" && mode === "callback") return <CallbackForm api={api} ticketId={ticketId} color={color} onClose={() => setMode("idle")} />;
+  if (c.state === "idle" && mode === "callback") return <CallbackForm api={api} ticketId={ticketId} color={color} knownPhone={s.customer.phone ?? null} onClose={() => setMode("idle")} />;
   if (c.ivr) return null;
   if (c.state === "idle" && mode === "idle" && compact) return null;
   if (c.state === "idle" && mode === "idle")
     return (
       <div className="flex gap-2">
-        {s.online && (
+        {!(s.schedule && !s.schedule.status.open) && (
           <Button variant="outline" className="flex-1" onClick={() => (s.recordCalls ? setMode("consent") : void c.begin({ ticketId, consent: true, onTicket, lang }))} data-call-us>
             <PhoneIcon /> Call us
           </Button>
         )}
-        <Button variant="ghost" className={s.online ? "" : "w-full"} onClick={() => setMode("callback")} data-ask-callback>
+        <Button variant="ghost" className={!(s.schedule && !s.schedule.status.open) ? "" : "w-full"} onClick={() => setMode("callback")} data-ask-callback>
           Call me back
         </Button>
       </div>
@@ -1050,7 +1102,7 @@ export function CallLayer({ api, s, children, openedForCall = false, onBusy }: {
           </div>
         </div>
       )}
-      {askBack && <div className="px-4 pt-3"><CallbackForm api={api} ticketId={null} color={s.app.color ?? "#1A73E8"} onClose={() => setAskBack(false)} /></div>}
+      {askBack && <div className="px-4 pt-3"><CallbackForm api={api} ticketId={null} color={s.app.color ?? "#1A73E8"} knownPhone={s.customer.phone ?? null} onClose={() => setAskBack(false)} /></div>}
       {idle && finding && !ring && (
         <div className="border-b px-4 py-3 text-sm" data-call-finding>Connecting you to the call…</div>
       )}

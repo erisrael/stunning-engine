@@ -1184,7 +1184,8 @@ async function expireRinging() {
     await run("UPDATE sup_calls SET ring_queue = ?, ring_stage = 2 WHERE status = 'ringing' AND ring_stage = 1 AND direction = 'inbound' AND kind = 'web' AND started_at < ?", cfg.callOverflowQueue, new Date(Date.now() - 2 * esc).toISOString());
   // A queued call waits as long as its queue allows (then overflows once); other calls ring for ringSeconds.
   const Q = await import("./support-queues");
-  const queued = await Q.overflowWaiting(cfg.ringSeconds);
+  // A caller in a line waits five minutes unless the queue sets its own longest wait.
+  const queued = await Q.overflowWaiting(Math.max(cfg.ringSeconds, 300));
   const old = await all<{ id: string; ticket_id: string | null; direction: string; kind: string; customer_id: string | null; started_at: string; queue_id: string | null }>(
     `SELECT id, ticket_id, direction, kind, customer_id, started_at, COALESCE(ring_queue, queue_id) AS queue_id FROM sup_calls WHERE status = 'ringing' AND (
        (started_at < ? AND NOT (direction = 'inbound' AND kind = 'web' AND ring_stage <> 9 AND COALESCE(ring_queue, queue_id) IS NOT NULL) AND NOT (direction = 'outbound' AND kind = 'web'))

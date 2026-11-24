@@ -544,6 +544,23 @@ export function DialButtons({ ticketId, customer, number, phone }: { ticketId: s
     const d = r.data as { callId: string; phone: string };
     start({ mode: "phone", callId: d.callId, phone: d.phone, label: `${customer ?? "Customer"} · #${number}`, ticketId });
   };
+  // "Call again" on a past call in the conversation: the same way again (a phone call to their number, else the app).
+  const again = React.useRef<(kind: string) => void>(() => {});
+  again.current = (kind: string) => {
+    if (active) return void toast.message("Finish the current call first.");
+    if (kind === "phone" && tel) return void byPhone();
+    if (info?.inApp && info.online) return start({ mode: "dial", ticketId, customer, number });
+    if (tel) return void byPhone();
+    toast.error(info?.inApp ? "The customer does not have the app open now. Write to them, or call their phone." : "No way to call this customer yet.");
+  };
+  React.useEffect(() => {
+    const on = (e: Event) => {
+      const d = (e as CustomEvent<{ ticketId: string; kind: string }>).detail;
+      if (d?.ticketId === ticketId) again.current(d.kind);
+    };
+    window.addEventListener("myseed:desk-call-again", on);
+    return () => window.removeEventListener("myseed:desk-call-again", on);
+  }, [ticketId]);
   return (
     <>
       {info?.inApp && (

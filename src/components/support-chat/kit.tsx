@@ -22,6 +22,7 @@ import {
   PaperclipIcon,
   PauseIcon,
   PhoneIncomingIcon,
+  PhoneIcon,
   PhoneMissedIcon,
   PhoneOutgoingIcon,
   PlayIcon,
@@ -521,7 +522,7 @@ function Actions({ m, w, onReply, onReact }: { m: KitMsg; w: KitWords; onReply?:
   );
 }
 
-function CallItem({ c, w }: { c: KitCall; w: KitWords }) {
+function CallItem({ c, w, onAgain }: { c: KitCall; w: KitWords; onAgain?: (c: KitCall) => void }) {
   const missed = ["missed", "declined", "failed"].includes(c.status);
   const Icon = missed ? PhoneMissedIcon : c.direction === "outbound" ? PhoneOutgoingIcon : PhoneIncomingIcon;
   const label = c.status === "callback" ? w.call.callback! : missed ? (w.call[c.status] ?? w.call.missed!) : c.status === "ringing" ? w.call.ringing! : c.status === "answered" ? w.call.answered! : c.direction === "outbound" ? w.call.outbound! : w.call.inbound!;
@@ -543,6 +544,19 @@ function CallItem({ c, w }: { c: KitCall; w: KitWords }) {
           </span>
         </span>
         {c.recordingUrl && <audio controls preload="none" src={c.recordingUrl} className="h-8 w-48" data-recording-player />}
+        {/* Call again from a past call, as in a phone's recent calls. */}
+        {onAgain && !["ringing", "answered"].includes(c.status) && (
+          <button
+            type="button"
+            onClick={() => onAgain(c)}
+            title="Call again"
+            aria-label="Call again"
+            className="ml-1 flex size-9 shrink-0 items-center justify-center rounded-full bg-[#16a34a] text-white shadow-sm transition-transform active:scale-90"
+            data-call-again
+          >
+            <PhoneIcon className="size-4" />
+          </button>
+        )}
       </div>
     </div>
   );
@@ -564,8 +578,11 @@ export function ChatTimeline({
   className,
   empty,
   menu,
+  onCallAgain,
 }: {
   menu?: (m: KitMsg) => KitMenuItem[];
+  /** A past call's "Call again" button (both sides of support chat). */
+  onCallAgain?: (c: KitCall) => void;
   messages: KitMsg[];
   calls?: KitCall[];
   accent?: string;
@@ -654,7 +671,7 @@ export function ChatTimeline({
             return (
               <React.Fragment key={`c-${it.c.id}`}>
                 {sep}
-                <CallItem c={it.c} w={w} />
+                <CallItem c={it.c} w={w} onAgain={onCallAgain} />
               </React.Fragment>
             );
           const m = it.m;

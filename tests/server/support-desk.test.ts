@@ -128,11 +128,15 @@ async function main() {
   check("other agents cannot listen", !!(await throws(() => sd.readRecording(abel, call.callId))));
   check("listening is logged", !!(await get("SELECT 1 AS x FROM sup_activity WHERE kind = 'recording_played' AND user_id = ?", liya.id)));
   const missed = await sd.customerStartCall(A, s1.token, { offer: '{"type":"offer"}', consent: true });
-  await run("UPDATE sup_calls SET started_at = ? WHERE id = ?", new Date(Date.now() - 60e3).toISOString(), missed.callId);
+  // A caller in a line waits five minutes unless the queue says otherwise.
+  await run("UPDATE sup_calls SET started_at = ? WHERE id = ?", new Date(Date.now() - 360e3).toISOString(), missed.callId);
   check("unanswered calls are missed", (await sd.customerPollCall(A, s1.token, missed.callId)).status === "missed");
   await sd.setAgentStatus(abel, "offline");
   await sd.setAgentStatus(sara, "offline");
-  check("nobody online: the call is refused with the away message", !!(await throws(() => sd.customerStartCall(A, s1.token, { offer: "{}", consent: true }))));
+  // Nobody online is not a refusal: the caller waits in line (hearing the waiting message) until an agent is free.
+  const waits = await sd.customerStartCall(A, s1.token, { offer: '{"type":"offer"}', consent: true });
+  check("nobody online: the caller waits in line instead of being turned away", (await sd.customerPollCall(A, s1.token, waits.callId)).status === "ringing");
+  await sd.customerEndCall(A, s1.token, waits.callId);
 
   // Monitoring.
   const today = new Date().toISOString().slice(0, 10);

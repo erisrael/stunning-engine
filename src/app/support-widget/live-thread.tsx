@@ -233,6 +233,7 @@ export function LiveThread({ api, appKey, token, id, color, lang, online: startO
       <ChatTimeline
         messages={kitMsgs}
         calls={calls.map((c) => ({ ...c }))}
+        onCallAgain={done ? undefined : () => window.dispatchEvent(new Event("myseed:support-call"))}
         accent={color}
         typing={!done ? live?.typing : null}
         words={kw}

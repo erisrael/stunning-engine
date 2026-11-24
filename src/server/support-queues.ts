@@ -174,13 +174,14 @@ export async function waitingIn(queueId: string) {
 // Where a new call goes: the queue if it is open, has room and someone online; else its overflow queue (one step);
 // else it is refused with the reason, and the caller is offered a call-back.
 export async function admitCall(queueId: string | null): Promise<{ queueId: string | null; overflowFrom?: string; refused?: "closed" | "full" | "nobody" }> {
-  if (!queueId) return (await anyoneOnline(null)) ? { queueId: null } : { queueId: null, refused: "nobody" };
+  // Nobody free yet is not a refusal: the caller waits in the line (with the waiting message) until an agent is
+  // free or comes online, or the line's waiting time runs out. Only a closed or full line turns a caller away.
+  if (!queueId) return { queueId: null };
   const check = async (id: string): Promise<null | "closed" | "full" | "nobody"> => {
     const s = await queueSettings(id);
     if (!s) return "nobody";
     if (!openAt(s.activeHours, nowIso())) return "closed";
     if (s.maxSize && (await waitingIn(id)) >= s.maxSize) return "full";
-    if (!(await anyoneOnline(id))) return "nobody";
     return null;
   };
   const why = await check(queueId);

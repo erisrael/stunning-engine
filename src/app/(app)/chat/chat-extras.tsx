@@ -818,6 +818,49 @@ function InAppCallCard({ meta, mine, groupId }: { meta: Record<string, unknown>;
   );
 }
 
+// A group call's record in the chat: Join while it goes on; when it has ended, Call again starts the group's call anew.
+function GroupCallAction({ url, media, groupId, mine }: { url: string; media: "audio" | "video"; groupId: string; mine: boolean }) {
+  const id = url.slice("/call/".length);
+  const [live, setLive] = React.useState<boolean | null>(null);
+  React.useEffect(() => {
+    let stop = false;
+    void fetch("/api/calls/group", { method: "POST", body: JSON.stringify({ op: "active", groupId }) })
+      .then((x) => x.json() as Promise<{ ok: boolean; data?: { id: string } | null }>)
+      .then((r) => !stop && setLive(!!r.ok && r.data?.id === id))
+      .catch(() => !stop && setLive(false));
+    return () => {
+      stop = true;
+    };
+  }, [groupId, id]);
+  if (live !== false)
+    return (
+      <Button size="xs" variant={mine ? "secondary" : "default"} asChild>
+        <a href={url} target="_blank" rel="noreferrer">
+          Join
+        </a>
+      </Button>
+    );
+  return (
+    <Button
+      size="xs"
+      variant={mine ? "secondary" : "outline"}
+      onClick={async () => {
+        const tab = window.open("about:blank", "_blank");
+        const r = await fetch("/api/calls/group", { method: "POST", body: JSON.stringify({ op: "start", groupId, media }) }).then((x) => x.json());
+        if (!r.ok) {
+          tab?.close();
+          return void toast.error(r.error);
+        }
+        if (tab) tab.location.href = `/call/${r.data.id}`;
+        else window.location.href = `/call/${r.data.id}`;
+      }}
+      data-group-call-again
+    >
+      {media === "video" ? <VideoIcon /> : <PhoneIcon />} Call again
+    </Button>
+  );
+}
+
 export function CallCard({ url, mine, provider, meta, groupId }: { url: string; mine: boolean; provider: string; meta?: Record<string, unknown> | null; groupId: string }) {
   if (provider === "inapp" && meta) return <InAppCallCard meta={meta} mine={mine} groupId={groupId} />;
   const valid = /^https:\/\/(meet\.jit\.si|meet\.google\.com)\//.test(url) || (provider === "group" && /^\/call\/gcl_[a-z0-9]+$/.test(url));
@@ -830,13 +873,64 @@ export function CallCard({ url, mine, provider, meta, groupId }: { url: string; 
         <span className="block text-sm font-medium">{provider === "group" ? (meta?.media === "video" ? "Group video call" : "Group voice call") : "Video call"}</span>
         <span className={cn("block truncate text-[11px]", mine ? "text-white/75" : "text-muted-foreground")}>{provider === "meet" ? "Google Meet" : provider === "group" ? "In the app, up to 4 people" : "Jitsi Meet"}</span>
       </span>
-      {valid && (
-        <Button size="xs" variant={mine ? "secondary" : "default"} asChild>
-          <a href={url} target="_blank" rel="noreferrer">
-            Join
-          </a>
-        </Button>
+      {valid && provider === "group" ? (
+        <GroupCallAction url={url} media={meta?.media === "video" ? "video" : "audio"} groupId={groupId} mine={mine} />
+      ) : (
+        valid && (
+          <Button size="xs" variant={mine ? "secondary" : "default"} asChild>
+            <a href={url} target="_blank" rel="noreferrer">
+              Join
+            </a>
+          </Button>
+        )
       )}
+    </div>
+  );
+}
+
+// A call going on in a group: a bar under the chat's header with who is in it and Join (checked every few seconds
+// while the chat is open and visible). Opens the call in its own tab, as starting one does.
+export function GroupCallBar({ groupId }: { groupId: string }) {
+  const [call, setCall] = React.useState<{ id: string; media: string; people: string[] } | null>(null);
+  React.useEffect(() => {
+    let stop = false;
+    const load = async () => {
+      if (document.visibilityState !== "visible") return;
+      const r = await fetch("/api/calls/group", { method: "POST", body: JSON.stringify({ op: "active", groupId }) })
+        .then((x) => x.json() as Promise<{ ok: boolean; data?: { id: string; media: string; people: string[] } | null }>)
+        .catch(() => null);
+      if (!stop && r?.ok) setCall(r.data ?? null);
+    };
+    void load();
+    const t = window.setInterval(load, 8000);
+    const vis = () => void load();
+    document.addEventListener("visibilitychange", vis);
+    return () => {
+      stop = true;
+      window.clearInterval(t);
+      document.removeEventListener("visibilitychange", vis);
+    };
+  }, [groupId]);
+  if (!call) return null;
+  const video = call.media === "video";
+  const names = call.people.slice(0, 3).join(", ") + (call.people.length > 3 ? ` +${call.people.length - 3}` : "");
+  return (
+    <div className="glass glass-strong relative mx-2 mt-2 flex items-center gap-3 rounded-2xl px-3 py-2" role="status" data-group-call-bar>
+      <span className="relative flex size-9 shrink-0 items-center justify-center rounded-full bg-[#16a34a] text-white">
+        {video ? <VideoIcon className="size-4" /> : <PhoneIcon className="size-4" />}
+        <span aria-hidden className="absolute inset-0 animate-ping rounded-full bg-[#16a34a]/40 motion-reduce:hidden" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-semibold">{video ? "Video call" : "Voice call"} going on</span>
+        <span className="block truncate text-xs text-muted-foreground">
+          {call.people.length} in the call · {names}
+        </span>
+      </span>
+      <Button size="sm" className="shrink-0 rounded-full bg-[#16a34a] text-white hover:bg-[#15803d]" asChild>
+        <a href={`/call/${call.id}`} target="_blank" rel="noreferrer" data-group-call-join>
+          Join
+        </a>
+      </Button>
     </div>
   );
 }
