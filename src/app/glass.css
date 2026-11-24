@@ -462,9 +462,17 @@
   [data-support-shell][data-ticket-open] > :first-child {
     display: none;
   }
-  :is([data-ticket-tools], [data-inbox-lists], [data-inbox] [aria-label="Filters"]) select {
+  /* Status and priority only, until More is tapped. */
+  [data-ticket-tools]:not([data-expanded]) > :not(select[aria-label="Status"]):not(select[aria-label="Priority"]):not([data-tools-more]) {
+    display: none !important;
+  }
+  [data-support-shell] select {
     font-size: 14px !important;
     height: 2rem;
+  }
+  [data-ticket-tools]:not([data-expanded]) > select {
+    flex: 1 1 0;
+    max-width: none;
   }
 }
 /* Computers: in the support desk and Team chat the reply box is at the bottom right, so the assistant's button sits

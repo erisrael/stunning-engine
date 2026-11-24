@@ -38,9 +38,15 @@ try {
   check("a bottom tab bar on phones", await page.locator("[data-mobile-nav]").isVisible() && (await page.locator("[data-mobile-tab]").count()) >= 4);
   const desc = page.locator("main main [data-detail]").first();
   check("long explanations are left out", (await desc.count()) > 0 && !(await desc.isVisible()));
-  await page.locator("[data-mobile-details]").click();
+  // The Details switch is under Tools on phones (the top bar keeps the page's name, search, alerts and the account).
+  check("a slim top bar on phones", (await page.locator("[data-mobile-title]").isVisible()) && !(await page.locator("[data-focus-open]").isVisible()));
+  await page.locator('[data-mobile-tab="Tools"]').click();
+  await page.locator("[data-mobile-details] button").click();
+  await page.keyboard.press("Escape");
   check("the Details switch shows them", await desc.isVisible());
-  await page.locator("[data-mobile-details]").click();
+  await page.locator('[data-mobile-tab="Tools"]').click();
+  await page.locator("[data-mobile-details] button").click();
+  await page.keyboard.press("Escape");
   await page.locator('[data-mobile-tab="More"]').click();
   check("More opens the full menu", await page.locator("[data-sidebar=sidebar]").first().isVisible());
   await page.keyboard.press("Escape");

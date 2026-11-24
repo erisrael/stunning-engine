@@ -93,7 +93,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </main>
         {await (async () => {
           const h = await homeDepartment(viewer);
-          return <MobileNav work={h ? { href: h.base, label: h.kind === "studio" ? "Studio" : "Work" } : (viewer.leads.length || viewer.roles.some((r) => ["recording", "editing", "uploading", "publication"].includes(r))) ? { href: "/my-work", label: "My work" } : null} chat={counts.chat} alerts={counts.notifications} approvals={counts.approvals} appName={(await (await import("@/server/identity")).identity()).shortName} />;
+          return <MobileNav work={h ? { href: h.base, label: h.kind === "studio" ? "Studio" : "Work" } : (viewer.leads.length || viewer.roles.some((r) => ["recording", "editing", "uploading", "publication"].includes(r))) ? { href: "/my-work", label: "My work" } : null} chat={counts.chat} alerts={counts.notifications} approvals={counts.approvals} appName={(await (await import("@/server/identity")).identity()).shortName} roles={viewer.roles} activeRole={viewer.activeRole} qrScan={await (async () => { const c = await (await import("@/server/attendance-capture")).captureConfig(); return c.methods.qr && !!c.methods.scanner; })()} fun={!viewer.previewBy && !viewer.mustChangePassword && !!(await (await import("@/server/fun")).funFor(viewer).catch(() => null))} />;
         })()}
         <ChatKeyBootstrap viewerId={viewer.id} />
         <StyleEffects />

@@ -17,6 +17,13 @@ type Detector = { detect(src: CanvasImageSource): Promise<{ rawValue: string }[]
 
 export function QrScanButton({ label = "Scan the QR", className, compact }: { label?: string; className?: string; compact?: boolean }) {
   const [open, setOpen] = React.useState(false);
+  // The top bar's scanner also opens from Tools on phones (mobile-nav.tsx).
+  React.useEffect(() => {
+    if (!compact) return;
+    const on = () => setOpen(true);
+    window.addEventListener("myseed:qr-scan", on);
+    return () => window.removeEventListener("myseed:qr-scan", on);
+  }, [compact]);
   return (
     <>
       {compact ? (

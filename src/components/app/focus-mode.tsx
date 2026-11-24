@@ -122,6 +122,13 @@ export function FocusMode() {
     toast("Focus ended");
   };
 
+  // Phones open it from Tools (mobile-nav.tsx).
+  React.useEffect(() => {
+    const open = () => (focus ? setFull(true) : setSetup(true));
+    window.addEventListener("myseed:focus", open);
+    return () => window.removeEventListener("myseed:focus", open);
+  }, [focus]);
+
   const pct = focus ? Math.min(100, Math.max(0, 100 - (left / (focus.minutes * 60000)) * 100)) : 0;
 
   return (
@@ -136,7 +143,7 @@ export function FocusMode() {
           <TimerIcon className={cn("size-3.5", focus.endsAt && "animate-pulse")} /> {fmt(left)}
         </button>
       ) : (
-        <Button variant="ghost" size="icon" aria-label="Focus mode" title="Focus mode: set a timer and work on one thing" onClick={() => (focus ? setFull(true) : setSetup(true))} data-focus-open>
+        <Button variant="ghost" size="icon" className="max-md:hidden" aria-label="Focus mode" title="Focus mode: set a timer and work on one thing" onClick={() => (focus ? setFull(true) : setSetup(true))} data-focus-open>
           <TimerIcon />
         </Button>
       )}

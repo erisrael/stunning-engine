@@ -8,7 +8,8 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { toast } from "sonner";
 import {
   BellIcon,
   BriefcaseIcon,
@@ -17,20 +18,25 @@ import {
   DownloadIcon,
   EyeIcon,
   EyeOffIcon,
+  Gamepad2Icon,
   HelpCircleIcon,
   HomeIcon,
   LayoutGridIcon,
   MenuIcon,
   MessageCircleIcon,
+  QrCodeIcon,
   SearchIcon,
   SettingsIcon,
   SparklesIcon,
+  TimerIcon,
   ZapIcon,
 } from "lucide-react";
 import { useSidebar } from "@/components/ui/sidebar";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import { InstallPrompt, useInstall } from "./install-app";
+import { switchRoleAction } from "@/app/actions/auth";
+import { ROLE_LABELS, type Role } from "@/lib/domain";
 
 const KEY = "myseed.mobile.details";
 
@@ -142,7 +148,30 @@ function Badge({ n, className }: { n: number; className?: string }) {
 // Phones and tablets (below 1024px): a floating Liquid Glass tab bar in Apple's style (iOS 26): up to five tabs, a
 // glass pill that slides to the chosen one, filled icons for the chosen tab, red badges, 44pt+ touch targets, and it
 // stays clear of the home indicator. Tools opens a glass sheet of everyday tools; More opens the full menu.
-export function MobileNav({ work, chat, alerts, approvals = 0, appName = "the app" }: { work: { href: string; label: string } | null; chat: number; alerts: number; approvals?: number; appName?: string }) {
+export function MobileNav({
+  work,
+  chat,
+  alerts,
+  approvals = 0,
+  appName = "the app",
+  roles = [],
+  activeRole,
+  qrScan = false,
+  fun = false,
+}: {
+  work: { href: string; label: string } | null;
+  chat: number;
+  alerts: number;
+  approvals?: number;
+  appName?: string;
+  roles?: Role[];
+  activeRole?: Role;
+  qrScan?: boolean;
+  fun?: boolean;
+}) {
+  const router = useRouter();
+  const [details, toggleDetails] = useDetails();
+  const [switching, startSwitch] = React.useTransition();
   const pathname = usePathname();
   const { setOpenMobile, openMobile } = useSidebar();
   const [tools, setTools] = React.useState(false);
@@ -159,7 +188,7 @@ export function MobileNav({ work, chat, alerts, approvals = 0, appName = "the ap
   ];
   // Out of the way during a presentation.
   if (/\/present$/.test(pathname)) return null;
-  const tiles: { label: string; icon: React.ComponentType<{ className?: string }>; href?: string; onClick?: () => void; badge?: number }[] = [
+  const tiles: { label: string; icon: React.ComponentType<{ className?: string }>; href?: string; onClick?: () => void; badge?: number; phoneOnly?: boolean }[] = [
     { label: "Alerts", icon: BellIcon, href: "/notifications", badge: alerts },
     { label: "Check in", icon: ClockIcon, href: "/attendance" },
     { label: "Search", icon: SearchIcon, onClick: () => (setTools(false), press({ key: "k", ctrlKey: true })) },
@@ -168,6 +197,11 @@ export function MobileNav({ work, chat, alerts, approvals = 0, appName = "the ap
     { label: "Routines", icon: ZapIcon, href: "/routines" },
     { label: "Help", icon: HelpCircleIcon, href: "/profile/help" },
     { label: "Settings", icon: SettingsIcon, href: "/preferences" },
+    // Moved here from the top bar on phones.
+    ...(qrScan ? [{ label: "Scan QR", icon: QrCodeIcon, onClick: () => (setTools(false), window.dispatchEvent(new Event("myseed:qr-scan"))) }] : []),
+    { label: "Focus", icon: TimerIcon, onClick: () => (setTools(false), window.dispatchEvent(new Event("myseed:focus"))) },
+    ...(fun ? [{ label: "Fun mode", icon: Gamepad2Icon, onClick: () => (setTools(false), window.dispatchEvent(new CustomEvent("myseed-fun", { detail: { toggle: true } }))) }] : []),
+    { label: details ? "Less detail" : "All details", icon: details ? EyeOffIcon : EyeIcon, onClick: toggleDetails, phoneOnly: true },
     ...(installMode ? [{ label: "Install app", icon: DownloadIcon, onClick: () => (setTools(false), void install()) }] : []),
   ];
   const toolsBadge = alerts + approvals;
@@ -230,6 +264,36 @@ export function MobileNav({ work, chat, alerts, approvals = 0, appName = "the ap
             <SheetTitle className="text-[22px] font-bold tracking-tight">Tools</SheetTitle>
             <SheetDescription className="sr-only">Everyday tools and your settings</SheetDescription>
           </SheetHeader>
+          {/* Your role (phones; the top bar has the switcher on bigger screens). */}
+          {roles.length > 1 && activeRole && (
+            <div className="px-4 pb-3 md:hidden" data-tools-role>
+              <p className="mb-1.5 text-[13px] font-medium text-[var(--ios-label-2)]">Viewing as</p>
+              <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Active role">
+                {roles.map((r) => (
+                  <button
+                    key={r}
+                    type="button"
+                    role="radio"
+                    aria-checked={r === activeRole}
+                    disabled={switching}
+                    onClick={() =>
+                      r !== activeRole &&
+                      startSwitch(async () => {
+                        const res = await switchRoleAction(r).catch(() => ({ ok: false as const, error: "The role could not be switched. Try again." }));
+                        if (!res.ok) return void toast.error(res.error);
+                        toast.success(`Now viewing as ${ROLE_LABELS[r] || r}`);
+                        setTools(false);
+                        router.push("/dashboard");
+                      })
+                    }
+                    className={cn("h-9 rounded-full px-3.5 text-[14px] font-medium transition-colors", r === activeRole ? "bg-primary text-primary-foreground" : "glass text-foreground", switching && "opacity-60")}
+                  >
+                    {ROLE_LABELS[r] || r}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           <ul className="grid grid-cols-4 gap-x-2 gap-y-3 px-4 pb-2 sm:grid-cols-5">
             {tiles.map((t) => {
               const inner = (
@@ -243,7 +307,7 @@ export function MobileNav({ work, chat, alerts, approvals = 0, appName = "the ap
               );
               const cls = "flex w-full flex-col items-center gap-1.5 rounded-2xl p-1 transition-transform active:scale-95";
               return (
-                <li key={t.label} data-tool={t.label}>
+                <li key={t.label} data-tool={t.label} className={cn(t.phoneOnly && "md:hidden")} data-mobile-details={t.phoneOnly ? "" : undefined}>
                   {t.href ? (
                     <Link href={t.href} className={cls} onClick={() => setTools(false)}>
                       {inner}
@@ -264,36 +328,23 @@ export function MobileNav({ work, chat, alerts, approvals = 0, appName = "the ap
   );
 }
 
-// The Details switch (phones only): compact by default.
-export function MobileDetails() {
+// The Details switch (phones only, under Tools): compact by default; the choice stays on the phone.
+function useDetails() {
   const [full, setFull] = React.useState(false);
   React.useEffect(() => {
-    let v = false;
     try {
-      v = localStorage.getItem(KEY) === "1";
+      setFull(localStorage.getItem(KEY) === "1");
     } catch {}
-    setFull(v);
   }, []);
   React.useEffect(() => {
     document.documentElement.classList.toggle("m-full", full);
   }, [full]);
-  return (
-    <button
-      type="button"
-      className="flex size-9 items-center justify-center rounded-md text-muted-foreground hover:bg-muted md:hidden"
-      aria-pressed={full}
-      aria-label={full ? "Show less detail" : "Show all details"}
-      title={full ? "Show less detail" : "Show all details"}
-      onClick={() => {
-        const v = !full;
-        setFull(v);
-        try {
-          localStorage.setItem(KEY, v ? "1" : "0");
-        } catch {}
-      }}
-      data-mobile-details
-    >
-      {full ? <EyeIcon className="size-4" /> : <EyeOffIcon className="size-4" />}
-    </button>
-  );
+  const toggle = () =>
+    setFull((v) => {
+      try {
+        localStorage.setItem(KEY, v ? "0" : "1");
+      } catch {}
+      return !v;
+    });
+  return [full, toggle] as const;
 }

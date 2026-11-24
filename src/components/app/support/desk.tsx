@@ -7,7 +7,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { AlertTriangleIcon, ArrowLeftIcon, ArchiveIcon, BookmarkIcon, CircleIcon, FlagIcon, ForwardIcon, InfoIcon, Loader2Icon, LockIcon, MessageSquareTextIcon, PencilIcon, PhoneCallIcon, PhoneIcon, PlusIcon, SearchIcon, SendIcon, Trash2Icon } from "lucide-react";
+import { AlertTriangleIcon, ChevronDownIcon, ArrowLeftIcon, ArchiveIcon, BookmarkIcon, CircleIcon, FlagIcon, ForwardIcon, InfoIcon, Loader2Icon, LockIcon, MessageSquareTextIcon, PencilIcon, PhoneCallIcon, PhoneIcon, PlusIcon, SearchIcon, SendIcon, Trash2Icon } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import * as SC from "@/app/actions/support-chat";
@@ -278,6 +278,7 @@ export function TicketView({ d, agents, queues, canned, me, lead, articles = [],
   // The customer details beside the conversation (wide screens): open on very wide screens, otherwise as the person
   // last left it, so the conversation gets the room. Narrower screens open them as a sheet.
   const [info, setInfoState] = React.useState(false);
+  const [toolsOpen, setToolsOpen] = React.useState(false);
   React.useEffect(() => {
     let v: string | null = null;
     try {
@@ -410,7 +411,7 @@ export function TicketView({ d, agents, queues, canned, me, lead, articles = [],
           </Button>
         </header>
         {/* The conversation's state and actions in one slim row; on small screens it wraps onto more lines. */}
-        <div className="flex flex-wrap items-center gap-1.5 border-b bg-muted/20 px-3 py-1.5 text-sm" data-ticket-tools>
+        <div className="flex flex-wrap items-center gap-1.5 border-b bg-muted/20 px-3 py-1.5 text-sm" data-ticket-tools data-expanded={toolsOpen ? "" : undefined}>
           <select aria-label="Status" className={sel} value={t.status} disabled={busy} onChange={(e) => act(() => A.setTicketStatusAction(t.id, e.target.value as TicketStatus), "Status changed")}>
             {TICKET_STATUSES.map((s) => (
               <option key={s} value={s}>
@@ -425,6 +426,10 @@ export function TicketView({ d, agents, queues, canned, me, lead, articles = [],
               </option>
             ))}
           </select>
+          {/* Phones: status and priority stay; queue, calls and actions fold under More. */}
+          <Button size="xs" variant="ghost" className="ml-auto shrink-0 md:hidden" aria-expanded={toolsOpen} onClick={() => setToolsOpen((v) => !v)} data-tools-more>
+            {toolsOpen ? "Less" : "More"} <ChevronDownIcon className={cn("transition-transform", toolsOpen && "rotate-180")} />
+          </Button>
           <select aria-label="Queue" className={sel} value={move?.queueId ?? t.queue_id ?? ""} disabled={busy} onChange={(e) => (e.target.value && e.target.value !== t.queue_id ? setMove({ queueId: e.target.value, note: move?.note ?? "" }) : setMove(null))}>
             <option value="" disabled={!!t.queue_id}>
               No queue

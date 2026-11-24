@@ -2,7 +2,6 @@
 
 import { FocusMode } from "./focus-mode";
 import { ICON_PACKS, MOTION_CHOICES } from "@/lib/icon-packs";
-import { MobileDetails } from "./mobile-nav";
 import { QrScanButton } from "@/components/app/attendance/qr-scanner";
 import * as React from "react";
 import Link from "next/link";
@@ -125,6 +124,13 @@ function crumb(p: string, parent?: string) {
 export function Topbar({ user, activeRole, unread, chatUnread, qrScan, fun = false, assistant = false }: { user: { name: string; email: string; roles: Role[]; avatar?: string | null }; activeRole: Role; unread: number; chatUnread: number; qrScan?: boolean; fun?: boolean; assistant?: boolean }) {
   const pathname = usePathname();
   const parts = pathname.split("/").filter(Boolean);
+  const phoneTitle = (() => {
+    const i = parts.length - 1;
+    if (i < 0) return "Home";
+    const p = parts[i]!;
+    if (p === "dashboard") return "Home";
+    return parts[i - 2] === "hr" && parts[i - 1] === "people" ? "Employee" : TITLES[p] ?? (parts[i - 1] === "items" ? "Item detail" : parts[i - 1] === "routines" ? "Routine" : (DEPT_VIEW_LABELS as Record<string, string>)[p] ?? crumb(p, parts[i - 1]));
+  })();
   const [searchOpen, setSearchOpen] = React.useState(false);
   const [bellOpen, setBellOpen] = React.useState(false);
   const [count, setCount] = React.useState(unread);
@@ -173,7 +179,11 @@ export function Topbar({ user, activeRole, unread, chatUnread, qrScan, fun = fal
 
   return (
     <header data-topbar className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b bg-background/85 px-3 backdrop-blur supports-[backdrop-filter]:bg-background/70 sm:px-4 no-print">
-      <Hint tip={NAV_TIPS["top.sidebar"]}><SidebarTrigger className="-ml-1" /></Hint>
+      <Hint tip={NAV_TIPS["top.sidebar"]}><SidebarTrigger className="-ml-1 max-md:hidden" /></Hint>
+      {/* Phones: the page's name, like an app's navigation bar (the menu is the More tab). */}
+      <span className="min-w-0 flex-1 truncate text-[17px] font-semibold tracking-tight md:hidden" data-mobile-title>
+        {phoneTitle}
+      </span>
       <Separator orientation="vertical" className="mr-1 hidden h-5 sm:block" />
       <Breadcrumb className="hidden min-w-0 md:block">
         <BreadcrumbList>
@@ -200,13 +210,19 @@ export function Topbar({ user, activeRole, unread, chatUnread, qrScan, fun = fal
           <kbd className="ml-auto hidden rounded border bg-muted px-1 font-mono text-[10px] lg:inline" aria-hidden>Ctrl K</kbd>
         </Button>
         </Hint>
-        <MobileDetails />
-        <RoleSwitcher roles={user.roles} active={activeRole} />
-        {qrScan && <QrScanButton compact />}
-        {fun && <FunLauncher />}
+        {/* Phones: the role, QR check-in, Fun mode, Focus, the assistant and the detail switch are under Tools. */}
+        <span className="contents max-md:hidden">
+          <RoleSwitcher roles={user.roles} active={activeRole} />
+        </span>
+        {qrScan && <QrScanButton compact className="max-md:hidden" />}
+        {fun && (
+          <span className="contents max-md:hidden">
+            <FunLauncher />
+          </span>
+        )}
         <FocusMode />
         {assistant && (
-          <Button variant="ghost" size="icon" aria-label="Assistant" title="Assistant (Alt+A)" onClick={() => window.dispatchEvent(new Event("myseed:assistant"))} data-assistant-toggle>
+          <Button variant="ghost" size="icon" className="max-md:hidden" aria-label="Assistant" title="Assistant (Alt+A)" onClick={() => window.dispatchEvent(new Event("myseed:assistant"))} data-assistant-toggle>
             <SparklesIcon className="text-[#9334E6] dark:text-[#C58AF9]" />
           </Button>
         )}
