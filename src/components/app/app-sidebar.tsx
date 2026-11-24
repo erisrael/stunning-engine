@@ -360,6 +360,7 @@ export function AppSidebar({
           { label: "Clean data", href: "/admin?tab=clean-data" },
           { label: "System & workspace", href: "/admin?tab=system" },
           { label: "Platform & health", href: "/admin/platform?tab=status" },
+          { label: "View as", href: "/admin/preview" },
         ]
       : []),
     ...(has("data.manage") && has("users.manage") ? [{ label: "Data manager", href: "/admin/data" }] : []),

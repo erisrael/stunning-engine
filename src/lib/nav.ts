@@ -1,5 +1,5 @@
 export const ADMIN_SIDEBAR_GROUPS = [
- {label:"People & roles",links:[["people","People"],["teams","Teams"],["departments","Departments"],["permissions","Roles & permissions"],["sidebar","Sidebar per role"],["access","Access"]]},
+ {label:"People & roles",links:[["people","People"],["teams","Teams"],["departments","Departments"],["permissions","Roles & permissions"],["sidebar","Sidebar per role"],["access","Access"],["/admin/preview","View as"]]},
  {label:"Security",links:[["signin","Sign-in policy"],["sessions","Sessions & devices"],["privacy","Privacy"]]},
  {label:"Communication & support",links:[["customer-support","Support setup"],["chat","Chat"],["feedback","Feedback"],["reports","Safety reports"]]},
  {label:"Integrations",links:[["/admin/integrations","Integrations hub"],["/admin/integrations?tab=monitor","Call monitor"],["/admin/integrations?tab=connections","Connections"],["external-apis","External APIs"],["legacy-cms","Noor CMS user access"],["chapa-access","Chapa user access"]]},

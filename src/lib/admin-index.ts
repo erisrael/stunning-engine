@@ -9,6 +9,7 @@ export const ADMIN_INDEX: AdminEntry[] = [
   { tab: "departments", group: "People & roles", label: "Departments", description: "Departments, custom departments and their people and presenters.", keywords: "department custom archive presenter teacher member", need: "users" },
   { tab: "permissions", group: "People & roles", label: "Roles & permissions", description: "What each role may do, as a matrix.", keywords: "role permission capability matrix rights manager admin", need: "users" },
   { tab: "access", group: "People & roles", label: "Access", description: "Grades and subjects each person works on.", keywords: "scope grade subject access limit", need: "users" },
+  { href: "/admin/preview", group: "People & roles", label: "View as", description: "See the app exactly as a role, department, team lead or person sees it. Read only.", keywords: "view as preview impersonate see as switch user role check what they see", need: "users" },
   { tab: "sidebar", group: "People & roles", label: "Sidebar", description: "Which sidebar entries each role sees by default.", keywords: "sidebar menu navigation hide show role default", need: "users" },
   // Security
   { tab: "signin", group: "Security", label: "Sign-in", description: "Sign-in methods, Google, invites, sign-up requests, two-step sign-in and the sign-in log.", keywords: "login google oauth passkey two-step 2fa mfa invite signup sign up request password policy profile fields log email confirm", need: "users" },

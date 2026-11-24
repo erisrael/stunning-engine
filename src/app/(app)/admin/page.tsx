@@ -1,7 +1,7 @@
 import { roleCatalog } from "@/server/role-catalog";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { DatabaseIcon, Settings2Icon } from "lucide-react";
+import { DatabaseIcon, EyeIcon, Settings2Icon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { requireViewer } from "@/server/auth";
 import { all, get, databaseLabel } from "@/server/db";
@@ -228,6 +228,13 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
               <Button asChild variant="outline" size="sm">
                 <Link href="/admin/data">
                   <DatabaseIcon /> Data manager
+                </Link>
+              </Button>
+            )}
+            {manageUsers && (
+              <Button asChild variant="outline" size="sm">
+                <Link href="/admin/preview" data-view-as-link>
+                  <EyeIcon /> View as
                 </Link>
               </Button>
             )}
