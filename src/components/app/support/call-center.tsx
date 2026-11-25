@@ -19,6 +19,8 @@ import { gathered, single, trickle } from "@/lib/call-ice";
 import { ProximityShade, RouteToggle, useAudioRoute } from "@/components/app/audio-route";
 import type { CallHistoryRow } from "@/server/support-calls";
 import { cn } from "@/lib/utils";
+import { IosPhone } from "@/components/app/ios-phone";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 export type Ring = { id: string; ticket_id: string; customer: string | null; number: number; started_at: string; offer: string; consent: number; kind?: string; host?: string | null; transferred?: number };
 export type ActiveCall = { mode: "answer"; ring: Ring } | { mode: "dial"; ticketId: string; customer: string | null; number: number } | { mode: "phone"; callId: string; phone: string; label: string; ticketId: string | null };
@@ -380,7 +382,83 @@ function CallPanel({ call, record, onDone, onEnded }: { call: Exclude<ActiveCall
   const live = phase === "live";
   // An agent on a phone: the earpiece or the loudspeaker, and the ear guard (the cheek presses nothing; audio-route).
   const route = useAudioRoute(live, "voice");
+  const mobile = useIsMobile();
+  const endCall = async () => (await hangUp(false), await A.agentEndCallAction(p.current.callId ?? "", notes || null), router.refresh());
+  const closeCall = async () => (notes && p.current.callId && (await A.agentEndCallAction(p.current.callId, notes)), onDone(), router.refresh());
+  // On a computer: the call is a phone in a call docked at the side (iOS style), the notes inside it; the page stays
+  // free. Phones keep the bar on top of the desk.
+  // The sound plays from the same elements whichever way the call is drawn (a window resized mid-call keeps it).
+  const sound = (
+    <>
+      <audio ref={audio} autoPlay data-call-audio />
+      <audio ref={staffAudio} autoPlay data-call-audio />
+    </>
+  );
+  if (!mobile)
+    return (
+      <>
+      {sound}
+      <IosPhone
+        data-call-panel={phase}
+        name={who}
+        subtitle={`#${number}`}
+        status={phase === "connecting" ? "Connecting…" : phase === "ringing" ? "Ringing in the customer's app…" : live ? (held ? `On hold · ${clock(secs)}` : clock(secs)) : "Call ended"}
+        pulse={phase === "connecting" || phase === "ringing"}
+        ended={phase === "ended"}
+        badges={
+          <>
+            {held && <span className="rounded-full bg-[#ff9f0a]/25 px-2 py-0.5 text-[#ffd60a]" data-on-hold>On hold</span>}
+            {muted && <span className="rounded-full bg-white/15 px-2 py-0.5" data-muted>Muted</span>}
+            {joined && <span className="rounded-full bg-white/15 px-2 py-0.5" data-conference>With {joined.name}</span>}
+            {asking && <span className="rounded-full bg-white/10 px-2 py-0.5">Asking {asking.name}…</span>}
+            {recState !== "off" && (
+              <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5", recState === "recording" ? "bg-[#ff3b30]/25 text-[#ff6961]" : "bg-white/10 text-white/70")} data-recording={recState}>
+                <MicIcon className="size-3" aria-hidden /> {recState === "recording" ? "Recording" : recState === "saving" ? "Saving…" : recState === "saved" ? "Saved" : "Not saved"}
+              </span>
+            )}
+          </>
+        }
+        controls={[
+          ...(live || phase === "ringing" ? [{ key: "mute", label: muted ? "Unmute" : "Mute", icon: muted ? <MicOffIcon /> : <MicIcon />, active: muted, onClick: toggleMute, data: { "data-mute": true } }] : []),
+          ...(live && !staffLeg ? [{ key: "hold", label: held ? "Resume" : "Hold", icon: held ? <PlayIcon /> : <PauseIcon />, active: held, disabled: busy, onClick: () => void toggleHold(), data: { "data-hold": true } }] : []),
+          ...(live && !staffLeg && !joined && !asking ? [{ key: "add", label: "Add", icon: <UserPlusIcon />, disabled: busy, onClick: () => void openPick("invite"), data: { "data-invite": true } }] : []),
+          ...(live && !staffLeg && !joined ? [{ key: "transfer", label: "Transfer", icon: <ArrowRightLeftIcon />, disabled: busy, onClick: () => void openPick("transfer"), data: { "data-transfer-call": true } }] : []),
+          ...(live && !staffLeg && joined && p.current.staff ? [{ key: "handover", label: `To ${joined.name}`, icon: <PhoneForwardedIcon />, disabled: busy, onClick: () => void transfer(p.current.staff!.userId, ""), data: { "data-hand-over": true } }] : []),
+          ...(live && !staffLeg && joined && p.current.staff ? [{ key: "remove", label: "Remove", icon: <XIcon />, disabled: busy, onClick: () => void dropStaff(true) }] : []),
+        ]}
+        endLabel={phase === "ended" ? "Done" : staffLeg ? "Leave" : "Hang up"}
+        onEnd={phase === "ended" ? (recState === "saving" ? undefined : () => void closeCall()) : () => void endCall()}
+        endData={phase === "ended" ? { "data-call-close": true } : { "data-hang-up": true }}
+      >
+        <ProximityShade near={route.near} locked={route.locked} />
+        {pick && (
+          <div className="space-y-2 rounded-2xl bg-white/10 p-2.5 text-xs" data-call-pick={pick}>
+            <p className="text-white/75">{pick === "invite" ? "Talk together first; then hand over or remove them." : "The caller goes straight to them; the ticket becomes theirs."}</p>
+            <select aria-label="Colleague" className="h-8 w-full rounded-lg border-0 bg-white/15 px-2 text-sm text-white [&>option]:text-zinc-900" value={target} onChange={(e) => setTarget(e.target.value)}>
+              {targets.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+            {pick === "transfer" && <input aria-label="Note for them" placeholder="Note for them" className="h-8 w-full rounded-lg bg-white/15 px-2 text-sm text-white placeholder:text-white/50" value={xferNote} onChange={(e) => setXferNote(e.target.value)} />}
+            <div className="flex gap-2">
+              <button type="button" className="h-8 flex-1 rounded-lg bg-[#34c759] font-medium text-white disabled:opacity-50" disabled={busy || !target} onClick={() => (pick === "invite" ? invite() : transfer(target, xferNote))} data-call-pick-go>
+                {busy ? "…" : pick === "invite" ? "Call them" : "Transfer"}
+              </button>
+              <button type="button" className="h-8 rounded-lg px-3 text-white/80 hover:bg-white/10" onClick={() => setPick(null)}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+        <textarea aria-label="Call notes" placeholder="Notes" rows={3} className="w-full resize-none rounded-2xl border-0 bg-white/10 px-3 py-2 text-sm text-white placeholder:text-white/45 focus:bg-white/15 focus:outline-none" value={notes} onChange={(e) => setNotes(e.target.value)} />
+      </IosPhone>
+      </>
+    );
   return (
+    <>
+    {sound}
     <Card className="border-[#188038]/40" data-call-panel={phase}>
       <ProximityShade near={route.near} locked={route.locked} />
       <CardContent className="space-y-2 py-3 text-sm">
@@ -401,8 +479,6 @@ function CallPanel({ call, record, onDone, onEnded }: { call: Exclude<ActiveCall
               <MicIcon className="size-3" aria-hidden /> {recState === "recording" ? "Recording" : recState === "saving" ? "Saving the recording…" : recState === "saved" ? "Recording saved" : "Recording failed"}
             </span>
           )}
-          <audio ref={audio} autoPlay data-call-audio />
-          <audio ref={staffAudio} autoPlay data-call-audio />
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
           {live && (
@@ -448,11 +524,11 @@ function CallPanel({ call, record, onDone, onEnded }: { call: Exclude<ActiveCall
           )}
           <Input aria-label="Call notes" placeholder="Notes" className="h-8 w-56" value={notes} onChange={(e) => setNotes(e.target.value)} />
           {phase !== "ended" ? (
-            <Button size="sm" variant="destructive" onClick={async () => (await hangUp(false), await A.agentEndCallAction(p.current.callId ?? "", notes || null), router.refresh())} data-hang-up>
+            <Button size="sm" variant="destructive" onClick={() => void endCall()} data-hang-up>
               <PhoneOffIcon /> {staffLeg ? "Leave" : "Hang up"}
             </Button>
           ) : (
-            <Button size="sm" variant="outline" disabled={recState === "saving"} onClick={async () => (notes && p.current.callId && (await A.agentEndCallAction(p.current.callId, notes)), onDone(), router.refresh())} data-call-close>
+            <Button size="sm" variant="outline" disabled={recState === "saving"} onClick={() => void closeCall()} data-call-close>
               Close
             </Button>
           )}
@@ -478,6 +554,7 @@ function CallPanel({ call, record, onDone, onEnded }: { call: Exclude<ActiveCall
         )}
       </CardContent>
     </Card>
+    </>
   );
 }
 

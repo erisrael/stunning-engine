@@ -112,10 +112,9 @@ try {
   tgp.on("pageerror", (e) => errors.push(e.message));
   await tgp.goto(`${base}/support-widget?tg=${encodeURIComponent(prep.bot)}#tgWebAppData=${encodeURIComponent(hanaData)}`);
   await tgp.locator("[data-page-home]").waitFor({ timeout: 15000 });
-  await tgp.waitForFunction(() => window.__tg.main.visible && window.__tg.main.text === "Ask a question", null, { timeout: 5000 }).catch(() => {});
-  const st1 = await tgp.evaluate(() => ({ main: window.__tg.main.visible, text: window.__tg.main.text, back: window.__tg.back.visible }));
-  check("in Telegram, Home's main action is Telegram's Main button", st1.main && st1.text === "Ask a question" && !st1.back && (await tgp.locator("[data-new-question]").count()) === 0, st1);
-  await tgp.evaluate(() => window.__tg.main.clicks.at(-1)());
+  const st1 = await tgp.evaluate(() => ({ main: window.__tg.main.visible, back: window.__tg.back.visible }));
+  check("in Telegram, Home starts a conversation with + (no Ask a question Main button)", !st1.main && !st1.back && (await tgp.locator("[data-new-question]").count()) === 1, st1);
+  await tgp.locator("[data-new-question]").click();
   await tgp.locator("[data-page-new]").waitFor();
   await tgp.waitForFunction(() => window.__tg.main.text === "Send" && window.__tg.back.visible, null, { timeout: 5000 }).catch(() => {});
   const st2 = await tgp.evaluate(() => ({ text: window.__tg.main.text, back: window.__tg.back.visible }));

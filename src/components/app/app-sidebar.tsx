@@ -65,6 +65,7 @@ import { CompassIcon,
   HeadsetIcon,
   PhoneCallIcon,
   ChevronDownIcon,
+  ChevronRightIcon,
   CalendarDaysIcon,
   LaptopIcon,
   AlertTriangleIcon,
@@ -88,10 +89,6 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarMenuSub,
-  SidebarMenuSubButton,
-  SidebarMenuSubItem,
-  SidebarRail,
   useSidebar,
 } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -324,7 +321,7 @@ export function AppSidebar({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const search = searchParams.toString();
-  const { setOpenMobile, isMobile, state } = useSidebar();
+  const { setOpenMobile, isMobile, state, toggleSidebar } = useSidebar();
   // Collapsed to icons on a desktop or tablet: group labels and sub-pages hide; the sub-pages show as tabs on top of the page.
   const iconOnly = state === "collapsed" && !isMobile;
   const [customizing, setCustomizing] = React.useState(false);
@@ -774,10 +771,12 @@ export function AppSidebar({
             const here = items.some((i) => isActive(i));
             const folded = !iconOnly && (openGroups.includes(`fold:${g.label}`) || (isMobile && !here && g !== groups[0] && !openGroups.includes(`open:${g.label}`)));
             const toggleGroup=()=>setOpenGroups(o=>[...o.filter(k=>k!==`fold:${g.label}`&&k!==`open:${g.label}`),`${folded?"open":"fold"}:${g.label}`]);
+            // A heading that only repeats its one entry (Production, Production) is left out.
+            const bare = items.length === 1 && items[0]!.label.toLowerCase() === g.label.toLowerCase();
             return (
               <SidebarGroup key={g.label} className="py-1" data-nav-group={g.label} data-folded={folded ? "1" : undefined}>
                 {iconOnly && g !== groups.find((x) => prune(x.items.filter((i) => allowed(i.cap))).length) && <div role="separator" aria-hidden className="mx-2 mb-1 h-px bg-sidebar-border" />}
-                {isMobile ? (
+                {bare ? null : isMobile ? (
                   <button
                     type="button"
                     className="flex h-9 w-full items-center justify-between px-2 text-[11px] font-semibold tracking-wide text-sidebar-foreground/85 uppercase"
@@ -803,12 +802,12 @@ export function AppSidebar({
                     {items.map((item) => {
                       const active = isActive(item);
                       const inSection = inSectionOf(item);
-                      const expanded = openGroups.includes(`item:${item.href}`) || (inSection && !openGroups.includes(`closed:${item.href}`));
                       const href = item.keepFilters ? item.href + scopeQueryString(search) : item.href;
                       const tip = NAV_TIPS[keyOf(item)] ?? NAV_TIPS[item.href.split("?")[0]!];
+                      // One line per entry: its pages are the tab bar at the top of the page (section-tabs.tsx), not a
+                      // second list here (they showed twice). Collapsed to the rail: the icon with its name under it.
                       return (
                         <SidebarMenuItem key={keyOf(item)}>
-                          {(
                           <div className="flex min-w-0 items-center gap-1" data-nav-row>
                           <SidebarMenuButton
                             asChild
@@ -823,36 +822,20 @@ export function AppSidebar({
                                 </div>
                               ),
                             }}
-                            className="h-8 min-w-0 flex-1 font-medium text-sidebar-foreground/85 data-[active=true]:bg-sidebar-accent data-[active=true]:font-semibold data-[active=true]:text-sidebar-accent-foreground"
+                            className="h-8 min-w-0 flex-1 font-medium text-sidebar-foreground/85 data-[active=true]:bg-sidebar-accent data-[active=true]:font-semibold data-[active=true]:text-sidebar-accent-foreground group-data-[collapsible=icon]:h-auto! group-data-[collapsible=icon]:w-full! group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:gap-1 group-data-[collapsible=icon]:px-0.5! group-data-[collapsible=icon]:py-1.5!"
                           >
-                            <NavLink href={href} onClick={close} className="flex w-full items-center">
+                            <NavLink href={href} onClick={close} className="relative flex w-full items-center">
                               <AppIcon icon={item.icon} name={brand[keyOf(item)]?.icon} tone={(brand[keyOf(item)]?.tone as Tone | null | undefined) ?? null} />
-                              <span className="min-w-0 flex-1 truncate">{item.label}</span>
-
+                              <span data-nav-label className="min-w-0 flex-1 truncate group-data-[collapsible=icon]:w-full group-data-[collapsible=icon]:flex-none group-data-[collapsible=icon]:text-center group-data-[collapsible=icon]:text-[10px] group-data-[collapsible=icon]:leading-tight group-data-[collapsible=icon]:font-medium">{item.label}</span>
+                              {iconOnly && !!item.badge && item.badge > 0 && <span aria-hidden className="absolute top-0.5 right-2 size-2 rounded-full bg-primary ring-2 ring-sidebar" />}
                             </NavLink>
                           </SidebarMenuButton>
-                          <div className="flex shrink-0 items-center gap-1 pr-1 group-data-[collapsible=icon]:hidden" data-nav-controls>
-                          {!!item.badge && item.badge>0 && <span data-sidebar="menu-badge" data-nav-count={item.badge} title={String(item.badge)} aria-label={`${item.label}: ${item.badge}`} className="pointer-events-none flex h-5 min-w-5 items-center justify-center rounded-full bg-primary/15 text-primary border border-primary/25 px-1.5 text-[10px] font-semibold tabular-nums shadow-xs">{item.badge>99?"99+":item.badge}</span>}
-                          {item.sub && <button type="button" aria-label={`${expanded?"Collapse":"Expand"} ${item.label}`} aria-expanded={expanded} className="flex size-7 shrink-0 items-center justify-center rounded-md hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-sidebar-ring" onClick={()=>setOpenGroups(o=>[...o.filter(k=>k!==`item:${item.href}`&&k!==`closed:${item.href}`),`${expanded?"closed":"item"}:${item.href}`])}><ChevronDownIcon className={cn("size-4 transition-transform",!expanded&&"-rotate-90")}/></button>}
-                          </div>
-                          </div>
+                          {!!item.badge && item.badge>0 && (
+                            <div className="flex shrink-0 items-center gap-1 pr-1 group-data-[collapsible=icon]:hidden" data-nav-controls>
+                              <span data-sidebar="menu-badge" data-nav-count={item.badge} title={String(item.badge)} aria-label={`${item.label}: ${item.badge}`} className="pointer-events-none flex h-5 min-w-5 items-center justify-center rounded-full bg-primary/15 text-primary border border-primary/25 px-1.5 text-[10px] font-semibold tabular-nums shadow-xs">{item.badge>99?"99+":item.badge}</span>
+                            </div>
                           )}
-                          {item.sub && expanded && !iconOnly && (
-                            <SidebarMenuSub>
-                              {item.sub.map((s) => {
-                                const on = subActive(s.href);
-                                return (
-                                  <SidebarMenuSubItem key={s.href}>
-                                    <SidebarMenuSubButton asChild isActive={on}>
-                                      <NavLink href={s.keepFilters?s.href+scopeQueryString(search):s.href} onClick={close}>
-                                        {s.label}
-                                      </NavLink>
-                                    </SidebarMenuSubButton>
-                                  </SidebarMenuSubItem>
-                                );
-                              })}
-                            </SidebarMenuSub>
-                          )}
+                          </div>
                         </SidebarMenuItem>
                       );
                     })}
@@ -883,7 +866,19 @@ export function AppSidebar({
           </div>
         </SidebarFooter>
       </TooltipProvider>
-      <SidebarRail />
+      {/* The slider handle on the sidebar's edge: collapse to the icon rail and open it again (also Ctrl+B). */}
+      {!isMobile && (
+        <button
+          type="button"
+          onClick={toggleSidebar}
+          aria-label={iconOnly ? "Open the sidebar" : "Collapse the sidebar"}
+          title={iconOnly ? "Open the sidebar (Ctrl+B)" : "Collapse the sidebar (Ctrl+B)"}
+          className="absolute top-1/2 -right-3 z-20 flex h-8 w-6 -translate-y-1/2 items-center justify-center rounded-md border border-sidebar-border bg-sidebar text-sidebar-foreground/70 shadow-sm transition hover:text-sidebar-foreground hover:shadow"
+          data-sidebar-slider
+        >
+          <ChevronRightIcon className={cn("size-4 transition-transform", !iconOnly && "rotate-180")} />
+        </button>
+      )}
       {customizing && (
         <CustomizeSidebar
           groups={groups.map((g) => ({ label: g.label, items: g.items.filter((i) => allowed(i.cap)).map((i) => ({ key: keyOf(i), label: i.label, locked: !!i.locked, byAdmin: !i.granted && sidebarHidden(i.href,roleHidden,i.id) })) }))}

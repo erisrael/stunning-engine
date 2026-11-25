@@ -322,7 +322,8 @@ export function SupportWidget({ appKey: givenKey, initialUser, waitForParent, te
   // Telegram's Back button while a page is open over a tab; its Main button for the page's main action.
   useBackButton(tg, stack.length > 1, back);
   const color = hex;
-  const mainText = callBusy ? null : page === "new" ? undefined : page === "home" || page === "chats" ? w.ask : null;
+  // Telegram's Main button only where it sends something (New conversation); + starts one elsewhere.
+  const mainText = callBusy ? null : page === "new" ? undefined : null;
   useMainButton(tg, mainText, () => (setTopic(null), go("new")), { color });
 
   if (error) return <p className="p-6 text-center text-sm text-muted-foreground">{error}</p>;
@@ -348,12 +349,12 @@ export function SupportWidget({ appKey: givenKey, initialUser, waitForParent, te
       data-ticket={t.id}
     />
   );
-  const askButton = !own && (
-    <Button className="h-11 w-full rounded-[calc(var(--radius)+6px)] text-[15px]" onClick={() => (setTopic(null), go("new"))} data-new-question>
-      <PlusIcon /> {w.ask}
-    </Button>
+  // + starts a conversation (home's welcome bar and Chats), instead of the Ask a question buttons.
+  const newButton = (
+    <button type="button" aria-label={w.newConv} title={w.newConv} className="flex size-9 shrink-0 items-center justify-center rounded-full bg-white/20 text-white transition active:scale-90" onClick={() => (setTopic(null), go("new"))} data-new-question>
+      <PlusIcon className="size-5" />
+    </button>
   );
-  const first = s.customer.name.split(" ")[0];
   // The built-in Telegram app is named after its channel; customers see the product's name.
   const brandName = s.app.name === "Telegram" ? "MySeed" : s.app.name;
   const lw = LOOK_WORDS[lang];
@@ -366,35 +367,21 @@ export function SupportWidget({ appKey: givenKey, initialUser, waitForParent, te
   return (
     <div className="flex h-full flex-col bg-background text-foreground" data-widget data-page={page}>
       {page === "home" ? (
-        // A welcoming banner in the app's colour, with a greeting for the time of day and who is online.
-        <header className="relative mx-3 mt-3 mb-1 overflow-hidden rounded-[calc(var(--radius)+12px)] px-4 pt-4 pb-5 text-white shadow-md" style={{ background: `linear-gradient(135deg, ${color}, color-mix(in oklab, ${color} 55%, #7c3aed))` }} data-header="home">
-          <span aria-hidden className="pointer-events-none absolute -top-10 -right-8 size-36 rounded-full bg-white/15" />
-          <span aria-hidden className="pointer-events-none absolute -bottom-12 -left-6 size-28 rounded-full bg-white/10" />
-          <div className="relative flex items-center gap-3">
-            <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-white/20 text-lg font-bold backdrop-blur" aria-hidden>
-              {brandName.slice(0, 1).toUpperCase()}
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-xs text-white/80">
-                {brandName} {w.support}
-              </p>
-              <p className="truncate text-xl leading-tight font-bold" suppressHydrationWarning>
-                {(() => {
-                  const h = new Date().getHours();
-                  const g = am ? (h < 12 ? "እንደምን አደሩ" : h < 18 ? "እንደምን ዋሉ" : "እንደምን አመሹ") : h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
-                  return `${g}${first ? `, ${first}` : ""}!`;
-                })()}
-              </p>
-            </div>
-            <span className="[&_button]:border-white/40 [&_button]:bg-white/15 [&_button]:text-white">{langButton}</span>
+        // A small welcome bar in the app's colour (Myseed green): Welcome, who is online, the language, and + to start a
+        // conversation (it replaced the big time-of-day greeting and the Ask a question buttons).
+        <header className="mx-3 mt-3 mb-1 flex items-center gap-2.5 rounded-[calc(var(--radius)+10px)] px-3 py-2.5 text-white shadow-sm" style={{ background: `linear-gradient(135deg, ${color}, color-mix(in oklab, ${color} 70%, #074924))` }} data-header="home">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-white/20 text-base font-bold" aria-hidden>
+            {brandName.slice(0, 1).toUpperCase()}
+          </span>
+          <div className="min-w-0 flex-1 leading-tight">
+            <p className="truncate text-[15px] font-semibold">{am ? "እንኳን ደህና መጡ" : "Welcome"}</p>
+            <p className="flex items-center gap-1.5 truncate text-[11px] text-white/85" data-online={s.online ? "yes" : "no"}>
+              <span className={cn("inline-flex size-1.5 shrink-0 rounded-full", s.online ? "bg-emerald-300" : "bg-amber-300")} />
+              {s.online ? w.online : `${w.usually}: ${s.hours}`}
+            </p>
           </div>
-          <p className="relative mt-3 inline-flex items-center gap-1.5 rounded-full bg-white/20 px-2.5 py-1 text-xs backdrop-blur" data-online={s.online ? "yes" : "no"}>
-            <span className="relative flex size-2">
-              {s.online && <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-300 opacity-75" />}
-              <span className={cn("relative inline-flex size-2 rounded-full", s.online ? "bg-emerald-400" : "bg-amber-300")} />
-            </span>
-            {s.online ? w.online : `${w.usually}: ${s.hours}`}
-          </p>
+          <span className="[&_button]:border-white/40 [&_button]:bg-white/15 [&_button]:text-white">{langButton}</span>
+          {newButton}
         </header>
       ) : (
         page.startsWith("t:") ? (
@@ -501,8 +488,7 @@ export function SupportWidget({ appKey: givenKey, initialUser, waitForParent, te
                   )}
                 </div>
               )}
-              <div className="grid grid-cols-2 gap-2" aria-label={am ? "ፈጣን እርምጃዎች" : "Quick actions"} data-quick-actions>
-                <Tile icon={PlusIcon} label={w.ask} sub={am ? "በጽሑፍ" : "By message"} onClick={() => (setTopic(null), go("new"))} data-quick="new" />
+              <div className={cn("grid gap-2", s.channels?.calls !== false ? "grid-cols-3" : "grid-cols-2")} aria-label={am ? "ፈጣን እርምጃዎች" : "Quick actions"} data-quick-actions>
                 {s.channels?.calls !== false && <Tile icon={PhoneIcon} tint="#16a34a" label={w.callTitle} sub={s.online ? w.online : s.hours} onClick={() => go("calls")} data-quick="call" />}
                 <Tile icon={MessageCircleIcon} tint="#2563eb" label={w.chats} sub={openTickets.length ? `${openTickets.length} ${w.active.toLowerCase()}` : w.history} onClick={() => go("chats")} data-quick="chats" />
                 <Tile icon={BookOpenIcon} tint="#e8590c" label={w.faq} sub={am ? "መልሶች" : "Answers"} onClick={() => go("faq")} data-quick="faq" />
@@ -590,7 +576,6 @@ export function SupportWidget({ appKey: givenKey, initialUser, waitForParent, te
                 </Group>
               )}
               {telegram && <Resources api={api} title={w.resources} />}
-              {askButton}
             </div>
           )}
 
@@ -598,10 +583,10 @@ export function SupportWidget({ appKey: givenKey, initialUser, waitForParent, te
             <div className="space-y-5 p-4" data-page-chats>
               <div className="flex items-center justify-between gap-2">
                 <p className="text-xs text-muted-foreground">{w.kept}</p>
-                {!own && (
-                  <Button size="sm" className="rounded-full" onClick={() => (setTopic(null), go("new"))}>
-                    <PlusIcon /> {w.newConv}
-                  </Button>
+                {(
+                  <button type="button" aria-label={w.newConv} title={w.newConv} className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm transition active:scale-90" onClick={() => (setTopic(null), go("new"))} data-new-conversation>
+                    <PlusIcon className="size-5" />
+                  </button>
                 )}
               </div>
               {([["open", w.active, openTickets], ["previous", w.history, doneTickets]] as const).map(([part, label, list]) =>

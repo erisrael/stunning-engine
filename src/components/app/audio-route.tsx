@@ -8,10 +8,9 @@
 // The ear guard (voice calls on phones), so a cheek never ends or mutes a call:
 // - In the Android app: the phone's own proximity sensor, through Android (MyseedAndroid.callProximity): at the ear the
 //   screen goes off and ignores touches, as in a phone call; the earpiece and loudspeaker are switched for real.
-// - Browsers and Telegram cannot read the proximity sensor, so the call screen locks itself: when the phone is lifted
-//   to the ear (the motion sensor; Telegram's own where it has one), when a touch is as big as a cheek or several
-//   fingers touch at once, and after a few seconds without a tap while the sound is at the ear. A locked screen is
-//   dark and ignores touches; a deliberate press and hold on its button opens it again. Lowering the phone opens it too.
+// - Browsers and Telegram cannot read the proximity sensor, so the motion sensor stands in for it (Telegram's own where
+//   it has one), as Telegram's calls behave: lifted to the ear, the screen goes dark and ignores touches; lowered, it
+//   comes back by itself. Nothing to unlock. A touch as big as a cheek, or several fingers at once, is ignored.
 
 import * as React from "react";
 import { EarIcon, Volume2Icon } from "lucide-react";
@@ -163,41 +162,35 @@ export function useAudioRoute(active: boolean, kind: Kind, deps: unknown[] = [])
       L.why = why;
       setLocked(true);
     };
-    // A few seconds without a tap while the sound is at the ear: lock.
-    const arm = () => {
-      window.clearTimeout(L.idle);
-      L.idle = window.setTimeout(() => routeRef.current === "ear" && lock("idle"), 6000);
-    };
     const open = () => {
       L.why = null;
       setLocked(false);
-      arm();
     };
-    arm();
-    // A cheek: a big contact, or several at once. That touch does nothing.
+    // A cheek: a big contact, or several at once. That touch does nothing (the screen does not lock for it).
     const onTouch = (e: TouchEvent) => {
       const big = [...e.touches].some((t) => Math.max(t.radiusX || 0, t.radiusY || 0) > 24);
       if (e.touches.length >= 3 || big) {
         e.preventDefault();
         e.stopPropagation();
-        lock("touch");
-        return;
       }
-      if (!L.why) arm();
     };
     document.addEventListener("touchstart", onTouch, { capture: true, passive: false });
-    // The motion sensor: lifted to the ear locks; lowered for a moment opens a lock it made.
+    // The motion sensor: lifted to the ear goes dark; lowered for a moment comes back. If the readings stop while dark
+    // (the sensor paused), the screen comes back rather than staying dark.
     let away = 0;
+    let lastReading = 0;
     const seen = (beta: number | null | undefined, gamma: number | null | undefined) => {
       if (beta == null || gamma == null) return;
+      lastReading = Date.now();
       if (atEar(beta, gamma)) {
         away = 0;
         lock("ear");
       } else if (L.why === "ear") {
         away ||= Date.now();
-        if (Date.now() - away > 700) open();
+        if (Date.now() - away > 350) open();
       }
     };
+    const stale = window.setInterval(() => L.why && Date.now() - lastReading > 2500 && open(), 1000);
     const onOrient = (e: DeviceOrientationEvent) => seen(e.beta, e.gamma);
     const tg = tgWebApp();
     const tgOrient = tg?.DeviceOrientation;
@@ -218,7 +211,7 @@ export function useAudioRoute(active: boolean, kind: Kind, deps: unknown[] = [])
     const onUnlock = () => open();
     window.addEventListener("myseed:call-unlock", onUnlock);
     return () => {
-      window.clearTimeout(L.idle);
+      window.clearInterval(stale);
       L.why = null;
       setLocked(false);
       document.removeEventListener("touchstart", onTouch, { capture: true });
@@ -269,8 +262,8 @@ export function RouteToggle({ route, onToggle, realOutputs, className, children 
   );
 }
 
-// Dark while the phone is at the face; touches do nothing. Locked by the ear guard: dark too, and a press and hold on
-// the button opens it (a cheek cannot do that).
+// Dark while the phone is at the face, as a phone's screen turns off in a call; touches do nothing. It goes away by
+// itself when the phone is lowered (nothing to unlock).
 export function ProximityShade({ near, locked = false }: { near: boolean; locked?: boolean }) {
   if (!near && !locked) return null;
   const stop = (e: React.SyntheticEvent) => {
@@ -281,61 +274,11 @@ export function ProximityShade({ near, locked = false }: { near: boolean; locked
     <div
       data-proximity-shade
       data-locked={locked && !near ? "" : undefined}
-      aria-hidden={near}
-      role={near ? undefined : "dialog"}
-      aria-label={near ? undefined : "Call screen locked"}
-      className="fixed inset-0 z-[200] flex touch-none flex-col items-center justify-end bg-black/95 pb-[max(3rem,env(safe-area-inset-bottom))] select-none"
+      aria-hidden
+      className="fixed inset-0 z-[200] touch-none bg-black select-none"
       onPointerDown={stop}
       onClick={stop}
       onContextMenu={stop}
-    >
-      {!near && <HoldToUnlock />}
-    </div>
-  );
-}
-
-function HoldToUnlock() {
-  const [p, setP] = React.useState(0);
-  const t = React.useRef<number | null>(null);
-  const end = () => {
-    if (t.current) cancelAnimationFrame(t.current);
-    t.current = null;
-    setP(0);
-  };
-  const begin = (e: React.PointerEvent) => {
-    e.stopPropagation();
-    // A cheek is a big contact, not a finger.
-    if (e.pointerType === "touch" && Math.max(e.width || 0, e.height || 0) > 48) return;
-    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
-    const start = performance.now();
-    const tick = () => {
-      const v = Math.min(1, (performance.now() - start) / 800);
-      setP(v);
-      if (v >= 1) {
-        end();
-        window.dispatchEvent(new Event("myseed:call-unlock"));
-        return;
-      }
-      t.current = requestAnimationFrame(tick);
-    };
-    t.current = requestAnimationFrame(tick);
-  };
-  return (
-    <div className="flex flex-col items-center gap-3 px-6 text-center text-white/80">
-      <p className="text-sm">The call goes on. The screen is locked so your cheek cannot press anything.</p>
-      <button
-        type="button"
-        className="relative h-14 w-56 overflow-hidden rounded-full border border-white/25 bg-white/10 text-[15px] font-semibold text-white"
-        onPointerDown={begin}
-        onPointerUp={end}
-        onPointerCancel={end}
-        onPointerLeave={end}
-        onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && window.dispatchEvent(new Event("myseed:call-unlock"))}
-        data-call-unlock
-      >
-        <span aria-hidden className="absolute inset-y-0 left-0 bg-white/25" style={{ width: `${p * 100}%` }} />
-        <span className="relative">Hold to unlock</span>
-      </button>
-    </div>
+    />
   );
 }

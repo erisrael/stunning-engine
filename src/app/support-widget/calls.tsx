@@ -579,8 +579,22 @@ function useCustomerCall(api: Api) {
   return { state, setState, info, secs, setSecs, held, audio, soundBlocked, playRemote, waiting, call, accept, stop, micBlocked, setMicBlocked, ivr, setIvr, begin, routed, restart, queue, muted, toggleMute, quality, reconnecting };
 }
 
+// Closes something by itself after a moment, as a phone does (no OK to press).
+function useAutoClose(on: boolean, close: () => void, ms: number) {
+  const fn = React.useRef(close);
+  fn.current = close;
+  React.useEffect(() => {
+    if (!on) return;
+    const t = window.setTimeout(() => fn.current(), ms);
+    return () => window.clearTimeout(t);
+  }, [on, ms]);
+}
+
 function CallBar({ c, onOk, onCallback }: { c: ReturnType<typeof useCustomerCall>; onOk: () => void; onCallback: () => void }) {
   const { state, info, secs, held, waiting, queue } = c;
+  // A call that ends closes by itself like a phone call: "Call ended" for a moment (longer when it says why it
+  // could not connect), then the app is back.
+  useAutoClose(state === "ended", onOk, info && info !== "The call has ended." ? 6000 : 2500);
   // The loudspeaker or the earpiece, the screen kept on, and the proximity shade (shared with the team's calls).
   const route = useAudioRoute(state === "live", "voice");
   const mins = queue?.estimateSec ? Math.max(1, Math.round(queue.estimateSec / 60)) : null;
@@ -626,12 +640,10 @@ function CallBar({ c, onOk, onCallback }: { c: ReturnType<typeof useCustomerCall
               : c.reconnecting
                 ? "Reconnecting…"
                 : `${info ?? "Connected"} · ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`
-            : (info ?? "Call ended")}
+            : `${info ?? "Call ended"}${secs ? ` · ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}` : ""}`}
       </span>
       {state === "ended" ? (
-        <Button size="sm" variant="ghost" onClick={onOk}>
-          OK
-        </Button>
+        <PhoneOffIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden data-call-ended />
       ) : (
         <>
           {state === "live" && (
@@ -678,6 +690,7 @@ function IvrPlayer({ api, c, color, onCallback }: { api: Api; c: ReturnType<type
     let player: HTMLAudioElement | null = null;
     const synth = typeof speechSynthesis !== "undefined" ? speechSynthesis : null;
     synth?.cancel();
+    const started = Date.now();
     void (async () => {
       for (const p of sc.say) {
         if (cancelled) return;
@@ -689,6 +702,12 @@ function IvrPlayer({ api, c, color, onCallback }: { api: Api; c: ReturnType<type
           u.lang = sc.lang === "am" ? "am-ET" : "en-US";
           await new Promise<void>((res) => ((u.onend = () => res()), (u.onerror = () => res()), synth.speak(u)));
         }
+      }
+      // The menu ended: it closes by itself once its message was heard (time to read it, too), no OK to press.
+      if (!cancelled && sc.done?.action === "end") {
+        const read = sc.say.reduce((n, p) => n + p.text.length * 55, 0);
+        const wait = Math.max(1500, read - (Date.now() - started));
+        window.setTimeout(() => !cancelled && void leaveRef.current(), wait);
       }
     })();
     return () => {
@@ -721,6 +740,8 @@ function IvrPlayer({ api, c, color, onCallback }: { api: Api; c: ReturnType<type
     speechSynthesis?.cancel();
     await api(`ivr/${sc.sessionId}/leave`, {}).catch(() => {});
   };
+  const leaveRef = React.useRef(leave);
+  leaveRef.current = leave;
   if (voice) return <VoiceMessage api={api} sessionId={sc.sessionId} maxSec={voice.maxSec} color={color} prompt={sc.say.map((p) => p.text).join(" ")} onClose={() => c.setIvr(null)} />;
   return (
     <div className="space-y-2 rounded-lg border p-2 text-sm" data-ivr-player data-ivr-lang={sc.lang}>
@@ -750,11 +771,13 @@ function IvrPlayer({ api, c, color, onCallback }: { api: Api; c: ReturnType<type
           </div>
         </div>
       )}
-      <div className="flex justify-end">
-        <Button size="sm" variant="ghost" onClick={() => void leave()} data-ivr-leave>
-          {sc.done?.action === "end" ? "OK" : <><PhoneOffIcon /> Hang up</>}
-        </Button>
-      </div>
+      {sc.done?.action !== "end" && (
+        <div className="flex justify-end">
+          <Button size="sm" variant="ghost" onClick={() => void leave()} data-ivr-leave>
+            <PhoneOffIcon /> Hang up
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
@@ -766,6 +789,7 @@ function VoiceMessage({ api, sessionId, maxSec, color, prompt, onClose }: { api:
   const [msg, setMsg] = React.useState<string | null>(null);
   const rec = React.useRef<{ r?: MediaRecorder; chunks: Blob[]; t?: number; stream?: MediaStream }>({ chunks: [] });
   const finish = React.useCallback(() => rec.current.r?.state === "recording" && rec.current.r.stop(), []);
+  useAutoClose(state === "sent", onClose, 3000);
   React.useEffect(() => () => (window.clearInterval(rec.current.t), rec.current.stream?.getTracks().forEach((t) => t.stop())), []);
   const start = async () => {
     try {
@@ -815,8 +839,8 @@ function VoiceMessage({ api, sessionId, maxSec, color, prompt, onClose }: { api:
           </Button>
         )}
         {state === "sending" && <span className="text-xs text-muted-foreground">Sending…</span>}
-        {(state === "ready" || state === "sent" || state === "error") && (
-          <Button size="sm" variant="ghost" onClick={onClose}>{state === "sent" ? "OK" : "Close"}</Button>
+        {(state === "ready" || state === "error") && (
+          <Button size="sm" variant="ghost" onClick={onClose}>Close</Button>
         )}
       </div>
     </div>
@@ -828,6 +852,8 @@ function CallbackForm({ api, ticketId, color, onClose, knownPhone = null }: { ap
   const [phone, setPhone] = React.useState(knownPhone ?? "");
   const [msg, setMsg] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
+  const [done, setDone] = React.useState(false);
+  useAutoClose(done, onClose, 3000);
   return (
     <div className="space-y-2 rounded-lg border p-2 text-xs" data-callback-form>
       {msg ? (
@@ -851,6 +877,7 @@ function CallbackForm({ api, ticketId, color, onClose, knownPhone = null }: { ap
               try {
                 const r = await api<{ again: boolean }>("callback", { phone, ticketId });
                 setMsg(r.again ? "We already have your request. We will call you soon." : "Thank you. We will call you soon.");
+                setDone(true);
               } catch (e) {
                 setMsg(e instanceof Error ? e.message : "Could not send.");
               }
@@ -861,9 +888,11 @@ function CallbackForm({ api, ticketId, color, onClose, knownPhone = null }: { ap
             Call me back
           </Button>
         )}
-        <Button size="sm" variant="ghost" onClick={onClose}>
-          {msg ? "OK" : "Cancel"}
-        </Button>
+        {!done && (
+          <Button size="sm" variant="ghost" onClick={onClose}>
+            {msg ? "Close" : "Cancel"}
+          </Button>
+        )}
       </div>
     </div>
   );
@@ -928,14 +957,14 @@ const CallCtx = React.createContext<Call | null>(null);
 export const CALL_EVENT = "myseed:support-call";
 export function CallButton({ api, s, ticketId, color, onTicket, lang = "en", compact = false }: { api: Api; s: Session; ticketId: string | null; color: string; onTicket: (id: string) => void; lang?: string; compact?: boolean }) {
   const c = React.useContext(CallCtx)!;
-  const [agree, setAgree] = React.useState(false);
-  const [mode, setMode] = React.useState<"idle" | "consent" | "callback">("idle");
+  const [mode, setMode] = React.useState<"idle" | "callback">("idle");
   const start = React.useRef<() => void>(() => {});
   start.current = () => {
     if (c.state !== "idle" || c.ivr) return;
     // A closed line: ask to be called back; otherwise call and wait in the line.
     if (s.schedule && !s.schedule.status.open) return setMode("callback");
-    if (s.recordCalls) return setMode("consent");
+    // No separate "I agree" step: the recording notice shows with the Call button and on the call, and calling means
+    // agreeing (as a phone line's "this call may be recorded").
     void c.begin({ ticketId, consent: true, onTicket, lang });
   };
   React.useEffect(() => {
@@ -967,32 +996,18 @@ export function CallButton({ api, s, ticketId, color, onTicket, lang = "en", com
   if (c.state === "idle" && mode === "idle" && compact) return null;
   if (c.state === "idle" && mode === "idle")
     return (
-      <div className="flex gap-2">
-        {!(s.schedule && !s.schedule.status.open) && (
-          <Button variant="outline" className="flex-1" onClick={() => (s.recordCalls ? setMode("consent") : void c.begin({ ticketId, consent: true, onTicket, lang }))} data-call-us>
-            <PhoneIcon /> Call us
-          </Button>
-        )}
-        <Button variant="ghost" className={!(s.schedule && !s.schedule.status.open) ? "" : "w-full"} onClick={() => setMode("callback")} data-ask-callback>
-          Call me back
-        </Button>
-      </div>
-    );
-  if (c.state === "idle" && mode === "consent")
-    return (
-      <div className="space-y-2 rounded-lg border p-2 text-xs" data-call-consent>
-        <p>{s.recordingNotice}</p>
-        <label className="flex items-center gap-2">
-          <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} /> I agree
-        </label>
+      <div className="space-y-1.5">
         <div className="flex gap-2">
-          <Button size="sm" className="text-white" style={{ background: color }} disabled={!agree} onClick={() => (setMode("idle"), void c.begin({ ticketId, consent: agree, onTicket, lang }))}>
-            <PhoneIcon /> Call
-          </Button>
-          <Button size="sm" variant="ghost" onClick={() => setMode("idle")}>
-            Cancel
+          {!(s.schedule && !s.schedule.status.open) && (
+            <Button variant="outline" className="flex-1" onClick={() => void c.begin({ ticketId, consent: true, onTicket, lang })} data-call-us>
+              <PhoneIcon /> Call us
+            </Button>
+          )}
+          <Button variant="ghost" className={!(s.schedule && !s.schedule.status.open) ? "" : "w-full"} onClick={() => setMode("callback")} data-ask-callback>
+            Call me back
           </Button>
         </div>
+        {s.recordCalls && s.recordingNotice && <p className="px-1 text-[11px] text-muted-foreground" data-recording-notice>{s.recordingNotice} Calling means you agree.</p>}
       </div>
     );
   // A call in progress shows at the top of the widget (CallLayer).
@@ -1084,12 +1099,13 @@ export function CallLayer({ api, s, children, openedForCall = false, onBusy }: {
     <CallCtx.Provider value={c}>
       {!idle && (
         <div className="px-4 pt-3">
+          {c.state === "ringing" && s.recordCalls && s.recordingNotice && <p className="mb-1.5 text-[11px] text-muted-foreground" data-recording-notice>{s.recordingNotice}</p>}
           <CallBar c={c} onOk={() => (c.setState("idle"), c.setSecs(0), setRing(null))} onCallback={() => setAskBack(true)} />
         </div>
       )}
       {idle && c.ivr && (
         <div className="px-4 pt-3">
-          <IvrPlayer api={api} c={c} color={s.app.color ?? "#1A73E8"} onCallback={() => setAskBack(true)} />
+          <IvrPlayer api={api} c={c} color={s.app.color ?? "#0B7A3B"} onCallback={() => setAskBack(true)} />
         </div>
       )}
       {c.micBlocked && (
@@ -1102,7 +1118,7 @@ export function CallLayer({ api, s, children, openedForCall = false, onBusy }: {
           </div>
         </div>
       )}
-      {askBack && <div className="px-4 pt-3"><CallbackForm api={api} ticketId={null} color={s.app.color ?? "#1A73E8"} knownPhone={s.customer.phone ?? null} onClose={() => setAskBack(false)} /></div>}
+      {askBack && <div className="px-4 pt-3"><CallbackForm api={api} ticketId={null} color={s.app.color ?? "#0B7A3B"} knownPhone={s.customer.phone ?? null} onClose={() => setAskBack(false)} /></div>}
       {idle && finding && !ring && (
         <div className="border-b px-4 py-3 text-sm" data-call-finding>Connecting you to the call…</div>
       )}
@@ -1125,7 +1141,7 @@ export function CallLayer({ api, s, children, openedForCall = false, onBusy }: {
         <div role="dialog" aria-modal="true" aria-label={`${ring.agent ?? "Support"} is calling you`} className="fixed inset-0 z-50 flex flex-col items-center justify-between bg-background px-6 py-10 text-center" data-incoming-call>
           <div className="space-y-2 pt-6">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{s.app.name} support</p>
-            <div className="mx-auto flex size-20 items-center justify-center rounded-full text-3xl font-semibold text-white motion-safe:animate-pulse" style={{ background: s.app.color ?? "#1A73E8" }} aria-hidden>
+            <div className="mx-auto flex size-20 items-center justify-center rounded-full text-3xl font-semibold text-white motion-safe:animate-pulse" style={{ background: s.app.color ?? "#0B7A3B" }} aria-hidden>
               {(ring.agent ?? "S").slice(0, 1).toUpperCase()}
             </div>
             <p className="text-xl font-semibold">{ring.agent ?? "Support"} is calling you</p>

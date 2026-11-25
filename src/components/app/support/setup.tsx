@@ -491,7 +491,7 @@ export function Apps({ apps, queues, origin, admin }: { apps: App[]; queues: Que
               ))}
             </select>
             <Input aria-label="Greeting" placeholder="Greeting, e.g. Hi! How can we help with your lessons?" value={a.greeting} onChange={(e) => setA({ ...a, greeting: e.target.value })} />
-            <Input aria-label="Colour" placeholder="#1A73E8" value={a.color} onChange={(e) => setA({ ...a, color: e.target.value })} />
+            <Input aria-label="Colour" placeholder="#0B7A3B" value={a.color} onChange={(e) => setA({ ...a, color: e.target.value })} />
             <label className="flex items-center gap-2">
               <input type="checkbox" checked={a.verifyIdentity} onChange={(e) => setA({ ...a, verifyIdentity: e.target.checked })} /> The app signs who the customer is (recommended for signed-in customers)
             </label>

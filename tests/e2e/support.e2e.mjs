@@ -90,9 +90,9 @@ try {
   check("but not the internal note", (await w.getByText("SMS provider was slow").count()) === 0);
 
   // A call from the widget, answered in the desk and recorded.
+  // No "I agree" step: the recording notice shows with the Call button, and calling means agreeing.
+  check("the recording notice shows with Call us", await visible(w.locator("[data-recording-notice]")));
   await w.locator("[data-call-us]").click();
-  await w.locator("[data-call-consent]").getByRole("checkbox").check();
-  await w.locator("[data-call-consent]").getByRole("button", { name: "Call" }).click();
   check("the call rings in the desk", await visible(sara.locator("[data-ringing]"), 20000));
   await sara.locator("[data-ringing]").first().click();
   check("the agent is on the call", await visible(sara.locator('[data-call-panel="live"]'), 20000));

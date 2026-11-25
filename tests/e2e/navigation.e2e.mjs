@@ -90,18 +90,17 @@ try {
   check("Restoring sidebar choices restores access links",await visible(sideLink(d,"Legacy CMS (Noor)")));
   const y=await as("meron@demo.local");
   const row=sideLink(y,"Handovers").locator('xpath=..');
-  const badge=row.locator('[data-nav-count]'), arrow=row.getByRole("button");
-  const badgeBox=await badge.boundingBox(), arrowBox=await arrow.boundingBox(), linkBox=await sideLink(y,"Handovers").boundingBox();
-  check("Counters, labels and dropdown buttons have separate space", !!badgeBox && !!arrowBox && linkBox.x+linkBox.width<=badgeBox.x && badgeBox.x+badgeBox.width<=arrowBox.x);
-  await arrow.click();
-  check("Dropdown opens independently of its counter",await visible(side(y).getByRole("link",{name:"Rejected",exact:true})));
-  await arrow.click();
-  check("Dropdown closes independently of its counter",await side(y).getByRole("link",{name:"Rejected",exact:true}).count()===0);
-  await y.screenshot({path:path.join(shots,"5-counter-dropdown.png")});
+  const badge=row.locator('[data-nav-count]');
+  const badgeBox=await badge.boundingBox(), linkBox=await sideLink(y,"Handovers").boundingBox();
+  check("Counters and labels have separate space", !!badgeBox && linkBox.x+linkBox.width<=badgeBox.x);
+  // An entry's pages are tabs on the page, never a second list in the sidebar.
+  check("The sidebar lists no sub-pages (no duplicates of the page tabs)", (await side(y).getByRole("link",{name:"Rejected",exact:true}).count())===0 && (await row.getByRole("button").count())===0);
+  await y.screenshot({path:path.join(shots,"5-counter.png")});
 
-  await y.locator('[data-sidebar="trigger"]').click();
+  await y.locator('[data-sidebar-slider]').click();
   await y.waitForTimeout(250);
   check("Collapsed sidebar hides counters and dropdown controls",await side(y).locator('[data-nav-controls]:visible').count()===0);
+  check("Collapsed rail shows each entry's name under its icon", await sideLink(y,"Handovers").locator("[data-nav-label]").isVisible());
   // Collapsed: icons only, with a line between groups.
   check("Collapsed sidebar separates groups with a line", await side(y).locator('[data-nav-group] [role=separator]').count() >= 1);
   check("Collapsed sidebar keeps every group's icons", await side(y).locator('[data-nav-group][data-folded]').count() === 0);
@@ -123,9 +122,9 @@ try {
   await y.waitForURL((u) => !u.pathname.includes("/handovers/rejected"));
   await y.goBack(); // back to the start page, outside the Workflow group
   await y.waitForURL((u) => !u.pathname.includes("/handovers/rejected"));
-  await y.locator('[data-sidebar="trigger"]').click();
+  await y.locator('[data-sidebar-slider]').click();
   await y.setViewportSize({width:390,height:844});
-  await y.locator('[data-sidebar="trigger"]').click();
+  await y.locator('[data-mobile-tab="More"]').click();
   const mobileGroup=side(y).getByRole("button",{name:"Workflow",exact:true});
   await mobileGroup.click();
   check("Mobile group opens",await mobileGroup.getAttribute("aria-expanded")==="true");

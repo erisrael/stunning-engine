@@ -255,11 +255,15 @@ export type AppFull = { id: string; name: string; public_key: string; secret: st
 // The support app inside the default Telegram bot (its customers belong to no system): the widget's API runs for
 // them as this app, keyed "telegram" and signed with the bot's own secret. Customers sign in only through
 // telegramMiniApp (Telegram's signed data), never by identify.
+// The customers' app (web, Android, Telegram Mini App) wears Myseed's green unless Admin chose another colour; the old
+// defaults (Google blue, Telegram blue) count as no choice.
+export const MYSEED_GREEN = "#0B7A3B";
+export const appColor = (c: string | null | undefined) => (!c || /^#(1a73e8|229ed9)$/i.test(c.trim()) ? MYSEED_GREEN : c);
 export const TELEGRAM_APP_KEY = "telegram";
 export async function defaultTelegramApp(): Promise<AppFull> {
   const st = parseJson<{ secret?: string; tokenEnc?: string }>((await get<{ value: string }>("SELECT value FROM settings WHERE key = 'sup.telegram'"))?.value, {});
   if (!st.secret || !st.tokenEnc) throw new WorkflowError("FORBIDDEN", "The Telegram bot is not connected.");
-  return { id: null as unknown as string, name: "Telegram", public_key: TELEGRAM_APP_KEY, secret: `tg-app:${st.secret}`, origins: "[]", queue_id: null, verify_identity: 1, greeting: null, color: "#229ED9", active: 1 };
+  return { id: null as unknown as string, name: "Telegram", public_key: TELEGRAM_APP_KEY, secret: `tg-app:${st.secret}`, origins: "[]", queue_id: null, verify_identity: 1, greeting: null, color: MYSEED_GREEN, active: 1 };
 }
 // The channel a customer's chat belongs to: Telegram customers (bot or Mini App) are on Telegram.
 const chatChannel = (externalId: string | null | undefined) => (/^tg:/.test(externalId ?? "") ? ("telegram" as const) : ("web_chat" as const));
@@ -339,7 +343,7 @@ export async function sessionFor(app: AppFull, customerId: string) {
   return {
     token: tokenFor(app, customerId),
     customer: { id: customerId, name: c.name, email: c.email, phone: c.phone, telegram: /^tg:/.test(c.external_id ?? "") },
-    app: { name: app.name, greeting: app.greeting, color: app.color },
+    app: { name: app.name, greeting: app.greeting, color: appColor(app.color) },
     channels,
     online: online.length > 0,
     hours: cfg.hours,

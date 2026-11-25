@@ -78,7 +78,7 @@ try {
   await sara.getByLabel("Call notes").fill("Refund steps explained");
   await sara.locator("[data-hang-up]").click();
   check("the widget sees the end", await seen(cust.locator("[data-call-state=ended]")));
-  await cust.getByRole("button", { name: "OK" }).click();
+  check("the ended call closes by itself (no OK)", await seen(cust.locator("[data-call-us]").first(), 8000));
   await sara.locator("[data-call-close]").click().catch(() => {});
 
   // Sara calls the customer in the app.
@@ -96,7 +96,7 @@ try {
   await sara.locator("[data-call-close]").click();
 
   // A call-back.
-  await cust.getByRole("button", { name: "OK" }).click().catch(() => {});
+  await cust.locator("[data-call-state=ended]").waitFor({ state: "detached", timeout: 8000 }).catch(() => {});
   await cust.locator("[data-ask-callback]").first().click();
   await cust.getByLabel("Your phone number").fill("+251911000111");
   await cust.locator("[data-callback-send]").click();

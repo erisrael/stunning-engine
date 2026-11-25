@@ -24,6 +24,7 @@ import {
 import type { CallMedia, CallSignal, CallStatus, CallView } from "@/server/calls";
 import { cn } from "@/lib/utils";
 import { ProximityShade, RouteToggle, useAudioRoute } from "@/components/app/audio-route";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 type Phase = "idle" | "incoming" | "outgoing" | "connecting" | "active" | "ended";
 type Quality = "good" | "fair" | "poor" | null;
@@ -168,6 +169,7 @@ export function CallLayer({ children, disabled = false }: { children: React.Reac
   const [peerCamOff, setPeerCamOff] = React.useState(false);
   const [sharing, setSharing] = React.useState(false);
   const [minimized, setMinimized] = React.useState(false);
+  const isMobile = useIsMobile();
   const [quality, setQuality] = React.useState<Quality>(null);
   const [connectedAt, setConnectedAt] = React.useState<number | null>(null);
   const [cameras, setCameras] = React.useState(0);
@@ -610,6 +612,9 @@ export function CallLayer({ children, disabled = false }: { children: React.Reac
   const ctx = React.useMemo(() => ({ start: (g: string, m: CallMedia) => void engine.current.start(g, m), inCall }), [inCall]);
 
   const video = call?.media === "video";
+  // A voice call on a computer: a phone in a call docked at the side (iOS style, components/app/ios-phone.tsx), the
+  // page stays usable. Video calls and phones keep the full screen.
+  const phoneMode = !isMobile && !video && !minimized;
   const showRemoteVideo = video && !!remoteStream && !peerCamOff && (phase === "active" || phase === "connecting");
   const status =
     phase === "incoming"
@@ -631,9 +636,15 @@ export function CallLayer({ children, disabled = false }: { children: React.Reac
           aria-label={status}
           className={cn(
             "z-[100] overflow-hidden bg-zinc-950 text-white shadow-2xl",
-            minimized ? "fixed right-4 bottom-4 h-44 w-72 rounded-2xl" : "fixed inset-0",
+            minimized
+              ? "fixed right-4 bottom-4 h-44 w-72 rounded-2xl"
+              : phoneMode
+                ? "fixed top-20 right-5 h-[600px] max-h-[calc(100dvh-6rem)] w-[300px] rounded-[46px] border-[10px] border-zinc-900 bg-gradient-to-b from-zinc-700 via-zinc-800 to-zinc-950 ring-1 ring-black/40"
+                : "fixed inset-0",
           )}
+          data-call-ui={phoneMode ? "phone" : minimized ? "mini" : "full"}
         >
+          {phoneMode && <div aria-hidden className="absolute top-2 left-1/2 z-10 h-6 w-24 -translate-x-1/2 rounded-full bg-black" />}
           {/* Remote audio and video; always mounted during a call so sound keeps playing when minimised. */}
           <video
             ref={(el) => {
@@ -646,11 +657,12 @@ export function CallLayer({ children, disabled = false }: { children: React.Reac
           />
           <ProximityShade near={audio.near} locked={audio.locked} />
           {!showRemoteVideo && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4 text-center">
+            <div className={cn("absolute inset-0 flex flex-col items-center gap-3 p-4 text-center", phoneMode ? "justify-start pt-16" : "justify-center")}>
               <span
                 className={cn(
-                  "flex items-center justify-center rounded-full bg-gradient-to-br from-sky-500 to-violet-600 font-semibold",
-                  minimized ? "size-12 text-lg" : "size-28 text-4xl",
+                  "flex items-center justify-center rounded-full font-semibold",
+                  phoneMode ? "size-20 bg-gradient-to-b from-zinc-400 to-zinc-600 text-3xl font-medium" : "bg-gradient-to-br from-[#0B7A3B] to-[#074924]",
+                  phoneMode ? "" : minimized ? "size-12 text-lg" : "size-28 text-4xl",
                   (phase === "incoming" || phase === "outgoing") && "animate-pulse",
                 )}
               >
@@ -688,7 +700,7 @@ export function CallLayer({ children, disabled = false }: { children: React.Reac
             </span>
           )}
 
-          <div className={cn("absolute inset-x-0 bottom-0 flex items-center justify-center", minimized ? "gap-2 p-2" : "gap-3 p-6 sm:gap-4")}>
+          <div className={cn("absolute inset-x-0 bottom-0 flex items-center justify-center", minimized ? "gap-2 p-2" : phoneMode ? "flex-wrap gap-x-6 gap-y-4 px-6 pb-10" : "gap-3 p-6 sm:gap-4")}>
             {phase === "incoming" ? (
               <>
                 <RoundButton label="Decline" className="bg-red-600 hover:bg-red-500" big onClick={decline}>
@@ -700,12 +712,12 @@ export function CallLayer({ children, disabled = false }: { children: React.Reac
               </>
             ) : phase === "ended" ? null : (
               <>
-                <RoundButton label={muted ? "Unmute" : "Mute"} small={minimized} active={muted} onClick={toggleMute}>
+                <RoundButton label={muted ? "Unmute" : "Mute"} small={minimized} caption={phoneMode} active={muted} onClick={toggleMute}>
                   {muted ? <MicOffIcon /> : <MicIcon />}
                 </RoundButton>
                 <RouteToggle route={audio.route} onToggle={audio.toggle} realOutputs={audio.realOutputs}>
                   {(icon, label) => (
-                    <RoundButton label={label} small={minimized} active={audio.route === "speaker"} onClick={audio.toggle}>
+                    <RoundButton label={label} small={minimized} caption={phoneMode} active={audio.route === "speaker"} onClick={audio.toggle}>
                       {icon}
                     </RoundButton>
                   )}
@@ -725,10 +737,11 @@ export function CallLayer({ children, disabled = false }: { children: React.Reac
                     <MonitorUpIcon />
                   </RoundButton>
                 )}
-                <RoundButton label={minimized ? "Expand" : "Minimise"} small={minimized} onClick={() => setMinimized((m) => !m)}>
+                <RoundButton label={minimized ? "Expand" : "Minimise"} small={minimized} caption={phoneMode} onClick={() => setMinimized((m) => !m)}>
                   {minimized ? <Maximize2Icon /> : <Minimize2Icon />}
                 </RoundButton>
-                <RoundButton label="Hang up" small={minimized} className="bg-red-600 hover:bg-red-500" onClick={() => hangup()}>
+                {phoneMode && <span className="basis-full" aria-hidden />}
+                <RoundButton label="Hang up" small={minimized} big={phoneMode} className="bg-[#ff3b30] hover:bg-[#ff5147]" onClick={() => hangup()}>
                   <PhoneOffIcon />
                 </RoundButton>
               </>
@@ -740,7 +753,17 @@ export function CallLayer({ children, disabled = false }: { children: React.Reac
   );
 }
 
-function RoundButton({ label, onClick, children, className, active, big, small }: { label: string; onClick: () => void; children: React.ReactNode; className?: string; active?: boolean; big?: boolean; small?: boolean }) {
+function RoundButton({ label, onClick, children, className, active, big, small, caption }: { label: string; onClick: () => void; children: React.ReactNode; className?: string; active?: boolean; big?: boolean; small?: boolean; caption?: boolean }) {
+  // The phone look: a 60px button with its name under it, as iOS draws them.
+  if (caption)
+    return (
+      <span className="flex flex-col items-center gap-1.5">
+        <RoundButton label={label} onClick={onClick} className={cn("size-[60px] [&_svg]:size-6", className ?? (active ? "bg-white text-zinc-900" : "bg-white/15 hover:bg-white/25"))} active={active}>
+          {children}
+        </RoundButton>
+        <span className="text-[11px] text-white/85">{label}</span>
+      </span>
+    );
   return (
     <button
       type="button"

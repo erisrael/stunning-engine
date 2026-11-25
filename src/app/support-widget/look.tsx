@@ -34,7 +34,7 @@ function read(): Look {
 }
 
 // Applies the look to the page. "auto": inside Telegram its theme, elsewhere the phone's light or dark setting.
-// Accent "brand": inside Telegram its button colour, elsewhere the app's colour from Customer support.
+// Accent "brand": the app's colour from Customer support (Myseed green unless Admin chose another), everywhere.
 export function applyLook(l: Look, brand: string | null, inTelegram: boolean) {
   const root = document.documentElement;
   for (const v of INLINE) root.style.removeProperty(v);
@@ -46,12 +46,12 @@ export function applyLook(l: Look, brand: string | null, inTelegram: boolean) {
   }
   if (l.accent === "brand") {
     delete root.dataset.accent;
-    const tgButton = inTelegram && l.mode === "auto" ? tg?.themeParams?.button_color : null;
-    const c = tgButton || brand;
-    if (c && /^#[0-9a-f]{3,8}$/i.test(c)) {
+    // Myseed's colour (or the one Admin chose), also inside Telegram (its blue buttons are not used).
+    const c = brand || "#0B7A3B";
+    if (/^#[0-9a-f]{3,8}$/i.test(c)) {
       root.style.setProperty("--primary", c);
       root.style.setProperty("--ring", c);
-      root.style.setProperty("--primary-foreground", tg?.themeParams?.button_text_color && tgButton ? tg.themeParams.button_text_color : "#ffffff");
+      root.style.setProperty("--primary-foreground", "#ffffff");
     }
   } else {
     root.style.removeProperty("--primary");
@@ -80,12 +80,12 @@ export function primaryHex(fallback: string) {
 
 export function useLook(brand: string | null, inTelegram: boolean) {
   const [look, setLookState] = React.useState<Look>(DEFAULT);
-  const [hex, setHex] = React.useState(brand ?? "#1A73E8");
+  const [hex, setHex] = React.useState(brand ?? "#0B7A3B");
   React.useEffect(() => setLookState(read()), []);
   React.useEffect(() => {
     const on = () => {
       applyLook(look, brand, inTelegram);
-      setHex(primaryHex(brand ?? "#1A73E8"));
+      setHex(primaryHex(brand ?? "#0B7A3B"));
     };
     on();
     const t = window.setTimeout(on, 1200);
@@ -163,9 +163,9 @@ export function Tile({ icon: Icon, label, sub, onClick, tint, ...rest }: { icon:
       <span className="flex size-10 items-center justify-center rounded-2xl text-white shadow-sm transition-transform group-hover:scale-110 group-active:rotate-6" style={{ background: `linear-gradient(135deg, ${tint ?? "var(--primary)"}, color-mix(in oklab, ${tint ?? "var(--primary)"} 65%, #fff))` }}>
         <Icon className="size-5" />
       </span>
-      <span>
+      <span className="max-w-full min-w-0">
         <span className="block text-sm leading-tight font-semibold">{label}</span>
-        {sub && <span className="block text-[11px] text-muted-foreground">{sub}</span>}
+        {sub && <span className="block truncate text-[11px] text-muted-foreground">{sub}</span>}
       </span>
     </button>
   );
