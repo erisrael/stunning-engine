@@ -296,6 +296,14 @@ export function TicketView({ d, agents, queues, canned, me, lead, articles = [],
     });
   const openInfo = () => (window.matchMedia("(min-width: 1280px)").matches ? setInfo((v) => !v) : setPanel(true));
   const [body, setBody] = React.useState("");
+  // Saved replies by typing "/" and a few letters of the title; {name}, {first} and {ticket} are filled in.
+  const fillReply = (text: string) =>
+    text
+      .replace(/\{name\}/g, d.customer?.name ?? "")
+      .replace(/\{first\}/g, (d.customer?.name ?? "").split(" ")[0] ?? "")
+      .replace(/\{ticket\}/g, `#${t.number}`);
+  const slash = /^\/([^\n]{0,40})$/.exec(body);
+  const slashHits = slash ? canned.filter((c) => c.title.toLowerCase().includes(slash[1]!.trim().toLowerCase())).slice(0, 6) : [];
   const [internal, setInternal] = React.useState(false);
   const [after, setAfter] = React.useState<TicketStatus | "">("");
   const [phone, setPhone] = React.useState<{ direction: "inbound" | "outbound"; minutes: number; notes: string } | null>(null);
@@ -603,6 +611,19 @@ export function TicketView({ d, agents, queues, canned, me, lead, articles = [],
               }}
               above={
                 <div className="flex flex-wrap items-center gap-2">
+                  {slash && (
+                    <div className="w-full rounded-lg border bg-popover p-1 text-sm shadow-sm" role="listbox" aria-label="Saved replies" data-slash-replies>
+                      {slashHits.length ? (
+                        slashHits.map((c) => (
+                          <button key={c.id} type="button" role="option" aria-selected={false} className="block w-full truncate rounded-md px-2 py-1.5 text-left hover:bg-muted" onClick={() => setBody(fillReply(c.body))}>
+                            <span className="font-medium">{c.title}</span> <span className="text-xs text-muted-foreground">{c.body.slice(0, 80)}</span>
+                          </button>
+                        ))
+                      ) : (
+                        <p className="px-2 py-1.5 text-xs text-muted-foreground">{canned.length ? "No saved reply matches." : "No saved replies yet (Support setup)."}</p>
+                      )}
+                    </div>
+                  )}
                   <Button size="xs" variant={internal ? "outline" : "default"} onClick={() => setInternal(false)}>
                     Reply to the customer
                   </Button>
@@ -628,7 +649,7 @@ export function TicketView({ d, agents, queues, canned, me, lead, articles = [],
                     </select>
                   )}
                   {canned.length > 0 && (
-                    <select aria-label="Saved reply" className={cn(select, "h-7 max-w-44 text-xs")} value="" onChange={(e) => setBody((b) => `${b}${b ? "\n" : ""}${canned.find((c) => c.id === e.target.value)?.body ?? ""}`)}>
+                    <select aria-label="Saved reply" className={cn(select, "h-7 max-w-44 text-xs")} value="" title="Or type / and a few letters in the message box" onChange={(e) => setBody((b) => `${b}${b ? "\n" : ""}${fillReply(canned.find((c) => c.id === e.target.value)?.body ?? "")}`)}>
                       <option value="">Saved replies…</option>
                       {canned.map((c) => (
                         <option key={c.id} value={c.id}>

@@ -173,6 +173,7 @@ export function ApiUsageView({ data }: { data: Awaited<ReturnType<typeof P.apiUs
             <CardTitle className="text-base">By API</CardTitle>
           </CardHeader>
           <CardContent>
+            <div className="overflow-x-auto">
             <table className="w-full text-sm" data-api-routes>
               <thead className="text-left text-xs text-muted-foreground">
                 <tr>
@@ -202,6 +203,7 @@ export function ApiUsageView({ data }: { data: Awaited<ReturnType<typeof P.apiUs
                 )}
               </tbody>
             </table>
+            </div>
           </CardContent>
         </Card>
         <Card>

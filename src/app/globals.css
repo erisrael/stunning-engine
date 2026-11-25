@@ -492,7 +492,9 @@ html[data-helplinks="off"] [data-help-link] {
 }
 
 /* Phones (Phase 29): touch-sized controls, no zoom on typing, and a compact view that leaves out long
-   explanations and extra table columns (the Details switch in the top bar shows everything). */
+   explanations (the Details switch under Tools shows everything). Tables keep every column and scroll sideways in
+   their own box: hiding columns by position cut off Grade, Unit and subject columns and misaligned tables with
+   merged cells. A column that may be left out on phones is marked data-detail. */
 @media (max-width: 767px) {
   input, select, textarea {
     font-size: 16px !important;
@@ -501,9 +503,7 @@ html[data-helplinks="off"] [data-help-link] {
     min-height: 2.5rem;
   }
   html:not(.m-full) [data-detail],
-  html:not(.m-full) [data-slot="card-description"],
-  html:not(.m-full) main table th:nth-child(n + 5):not(:last-child),
-  html:not(.m-full) main table td:nth-child(n + 5):not(:last-child) {
+  html:not(.m-full) [data-slot="card-description"] {
     display: none !important;
   }
   html:not(.m-full) main [data-slot="card"] {

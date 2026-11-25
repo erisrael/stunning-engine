@@ -299,6 +299,7 @@ export function DevToolsView(props: { releaseReview:Awaited<ReturnType<typeof im
           {props.portfolio.length === 0 ? (
             <p className="text-muted-foreground">No projects yet.</p>
           ) : (
+            <div className="overflow-x-auto">
             <table className="w-full text-xs" data-portfolio>
               <thead>
                 <tr className="text-left text-muted-foreground">
@@ -319,6 +320,7 @@ export function DevToolsView(props: { releaseReview:Awaited<ReturnType<typeof im
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </Section>
       )}

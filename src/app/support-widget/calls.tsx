@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import type { IvrScreen } from "@/lib/support-ivr";
 import type { Api, Session } from "./widget";
 import { shareTelegramPhone } from "./tg";
-import { gathered, trickle } from "@/lib/call-ice";
+import { gathered, single, trickle } from "@/lib/call-ice";
 
 // Telegram's Mini App controls used during a call (each only where this Telegram version has it).
 type TgCallApp = {
@@ -482,7 +482,7 @@ function useCustomerCall(api: Api) {
     ref.current.callId = callId;
     const tr = ref.current.ice;
     tr?.start();
-    ref.current.poll = window.setInterval(async () => {
+    ref.current.poll = window.setInterval(single(async () => {
       const k = await api<Poll>(`calls/${callId}`).catch(() => null);
       if (!k || ref.current.callId !== callId) return;
       if (k.status === "ringing") {
@@ -511,7 +511,7 @@ function useCustomerCall(api: Api) {
         setInfo(k.status === "missed" ? "Nobody could answer. We will write to you here." : "The call has ended.");
         await stop(false);
       }
-    }, 1500);
+    }), 1500);
   };
 
   const call = async (ticketId: string | null, consent: boolean, onTicket: ((id: string) => void) | null, transferFrom: string | null = null, ivrSession: string | null = null) => {

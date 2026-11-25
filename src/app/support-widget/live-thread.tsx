@@ -126,6 +126,8 @@ export function LiveThread({ api, appKey, token, id, color, lang, online: startO
   const [geez, setGeez] = React.useState(lang === "am");
   const [err, setErr] = React.useState<string | null>(null);
   const [reply, setReply] = React.useState<Quote | null>(null);
+  // Messages shown at once while they are on their way (slow mobile data), and those that could not be sent.
+  const [outbox, setOutbox] = React.useState<(Msg & { failed?: boolean; replyId: string | null })[]>([]);
   const composer = React.useRef<ComposerHandle>(null);
   const lastTyping = React.useRef(0);
   const q = `key=${encodeURIComponent(appKey)}&token=${encodeURIComponent(token)}`;
@@ -169,13 +171,36 @@ export function LiveThread({ api, appKey, token, id, color, lang, online: startO
       void api(`tickets/${id}/typing`, {}).catch(() => null);
     }
   };
+  // The message shows straight away and the box empties; it is sent in the background. If it cannot be sent it stays,
+  // marked, with Retry (nothing typed is lost).
+  const deliver = async (m: Msg & { replyId: string | null }) => {
+    setOutbox((o) => o.map((x) => (x.id === m.id ? { ...x, failed: false } : x)));
+    try {
+      await api(`tickets/${id}/messages`, { body: m.body, replyTo: m.replyId });
+      await load().catch(() => null);
+      setOutbox((o) => o.filter((x) => x.id !== m.id));
+    } catch (e) {
+      setOutbox((o) => o.map((x) => (x.id === m.id ? { ...x, failed: true } : x)));
+      setErr(e instanceof Error ? e.message : String(e));
+    }
+  };
   const sendText = async (body: string) => {
     const b = geez ? toGeez(body) : body;
     if (!b.trim()) return;
     setErr(null);
-    await api(`tickets/${id}/messages`, { body: b, replyTo: reply?.id ?? null });
+    const m = {
+      id: `out-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      from: "customer",
+      name: "",
+      body: b,
+      at: new Date().toISOString(),
+      replyTo: reply ? { id: reply.id, author: reply.author ?? reply.name ?? "", body: reply.body } : null,
+      reactions: [],
+      replyId: reply?.id ?? null,
+    };
+    setOutbox((o) => [...o, m]);
     setReply(null);
-    await load();
+    void deliver(m);
   };
   const upload = async (blob: Blob, name: string, caption = "") => {
     await api(`tickets/${id}/files`, { name, mime: blob.type || "application/octet-stream", data: await toBase64(blob), caption, replyTo: reply?.id ?? null });
@@ -203,7 +228,7 @@ export function LiveThread({ api, appKey, token, id, color, lang, online: startO
   const done = ["solved", "closed"].includes(status);
   const online = live ? live.online : startOnline;
   const fileUrl = (f: FileRow) => `/api/support/v1/files/${f.id}?${q}`;
-  const kitMsgs: KitMsg[] = msgs.map((m) => ({
+  const serverMsgs = msgs.map((m) => ({
     id: m.id,
     side: m.from === "customer" ? "out" : m.from === "system" ? "system" : "in",
     author: m.from === "customer" ? null : m.name,
@@ -215,7 +240,13 @@ export function LiveThread({ api, appKey, token, id, color, lang, online: startO
     reactions: m.reactions ?? [],
     status: m.from === "customer" ? (live?.read && live.read >= m.at ? "seen" : "sent") : null,
     role: m.from,
-  }));
+  })) as KitMsg[];
+  const kitMsgs: KitMsg[] = [
+    ...serverMsgs,
+    // On its way: no tick yet.
+    ...outbox.map((m) => ({ id: m.id, side: "out", author: null, authorKey: "customer", body: m.body, at: m.at, files: [], replyTo: m.replyTo, reactions: [], status: null, role: "customer" }) as KitMsg),
+  ];
+  const failed = outbox.filter((m) => m.failed);
   return (
     <div className="flex h-full flex-col" data-live-thread>
       <div className="flex items-center gap-2 border-b px-4 py-2 text-sm">
@@ -268,7 +299,15 @@ export function LiveThread({ api, appKey, token, id, color, lang, online: startO
             above={
               <>
                 {!done && callButton?.(() => void load())}
-                {err && <p className="text-xs text-[#D93025]">{err}</p>}
+                {failed.length > 0 && (
+                  <p className="flex items-center gap-2 text-xs text-[#D93025]" data-not-sent>
+                    {lang === "am" ? `${failed.length} መልዕክት አልተላከም።` : `${failed.length === 1 ? "A message was" : `${failed.length} messages were`} not sent.`}
+                    <button type="button" className="font-semibold underline underline-offset-2" onClick={() => failed.forEach((m) => void deliver(m))}>
+                      {lang === "am" ? "እንደገና ላክ" : "Retry"}
+                    </button>
+                  </p>
+                )}
+                {err && !failed.length && <p className="text-xs text-[#D93025]">{err}</p>}
               </>
             }
           />

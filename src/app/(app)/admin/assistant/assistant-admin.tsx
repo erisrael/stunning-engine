@@ -57,6 +57,7 @@ export function AssistantAdmin({ config, stats, flows, roles }: { config: Assist
           <Button size="sm" variant="outline" onClick={csv}>
             <DownloadIcon /> Export
           </Button>
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="text-left text-xs text-muted-foreground">
               <tr>
@@ -79,6 +80,7 @@ export function AssistantAdmin({ config, stats, flows, roles }: { config: Assist
               ))}
             </tbody>
           </table>
+          </div>
           {stats.weeks.length > 0 && <p className="text-xs text-muted-foreground">Per week: {stats.weeks.map((w) => `${w.week}: ${w.started}`).join(" · ")}</p>}
           <div data-assistant-refused>
             <p className="text-sm font-medium">Asked for outside the role</p>

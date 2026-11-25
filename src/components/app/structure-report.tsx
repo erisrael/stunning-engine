@@ -351,15 +351,15 @@ function MergedTable({ rows, mode }: { rows: StructureRow[]; mode: ReportMode })
   const pin = "sticky z-[5] bg-card py-0.5";
   return (
     <div className="overflow-auto rounded-lg border bg-card" style={{ maxHeight: "calc(100dvh - 18rem)" }}>
-      <table className="w-full min-w-[900px] border-separate border-spacing-0 text-sm">
+      <table className="w-full min-w-[620px] border-separate border-spacing-0 text-sm sm:min-w-[900px]">
         <thead ref={head} className="sticky top-0 z-10 bg-muted text-left text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
           <tr>
-            <th className="w-28 border-b px-3 py-2">{l1[2]}</th>
-            <th className="w-40 border-b px-3 py-2">{l2[2]}</th>
-            <th className="w-64 border-b px-3 py-2">Unit</th>
+            <th className="w-20 border-b px-2 py-2 sm:w-28 sm:px-3">{l1[2]}</th>
+            <th className="w-24 border-b px-2 py-2 sm:w-40 sm:px-3">{l2[2]}</th>
+            <th className="w-28 border-b px-2 py-2 sm:w-64 sm:px-3">Unit</th>
             <th className="border-b px-3 py-2">Part</th>
             {STAGES.map((s) => (
-              <th key={s} className="w-28 border-b px-2 py-2 text-center">
+              <th key={s} className="w-20 border-b px-2 py-2 text-center sm:w-28">
                 {STAGE_LABELS[s]}
               </th>
             ))}

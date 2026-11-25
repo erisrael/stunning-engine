@@ -162,6 +162,7 @@ export function TeamView({ cards, period }: { cards: Scorecard[]; period: string
         </CardDescription>
       </CardHeader>
       <CardContent>
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-muted-foreground">
@@ -196,6 +197,7 @@ export function TeamView({ cards, period }: { cards: Scorecard[]; period: string
             )}
           </tbody>
         </table>
+        </div>
       </CardContent>
     </Card>
   );
@@ -210,6 +212,7 @@ export function CompanyView({ data }: { data: { period: string; departments: { d
           <CardDescription>Average score and how many people in each rating; a department with nobody below or everyone above may need its targets checked.</CardDescription>
         </CardHeader>
         <CardContent>
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-muted-foreground">
@@ -236,6 +239,7 @@ export function CompanyView({ data }: { data: { period: string; departments: { d
               ))}
             </tbody>
           </table>
+          </div>
         </CardContent>
       </Card>
       <Card>

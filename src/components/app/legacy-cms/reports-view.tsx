@@ -169,7 +169,7 @@ export function CmsReportsView({ categories, canSchedule, isAdmin, chatGroups }:
                     </div>
                   </fieldset>
                 </div>
-                <div className="overflow-hidden rounded-xl border">
+                <div className="overflow-x-auto rounded-xl border">
                   <table className="w-full text-xs" aria-label="Report summary">
                     <thead className="bg-muted/60 text-left text-[11px] text-muted-foreground">
                       <tr>

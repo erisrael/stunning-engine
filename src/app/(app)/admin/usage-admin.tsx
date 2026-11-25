@@ -59,6 +59,7 @@ export function UsageAdmin({ report, roleLabel }: { report: UsageReport; roleLab
         </CardHeader>
         <CardContent>
           {report.timings.length ? (
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-xs text-muted-foreground">
@@ -81,6 +82,7 @@ export function UsageAdmin({ report, roleLabel }: { report: UsageReport; roleLab
                 ))}
               </tbody>
             </table>
+            </div>
           ) : (
             <p className="text-sm text-muted-foreground">No timings yet.</p>
           )}

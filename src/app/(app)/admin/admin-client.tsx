@@ -1536,6 +1536,7 @@ export function TeamsAdmin({ people }: { people: TeamPerson[] }) {
               </div>
               <RoleBadge role={st} />
             </div>
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-muted/40 text-left text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
                 <tr>
@@ -1585,6 +1586,7 @@ export function TeamsAdmin({ people }: { people: TeamPerson[] }) {
                 )}
               </tbody>
             </table>
+            </div>
           </Card>
         );
       })}

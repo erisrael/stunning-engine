@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import * as A from "@/app/actions/support-desk";
-import { gathered, trickle } from "@/lib/call-ice";
+import { gathered, single, trickle } from "@/lib/call-ice";
 import { ProximityShade, RouteToggle, useAudioRoute } from "@/components/app/audio-route";
 import type { CallHistoryRow } from "@/server/support-calls";
 import { cn } from "@/lib/utils";
@@ -191,7 +191,7 @@ function CallPanel({ call, record, onDone, onEnded }: { call: Exclude<ActiveCall
       router.push(`/support?ticket=${ticketId}`);
       p.current.timer = window.setInterval(() => setSecs((s) => s + 1), 1000);
       if (doRecord) startRecording();
-      p.current.poll = window.setInterval(async () => {
+      p.current.poll = window.setInterval(single(async () => {
         const s = await A.agentPollCallAction(p.current.callId!);
         if (!s.ok) return;
         const d = s.data as { status: string; onHold: boolean; legs: Leg[]; ice?: unknown[] };
@@ -202,7 +202,7 @@ function CallPanel({ call, record, onDone, onEnded }: { call: Exclude<ActiveCall
           await hangUp(false);
         }
         if (d.status === "transferred") await hangUp(false);
-      }, 2000);
+      }), 2000);
     },
     [hangUp, router, startRecording, staffLeg, ticketId],
   );
@@ -263,7 +263,7 @@ function CallPanel({ call, record, onDone, onEnded }: { call: Exclude<ActiveCall
           p.current.callId = d.callId;
           tr.start();
           setPhase("ringing");
-          p.current.poll = window.setInterval(async () => {
+          p.current.poll = window.setInterval(single(async () => {
             const s = await A.agentPollCallAction(d.callId);
             if (!s.ok) return;
             const k = s.data as { status: string; answer: string | null; ice?: unknown[] };
@@ -276,7 +276,7 @@ function CallPanel({ call, record, onDone, onEnded }: { call: Exclude<ActiveCall
               toast.message(k.status === "declined" ? "The customer declined the call." : "The customer did not answer.");
               await hangUp(false);
             }
-          }, 1500);
+          }), 1500);
         }
       } catch (e) {
         toast.error(e instanceof Error && /Permission|NotAllowed/i.test(e.name + e.message) ? "Allow the microphone to make and answer calls." : "The call could not connect.");
@@ -350,7 +350,7 @@ function CallPanel({ call, record, onDone, onEnded }: { call: Exclude<ActiveCall
       x.staff.legId = legId;
       setPick(null);
       toast.message(`Calling ${name}…`);
-      x.staff.poll = window.setInterval(async () => {
+      x.staff.poll = window.setInterval(single(async () => {
         const s = await A.agentPollCallAction(legId);
         if (!s.ok || !x.staff) return;
         const k = s.data as { status: string; answer: string | null };
@@ -359,7 +359,7 @@ function CallPanel({ call, record, onDone, onEnded }: { call: Exclude<ActiveCall
           toast.message(k.status === "ended" ? `${name} left the call.` : `${name} did not join.`);
           await dropStaff(false);
         }
-      }, 1500);
+      }), 1500);
     } finally {
       setBusy(false);
     }

@@ -211,6 +211,7 @@ function Platforms({ connectors, presets, calls }: { connectors: Connector[]; pr
         {calls.length > 0 && (
           <details className="rounded-lg border p-2 text-xs" data-call-log>
             <summary className="cursor-pointer font-medium">Recent calls ({calls.length})</summary>
+            <div className="overflow-x-auto">
             <table className="mt-1 w-full">
               <tbody>
                 {calls.map((l) => (
@@ -227,6 +228,7 @@ function Platforms({ connectors, presets, calls }: { connectors: Connector[]; pr
                 ))}
               </tbody>
             </table>
+            </div>
           </details>
         )}
       </CardContent>

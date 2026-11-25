@@ -200,6 +200,7 @@ export function IoRules({ cfg, perms, templates, entities }: { cfg: Cfg; perms: 
         </section>
         <section className="space-y-2">
           <h3 className="text-xs font-medium uppercase text-muted-foreground">Allow or deny</h3>
+          <div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead className="text-muted-foreground"><tr><th className="text-left font-medium" /><th className="w-16 font-medium">Import</th><th className="w-16 font-medium">Export</th></tr></thead>
             <tbody>
@@ -212,6 +213,7 @@ export function IoRules({ cfg, perms, templates, entities }: { cfg: Cfg; perms: 
               ))}
             </tbody>
           </table>
+          </div>
           <p className="text-[11px] text-muted-foreground">Checked on the server: the Users and access import refuses rows that change a turned-off kind, and the people exports stop.</p>
         </section>
       </CardContent>

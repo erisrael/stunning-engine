@@ -948,7 +948,7 @@ function KpiDialog({ dept, config, project, access, onClose }: { dept: WorkDept;
             </Button>
           </div>
         )}
-        <div className="max-h-72 overflow-y-auto rounded-lg border">
+        <div className="max-h-72 overflow-auto rounded-lg border">
           <table className="w-full text-xs">
             <tbody>
               {rows?.map((r) => (

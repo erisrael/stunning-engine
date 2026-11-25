@@ -85,14 +85,32 @@ function useChosenTabInView(pathname: string) {
         row.scrollTo({ left: Math.max(0, left), behavior: "smooth" });
       }
     };
-    const t = window.setTimeout(bring, 250);
+    // A strip with more tabs off to a side fades on that side (glass.css), so the hidden tabs are not missed.
+    const edge = (row: HTMLElement) => {
+      const more = row.scrollWidth > row.clientWidth + 2;
+      row.toggleAttribute("data-more-start", more && row.scrollLeft > 4);
+      row.toggleAttribute("data-more-end", more && row.scrollLeft + row.clientWidth < row.scrollWidth - 4);
+    };
+    const edges = () => document.querySelectorAll<HTMLElement>(TAB_ROWS).forEach(edge);
+    const timers = [window.setTimeout(bring, 250), window.setTimeout(edges, 300), window.setTimeout(edges, 1200)];
     const onClick = (e: MouseEvent) => {
-      if ((e.target as Element | null)?.closest?.(TAB_ROWS)) window.setTimeout(bring, 300);
+      if ((e.target as Element | null)?.closest?.(TAB_ROWS)) timers.push(window.setTimeout(bring, 300), window.setTimeout(edges, 800));
+    };
+    let frame = 0;
+    const onScroll = (e: Event) => {
+      const row = e.target instanceof HTMLElement && e.target.matches(TAB_ROWS) ? e.target : null;
+      if (!row || frame) return;
+      frame = window.requestAnimationFrame(() => ((frame = 0), edge(row)));
     };
     document.addEventListener("click", onClick);
+    document.addEventListener("scroll", onScroll, { capture: true, passive: true });
+    window.addEventListener("resize", edges);
     return () => {
-      window.clearTimeout(t);
+      timers.forEach((t) => window.clearTimeout(t));
+      if (frame) window.cancelAnimationFrame(frame);
       document.removeEventListener("click", onClick);
+      document.removeEventListener("scroll", onScroll, { capture: true });
+      window.removeEventListener("resize", edges);
     };
   }, [pathname]);
 }
@@ -115,7 +133,8 @@ function useRefraction(ref: React.RefObject<HTMLElement | null>) {
     const el = ref.current;
     const root = document.documentElement;
     const chromium = !!(navigator as Navigator & { userAgentData?: { brands?: { brand: string }[] } }).userAgentData?.brands?.some((b) => /Chromium/.test(b.brand));
-    const calm = () => root.dataset.lite === "on" || window.matchMedia("(prefers-reduced-transparency: reduce)").matches;
+    // Not in Lite mode, with Reduce Transparency, or on low-power phones and the Android app (redrawn on every scroll frame).
+    const calm = () => root.dataset.lite === "on" || "lowPower" in root.dataset || window.matchMedia("(prefers-reduced-transparency: reduce)").matches;
     if (!el || !chromium || calm()) return;
     const draw = () => {
       const { width, height } = el.getBoundingClientRect();

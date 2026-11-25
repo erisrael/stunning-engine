@@ -76,3 +76,20 @@ export function trickle(pc: RTCPeerConnection, send: (candidate: RTCIceCandidate
     },
   };
 }
+
+/**
+ * For a repeating check (setInterval) that waits on the network: a tick that comes while the last one is still
+ * waiting is skipped, so slow mobile data does not pile up requests that then answer out of order.
+ */
+export function single<A extends unknown[]>(fn: (...args: A) => Promise<unknown>) {
+  let busy = false;
+  return (...args: A) => {
+    if (busy) return;
+    busy = true;
+    void fn(...args)
+      .catch((err) => console.error("call check", err))
+      .finally(() => {
+        busy = false;
+      });
+  };
+}

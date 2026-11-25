@@ -709,7 +709,7 @@ function HealthCard({ issue }: { issue: HealthIssue }) {
       </CardHeader>
       {open && (
         <CardContent>
-          <div className="max-h-80 overflow-y-auto rounded-lg border">
+          <div className="max-h-80 overflow-auto rounded-lg border">
             <table className="w-full text-xs">
               <thead className="sticky top-0 bg-muted/80 text-left text-muted-foreground backdrop-blur">
                 <tr>

@@ -282,6 +282,7 @@ export function RenameDialog({ entity, rows, onClose, onDone }: { entity: Record
             {error ? (
               <p className="p-3 text-sm text-destructive">{error.message}</p>
             ) : (
+              <div className="overflow-x-auto">
               <table className="w-full text-xs">
                 <tbody>
                   {preview.slice(0, 300).map(({ r, before, after }) => (
@@ -292,6 +293,7 @@ export function RenameDialog({ entity, rows, onClose, onDone }: { entity: Record
                   ))}
                 </tbody>
               </table>
+              </div>
             )}
           </div>
         </div>

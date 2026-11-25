@@ -200,6 +200,7 @@ export function TakeRequests({ rows }: { rows: Req[] }) {
           <Button size="sm" className="h-8 text-xs" disabled={busy || !ids.length} onClick={() => decide(ids, true)}><CheckIcon /> Approve {ids.length || ""}</Button>
           <Button size="sm" variant="outline" className="h-8 text-xs" disabled={busy || !ids.length} onClick={() => decide(ids, false)}><XIcon /> Decline</Button>
         </div>
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="text-left text-[11px] text-muted-foreground"><tr><th className="w-8 px-2 py-1"><Checkbox aria-label="Select all requests" checked={sel.size === rows.length} onCheckedChange={(v) => setSel(v === true ? new Set(rows.map((r) => r.id)) : new Set())} /></th><th className="px-2">Part</th><th className="px-2">Who</th><th className="px-2">Stage</th><th /></tr></thead>
           <tbody>
@@ -214,6 +215,7 @@ export function TakeRequests({ rows }: { rows: Req[] }) {
             ))}
           </tbody>
         </table>
+        </div>
       </CardContent>
     </Card>
   );
@@ -254,6 +256,7 @@ export function TakeRulesEditor({ rules, stages }: { rules: Rules; stages: Stage
             <label className="flex items-center gap-2"><Switch checked={r.members} onCheckedChange={(v) => setR({ ...r, members: v })} aria-label="Team members may take work" /> Team members may take work</label>
             <label className="flex items-center gap-2"><Switch checked={r.leadApproval} onCheckedChange={(v) => setR({ ...r, leadApproval: v })} aria-label="Lead approves members' takes" /> Lead approves members&apos; takes</label>
           </div>
+          <div className="overflow-x-auto">
           <table className="w-full">
             <thead className="text-left text-[11px] text-muted-foreground"><tr><th className="py-1">Team</th><th>Per take</th><th>Open</th><th>Members take</th><th>Lead approves</th></tr></thead>
             <tbody>
@@ -279,6 +282,7 @@ export function TakeRulesEditor({ rules, stages }: { rules: Rules; stages: Stage
               })}
             </tbody>
           </table>
+          </div>
           <Button size="sm" onClick={save} disabled={busy} data-save-take-rules>{busy && <Loader2Icon className="animate-spin" />} Save rules</Button>
         </CardContent>
       )}

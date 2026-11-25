@@ -172,6 +172,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
             <CardDescription>Handoffs submitted in the period.</CardDescription>
           </CardHeader>
           <CardContent>
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="text-xs text-muted-foreground">
                 <tr><th className="text-left font-medium">Stage</th><th className="text-right font-medium">Submitted</th><th className="text-right font-medium">Returned</th><th className="text-right font-medium">First pass</th></tr>
@@ -182,6 +183,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
                 ))}
               </tbody>
             </table>
+            </div>
             {r.reworkReasons.length > 0 && (
               <div className="mt-4 space-y-1">
                 <p className="text-xs font-medium">Return reasons</p>

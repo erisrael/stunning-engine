@@ -18,7 +18,6 @@ import { CompassIcon,
   ContactIcon,
   CrownIcon,
   DatabaseIcon,
-  EyeIcon,
   FilePlus2Icon,
   FileTextIcon,
   GridIcon,
@@ -333,8 +332,9 @@ export function AppSidebar({
   const [cmsAccess,setCmsAccess]=React.useState(initialCmsAccess);
   React.useEffect(()=>{setRoleHidden(initialRoleHidden);setCmsAccess(initialCmsAccess);},[initialRoleHidden,initialCmsAccess]);
   React.useEffect(()=>{
-    let cancelled=false, pending=false;
-    const refresh=async()=>{if(pending||document.visibilityState!=="visible")return;pending=true;try{const r=await sidebarVisibilityAction();if(!cancelled&&r.ok&&r.data){setRoleHidden(current=>JSON.stringify(current)===JSON.stringify(r.data!.hidden)?current:r.data!.hidden);setCmsAccess(r.data.cmsAccess);}}catch{}finally{pending=false;}};
+    // At most once a minute, also when the window is focused or shown again (every tab switch used to ask the server).
+    let cancelled=false, pending=false, last=Date.now();
+    const refresh=async()=>{if(pending||document.visibilityState!=="visible"||Date.now()-last<55000)return;pending=true;last=Date.now();try{const r=await sidebarVisibilityAction();if(!cancelled&&r.ok&&r.data){setRoleHidden(current=>JSON.stringify(current)===JSON.stringify(r.data!.hidden)?current:r.data!.hidden);setCmsAccess(r.data.cmsAccess);}}catch{}finally{pending=false;}};
     const timer=window.setInterval(refresh,60000);window.addEventListener("focus",refresh);document.addEventListener("visibilitychange",refresh);
     return()=>{cancelled=true;window.clearInterval(timer);window.removeEventListener("focus",refresh);document.removeEventListener("visibilitychange",refresh);};
   },[activeRole]);
@@ -510,8 +510,8 @@ export function AppSidebar({
         { href: "/checklists", label: "Checklists", icon: ListChecksIcon, cap: "checklists.manage" },
         { href: "/import-export", label: "Import and export", icon: ArrowLeftRightIcon, cap: ["import.run", "import.stage", "import.tracker", "export.run", "export.report", "export.tracker", "export.audit"] },
         { href: "/settings", label: "Settings", icon: SettingsIcon, cap: "settings.manage", sub: settingsSub },
+        // View as is one of Admin's pages (adminSub), not a second entry.
         { href: "/admin", label: "Admin", icon: UserCogIcon, cap: "users.manage", sub: adminSub },
-        { href: "/admin/preview", label: "View as", icon: EyeIcon, cap: "users.manage" },
         // Data manager and Sessions are under Admin for Admin; a data manager without Admin keeps their own entry.
         ...(!has("users.manage") ? [{ href: "/admin/data", label: "Data manager", icon: DatabaseIcon, cap: "data.manage" as Capability }] : []),
         { href: "/audit", label: "Audit log", icon: ShieldCheckIcon, cap: ["users.manage", "items.plan"] },

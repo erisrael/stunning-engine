@@ -47,9 +47,82 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   after(() => maybeRunScheduledChecks());
   // Online status follows activity anywhere in the app, not only in chat (never while viewing as someone).
   if (!viewer.previewBy) after(() => touchPresence(viewer.id));
-  const [counts, cookieStore, settings, users] = await Promise.all([shellCounts(viewer), cookies(), getSettings(), userDirectory()]);
+  const mod = {
+    assistant: import("@/server/assistant"),
+    chapa: import("@/server/chapa-access"),
+    handover: import("@/server/handover-config"),
+    legacy: import("@/server/legacy"),
+    sessions: import("@/server/sessions"),
+    identity: import("@/server/identity"),
+    recognition: import("@/server/recognition"),
+    overview: import("@/server/overview-teams"),
+    support: import("@/server/support-desk"),
+    callRecords: import("@/server/call-records"),
+    fun: import("@/server/fun"),
+    capture: import("@/server/attendance-capture"),
+  };
+  // Everything the shell needs, asked for at once. They were asked one after another (some two or three times) on
+  // every page and every refresh, so the shell waited for the sum of them instead of the slowest one.
+  const quiet = !viewer.previewBy && !viewer.mustChangePassword;
+  const [
+    counts,
+    cookieStore,
+    settings,
+    users,
+    home,
+    cmsAccess,
+    chapaAccess,
+    handover,
+    legacy,
+    sessionsManager,
+    ident,
+    reportDepts,
+    customDepts,
+    roleSidebars,
+    brand,
+    recognition,
+    overviewStages,
+    support,
+    callRecords,
+    fun,
+    capture,
+    avatars,
+    announcements,
+    banners,
+    privacy,
+    assistantOn,
+  ] = await Promise.all([
+    shellCounts(viewer),
+    cookies(),
+    getSettings(),
+    userDirectory(),
+    homeDepartment(viewer),
+    canOpenPath(viewer, "/legacy-cms"),
+    mod.chapa.then((m) => m.hasChapaGrant(viewer)).catch(() => false),
+    mod.handover.then((m) => m.handoverConfig()),
+    mod.legacy.then((m) => m.legacyConfig()),
+    mod.sessions.then((m) => m.canPlanSessions(viewer)),
+    mod.identity.then((m) => m.identity()),
+    can(viewer, "owners.view") ? Promise.resolve([] as string[]) : reportDepartments(viewer),
+    myCustomDepartments(viewer),
+    sidebarDefaults(),
+    navBrand(),
+    mod.recognition.then((m) => m.recognitionConfig()),
+    mod.overview.then((m) => m.overviewStagesFor(viewer)),
+    mod.support.then((m) => m.supportNav(viewer)),
+    mod.callRecords.then((m) => m.canOpenCallRecords(viewer)).catch(() => false),
+    quiet ? mod.fun.then((m) => m.funFor(viewer)).catch(() => null) : Promise.resolve(null),
+    mod.capture.then((m) => m.captureConfig()),
+    avatarsFor([viewer.id]),
+    viewer.mustChangePassword ? Promise.resolve(null) : pendingAnnouncements(viewer),
+    bannerMap(),
+    viewer.previewBy ? Promise.resolve(null) : privacyToAccept(viewer),
+    !quiet ? Promise.resolve(false) : viewer.prefs.assistantShown != null ? Promise.resolve(!!viewer.prefs.assistantShown) : mod.assistant.then(async (m) => !!(await m.roleOptions(viewer.activeRole)).shown),
+  ]);
   const sidebarCookie = cookieStore.get("sidebar_state")?.value;
-  const assistantOn = !viewer.mustChangePassword && !viewer.previewBy && !!(viewer.prefs.assistantShown ?? (await (await import("@/server/assistant")).roleOptions(viewer.activeRole)).shown);
+  const funOn = !!fun;
+  const qrScan = capture.methods.qr && !!capture.methods.scanner;
+  const [assistantCtx, ai, agent] = assistantOn ? await Promise.all([assistantContext(viewer), aiAvailable(viewer), agentAvailable(viewer)]) : [null, false, false];
   return (
     <ActionCenter
       users={users}
@@ -60,19 +133,32 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <CallLayer disabled={!!viewer.previewBy}>
     <SidebarProvider defaultOpen={sidebarCookie !== "false"}>
       <AppSidebar
-        cmsAccess={await canOpenPath(viewer, "/legacy-cms")}
-        chapaAccess={await (await import("@/server/chapa-access")).hasChapaGrant(viewer).catch(() => false)}
-        home={await homeDepartment(viewer)}
-        studioBooking={(await (await import("@/server/handover-config")).handoverConfig()).studioBooking}
-        legacy={(await (await import("@/server/legacy")).legacyConfig()).on}
-        sessionsManager={await (await import("@/server/sessions")).canPlanSessions(viewer)}
-        identity={await (await import("@/server/identity")).identity()}
+        cmsAccess={cmsAccess}
+        chapaAccess={chapaAccess}
+        home={home}
+        studioBooking={handover.studioBooking}
+        legacy={legacy.on}
+        sessionsManager={sessionsManager}
+        identity={ident}
         viewerId={viewer.id}
         approver={viewer.leads.length > 0 || can(viewer, "team.view") || can(viewer, "attendance.manage") || can(viewer, "corrections.approve")}
-        reportsLink={!can(viewer, "owners.view") && (await reportDepartments(viewer)).length > 0} customDepts={await myCustomDepartments(viewer)} userHidden={viewer.prefs.sidebarHidden ?? []} roleHidden={(await sidebarDefaults())[viewer.activeRole] ?? []} perms={viewer.perms} activeRole={viewer.activeRole} counts={counts} workspaceName={settings.workspace.name} brand={await navBrand()} recognition={(await (await import("@/server/recognition")).recognitionConfig()).enabled} overviewTeam={!!(await (await import("@/server/overview-teams")).overviewStagesFor(viewer))?.length} support={await (await import("@/server/support-desk")).supportNav(viewer)} callRecords={await (await import("@/server/call-records")).canOpenCallRecords(viewer).catch(() => false)} />
+        reportsLink={reportDepts.length > 0}
+        customDepts={customDepts}
+        userHidden={viewer.prefs.sidebarHidden ?? []}
+        roleHidden={roleSidebars[viewer.activeRole] ?? []}
+        perms={viewer.perms}
+        activeRole={viewer.activeRole}
+        counts={counts}
+        workspaceName={settings.workspace.name}
+        brand={brand}
+        recognition={recognition.enabled}
+        overviewTeam={!!overviewStages?.length}
+        support={support}
+        callRecords={callRecords}
+      />
       <SidebarInset className="min-w-0">
         {viewer.previewBy && <PreviewBanner name={viewer.name} role={ROLE_LABELS[viewer.activeRole]} />}
-        <Topbar user={{ name: viewer.name, email: viewer.email, roles: viewer.roles, avatar: (await avatarsFor([viewer.id]))[viewer.id] ?? null }} activeRole={viewer.activeRole} unread={counts.notifications} chatUnread={counts.chat} assistant={assistantOn} fun={!viewer.previewBy && !viewer.mustChangePassword && !!(await (await import("@/server/fun")).funFor(viewer).catch(() => null))} qrScan={await (async () => { const c = await (await import("@/server/attendance-capture")).captureConfig(); return c.methods.qr && !!c.methods.scanner; })()} />
+        <Topbar user={{ name: viewer.name, email: viewer.email, roles: viewer.roles, avatar: avatars[viewer.id] ?? null }} activeRole={viewer.activeRole} unread={counts.notifications} chatUnread={counts.chat} assistant={assistantOn} fun={funOn} qrScan={qrScan} />
         <OfflineCheckinSync />
         {!viewer.previewBy && <AskAnywhere />}
         <GeofenceWatch />
@@ -86,15 +172,22 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           </div>
         )}
         <main data-app-main className="mx-auto w-full max-w-[1600px] min-w-0 flex-1 px-3 pt-4 pb-[calc(var(--tabbar-space)+1rem)] sm:px-6 sm:pt-6 lg:pb-6">
-          {!viewer.mustChangePassword && <AnnouncementStrip pending={await pendingAnnouncements(viewer)} />}
-          <SectionBanner banners={await bannerMap()} />
+          {announcements && <AnnouncementStrip pending={announcements} />}
+          <SectionBanner banners={banners} />
           <CollapsedSectionTabs />
           {children}
         </main>
-        {await (async () => {
-          const h = await homeDepartment(viewer);
-          return <MobileNav work={h ? { href: h.base, label: h.kind === "studio" ? "Studio" : "Work" } : (viewer.leads.length || viewer.roles.some((r) => ["recording", "editing", "uploading", "publication"].includes(r))) ? { href: "/my-work", label: "My work" } : null} chat={counts.chat} alerts={counts.notifications} approvals={counts.approvals} appName={(await (await import("@/server/identity")).identity()).shortName} roles={viewer.roles} activeRole={viewer.activeRole} qrScan={await (async () => { const c = await (await import("@/server/attendance-capture")).captureConfig(); return c.methods.qr && !!c.methods.scanner; })()} fun={!viewer.previewBy && !viewer.mustChangePassword && !!(await (await import("@/server/fun")).funFor(viewer).catch(() => null))} />;
-        })()}
+        <MobileNav
+          work={home ? { href: home.base, label: home.kind === "studio" ? "Studio" : "Work" } : viewer.leads.length || viewer.roles.some((r) => ["recording", "editing", "uploading", "publication"].includes(r)) ? { href: "/my-work", label: "My work" } : null}
+          chat={counts.chat}
+          alerts={counts.notifications}
+          approvals={counts.approvals}
+          appName={ident.shortName}
+          roles={viewer.roles}
+          activeRole={viewer.activeRole}
+          qrScan={qrScan}
+          fun={funOn}
+        />
         <ChatKeyBootstrap viewerId={viewer.id} />
         <StyleEffects />
         <TerminalAmbient />
@@ -110,9 +203,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         {!viewer.previewBy && <PresencePing />}
         <Localizer defaultCalendar={settings.workspace.calendarDisplay} />
         <EthiopianDatePicker defaultCalendar={settings.workspace.calendarDisplay} />
-        {assistantOn && <Assistant ctx={await assistantContext(viewer)} ai={await aiAvailable(viewer)} agent={await agentAvailable(viewer)} />}
-        {!viewer.previewBy && !viewer.mustChangePassword && (await (await import("@/server/fun")).funFor(viewer).catch(() => null)) && <FunMode />}
-        {!viewer.previewBy && await privacyToAccept(viewer).then((p) => (p ? <PrivacyGate notice={p.notice} version={p.version} updatedAt={p.updatedAt} /> : null))}
+        {assistantOn && assistantCtx && <Assistant ctx={assistantCtx} ai={ai} agent={agent} />}
+        {funOn && <FunMode />}
+        {privacy && <PrivacyGate notice={privacy.notice} version={privacy.version} updatedAt={privacy.updatedAt} />}
         {!viewer.mustChangePassword && <GetStarted audience={audienceFor(viewer.activeRole, viewer.leads)} tour={viewer.prefs.tour ?? {}} />}
       </SidebarInset>
     </SidebarProvider>

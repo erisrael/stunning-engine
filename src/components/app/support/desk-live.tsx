@@ -36,9 +36,10 @@ export function DeskLive({ children }: { children: React.ReactNode }) {
       const v = JSON.parse(e.data) as { inbox: string; ticket: TicketLive | null };
       setState({ ticket: v.ticket, connected: true });
       if ((inbox && v.inbox !== inbox) || (stamp && v.ticket && v.ticket.stamp !== stamp)) soon();
+      // Marked read when the ticket opens or something in it changed (it was written on every live update).
+      if (ticket && v.ticket && v.ticket.stamp !== stamp) void agentReadAction(ticket);
       inbox = v.inbox;
       stamp = v.ticket?.stamp ?? "";
-      if (ticket && v.ticket) void agentReadAction(ticket);
     };
     return () => {
       es.close();

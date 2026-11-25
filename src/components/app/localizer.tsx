@@ -38,6 +38,9 @@ const hydrated = (el: Element) => Object.keys(el).some((k) => k.startsWith("__re
 
 export function Localizer({ defaultCalendar = "gregorian" }: { defaultCalendar?: string }) {
   const pathname = usePathname();
+  // Sweeps for a newly opened page (set up once below; a page change no longer undoes and redoes the whole page).
+  const sweepRef = React.useRef<(() => void) | null>(null);
+  React.useEffect(() => sweepRef.current?.(), [pathname]);
   React.useEffect(() => {
     const root = document.documentElement;
 
@@ -117,15 +120,26 @@ export function Localizer({ defaultCalendar = "gregorian" }: { defaultCalendar?:
     const schedule = () => {
       sweeps.forEach((t) => window.clearTimeout(t));
       all();
-      sweeps = [400, 1200, 2500, 5000].map((ms) => window.setTimeout(all, ms));
+      sweeps = [400, 1500, 4000].map((ms) => window.setTimeout(all, ms));
     };
     schedule();
-    let busy = false;
-    const obs = new MutationObserver((list) => {
-      if (busy) return;
-      busy = true;
-      try {
-        for (const m of list) {
+    sweepRef.current = () => {
+      if (lang !== "en" || cal !== "gregorian") schedule();
+    };
+    // Changes are handled together once per frame (before it is drawn), not one by one as they happen.
+    let pending: MutationRecord[] = [];
+    let frame = 0;
+    // A hidden tab draws no frames: past a few thousand changes, one full pass replaces them.
+    let full = false;
+    const flush = () => {
+      frame = 0;
+      const list = pending;
+      pending = [];
+      if (full) {
+        full = false;
+        all();
+      }
+      for (const m of list) {
           if (m.type === "attributes" && m.target === root) {
             const nl = root.dataset.lang ?? "en";
             const nc = root.dataset.calendar || defaultCalendar;
@@ -138,20 +152,28 @@ export function Localizer({ defaultCalendar = "gregorian" }: { defaultCalendar?:
           } else if (lang !== "en" || cal !== "gregorian") {
             if (m.type === "characterData") fix(m.target as Text);
             else if (m.type === "attributes") fixAttrs(m.target as Element);
-            else m.addedNodes.forEach(walk);
+            else m.addedNodes.forEach((n) => n.isConnected && walk(n));
           }
-        }
-      } finally {
-        busy = false;
       }
+    };
+    const obs = new MutationObserver((list) => {
+      // English and Gregorian: only a change of language or calendar matters.
+      for (const m of list) if (m.target === root || lang !== "en" || cal !== "gregorian") pending.push(m);
+      if (pending.length > 3000) {
+        pending = pending.filter((m) => m.target === root);
+        full = true;
+      }
+      if ((pending.length || full) && !frame) frame = window.requestAnimationFrame(flush);
     });
     obs.observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["placeholder", "title", "aria-label"] });
     obs.observe(root, { attributes: true, attributeFilter: ["data-lang", "data-calendar"] });
     return () => {
       obs.disconnect();
+      if (frame) window.cancelAnimationFrame(frame);
       sweeps.forEach((t) => window.clearTimeout(t));
+      sweepRef.current = null;
       restore();
     };
-  }, [pathname, defaultCalendar]);
+  }, [defaultCalendar]);
   return null;
 }

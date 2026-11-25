@@ -422,6 +422,19 @@
   :is([data-slot="tabs-list"], [data-page-tabs], [data-section-tabs], [data-wrap-tabs]) > * {
     scroll-snap-align: start;
   }
+  /* More tabs off to a side (marked by mobile-nav.tsx): that side fades out. */
+  :is([data-slot="tabs-list"], [data-page-tabs], [data-section-tabs], [data-wrap-tabs])[data-more-end] {
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  }
+  :is([data-slot="tabs-list"], [data-page-tabs], [data-section-tabs], [data-wrap-tabs])[data-more-start] {
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 28px);
+    mask-image: linear-gradient(to right, transparent, #000 28px);
+  }
+  :is([data-slot="tabs-list"], [data-page-tabs], [data-section-tabs], [data-wrap-tabs])[data-more-start][data-more-end] {
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent);
+  }
 }
 
 /* ------------------------------------------------------------------ Customer support desk on phones and tablets
@@ -515,4 +528,31 @@
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
+}
+
+/* ------------------------------------------------------------------ Low power
+   The Android app and phones with 4 GB or less (appearance-script.ts sets data-low-power): the same glass look, but
+   nothing blurs what is behind it live. Blur on the fixed tab bar, the sticky top bar and open menus is redrawn on
+   every frame while the page scrolls, which made those phones lag. Surfaces are a little more opaque instead. */
+:root[data-low-power] :is(.glass, header[data-topbar], [data-slot="sidebar"][data-mobile="true"], [data-slot="dialog-content"], [data-slot="alert-dialog-content"], [data-slot="sheet-content"], [data-slot="popover-content"], [data-slot="dropdown-menu-content"], [data-slot="select-content"], [data-slot="context-menu-content"]),
+:root[data-low-power] :is(header[data-topbar], [data-slot="sidebar"][data-mobile="true"], [data-slot="sidebar-inner"], [data-slot="popover-content"], [data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"], [data-slot="select-content"], [data-slot="context-menu-content"], [data-slot="hover-card-content"])::before {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+:root[data-low-power] .glass {
+  background: color-mix(in oklab, var(--glass-solid) 94%, transparent);
+}
+:root[data-low-power] {
+  --glass-tint: rgb(255 255 255 / 0.9);
+  --glass-tint-strong: rgb(250 250 252 / 0.96);
+}
+:root.dark[data-low-power] {
+  --glass-tint: rgb(44 44 48 / 0.9);
+  --glass-tint-strong: rgb(30 30 34 / 0.96);
+}
+:root[data-low-power] :is([data-slot="dialog-content"], [data-slot="alert-dialog-content"], [data-slot="sheet-content"]) {
+  background: var(--popover) !important;
+}
+:root[data-low-power] [data-slot="sidebar"][data-mobile="true"] {
+  background: var(--sidebar) !important;
 }

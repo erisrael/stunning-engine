@@ -204,7 +204,17 @@ export function CallLayer({ children, disabled = false }: { children: React.Reac
     setCall(c);
   };
 
-  const iceServers = () => (iceRef.current ??= fetch("/api/calls/ice", { cache: "no-store" }).then((r) => r.json() as Promise<Ice>).catch(() => ({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }], relay: false })));
+  // Connection servers for this call (cleared at the end of each call). A failed fetch is not kept: the next ask tries again.
+  const iceServers = () =>
+    (iceRef.current ??= fetch("/api/calls/ice", { cache: "no-store" })
+      .then((r) => {
+        if (!r.ok) throw new Error(String(r.status));
+        return r.json() as Promise<Ice>;
+      })
+      .catch(() => {
+        iceRef.current = null;
+        return { iceServers: [{ urls: "stun:stun.l.google.com:19302" }, { urls: "stun:stun.cloudflare.com:3478" }], relay: false };
+      }));
 
   const signal = (kind: string, payload: unknown) => {
     const c = callRef.current;
@@ -301,15 +311,50 @@ export function CallLayer({ children, disabled = false }: { children: React.Reac
     local?.getTracks().forEach((t) => pc.addTrack(t, local));
     pc.ontrack = (e) => setRemoteStream(e.streams[0] ?? new MediaStream([e.track]));
     pc.onicecandidate = (e) => e.candidate && signal("candidate", e.candidate.toJSON());
+    // A dropped network (Wi-Fi to mobile data, a tunnel) is reconnected instead of ending the call: the caller asks
+    // for new network paths (an ICE restart, sent as a new offer the other side answers as usual). Two tries, then
+    // the call ends as failed.
+    let restarts = 0;
+    let wait = 0;
+    let connectedOnce = false;
+    const restart = async () => {
+      if (pcRef.current !== pc || pc.connectionState === "connected" || pc.signalingState === "closed") return;
+      if (restarts >= 2) return void hangup("failed");
+      restarts++;
+      try {
+        pc.restartIce();
+        if (initiator && pc.signalingState === "stable") {
+          await pc.setLocalDescription(await pc.createOffer({ iceRestart: true }));
+          signal("offer", pc.localDescription!.toJSON());
+        }
+      } catch (err) {
+        console.error("call restart", err);
+      }
+      window.clearTimeout(wait);
+      wait = window.setTimeout(() => pcRef.current === pc && pc.connectionState !== "connected" && void restart(), 12_000);
+      timers.current.push(wait);
+    };
     pc.onconnectionstatechange = () => {
       if (pcRef.current !== pc) return;
       const st = pc.connectionState;
       if (st === "connected") {
+        window.clearTimeout(wait);
+        restarts = 0;
         if (phaseRef.current === "connecting") setPhase("active");
         setConnectedAt((x) => x ?? Date.now());
-        setQuality((q) => q ?? "good");
-      } else if (st === "disconnected") setQuality("poor");
-      else if (st === "failed") void hangup("failed");
+        setQuality((q) => (q === "poor" ? "fair" : (q ?? "good")));
+      } else if (st === "disconnected") {
+        setQuality("poor");
+        // Often back on its own within seconds; restart if not.
+        window.clearTimeout(wait);
+        wait = window.setTimeout(() => pcRef.current === pc && pc.connectionState === "disconnected" && void restart(), 4000);
+        timers.current.push(wait);
+      } else if (st === "failed") {
+        // Never connected at all: a network that blocks calls; once connected: try to reconnect.
+        if (connectedOnce) void restart();
+        else void hangup("failed");
+      }
+      if (st === "connected") connectedOnce = true;
     };
     const deadline = window.setTimeout(() => {
       if (pcRef.current === pc && pc.connectionState !== "connected") void hangup("failed");
@@ -461,12 +506,12 @@ export function CallLayer({ children, disabled = false }: { children: React.Reac
     const loop = async () => {
       if (stop) return;
       const c = callRef.current;
-      if (c || document.visibilityState === "visible") {
-        const r = await api<PollResult>("poll", { callId: c?.id ?? null, afterSeq: seqRef.current });
-        if (!stop && r.ok) await engine.current.onPoll(r.data).catch((err) => console.error("call poll", err));
-      }
+      // A hidden tab still hears calls, checking less often (it used to stop, so a call to a background tab never rang).
+      const hidden = document.visibilityState !== "visible";
+      const r = await api<PollResult>("poll", { callId: c?.id ?? null, afterSeq: seqRef.current });
+      if (!stop && r.ok) await engine.current.onPoll(r.data).catch((err) => console.error("call poll", err));
       const p = phaseRef.current;
-      t = window.setTimeout(loop, !callRef.current ? 2500 : p === "outgoing" || p === "connecting" ? 700 : 2000);
+      t = window.setTimeout(loop, !callRef.current ? (hidden ? 8000 : 2500) : p === "outgoing" || p === "connecting" ? 700 : 2000);
     };
     void loop();
     const onVisible = () => document.visibilityState === "visible" && !callRef.current && (window.clearTimeout(t), void loop());

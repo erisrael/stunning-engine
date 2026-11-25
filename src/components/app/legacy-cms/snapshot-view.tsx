@@ -371,6 +371,7 @@ function CompareTab({ id, comparison: c, others, withId }: { id: string; compari
                 <p className="font-medium">
                   {x.title ?? x.externalId} <span className="font-mono text-xs text-muted-foreground">{x.category} #{x.externalId}</span>
                 </p>
+                <div className="overflow-x-auto">
                 <table className="mt-1 w-full text-xs">
                   <tbody>
                     {x.fields.map((fl) => (
@@ -382,6 +383,7 @@ function CompareTab({ id, comparison: c, others, withId }: { id: string; compari
                     ))}
                   </tbody>
                 </table>
+                </div>
               </li>
             ))}
           </ul>

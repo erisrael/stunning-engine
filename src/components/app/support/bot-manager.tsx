@@ -306,6 +306,7 @@ function ContentSection({ bot, content, pushes }: { bot: string; content: Conten
           {!pushes.length ? (
             <p className="text-sm text-muted-foreground">No sends yet.</p>
           ) : (
+            <div className="overflow-x-auto">
             <table className="w-full text-sm" data-pushes>
               <thead className="text-left text-xs text-muted-foreground">
                 <tr>
@@ -334,6 +335,7 @@ function ContentSection({ bot, content, pushes }: { bot: string; content: Conten
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </CardContent>
       </Card>

@@ -97,6 +97,7 @@ export function PrivacyAdmin({ config, report, log }: { config: PrivacyConfig; r
         </CardHeader>
         <CardContent>
           {log.length ? (
+            <div className="overflow-x-auto">
             <table className="w-full text-sm" data-access-log>
               <thead className="text-left text-xs text-muted-foreground">
                 <tr>
@@ -117,6 +118,7 @@ export function PrivacyAdmin({ config, report, log }: { config: PrivacyConfig; r
                 ))}
               </tbody>
             </table>
+            </div>
           ) : (
             <p className="text-sm text-muted-foreground">Nobody has opened someone else&apos;s record yet.</p>
           )}

@@ -700,7 +700,7 @@ function LogDetail({ id, tz, onClose }: { id: string; tz: string; onClose: () =>
                 <PaperclipIcon className="inline size-3" /> {data.attachments.map((a) => a.name).join(", ")}
               </p>
             )}
-            <div className="max-h-64 overflow-y-auto rounded-lg border">
+            <div className="max-h-64 overflow-auto rounded-lg border">
               <table className="w-full text-xs">
                 <tbody>
                   {data.recipients.map((r) => (

@@ -482,6 +482,7 @@ function Tree({ rows, ctx, viewer, open, grouping }: { rows: ItemListRow[]; ctx:
         return (
           <section key={g.title} className="overflow-hidden rounded-xl border bg-card">
             <h3 className="border-b bg-muted/50 px-3 py-2 text-sm font-semibold">{g.title}</h3>
+            <div className="overflow-x-auto">
             <table className="w-full min-w-[760px] text-sm">
               <thead className="text-left text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
                 <tr>
@@ -519,6 +520,7 @@ function Tree({ rows, ctx, viewer, open, grouping }: { rows: ItemListRow[]; ctx:
                 </tbody>
               ))}
             </table>
+            </div>
           </section>
         );
       })}

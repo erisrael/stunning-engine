@@ -68,8 +68,17 @@ export function GroupCallRoom({ callId, me }: { callId: string; me: Peer }) {
       local.current?.getTracks().forEach((t) => pc.addTrack(t, local.current!));
       pc.onicecandidate = (e) => e.candidate && void send(peer.id, "ice", e.candidate.toJSON());
       pc.ontrack = (e) => setStreams((s) => ({ ...s, [peer.id]: e.streams[0] ?? new MediaStream([e.track]) }));
+      // A dropped connection asks for new network paths. restartIce() alone sends nothing; the side that made the first
+      // offer sends a new one (iceRestart), which the other side answers as usual.
       pc.onconnectionstatechange = () => {
-        if (pc.connectionState === "failed") pc.restartIce?.();
+        if (pc.connectionState !== "failed" || !pcs.current.has(peer.id)) return;
+        pc.restartIce?.();
+        if (me.id < peer.id && pc.signalingState === "stable")
+          void (async () => {
+            const offer = await pc.createOffer({ iceRestart: true });
+            await pc.setLocalDescription(offer);
+            await send(peer.id, "offer", offer);
+          })().catch(() => null);
       };
       if (me.id < peer.id)
         void (async () => {
@@ -132,7 +141,12 @@ export function GroupCallRoom({ callId, me }: { callId: string; me: Peer }) {
         setTitle(joined.group);
         const wantVideo = joined.media === "video";
         setVideo(wantVideo);
-        ice.current = ((await fetch("/api/calls/ice").then((r) => r.json()).catch(() => ({ iceServers: [] }))) as { iceServers: RTCIceServer[] }).iceServers;
+        // Without the server's list, public STUN at least (an empty list only connects people on the same network).
+        const fallback = [{ urls: "stun:stun.l.google.com:19302" }, { urls: "stun:stun.cloudflare.com:3478" }];
+        ice.current = await fetch("/api/calls/ice", { cache: "no-store" })
+          .then((r) => (r.ok ? (r.json() as Promise<{ iceServers: RTCIceServer[] }>) : Promise.reject(new Error(String(r.status)))))
+          .then((d) => (d.iceServers?.length ? d.iceServers : fallback))
+          .catch(() => fallback);
         try {
           local.current = await navigator.mediaDevices.getUserMedia({ audio: true, video: wantVideo });
         } catch {

@@ -31,6 +31,7 @@ export function ReportView({ dept, data, period, workspace }: { dept: string; da
   const exportQuery=new URLSearchParams({dept,period,...Object.fromEntries(Object.entries(data.filters).filter((e):e is [string,string]=>!!e[1]))});
   const table = (head: string[], rows: (string | number | null)[][], empty: string) =>
     rows.length ? (
+      <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead className="text-left text-xs text-muted-foreground">
           <tr className="border-b">
@@ -53,6 +54,7 @@ export function ReportView({ dept, data, period, workspace }: { dept: string; da
           ))}
         </tbody>
       </table>
+      </div>
     ) : (
       <p className="text-sm text-muted-foreground">{empty}</p>
     );
