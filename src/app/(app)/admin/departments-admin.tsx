@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { UserAvatar } from "@/components/app/primitives";
 import { archiveDepartmentAction, assignPresenterToDepartmentAction, createDepartmentAction, deleteDepartmentAction, setPositionAction } from "@/app/actions/departments";
-import { DEPARTMENT_LABELS, DEPARTMENT_ROLES, POSITION_LABELS, POSITIONS, ROLE_LABELS, type Department, type Position, type Role } from "@/lib/domain";
+import { roleLabel, DEPARTMENT_LABELS, DEPARTMENT_ROLES, POSITION_LABELS, POSITIONS, type Department, type Position, type Role } from "@/lib/domain";
 import { DEPT_TEMPLATES } from "@/lib/dept-config";
 import { deptPath } from "@/lib/work";
 import { cn } from "@/lib/utils";
@@ -22,7 +22,7 @@ export type PresenterItem = { id: string; name: string; kind: string; subjects?:
 export type DeptRow = { dept: Department; people: Person[] };
 export type CustomRow = { key: string; title: string; template: string; archived: boolean; people: Person[] };
 
-const SECTION: Partial<Record<Department, string>> = { dev: "/dev", studio: "/studio", marketing: "/marketing" };
+const SECTION: Partial<Record<Department, string>> = { dev: "/dev", studio: "/studio", marketing: "/marketing", sales: "/sales", operations: "/operations", support: "/support" };
 
 export function DepartmentsAdmin({ departments, custom = [], everyone = [], presenters = [] }: { departments: DeptRow[]; custom?: CustomRow[]; everyone?: { id: string; name: string }[]; presenters?: PresenterItem[] }) {
   return (
@@ -39,12 +39,12 @@ export function DepartmentsAdmin({ departments, custom = [], everyone = [], pres
             key={d.dept}
             dept={d.dept}
             title={DEPARTMENT_LABELS[d.dept]}
-            subtitle={`Roles: ${DEPARTMENT_ROLES[d.dept].map((r) => ROLE_LABELS[r]).join(", ")}`}
+            subtitle={`Roles: ${DEPARTMENT_ROLES[d.dept].map((r) => roleLabel(r)).join(", ")}`}
             href={SECTION[d.dept]}
-            configure={d.dept === "dev" || d.dept === "marketing"}
+            configure={d.dept === "dev" || d.dept === "marketing" || d.dept === "sales" || d.dept === "operations"}
             people={d.people}
             presenters={presenters}
-            empty={`Nobody yet. Give people the ${DEPARTMENT_ROLES[d.dept].map((r) => ROLE_LABELS[r]).join(" or ")} role in People.`}
+            empty={`Nobody yet. Give people the ${DEPARTMENT_ROLES[d.dept].map((r) => roleLabel(r)).join(" or ")} role in People.`}
           />
         ))}
         {custom.map((d) => (
@@ -227,7 +227,7 @@ function DeptCard({
                 <UserAvatar name={p.name} />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-medium">{p.name}</span>
-                  <span className="block truncate text-xs text-muted-foreground">{custom ? POSITION_LABELS[p.position] : p.roles.map((r) => ROLE_LABELS[r]).join(", ") || "No role in this department"}</span>
+                  <span className="block truncate text-xs text-muted-foreground">{custom ? POSITION_LABELS[p.position] : p.roles.map((r) => roleLabel(r)).join(", ") || "No role in this department"}</span>
                 </span>
                 <Select value={p.position} disabled={busy === `${dept}:${p.id}`} onValueChange={(v) => set(p.id, p.name, v as Position)}>
                   <SelectTrigger size="sm" className="h-8 w-28 text-xs" aria-label={`Position of ${p.name}`}>

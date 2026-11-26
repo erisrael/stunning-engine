@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { blockDeviceAction, endOtherSessionsAction, endSessionAction, exitPreviewAction, startPreviewAction, unblockDeviceAction } from "@/app/actions/security";
 import type { BlockedDevice, SessionRow } from "@/server/devices";
-import { ROLE_LABELS, STAGE_LABELS, type Role, type Stage } from "@/lib/domain";
+import { roleLabel, ROLE_LABELS, STAGE_LABELS, type Role, type Stage } from "@/lib/domain";
 import { cn } from "@/lib/utils";
 
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "-");
@@ -215,7 +215,7 @@ export function ViewAsPicker({ people, departments }: { people: PreviewPerson[];
               <div className="min-w-0 flex-1">
                 <div className="truncate font-medium">{p.name}</div>
                 <div className="truncate text-xs text-muted-foreground">
-                  {[...p.roles.map((r) => ROLE_LABELS[r]), ...p.leads.map((s) => `${STAGE_LABELS[s]} lead`), ...p.positions.map((x) => `${x.position} in ${departments.find((d) => d.key === x.dept)?.label ?? x.dept}`)].join(" · ")}
+                  {[...p.roles.map((r) => roleLabel(r)), ...p.leads.map((s) => `${STAGE_LABELS[s]} lead`), ...p.positions.map((x) => `${x.position} in ${departments.find((d) => d.key === x.dept)?.label ?? x.dept}`)].join(" · ")}
                 </div>
               </div>
               <Button size="sm" variant="outline" onClick={() => go(p)}>

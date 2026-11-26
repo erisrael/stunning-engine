@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 93;
+export const SCHEMA_VERSION = 94;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -4420,6 +4420,124 @@ CREATE TABLE IF NOT EXISTS dept_diagrams (
   updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_dept_diagrams ON dept_diagrams(dept, project_id);
+-- v94: the Tools hub (src/server/tools*.ts). Everything a person makes here is theirs alone (user_id on every row;
+-- every query filters by it). Notes keep Markdown with tick boxes; tasks and reminders may link to a production item.
+CREATE TABLE IF NOT EXISTS tool_notes (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title TEXT NOT NULL DEFAULT '',
+  body TEXT NOT NULL DEFAULT '',
+  tags TEXT NOT NULL DEFAULT '[]',
+  pinned INTEGER NOT NULL DEFAULT 0,
+  link_kind TEXT,
+  link_id TEXT,
+  link_label TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  deleted_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_tool_notes_user ON tool_notes(user_id, deleted_at, updated_at);
+CREATE TABLE IF NOT EXISTS tool_tasks (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  note_id TEXT REFERENCES tool_notes(id) ON DELETE SET NULL,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  due_at TEXT,
+  done INTEGER NOT NULL DEFAULT 0,
+  done_at TEXT,
+  link_kind TEXT,
+  link_id TEXT,
+  link_label TEXT,
+  sort INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_tool_tasks_user ON tool_tasks(user_id, done, due_at);
+CREATE TABLE IF NOT EXISTS tool_reminders (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  notes TEXT NOT NULL DEFAULT '',
+  at TEXT NOT NULL,
+  all_day INTEGER NOT NULL DEFAULT 0,
+  done INTEGER NOT NULL DEFAULT 0,
+  note_id TEXT REFERENCES tool_notes(id) ON DELETE SET NULL,
+  task_id TEXT REFERENCES tool_tasks(id) ON DELETE CASCADE,
+  link_kind TEXT,
+  link_id TEXT,
+  link_label TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_tool_reminders_user ON tool_reminders(user_id, at);
+-- Documents, decks, letters and saved sheets (kind), their content as JSON.
+CREATE TABLE IF NOT EXISTS tool_files (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,
+  title TEXT NOT NULL DEFAULT '',
+  data TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  deleted_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_tool_files_user ON tool_files(user_id, kind, deleted_at, updated_at);
+-- The private calendar feed: only the token's hash is looked up; the sealed token lets the owner see the link again.
+CREATE TABLE IF NOT EXISTS tool_calendar_tokens (
+  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL UNIQUE,
+  token_enc TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  last_used_at TEXT
+);
+-- A person's own connections (Notion): the token sealed with the workspace key.
+CREATE TABLE IF NOT EXISTS tool_connections (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  provider TEXT NOT NULL,
+  token_enc TEXT NOT NULL,
+  meta TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (user_id, provider)
+);
+-- OAuth 2.1 for Claude (MCP) and ChatGPT (Custom GPT actions): clients, one-time codes (PKCE) and tokens. Only hashes
+-- of codes, secrets and tokens are stored.
+CREATE TABLE IF NOT EXISTS oauth_clients (
+  client_id TEXT PRIMARY KEY,
+  secret_hash TEXT,
+  name TEXT NOT NULL,
+  redirect_uris TEXT NOT NULL DEFAULT '[]',
+  kind TEXT NOT NULL DEFAULT 'dynamic',
+  created_by TEXT,
+  created_at TEXT NOT NULL,
+  revoked_at TEXT
+);
+CREATE TABLE IF NOT EXISTS oauth_codes (
+  code_hash TEXT PRIMARY KEY,
+  client_id TEXT NOT NULL,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  redirect_uri TEXT NOT NULL,
+  code_challenge TEXT,
+  scope TEXT NOT NULL,
+  resource TEXT,
+  expires_at TEXT NOT NULL,
+  used_at TEXT
+);
+CREATE TABLE IF NOT EXISTS oauth_tokens (
+  id TEXT PRIMARY KEY,
+  token_hash TEXT NOT NULL UNIQUE,
+  kind TEXT NOT NULL,
+  client_id TEXT NOT NULL,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  scope TEXT NOT NULL,
+  parent_id TEXT,
+  expires_at TEXT NOT NULL,
+  revoked_at TEXT,
+  created_at TEXT NOT NULL,
+  last_used_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_oauth_tokens_user ON oauth_tokens(user_id, kind, revoked_at);
 
 `;
 
@@ -4711,4 +4829,10 @@ export const TABLES = [
   "assignment_responses",
   "dept_diagrams",
   "dept_access_events",
+  "tool_notes",
+  "tool_tasks",
+  "tool_reminders",
+  "tool_files",
+  "tool_calendar_tokens",
+  "tool_connections",
 ] as const;

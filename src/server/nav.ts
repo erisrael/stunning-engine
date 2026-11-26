@@ -33,7 +33,7 @@ export async function homeDepartment(user: AppUser & { activeRole: string }): Pr
   if (oversees(user)) return null;
   // The built-in department of the active role (Developer: Dev; Marketing; Content: Studio).
   let key: string | null = null;
-  for (const d of ["dev", "marketing", "studio"] as Department[]) if ((DEPARTMENT_ROLES[d] as string[]).includes(user.activeRole)) key = d;
+  for (const d of ["dev", "marketing", "studio", "sales", "operations"] as Department[]) if ((DEPARTMENT_ROLES[d] as string[]).includes(user.activeRole)) key = d;
   let custom: { title: string; template: string } | null = null;
   // Otherwise a department created in Admin where the person has a position (not for production staff, whose
   // sidebar is their stage).

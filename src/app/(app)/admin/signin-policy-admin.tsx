@@ -17,7 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ProviderMark } from "@/components/app/signin-ui";
 import { SignInHistory } from "@/components/app/account-security";
 import { createInviteAction, decideSignupAction, markEmailConfirmedAction, resetTwoStepAction, revokeInviteAction, saveSignInPolicyAction, sendEmailConfirmationAction, signInLogAction } from "@/app/actions/signin";
-import { ROLE_LABELS, ROLES, type Role } from "@/lib/domain";
+import { roleLabel, ROLES, type Role } from "@/lib/domain";
 import { cleanDomains, PROVIDER_IDS, SIGNIN_EVENTS, type ProviderId, type SignInPolicy, type TwoStepLevel } from "@/lib/signin-policy";
 import type { InviteRow, SignInLogRow, SignupRequestRow, TwoStepRosterRow } from "@/server/signin";
 import { fmtDateTime } from "@/lib/format";
@@ -68,7 +68,7 @@ function RolePicker({ value, onChange }: { value: Role[]; onChange: (r: Role[]) 
       {ROLES.map((r) => (
         <label key={r} className="flex items-center gap-1.5 text-sm">
           <Checkbox checked={value.includes(r)} onCheckedChange={(v) => onChange(v === true ? [...value, r] : value.filter((x) => x !== r))} />
-          {ROLE_LABELS[r]}
+          {roleLabel(r)}
         </label>
       ))}
     </div>
@@ -251,7 +251,7 @@ export function SignInPolicyAdmin({ data }: { data: SignInAdminData }) {
                     });
                   return (
                     <TableRow key={r}>
-                      <TableCell className="font-medium">{ROLE_LABELS[r]}</TableCell>
+                      <TableCell className="font-medium">{roleLabel(r)}</TableCell>
                       <TableCell>
                         <Select
                           value={p.twoStep.roles[r] ?? "default"}
@@ -264,7 +264,7 @@ export function SignInPolicyAdmin({ data }: { data: SignInAdminData }) {
                             })
                           }
                         >
-                          <SelectTrigger className="w-36" aria-label={`Two-step for ${ROLE_LABELS[r]}`}>
+                          <SelectTrigger className="w-36" aria-label={`Two-step for ${roleLabel(r)}`}>
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -281,7 +281,7 @@ export function SignInPolicyAdmin({ data }: { data: SignInAdminData }) {
                         <Input
                           type="number"
                           className="w-24"
-                          aria-label={`Idle minutes for ${ROLE_LABELS[r]}`}
+                          aria-label={`Idle minutes for ${roleLabel(r)}`}
                           placeholder={String(p.sessions.default.idleMinutes)}
                           value={lim ? lim.idleMinutes : ""}
                           onChange={(e) => setLim(e.target.value === "" && !lim?.maxHours ? null : { idleMinutes: Number(e.target.value) })}
@@ -291,7 +291,7 @@ export function SignInPolicyAdmin({ data }: { data: SignInAdminData }) {
                         <Input
                           type="number"
                           className="w-24"
-                          aria-label={`Maximum hours for ${ROLE_LABELS[r]}`}
+                          aria-label={`Maximum hours for ${roleLabel(r)}`}
                           placeholder={String(p.sessions.default.maxHours)}
                           value={lim ? lim.maxHours : ""}
                           onChange={(e) => setLim({ maxHours: Number(e.target.value) || p.sessions.default.maxHours })}
@@ -468,7 +468,7 @@ function SignupSettings({ p, set, domainText, setDomainText }: { p: SignInPolicy
                   <SelectContent>
                     {ROLES.filter((r) => r !== "admin" && r !== "owner").map((r) => (
                       <SelectItem key={r} value={r}>
-                        {ROLE_LABELS[r]}
+                        {roleLabel(r)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -520,7 +520,7 @@ function Invites({ data, mode }: { data: SignInAdminData; mode: SignInPolicy["si
               <SelectContent>
                 {ROLES.map((r) => (
                   <SelectItem key={r} value={r}>
-                    {ROLE_LABELS[r]}
+                    {roleLabel(r)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -556,7 +556,7 @@ function Invites({ data, mode }: { data: SignInAdminData; mode: SignInPolicy["si
               {data.invites.map((i) => (
                 <TableRow key={i.id}>
                   <TableCell>{i.email ?? "Anyone with the link"}</TableCell>
-                  <TableCell>{ROLE_LABELS[i.role]}</TableCell>
+                  <TableCell>{roleLabel(i.role)}</TableCell>
                   <TableCell className="text-muted-foreground">{i.createdBy}</TableCell>
                   <TableCell>{i.usedAt ? `Used by ${i.usedBy ?? "someone"}, ${fmtDateTime(i.usedAt)}` : i.expiresAt < now ? "Expired" : `Open until ${fmtDateTime(i.expiresAt)}`}</TableCell>
                   <TableCell className="text-right">
@@ -629,7 +629,7 @@ function Requests({ rows, defaultRole }: { rows: SignupRequestRow[]; defaultRole
                       <SelectContent>
                         {ROLES.filter((x) => x !== "owner").map((x) => (
                           <SelectItem key={x} value={x}>
-                            {ROLE_LABELS[x]}
+                            {roleLabel(x)}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -694,7 +694,7 @@ function Roster({ rows }: { rows: TwoStepRosterRow[] }) {
                 <TableRow key={r.id}>
                   <TableCell>
                     <p className="font-medium">{r.name}</p>
-                    <p className="text-xs text-muted-foreground">{r.roles.map((x) => ROLE_LABELS[x]).join(", ")}</p>
+                    <p className="text-xs text-muted-foreground">{r.roles.map((x) => roleLabel(x)).join(", ")}</p>
                   </TableCell>
                   <TableCell>{LEVEL_LABELS[r.level]}</TableCell>
                   <TableCell>{r.on ? <Badge variant="secondary">On</Badge> : <span className={r.level === "required" ? "text-destructive" : "text-muted-foreground"}>Not set up</span>}</TableCell>

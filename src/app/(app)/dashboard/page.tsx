@@ -8,7 +8,7 @@ import { all, nowIso, placeholders } from "@/server/db";
 import { getSettings } from "@/server/settings";
 import { scopeSql } from "@/server/users";
 import { parseFilters } from "@/lib/filters";
-import { ROLE_LABELS, STAGE_LABELS, type Stage } from "@/lib/domain";
+import { roleLabel, STAGE_LABELS, type Stage } from "@/lib/domain";
 import { fmtDateTime, fmtShortDate, fmtTime, tzLabel } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardAction } from "@/components/ui/card";
@@ -154,7 +154,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   return (
     <div className="space-y-4">
       <PageHeader
-        eyebrow={`${ROLE_LABELS[role]} dashboard`}
+        eyebrow={`${roleLabel(role)} dashboard`}
         title={`${greeting}, ${firstName}`}
         description={copy.description}
         actions={

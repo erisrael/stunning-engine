@@ -14,7 +14,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { KeyValue } from "@/components/app/primitives";
 import { addEmployeeDocumentAction, createAppAccountAction, deleteEmployeeAction, deleteEmployeeDocumentAction, saveEmployeeAction, updateOwnContactAction } from "@/app/actions/hr";
-import { ROLE_LABELS, type Role } from "@/lib/domain";
+import { roleLabel, type Role } from "@/lib/domain";
 import type { EmployeeDetail, PrivateDetails } from "@/server/hr";
 import {
   DOC_KIND_LABELS,
@@ -620,7 +620,7 @@ function CreateAccountDialog({
                     }`}
                   >
                     <Checkbox checked={checked} onCheckedChange={() => toggleRole(r)} />
-                    <span className="truncate">{ROLE_LABELS[r]}</span>
+                    <span className="truncate">{roleLabel(r)}</span>
                   </label>
                 );
               })}
@@ -651,7 +651,7 @@ function CredentialsDialog({
   const [copied, setCopied] = React.useState(false);
   if (!account) return null;
 
-  const textToCopy = `Sign in credentials for Myseed:\nEmail: ${account.email}\nTemporary password: ${account.tempPassword}\nRoles: ${account.roles.map((r) => ROLE_LABELS[r] ?? r).join(", ")}`;
+  const textToCopy = `Sign in credentials for Myseed:\nEmail: ${account.email}\nTemporary password: ${account.tempPassword}\nRoles: ${account.roles.map((r) => roleLabel(r)).join(", ")}`;
 
   const copy = () => {
     navigator.clipboard.writeText(textToCopy).then(() => {
@@ -684,7 +684,7 @@ function CredentialsDialog({
           </div>
           <div className="flex justify-between">
             <span className="text-muted-foreground">Roles:</span>
-            <span className="text-foreground">{account.roles.map((r) => ROLE_LABELS[r] ?? r).join(", ")}</span>
+            <span className="text-foreground">{account.roles.map((r) => roleLabel(r)).join(", ")}</span>
           </div>
         </div>
 

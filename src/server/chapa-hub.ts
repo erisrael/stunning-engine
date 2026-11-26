@@ -909,7 +909,49 @@ export async function chapaDailyBoard(user: AppUser, day: string, biz?: string |
 // failed, and who is still pending. "Recovered" means a successful payment after the customer's first failed try.
 export type ChapaCustomerOutcome = "paid_first" | "recovered" | "failed_only" | "pending_only";
 export const CHAPA_OUTCOME_LABEL: Record<ChapaCustomerOutcome, string> = { paid_first: "Paid first time", recovered: "Paid after failing", failed_only: "Never paid", pending_only: "Pending only" };
-export type ChapaCustomerFilter = { biz?: string | null; q?: string; from?: string; until?: string; method?: string[]; outcome?: ChapaCustomerOutcome[]; sort?: "recent" | "paid" | "failed" | "name" };
+// callList: only the people still to call (never paid or only pending), each person once, and nobody who paid
+// under another phone, email or business.
+export type ChapaCustomerFilter = { biz?: string | null; q?: string; from?: string; until?: string; method?: string[]; outcome?: ChapaCustomerOutcome[]; sort?: "recent" | "paid" | "failed" | "name"; callList?: boolean };
+
+// The same person can show up as several customers: once per business, or once under their phone and again under a
+// try that had only their email. Rows sharing a phone (last 9 digits) or an email are one person; of that person's
+// unpaid rows one is the row to call (the most recent, with a phone), the others are duplicates, and a person who
+// paid on any of their rows is not called at all.
+export type ChapaDuplicate = { group: string; size: number; primary: boolean; paidElsewhere: boolean; others: { business: string; name: string; phone: string | null; email: string | null; outcome: ChapaCustomerOutcome }[] };
+function markDuplicates<T extends { accountId: string; key: string; business: string; name: string; phone: string | null; email: string | null; outcome: ChapaCustomerOutcome; paidCount: number; lastSeen: string }>(list: T[]): (T & { dup: ChapaDuplicate | null })[] {
+  const parent = list.map((_, i) => i);
+  const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i]!)));
+  const seen = new Map<string, number>();
+  list.forEach((c, i) => {
+    const digits = (c.phone ?? "").replace(/\D/g, "").slice(-9);
+    for (const k of [digits.length >= 7 ? `p:${digits}` : null, c.email ? `e:${c.email.trim().toLowerCase()}` : null]) {
+      if (!k) continue;
+      const j = seen.get(k);
+      if (j === undefined) seen.set(k, i);
+      else parent[find(i)] = find(j);
+    }
+  });
+  const groups = new Map<number, number[]>();
+  list.forEach((_, i) => groups.set(find(i), [...(groups.get(find(i)) ?? []), i]));
+  const out = list.map((c) => ({ ...c, dup: null as ChapaDuplicate | null }));
+  for (const [root, idx] of groups) {
+    if (idx.length < 2) continue;
+    const paid = idx.some((i) => list[i]!.paidCount > 0);
+    const unpaid = idx.filter((i) => list[i]!.paidCount === 0).sort((a, b) => Number(!!list[b]!.phone) - Number(!!list[a]!.phone) || list[b]!.lastSeen.localeCompare(list[a]!.lastSeen));
+    const primary = unpaid[0];
+    for (const i of idx)
+      out[i]!.dup = {
+        group: `g${root}`,
+        size: idx.length,
+        primary: i === primary,
+        paidElsewhere: paid && list[i]!.paidCount === 0,
+        others: idx.filter((j) => j !== i).map((j) => ({ business: list[j]!.business, name: list[j]!.name, phone: list[j]!.phone, email: list[j]!.email, outcome: list[j]!.outcome })),
+      };
+  }
+  return out;
+}
+// Whether to call this customer: never paid (or only pending), and the one row kept for that person.
+export const toCall = (c: { outcome: ChapaCustomerOutcome; dup: ChapaDuplicate | null }) => (c.outcome === "failed_only" || c.outcome === "pending_only") && (!c.dup || (c.dup.primary && !c.dup.paidElsewhere));
 const CUSTOMER_KEY = "COALESCE(NULLIF(RIGHT(REGEXP_REPLACE(COALESCE(t.phone,''), '[^0-9]', '', 'g'), 9), ''), LOWER(t.email), t.tx_ref)";
 
 export async function chapaCustomers(user: AppUser, f: ChapaCustomerFilter) {
@@ -930,7 +972,7 @@ export async function chapaCustomers(user: AppUser, f: ChapaCustomerFilter) {
   );
   const cms = await cmsPhoneIndex();
   const outcomes = new Set(f.outcome ?? []);
-  return rows
+  const mapped = rows
     .map((r) => {
       const paidN = Number(r.paid_n);
       const failed = Number(r.failed);
@@ -943,8 +985,9 @@ export async function chapaCustomers(user: AppUser, f: ChapaCustomerFilter) {
         outcome, failedBeforePaid: Number(r.failed_before_paid), recoveredAfterMs: recovered ? Date.parse(r.last_paid!) - Date.parse(r.first_failed!) : null,
         currency: r.currency, cms: cms.get(phoneKey(r.phone)) ?? null,
       };
-    })
-    .filter((c) => !outcomes.size || outcomes.has(c.outcome));
+    });
+  // Duplicates are found over every customer in the period, before the outcome filter, so "paid elsewhere" holds.
+  return markDuplicates(mapped).filter((c) => (!outcomes.size || outcomes.has(c.outcome)) && (!f.callList || toCall(c)));
 }
 export type ChapaCustomer = Awaited<ReturnType<typeof chapaCustomers>>[number];
 
@@ -969,6 +1012,10 @@ export function chapaCustomerSummary(list: ChapaCustomer[]) {
     recoveryRate: failedOnce.length ? recovered.length / failedOnce.length : null,
     neverPaid: list.filter((c) => c.outcome === "failed_only").length,
     pendingOnly: list.filter((c) => c.outcome === "pending_only").length,
+    // Unpaid rows that are the same person as another row (not to be called twice), and the people left to call.
+    duplicateUnpaid: list.filter((c) => c.paidCount === 0 && c.dup && (!c.dup.primary || c.dup.paidElsewhere)).length,
+    paidElsewhere: list.filter((c) => c.dup?.paidElsewhere).length,
+    toCall: list.filter(toCall).length,
     medianRecoveryMs: waits.length ? waits[Math.floor(waits.length / 2)] : null,
     money: Object.entries(byCur).map(([currency, v]) => ({ currency, ...v })),
   };
@@ -990,10 +1037,13 @@ export async function chapaCustomersReport(user: AppUser, f: ChapaCustomerFilter
   const { fmtDateTime } = await import("@/lib/format");
   const s = await getSettings();
   const tz = s.workspace.timezone;
-  const headers = ["Outcome", "Customer", "Phone", "Email", "Paid", "Currency", "Payments", "Failed tries", "Failed before paying", "Pending", "First try", "First failure", "Paid after failure", "Last payment", "Methods", "Noor", "Business"];
+  const headers = ["Outcome", "Call?", "Duplicate of", "Customer", "Phone", "Email", "Paid", "Currency", "Payments", "Failed tries", "Failed before paying", "Pending", "First try", "First failure", "Paid after failure", "Last payment", "Methods", "Noor", "Business"];
   const d = (v: string | null) => (v ? fmtDateTime(v, tz) : "");
   const data = list.map((c) => ({
-    Outcome: CHAPA_OUTCOME_LABEL[c.outcome], Customer: c.name, Phone: c.phone ?? "", Email: c.email ?? "", Paid: String(c.paid), Currency: c.currency, Payments: String(c.paidCount), "Failed tries": String(c.failed), "Failed before paying": String(c.failedBeforePaid), Pending: String(c.pending),
+    Outcome: CHAPA_OUTCOME_LABEL[c.outcome],
+    "Call?": toCall(c) ? "Call" : c.dup?.paidElsewhere ? "No, paid under another phone, email or business" : c.paidCount === 0 && c.dup ? "No, duplicate" : "",
+    "Duplicate of": c.dup ? c.dup.others.map((o) => [o.name, o.phone ?? o.email, o.business].filter(Boolean).join(" / ")).join("; ") : "",
+    Customer: c.name, Phone: c.phone ?? "", Email: c.email ?? "", Paid: String(c.paid), Currency: c.currency, Payments: String(c.paidCount), "Failed tries": String(c.failed), "Failed before paying": String(c.failedBeforePaid), Pending: String(c.pending),
     "First try": d(c.firstSeen), "First failure": d(c.firstFailed), "Paid after failure": c.outcome === "recovered" ? d(c.lastPaid) : "", "Last payment": d(c.lastPaid), Methods: c.methods.join(", "), Noor: c.cms ? `${c.cms.student} (${c.cms.grade})` : "", Business: c.business,
   }));
   const today = addisDay(Date.now());

@@ -44,7 +44,7 @@ import {
   type ChecklistTemplateItem,
 } from "@/lib/hr-growth";
 import { EMPLOYMENT_TYPES, EMPLOYMENT_TYPE_LABELS } from "@/lib/hr";
-import { ROLE_LABELS, type Role } from "@/lib/domain";
+import { roleLabel, type Role } from "@/lib/domain";
 import { cn } from "@/lib/utils";
 import { SimpleSelect } from "./hr-home";
 import { Field, fmtDay, readBase64 } from "./hr-shared";
@@ -458,7 +458,7 @@ function ApplicantPanel({ a, users, canGivePrivileged, onClose }: { a: Applicant
                   {[...ACCOUNT_ROLES, ...(canGivePrivileged ? PRIVILEGED_ROLES : [])].map((r) => (
                     <label key={r} className="flex items-center gap-1.5 text-xs">
                       <Checkbox checked={hire.roles.includes(r)} onCheckedChange={(v) => setHire({ ...hire, roles: v === true ? [...hire.roles, r] : hire.roles.filter((x) => x !== r) })} />
-                      {ROLE_LABELS[r]}
+                      {roleLabel(r)}
                     </label>
                   ))}
                 </div>

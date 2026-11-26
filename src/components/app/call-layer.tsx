@@ -513,7 +513,9 @@ export function CallLayer({ children, disabled = false }: { children: React.Reac
       const r = await api<PollResult>("poll", { callId: c?.id ?? null, afterSeq: seqRef.current });
       if (!stop && r.ok) await engine.current.onPoll(r.data).catch((err) => console.error("call poll", err));
       const p = phaseRef.current;
-      t = window.setTimeout(loop, !callRef.current ? (hidden ? 8000 : 2500) : p === "outgoing" || p === "connecting" ? 700 : 2000);
+      // Idle tabs (nearly all of them, all day) check every 4 s, hidden ones every 15 s: an incoming call still rings
+      // within seconds, while the steady load on the server is a fraction of what 2.5 s from every tab was.
+      t = window.setTimeout(loop, !callRef.current ? (hidden ? 15000 : 4000) : p === "outgoing" || p === "connecting" ? 700 : 2000);
     };
     void loop();
     const onVisible = () => document.visibilityState === "visible" && !callRef.current && (window.clearTimeout(t), void loop());

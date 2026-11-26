@@ -6,7 +6,7 @@ import { audit, WorkflowError } from "./workflow";
 import * as studio from "./studio";
 import * as hr from "./hr";
 import * as finance from "./finance";
-import { ROLES, ROLE_LABELS } from "@/lib/domain";
+import { roleLabel, ROLES } from "@/lib/domain";
 import { DATA_RIGHTS, grantsFor, RECORD_SCOPES, RECORD_SETS, type DataGrants, type DataPolicy, type DataRight, type ManagedRecord, type RecordsPageData, type RecordScope, type RecordValue } from "@/lib/department-records";
 
 function scopeOf(scope: string): RecordScope {
@@ -27,7 +27,7 @@ async function accessFor(user: AppUser, scope: RecordScope) {
   const policy = await policyFor(scope);
   const keys = scope === "studio" ? [membership!.readOnly ? "observer" : membership!.position ?? "member"] : user.roles;
   const rights = Object.fromEntries(DATA_RIGHTS.map(right => [right, (right === "view" || right === "export" || write) && (admin || keys.some(key => grantsFor(policy, key)[right]))])) as DataGrants;
-  const principals = scope === "studio" ? [{ key: "head", label: "Head" }, { key: "lead", label: "Lead" }, { key: "member", label: "Member" }, { key: "observer", label: "Read-only observer" }] : ROLES.filter(role => role !== "admin").map(key => ({ key, label: ROLE_LABELS[key] }));
+  const principals = scope === "studio" ? [{ key: "head", label: "Head" }, { key: "lead", label: "Lead" }, { key: "member", label: "Member" }, { key: "observer", label: "Read-only observer" }] : ROLES.filter(role => role !== "admin").map(key => ({ key, label: roleLabel(key) }));
   return { rights, configure, policy, principals, membership };
 }
 function need(rights: DataGrants, right: DataRight) {

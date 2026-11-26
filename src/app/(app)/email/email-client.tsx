@@ -56,7 +56,7 @@ import {
   checkSmtpLoginAction,
 } from "@/app/actions/email";
 import type { CheckStep, EmailLogRow, EmailTemplate, LogFilter, Recipient, Sender, SendMode, SmtpSettings } from "@/server/email";
-import { ROLE_LABELS, ROLES, STAGE_LABELS, STAGES, type Role } from "@/lib/domain";
+import { roleLabel, ROLES, STAGE_LABELS, STAGES, type Role } from "@/lib/domain";
 import { fmtDateTime, fmtRelative } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -338,8 +338,8 @@ function Compose({
               <UsersIcon className="size-4" /> To
             </p>
             <div className="flex flex-wrap gap-2">
-              <MultiSelect label="People" options={people.map((p) => ({ value: p.id, label: p.name, hint: p.roles.map((r) => ROLE_LABELS[r]).join(", ") }))} value={userIds} onChange={setUserIds} />
-              <MultiSelect label="Everyone with role" options={ROLES.map((r) => ({ value: r, label: ROLE_LABELS[r] }))} value={roles} onChange={setRoles} />
+              <MultiSelect label="People" options={people.map((p) => ({ value: p.id, label: p.name, hint: p.roles.map((r) => roleLabel(r)).join(", ") }))} value={userIds} onChange={setUserIds} />
+              <MultiSelect label="Everyone with role" options={ROLES.map((r) => ({ value: r, label: roleLabel(r) }))} value={roles} onChange={setRoles} />
               <MultiSelect label="Team leads" options={STAGES.map((s) => ({ value: s, label: `${STAGE_LABELS[s]} leads` }))} value={leads} onChange={setLeads} />
               {groups.length > 0 && <MultiSelect label="Chat group members" options={groups.map((g) => ({ value: g.id, label: g.name, hint: g.kind === "channel" ? "channel" : undefined }))} value={groupIds} onChange={setGroupIds} />}
             </div>

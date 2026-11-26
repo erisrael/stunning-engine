@@ -27,7 +27,7 @@ import { can, type AppUser } from "./users";
 // ---------------------------------------------------------------------------
 
 // People records (HR) and the books (Finance) stay with the accounts.
-const ACCOUNT_TABLES = new Set(["users", "role_assignments", "access_scopes", "sessions", "user_capacity", "leave_entries", "employees", "employee_private", "employee_documents", "equipment", "equipment_events", "leave_types", "leave_requests", "leave_adjustments", "job_openings", "applicants", "applicant_files", "interviews", "scorecards", "employee_checklists", "hr_goals", "review_cycles", "hr_reviews", "one_on_ones", "courses", "trainings", "hr_cases", "hr_case_notes", "api_tokens", "blocked_devices", "profiles", "profile_files", "password_resets", "fin_accounts", "fin_parties", "fin_ledger", "fin_transactions", "fin_bills", "fin_invoices", "fin_claims", "fin_purchases", "fin_budgets", "fin_pay_structures", "fin_payroll_runs", "fin_payslips", "fin_periods", "att_events", "att_marks", "att_shift_assign", "att_corrections", "att_kiosks", "att_badges", "google_tokens", "user_two_step", "user_identities", "signup_invites", "signup_requests", "password_history", "signin_log", "att_devices"]);
+const ACCOUNT_TABLES = new Set(["users", "role_assignments", "access_scopes", "sessions", "user_capacity", "leave_entries", "employees", "employee_private", "employee_documents", "equipment", "equipment_events", "leave_types", "leave_requests", "leave_adjustments", "job_openings", "applicants", "applicant_files", "interviews", "scorecards", "employee_checklists", "hr_goals", "review_cycles", "hr_reviews", "one_on_ones", "courses", "trainings", "hr_cases", "hr_case_notes", "api_tokens", "blocked_devices", "profiles", "profile_files", "password_resets", "fin_accounts", "fin_parties", "fin_ledger", "fin_transactions", "fin_bills", "fin_invoices", "fin_claims", "fin_purchases", "fin_budgets", "fin_pay_structures", "fin_payroll_runs", "fin_payslips", "fin_periods", "att_events", "att_marks", "att_shift_assign", "att_corrections", "att_kiosks", "att_badges", "google_tokens", "user_two_step", "user_identities", "signup_invites", "signup_requests", "password_history", "signin_log", "att_devices", "tool_notes", "tool_tasks", "tool_reminders", "tool_files", "tool_calendar_tokens", "tool_connections"]);
 
 // Removes all workspace data. Accounts and settings can be kept so people stay signed in.
 export async function emptyWorkspace(opts: { keepAccounts?: boolean; keepSettings?: boolean } = {}) {
@@ -725,4 +725,97 @@ export async function exportTrackerBackup(user: import("./users").AppUser): Prom
     };
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// Where the workspace's data came from (Admin, Data manager)
+// ---------------------------------------------------------------------------
+
+export type DataSource = { label: string; count: number; hint?: string };
+export type DataOrigin = { key: string; total: number; sources: DataSource[]; note?: string };
+
+// Each count of the Data manager split by where its rows came from: spreadsheet imports (logged row by row while an
+// import runs), the curriculum tracker backup (units, parts and videos keep the tracker's id), how items were made
+// (their provenance), sign-ups and HR, and what was made by hand in the app. What no record explains is shown as
+// "set up or added before tracking", so every row is accounted for.
+export async function dataSources(): Promise<{ origins: DataOrigin[]; imports: { id: string; file: string | null; template: string | null; by: string | null; at: string; created: number; updated: number; status: string; undone: boolean }[]; backups: string[] }> {
+  const n = (v: unknown) => Number(v ?? 0);
+  const viaImports = await all<{ tbl: string; c: number }>(
+    `SELECT tbl, COUNT(*) AS c FROM job_changes WHERE op = 'INSERT' AND tbl IN ('users','grades','subjects','units','lessons','items','assets','chat_messages')
+       AND (tbl <> 'assets' OR after_row::jsonb->>'kind' = 'raw') GROUP BY tbl`,
+  ).catch(() => []);
+  const imp = (t: string) => n(viaImports.find((r) => r.tbl === t)?.c);
+  const audits = await all<{ action: string; c: number }>("SELECT action, COUNT(*) AS c FROM audit_events WHERE action IN ('user.signed_up','user.invited','hr.account_created') GROUP BY action").catch(() => []);
+  const aud = (a: string) => n(audits.find((r) => r.action === a)?.c);
+  const one = async (sql: string) => n((await get<{ c: number }>(sql).catch(() => undefined))?.c);
+  const counts = await workspaceCounts();
+
+  // Fills in the rest, so the sources always add up to the total (capped where records overlap).
+  const finish = (key: string, parts: DataSource[], rest: string): DataOrigin => {
+    const total = counts[key] ?? 0;
+    let left = total;
+    const sources = parts
+      .filter((p) => p.count > 0)
+      .map((p) => {
+        const c = Math.min(p.count, left);
+        left -= c;
+        return { ...p, count: c };
+      })
+      .filter((p) => p.count > 0);
+    if (left > 0) sources.push({ label: rest, count: left });
+    return { key, total, sources };
+  };
+
+  const [neverIn, inactive, unitsTracker, partsTracker, itemsBy, rawTracker, rawPeople, authors] = await Promise.all([
+    one("SELECT COUNT(*) AS c FROM users WHERE last_login_at IS NULL"),
+    one("SELECT COUNT(*) AS c FROM users WHERE active = 0"),
+    one("SELECT COUNT(*) AS c FROM units WHERE source_ref IS NOT NULL"),
+    one("SELECT COUNT(*) AS c FROM lessons WHERE source_ref IS NOT NULL"),
+    all<{ provenance: string; by_person: number; c: number }>("SELECT provenance, CASE WHEN created_by IS NULL OR created_by = '' THEN 0 ELSE 1 END AS by_person, COUNT(*) AS c FROM items GROUP BY 1, 2").catch(() => []),
+    one("SELECT COUNT(*) AS c FROM assets WHERE kind = 'raw' AND source_ref IS NOT NULL"),
+    one("SELECT COUNT(*) AS c FROM assets WHERE kind = 'raw' AND source_ref IS NULL AND created_by IS NOT NULL"),
+    one("SELECT COUNT(DISTINCT author_id) AS c FROM chat_messages"),
+  ]);
+  const item = (prov: string, person?: 0 | 1) => itemsBy.filter((r) => r.provenance === prov && (person === undefined || n(r.by_person) === person)).reduce((a, r) => a + n(r.c), 0);
+
+  const origins: DataOrigin[] = [
+    finish(
+      "users",
+      [
+        { label: "Imported from a people sheet", count: imp("users") },
+        { label: "Signed up (invitation or sign-up page)", count: aud("user.signed_up") },
+        { label: "Created from HR (new employee)", count: aud("hr.account_created") },
+      ],
+      "Added by Admin in People, or at first setup",
+    ),
+    finish("grades", [{ label: "Imported from a sheet", count: imp("grades") }], "Curriculum tracker backup or setup (Admin, Data)"),
+    finish("subjects", [{ label: "Imported from a sheet", count: imp("subjects") }], "Curriculum tracker backup or setup (Admin, Data)"),
+    finish("units", [{ label: "Curriculum tracker backup", count: unitsTracker }, { label: "Imported from a sheet", count: imp("units") }], "Added in the app (Curriculum)"),
+    finish("parts", [{ label: "Curriculum tracker backup", count: partsTracker }, { label: "Imported from a sheet", count: imp("lessons") }], "Added in the app (Curriculum, Legacy catalog)"),
+    finish(
+      "items",
+      [
+        { label: "Imported from a planning sheet", count: item("imported") },
+        { label: "Historical migration (made before Myseed; left out of timing)", count: item("historical") },
+        { label: "Made from the curriculum (tracker backup or Legacy catalog)", count: item("live", 0) },
+        { label: "Created by people in the app (New item)", count: item("live", 1) },
+      ],
+      "Other",
+    ),
+    finish("recordings", [{ label: "Videos in the curriculum tracker backup", count: rawTracker }, { label: "Imported from a sheet", count: imp("assets") }, { label: "Logged in the app by Recording", count: rawPeople }], "Other"),
+    finish("messages", [{ label: `Written in Chat by ${authors} ${authors === 1 ? "person" : "people"}`, count: counts.messages ?? 0 }], "Other"),
+  ];
+  origins[0]!.note = `${neverIn} never signed in; ${inactive} switched off.`;
+
+  const [imports, backups] = await Promise.all([
+    all<{ id: string; file_name: string | null; template: string | null; by: string | null; created_at: string; created_count: number; updated_count: number; status: string; undone_at: string | null }>(
+      "SELECT j.id, j.file_name, j.template, u.name AS by, j.created_at, j.created_count, j.updated_count, j.status, j.undone_at FROM jobs j LEFT JOIN users u ON u.id = j.actor_id WHERE j.kind = 'import' AND j.dry_run = 0 ORDER BY j.created_at DESC LIMIT 30",
+    ).catch(() => []),
+    all<{ version: string }>("SELECT version FROM curricula ORDER BY id").catch(() => []),
+  ]);
+  return {
+    origins,
+    imports: imports.map((j) => ({ id: j.id, file: j.file_name, template: j.template, by: j.by, at: j.created_at, created: n(j.created_count), updated: n(j.updated_count), status: j.status, undone: !!j.undone_at })),
+    backups: backups.map((b) => b.version).filter(Boolean),
+  };
 }

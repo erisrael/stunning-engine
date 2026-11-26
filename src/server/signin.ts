@@ -23,7 +23,7 @@ import { appOrigin } from "./password-reset";
 import { uniqueHandle } from "./importer";
 import { currentStep, matchTotp, newTotpSecret, otpauthUrl } from "./totp";
 import { domainAllowed, PROVIDER_LABELS, twoStepLevelFor, type ProviderId, type SignInEvent, type SignInPolicy, type TwoStepLevel } from "@/lib/signin-policy";
-import { ROLE_LABELS, ROLES, type Role } from "@/lib/domain";
+import { roleLabel, ROLES, type Role } from "@/lib/domain";
 
 const CHALLENGE_COOKIE = "myseed_2step";
 const CHALLENGE_MINUTES = 10;
@@ -711,7 +711,7 @@ export async function createInvite(admin: AppUser, input: { email?: string | nul
   if (!can(admin, "users.manage")) throw new WorkflowError("FORBIDDEN", "Only Admin invites people.");
   const p = await signInPolicy();
   if (p.signup.mode === "off") throw new WorkflowError("INVALID_STATE", "Switch sign-up to invitations first (Sign-up, above).");
-  if (!ROLES.includes(input.role)) throw new WorkflowError("VALIDATION", "Choose a role.");
+  if (!(await (await import("./role-catalog")).isKnownRole(input.role))) throw new WorkflowError("VALIDATION", "Choose a role.");
   const email = input.email?.trim().toLowerCase() || null;
   if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new WorkflowError("VALIDATION", "Enter a valid email, or leave it empty for a link anyone can use once.");
   if (email && (await get("SELECT 1 AS x FROM users WHERE lower(email) = ?", email))) throw new WorkflowError("VALIDATION", "That person already has an account.");
@@ -726,15 +726,15 @@ export async function createInvite(admin: AppUser, input: { email?: string | nul
       await sendSystemEmail(
         email,
         `You are invited to ${ws}`,
-        `${admin.name} invited you to ${ws} as ${ROLE_LABELS[input.role]}.\n\nCreate your account with this link (it works for ${p.signup.inviteDays} days, once):\n\n${link}`,
-        `<p>${esc(admin.name)} invited you to ${esc(ws)} as ${esc(ROLE_LABELS[input.role])}.</p><p><a href="${link}">Create your account</a></p><p>The link works for ${p.signup.inviteDays} days, once.</p>`,
+        `${admin.name} invited you to ${ws} as ${roleLabel(input.role)}.\n\nCreate your account with this link (it works for ${p.signup.inviteDays} days, once):\n\n${link}`,
+        `<p>${esc(admin.name)} invited you to ${esc(ws)} as ${esc(roleLabel(input.role))}.</p><p><a href="${link}">Create your account</a></p><p>The link works for ${p.signup.inviteDays} days, once.</p>`,
       );
       sent = true;
     } catch (e) {
       console.error("Invitation email failed", e);
     }
   }
-  await audit({ actor: admin }, { action: "user.invited", summary: `${admin.name} made an invitation${email ? ` for ${email}` : ""} as ${ROLE_LABELS[input.role]}` });
+  await audit({ actor: admin }, { action: "user.invited", summary: `${admin.name} made an invitation${email ? ` for ${email}` : ""} as ${roleLabel(input.role)}` });
   return { link, sent };
 }
 
@@ -798,8 +798,8 @@ export async function signUpWithInvite(token: string, input: { name: string; ema
   const id = await createAccount({ name, email, passwordHash: hashPassword(input.password), role: inv.role });
   await run("UPDATE signup_invites SET used_by = ? WHERE token_hash = ?", id, sha(token));
   await logSignIn({ userId: id, email, event: "invite_used", method: "invite" });
-  await audit({ actor: null }, { action: "user.signed_up", summary: `${name} created their account from an invitation (${ROLE_LABELS[inv.role]})` });
-  await notify(await usersWithRole("admin"), { type: "security", title: `${name} joined`, body: `From an invitation, as ${ROLE_LABELS[inv.role]}.`, link: "/admin?tab=people" }, nowIso());
+  await audit({ actor: null }, { action: "user.signed_up", summary: `${name} created their account from an invitation (${roleLabel(inv.role)})` });
+  await notify(await usersWithRole("admin"), { type: "security", title: `${name} joined`, body: `From an invitation, as ${roleLabel(inv.role)}.`, link: "/admin?tab=people" }, nowIso());
   // Email verification: the new account confirms its address before it is used.
   await run("UPDATE users SET email_verify_required = 1 WHERE id = ?", id);
   const verify = await import("./email-verify");
@@ -866,7 +866,7 @@ export async function decideSignup(admin: AppUser, id: string, approve: boolean,
     return;
   }
   if (await get("SELECT 1 AS x FROM users WHERE lower(email) = ?", r.email)) throw new WorkflowError("VALIDATION", "An account already uses this email.");
-  const startRole = role && ROLES.includes(role) && role !== "owner" ? role : p.signup.startRole;
+  const startRole = role && (await (await import("./role-catalog")).isKnownRole(role)) && role !== "owner" ? role : p.signup.startRole;
   const userId = await createAccount({ name: r.name, email: r.email, passwordHash: r.password_hash, role: startRole });
   // Joined by sign-up: confirms the email (unless a provider already checked it).
   if (r.provider) await run("UPDATE users SET email_verified_at = ? WHERE id = ?", nowIso(), userId);
@@ -874,6 +874,6 @@ export async function decideSignup(admin: AppUser, id: string, approve: boolean,
   if (r.provider && r.subject) await run("INSERT INTO user_identities (provider, subject, user_id, email, created_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING", r.provider, r.subject, userId, r.email, nowIso());
   await run("UPDATE signup_requests SET status = 'approved', decided_by = ?, decided_at = ?, password_hash = NULL WHERE id = ?", admin.id, nowIso(), id);
   await logSignIn({ userId, email: r.email, event: "signup_approved", detail: `by ${admin.name}` });
-  await audit({ actor: admin }, { action: "user.invited", summary: `${admin.name} approved ${r.name}'s account (${ROLE_LABELS[startRole]})` });
+  await audit({ actor: admin }, { action: "user.invited", summary: `${admin.name} approved ${r.name}'s account (${roleLabel(startRole)})` });
   void mail(r.email, "Your account is ready", `Your account on ${ws} was approved. Sign in at ${await appOrigin()}/login${r.provider ? ` with ${providerName(p, r.provider)}` : " with the email and password you chose"}.`);
 }

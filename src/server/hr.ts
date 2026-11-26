@@ -9,7 +9,7 @@ import { audit, WorkflowError } from "./workflow";
 import { notify } from "./notifications";
 import { customDepartments } from "./departments";
 import { can, listUsers, type AppUser } from "./users";
-import { DEPARTMENT_LABELS, DEPARTMENT_ROLES, ROLE_LABELS, ROLES, type Department, type Role } from "@/lib/domain";
+import { roleLabel, DEPARTMENT_LABELS, DEPARTMENT_ROLES, ROLES, type Department, type Role } from "@/lib/domain";
 import { hashPassword } from "./passwords";
 import { uniqueHandle } from "./importer";
 import {
@@ -641,7 +641,7 @@ export async function ensureEmployeeRecords(actorId: string | null) {
       u.name,
       u.email,
       dept,
-      u.roles.map((r) => ROLE_LABELS[r]).join(", ") || null,
+      u.roles.map((r) => roleLabel(r)).join(", ") || null,
       now,
       now,
       actorId,
@@ -664,7 +664,7 @@ export async function syncFromUsers(user: AppUser) {
       (u.roles.some((r) => r === "hr_manager" || r === "hr_officer") ? "hr" : null) ??
       positions.find((p) => p.user_id === u.id)?.department ??
       (u.roles.includes("owner") || u.roles.includes("admin") ? "management" : null);
-    const title = u.roles.map((r) => ROLE_LABELS[r]).join(", ") || null;
+    const title = u.roles.map((r) => roleLabel(r)).join(", ") || null;
     await saveEmployee(user, { userId: u.id, fullName: u.name, email: u.email, department: dept, jobTitle: title, status: "active" });
     added++;
   }

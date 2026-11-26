@@ -32,7 +32,7 @@ import { executeOp, myApprovals, OP_KEYS, OPS, prepareOp } from "./assistant-ops
 import { listRoutines, routinesOpen } from "./routines";
 import { CHAPTERS } from "@/lib/help";
 import { FLOWS, GLOSSARY, PLACES } from "@/lib/assistant";
-import { ROLE_LABELS, STAGE_LABELS } from "@/lib/domain";
+import { roleLabel, STAGE_LABELS } from "@/lib/domain";
 
 export const AI_PROVIDERS = [
   { id: "anthropic", label: "Anthropic (Claude)" },
@@ -740,7 +740,7 @@ async function runTool(user: Viewer, name: string, input: unknown, out: Out, all
       const ds = await depts(user);
       return {
         name: user.name,
-        role: ROLE_LABELS[user.activeRole as keyof typeof ROLE_LABELS] ?? user.activeRole,
+        role: roleLabel(user.activeRole),
         leads_production_stages: user.leads.map((s) => STAGE_LABELS[s]),
         departments: ds.map((d) => ({ key: d.dept, title: d.title, position: d.position, manage: d.manage })),
         waiting: { notifications: c.notifications, chat: c.chat, email: c.mailbox ? c.mail : "no mailbox", approvals: c.approvals, leave_to_approve: c.leave, claims_to_approve: c.claims, attendance_to_approve: c.attendance, handovers_to_check: c.incoming, production_work: c.myWork, questions: c.questions },
@@ -1226,7 +1226,7 @@ export async function askAi(user: Viewer, input: { history: Turn[]; text: string
   await logAi(user, text);
   const ctx = await assistantContext(user);
   const today = new Date().toISOString().slice(0, 10);
-  const who = `The person: ${user.name}${user.title ? `, ${user.title}` : ""}; viewing as ${ROLE_LABELS[user.activeRole as keyof typeof ROLE_LABELS] ?? user.activeRole}${ctx.home ? `; their department: ${ctx.home.title} at ${ctx.home.base} ({home})` : ""}${user.leads.length ? `; leads production stages: ${user.leads.join(", ")}` : ""}. Today is ${today}. They are on the page ${String(input.page ?? "/").slice(0, 200)}.`;
+  const who = `The person: ${user.name}${user.title ? `, ${user.title}` : ""}; viewing as ${roleLabel(user.activeRole)}${ctx.home ? `; their department: ${ctx.home.title} at ${ctx.home.base} ({home})` : ""}${user.leads.length ? `; leads production stages: ${user.leads.join(", ")}` : ""}. Today is ${today}. They are on the page ${String(input.page ?? "/").slice(0, 200)}.`;
   const history: Anthropic.Beta.BetaMessageParam[] = (input.history ?? [])
     .slice(-12)
     .filter((t) => t && (t.role === "user" || t.role === "assistant") && String(t.text ?? "").trim())
@@ -1241,7 +1241,7 @@ export async function askAi(user: Viewer, input: { history: Turn[]; text: string
   const canDo = OPS.filter((o) => allowed.includes(o.key)).map((o) => o.label);
   messages[messages.length - 1] = {
     role: "user",
-    content: `${who}\nPages this person can open (offer only these): ${pages.map((p) => `${p.name} ${p.href}`).join("; ")}.\nActions you may ${input.mode === "agent" ? "do" : "prepare"} for them: ${canDo.length ? canDo.join("; ") : "none (answer and point to pages only)"}.\nTheir rights: ${[ab.hr && "HR", ab.attendanceHr && "attendance for everyone", ab.attendance && !ab.attendanceHr && "their team's attendance", ab.cases && "HR cases", ab.lead && "leads a team", ab.approver && "approves requests", ab.finance && "finance", ab.support && "customer support agent", ab.admin && "Admin"].filter(Boolean).join(", ") || "a team member (their own work, leave and attendance)"}.\nRole scope: answer as their ${ROLE_LABELS[user.activeRole as keyof typeof ROLE_LABELS] ?? user.activeRole} role only, within the rights above. ${ab.lead ? "They may create and assign tasks for their own team members." : "They may create tasks only for themselves."} Anything else: say it is outside their role and name who can help.\n\n${text}`,
+    content: `${who}\nPages this person can open (offer only these): ${pages.map((p) => `${p.name} ${p.href}`).join("; ")}.\nActions you may ${input.mode === "agent" ? "do" : "prepare"} for them: ${canDo.length ? canDo.join("; ") : "none (answer and point to pages only)"}.\nTheir rights: ${[ab.hr && "HR", ab.attendanceHr && "attendance for everyone", ab.attendance && !ab.attendanceHr && "their team's attendance", ab.cases && "HR cases", ab.lead && "leads a team", ab.approver && "approves requests", ab.finance && "finance", ab.support && "customer support agent", ab.admin && "Admin"].filter(Boolean).join(", ") || "a team member (their own work, leave and attendance)"}.\nRole scope: answer as their ${roleLabel(user.activeRole)} role only, within the rights above. ${ab.lead ? "They may create and assign tasks for their own team members." : "They may create tasks only for themselves."} Anything else: say it is outside their role and name who can help.\n\n${text}`,
   };
   const agentOn = input.mode === "agent" && (await agentAvailable(user));
   if (input.mode === "agent" && !agentOn) throw new WorkflowError("FORBIDDEN", "Agent mode is not on for you. Ask Admin, or use Ask mode.");

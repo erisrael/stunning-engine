@@ -18,8 +18,8 @@ export const DEPARTMENT_ACCESS: Record<Department, Capability> = {
   studio: "studio.access",
   marketing: "marketing.access",
   support: "nav.questions",
-  sales: "company.view",
-  operations: "company.view",
+  sales: "sales.access",
+  operations: "operations.access",
 };
 
 const isBuiltIn = (d: string): d is Department => (DEPARTMENTS as readonly string[]).includes(d);

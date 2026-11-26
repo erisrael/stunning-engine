@@ -34,7 +34,7 @@ export async function logoutAction() {
 }
 
 export async function switchRoleAction(role: Role) {
-  if (!ROLES.includes(role)) return { ok: false as const, error: "Unknown role." };
+  if (!(await (await import("@/server/role-catalog")).isKnownRole(role))) return { ok: false as const, error: "Unknown role." };
   // An error here must never break the page: it comes back as a message.
   try {
     await setActiveRole(role);

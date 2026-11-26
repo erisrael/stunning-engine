@@ -1,7 +1,7 @@
 // Shared domain vocabulary used by both the server and the client.
 
 // Production roles first, then the department roles (Phase 5). Department positions (head, lead, member) are set in Admin.
-export const ROLES = ["recording", "editing", "uploading", "publication", "manager", "assistant_manager", "admin", "owner", "developer", "content", "marketing", "hr_manager", "hr_officer", "finance_manager", "accountant", "support", "sales", "operations"] as const;
+export const ROLES = ["recording", "editing", "uploading", "publication", "manager", "assistant_manager", "admin", "owner", "developer", "content", "marketing", "hr_manager", "hr_officer", "finance_manager", "accountant", "support", "sales", "operations", "ceo", "cfo", "cto", "cedo"] as const;
 export type Role = (typeof ROLES)[number];
 
 export const ROLE_LABELS: Record<Role, string> = {
@@ -23,7 +23,31 @@ export const ROLE_LABELS: Record<Role, string> = {
   support: "Customer Support",
   sales: "Sales & Outreach",
   operations: "Operations",
+  ceo: "Chief Executive Officer (CEO)",
+  cfo: "Chief Financial Officer (CFO)",
+  cto: "Chief Technology Officer (CTO)",
+  cedo: "Chief Education & Development Officer (CEDO)",
 };
+
+// The chief officers sit beside the owners: company-wide sight, managed by Admin and the Operations head.
+export const CHIEF_ROLES = ["ceo", "cfo", "cto", "cedo"] as const satisfies readonly Role[];
+
+// Labels of roles that are not built in (presets and roles Admin created), so a role never shows blank or as a raw key.
+export const PRESET_ROLE_LABELS: Record<string, string> = {
+  support_head: "Customer Support Head",
+  support_supervisor: "Customer Support Supervisor",
+  call_center_supervisor: "Call Center Supervisor",
+  auditor: "Auditor",
+};
+const customRoleLabels: Record<string, string> = {};
+// The server and the browser register Admin's role names here (Roles and permissions) so roleLabel finds them.
+export function registerRoleLabels(labels: Record<string, string>) {
+  Object.assign(customRoleLabels, labels);
+}
+export function roleLabel(role: string | null | undefined): string {
+  if (!role) return "";
+  return customRoleLabels[role] || ROLE_LABELS[role as Role] || PRESET_ROLE_LABELS[role] || role.replace(/[_-]+/g, " ").replace(/^./, (c) => c.toUpperCase());
+}
 
 export const ROLE_DESCRIPTIONS: Record<Role, string> = {
   recording: "Records sessions and logs camera codes for each part.",
@@ -43,7 +67,11 @@ export const ROLE_DESCRIPTIONS: Record<Role, string> = {
   accountant: "Finance: records bills, invoices, payments and claims, and prepares reports.",
   support: "Customer support: manages support desk, live inquiries, tickets, feedback and student communication.",
   sales: "Sales: drives student enrollments, school partnerships, subscription growth and corporate outreach.",
-  operations: "Operations: coordinates logistics, hardware devices, office inventory and operational readiness.",
+  operations: "Operations: coordinates logistics, hardware devices, office inventory and operational readiness. The Operations head manages the people of the departments Admin chooses.",
+  ceo: "Chief Executive Officer: company-wide overview, every department's dashboard and reports (read only unless Admin adds rights).",
+  cfo: "Chief Financial Officer: company overview plus finance reports, approvals and payroll sign-off.",
+  cto: "Chief Technology Officer: company overview plus the Dev team, releases and integrations.",
+  cedo: "Chief Education & Development Officer: company overview plus production, curriculum, Studio and performance.",
 };
 
 // Capabilities that can be granted per role in Admin, Roles and permissions.
@@ -93,6 +121,11 @@ export const CAPABILITIES = [
   { key: "dev.access", label: "Dev team section", group: "Departments" },
   { key: "studio.access", label: "Studio section (notes, exams, flash cards)", group: "Departments" },
   { key: "marketing.access", label: "Marketing section", group: "Departments" },
+  { key: "sales.access", label: "Sales & Outreach section", group: "Departments" },
+  { key: "operations.access", label: "Operations section", group: "Departments" },
+  { key: "people.operations", label: "People operations: manage the people of the departments Admin chose for Operations (roles, leads, chief officers; never Admin or owners)", group: "Departments" },
+  { key: "tools.use", label: "Tools hub: notes, calendar, sheets, documents, decks and letters (Admin chooses which apps per role)", group: "Tools" },
+  { key: "tools.letterhead", label: "Tools: change the official company letterhead", group: "Tools" },
   { key: "owners.view", label: "Owners dashboard (stats and reports from every department, read only)", group: "Departments" },
   { key: "company.view", label: "Company overview: every department's dashboard, overall progress and money (read only)", group: "Departments" },
   { key: "chat.contact_owners", label: "Start direct chats with owners", group: "Collaboration" },
@@ -164,6 +197,9 @@ export const CRUD_AREAS: CrudArea[] = [
   { key: "dev", label: "Dev team section", group: "Departments", caps: { v: ["dev.access"] } },
   { key: "studio", label: "Studio section (notes, exams, flash cards)", group: "Departments", caps: { v: ["studio.access"] } },
   { key: "marketing", label: "Marketing section", group: "Departments", caps: { v: ["marketing.access"] } },
+  { key: "sales", label: "Sales & Outreach section", group: "Departments", caps: { v: ["sales.access"] } },
+  { key: "operations", label: "Operations section", group: "Departments", caps: { v: ["operations.access"], u: ["people.operations"] } },
+  { key: "tools", label: "Tools hub (notes, calendar, sheets, documents, decks, letters)", group: "Tools", caps: { v: ["tools.use"], u: ["tools.letterhead"] } },
   { key: "hr", label: "HR records", group: "HR", caps: { v: ["hr.access"], d: ["hr.manage"], u: ["hr.sensitive"] } },
   { key: "hr-cases", label: "HR cases", group: "HR", caps: { v: ["hr.cases"] } },
   { key: "attendance", label: "Attendance", group: "HR", caps: { u: ["attendance.manage", "attendance.capture"] } },
@@ -211,8 +247,13 @@ export const DEFAULT_PERMISSIONS: Record<Role, Capability[]> = {
   finance_manager: ["finance.access", "finance.approve", "finance.payroll", "finance.view", "nav.questions", "email.send", "chat.channels", "company.view"],
   accountant: ["finance.access", "finance.view", "nav.questions", "email.send"],
   support: ["nav.questions", "chat.channels", "email.send"],
-  sales: ["marketing.access", "company.view", "nav.questions", "email.send"],
-  operations: ["hr.access", "company.view", "nav.questions", "items.plan"],
+  // Sales and Operations have their own sections (they once borrowed the owners' company view, which hid them).
+  sales: ["sales.access", "marketing.access", "nav.questions", "email.send", "chat.channels", "tools.use"],
+  operations: ["operations.access", "hr.access", "nav.questions", "chat.channels", "email.send", "tools.use"],
+  ceo: ["company.view", "owners.view", "perf.view_company", "finance.view", "reports.view", "team.view", "nav.overview", "nav.coverage", "items.detail", "export.run", "export.report", "chat.channels", "chat.contact_owners", "email.send", "tools.use"],
+  cfo: ["company.view", "finance.view", "finance.approve", "finance.owner_approve", "reports.view", "export.run", "export.report", "chat.channels", "chat.contact_owners", "email.send", "tools.use"],
+  cto: ["company.view", "dev.access", "reports.view", "team.view", "export.run", "export.report", "chat.channels", "chat.contact_owners", "email.send", "tools.use"],
+  cedo: ["company.view", "studio.access", "perf.view_company", "nav.overview", "nav.coverage", "items.detail", "reports.view", "team.view", "curriculum.manage", "export.run", "export.report", "chat.channels", "chat.contact_owners", "email.send", "tools.use"],
   admin: [
     ...FULL_VIEW,
     "items.create",
@@ -239,6 +280,11 @@ export const DEFAULT_PERMISSIONS: Record<Role, Capability[]> = {
     "dev.access",
     "studio.access",
     "marketing.access",
+    "sales.access",
+    "operations.access",
+    "people.operations",
+    "tools.use",
+    "tools.letterhead",
     "owners.view",
     "company.view",
     "hr.access",
@@ -276,6 +322,10 @@ export const DEFAULT_PERMISSIONS: Record<Role, Capability[]> = {
     ...EDITORIAL_CAPABILITIES,
   ],
 };
+
+// Everyone gets the Tools hub by default (Admin narrows it per app and role in Admin, Tools hub). New arrays, so
+// the lists that several roles share are not changed.
+for (const r of Object.keys(DEFAULT_PERMISSIONS) as Role[]) if (!DEFAULT_PERMISSIONS[r].includes("tools.use")) DEFAULT_PERMISSIONS[r] = [...DEFAULT_PERMISSIONS[r], "tools.use"];
 
 // Departments group people by role. Heads and leads (Admin, Departments) see and assign the whole department's
 // work; members see their own. Production keeps its stage team leads.

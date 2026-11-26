@@ -8,7 +8,7 @@ import { wrap } from "@/server/action-result";
 import { audit } from "@/server/workflow";
 import { can, loadUser } from "@/server/users";
 import * as dev from "@/server/devices";
-import { ROLE_LABELS, type Role } from "@/lib/domain";
+import { roleLabel, type Role } from "@/lib/domain";
 
 // Sessions and devices (the server checks own sessions or Admin in devices.ts).
 export async function endSessionAction(id: string) {
@@ -33,7 +33,7 @@ export async function startPreviewAction(userId: string, role?: Role | null) {
   if (!target?.active) return { ok: false as const, error: "Choose an active person." };
   if (target.id === me.id) return { ok: false as const, error: "That is you." };
   (await cookies()).set(PREVIEW_COOKIE, `${target.id}:${role && target.roles.includes(role) ? role : ""}`, { httpOnly: true, sameSite: "lax", secure: secure(), path: "/", maxAge: 4 * 3600 });
-  await audit({ actor: me }, { action: "user.preview", summary: `${me.name} viewed the app as ${target.name}${role ? ` (${ROLE_LABELS[role]})` : ""}` });
+  await audit({ actor: me }, { action: "user.preview", summary: `${me.name} viewed the app as ${target.name}${role ? ` (${roleLabel(role)})` : ""}` });
   revalidatePath("/", "layout");
   return { ok: true as const };
 }

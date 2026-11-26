@@ -3,7 +3,7 @@ import { getViewer } from "@/server/auth";
 import { checkInvite } from "@/server/signin";
 import { signInPolicy } from "@/server/signin-config";
 import { readyProviders } from "@/server/oidc";
-import { ROLE_LABELS } from "@/lib/domain";
+import { roleLabel } from "@/lib/domain";
 import { AuthShell } from "../login/auth-shell";
 import { SignupForm } from "./signup-form";
 
@@ -17,7 +17,7 @@ export default async function SignupPage({ searchParams }: { searchParams: Promi
   const inv = invite ? await checkInvite(invite) : null;
   if (inv)
     return (
-      <AuthShell title="Create your account" subtitle={`You were invited as ${ROLE_LABELS[inv.role]}.`}>
+      <AuthShell title="Create your account" subtitle={`You were invited as ${roleLabel(inv.role)}.`}>
         <SignupForm mode="invite" token={invite} email={inv.email} />
       </AuthShell>
     );

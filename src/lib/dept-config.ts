@@ -207,6 +207,9 @@ const ALL_RIGHTS: Rights = { dataManager: true, createTasks: true, updateTasks: 
 // Dev and Marketing start with their ready flow on (Phase 12); their own statuses and types are kept alongside.
 export function defaultConfig(dept: WorkDept): DeptConfig {
   if (!isBuiltInWorkDept(dept)) return deptTemplateConfig("blank", dept, dept.toUpperCase().slice(0, 4));
+  // Sales and Operations start from their templates (pipeline of deals; jobs, purchases and repairs).
+  if (dept === "sales") return deptTemplateConfig("sales", "Sales & Outreach", "SAL");
+  if (dept === "operations") return deptTemplateConfig("operations", "Operations", "OPS");
   return applyFlowPreset(builtInBase(dept), dept);
 }
 

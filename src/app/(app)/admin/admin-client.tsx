@@ -52,7 +52,7 @@ import {
   signOutUserAction,
 } from "@/app/actions/admin";
 import type { CurriculumImportSummary } from "@/server/workspace-data";
-import { CAPABILITIES, CRUD_ACTIONS, CRUD_AREAS, ROLE_DESCRIPTIONS, ROLE_LABELS, ROLES, STAGE_LABELS, STAGES, leadKey, type Capability, type CrudKey, type PermissionMatrix, type Role, type Stage } from "@/lib/domain";
+import { roleLabel, CAPABILITIES, CRUD_ACTIONS, CRUD_AREAS, ROLE_DESCRIPTIONS, ROLES, STAGE_LABELS, STAGES, leadKey, type Capability, type CrudKey, type PermissionMatrix, type Role, type Stage } from "@/lib/domain";
 import { fmtRelative } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -94,9 +94,13 @@ const ROLE_TONE: Record<Role, string> = {
   support: "bg-cyan-500/15 text-cyan-700 dark:text-cyan-300",
   sales: "bg-amber-500/15 text-amber-700 dark:text-amber-300",
   operations: "bg-indigo-500/15 text-indigo-700 dark:text-indigo-300",
+  ceo: "bg-yellow-500/15 text-yellow-800 dark:text-yellow-300",
+  cfo: "bg-yellow-500/15 text-yellow-800 dark:text-yellow-300",
+  cto: "bg-yellow-500/15 text-yellow-800 dark:text-yellow-300",
+  cedo: "bg-yellow-500/15 text-yellow-800 dark:text-yellow-300",
 };
 
-const AdminRoles = React.createContext<{key:Role;label:string}[]>(ROLES.map(key=>({key,label:ROLE_LABELS[key]})));
+const AdminRoles = React.createContext<{key:Role;label:string}[]>(ROLES.map(key=>({key,label:roleLabel(key)})));
 export function AdminRoleProvider({roles,children}:{roles:{key:Role;label:string}[];children:React.ReactNode}) { return <AdminRoles.Provider value={roles}>{children}</AdminRoles.Provider>; }
 export function RoleBadge({ role }: { role: Role }) {
   const label=React.useContext(AdminRoles).find(r=>r.key===role)?.label ?? role;
@@ -185,7 +189,7 @@ export function PeopleAdmin({ users, grades, subjects, viewerId }: { users: Admi
             <SelectItem value="all">All roles</SelectItem>
             {roleKeys.map((r) => (
               <SelectItem key={r} value={r}>
-                {ROLE_LABELS[r]}
+                {roleLabel(r)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -521,7 +525,7 @@ function UserDialog({
                   onCheckedChange={(v) => setU({ ...u, roles: v ? [...u.roles, r] : u.roles.filter((x) => x !== r) })}
                 />
                 <span>
-                  <span className="font-medium">{ROLE_LABELS[r]}</span>
+                  <span className="font-medium">{roleLabel(r)}</span>
                   <span className="block text-xs text-muted-foreground">{ROLE_DESCRIPTIONS[r]}</span>
                 </span>
               </label>
@@ -1112,7 +1116,7 @@ export function PermissionsAdmin({ matrix, counts, leadCounts }: { matrix: Permi
                   <SelectContent>
                     {roleKeys.map((r) => (
                       <SelectItem key={r} value={r}>
-                        {ROLE_LABELS[r]} ({r})
+                        {roleLabel(r)} ({r})
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -1325,7 +1329,7 @@ export function AccessAdmin({ users, grades, subjects }: { users: AdminUser[]; g
 // Data: import the curriculum backup, back up, empty
 // ---------------------------------------------------------------------------
 
-export function DataAdmin({ counts, database, canManageUsers }: { counts: Record<string, number>; database: string; canManageUsers: boolean }) {
+export function DataAdmin({ counts, database, canManageUsers, sources }: { counts: Record<string, number>; database: string; canManageUsers: boolean; sources?: { origins: { key: string; total: number; sources: { label: string; count: number }[]; note?: string }[]; imports: { id: string; file: string | null; template: string | null; by: string | null; at: string; created: number; updated: number; status: string; undone: boolean }[]; backups: string[] } }) {
   const router = useRouter();
   const [busy, setBusy] = React.useState(false);
   const [result, setResult] = React.useState<CurriculumImportSummary | null>(null);
@@ -1353,6 +1357,7 @@ export function DataAdmin({ counts, database, canManageUsers }: { counts: Record
               </div>
             ))}
           </dl>
+          {sources && <DataOrigins sources={sources} />}
         </CardContent>
       </Card>
 
@@ -1594,6 +1599,84 @@ export function TeamsAdmin({ people }: { people: TeamPerson[] }) {
         Team leads get every handoff and redo request for their team, assign work to members, and see their team&apos;s reports. A team can have several leads and one person can lead several teams.
         Members marked <span className="font-medium">Own work only</span> see just the items assigned to them, on every page.
       </p>
+    </div>
+  );
+}
+
+// Where each count came from (imports, the curriculum tracker backup, sign-ups, made in the app), and the imports.
+function DataOrigins({ sources }: { sources: NonNullable<Parameters<typeof DataAdmin>[0]["sources"]> }) {
+  const [open, setOpen] = React.useState(false);
+  return (
+    <div className="mt-4 space-y-3 border-t pt-3">
+      <button type="button" className="text-sm font-medium underline-offset-2 hover:underline" onClick={() => setOpen(!open)} aria-expanded={open} data-data-origins>
+        {open ? "Hide" : "Show"} where this data came from
+      </button>
+      {open && (
+        <>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            {sources.origins.map((o) => (
+              <div key={o.key} className="rounded-lg border p-3">
+                <p className="text-sm font-medium capitalize">
+                  {o.key} <span className="font-normal text-muted-foreground tabular">{o.total.toLocaleString("en-US")}</span>
+                </p>
+                <ul className="mt-1.5 space-y-1.5">
+                  {o.sources.map((x) => (
+                    <li key={x.label} className="text-xs">
+                      <div className="flex justify-between gap-2">
+                        <span>{x.label}</span>
+                        <span className="tabular text-muted-foreground">{x.count.toLocaleString("en-US")}</span>
+                      </div>
+                      <div className="mt-0.5 h-1 overflow-hidden rounded bg-muted">
+                        <div className="h-full bg-primary/70" style={{ width: `${o.total ? (x.count / o.total) * 100 : 0}%` }} />
+                      </div>
+                    </li>
+                  ))}
+                  {!o.sources.length && <li className="text-xs text-muted-foreground">None yet.</li>}
+                </ul>
+                {o.note && <p className="mt-1.5 text-[11px] text-muted-foreground">{o.note}</p>}
+              </div>
+            ))}
+          </div>
+          {sources.backups.length > 0 && (
+            <p className="text-xs text-muted-foreground">
+              Curriculum tracker backups loaded: <span className="text-foreground">{sources.backups.join(", ")}</span>
+            </p>
+          )}
+          <div className="space-y-1">
+            <p className="text-xs font-medium">Imports ({sources.imports.length ? `latest ${sources.imports.length}` : "none"})</p>
+            {sources.imports.length > 0 && (
+              <div className="max-h-56 overflow-auto rounded-md border">
+                <table className="w-full text-xs">
+                  <thead className="sticky top-0 bg-muted text-left">
+                    <tr>
+                      <th className="px-2 py-1">When</th>
+                      <th className="px-2 py-1">File</th>
+                      <th className="px-2 py-1">Kind</th>
+                      <th className="px-2 py-1">By</th>
+                      <th className="px-2 py-1 text-right">New</th>
+                      <th className="px-2 py-1 text-right">Updated</th>
+                      <th className="px-2 py-1">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sources.imports.map((j) => (
+                      <tr key={j.id} className="border-t">
+                        <td className="px-2 py-1 whitespace-nowrap">{new Date(j.at).toLocaleString()}</td>
+                        <td className="max-w-56 truncate px-2 py-1" title={j.file ?? ""}>{j.file ?? "-"}</td>
+                        <td className="px-2 py-1">{j.template ?? "-"}</td>
+                        <td className="px-2 py-1">{j.by ?? "System"}</td>
+                        <td className="px-2 py-1 text-right tabular">{j.created}</td>
+                        <td className="px-2 py-1 text-right tabular">{j.updated}</td>
+                        <td className="px-2 py-1">{j.undone ? "Undone" : j.status.replace(/_/g, " ")}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }

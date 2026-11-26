@@ -3,7 +3,7 @@ import { can, type AppUser } from "./users";
 import { csvEscape } from "./exporter";
 import { audit, WorkflowError } from "./workflow";
 import { assertIo, roleGroup, type IoEntity } from "./io-rules";
-import { ROLE_LABELS, type Role } from "@/lib/domain";
+import { roleLabel, type Role } from "@/lib/domain";
 
 // People exports: members (accounts), teams (production team membership and leads) and departments (department
 // roles). Each is behind Admin's export switch and the person's own export or user-management permission.
@@ -25,7 +25,7 @@ export async function exportPeople(user: AppUser, entity: string) {
     head = entity === "teams" ? ["team", "name", "email", "lead", "active"] : ["department", "name", "email", "active"];
     rows = mine.map((r) => {
       const u = byId.get(r.user_id)!;
-      return entity === "teams" ? [ROLE_LABELS[r.role] ?? r.role, u.name, u.email, leads.has(`${u.id}:${r.role}`) ? "yes" : "no", u.active ? "yes" : "no"] : [ROLE_LABELS[r.role] ?? r.role, u.name, u.email, u.active ? "yes" : "no"];
+      return entity === "teams" ? [roleLabel(r.role), u.name, u.email, leads.has(`${u.id}:${r.role}`) ? "yes" : "no", u.active ? "yes" : "no"] : [roleLabel(r.role), u.name, u.email, u.active ? "yes" : "no"];
     });
   }
   const body = [head, ...rows].map((r) => r.map(csvEscape).join(",")).join("\r\n");

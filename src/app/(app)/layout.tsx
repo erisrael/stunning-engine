@@ -22,7 +22,7 @@ import { canOpenPath } from "@/server/page-access";
 import { avatarsFor } from "@/server/profiles";
 import { touchPresence } from "@/server/chat-extras";
 import { PreviewBanner } from "@/components/app/security";
-import { ROLE_LABELS } from "@/lib/domain";
+import { roleLabel } from "@/lib/domain";
 import { homeDepartment } from "@/server/nav";
 import { assistantContext } from "@/server/assistant";
 import { agentAvailable, aiAvailable } from "@/server/assistant-ai";
@@ -40,6 +40,7 @@ import { MobileNav } from "@/components/app/mobile-nav";
 import { GeofenceWatch } from "@/components/app/attendance/geofence-watch";
 import { PresencePing } from "@/components/app/presence-ping";
 
+import { RoleLabels } from "@/components/app/role-labels";
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const viewer = await requireViewer();
   // Alert checks run after the page is sent, so no visitor waits for them (hosts also call /api/cron/checks).
@@ -89,6 +90,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     announcements,
     banners,
     privacy,
+    tools,
+    peopleOps,
+    roleNames,
     assistantOn,
   ] = await Promise.all([
     shellCounts(viewer),
@@ -116,6 +120,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     viewer.mustChangePassword ? Promise.resolve(null) : pendingAnnouncements(viewer),
     bannerMap(),
     viewer.previewBy ? Promise.resolve(null) : privacyToAccept(viewer),
+    viewer.previewBy ? Promise.resolve(null) : import("@/server/tools").then((m) => m.toolsFor(viewer)).catch(() => null),
+    import("@/server/people-ops").then((m) => m.peopleOpsAccess(viewer)).then((a) => a.allowed).catch(() => false),
+    import("@/server/role-catalog").then((m) => m.customRoleLabels()).catch(() => ({}) as Record<string, string>),
     !quiet ? Promise.resolve(false) : viewer.prefs.assistantShown != null ? Promise.resolve(!!viewer.prefs.assistantShown) : mod.assistant.then(async (m) => !!(await m.roleOptions(viewer.activeRole)).shown),
   ]);
   const sidebarCookie = cookieStore.get("sidebar_state")?.value;
@@ -131,7 +138,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     >
     <CallLayer disabled={!!viewer.previewBy}>
     <SidebarProvider defaultOpen={sidebarCookie !== "false"}>
+      <RoleLabels labels={roleNames} />
       <AppSidebar
+        tools={tools?.apps.map((a) => ({ label: a.label, href: a.href })) ?? []}
+        peopleOps={peopleOps}
         cmsAccess={cmsAccess}
         chapaAccess={chapaAccess}
         home={home}
@@ -156,7 +166,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         callRecords={callRecords}
       />
       <SidebarInset className="min-w-0">
-        {viewer.previewBy && <PreviewBanner name={viewer.name} role={ROLE_LABELS[viewer.activeRole]} />}
+        {viewer.previewBy && <PreviewBanner name={viewer.name} role={roleLabel(viewer.activeRole)} />}
         <Topbar user={{ name: viewer.name, email: viewer.email, roles: viewer.roles, avatar: avatars[viewer.id] ?? null }} activeRole={viewer.activeRole} unread={counts.notifications} chatUnread={counts.chat} assistant={assistantOn} fun={funOn} qrScan={qrScan} />
         <OfflineCheckinSync />
         {!viewer.previewBy && <AskAnywhere />}

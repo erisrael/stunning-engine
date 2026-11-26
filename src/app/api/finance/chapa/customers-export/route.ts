@@ -11,7 +11,7 @@ export async function GET(request: Request) {
   const u = new URL(request.url);
   const q = (k: string) => u.searchParams.get(k) ?? "";
   const list = (k: string) => (q(k) ? q(k).split(",").filter(Boolean).slice(0, 20) : undefined);
-  const f: ChapaCustomerFilter = { biz: q("biz") || null, q: q("q") || undefined, from: q("from") || undefined, until: q("until") || undefined, method: list("method"), outcome: list("outcome") as ChapaCustomerOutcome[] | undefined, sort: (q("sort") || undefined) as ChapaCustomerFilter["sort"] };
+  const f: ChapaCustomerFilter = { biz: q("biz") || null, q: q("q") || undefined, from: q("from") || undefined, until: q("until") || undefined, method: list("method"), outcome: list("outcome") as ChapaCustomerOutcome[] | undefined, sort: (q("sort") || undefined) as ChapaCustomerFilter["sort"], callList: q("calllist") === "1" };
   const format = q("format") === "csv" ? "csv" : "xlsx";
   try {
     const { report, meta } = await chapaCustomersReport(viewer, f);

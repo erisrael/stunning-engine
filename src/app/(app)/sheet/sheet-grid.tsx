@@ -25,11 +25,10 @@ import { actionItemOf } from "@/app/(app)/content/content-table";
 
 const DATE_COLS: Record<string, Stage> = { recorded_date: "recording", edited_date: "editing", uploaded_date: "uploading", published_date: "publication" };
 const MERGED = ["grade", "subject", "unit"];
-import {
+import { roleLabel,
   BLOCKER_CAUSE_LABELS,
   NEXT_STAGE,
   PRIORITY_LABELS,
-  ROLE_LABELS,
   SHEET_STATUS_OPTIONS,
   STAGE_LABELS,
   STAGES,
@@ -135,7 +134,7 @@ export function SheetGrid({
     if (st === "publication" && (override || viewer.roles.includes("publication"))) return null;
     const owner = r.stages[st].ownerId;
     if (override || viewer.leads?.includes(st)) return null;
-    if (!viewer.roles.includes(st)) return `Only ${ROLE_LABELS[st]} staff can change this. Responsible: ${owner ? names[owner] : "unassigned"}.`;
+    if (!viewer.roles.includes(st)) return `Only ${roleLabel(st)} staff can change this. Responsible: ${owner ? names[owner] : "unassigned"}.`;
     if (owner && owner !== viewer.id) return `Owned by ${names[owner]}. Ask the team lead to reassign it.`;
     return null;
   };

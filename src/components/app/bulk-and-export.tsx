@@ -23,6 +23,7 @@ import { bulkAction, type BulkInput } from "@/app/actions/items";
 import { PRIORITY_LABELS, STAGE_LABELS, STAGES, type Capability, type Role, type Stage } from "@/lib/domain";
 import { endOfLocalDayIso } from "@/lib/format";
 import { ITEM_COLUMNS } from "@/lib/columns";
+import { ColumnPicker, PreviewTable } from "@/components/app/export-columns";
 import { FILL_FIELDS } from "@/lib/data-fields";
 import { FillDialog, RenameDialog, StatusDialog, TrashDialog, type RecordLike } from "@/components/app/record-dialogs";
 import { HandoverDialog } from "@/components/app/handover-dialog";
@@ -50,7 +51,7 @@ export async function downloadExport(input: { format: "csv" | "xlsx" | "json" | 
 }
 
 type ExportFormat = "csv" | "xlsx" | "json" | "tracker" | "pdf" | "audit";
-type ExportPrefs = { format: ExportFormat; scope: "page" | "selected" | "all"; grouping: "grade" | "subject" | "none"; includeDates: boolean; columnSet: "view" | "overview" | "all"; orientation: "landscape" | "portrait"; pageBreaks: boolean };
+type ExportPrefs = { format: ExportFormat; scope: "page" | "selected" | "all"; grouping: "grade" | "subject" | "none"; includeDates: boolean; columnSet: "view" | "overview" | "all" | "custom"; custom?: string[]; pdfStages?: Stage[]; orientation: "landscape" | "portrait"; pageBreaks: boolean };
 
 // Each format needs its own permission (Admin, Roles and permissions, Import and export).
 const FORMATS: { key: ExportFormat; label: string; hint: string; cap: Capability }[] = [
@@ -84,10 +85,33 @@ export function ExportMenu({ columns, query, selected, pageCount, total, perms }
   const format = fmt?.key;
   const tabular = format === "csv" || format === "xlsx" || format === "json";
   const cols = (() => {
+    // Chosen by hand: exactly those columns, dates included only if ticked among them.
+    if (p.columnSet === "custom") return p.custom ?? columns;
     const base = p.columnSet === "overview" ? OVERVIEW_COLUMNS : p.columnSet === "all" ? ALL_EXPORT_COLUMNS : columns;
     return p.includeDates ? [...new Set([...base, ...DATE_COLUMNS])] : base.filter((c) => !DATE_COLUMNS.includes(c));
   })();
   const params = new URLSearchParams(query);
+  // The first rows as they will be exported, refreshed a moment after a choice changes.
+  const [pv, setPv] = React.useState<{ labels: string[]; rows: string[][]; total: number | null; loading: boolean; error: string | null }>({ labels: [], rows: [], total: null, loading: false, error: null });
+  const pvKey = JSON.stringify([open, tabular, p.scope, p.grouping, cols, query, p.scope === "selected" ? selected : null]);
+  React.useEffect(() => {
+    if (!open || !tabular) return;
+    if (!cols.length) return setPv({ labels: [], rows: [], total: null, loading: false, error: null });
+    setPv((x) => ({ ...x, loading: true }));
+    const ctl = new AbortController();
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch("/api/export", { method: "POST", signal: ctl.signal, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ format: "json", scope: p.scope, ids: p.scope === "selected" ? selected : undefined, columns: cols, query, grouping: p.grouping, preview: true }) });
+        if (!res.ok) throw new Error(await res.text());
+        const j = (await res.json()) as { labels: string[]; rows: string[][]; total: number };
+        setPv({ ...j, loading: false, error: null });
+      } catch (e) {
+        if (!ctl.signal.aborted) setPv({ labels: [], rows: [], total: null, loading: false, error: e instanceof Error ? e.message : "Preview failed" });
+      }
+    }, 350);
+    return () => (clearTimeout(t), ctl.abort());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pvKey]);
   const rowsFor = p.scope === "page" ? pageCount : p.scope === "selected" ? selected.length : total;
 
   const go = async () => {
@@ -98,6 +122,7 @@ export function ExportMenu({ columns, query, selected, pageCount, total, perms }
     }
     if (format === "pdf") {
       const r = new URLSearchParams({ mode: p.grouping === "subject" ? "subject" : "grade", dates: p.includeDates ? "1" : "0", orientation: p.orientation, breaks: p.pageBreaks ? "1" : "0" });
+      if (p.pdfStages?.length && p.pdfStages.length < STAGES.length) r.set("stages", p.pdfStages.join(","));
       const g = params.get("g");
       const s = params.get("s");
       if (g && !g.includes(",")) r.set("grade", g);
@@ -124,7 +149,7 @@ export function ExportMenu({ columns, query, selected, pageCount, total, perms }
         <DownloadIcon /> Export
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-xl">
+        <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Export</DialogTitle>
             <DialogDescription>Choose a format and what to include. Exports follow your current filters and only contain what you are allowed to see.</DialogDescription>
@@ -174,6 +199,7 @@ export function ExportMenu({ columns, query, selected, pageCount, total, perms }
                         <SelectItem value="view">As shown in this view ({columns.length})</SelectItem>
                         <SelectItem value="overview">Overview (stages and dates)</SelectItem>
                         <SelectItem value="all">Every column</SelectItem>
+                        <SelectItem value="custom">Choose columns…</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -211,7 +237,41 @@ export function ExportMenu({ columns, query, selected, pageCount, total, perms }
                 )}
               </div>
             )}
-            {(tabular || format === "pdf") && (
+            {tabular && p.columnSet === "custom" && (
+              <ColumnPicker
+                columns={ITEM_COLUMNS.map((c) => ({ key: c.key, label: c.label, group: c.group }))}
+                value={p.custom ?? columns}
+                onChange={(v) => set("custom", v)}
+                defaults={ITEM_COLUMNS.filter((c) => c.defaultOn).map((c) => c.key)}
+              />
+            )}
+            {format === "pdf" && (
+              <div className="space-y-1.5">
+                <Label>Stage columns</Label>
+                <div className="flex flex-wrap gap-3">
+                  {STAGES.map((st) => {
+                    const on = (p.pdfStages ?? STAGES).includes(st);
+                    return (
+                      <label key={st} className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          className="size-4 accent-[var(--primary)]"
+                          checked={on}
+                          onChange={(e) => {
+                            const cur = p.pdfStages ?? [...STAGES];
+                            const next = STAGES.filter((x) => (x === st ? e.target.checked : cur.includes(x)));
+                            set("pdfStages", next.length ? next : cur);
+                          }}
+                        />
+                        {STAGE_LABELS[st]}
+                      </label>
+                    );
+                  })}
+                </div>
+                <p className="text-xs text-muted-foreground">The report opens as a preview first; choose Save as PDF there.</p>
+              </div>
+            )}
+            {(tabular || format === "pdf") && p.columnSet !== "custom" && (
               <label className="flex items-center gap-2 text-sm">
                 <input type="checkbox" className="size-4 accent-[var(--primary)]" checked={p.includeDates} onChange={(e) => set("includeDates", e.target.checked)} />
                 Include recorded, edited, uploaded and publication dates
@@ -223,6 +283,7 @@ export function ExportMenu({ columns, query, selected, pageCount, total, perms }
                 Start each {p.grouping === "subject" ? "subject" : "grade"} on a new page
               </label>
             )}
+            {tabular && <PreviewTable labels={pv.labels} rows={pv.rows} total={pv.total} loading={pv.loading} error={pv.error} />}
             <p className="rounded-lg bg-muted/60 p-2.5 text-xs text-muted-foreground">
               <span className="font-medium text-foreground">{fmt.label}:</span> {fmt.hint}
               {tabular && ` ${rowsFor} rows, ${cols.length + (p.grouping === "none" ? 0 : 4)} columns.`} Your choices are remembered for next time.
@@ -232,7 +293,7 @@ export function ExportMenu({ columns, query, selected, pageCount, total, perms }
             <Button variant="outline" onClick={() => setOpen(false)}>
               Cancel
             </Button>
-            <Button disabled={busy || (p.scope === "selected" && !selected.length && tabular)} onClick={go}>
+            <Button disabled={busy || (p.scope === "selected" && !selected.length && tabular) || (tabular && !cols.length)} onClick={go}>
               {busy ? <Loader2Icon className="animate-spin" /> : <DownloadIcon />} {format === "pdf" ? "Open report" : "Export"}
             </Button>
           </DialogFooter>

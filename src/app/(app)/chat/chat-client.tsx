@@ -60,7 +60,7 @@ import {
   updateGroupAction,
 } from "@/app/actions/chat";
 import type { ChatGroupSummary, ChatMember, ChatMessage } from "@/server/chat";
-import { ROLE_LABELS, type Role } from "@/lib/domain";
+import { roleLabel, type Role } from "@/lib/domain";
 import { initials } from "@/lib/format";
 import { decryptText, encryptText, isEnvelope } from "@/lib/e2e";
 import { answerQuestionAction } from "@/app/actions/collab";
@@ -1295,7 +1295,7 @@ function GroupInfo({
                 <MultiSelect
                   label="Add people"
                   className="flex-1"
-                  options={directory.filter((p) => !memberIds.has(p.id)).map((p) => ({ value: p.id, label: p.name, hint: p.roles.map((r) => ROLE_LABELS[r]).join(", ") }))}
+                  options={directory.filter((p) => !memberIds.has(p.id)).map((p) => ({ value: p.id, label: p.name, hint: p.roles.map((r) => roleLabel(r)).join(", ") }))}
                   value={adding}
                   onChange={setAdding}
                 />
@@ -1321,7 +1321,7 @@ function GroupInfo({
                       {m.name} {m.userId === viewerId && <span className="text-xs font-normal text-muted-foreground">(you)</span>}
                     </span>
                     <span className="block truncate text-xs text-muted-foreground">
-                      @{m.handle} · {m.roles.map((r) => ROLE_LABELS[r as Role] ?? r).join(", ")}
+                      @{m.handle} · {m.roles.map((r) => roleLabel(r)).join(", ")}
                     </span>
                   </span>
                   {m.role === "admin" && <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">{noun} admin</span>}
@@ -1404,14 +1404,14 @@ function NewGroupDialog({ directory, viewerId, onClose, onCreated }: { directory
             <Label>Members</Label>
             <MultiSelect
               label="Choose people"
-              options={directory.filter((p) => p.id !== viewerId).map((p) => ({ value: p.id, label: p.name, hint: p.roles.map((r) => ROLE_LABELS[r]).join(", ") }))}
+              options={directory.filter((p) => p.id !== viewerId).map((p) => ({ value: p.id, label: p.name, hint: p.roles.map((r) => roleLabel(r)).join(", ") }))}
               value={members}
               onChange={setMembers}
             />
             <div className="flex flex-wrap gap-1">
               {(["recording", "editing", "uploading", "publication", "manager"] as Role[]).map((r) => (
                 <Button key={r} size="xs" variant="outline" onClick={() => setMembers([...new Set([...members, ...byRole(r).filter((id) => id !== viewerId)])])}>
-                  + all {ROLE_LABELS[r]}
+                  + all {roleLabel(r)}
                 </Button>
               ))}
             </div>
@@ -1467,7 +1467,7 @@ function NewDirectDialog({ directory, viewerId, onClose, onOpen }: { directory: 
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-medium">{p.name}</span>
                   <span className="block truncate text-xs text-muted-foreground">
-                    @{p.handle} · {p.roles.map((r) => ROLE_LABELS[r]).join(", ")}
+                    @{p.handle} · {p.roles.map((r) => roleLabel(r)).join(", ")}
                   </span>
                 </span>
               </button>

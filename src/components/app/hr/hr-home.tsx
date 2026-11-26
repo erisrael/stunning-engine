@@ -16,7 +16,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { EmptyState } from "@/components/app/primitives";
 import { createAppAccountAction, deleteEmployeeAction, equipmentHistoryAction, issueEquipmentAction, returnEquipmentAction, saveEmployeeAction, saveEquipmentAction, syncEmployeesAction } from "@/app/actions/hr";
-import { ROLE_LABELS, type Role } from "@/lib/domain";
+import { roleLabel, type Role } from "@/lib/domain";
 import type { EmployeeListRow, EquipmentRow, HrDue, OrgNode } from "@/server/hr";
 import {
   CONDITIONS,
@@ -408,7 +408,7 @@ function AddEmployee({ open, onOpenChange, departments, people }: { open: boolea
 
   const copyCreds = () => {
     if (!createdAccount) return;
-    const txt = `Sign in credentials for Myseed:\nEmail: ${createdAccount.email}\nTemporary password: ${createdAccount.tempPassword}\nRoles: ${createdAccount.roles.map((r) => ROLE_LABELS[r] ?? r).join(", ")}`;
+    const txt = `Sign in credentials for Myseed:\nEmail: ${createdAccount.email}\nTemporary password: ${createdAccount.tempPassword}\nRoles: ${createdAccount.roles.map((r) => roleLabel(r)).join(", ")}`;
     navigator.clipboard.writeText(txt).then(() => {
       setCopied(true);
       toast.success("Credentials copied");
@@ -440,7 +440,7 @@ function AddEmployee({ open, onOpenChange, departments, people }: { open: boolea
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Roles:</span>
-              <span className="text-foreground">{createdAccount.roles.map((r) => ROLE_LABELS[r] ?? r).join(", ")}</span>
+              <span className="text-foreground">{createdAccount.roles.map((r) => roleLabel(r)).join(", ")}</span>
             </div>
           </div>
 
@@ -533,7 +533,7 @@ function AddEmployee({ open, onOpenChange, departments, people }: { open: boolea
                               setRoles((curr) => (curr.includes(r) ? (curr.length > 1 ? curr.filter((x) => x !== r) : curr) : [...curr, r]))
                             }
                           />
-                          <span className="truncate">{ROLE_LABELS[r]}</span>
+                          <span className="truncate">{roleLabel(r)}</span>
                         </label>
                       );
                     })}

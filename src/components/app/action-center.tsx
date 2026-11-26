@@ -17,13 +17,12 @@ import { Combobox } from "@/components/app/multi-select";
 import { itemAction, requirementsAction, type ItemActionInput } from "@/app/actions/items";
 import { askQuestionAction } from "@/app/actions/collab";
 import { checkAppAction, publishToAppAction } from "@/app/actions/files-publishing";
-import {
+import { roleLabel,
   ASSET_KIND_LABELS,
   BLOCKER_CAUSE_LABELS,
   NEXT_STAGE,
   REDO_LABELS,
   RETURN_REASON_LABELS,
-  ROLE_LABELS,
   STAGE_LABELS,
   STAGES,
   type AssetKind,
@@ -320,7 +319,7 @@ function ActionDialog({ kind, item, preset, onClose }: { kind: DialogKind; item:
   const stage = (info?.stage ?? item.stage ?? null) as Stage | null;
   const destLabel = (k: string) => destinations.find((d) => d.key === k)?.label ?? k;
   const userOpts = (role?: Role) =>
-    users.filter((u) => !role || u.roles.includes(role)).map((u) => ({ value: u.id, label: u.name, hint: u.roles.map((r) => ROLE_LABELS[r]).join(", ") }));
+    users.filter((u) => !role || u.roles.includes(role)).map((u) => ({ value: u.id, label: u.name, hint: u.roles.map((r) => roleLabel(r)).join(", ") }));
 
   const submit = async (input: ItemActionInput) => {
     setBusy(true);

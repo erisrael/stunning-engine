@@ -5,6 +5,8 @@ import { NavLink } from "@/components/app/nav-link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { CompassIcon,
+  HandshakeIcon,
+  ToolCaseIcon,
   WrenchIcon,
   MicIcon,
   ZapIcon,
@@ -107,7 +109,7 @@ import { ADMIN_SIDEBAR_GROUPS } from "@/lib/nav";
 import { pruneSidebar, sidebarHidden } from "@/lib/sidebar-visibility";
 import { savePrefsAction } from "@/app/actions/admin";
 import { NAV_TIPS } from "@/lib/help";
-import { ROLE_LABELS, type Capability, type Role } from "@/lib/domain";
+import { roleLabel, type Capability, type Role } from "@/lib/domain";
 import { scopeQueryString } from "@/lib/filters";
 import { AppIcon, type Tone } from "@/components/app/app-icon";
 
@@ -286,7 +288,13 @@ export function AppSidebar({
   legacy = false,
   sessionsManager = false,
   identity = { name: "Myseed", tagline: "Content Manager", logo: false, version: "0" },
+  tools = [],
+  peopleOps = false,
 }: {
+  // The Tools hub's apps this person may open (Admin, Tools): notes, calendar, sheets, documents, decks, letters.
+  tools?: { label: string; href: string }[];
+  // The Operations head (or whoever Admin allows) manages the people of the chosen departments.
+  peopleOps?: boolean;
   // The site's name, tagline and logo (Admin, Branding).
   identity?: { name: string; tagline: string; logo: boolean; version: string };
   // Named to manage studio sessions (the academic manager).
@@ -459,6 +467,8 @@ export function AppSidebar({
         { href: "/dev", label: "Dev team", icon: CodeIcon, cap: ["dev.access", "owners.view"], sub: deptViews("/dev", [{ label: "Sprint", view: "sprint" }, { label: "Repositories", view: "repos" }, { label: "Roadmap", view: "roadmap" }, { label: "Specs and docs", view: "docs" }, { label: "Releases and quality", view: "tools" }], has("users.manage")) },
         { href: "/studio", label: "Studio", icon: BookOpenIcon, cap: ["studio.access", "owners.view"], sub: [{ label: "Home", href: "/studio" }, { label: "Data Manager", href: "/studio/data" }] },
         { href: "/marketing", label: "Marketing", icon: MegaphoneIcon, cap: ["marketing.access", "owners.view"], sub: deptViews("/marketing", [], has("users.manage")) },
+        { href: "/sales", label: "Sales & Outreach", icon: HandshakeIcon, cap: ["sales.access", "owners.view"], sub: deptViews("/sales", [], has("users.manage")) },
+        { href: "/operations", label: "Operations", icon: WrenchIcon, cap: ["operations.access", "owners.view"], sub: [...deptViews("/operations", [], has("users.manage")), ...(peopleOps ? [{ label: "People operations", href: "/operations/people" }] : [])] },
         ...customDepts.map((d) => ({ href: `/d/${d.key}`, label: d.title, icon: BriefcaseIcon, sub: deptViews(`/d/${d.key}`, [], has("users.manage")) })),
         {
           href: "/hr",
@@ -651,6 +661,18 @@ export function AppSidebar({
     const resourceItem: NavItem = { href: "/resources", label: "Finance requests & equipment", icon: PackageIcon };
     if (resourceGroup) resourceGroup.items.push(resourceItem);
     else groups.push({ label: "Resources", items: [resourceItem] });
+  }
+  // The Tools hub (every app Admin allows for the person), and People operations for the Operations head when
+  // their sidebar has no Operations entry (a department sidebar of their own).
+  if (tools.length) {
+    const toolsItem: NavItem = { href: "/tools", label: "Tools hub", icon: ToolCaseIcon, sub: [{ label: "All tools", href: "/tools" }, ...tools] };
+    const g = groups.find((x) => x.label === "Tools");
+    if (g) g.items.unshift(toolsItem);
+    else groups.splice(Math.min(1, groups.length), 0, { label: "Tools", items: [toolsItem] });
+  }
+  if (peopleOps && !groups.some((g) => g.items.some((i) => i.href === "/operations/people" || i.sub?.some((x) => x.href === "/operations/people")))) {
+    const g = groups.find((x) => x.label === "Tools") ?? groups[0]!;
+    g.items.push({ href: "/operations/people", label: "People operations", icon: UsersRoundIcon });
   }
   // Payments and Noor data get a group of their own, after the departments (before Manage and Data & records).
   const payments: NavItem[] = [];
@@ -902,7 +924,7 @@ export function AppSidebar({
           </SidebarMenu>
           <div className="flex items-center gap-1 px-2 group-data-[collapsible=icon]:hidden">
             <p className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
-              Viewing as <span className="font-semibold text-foreground">{ROLE_LABELS[activeRole] || activeRole}</span>
+              Viewing as <span className="font-semibold text-foreground">{roleLabel(activeRole)}</span>
             </p>
             <Button size="icon-xs" variant="ghost" aria-label="Customize the sidebar" title="Choose what your sidebar shows" onClick={() => setCustomizing(true)}>
               <Settings2Icon />

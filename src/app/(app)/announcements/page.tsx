@@ -2,7 +2,7 @@ import { requireViewer } from "@/server/auth";
 import { announceTargets, myAnnouncements } from "@/server/announcements";
 import { customDepartments } from "@/server/departments";
 import { PageHeader } from "@/components/app/primitives";
-import { DEPARTMENT_LABELS, ROLES, ROLE_LABELS } from "@/lib/domain";
+import { roleLabel, DEPARTMENT_LABELS, ROLES } from "@/lib/domain";
 import { AnnouncementsClient } from "./announcements-client";
 
 export const metadata = { title: "Announcements" };
@@ -21,7 +21,7 @@ export default async function Page() {
         viewerId={viewer.id}
         canAll={targets.all}
         departments={targets.departments.map((k) => ({ key: k, label: label(k) }))}
-        roles={targets.all ? ROLES.map((r) => ({ key: r, label: ROLE_LABELS[r] })) : []}
+        roles={targets.all ? ROLES.map((r) => ({ key: r, label: roleLabel(r) })) : []}
       />
     </div>
   );

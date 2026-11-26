@@ -151,9 +151,52 @@ async function executor(): Promise<Executor> {
   return txStore.getStore() ?? (await driver());
 }
 
-export async function all<T = Row>(sql: string, ...params: Param[]): Promise<T[]> {
+// Settings rows (one JSON value per key) are read by many modules on every page and in the layout, mostly without a
+// cache of their own: they are kept here for a few seconds, and any statement that writes to settings clears them.
+// Inside a transaction the cache is not used, so a change is always read back by the code that made it.
+const SETTINGS_READ = /^\s*SELECT\s+(?:key\s*,\s*)?value\s+FROM\s+settings\s+WHERE\s+key\s*(?:=|IN)\s*/i;
+const SETTINGS_WRITE = /^\s*(?:INSERT\s+(?:OR\s+\w+\s+)?INTO|UPDATE|DELETE\s+FROM|TRUNCATE)\s+(?:TABLE\s+)?settings\b|TRUNCATE\b[^;]*\bsettings\b/i;
+const SETTINGS_MS = 5000;
+const settingsCache = new Map<string, { at: number; rows: Promise<Row[]> }>();
+export function forgetSettingsCache() {
+  settingsCache.clear();
+}
+
+// Queries slower than this are written to the server log (MYSEED_SLOW_QUERY_MS, 0 switches it off).
+const SLOW_MS = Number(process.env.MYSEED_SLOW_QUERY_MS ?? 500);
+async function timed<T>(sql: string, fn: () => Promise<T>): Promise<T> {
+  if (!SLOW_MS) return fn();
+  const t0 = performance.now();
+  try {
+    return await fn();
+  } finally {
+    const ms = performance.now() - t0;
+    if (ms > SLOW_MS) console.warn(`[db] slow query ${Math.round(ms)} ms: ${sql.replace(/\s+/g, " ").slice(0, 240)}`);
+  }
+}
+
+async function query(sql: string, params: Param[]) {
+  const inTx = !!txStore.getStore();
+  if (SETTINGS_WRITE.test(sql)) settingsCache.clear();
+  else if (!inTx && SETTINGS_READ.test(sql)) {
+    const key = `${sql}|${JSON.stringify(params)}`;
+    const hit = settingsCache.get(key);
+    if (hit && Date.now() - hit.at < SETTINGS_MS) return { rows: (await hit.rows).map((r) => ({ ...r })), affected: 0 };
+    const rows = executor().then((ex) => timed(sql, () => ex.query(translate(sql), norm(params)))).then((r) => r.rows);
+    if (settingsCache.size > 500) settingsCache.clear();
+    settingsCache.set(key, { at: Date.now(), rows });
+    rows.catch(() => settingsCache.delete(key));
+    return { rows: (await rows).map((r) => ({ ...r })), affected: 0 };
+  }
   const ex = await executor();
-  return (await ex.query(translate(sql), norm(params))).rows as T[];
+  const res = await timed(sql, () => ex.query(translate(sql), norm(params)));
+  // A write to settings inside a transaction clears the cache again when it commits.
+  if (inTx && SETTINGS_WRITE.test(sql)) settingsCache.clear();
+  return res;
+}
+
+export async function all<T = Row>(sql: string, ...params: Param[]): Promise<T[]> {
+  return (await query(sql, params)).rows as T[];
 }
 
 export async function get<T = Row>(sql: string, ...params: Param[]): Promise<T | undefined> {
@@ -162,8 +205,7 @@ export async function get<T = Row>(sql: string, ...params: Param[]): Promise<T |
 }
 
 export async function run(sql: string, ...params: Param[]): Promise<{ changes: number }> {
-  const ex = await executor();
-  const res = await ex.query(translate(sql), norm(params));
+  const res = await query(sql, params);
   return { changes: res.affected };
 }
 
@@ -176,10 +218,16 @@ export async function scalar<T = number>(sql: string, ...params: Param[]): Promi
 export async function tx<T>(fn: () => Promise<T>): Promise<T> {
   if (txStore.getStore()) return fn();
   const d = await driver();
-  return d.transaction((ex) => txStore.run(ex, fn));
+  try {
+    return await d.transaction((ex) => txStore.run(ex, fn));
+  } finally {
+    // Whatever the transaction wrote to settings is read fresh afterwards (and nothing stale survives a rollback).
+    settingsCache.clear();
+  }
 }
 
 export async function execRaw(sql: string) {
+  settingsCache.clear();
   await (await driver()).exec(sql);
 }
 

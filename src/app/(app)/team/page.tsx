@@ -5,7 +5,7 @@ import { getSettings } from "@/server/settings";
 import { nowIso } from "@/server/db";
 import { userNames } from "@/server/rows";
 import { parseFilters } from "@/lib/filters";
-import { ROLE_LABELS, STAGE_LABELS, STAGES, type Stage } from "@/lib/domain";
+import { roleLabel, STAGE_LABELS, STAGES, type Stage } from "@/lib/domain";
 import { fmtDateTime, fmtDuration, fmtNum, fmtPct } from "@/lib/format";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -105,7 +105,7 @@ export default async function TeamPage({ searchParams }: { searchParams: Promise
                               </span>
                             </span>
                           </td>
-                          <td className="text-xs">{u.roles.map((r) => ROLE_LABELS[r]).join(", ")}</td>
+                          <td className="text-xs">{u.roles.map((r) => roleLabel(r)).join(", ")}</td>
                           <td className="text-right tabular">
                             {u.owned}
                             {u.blocked > 0 && <span className="block text-[11px] text-[var(--st-blocked-fg)]">{u.blocked} blocked</span>}

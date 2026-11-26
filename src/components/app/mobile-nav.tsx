@@ -36,7 +36,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { cn } from "@/lib/utils";
 import { InstallPrompt, useInstall } from "./install-app";
 import { switchRoleAction } from "@/app/actions/auth";
-import { ROLE_LABELS, type Role } from "@/lib/domain";
+import { roleLabel, type Role } from "@/lib/domain";
 
 const KEY = "myseed.mobile.details";
 
@@ -300,14 +300,14 @@ export function MobileNav({
                       startSwitch(async () => {
                         const res = await switchRoleAction(r).catch(() => ({ ok: false as const, error: "The role could not be switched. Try again." }));
                         if (!res.ok) return void toast.error(res.error);
-                        toast.success(`Now viewing as ${ROLE_LABELS[r] || r}`);
+                        toast.success(`Now viewing as ${roleLabel(r)}`);
                         setTools(false);
                         router.push("/dashboard");
                       })
                     }
                     className={cn("h-9 rounded-full px-3.5 text-[14px] font-medium transition-colors", r === activeRole ? "bg-primary text-primary-foreground" : "glass text-foreground", switching && "opacity-60")}
                   >
-                    {ROLE_LABELS[r] || r}
+                    {roleLabel(r)}
                   </button>
                 ))}
               </div>

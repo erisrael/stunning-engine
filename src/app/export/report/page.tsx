@@ -33,6 +33,9 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
   const showDates = sp.dates !== "0";
   const pageBreaks = sp.breaks === "1";
   const stageFilter = STAGES.includes(sp.stage as Stage) ? (sp.stage as Stage) : null;
+  // The stage columns chosen in the export dialog (all four when none are named).
+  const picked = (sp.stages ?? "").split(",").filter((x): x is Stage => STAGES.includes(x as Stage));
+  const shown: readonly Stage[] = picked.length ? STAGES.filter((st) => picked.includes(st)) : STAGES;
   const statusFilter = (["done", "in_process", "missing"] as SimpleStatus[]).includes(sp.status as SimpleStatus) ? (sp.status as SimpleStatus) : null;
   const s = await getSettings();
   const tz = s.workspace.timezone;
@@ -133,7 +136,7 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
               parts in {new Set(rows.map((r) => r.unitId)).size} units, {groups.length} {mode === "grade" ? "grades" : "subjects"}
             </p>
           </div>
-          {STAGES.map((st) => {
+          {shown.map((st) => {
             const done = parts.filter((r) => r.stages[st] === "done").length;
             const inProcess = parts.filter((r) => r.stages[st] === "in_process").length;
             const p = pct(done, parts.length);
@@ -159,7 +162,7 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
               <colgroup>
                 <col style={{ width: "24%" }} />
                 <col style={{ width: "12%" }} />
-                {STAGES.map((st) => (
+                {shown.map((st) => (
                   <col key={st} style={{ width: "16%" }} />
                 ))}
               </colgroup>
@@ -167,7 +170,7 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
                 <tr className="bg-[#f5f6f8] text-left text-[6.5pt] tracking-wide text-[#656f7d] uppercase">
                   <th className="border border-[#e8eaed] px-[1.5mm] py-[1mm]">{mode === "grade" ? "Grade" : "Subject"}</th>
                   <th className="border border-[#e8eaed] px-[1.5mm] py-[1mm] text-right">Parts</th>
-                  {STAGES.map((st) => (
+                  {shown.map((st) => (
                     <th key={st} className="border border-[#e8eaed] px-[1.5mm] py-[1mm]">
                       {STAGE_LABELS[st]} done
                     </th>
@@ -181,7 +184,7 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
                     <tr key={g.key}>
                       <td className="border border-[#e8eaed] px-[1.5mm] py-[0.8mm] font-semibold">{g.name}</td>
                       <td className="border border-[#e8eaed] px-[1.5mm] py-[0.8mm] text-right tabular-nums">{gp.length}</td>
-                      {STAGES.map((st) => {
+                      {shown.map((st) => {
                         const done = gp.filter((r) => r.stages[st] === "done").length;
                         const p = pct(done, gp.length);
                         return (
@@ -221,14 +224,14 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
                 <h2 className="text-[11pt] font-bold">{g.name}</h2>
                 <p className="text-[7pt] text-[#656f7d]">
                   {gp.length} parts · {new Set(g.rows.map((r) => r.unitId)).size} units ·{" "}
-                  {STAGES.map((st) => `${STAGE_LABELS[st]} ${pct(gp.filter((r) => r.stages[st] === "done").length, gp.length)}%`).join(" · ")}
+                  {shown.map((st) => `${STAGE_LABELS[st]} ${pct(gp.filter((r) => r.stages[st] === "done").length, gp.length)}%`).join(" · ")}
                 </p>
               </div>
               <table className="w-full border-collapse">
                 <colgroup>
                   <col style={{ width: `${COLS.unit}%` }} />
                   <col style={{ width: `${COLS.part}%` }} />
-                  {STAGES.map((st) => (
+                  {shown.map((st) => (
                     <col key={st} style={{ width: `${COLS.stage}%` }} />
                   ))}
                 </colgroup>
@@ -236,7 +239,7 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
                   <tr className="bg-[#f5f6f8] text-left text-[6.5pt] tracking-wide text-[#656f7d] uppercase">
                     <th className="border border-[#e8eaed] px-[1.5mm] py-[1mm]">Unit</th>
                     <th className="border border-[#e8eaed] px-[1.5mm] py-[1mm]">Part</th>
-                    {STAGES.map((st) => (
+                    {shown.map((st) => (
                       <th key={st} className="border border-[#e8eaed] px-[1mm] py-[1mm] text-center">
                         {STAGE_LABELS[st]}
                       </th>
@@ -252,7 +255,7 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
                       <React.Fragment key={`${r.unitId}-${r.partId ?? "u"}`}>
                         {s2 > 0 && (
                           <tr className="report-sub">
-                            <td colSpan={2 + STAGES.length} className="border border-[#e8eaed] bg-[#f8f7ff] px-[1.5mm] py-[0.8mm]">
+                            <td colSpan={2 + shown.length} className="border border-[#e8eaed] bg-[#f8f7ff] px-[1.5mm] py-[0.8mm]">
                               <span className="font-semibold">{secondName(r)}</span>
                               <span className="ml-2 text-[6.5pt] text-[#656f7d]">
                                 {sub} parts · {new Set(g.rows.slice(i, i + s2).map((x) => x.unitId)).size} units
@@ -270,7 +273,7 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
                           {partLabel(r)}
                           {r.cameraCodes.length > 0 && <span className="block font-mono text-[6pt] text-[#8a919c]">{r.cameraCodes.join(" ")}</span>}
                         </td>
-                        {STAGES.map((st) => (
+                        {shown.map((st) => (
                           <td key={st} className="border border-[#e8eaed] px-[0.8mm] py-[0.8mm] text-center">
                             <span className="inline-block w-full max-w-[19mm] rounded-[1mm] px-[0.8mm] py-[0.3mm] text-[6.5pt] font-semibold whitespace-nowrap" style={CHIP[r.stages[st]]}>
                               {SIMPLE_STATUS_LABELS[r.stages[st]]}

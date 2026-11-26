@@ -249,7 +249,7 @@ export async function setMeta(key: string, value: string) {
 }
 
 // Role and team-lead permission matrix (Admin, Roles and permissions). Missing entries fall back to defaults.
-const MATRIX_VERSION = 18;
+const MATRIX_VERSION = 19;
 // Version 2 made managers view-only, moved item creation to Admin and the Recording lead, and added sidebar switches.
 const V2_MANAGER_REMOVED: Capability[] = ["items.create", "items.plan", "items.close", "work.override", "release.emergency", "import.run", "import.stage"];
 const V2_ADMIN_ADDED: Capability[] = ["items.create", "items.plan", "items.close", "import.tracker"];
@@ -428,6 +428,19 @@ function migrateV18(stored: Partial<PermissionMatrix>): Partial<PermissionMatrix
   return out as Partial<PermissionMatrix>;
 }
 
+// v19: Sales and Operations get their own sections (they borrowed the owners' Company overview, which made the
+// sidebar treat them as owners and hid their department); Operations may manage people (Admin chooses the scope);
+// everyone gets the Tools hub (Admin narrows it per app and role in Admin, Tools); Admin gets the new rights.
+function migrateV19(stored: Partial<PermissionMatrix>): Partial<PermissionMatrix> {
+  const out: Record<string, Capability[]> = { ...(stored as Record<string, Capability[]>) };
+  const swap = (k: string, add: Capability[]) => out[k] && (out[k] = [...new Set([...out[k]!.filter((c) => c !== "company.view"), ...add])]);
+  swap("sales", ["sales.access"]);
+  swap("operations", ["operations.access"]);
+  if (out.admin) out.admin = [...new Set([...out.admin, "sales.access", "operations.access", "people.operations", "tools.use", "tools.letterhead"] as Capability[])];
+  for (const [k, caps] of Object.entries(out)) if (Array.isArray(caps) && !k.startsWith("lead.") && !caps.includes("tools.use")) out[k] = [...caps, "tools.use"];
+  return out as Partial<PermissionMatrix>;
+}
+
 // Read on every request (signed-in user's permissions), so cached briefly; concurrent callers share one query.
 let matrixCache: { at: number; value: Promise<PermissionMatrix> } | null = null;
 
@@ -465,6 +478,7 @@ async function loadPermissionMatrix(): Promise<PermissionMatrix> {
   if (version < 16) stored = migrateV16(stored);
   if (version < 17) stored = migrateV17(stored);
   if (version < 18) stored = migrateV18(stored);
+  if (version < 19) stored = migrateV19(stored);
   const keys = [...new Set([...ROLES, ...STAGES.map(leadKey), ...Object.keys(stored).filter(k => /^[a-z][a-z0-9_]{1,39}$/.test(k) && Array.isArray((stored as Record<string, unknown>)[k]))])] as (keyof PermissionMatrix)[];
   const defaults: PermissionMatrix = { ...DEFAULT_PERMISSIONS, ...DEFAULT_LEAD_PERMISSIONS };
   return Object.fromEntries(keys.map((k) => [k, stored[k] ?? defaults[k]])) as PermissionMatrix;

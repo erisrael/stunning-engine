@@ -5,7 +5,7 @@
 import { all, get, nowIso, parseJson, run, uid } from "./db";
 import { audit, WorkflowError } from "./workflow";
 import { can, isLeadOf, loadUser, type AppUser } from "./users";
-import { STAGES, ROLE_LABELS } from "@/lib/domain";
+import { roleLabel, STAGES } from "@/lib/domain";
 
 export const COVERS = ["emerald", "indigo", "sunset", "ocean", "rose", "slate", "gold", "violet"] as const;
 export type Cover = (typeof COVERS)[number];
@@ -140,7 +140,7 @@ export async function getProfile(viewer: AppUser, userId: string): Promise<Profi
     userId,
     name: u.name,
     email: u.email,
-    roles: u.roles.map((r) => ROLE_LABELS[r]),
+    roles: u.roles.map((r) => roleLabel(r)),
     headline: p?.headline ?? u.title ?? null,
     about: shows("about") ? (p?.about ?? null) : null,
     location: p?.location ?? null,
@@ -448,7 +448,7 @@ export async function contactCard(viewer: AppUser, userId: string): Promise<Cont
     avatar: p?.has_avatar && p.updated_at ? avatarUrl(userId, p.updated_at) : null,
     cover: p?.cover ?? "emerald",
     headline: p?.headline ?? u.title ?? null,
-    roles: u.roles.map((r) => ROLE_LABELS[r]),
+    roles: u.roles.map((r) => roleLabel(r)),
     lastActiveAt: last?.last_active_at ?? null,
     email: allowed(c.emailVisible) ? u.email : null,
     workEmail: allowed(c.emailVisible) && c.workEmail ? c.workEmail : null,

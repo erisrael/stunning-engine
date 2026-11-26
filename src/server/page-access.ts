@@ -60,6 +60,10 @@ const RULES: Rule[] = [
   { prefix: "/call-records", check: async (u) => (await import("./call-records")).canOpenCallRecords(u) },
   { prefix: "/dev", check: dept("dev") },
   { prefix: "/marketing", check: dept("marketing") },
+  { prefix: "/sales", check: dept("sales") },
+  { prefix: "/operations/people", check: async (u) => (await (await import("./people-ops")).peopleOpsAccess(u)).allowed },
+  { prefix: "/operations", check: dept("operations") },
+  { prefix: "/tools", check: async (u) => (await (await import("./tools")).toolsFor(u)).apps.length > 0 },
   { prefix: "/studio", check: (u) => can(u, "studio.access") || can(u, "owners.view") },
   { prefix: "/kiosk", any: ["attendance.manage", "attendance.capture"] },
   { prefix: "/presenters", check: (u) => ["items.plan", "hr.access", "finance.access", "team.view"].some((c) => can(u, c as Capability)) },
@@ -70,7 +74,7 @@ export async function canOpenPath(u: AppUser, href: string): Promise<boolean> {
   const path = href.split(/[?#]/)[0]!;
   if(path === "/admin" && new URLSearchParams(href.split("?")[1] ?? "").get("tab") !== "data") return can(u,"users.manage");
   if (!path.startsWith("/") || path.startsWith("//")) return false;
-  const d = path.match(/^\/d\/([a-z0-9-]+)(?:\/(\w+))?/) ?? path.match(/^\/(dev|marketing)(?:\/(\w+))?$/);
+  const d = path.match(/^\/d\/([a-z0-9-]+)(?:\/(\w+))?/) ?? path.match(/^\/(dev|marketing|sales)(?:\/(\w+))?$/) ?? (path.startsWith("/operations/people") ? null : path.match(/^\/(operations)(?:\/(\w+))?$/));
   if (d) return dept(d[1]!, d[2])(u);
   // Support's lead tabs (phone menu, queues, setup…) are for support leads and Admin; agents get the desk.
   if (path === "/support") {

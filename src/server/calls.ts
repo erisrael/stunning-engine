@@ -223,11 +223,19 @@ export async function sendSignal(user: AppUser, id: string, kind: string, payloa
 
 // One poll: marks this person as present in their active call, ends stale calls, and returns their incoming call
 // (if ringing), the state of the call they are following, and connection messages from the other side.
+// The stale-call sweep runs at most every few seconds per server, not on every poll of every tab.
+let lastSweep = 0;
 export async function pollCalls(user: AppUser, input: { callId?: string | null; afterSeq?: number }) {
   const now = nowIso();
-  await run("UPDATE calls SET caller_seen_at = ? WHERE caller_id = ? AND status IN ('ringing', 'accepted')", now, user.id);
-  await run("UPDATE calls SET callee_seen_at = ? WHERE callee_id = ? AND status = 'accepted'", now, user.id);
-  await sweepCalls();
+  // "Still here" marks matter only while in a call; an idle tab (no call open) writes nothing.
+  if (input.callId) {
+    await run("UPDATE calls SET caller_seen_at = ? WHERE caller_id = ? AND status IN ('ringing', 'accepted')", now, user.id);
+    await run("UPDATE calls SET callee_seen_at = ? WHERE callee_id = ? AND status = 'accepted'", now, user.id);
+  }
+  if (input.callId || Date.now() - lastSweep > 5000) {
+    lastSweep = Date.now();
+    await sweepCalls();
+  }
   const ringing = await get<CallRow>("SELECT * FROM calls WHERE callee_id = ? AND status = 'ringing' ORDER BY created_at DESC LIMIT 1", user.id);
   let call: CallView | null = null;
   let signals: CallSignal[] = [];

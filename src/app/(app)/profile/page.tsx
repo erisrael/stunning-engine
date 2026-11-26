@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { requireViewer } from "@/server/auth";
-import { ROLE_LABELS } from "@/lib/domain";
+import { roleLabel } from "@/lib/domain";
 import { taxonomy } from "@/server/queries";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -133,7 +133,7 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
           <CardContent className="space-y-3 text-sm">
             <div>
               <p className="text-xs text-muted-foreground">Roles</p>
-              <div className="mt-1 flex flex-wrap gap-1">{viewer.roles.map((r) => <Badge key={r} variant="secondary">{ROLE_LABELS[r]}</Badge>)}</div>
+              <div className="mt-1 flex flex-wrap gap-1">{viewer.roles.map((r) => <Badge key={r} variant="secondary">{roleLabel(r)}</Badge>)}</div>
             </div>
             <div>
               <p className="text-xs text-muted-foreground">Access scope</p>

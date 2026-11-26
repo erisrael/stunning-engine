@@ -168,6 +168,8 @@ export type ExportRequest = {
   filters: Filters;
   // Grade → Subject (or Subject → Grade) order with grade, subject, unit and part as the first columns.
   grouping?: "grade" | "subject" | "none";
+  // The export dialog's preview: the first rows as they will be exported (nothing is logged as an export).
+  preview?: boolean;
 };
 
 export async function exportItems(user: AppUser, req: ExportRequest): Promise<{ filename: string; contentType: string; body: Buffer | string; rows: number }> {
@@ -195,6 +197,10 @@ export async function exportItems(user: AppUser, req: ExportRequest): Promise<{ 
     ["Counting rule", "One row per distinct item. Multi-grade items appear once."],
   ];
   const nowMs = Date.now();
+  if (req.preview) {
+    const sample = rows.slice(0, 12).map((r) => cols.map((c) => { const v = cellValue(r, c, users, tz, nowMs, s); return v == null ? "" : String(v); }));
+    return { filename: "preview.json", contentType: "application/json", body: JSON.stringify({ labels, rows: sample, total: rows.length }), rows: rows.length };
+  }
   const data = rows.map((r) => cols.map((c) => cellValue(r, c, users, tz, nowMs, s)));
 
   await run(

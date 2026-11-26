@@ -665,13 +665,15 @@ function Customers({ biz }: { biz: string | null }) {
   const [method, setMethod] = React.useState("");
   const [sort, setSort] = React.useState<"recent" | "paid" | "failed" | "name">("recent");
   const [open, setOpen] = React.useState<string | null>(null);
-  const filter = { from: from || undefined, until: until || undefined, outcome: outcome ? [outcome] : undefined, method: method ? [method] : undefined, sort };
-  const { data, error } = useLoad(() => A.chapaCustomersAction(biz, sent, filter), [biz, sent, from, until, outcome, method, sort]);
-  const qs = new URLSearchParams({ ...(biz ? { biz } : {}), ...(sent ? { q: sent } : {}), ...(from ? { from } : {}), ...(until ? { until } : {}), ...(outcome ? { outcome } : {}), ...(method ? { method } : {}), sort }).toString();
+  // Call list: each unpaid person once, leaving out duplicates and people who paid under another phone or email.
+  const [callList, setCallList] = React.useState(false);
+  const filter = { from: from || undefined, until: until || undefined, outcome: outcome ? [outcome] : undefined, method: method ? [method] : undefined, sort, callList };
+  const { data, error } = useLoad(() => A.chapaCustomersAction(biz, sent, filter), [biz, sent, from, until, outcome, method, sort, callList]);
+  const qs = new URLSearchParams({ ...(biz ? { biz } : {}), ...(sent ? { q: sent } : {}), ...(from ? { from } : {}), ...(until ? { until } : {}), ...(outcome ? { outcome } : {}), ...(method ? { method } : {}), ...(callList ? { calllist: "1" } : {}), sort }).toString();
   const sum = data?.summary;
   const pct = (n: number | null) => (n === null ? "-" : `${Math.round(n * 100)}%`);
   const sel = "h-8 rounded-md border bg-background px-2 text-xs";
-  const active = !!(sent || from || until || outcome || method);
+  const active = !!(sent || from || until || outcome || method || callList);
   return (
     <div className="space-y-3" data-chapa-customers>
       <Toolbar
@@ -703,7 +705,10 @@ function Customers({ biz }: { biz: string | null }) {
           <option value="failed">Most failed tries</option>
           <option value="name">Name</option>
         </select>
-        {active && <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => (setQ(""), setSent(""), setFrom(""), setUntil(""), setOutcome(""), setMethod(""))}>Reset</Button>}
+        <label className="flex h-8 items-center gap-1.5 rounded-md border px-2 text-xs" title="Each unpaid person once: no duplicates, and nobody who paid under another phone, email or business">
+          <input type="checkbox" className="size-3.5" checked={callList} onChange={(e) => setCallList(e.target.checked)} data-call-list /> Call list (no duplicates)
+        </label>
+        {active && <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => (setQ(""), setSent(""), setFrom(""), setUntil(""), setOutcome(""), setMethod(""), setCallList(false))}>Reset</Button>}
       </Toolbar>
       {error && <StatusStrip tone="danger">{error}</StatusStrip>}
       {sum && (
@@ -713,6 +718,15 @@ function Customers({ biz }: { biz: string | null }) {
           <MetricCard label="Paid after failing" value={sum.recovered.toLocaleString()} hint={`${pct(sum.recoveryRate)} of the ${sum.failedOnce.toLocaleString()} who failed · typically ${span(sum.medianRecoveryMs)} later`} />
           <MetricCard label="Never paid" value={sum.neverPaid.toLocaleString()} hint={`${sum.pendingOnly.toLocaleString()} more only pending`} />
         </div>
+      )}
+      {sum && !callList && (sum.duplicateUnpaid > 0 || sum.paidElsewhere > 0) && (
+        <StatusStrip tone="warning">
+          <span data-duplicate-summary>
+            {sum.duplicateUnpaid.toLocaleString()} unpaid rows are the same person as another row
+            {sum.paidElsewhere ? `, and ${sum.paidElsewhere.toLocaleString()} of them already paid under another phone, email or business` : ""}. {sum.toCall.toLocaleString()} people left to call.{" "}
+            <button type="button" className="font-medium underline" onClick={() => setCallList(true)}>Show the call list</button>
+          </span>
+        </StatusStrip>
       )}
       <div className="overflow-auto rounded-xl border bg-card">
         <table className="w-full text-xs">
@@ -727,7 +741,21 @@ function Customers({ biz }: { biz: string | null }) {
               return (
                 <React.Fragment key={id}>
                   <tr className="cursor-pointer border-t hover:bg-muted/40" onClick={() => setOpen(open === id ? null : id)} data-customer-row={c.outcome} aria-expanded={open === id}>
-                    <td className="px-2 py-1.5"><div className="font-medium">{c.name}</div><div className="text-[11px] text-muted-foreground">{[c.phone, c.email].filter(Boolean).join(" · ")}</div></td>
+                    <td className="px-2 py-1.5">
+                      <div className="font-medium">{c.name}</div>
+                      <div className="text-[11px] text-muted-foreground">{[c.phone, c.email].filter(Boolean).join(" · ")}</div>
+                      {c.dup && c.paidCount === 0 && (
+                        <div className="mt-0.5 text-[11px]" title={c.dup.others.map((o) => [o.name, o.phone ?? o.email, o.business].filter(Boolean).join(" / ")).join("; ")} data-duplicate={c.dup.paidElsewhere ? "paid" : c.dup.primary ? "primary" : "duplicate"}>
+                          {c.dup.paidElsewhere ? (
+                            <span className="rounded bg-emerald-500/15 px-1 text-emerald-800 dark:text-emerald-200">Paid elsewhere: don&apos;t call</span>
+                          ) : c.dup.primary ? (
+                            <span className="rounded bg-sky-500/15 px-1 text-sky-800 dark:text-sky-200">Call this one ({c.dup.size - 1} duplicate{c.dup.size > 2 ? "s" : ""})</span>
+                          ) : (
+                            <span className="rounded bg-amber-500/15 px-1 text-amber-800 dark:text-amber-200">Duplicate: don&apos;t call</span>
+                          )}
+                        </div>
+                      )}
+                    </td>
                     <td className="px-2 py-1.5"><span className={cn("rounded-full border px-2 py-0.5 text-[11px] whitespace-nowrap", OUTCOME_TONE[c.outcome as Outcome])}>{OUTCOMES.find(([k]) => k === c.outcome)?.[1]}</span></td>
                     <td className="px-2 py-1.5 text-right tabular-nums">{money(c.paid, c.currency)} <span className="text-muted-foreground">({c.paidCount})</span></td>
                     <td className="px-2 py-1.5 text-right tabular-nums">{c.tries}{c.failed ? <span className="text-rose-600"> · {c.failed} failed</span> : null}</td>
@@ -736,7 +764,7 @@ function Customers({ biz }: { biz: string | null }) {
                     <td className="px-2 py-1.5">{c.lastPaid ? when(c.lastPaid) : "Never"}</td>
                     <td className="px-2 py-1.5">{c.cms ? `${c.cms.student} (${c.cms.grade})` : "-"}</td>
                     <td className="px-2 py-1.5">{c.business}</td>
-                    <td className="px-2 py-1.5" onClick={(e) => e.stopPropagation()}>{c.phone && <Button asChild size="icon" variant="ghost" className="size-7" aria-label={`Call ${c.name}`}><a href={`tel:${c.phone}`}><PhoneIcon /></a></Button>}</td>
+                    <td className="px-2 py-1.5" onClick={(e) => e.stopPropagation()}>{c.phone && !(c.dup && c.paidCount === 0 && (c.dup.paidElsewhere || !c.dup.primary)) && <Button asChild size="icon" variant="ghost" className="size-7" aria-label={`Call ${c.name}`}><a href={`tel:${c.phone}`}><PhoneIcon /></a></Button>}</td>
                   </tr>
                   {open === id && (
                     <tr className="border-t bg-muted/20">

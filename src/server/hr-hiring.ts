@@ -432,7 +432,7 @@ export async function hireApplicant(
     "SELECT title, department, employment_type, hiring_manager_id, positions, location FROM job_openings WHERE id = ?",
     a.opening_id,
   ))!;
-  const roles = (input.roles ?? []).filter((r) => ROLES.includes(r));
+  const roles = await (await import("./role-catalog")).knownRoles(input.roles ?? []);
   let userId: string | null = null;
   let tempPassword: string | null = null;
   if (input.createAccount) {

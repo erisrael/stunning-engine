@@ -1,9 +1,9 @@
 export const ADMIN_SIDEBAR_GROUPS = [
- {label:"People & roles",links:[["people","People"],["teams","Teams"],["departments","Departments"],["permissions","Roles & permissions"],["sidebar","Sidebar per role"],["access","Access"],["/admin/preview","View as"]]},
+ {label:"People & roles",links:[["people","People"],["teams","Teams"],["departments","Departments"],["permissions","Roles & permissions"],["operations-authority","Operations authority"],["sidebar","Sidebar per role"],["access","Access"],["/admin/preview","View as"]]},
  {label:"Security",links:[["signin","Sign-in policy"],["sessions","Sessions & devices"],["privacy","Privacy"]]},
  {label:"Communication & support",links:[["customer-support","Support setup"],["chat","Chat"],["feedback","Feedback"],["reports","Safety reports"]]},
  {label:"Integrations",links:[["/admin/integrations","Integrations hub"],["/admin/integrations?tab=monitor","Call monitor"],["/admin/integrations?tab=connections","Connections"],["external-apis","External APIs"],["legacy-cms","Noor CMS user access"],["chapa-access","Chapa user access"]]},
- {label:"System & workspace",links:[["/admin/configure","Configure whole system"],["system","System settings"],["branding","Branding"],["files","Files & storage"],["usage","Usage"],["clean-data","Clean data"],["presentations","Presentation templates"],["fun","Fun mode"],["/admin/assistant","Assistant"],["/admin/platform?tab=status","Platform & health"]]},
+ {label:"System & workspace",links:[["/admin/configure","Configure whole system"],["system","System settings"],["tools","Tools hub"],["branding","Branding"],["files","Files & storage"],["usage","Usage"],["clean-data","Clean data"],["presentations","Presentation templates"],["fun","Fun mode"],["/admin/assistant","Assistant"],["/admin/platform?tab=status","Platform & health"]]},
 ].map(g=>({label:g.label,links:g.links.map(([key,label])=>({label,href:key.startsWith("/")?key:`/admin?tab=${key}`}))}));
 
 // Sidebar entries Admin can hide for a role (the sidebar still shows only what the role's permissions allow).

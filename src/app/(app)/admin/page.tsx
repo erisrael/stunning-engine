@@ -19,7 +19,7 @@ import { FilesAdmin } from "./files-admin";
 import { appConfigView, brokenLinks, linksOutside, storageConfig } from "@/server/files-publishing";
 import { acceptanceReport, accessLog, privacyConfig } from "@/server/privacy";
 import { usageReport } from "@/server/announcements";
-import { ROLE_LABELS } from "@/lib/domain";
+import { roleLabel, ROLE_LABELS } from "@/lib/domain";
 import { bannerSections, banners, navBrand } from "@/server/branding";
 import { PageHeader } from "@/components/app/primitives";
 import { PageTabs } from "@/components/app/page-kit";
@@ -67,6 +67,9 @@ import * as ch from "@/server/support-channels";
 
 import { AdminSearch, AdminSectionHead } from "./admin-search";
 
+import { OperationsAuthorityAdmin } from "./operations-authority-admin";
+import { ToolsAdmin } from "./tools-admin";
+import { OPS_DEPT_LABELS as OPS_LABELS } from "@/server/people-ops";
 export const metadata = { title: "Admin" };
 
 // Admin, External APIs: status and latest calls per provider, settings without keys, and Noor's stored counts.
@@ -159,6 +162,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
               { id: "teams", label: "Teams", count: team.length },
               { id: "departments", label: "Departments" },
               { id: "permissions", label: "Roles & permissions" },
+              { id: "operations-authority", label: "Operations authority" },
               { id: "access", label: "Access" },
               { id: "sidebar", label: "Sidebar" },
             ],
@@ -197,6 +201,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
             label: "System & workspace",
             tabs: [
               { id: "system", label: "System" },
+              { id: "tools", label: "Tools hub" },
               { id: "branding", label: "Branding" },
               { id: "files", label: "Files & publishing" },
               { id: "usage", label: "Usage" },
@@ -290,7 +295,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
               {tab === "people" && (
                 <>
                   <PeopleAdmin users={users} grades={grades} subjects={subjects} viewerId={viewer.id} />
-                  <PeopleVisibilityAdmin config={await peopleVisibility()} roles={ROLES.map((r) => ({ key: r, label: ROLE_LABELS[r] }))} />
+                  <PeopleVisibilityAdmin config={await peopleVisibility()} roles={ROLES.map((r) => ({ key: r, label: roleLabel(r) }))} />
                 </>
               )}
             </TabsContent>
@@ -435,6 +440,16 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
                 />
               )}
             </TabsContent>
+            <TabsContent value="operations-authority">
+              {tab === "operations-authority" && (
+                <OperationsAuthorityAdmin
+                  initial={await (await import("@/server/people-ops")).peopleOpsConfig()}
+                  departments={(await import("@/server/people-ops")).OPS_DEPARTMENTS.map((d) => ({ key: d, label: (OPS_LABELS as Record<string, string>)[d] ?? d }))}
+                  heads={await all<{ id: string; name: string; position: string }>("SELECT u.id, u.name, p.position FROM department_positions p JOIN users u ON u.id = p.user_id WHERE p.department = 'operations' AND p.position IN ('head','lead') AND u.active = 1 ORDER BY p.position, u.name")}
+                />
+              )}
+            </TabsContent>
+            <TabsContent value="tools">{tab === "tools" && <ToolsAdmin initial={await (await import("@/server/tools")).toolsConfig()} roles={(await roleCatalog()).map((r) => ({ key: r.key, label: r.label }))} gptClients={await (await import("@/server/oauth")).gptClients()} />}</TabsContent>
             <TabsContent value="chapa-access">{tab === "chapa-access" && <ChapaAccessAdmin />}</TabsContent>
             <TabsContent value="legacy-cms">
               {tab === "legacy-cms" && (
@@ -492,7 +507,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
         )}
         {manageData && (
           <TabsContent value="data">
-            <DataAdmin counts={await workspaceCounts()} database={databaseLabel()} canManageUsers={manageUsers} />
+            <DataAdmin counts={await workspaceCounts()} database={databaseLabel()} canManageUsers={manageUsers} sources={await (await import("@/server/workspace-data")).dataSources()} />
           </TabsContent>
         )}
       </Tabs>

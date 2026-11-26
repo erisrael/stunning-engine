@@ -13,7 +13,7 @@ import { ItemStatusPill } from "@/components/app/status-pill";
 import { SimpleChip } from "@/components/app/structure-report";
 import { DurationEditor, TargetsTable } from "../item-client";
 import { CommentProvider, InlineSelect, InlineText, LinkFileButton, LockNote, PropertyRow, StageDate, StageNotes } from "./form-client";
-import { COMPLEXITY_LABELS, PRIORITY_LABELS, ROLE_LABELS, STAGE_LABELS, STAGES, sheetStatusLabel, type AttemptStatus, type Stage } from "@/lib/domain";
+import { roleLabel, COMPLEXITY_LABELS, PRIORITY_LABELS, STAGE_LABELS, STAGES, sheetStatusLabel, type AttemptStatus, type Stage } from "@/lib/domain";
 import { fmtDate, fmtDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -52,7 +52,7 @@ export default async function ItemFormPage({ params }: { params: Promise<{ id: s
     if (lifecycle !== "in_production" || !stage) return lifecycle === "draft" ? "Opens when Recording staff start the item." : "This item is closed.";
     const lead = viewer.leads.includes(st);
     const roleOk = manager || lead || viewer.roles.includes(st);
-    if (!roleOk) return `${ROLE_LABELS[st]} team only. You can view and comment.`;
+    if (!roleOk) return `${roleLabel(st)} team only. You can view and comment.`;
     if (stage !== st) return STAGES.indexOf(st) < STAGES.indexOf(stage) ? `${STAGE_LABELS[st]} is complete.` : `Opens after ${STAGE_LABELS[stage]}.`;
     const owner = current?.owner_id ?? ownerOf(st);
     if (!manager && !lead && owner && owner !== viewer.id && !collaborator) return `Owned by ${names[owner] ?? "someone else"}. You can view and comment.`;

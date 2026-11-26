@@ -11,7 +11,7 @@ import { all, get, nowIso, placeholders, run, uid } from "./db";
 import { seal, unseal } from "./secrets";
 import { audit, WorkflowError } from "./workflow";
 import { can, type AppUser } from "./users";
-import { ROLE_LABELS, ROLES, STAGES, type Role, type Stage } from "@/lib/domain";
+import { roleLabel, ROLES, STAGES, type Role, type Stage } from "@/lib/domain";
 import { trackedFetch } from "./call-monitor";
 
 // ---------------------------------------------------------------------------
@@ -631,7 +631,7 @@ export type Recipient = { address: string; name: string | null; userId: string |
 
 export async function resolveRecipients(input: RecipientInput): Promise<{ list: Recipient[]; invalid: string[] }> {
   const ids = new Set(input.userIds ?? []);
-  const roles = (input.roles ?? []).filter((r) => (ROLES as readonly string[]).includes(r));
+  const roles: string[] = await (await import("./role-catalog")).knownRoles(input.roles ?? []);
   if (roles.length) for (const r of await all<{ user_id: string }>(`SELECT user_id FROM role_assignments WHERE role IN (${placeholders(roles.length)})`, ...roles)) ids.add(r.user_id);
   const leads = (input.leads ?? []).filter((s) => (STAGES as readonly string[]).includes(s));
   if (leads.length) for (const r of await all<{ user_id: string }>(`SELECT user_id FROM team_leads WHERE stage IN (${placeholders(leads.length)})`, ...leads)) ids.add(r.user_id);
@@ -645,7 +645,7 @@ export async function resolveRecipients(input: RecipientInput): Promise<{ list: 
     for (const u of users) {
       const address = u.email.trim().toLowerCase();
       if (!isEmail(address)) continue;
-      out.set(address, { address, name: u.name, userId: u.id, firstName: u.name.split(/\s+/)[0], role: roleRows.filter((r) => r.user_id === u.id).map((r) => ROLE_LABELS[r.role] ?? r.role).join(", ") });
+      out.set(address, { address, name: u.name, userId: u.id, firstName: u.name.split(/\s+/)[0], role: roleRows.filter((r) => r.user_id === u.id).map((r) => roleLabel(r.role)).join(", ") });
     }
   }
   const invalid: string[] = [];
