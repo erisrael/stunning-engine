@@ -558,8 +558,21 @@
 }
 
 /* ------------------------------------------------------------------ Simple look
-   Plain and calm (Settings, Appearance; Admin's default for everyone): with the low-power rules above and the Classic
-   style, nothing moves, nothing shines and nothing blurs. Spinners and the loading bar still move, so waiting shows. */
+   Plain and calm (Settings, Appearance; Admin's default for everyone): the Zen style as a base (set with it), no glass,
+   blur or background field (the low-power rules above), nothing moving, and its own clean finish: a light grey page,
+   white cards with a fine border, the sidebar's edge, coloured icons and a tinted active item. Spinners and the loading
+   bar still move, so waiting shows. */
+:root[data-plain]:not(.dark):not([data-preset]) {
+  --background: #f6f7f9; --foreground: #111827; --card: #ffffff; --card-foreground: #111827; --popover: #ffffff; --popover-foreground: #111827;
+  --muted: #f1f3f5; --muted-foreground: #6b7280; --secondary: #f1f3f5; --secondary-foreground: #111827; --border: #e4e7ec; --input: #e4e7ec;
+  --sidebar: #ffffff; --sidebar-foreground: #1f2937; --sidebar-border: #e4e7ec; --sidebar-accent: #f1f3f5;
+}
+:root[data-plain].dark:not([data-preset]) {
+  --background: #0f1115; --foreground: #e5e7eb; --card: #16181d; --card-foreground: #e5e7eb; --popover: #16181d; --popover-foreground: #e5e7eb;
+  --muted: #1c1f25; --muted-foreground: #9aa1ac; --secondary: #1c1f25; --secondary-foreground: #e5e7eb; --border: #262a31; --input: #2a2f37;
+  --sidebar: #121418; --sidebar-foreground: #d7dbe0; --sidebar-border: #22262d; --sidebar-accent: #1c1f25;
+}
+:root[data-plain] { --radius: 0.625rem; }
 :root[data-plain] *:not(.animate-spin):not(.global-progress-bar),
 :root[data-plain] *::before,
 :root[data-plain] *::after {
@@ -570,6 +583,36 @@
 :root[data-plain] body::before {
   display: none !important;
 }
+:root[data-plain] :is(body, [data-slot="sidebar-inset"]) {
+  background: var(--background) !important;
+}
 :root[data-plain] .glass {
-  box-shadow: 0 0 0 1px var(--border) !important;
+  background: var(--card) !important;
+  box-shadow: 0 0 0 1px var(--border), 0 4px 14px -8px rgb(16 24 40 / 0.18) !important;
+}
+:root[data-plain] [data-slot="card"] {
+  background: var(--card) !important;
+  border: 1px solid var(--border) !important;
+  box-shadow: 0 1px 2px rgb(16 24 40 / 0.04) !important;
+}
+:root[data-plain] header[data-topbar] {
+  border-bottom: 1px solid var(--border) !important;
+}
+:root[data-plain] [data-slot="sidebar-container"] {
+  border-right: 1px solid var(--sidebar-border) !important;
+}
+/* Zen greys the icons out; Simple look keeps their colours. */
+:root[data-plain][data-style="zen"] .app-icon {
+  color: revert-layer !important;
+}
+:root[data-plain][data-style="zen"] .app-tile {
+  background: revert-layer !important;
+  color: revert-layer !important;
+}
+:root[data-plain] [data-slot="sidebar-menu-button"][data-active="true"],
+:root[data-plain] [data-slot="sidebar-menu-sub-button"][data-active="true"] {
+  background: color-mix(in oklab, var(--primary) 10%, transparent) !important;
+  color: var(--primary) !important;
+  box-shadow: none !important;
+  font-weight: 600;
 }

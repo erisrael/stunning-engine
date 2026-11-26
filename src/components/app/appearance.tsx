@@ -94,11 +94,11 @@ function apply(a: Appearance) {
   el.dataset.contrast = a.contrast;
   el.dataset.lite = a.lite;
   // Simple look: the person's choice ("on" or "off"), else the workspace's (Admin, Configure whole system). Plain
-  // surfaces (the Classic style), no glass, no motion, no effects (globals.css).
+  // surfaces (the Zen base with its own polish, glass.css), no glass, no motion, no effects, fewer refreshes.
   const plain = a.plain === "on" || (a.plain !== "off" && el.dataset.plainDefault === "1");
   if (plain) {
     el.dataset.plain = "";
-    if (el.dataset.style) el.dataset.style = "classic";
+    if (el.dataset.style) el.dataset.style = "zen";
     el.dataset.motion = "off";
   } else delete el.dataset.plain;
   el.dataset.lang = a.lang;

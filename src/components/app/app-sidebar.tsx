@@ -65,6 +65,7 @@ import { CompassIcon,
   HeadsetIcon,
   PhoneCallIcon,
   ChevronDownIcon,
+  ChevronLeftIcon,
   ClapperboardIcon,
   CalendarDaysIcon,
   LaptopIcon,
@@ -93,11 +94,9 @@ import {
   SidebarMenuSubButton,
   SidebarMenuSubItem,
   SidebarRail,
-  SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { publishSection } from "@/components/app/section-tabs";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -326,7 +325,7 @@ export function AppSidebar({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const search = searchParams.toString();
-  const { setOpenMobile, isMobile, state } = useSidebar();
+  const { setOpenMobile, isMobile, state, toggleSidebar } = useSidebar();
   // Collapsed to icons on a desktop or tablet: group labels and sub-pages hide; the sub-pages show as tabs on top of the page.
   const iconOnly = state === "collapsed" && !isMobile;
   const [customizing, setCustomizing] = React.useState(false);
@@ -724,11 +723,33 @@ export function AppSidebar({
   const visibleItems = groups.flatMap((g) => prune(g.items.filter((i) => allowed(i.cap))));
   const sectionItem = visibleItems.find((i) => i.sub && i.sub.some((s) => subActive(s.href))) ?? visibleItems.find((i) => i.sub && inSectionOf(i));
   const sectionKey = sectionItem ? JSON.stringify([sectionItem.label, sectionItem.sub, search]) : "";
+  // Does the page you are on draw these pages as its own tabs (Admin, Attendance, Email)? Then the sidebar keeps the
+  // section folded, so they never show twice; otherwise it opens the section you are in. No tab bar is added to pages.
+  const [pageTabs, setPageTabs] = React.useState(false);
   React.useEffect(() => {
-    if (!sectionItem?.sub) return publishSection(null);
-    const tabs = sectionItem.sub.map((s) => ({ label: s.label, href: s.keepFilters ? s.href + scopeQueryString(search) : s.href }));
-    const on = sectionItem.sub.find((s) => subActive(s.href));
-    publishSection({ label: sectionItem.label, tabs, active: on ? (on.keepFilters ? on.href + scopeQueryString(search) : on.href) : null });
+    const subs = sectionItem?.sub;
+    const main = document.querySelector("main");
+    if (!subs || subs.length < 2 || !main) return setPageTabs(false);
+    const check = () => {
+      if (main.querySelector("[data-page-tabs]")) return setPageTabs(true);
+      const hrefs = new Set([...main.querySelectorAll<HTMLAnchorElement>("a[href]")].map((a) => (a.getAttribute("href") ?? "").split("&")[0]));
+      const names = new Set([...main.querySelectorAll<HTMLElement>('[role="tab"], [data-slot="tabs-trigger"]')].map((el) => (el.textContent ?? "").replace(/\s*\d+$/, "").trim().toLowerCase()));
+      const half = Math.ceil(subs.length / 2);
+      setPageTabs(subs.filter((x) => hrefs.has(x.href)).length >= half || subs.filter((x) => names.has(x.label.toLowerCase())).length >= half);
+    };
+    check();
+    let frame = 0;
+    const mo = new MutationObserver(() => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(() => ((frame = 0), check()));
+    });
+    mo.observe(main, { childList: true, subtree: true });
+    const stop = window.setTimeout(() => mo.disconnect(), 4000);
+    return () => {
+      mo.disconnect();
+      window.clearTimeout(stop);
+      if (frame) window.cancelAnimationFrame(frame);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sectionKey, pathname, tabParam]);
 
@@ -791,8 +812,9 @@ export function AppSidebar({
                     {items.map((item) => {
                       const active = isActive(item);
                       const inSection = inSectionOf(item);
-                      // Folded unless opened with the arrow: a section's pages are the tab bar on the page, so they never show twice.
-                      const expanded = openGroups.includes(`item:${item.href}`);
+                      // The section you are in opens by itself, unless the page shows the same pages as its own tabs; the arrow
+                      // opens or folds any section.
+                      const expanded = openGroups.includes(`item:${item.href}`) || (inSection && !pageTabs && !!sectionItem && keyOf(item) === keyOf(sectionItem) && !openGroups.includes(`closed:${item.href}`));
                       const href = item.keepFilters ? item.href + scopeQueryString(search) : item.href;
                       const tip = NAV_TIPS[keyOf(item)] ?? NAV_TIPS[item.href.split("?")[0]!];
                       return (
@@ -853,15 +875,13 @@ export function AppSidebar({
         </SidebarContent>
         <SidebarFooter className="border-t border-sidebar-border">
           <SidebarMenu>
-            <SidebarMenuItem className="flex items-center gap-1 group-data-[collapsible=icon]:flex-col">
-              <SidebarMenuButton asChild isActive={pathname === "/profile"} tooltip="Profile: my record, leave, pay and claims, account" className="h-8 min-w-0 flex-1 font-medium">
+            <SidebarMenuItem>
+              <SidebarMenuButton asChild isActive={pathname === "/profile"} tooltip="Profile: my record, leave, pay and claims, account" className="h-8 font-medium">
                 <NavLink href="/profile" onClick={close}>
                   <AppIcon icon={CircleUserIcon} />
                   <span>Profile</span>
                 </NavLink>
               </SidebarMenuButton>
-              {/* Collapse to the icon rail and open again, on the sidebar itself (also Ctrl+B). Phones use More. */}
-              {!isMobile && <SidebarTrigger className="size-8 shrink-0" title={iconOnly ? "Open the sidebar (Ctrl+B)" : "Collapse the sidebar (Ctrl+B)"} />}
             </SidebarMenuItem>
           </SidebarMenu>
           <div className="flex items-center gap-1 px-2 group-data-[collapsible=icon]:hidden">
@@ -875,6 +895,19 @@ export function AppSidebar({
         </SidebarFooter>
       </TooltipProvider>
       <SidebarRail />
+      {/* The open/close handle in the middle of the sidebar's edge (also Ctrl+B). Phones use the More tab. */}
+      {!isMobile && (
+        <button
+          type="button"
+          onClick={toggleSidebar}
+          data-sidebar="trigger"
+          aria-label={iconOnly ? "Open the sidebar" : "Close the sidebar"}
+          title={iconOnly ? "Open the sidebar (Ctrl+B)" : "Close the sidebar (Ctrl+B)"}
+          className="absolute top-1/2 -right-3 z-20 flex size-6 -translate-y-1/2 items-center justify-center rounded-full border border-sidebar-border bg-sidebar text-sidebar-foreground/70 shadow-sm transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+        >
+          <ChevronLeftIcon className={cn("size-3.5 transition-transform", iconOnly && "rotate-180")} />
+        </button>
+      )}
       {customizing && (
         <CustomizeSidebar
           groups={groups.map((g) => ({ label: g.label, items: g.items.filter((i) => allowed(i.cap)).map((i) => ({ key: keyOf(i), label: i.label, locked: !!i.locked, byAdmin: !i.granted && sidebarHidden(i.href,roleHidden,i.id) })) }))}

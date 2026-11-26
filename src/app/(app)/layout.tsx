@@ -8,7 +8,6 @@ import { shellCounts } from "@/server/shell";
 import { getSettings } from "@/server/settings";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app/app-sidebar";
-import { CollapsedSectionTabs } from "@/components/app/section-tabs";
 import { Topbar } from "@/components/app/topbar";
 import { ActionCenter } from "@/components/app/action-center";
 import { isManager, userDirectory } from "@/server/users";
@@ -174,7 +173,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <main data-app-main className="mx-auto w-full max-w-[1600px] min-w-0 flex-1 px-3 pt-4 pb-[calc(var(--tabbar-space)+1rem)] sm:px-6 sm:pt-6 lg:pb-6">
           {announcements && <AnnouncementStrip pending={announcements} />}
           <SectionBanner banners={banners} />
-          <CollapsedSectionTabs />
           {children}
         </main>
         <MobileNav

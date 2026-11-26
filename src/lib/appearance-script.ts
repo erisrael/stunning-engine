@@ -20,7 +20,7 @@ export function appearanceScript(def: string, ui: { style?: string; allowed?: st
   const ip = /^[a-z]{2,12}$/.test(ui.iconPack ?? "") ? ui.iconPack! : "lucide";
   const motion = `d.dataset.motionDefault=${JSON.stringify(md)};d.dataset.motionAllowed=${ui.cinematic === false ? '"0"' : '"1"'};d.dataset.iconPackDefault=${JSON.stringify(ip)};var mo=a.motion&&a.motion!=="auto"?a.motion:${JSON.stringify(md)};if(mo==="cinematic"&&d.dataset.motionAllowed==="0")mo="subtle";d.dataset.motion=mo;`;
   // Simple look (the person's choice, else the workspace's): plain surfaces, no motion (globals.css).
-  const plain = `d.dataset.plainDefault=${ui.plain ? '"1"' : '""'};if(a.plain==="on"||(a.plain!=="off"&&d.dataset.plainDefault==="1")){d.dataset.plain="";if(d.dataset.style)d.dataset.style="classic";d.dataset.motion="off";}`;
+  const plain = `d.dataset.plainDefault=${ui.plain ? '"1"' : '""'};if(a.plain==="on"||(a.plain!=="off"&&d.dataset.plainDefault==="1")){d.dataset.plain="";if(d.dataset.style)d.dataset.style="zen";d.dataset.motion="off";}`;
   return `try{var a=JSON.parse(localStorage.getItem("${KEY}")||"{}");var d=document.documentElement;${preset}${style}${motion}${plain}` + BODY;
 }
 // Low power (the Android app, phones with 4 GB or less): glass without live blur or refraction (glass.css), the
