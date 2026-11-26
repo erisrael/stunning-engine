@@ -3,6 +3,8 @@ import { Abyssinica_SIL, Atkinson_Hyperlegible, Bangers, Bebas_Neue, Comic_Neue,
 import { ThemeProvider } from "next-themes";
 import { Toaster } from "@/components/ui/sonner";
 import { VersionWatch } from "@/components/app/version-watch";
+import { GlobalProgress } from "@/components/app/global-progress";
+import * as React from "react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import "./globals.css";
 import "./ui-styles.css";
@@ -80,6 +82,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       </head>
       <body className="min-h-full">
         <ErrorReporter />
+        {/* A bar and a Loading card the moment a page or a change is on its way (components/app/global-progress). */}
+        <React.Suspense fallback={null}>
+          <GlobalProgress />
+        </React.Suspense>
         <VersionWatch />
         <AndroidBridge />
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
