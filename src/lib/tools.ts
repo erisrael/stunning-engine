@@ -3,10 +3,10 @@
 export const TOOL_APPS = [
   { key: "notes", label: "Notes & Checklists", href: "/tools/notes", hint: "Notes with tick boxes, tasks with due dates, linked to production parts." },
   { key: "calendar", label: "Reminder Calendar", href: "/tools/calendar", hint: "Reminders and dated tasks by month or week; subscribe from Google, Outlook or Apple." },
-  { key: "sheets", label: "Excel / Sheets Studio", href: "/tools/sheets", hint: "Open, edit and export .xlsx and .csv; cross-check rows against production data." },
-  { key: "docs", label: "Document Builder", href: "/tools/docs", hint: "Documents from templates, exported to Word (.docx) or PDF." },
-  { key: "decks", label: "PowerPoint Deck Maker", href: "/tools/decks", hint: "Slides from layouts, exported to PowerPoint (.pptx)." },
-  { key: "letters", label: "Company Letter Generator", href: "/tools/letters", hint: "Official letters on the locked company letterhead, as PDF or Word." },
+  { key: "sheets", label: "Excel / Sheets Studio", href: "/tools/sheets", hint: "A real spreadsheet: formulas, styles, several sheets, charts and sorting; opens and saves .xlsx and .csv, and checks rows against production." },
+  { key: "docs", label: "Document Builder", href: "/tools/docs", hint: "Word-style documents: fonts, colours, tables with formulas, contents, columns and page setup; opens and saves .docx, PDF, Markdown and HTML." },
+  { key: "decks", label: "PowerPoint Deck Maker", href: "/tools/decks", hint: "Slides from layouts or designed freely, presented full screen; opens and saves .pptx, PDF and pictures." },
+  { key: "letters", label: "Company Letter Generator", href: "/tools/letters", hint: "Over 50 kinds of official letter on the letterhead: write, design them Canva-style, preview, and save as PDF, Word or a picture." },
 ] as const;
 export type ToolApp = (typeof TOOL_APPS)[number]["key"];
 

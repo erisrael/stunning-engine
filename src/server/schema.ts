@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 94;
+export const SCHEMA_VERSION = 97;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -4538,6 +4538,467 @@ CREATE TABLE IF NOT EXISTS oauth_tokens (
   last_used_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_oauth_tokens_user ON oauth_tokens(user_id, kind, revoked_at);
+-- v95: Correspondence (src/server/corr/*): official, numbered company letters. Entities (the company, subsidiaries,
+-- branches) and document categories carry the numbering rules; sequences are allocated by one atomic statement and
+-- reference numbers are unique for ever (a voided letter keeps its number). Each document has a permanent UUIDv7.
+-- The audit log is append-only and hash-chained per document, so a changed or removed record shows.
+CREATE TABLE IF NOT EXISTS corr_entities (
+  id TEXT PRIMARY KEY,
+  parent_id TEXT REFERENCES corr_entities(id) ON DELETE SET NULL,
+  kind TEXT NOT NULL DEFAULT 'company',
+  code TEXT NOT NULL UNIQUE,
+  legal_name TEXT NOT NULL,
+  trading_name TEXT,
+  registration_no TEXT,
+  tax_id TEXT,
+  address TEXT,
+  phone TEXT,
+  email TEXT,
+  website TEXT,
+  letterhead TEXT NOT NULL DEFAULT '{}',
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS corr_categories (
+  id TEXT PRIMARY KEY,
+  entity_id TEXT REFERENCES corr_entities(id) ON DELETE SET NULL,
+  code TEXT NOT NULL,
+  name TEXT NOT NULL,
+  pattern TEXT NOT NULL,
+  scope TEXT NOT NULL DEFAULT 'category',
+  reset TEXT NOT NULL DEFAULT 'yearly',
+  padding INTEGER NOT NULL DEFAULT 6,
+  classification TEXT NOT NULL DEFAULT 'internal',
+  config TEXT NOT NULL DEFAULT '{}',
+  active INTEGER NOT NULL DEFAULT 1,
+  sort INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (entity_id, code)
+);
+CREATE TABLE IF NOT EXISTS corr_sequences (
+  key TEXT PRIMARY KEY,
+  next_value BIGINT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS corr_documents (
+  id TEXT PRIMARY KEY,
+  ref_number TEXT UNIQUE,
+  direction TEXT NOT NULL DEFAULT 'outgoing',
+  entity_id TEXT REFERENCES corr_entities(id) ON DELETE SET NULL,
+  category_id TEXT REFERENCES corr_categories(id) ON DELETE SET NULL,
+  department TEXT,
+  status TEXT NOT NULL DEFAULT 'draft',
+  classification TEXT NOT NULL DEFAULT 'internal',
+  priority TEXT NOT NULL DEFAULT 'normal',
+  subject TEXT NOT NULL DEFAULT '',
+  data TEXT NOT NULL DEFAULT '{}',
+  version INTEGER NOT NULL DEFAULT 1,
+  issued_snapshot TEXT,
+  content_hash TEXT,
+  replaces_id TEXT REFERENCES corr_documents(id) ON DELETE SET NULL,
+  in_reply_to TEXT REFERENCES corr_documents(id) ON DELETE SET NULL,
+  external_ref TEXT,
+  delivery_method TEXT,
+  void_reason TEXT,
+  created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+  issued_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  issued_at TEXT,
+  dispatched_at TEXT,
+  delivered_at TEXT,
+  acknowledged_at TEXT,
+  archived_at TEXT,
+  voided_at TEXT,
+  due_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_corr_docs_status ON corr_documents(status, updated_at);
+CREATE INDEX IF NOT EXISTS idx_corr_docs_creator ON corr_documents(created_by, updated_at);
+CREATE INDEX IF NOT EXISTS idx_corr_docs_category ON corr_documents(category_id, issued_at);
+-- Every saved version of a document's content (drafts included), for history and comparison.
+CREATE TABLE IF NOT EXISTS corr_versions (
+  document_id TEXT NOT NULL REFERENCES corr_documents(id) ON DELETE CASCADE,
+  version INTEGER NOT NULL,
+  data TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  saved_by TEXT,
+  saved_at TEXT NOT NULL,
+  PRIMARY KEY (document_id, version)
+);
+-- Recipients: to, cc and bcc, each copied from the directory at the time (later directory edits do not change it).
+CREATE TABLE IF NOT EXISTS corr_recipients (
+  id TEXT PRIMARY KEY,
+  document_id TEXT NOT NULL REFERENCES corr_documents(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL DEFAULT 'to',
+  org_id TEXT,
+  contact_id TEXT,
+  name TEXT,
+  title TEXT,
+  organisation TEXT,
+  address TEXT,
+  email TEXT,
+  phone TEXT,
+  fax TEXT,
+  sort INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_corr_recipients_doc ON corr_recipients(document_id);
+CREATE INDEX IF NOT EXISTS idx_corr_recipients_org ON corr_recipients(org_id);
+-- Every reference number ever allocated, and what happened to it.
+CREATE TABLE IF NOT EXISTS corr_numbers (
+  ref_number TEXT PRIMARY KEY,
+  sequence_key TEXT NOT NULL,
+  value BIGINT NOT NULL,
+  document_id TEXT REFERENCES corr_documents(id) ON DELETE SET NULL,
+  state TEXT NOT NULL DEFAULT 'issued',
+  allocated_by TEXT,
+  allocated_at TEXT NOT NULL,
+  note TEXT
+);
+CREATE TABLE IF NOT EXISTS corr_audit (
+  seq BIGSERIAL PRIMARY KEY,
+  document_id TEXT,
+  actor_id TEXT,
+  actor_name TEXT,
+  action TEXT NOT NULL,
+  detail TEXT NOT NULL DEFAULT '{}',
+  ip TEXT,
+  at TEXT NOT NULL,
+  prev_hash TEXT,
+  hash TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_corr_audit_doc ON corr_audit(document_id, seq);
+CREATE OR REPLACE FUNCTION corr_audit_guard() RETURNS trigger LANGUAGE plpgsql AS $fn$
+BEGIN
+  RAISE EXCEPTION 'The correspondence audit log is append-only';
+END
+$fn$;
+DO $do$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'corr_audit_append_only') THEN
+    CREATE TRIGGER corr_audit_append_only BEFORE UPDATE OR DELETE ON corr_audit FOR EACH ROW EXECUTE FUNCTION corr_audit_guard();
+  END IF;
+END
+$do$;
+-- The company directory: organisations and their contact people.
+CREATE TABLE IF NOT EXISTS corr_orgs (
+  id TEXT PRIMARY KEY,
+  legal_name TEXT NOT NULL,
+  trading_name TEXT,
+  registration_no TEXT,
+  tax_id TEXT,
+  kind TEXT,
+  industry TEXT,
+  country TEXT,
+  region TEXT,
+  city TEXT,
+  address TEXT,
+  postal_address TEXT,
+  phone TEXT,
+  email TEXT,
+  fax TEXT,
+  website TEXT,
+  channel TEXT,
+  status TEXT NOT NULL DEFAULT 'active',
+  source TEXT NOT NULL DEFAULT 'internal',
+  verified_by TEXT,
+  verified_at TEXT,
+  favorite INTEGER NOT NULL DEFAULT 0,
+  notes TEXT,
+  created_by TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_corr_orgs_name ON corr_orgs(lower(legal_name));
+CREATE TABLE IF NOT EXISTS corr_contacts (
+  id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL REFERENCES corr_orgs(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  title TEXT,
+  department TEXT,
+  email TEXT,
+  phone TEXT,
+  fax TEXT,
+  is_primary INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_corr_contacts_org ON corr_contacts(org_id);
+-- v96: Correspondence stages 2 to 6.
+-- Templates: versioned layouts, drafted, submitted, approved and published; letters keep the version they used.
+CREATE TABLE IF NOT EXISTS corr_templates (
+  id TEXT PRIMARY KEY,
+  entity_id TEXT REFERENCES corr_entities(id) ON DELETE SET NULL,
+  name TEXT NOT NULL,
+  description TEXT,
+  current_version INTEGER,
+  active INTEGER NOT NULL DEFAULT 1,
+  created_by TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS corr_template_versions (
+  template_id TEXT NOT NULL REFERENCES corr_templates(id) ON DELETE CASCADE,
+  version INTEGER NOT NULL,
+  layout TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'draft',
+  note TEXT,
+  created_by TEXT,
+  created_at TEXT NOT NULL,
+  submitted_at TEXT,
+  decided_by TEXT,
+  decided_at TEXT,
+  decision_note TEXT,
+  PRIMARY KEY (template_id, version)
+);
+ALTER TABLE corr_documents ADD COLUMN IF NOT EXISTS template_id TEXT;
+ALTER TABLE corr_documents ADD COLUMN IF NOT EXISTS template_version INTEGER;
+ALTER TABLE corr_documents ADD COLUMN IF NOT EXISTS financial_value DOUBLE PRECISION;
+ALTER TABLE corr_documents ADD COLUMN IF NOT EXISTS recipient_type TEXT;
+ALTER TABLE corr_documents ADD COLUMN IF NOT EXISTS risk TEXT;
+ALTER TABLE corr_documents ADD COLUMN IF NOT EXISTS signature TEXT;
+ALTER TABLE corr_documents ADD COLUMN IF NOT EXISTS verify_code TEXT;
+ALTER TABLE corr_documents ADD COLUMN IF NOT EXISTS scheduled_at TEXT;
+ALTER TABLE corr_documents ADD COLUMN IF NOT EXISTS legal_hold INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE corr_documents ADD COLUMN IF NOT EXISTS retain_until TEXT;
+ALTER TABLE corr_documents ADD COLUMN IF NOT EXISTS bulk_id TEXT;
+CREATE INDEX IF NOT EXISTS idx_corr_docs_verify ON corr_documents(verify_code);
+-- The organisation: units, positions (reporting lines), who holds them when, the authority matrix, delegations.
+CREATE TABLE IF NOT EXISTS org_units (
+  id TEXT PRIMARY KEY,
+  parent_id TEXT REFERENCES org_units(id) ON DELETE SET NULL,
+  kind TEXT NOT NULL DEFAULT 'department',
+  name TEXT NOT NULL,
+  code TEXT,
+  effective_from TEXT,
+  effective_to TEXT,
+  sort INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS org_positions (
+  id TEXT PRIMARY KEY,
+  unit_id TEXT REFERENCES org_units(id) ON DELETE SET NULL,
+  title TEXT NOT NULL,
+  level TEXT NOT NULL DEFAULT 'operational',
+  reports_to TEXT REFERENCES org_positions(id) ON DELETE SET NULL,
+  dotted_to TEXT NOT NULL DEFAULT '[]',
+  active INTEGER NOT NULL DEFAULT 1,
+  effective_from TEXT,
+  effective_to TEXT,
+  sort INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS org_assignments (
+  id TEXT PRIMARY KEY,
+  position_id TEXT NOT NULL REFERENCES org_positions(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL DEFAULT 'substantive',
+  start_at TEXT NOT NULL,
+  end_at TEXT,
+  authorization_ref TEXT,
+  approved_by TEXT,
+  created_by TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_org_assignments_user ON org_assignments(user_id, start_at);
+CREATE INDEX IF NOT EXISTS idx_org_assignments_pos ON org_assignments(position_id, start_at);
+CREATE TABLE IF NOT EXISTS org_authorities (
+  id TEXT PRIMARY KEY,
+  subject_kind TEXT NOT NULL,
+  subject_id TEXT NOT NULL,
+  action TEXT NOT NULL,
+  category_id TEXT,
+  department TEXT,
+  max_classification TEXT NOT NULL DEFAULT 'restricted',
+  max_value DOUBLE PRECISION,
+  note TEXT,
+  created_by TEXT,
+  created_at TEXT NOT NULL,
+  revoked_at TEXT,
+  revoked_by TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_org_authorities ON org_authorities(action, revoked_at);
+CREATE TABLE IF NOT EXISTS org_delegations (
+  id TEXT PRIMARY KEY,
+  from_user TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  from_position TEXT REFERENCES org_positions(id) ON DELETE SET NULL,
+  to_user TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  actions TEXT NOT NULL DEFAULT '[]',
+  categories TEXT NOT NULL DEFAULT '[]',
+  max_value DOUBLE PRECISION,
+  includes_signing INTEGER NOT NULL DEFAULT 0,
+  can_subdelegate INTEGER NOT NULL DEFAULT 0,
+  conditions TEXT,
+  start_at TEXT NOT NULL,
+  end_at TEXT NOT NULL,
+  authorization_ref TEXT,
+  parent_id TEXT,
+  revoked_at TEXT,
+  revoked_by TEXT,
+  created_by TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_org_delegations_to ON org_delegations(to_user, end_at);
+-- Workflows and rules (versioned), and their runs: each run keeps the exact definition and rules it was made from.
+CREATE TABLE IF NOT EXISTS corr_workflows (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT,
+  version INTEGER NOT NULL DEFAULT 1,
+  definition TEXT NOT NULL,
+  active INTEGER NOT NULL DEFAULT 1,
+  created_by TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS corr_workflow_versions (
+  workflow_id TEXT NOT NULL REFERENCES corr_workflows(id) ON DELETE CASCADE,
+  version INTEGER NOT NULL,
+  definition TEXT NOT NULL,
+  saved_by TEXT,
+  saved_at TEXT NOT NULL,
+  PRIMARY KEY (workflow_id, version)
+);
+CREATE TABLE IF NOT EXISTS corr_rules (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  priority INTEGER NOT NULL DEFAULT 100,
+  condition TEXT NOT NULL,
+  effect TEXT NOT NULL,
+  active INTEGER NOT NULL DEFAULT 1,
+  effective_from TEXT,
+  effective_to TEXT,
+  version INTEGER NOT NULL DEFAULT 1,
+  created_by TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS corr_runs (
+  id TEXT PRIMARY KEY,
+  document_id TEXT NOT NULL REFERENCES corr_documents(id) ON DELETE CASCADE,
+  workflow_id TEXT,
+  workflow_version INTEGER,
+  definition TEXT NOT NULL,
+  rules TEXT NOT NULL DEFAULT '[]',
+  status TEXT NOT NULL DEFAULT 'running',
+  content_hash TEXT,
+  started_by TEXT,
+  started_at TEXT NOT NULL,
+  finished_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_corr_runs_doc ON corr_runs(document_id, started_at);
+CREATE TABLE IF NOT EXISTS corr_steps (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL REFERENCES corr_runs(id) ON DELETE CASCADE,
+  document_id TEXT NOT NULL,
+  stage_index INTEGER NOT NULL,
+  stage_key TEXT NOT NULL,
+  stage_name TEXT NOT NULL,
+  stage_type TEXT NOT NULL,
+  action TEXT NOT NULL,
+  label TEXT,
+  quorum INTEGER,
+  user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+  user_name TEXT,
+  status TEXT NOT NULL DEFAULT 'waiting',
+  capacity TEXT,
+  delegation_id TEXT,
+  comment TEXT,
+  content_hash TEXT,
+  signature_image TEXT,
+  stamp_image TEXT,
+  stamp_id TEXT,
+  due_at TEXT,
+  acted_at TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_corr_steps_user ON corr_steps(user_id, status);
+CREATE INDEX IF NOT EXISTS idx_corr_steps_run ON corr_steps(run_id, stage_index);
+-- Signatures (pictures people register) and stamps (designed by administrators, used by the people allowed).
+CREATE TABLE IF NOT EXISTS corr_signatures (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  image TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'upload',
+  active INTEGER NOT NULL DEFAULT 1,
+  valid_from TEXT,
+  valid_to TEXT,
+  revoked_at TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_corr_signatures_user ON corr_signatures(user_id, active);
+CREATE TABLE IF NOT EXISTS corr_stamps (
+  id TEXT PRIMARY KEY,
+  entity_id TEXT,
+  name TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'circular',
+  design TEXT NOT NULL DEFAULT '{}',
+  image TEXT NOT NULL,
+  allowed TEXT NOT NULL DEFAULT '{}',
+  active INTEGER NOT NULL DEFAULT 1,
+  created_by TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+-- Public verification: every check of a letter (by its QR code or reference) is logged.
+CREATE TABLE IF NOT EXISTS corr_verifications (
+  id BIGSERIAL PRIMARY KEY,
+  document_id TEXT,
+  query TEXT,
+  result TEXT NOT NULL,
+  ip TEXT,
+  user_agent TEXT,
+  at TEXT NOT NULL
+);
+-- Attachments (files kept in the database, with their fingerprint and scan result) and dispatches (email, secure
+-- link, fax through a provider), with their delivery state.
+CREATE TABLE IF NOT EXISTS corr_attachments (
+  id TEXT PRIMARY KEY,
+  document_id TEXT NOT NULL REFERENCES corr_documents(id) ON DELETE CASCADE,
+  n INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  description TEXT,
+  mime TEXT NOT NULL,
+  size BIGINT NOT NULL,
+  sha256 TEXT NOT NULL,
+  blob_id TEXT NOT NULL,
+  scan TEXT NOT NULL DEFAULT 'not_scanned',
+  uploaded_by TEXT,
+  created_at TEXT NOT NULL,
+  removed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_corr_attachments_doc ON corr_attachments(document_id, n);
+-- The attachment files themselves (base64), apart from the list so listing never loads them.
+CREATE TABLE IF NOT EXISTS corr_blobs (
+  id TEXT PRIMARY KEY,
+  data TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS corr_dispatches (
+  id TEXT PRIMARY KEY,
+  document_id TEXT NOT NULL REFERENCES corr_documents(id) ON DELETE CASCADE,
+  channel TEXT NOT NULL,
+  address TEXT,
+  status TEXT NOT NULL DEFAULT 'queued',
+  provider TEXT,
+  provider_ref TEXT,
+  token_hash TEXT,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  error TEXT,
+  scheduled_at TEXT,
+  sent_at TEXT,
+  delivered_at TEXT,
+  opened_at TEXT,
+  expires_at TEXT,
+  created_by TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_corr_dispatch_doc ON corr_dispatches(document_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_corr_dispatch_due ON corr_dispatches(status, scheduled_at);
+CREATE INDEX IF NOT EXISTS idx_corr_dispatch_token ON corr_dispatches(token_hash);
+-- v97: text read from scanned attachments (OCR), searchable in the registry; entity stamps and letterheads.
+ALTER TABLE corr_attachments ADD COLUMN IF NOT EXISTS ocr_text TEXT;
+ALTER TABLE corr_attachments ADD COLUMN IF NOT EXISTS ocr_at TEXT;
+ALTER TABLE corr_attachments ADD COLUMN IF NOT EXISTS ocr_lang TEXT;
 
 `;
 
@@ -4835,4 +5296,32 @@ export const TABLES = [
   "tool_files",
   "tool_calendar_tokens",
   "tool_connections",
+  "corr_entities",
+  "corr_categories",
+  "corr_sequences",
+  "corr_orgs",
+  "corr_contacts",
+  "corr_documents",
+  "corr_versions",
+  "corr_recipients",
+  "corr_numbers",
+  "corr_audit",
+  "corr_templates",
+  "corr_template_versions",
+  "org_units",
+  "org_positions",
+  "org_assignments",
+  "org_authorities",
+  "org_delegations",
+  "corr_workflows",
+  "corr_workflow_versions",
+  "corr_rules",
+  "corr_runs",
+  "corr_steps",
+  "corr_signatures",
+  "corr_stamps",
+  "corr_verifications",
+  "corr_blobs",
+  "corr_attachments",
+  "corr_dispatches",
 ] as const;

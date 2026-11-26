@@ -3,17 +3,54 @@
 // is escaped before it goes into HTML.
 
 import type { Letterhead } from "@/lib/tools";
+import { computeTable } from "@/lib/formula";
+
+// Paragraph settings: font, size (pt), colour, line spacing, space before and after (pt), indents (mm).
+export type ParaStyle = { font?: string; size?: number; color?: string; lineHeight?: number; before?: number; after?: number; indent?: number; firstLine?: number };
 
 export type Block =
-  | { id: string; type: "heading"; level: 1 | 2 | 3; text: string }
-  | { id: string; type: "paragraph"; text: string; align?: "left" | "center" | "right" | "justify" }
-  | { id: string; type: "list"; ordered: boolean; items: string[] }
-  | { id: string; type: "table"; header: boolean; rows: string[][] }
+  | { id: string; type: "heading"; level: 1 | 2 | 3; text: string; align?: "left" | "center" | "right" }
+  | { id: string; type: "paragraph"; text: string; align?: "left" | "center" | "right" | "justify"; style?: ParaStyle }
+  // style: 1, a, A, i, I numbering or a checklist (checked marks which items are ticked).
+  | { id: string; type: "list"; ordered: boolean; items: string[]; style?: ListStyle; checked?: boolean[] }
+  // Cells starting with "=" are formulas (=SUM(ABOVE), =B2*C2…); a cell that is exactly "<" joins the cell on its left.
+  | { id: string; type: "table"; header: boolean; rows: string[][]; style?: TableStyle }
+  | { id: string; type: "toc"; title?: string }
+  | { id: string; type: "columns"; left: string; right: string; rule?: boolean }
   | { id: string; type: "quote"; text: string }
   | { id: string; type: "divider" }
-  | { id: string; type: "pagebreak" };
+  | { id: string; type: "pagebreak" }
+  // A new section starts on a new page (in Word, a section break: its own page numbering can follow).
+  | { id: string; type: "section"; title?: string }
+  | { id: string; type: "image"; src: string; width: number; align: "left" | "center" | "right"; caption?: string }
+  | { id: string; type: "textbox"; text: string; border: string; fill: string; align: "left" | "right" | "full"; width: number };
 
-export type DocData = { template: string; blocks: Block[]; meta?: { subtitle?: string; author?: string; date?: string } };
+export type ListStyle = "1" | "a" | "A" | "i" | "I" | "check";
+export type TableStyle = { headFill?: string; headColor?: string; border?: string; stripe?: string | null; align?: ("left" | "center" | "right")[]; widths?: number[]; size?: number; borders?: "all" | "rows" | "none" };
+// Page setup of a document (Document Builder): paper, margins, header and footer text, page numbers, a watermark.
+export type DocPage = { size: "A4" | "A5" | "Letter" | "Legal"; orientation: "portrait" | "landscape"; margins: { top: number; right: number; bottom: number; left: number }; header: string; footer: string; pageNumbers: boolean; watermark: string };
+export const DOC_PAPER: Record<DocPage["size"], { w: number; h: number }> = { A4: { w: 210, h: 297 }, A5: { w: 148, h: 210 }, Letter: { w: 215.9, h: 279.4 }, Legal: { w: 215.9, h: 355.6 } };
+export const DEFAULT_PAGE: DocPage = { size: "A4", orientation: "portrait", margins: { top: 20, right: 18, bottom: 20, left: 18 }, header: "", footer: "", pageNumbers: true, watermark: "" };
+
+export const FONTS: { label: string; css: string; word: string }[] = [
+  { label: "Default", css: "", word: "" },
+  { label: "Calibri", css: "Calibri, Arial, 'Noto Sans Ethiopic', sans-serif", word: "Calibri" },
+  { label: "Arial", css: "Arial, 'Noto Sans Ethiopic', sans-serif", word: "Arial" },
+  { label: "Times New Roman", css: "'Times New Roman', 'Noto Serif Ethiopic', serif", word: "Times New Roman" },
+  { label: "Georgia", css: "Georgia, 'Noto Serif Ethiopic', serif", word: "Georgia" },
+  { label: "Cambria", css: "Cambria, Georgia, serif", word: "Cambria" },
+  { label: "Nyala (Amharic)", css: "Nyala, 'Noto Sans Ethiopic', sans-serif", word: "Nyala" },
+  { label: "Abyssinica SIL (Amharic)", css: "'Abyssinica SIL', 'Noto Serif Ethiopic', serif", word: "Abyssinica SIL" },
+  { label: "Courier New", css: "'Courier New', monospace", word: "Courier New" },
+  { label: "Verdana", css: "Verdana, 'Noto Sans Ethiopic', sans-serif", word: "Verdana" },
+  { label: "Garamond", css: "Garamond, 'Noto Serif Ethiopic', serif", word: "Garamond" },
+  { label: "Segoe UI", css: "'Segoe UI', 'Noto Sans Ethiopic', sans-serif", word: "Segoe UI" },
+  { label: "Noto Sans Ethiopic", css: "'Noto Sans Ethiopic', sans-serif", word: "Noto Sans Ethiopic" },
+];
+const fontCss = (f?: string) => FONTS.find((x) => x.label === f)?.css ?? "";
+const fontWord = (f?: string) => FONTS.find((x) => x.label === f)?.word || undefined;
+
+export type DocData = { template: string; blocks: Block[]; meta?: { subtitle?: string; author?: string; date?: string }; page?: DocPage };
 
 export const bid = () => Math.random().toString(36).slice(2, 10);
 const h = (level: 1 | 2 | 3, text: string): Block => ({ id: bid(), type: "heading", level, text });
@@ -71,65 +108,226 @@ export function newBlock(type: Block["type"]): Block {
       return { id: bid(), type: "divider" };
     case "pagebreak":
       return { id: bid(), type: "pagebreak" };
+    case "section":
+      return { id: bid(), type: "section", title: "" };
+    case "image":
+      return { id: bid(), type: "image", src: "", width: 60, align: "center", caption: "" };
+    case "textbox":
+      return { id: bid(), type: "textbox", text: "", border: "#94a3b8", fill: "#f8fafc", align: "full", width: 100 };
+    case "toc":
+      return { id: bid(), type: "toc", title: "Contents" };
+    case "columns":
+      return { id: bid(), type: "columns", left: "", right: "" };
     default:
       return p("");
   }
 }
 
 export const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+const HEX = /^#[0-9a-f]{6}$/i;
+const SAFE_URL = /^(https?:\/\/|mailto:)[^\s"'<>]+$/i;
 
-// **bold**, *italic*, and a line break for two trailing spaces or a newline, on escaped text.
-export function inlineHtml(text: string) {
-  return esc(text)
-    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-    .replace(/(^|[^*])\*(?!\s)(.+?)\*(?!\*)/g, "$1<em>$2</em>")
-    .replace(/ {2}\n|\n/g, "<br>");
+// Inline formatting, written as marks in the text (the toolbar adds them): **bold**, *italic*, __underline__,
+// ~~struck~~, ==highlight==, {#c00000|coloured text}, [link text](https://…) and ^[a footnote]. A newline is a
+// line break. The same parser feeds the HTML (PDF) and the Word file, so both agree.
+// {spec|text} takes one or more of: #c00000 (colour), bg#fff2cc (highlight colour), 14pt (size), f:Georgia (font),
+// sup, sub and caps, joined by ";" (for example {#1d4ed8;14pt;f:Georgia|text}).
+export type Run = { text: string; bold?: boolean; italics?: boolean; underline?: boolean; strike?: boolean; highlight?: boolean; color?: string; link?: string; footnote?: string; break?: boolean; bg?: string; size?: number; font?: string; sup?: boolean; sub?: boolean; caps?: boolean };
+const SPEC = "(?:#[0-9a-fA-F]{6}|bg#[0-9a-fA-F]{6}|\\d{1,2}(?:\\.\\d)?pt|f:[A-Za-z][\\w '-]{0,39}|sup|sub|caps)";
+const INLINE_SRC = new RegExp(`\\*\\*(.+?)\\*\\*|__(.+?)__|~~(.+?)~~|==(.+?)==|\\{(${SPEC}(?:;${SPEC})*)\\|(.+?)\\}|\\[([^\\]]+)\\]\\(([^)\\s]+)\\)|\\^\\[([^\\]]+)\\]|\\*(?!\\s)(.+?)\\*`, "g");
+function specOf(spec: string): Omit<Run, "text"> {
+  const out: Omit<Run, "text"> = {};
+  for (const t of spec.split(";")) {
+    if (/^#[0-9a-f]{6}$/i.test(t)) out.color = t;
+    else if (/^bg#[0-9a-f]{6}$/i.test(t)) out.bg = t.slice(2);
+    else if (/pt$/.test(t)) out.size = Math.min(72, Math.max(5, Number(t.slice(0, -2))));
+    else if (t.startsWith("f:")) out.font = t.slice(2);
+    else if (t === "sup") out.sup = true;
+    else if (t === "sub") out.sub = true;
+    else if (t === "caps") out.caps = true;
+  }
+  return out;
 }
-
-// Runs of text with bold and italics, for Word.
-export function runsOf(text: string): { text: string; bold?: boolean; italics?: boolean; break?: boolean }[] {
-  const out: { text: string; bold?: boolean; italics?: boolean; break?: boolean }[] = [];
+export function parseInline(text: string, base: Omit<Run, "text"> = {}, depth = 0): Run[] {
+  const out: Run[] = [];
   text.split(/ {2}\n|\n/).forEach((line, li) => {
-    const re = /\*\*(.+?)\*\*|\*(.+?)\*/g;
     let last = 0;
-    let m: RegExpExecArray | null;
     let first = true;
-    const push = (r: { text: string; bold?: boolean; italics?: boolean }) => {
+    const push = (r: Run) => {
       out.push({ ...r, ...(li > 0 && first ? { break: true } : {}) });
       first = false;
     };
-    while ((m = re.exec(line))) {
-      if (m.index > last) push({ text: line.slice(last, m.index) });
-      push(m[1] !== undefined ? { text: m[1], bold: true } : { text: m[2]!, italics: true });
+    const inner = (t: string, add: Omit<Run, "text">) => {
+      const rs = depth < 3 ? parseInline(t, { ...base, ...add }, depth + 1) : [{ text: t, ...base, ...add }];
+      rs.forEach((r, i) => push(i === 0 ? r : { ...r, break: r.break }));
+    };
+    // A pattern of its own for each call: the nested calls below would otherwise move the outer loop's position.
+    const INLINE = new RegExp(INLINE_SRC.source, "g");
+    let m: RegExpExecArray | null;
+    while ((m = INLINE.exec(line))) {
+      if (m.index > last) push({ text: line.slice(last, m.index), ...base });
+      if (m[1] !== undefined) inner(m[1], { bold: true });
+      else if (m[2] !== undefined) inner(m[2], { underline: true });
+      else if (m[3] !== undefined) inner(m[3], { strike: true });
+      else if (m[4] !== undefined) inner(m[4], { highlight: true });
+      else if (m[5] !== undefined) inner(m[6]!, specOf(m[5]));
+      else if (m[7] !== undefined) {
+        const url = SAFE_URL.test(m[8]!) ? m[8]! : undefined;
+        inner(m[7], url ? { link: url, underline: true, color: base.color ?? "#1d4ed8" } : {});
+      } else if (m[9] !== undefined) push({ text: "", footnote: m[9] });
+      else if (m[10] !== undefined) inner(m[10], { italics: true });
       last = m.index + m[0].length;
     }
-    if (last < line.length || first) push({ text: line.slice(last) });
+    if (last < line.length || first) push({ text: line.slice(last), ...base });
   });
   return out;
 }
 
+// HTML for runs; footnotes are numbered into the list given (shown as notes at the end of the document).
+export function runsHtml(runs: Run[], notes?: string[]) {
+  return runs
+    .map((r) => {
+      if (r.footnote !== undefined) {
+        if (!notes) return "";
+        notes.push(r.footnote);
+        return `<sup class="fn">${notes.length}</sup>`;
+      }
+      let t = esc(r.text);
+      if (r.bold) t = `<strong>${t}</strong>`;
+      if (r.italics) t = `<em>${t}</em>`;
+      if (r.underline) t = `<u>${t}</u>`;
+      if (r.strike) t = `<s>${t}</s>`;
+      if (r.highlight) t = `<mark>${t}</mark>`;
+      if (r.sup) t = `<sup>${t}</sup>`;
+      if (r.sub) t = `<sub>${t}</sub>`;
+      const css = [r.color && HEX.test(r.color) ? `color:${r.color}` : "", r.bg && HEX.test(r.bg) ? `background:${r.bg}` : "", r.size ? `font-size:${r.size}pt` : "", r.font && fontCss(r.font) ? `font-family:${fontCss(r.font)}` : r.font && /^[\w '-]+$/.test(r.font) ? `font-family:'${r.font}'` : "", r.caps ? "text-transform:uppercase" : ""].filter(Boolean).join(";");
+      if (css) t = `<span style="${css}">${t}</span>`;
+      if (r.link) t = `<a href="${esc(r.link)}" rel="noopener noreferrer">${t}</a>`;
+      return (r.break ? "<br>" : "") + t;
+    })
+    .join("");
+}
+
+// Inline marks to HTML on escaped text (footnotes are left out where there is no notes list).
+export function inlineHtml(text: string, notes?: string[]) {
+  return runsHtml(parseInline(text), notes);
+}
+
+// Runs for Word (kept for callers that only need bold, italics and breaks).
+export function runsOf(text: string): Run[] {
+  return parseInline(text);
+}
+
+function paraStyle(s?: ParaStyle) {
+  if (!s) return "";
+  const out: string[] = [];
+  if (fontCss(s.font)) out.push(`font-family:${fontCss(s.font)}`);
+  if (s.size) out.push(`font-size:${Math.min(48, Math.max(6, s.size))}pt`);
+  if (s.color && HEX.test(s.color)) out.push(`color:${s.color}`);
+  if (s.lineHeight) out.push(`line-height:${Math.min(3, Math.max(1, s.lineHeight))}`);
+  if (s.before != null) out.push(`margin-top:${Math.min(72, Math.max(0, s.before))}pt`);
+  if (s.after != null) out.push(`margin-bottom:${Math.min(72, Math.max(0, s.after))}pt`);
+  if (s.indent) out.push(`margin-left:${Math.min(100, Math.max(0, s.indent))}mm`);
+  if (s.firstLine) out.push(`text-indent:${Math.min(50, Math.max(-20, s.firstLine))}mm`);
+  return out.join(";");
+}
+const IMG_SRC = /^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/;
+
+// A table's cells worked out (formulas) and laid out (cells joined with "<").
+export function tableLayout(b: Extract<Block, { type: "table" }>) {
+  const width = Math.max(1, ...b.rows.map((r) => r.length));
+  const rows = computeTable(b.rows.map((r) => Array.from({ length: width }, (_, i) => r[i] ?? "")));
+  return rows.map((r) => {
+    const cells: { text: string; span: number; col: number }[] = [];
+    r.forEach((c, j) => {
+      if (c === "<" && cells.length) cells.at(-1)!.span++;
+      else cells.push({ text: c === "<" ? "" : c, span: 1, col: j });
+    });
+    return cells;
+  });
+}
+
+function tableHtml(b: Extract<Block, { type: "table" }>, notes: string[]) {
+  const st = b.style ?? {};
+  const border = HEX.test(st.border ?? "") ? st.border! : "#cbd5e1";
+  const lines = st.borders ?? "all";
+  const cellBorder = lines === "none" ? "border:0" : lines === "rows" ? `border:0;border-bottom:1px solid ${border}` : `border:1px solid ${border}`;
+  const widths = st.widths?.length ? `<colgroup>${st.widths.map((w) => `<col style="width:${Math.min(100, Math.max(3, w))}%">`).join("")}</colgroup>` : "";
+  const body = tableLayout(b)
+    .map((r, i) => {
+      const head = i === 0 && b.header;
+      const stripe = !head && st.stripe && HEX.test(st.stripe) && i % 2 === (b.header ? 0 : 1) ? `background:${st.stripe};` : "";
+      return `<tr>${r
+        .map((c) => {
+          const align = st.align?.[c.col] ?? (/^[-+]?[\d,.]+%?$/.test(c.text.trim()) && !head ? "right" : "left");
+          const style = `${cellBorder};text-align:${align};${stripe}${head && st.headFill && HEX.test(st.headFill) ? `background:${st.headFill};` : ""}${head && st.headColor && HEX.test(st.headColor) ? `color:${st.headColor};` : ""}`;
+          return `<${head ? "th" : "td"}${c.span > 1 ? ` colspan="${c.span}"` : ""} style="${style}">${inlineHtml(c.text, notes)}</${head ? "th" : "td"}>`;
+        })
+        .join("")}</tr>`;
+    })
+    .join("");
+  return `<table style="${st.size ? `font-size:${Math.min(20, Math.max(6, st.size))}pt;` : ""}table-layout:${widths ? "fixed" : "auto"}">${widths}${body}</table>`;
+}
+
+const ROMAN = (n: number) => {
+  const v = [1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1];
+  const r = ["m", "cm", "d", "cd", "c", "xc", "l", "xl", "x", "ix", "v", "iv", "i"];
+  let out = "";
+  for (let i = 0; i < v.length; i++) while (n >= v[i]!) (out += r[i]), (n -= v[i]!);
+  return out;
+};
+export function listMarker(style: ListStyle | undefined, ordered: boolean, n: number, checked?: boolean) {
+  if (style === "check") return checked ? "[x] " : "[ ] ";
+  if (!ordered) return "• ";
+  const k = n + 1;
+  if (style === "a") return `${String.fromCharCode(96 + (((k - 1) % 26) + 1))}. `;
+  if (style === "A") return `${String.fromCharCode(64 + (((k - 1) % 26) + 1))}. `;
+  if (style === "i") return `${ROMAN(k)}. `;
+  if (style === "I") return `${ROMAN(k).toUpperCase()}. `;
+  return `${k}. `;
+}
+
 export function blocksHtml(blocks: Block[]) {
-  return blocks
+  const notes: string[] = [];
+  const heads = blocks.filter((b): b is Extract<Block, { type: "heading" }> => b.type === "heading");
+  const html = blocks
     .map((b) => {
       switch (b.type) {
         case "heading":
-          return `<h${b.level}>${inlineHtml(b.text)}</h${b.level}>`;
+          return `<h${b.level} id="h-${esc(b.id)}"${b.align ? ` style="text-align:${b.align}"` : ""}>${inlineHtml(b.text, notes)}</h${b.level}>`;
+        case "toc":
+          return `<nav class="toc" style="margin:2mm 0 5mm">${b.title ? `<p style="font-weight:700;font-size:13pt;margin:0 0 2mm">${esc(b.title)}</p>` : ""}${heads
+            .map((h) => `<div style="margin-left:${(h.level - 1) * 6}mm;border-bottom:1px dotted #cbd5e1;padding:0.6mm 0"><a href="#h-${esc(h.id)}" style="color:inherit;text-decoration:none">${esc(h.text.replace(/\*\*|__|~~|==/g, ""))}</a></div>`)
+            .join("")}</nav>`;
+        case "columns":
+          return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8mm;margin:2mm 0;${b.rule ? "background:linear-gradient(#cbd5e1,#cbd5e1) center/1px 100% no-repeat;" : ""}"><div>${b.left.split(/\n\s*\n/).map((p) => `<p>${inlineHtml(p, notes)}</p>`).join("")}</div><div>${b.right.split(/\n\s*\n/).map((p) => `<p>${inlineHtml(p, notes)}</p>`).join("")}</div></div>`;
         case "paragraph":
-          return `<p style="text-align:${b.align ?? "left"}">${inlineHtml(b.text) || "&nbsp;"}</p>`;
+          return `<p style="text-align:${b.align ?? "left"};${paraStyle(b.style)}">${inlineHtml(b.text, notes) || "&nbsp;"}</p>`;
         case "list":
-          return `<${b.ordered ? "ol" : "ul"}>${b.items.map((i) => `<li>${inlineHtml(i)}</li>`).join("")}</${b.ordered ? "ol" : "ul"}>`;
+          if (b.style === "check") return `<ul style="list-style:none;margin-left:0;padding-left:0">${b.items.map((i, n) => `<li><span class="chk" style="display:inline-block;width:3.2mm;height:3.2mm;border:0.3mm solid #334155;border-radius:0.6mm;margin-right:1.5mm;text-align:center;line-height:3mm;font-size:8pt;vertical-align:-0.4mm">${b.checked?.[n] ? "✓" : ""}</span>${inlineHtml(i, notes)}</li>`).join("")}</ul>`;
+          return `<${b.ordered ? "ol" : "ul"}${b.ordered && b.style && b.style !== "1" ? ` type="${b.style}"` : ""}>${b.items.map((i) => `<li>${inlineHtml(i, notes)}</li>`).join("")}</${b.ordered ? "ol" : "ul"}>`;
         case "table":
-          return `<table>${b.rows.map((r, i) => `<tr>${r.map((c) => (i === 0 && b.header ? `<th>${inlineHtml(c)}</th>` : `<td>${inlineHtml(c)}</td>`)).join("")}</tr>`).join("")}</table>`;
+          return tableHtml(b, notes);
         case "quote":
-          return `<blockquote>${inlineHtml(b.text)}</blockquote>`;
+          return `<blockquote>${inlineHtml(b.text, notes)}</blockquote>`;
         case "divider":
           return "<hr>";
         case "pagebreak":
-          return '<div style="page-break-after:always"></div>';
+          return '<div style="page-break-after:always;break-after:page"></div>';
+        case "section":
+          return `<div style="page-break-before:always;break-before:page"></div>${b.title ? `<h2>${esc(b.title)}</h2>` : ""}`;
+        case "image":
+          if (!IMG_SRC.test(b.src)) return "";
+          return `<figure style="margin:3mm 0;text-align:${b.align}"><img src="${b.src}" alt="${esc(b.caption ?? "")}" style="width:${Math.min(100, Math.max(5, b.width))}%;height:auto">${b.caption ? `<figcaption style="font-size:8.5pt;color:#64748b">${esc(b.caption)}</figcaption>` : ""}</figure>`;
+        case "textbox":
+          return `<div style="border:0.4mm solid ${HEX.test(b.border) ? b.border : "#94a3b8"};background:${HEX.test(b.fill) ? b.fill : "#f8fafc"};padding:3mm 4mm;margin:3mm 0;${b.align === "full" ? "" : `float:${b.align};width:${Math.min(100, Math.max(20, b.width))}%;margin-${b.align === "left" ? "right" : "left"}:4mm`};break-inside:avoid">${inlineHtml(b.text, notes)}</div>`;
       }
     })
     .join("\n");
+  return notes.length ? `${html}<div style="clear:both"></div><section class="notes" style="margin-top:6mm;border-top:1px solid #cbd5e1;padding-top:2mm;font-size:8.5pt;color:#334155"><ol style="margin:0 0 0 5mm;padding:0">${notes.map((n) => `<li>${inlineHtml(n)}</li>`).join("")}</ol></section>` : html;
 }
+
+export { fontWord, IMG_SRC };
 
 // Opens the print dialog for the page (save as PDF there). Pictures are data URLs or same-site, so nothing leaks.
 export function printHtml(title: string, body: string, css = "") {
@@ -155,29 +353,94 @@ ${css}
 }
 
 // Word file from blocks (with an optional letterhead header and footer).
-export async function blocksDocx(opts: { title: string; blocks: Block[]; letterhead?: Letterhead & { logoData?: Uint8Array | null; logoType?: "png" | "jpg" }; before?: Block[]; after?: Block[] }) {
+// A template's page for Word: size and margins in millimetres, and the header and footer texts of the first and the
+// later pages (Correspondence templates).
+export type DocxBand = { text: string; align: "left" | "center" | "right"; size: number; bold: boolean; color: string }[];
+export type DocxPage = { w: number; h: number; margins: { top: number; right: number; bottom: number; left: number }; differentFirst: boolean; header: { first: DocxBand; rest: DocxBand; even?: DocxBand }; footer: { first: DocxBand; rest: DocxBand; even?: DocxBand }; pageNumbers: boolean; footerNote?: string; oddEven?: boolean; mirror?: boolean };
+
+export async function blocksDocx(opts: { title: string; blocks: Block[]; letterhead?: Letterhead & { logoData?: Uint8Array | null; logoType?: "png" | "jpg" }; before?: Block[]; after?: Block[]; page?: DocxPage }) {
   const d = await import("docx");
-  const { AlignmentType, BorderStyle, Document, Footer, Header, HeadingLevel, ImageRun, Packer, PageBreak, Paragraph, Table, TableCell, TableRow, TextRun, WidthType, ShadingType } = d;
+  const { AlignmentType, BorderStyle, Document, ExternalHyperlink, Footer, FootnoteReferenceRun, Header, HeadingLevel, ImageRun, Packer, PageBreak, PageNumber, Paragraph, Table, TableCell, TableRow, TextRun, WidthType, ShadingType, TableOfContents } = d;
   const color = (hex: string) => hex.replace("#", "");
-  const runs = (text: string, extra: Record<string, unknown> = {}) => runsOf(text).map((r) => new TextRun({ text: r.text, bold: r.bold, italics: r.italics, break: r.break ? 1 : undefined, ...extra }));
-  const para = (b: Block): (InstanceType<typeof Paragraph> | InstanceType<typeof Table>)[] => {
+  // Footnotes are numbered across the document, as Word does.
+  const footnotes: Record<number, { children: InstanceType<typeof Paragraph>[] }> = {};
+  let fn = 0;
+  type Child = InstanceType<typeof TextRun> | InstanceType<typeof ExternalHyperlink> | InstanceType<typeof FootnoteReferenceRun>;
+  const runs = (text: string, extra: Record<string, unknown> = {}): Child[] =>
+    parseInline(text).map((r): Child => {
+      if (r.footnote !== undefined) {
+        fn += 1;
+        footnotes[fn] = { children: [new Paragraph({ children: parseInline(r.footnote).map((x) => new TextRun({ text: x.text, bold: x.bold, italics: x.italics })) })] };
+        return new FootnoteReferenceRun(fn);
+      }
+      const run = new TextRun({ text: r.text, bold: r.bold, italics: r.italics, underline: r.underline ? {} : undefined, strike: r.strike, highlight: r.highlight ? "yellow" : undefined, color: r.color ? color(r.color) : undefined, break: r.break ? 1 : undefined, ...extra, ...(r.size ? { size: Math.round(r.size * 2) } : {}), ...(r.font ? { font: fontWord(r.font) ?? r.font } : {}), ...(r.bg && /^#[0-9a-f]{6}$/i.test(r.bg) ? { shading: { type: ShadingType.CLEAR, fill: color(r.bg), color: "auto" } } : {}), ...(r.sup ? { superScript: true } : {}), ...(r.sub ? { subScript: true } : {}), ...(r.caps ? { allCaps: true } : {}) });
+      return r.link ? new ExternalHyperlink({ link: r.link, children: [run] }) : run;
+    });
+  const align = { center: AlignmentType.CENTER, right: AlignmentType.RIGHT, justify: AlignmentType.JUSTIFIED, left: AlignmentType.LEFT, full: AlignmentType.LEFT };
+  const mmTw = (mm: number) => Math.round(mm * 56.6929);
+  const dataBytes = (src: string) => {
+    const m = /^data:image\/(png|jpeg|webp|gif);base64,(.+)$/.exec(src);
+    if (!m) return null;
+    const bin = atob(m[2]!);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return { data: out, type: (m[1] === "jpeg" ? "jpg" : m[1] === "gif" ? "gif" : "png") as "png" | "jpg" | "gif" };
+  };
+  const SECTION = Symbol("section");
+  const para = (b: Block): (InstanceType<typeof Paragraph> | InstanceType<typeof Table> | typeof SECTION)[] => {
     switch (b.type) {
       case "heading":
-        return [new Paragraph({ heading: [HeadingLevel.HEADING_1, HeadingLevel.HEADING_2, HeadingLevel.HEADING_3][b.level - 1], children: runs(b.text) })];
-      case "paragraph":
-        return [new Paragraph({ alignment: { center: AlignmentType.CENTER, right: AlignmentType.RIGHT, justify: AlignmentType.JUSTIFIED, left: AlignmentType.LEFT }[b.align ?? "left"], spacing: { after: 120 }, children: runs(b.text) })];
+        return [new Paragraph({ heading: [HeadingLevel.HEADING_1, HeadingLevel.HEADING_2, HeadingLevel.HEADING_3][b.level - 1], alignment: b.align ? align[b.align] : undefined, children: runs(b.text) })];
+      case "paragraph": {
+        const st = b.style ?? {};
+        const extra: Record<string, unknown> = {};
+        if (fontWord(st.font)) extra.font = fontWord(st.font);
+        if (st.size) extra.size = Math.round(Math.min(48, Math.max(6, st.size)) * 2);
+        if (st.color && /^#[0-9a-f]{6}$/i.test(st.color)) extra.color = color(st.color);
+        return [
+          new Paragraph({
+            alignment: align[b.align ?? "left"],
+            spacing: { before: st.before != null ? Math.round(st.before * 20) : undefined, after: st.after != null ? Math.round(st.after * 20) : 120, line: st.lineHeight ? Math.round(st.lineHeight * 240) : undefined },
+            indent: st.indent || st.firstLine ? { left: st.indent ? mmTw(st.indent) : undefined, firstLine: st.firstLine && st.firstLine > 0 ? mmTw(st.firstLine) : undefined, hanging: st.firstLine && st.firstLine < 0 ? mmTw(-st.firstLine) : undefined } : undefined,
+            children: runs(b.text, extra),
+          }),
+        ];
+      }
       case "list":
-        return b.items.map((i, n) => new Paragraph({ children: [new TextRun(b.ordered ? `${n + 1}. ` : "• "), ...runs(i)], indent: { left: 360, hanging: 260 }, spacing: { after: 60 } }));
+        return b.items.map((i, n) => new Paragraph({ children: [new TextRun(listMarker(b.style, b.ordered, n, b.checked?.[n])), ...runs(i)], indent: { left: 360, hanging: 260 }, spacing: { after: 60 } }));
+      case "toc":
+        return [...(b.title ? [new Paragraph({ heading: HeadingLevel.HEADING_2, children: [new TextRun(b.title)] })] : []), new TableOfContents(b.title || "Contents", { hyperlink: true, headingStyleRange: "1-3" }) as unknown as InstanceType<typeof Paragraph>, new Paragraph("")];
+      case "columns": {
+        const none = { style: BorderStyle.NONE, size: 0, color: "FFFFFF" };
+        const cell = (t: string) => new TableCell({ width: { size: 50, type: WidthType.PERCENTAGE }, borders: { top: none, bottom: none, left: none, right: none }, margins: { left: 80, right: 160 }, children: t.split(/\n\s*\n/).map((p) => new Paragraph({ spacing: { after: 100 }, children: runs(p) })) });
+        return [new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, borders: { top: none, bottom: none, left: none, right: none, insideHorizontal: none, insideVertical: b.rule ? { style: BorderStyle.SINGLE, size: 4, color: "CBD5E1" } : none }, rows: [new TableRow({ children: [cell(b.left), cell(b.right)] })] }), new Paragraph("")];
+      }
       case "table": {
-        const width = Math.max(1, ...b.rows.map((r) => r.length));
+        const st = b.style ?? {};
+        const hx = (v: string | null | undefined, dflt: string) => (v && /^#[0-9a-f]{6}$/i.test(v) ? color(v) : dflt);
+        const lines = st.borders ?? "all";
+        const line = { style: BorderStyle.SINGLE, size: 4, color: hx(st.border, "CBD5E1") };
+        const none = { style: BorderStyle.NONE, size: 0, color: "FFFFFF" };
+        const laid = tableLayout(b);
         return [
           new Table({
             width: { size: 100, type: WidthType.PERCENTAGE },
-            rows: b.rows.map(
+            columnWidths: st.widths?.length ? st.widths.map((w) => Math.round((Math.min(100, Math.max(3, w)) / 100) * 9000)) : undefined,
+            borders: lines === "none" ? { top: none, bottom: none, left: none, right: none, insideHorizontal: none, insideVertical: none } : lines === "rows" ? { top: none, left: none, right: none, insideVertical: none, bottom: line, insideHorizontal: line } : { top: line, bottom: line, left: line, right: line, insideHorizontal: line, insideVertical: line },
+            rows: laid.map(
               (r, i) =>
                 new TableRow({
                   tableHeader: i === 0 && b.header,
-                  children: Array.from({ length: width }, (_, j) => new TableCell({ shading: i === 0 && b.header ? { type: ShadingType.CLEAR, fill: "F1F5F9", color: "auto" } : undefined, children: [new Paragraph({ children: runs(r[j] ?? "", i === 0 && b.header ? { bold: true } : {}) })] })),
+                  children: r.map((c) => {
+                    const head = i === 0 && b.header;
+                    const stripe = !head && st.stripe && i % 2 === (b.header ? 0 : 1) ? hx(st.stripe, "") : "";
+                    const al = st.align?.[c.col] ?? (/^[-+]?[\d,.]+%?$/.test(c.text.trim()) && !head ? "right" : "left");
+                    return new TableCell({
+                      columnSpan: c.span > 1 ? c.span : undefined,
+                      shading: head ? { type: ShadingType.CLEAR, fill: hx(st.headFill, "F1F5F9"), color: "auto" } : stripe ? { type: ShadingType.CLEAR, fill: stripe, color: "auto" } : undefined,
+                      children: [new Paragraph({ alignment: al === "right" ? AlignmentType.RIGHT : al === "center" ? AlignmentType.CENTER : AlignmentType.LEFT, children: runs(c.text, { ...(head ? { bold: true, color: hx(st.headColor, "111827") } : {}), ...(st.size ? { size: Math.round(st.size * 2) } : {}) }) })],
+                    });
+                  }),
                 }),
             ),
           }),
@@ -190,6 +453,27 @@ export async function blocksDocx(opts: { title: string; blocks: Block[]; letterh
         return [new Paragraph({ border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: "CBD5E1", space: 1 } }, children: [] })];
       case "pagebreak":
         return [new Paragraph({ children: [new PageBreak()] })];
+      case "section":
+        return [SECTION, ...(b.title ? [new Paragraph({ heading: HeadingLevel.HEADING_2, children: [new TextRun(b.title)] })] : [])];
+      case "image": {
+        const img = dataBytes(b.src);
+        if (!img || img.type === "gif") return [];
+        // Width as a share of a 16 cm text column, height kept in proportion (assumed 4:3 when unknown).
+        const wpx = Math.round((Math.min(100, Math.max(5, b.width)) / 100) * 600);
+        return [
+          new Paragraph({ alignment: align[b.align], children: [new ImageRun({ type: img.type, data: img.data, transformation: { width: wpx, height: Math.round(wpx * 0.75) } })] }),
+          ...(b.caption ? [new Paragraph({ alignment: align[b.align], children: [new TextRun({ text: b.caption, size: 17, color: "64748B" })] })] : []),
+        ];
+      }
+      case "textbox":
+        return [
+          new Table({
+            width: { size: b.align === "full" ? 100 : Math.min(100, Math.max(20, b.width)), type: WidthType.PERCENTAGE },
+            alignment: b.align === "right" ? AlignmentType.RIGHT : AlignmentType.LEFT,
+            rows: [new TableRow({ children: [new TableCell({ shading: { type: ShadingType.CLEAR, fill: color(/^#[0-9a-f]{6}$/i.test(b.fill) ? b.fill : "#f8fafc"), color: "auto" }, margins: { top: 100, bottom: 100, left: 140, right: 140 }, children: [new Paragraph({ children: runs(b.text) })] })] })],
+          }),
+          new Paragraph(""),
+        ];
     }
   };
   const lh = opts.letterhead;
@@ -211,11 +495,62 @@ export async function blocksDocx(opts: { title: string; blocks: Block[]; letterh
   const footer = lh
     ? new Footer({ children: [new Paragraph({ alignment: AlignmentType.CENTER, border: { top: { style: BorderStyle.SINGLE, size: 6, color: color(lh.primary), space: 4 } }, children: [new TextRun({ text: lh.footer || [lh.company, lh.address, lh.website].filter(Boolean).join("  ·  "), size: 16, color: "64748B" })] })] })
     : undefined;
+  // Section breaks split the document into Word sections (each starts on a new page).
+  const groups: (InstanceType<typeof Paragraph> | InstanceType<typeof Table>)[][] = [[]];
+  for (const c of [...(opts.before ?? []), ...opts.blocks, ...(opts.after ?? [])].flatMap(para)) {
+    if (c === SECTION) groups.push([]);
+    else groups.at(-1)!.push(c);
+  }
+  const children = groups[0]!;
+  const pg = opts.page;
+  if (pg) {
+    // Millimetres to twentieths of a point (Word's unit).
+    const tw = (mm: number) => Math.round(mm * 56.6929);
+    const al = { left: AlignmentType.LEFT, center: AlignmentType.CENTER, right: AlignmentType.RIGHT };
+    const band = (list: DocxBand, opts2: { logo?: boolean; rule?: "top" | "bottom"; numbers?: boolean; note?: string }) => [
+      ...(opts2.logo && lh?.logoData ? [new Paragraph({ children: [new ImageRun({ type: lh.logoType ?? "png", data: lh.logoData, transformation: { width: 52, height: 52 } })] })] : []),
+      ...list.map(
+        (t, i) =>
+          new Paragraph({
+            alignment: al[t.align],
+            border: opts2.rule === "bottom" && i === list.length - 1 && lh ? { bottom: { style: BorderStyle.SINGLE, size: 10, color: color(lh.primary), space: 4 } } : opts2.rule === "top" && i === 0 && lh ? { top: { style: BorderStyle.SINGLE, size: 6, color: color(lh.primary), space: 4 } } : undefined,
+            children: runsOf(t.text).map((r) => new TextRun({ text: r.text, bold: r.bold || t.bold, italics: r.italics, break: r.break ? 1 : undefined, size: Math.round(t.size * 2), color: color(t.color) })),
+          }),
+      ),
+      ...(opts2.note ? [new Paragraph({ alignment: AlignmentType.LEFT, children: [new TextRun({ text: opts2.note, size: 14, color: "64748B" })] })] : []),
+      ...(opts2.numbers ? [new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ children: ["Page ", PageNumber.CURRENT, " of ", PageNumber.TOTAL_PAGES], size: 14, color: "64748B" })] })] : []),
+    ];
+    const doc = new Document({
+      creator: lh?.company ?? "Myseed",
+      title: opts.title,
+      styles: { default: { document: { run: { font: "Calibri", size: 22 } } } },
+      sections: [
+        {
+          properties: { titlePage: pg.differentFirst, page: { size: { width: tw(pg.w), height: tw(pg.h) }, margin: { top: tw(pg.margins.top + 8), right: tw(pg.margins.right), bottom: tw(pg.margins.bottom + 6), left: tw(pg.margins.left), header: tw(6), footer: tw(5) } } },
+          headers: { default: new Header({ children: band(pg.header.rest, { rule: "bottom" }) }), ...(pg.differentFirst ? { first: new Header({ children: band(pg.header.first, { logo: true, rule: "bottom" }) }) } : {}), ...(pg.oddEven ? { even: new Header({ children: band(pg.header.even ?? pg.header.rest, { rule: "bottom" }) }) } : {}) },
+          footers: { default: new Footer({ children: band(pg.footer.rest, { rule: "top", numbers: pg.pageNumbers, note: pg.footerNote }) }), ...(pg.differentFirst ? { first: new Footer({ children: band(pg.footer.first, { rule: "top", numbers: pg.pageNumbers, note: pg.footerNote }) }) } : {}), ...(pg.oddEven ? { even: new Footer({ children: band(pg.footer.even ?? pg.footer.rest, { rule: "top", numbers: pg.pageNumbers, note: pg.footerNote }) }) } : {}) },
+          children,
+        },
+        ...groups.slice(1).map((g) => ({
+          properties: { page: { size: { width: tw(pg.w), height: tw(pg.h) }, margin: { top: tw(pg.margins.top + 8), right: tw(pg.margins.right), bottom: tw(pg.margins.bottom + 6), left: tw(pg.margins.left), header: tw(6), footer: tw(5) } } },
+          headers: { default: new Header({ children: band(pg.header.rest, { rule: "bottom" }) }), ...(pg.oddEven ? { even: new Header({ children: band(pg.header.even ?? pg.header.rest, { rule: "bottom" }) }) } : {}) },
+          footers: { default: new Footer({ children: band(pg.footer.rest, { rule: "top", numbers: pg.pageNumbers, note: pg.footerNote }) }), ...(pg.oddEven ? { even: new Footer({ children: band(pg.footer.even ?? pg.footer.rest, { rule: "top", numbers: pg.pageNumbers, note: pg.footerNote }) }) } : {}) },
+          children: g,
+        })),
+      ],
+      evenAndOddHeaderAndFooters: !!pg.oddEven,
+      features: { updateFields: opts.blocks.some((b) => b.type === "toc") },
+      footnotes,
+    });
+    return Packer.toBlob(doc);
+  }
   const doc = new Document({
     creator: lh?.company ?? "Myseed",
     title: opts.title,
     styles: { default: { document: { run: { font: "Calibri", size: 22 } } } },
-    sections: [{ headers: header ? { default: header } : undefined, footers: footer ? { default: footer } : undefined, children: [...(opts.before ?? []), ...opts.blocks, ...(opts.after ?? [])].flatMap(para) }],
+    footnotes,
+    features: { updateFields: opts.blocks.some((b) => b.type === "toc") },
+    sections: groups.map((g, i) => ({ headers: header ? { default: header } : undefined, footers: footer ? { default: footer } : undefined, children: i === 0 ? children : g })),
   });
   return Packer.toBlob(doc);
 }
@@ -247,4 +582,24 @@ export async function logoBytes(lh: Letterhead): Promise<{ data: Uint8Array; typ
   } catch {
     return null;
   }
+}
+
+// A document's page setup as the Word page (and the CSS for the PDF).
+export function docxPageOf(p: DocPage): DocxPage {
+  const paper = DOC_PAPER[p.size] ?? DOC_PAPER.A4;
+  const [w, h] = p.orientation === "landscape" ? [paper.h, paper.w] : [paper.w, paper.h];
+  const band = (t: string): DocxBand => (t.trim() ? [{ text: t, align: "center", size: 8.5, bold: false, color: "#64748b" }] : []);
+  return { w, h, margins: { top: Math.max(0, p.margins.top - 8), right: p.margins.right, bottom: Math.max(0, p.margins.bottom - 6), left: p.margins.left }, differentFirst: false, header: { first: band(p.header), rest: band(p.header) }, footer: { first: band(p.footer), rest: band(p.footer) }, pageNumbers: p.pageNumbers };
+}
+export function pageCss(p: DocPage) {
+  const paper = DOC_PAPER[p.size] ?? DOC_PAPER.A4;
+  const [w, h] = p.orientation === "landscape" ? [paper.h, paper.w] : [paper.w, paper.h];
+  const m = p.margins;
+  return `@page{size:${w}mm ${h}mm;margin:${m.top}mm ${m.right}mm ${m.bottom}mm ${m.left}mm${p.pageNumbers ? ';@bottom-right{content:counter(page) " / " counter(pages);font-size:8pt;color:#64748b}' : ""}}
+.pg-head,.pg-foot{position:fixed;left:0;right:0;text-align:center;font-size:8.5pt;color:#64748b}.pg-head{top:-${Math.max(6, m.top - 6)}mm}.pg-foot{bottom:-${Math.max(6, m.bottom - 6)}mm}
+.pg-wm{position:fixed;top:40%;left:0;right:0;text-align:center;font-size:72pt;font-weight:800;color:rgba(100,116,139,.12);transform:rotate(-30deg);pointer-events:none}
+sup.fn{font-size:7pt}`;
+}
+export function pageChrome(p: DocPage) {
+  return `${p.header ? `<div class="pg-head">${esc(p.header)}</div>` : ""}${p.footer ? `<div class="pg-foot">${esc(p.footer)}</div>` : ""}${p.watermark ? `<div class="pg-wm">${esc(p.watermark)}</div>` : ""}`;
 }

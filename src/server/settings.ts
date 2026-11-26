@@ -249,7 +249,7 @@ export async function setMeta(key: string, value: string) {
 }
 
 // Role and team-lead permission matrix (Admin, Roles and permissions). Missing entries fall back to defaults.
-const MATRIX_VERSION = 19;
+const MATRIX_VERSION = 20;
 // Version 2 made managers view-only, moved item creation to Admin and the Recording lead, and added sidebar switches.
 const V2_MANAGER_REMOVED: Capability[] = ["items.create", "items.plan", "items.close", "work.override", "release.emergency", "import.run", "import.stage"];
 const V2_ADMIN_ADDED: Capability[] = ["items.create", "items.plan", "items.close", "import.tracker"];
@@ -441,6 +441,27 @@ function migrateV19(stored: Partial<PermissionMatrix>): Partial<PermissionMatrix
   return out as Partial<PermissionMatrix>;
 }
 
+// v20: Correspondence (official numbered letters). Admin gets everything; leaders and the chief officers write; the
+// CEO and Admin issue; auditors read the trail. Admin changes any of it in Roles & permissions.
+export const CORR_DEFAULTS: Record<string, Capability[]> = {
+  admin: ["corr.create", "corr.issue", "corr.view_all", "corr.directory", "corr.admin", "corr.audit", "corr.template", "corr.stamp", "corr.workflow"],
+  ceo: ["corr.create", "corr.issue", "corr.view_all", "corr.directory", "corr.audit", "corr.stamp"],
+  cfo: ["corr.create", "corr.directory"],
+  cto: ["corr.create", "corr.directory"],
+  cedo: ["corr.create", "corr.directory"],
+  owner: ["corr.view_all", "corr.audit"],
+  manager: ["corr.create", "corr.directory"],
+  hr_manager: ["corr.create", "corr.directory"],
+  finance_manager: ["corr.create", "corr.directory"],
+  operations: ["corr.create", "corr.directory"],
+  auditor: ["corr.view_all", "corr.audit"],
+};
+function migrateV20(stored: Partial<PermissionMatrix>): Partial<PermissionMatrix> {
+  const out: Record<string, Capability[]> = { ...(stored as Record<string, Capability[]>) };
+  for (const [k, caps] of Object.entries(CORR_DEFAULTS)) if (out[k]) out[k] = [...new Set([...out[k]!, ...caps])];
+  return out as Partial<PermissionMatrix>;
+}
+
 // Read on every request (signed-in user's permissions), so cached briefly; concurrent callers share one query.
 let matrixCache: { at: number; value: Promise<PermissionMatrix> } | null = null;
 
@@ -479,8 +500,10 @@ async function loadPermissionMatrix(): Promise<PermissionMatrix> {
   if (version < 17) stored = migrateV17(stored);
   if (version < 18) stored = migrateV18(stored);
   if (version < 19) stored = migrateV19(stored);
+  if (version < 20) stored = migrateV20(stored);
   const keys = [...new Set([...ROLES, ...STAGES.map(leadKey), ...Object.keys(stored).filter(k => /^[a-z][a-z0-9_]{1,39}$/.test(k) && Array.isArray((stored as Record<string, unknown>)[k]))])] as (keyof PermissionMatrix)[];
   const defaults: PermissionMatrix = { ...DEFAULT_PERMISSIONS, ...DEFAULT_LEAD_PERMISSIONS };
+  for (const [k, caps] of Object.entries(CORR_DEFAULTS)) if (defaults[k]) defaults[k] = [...new Set([...defaults[k]!, ...caps])];
   return Object.fromEntries(keys.map((k) => [k, stored[k] ?? defaults[k]])) as PermissionMatrix;
 }
 

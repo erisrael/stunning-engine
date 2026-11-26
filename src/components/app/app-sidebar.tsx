@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { CompassIcon,
   HandshakeIcon,
   ToolCaseIcon,
+  StampIcon,
   WrenchIcon,
   MicIcon,
   ZapIcon,
@@ -290,7 +291,10 @@ export function AppSidebar({
   identity = { name: "Myseed", tagline: "Content Manager", logo: false, version: "0" },
   tools = [],
   peopleOps = false,
+  correspondence = false,
 }: {
+  // Official numbered letters (Correspondence), for people with any Correspondence right.
+  correspondence?: boolean;
   // The Tools hub's apps this person may open (Admin, Tools): notes, calendar, sheets, documents, decks, letters.
   tools?: { label: string; href: string }[];
   // The Operations head (or whoever Admin allows) manages the people of the chosen departments.
@@ -669,6 +673,22 @@ export function AppSidebar({
     const g = groups.find((x) => x.label === "Tools");
     if (g) g.items.unshift(toolsItem);
     else groups.splice(Math.min(1, groups.length), 0, { label: "Tools", items: [toolsItem] });
+  }
+  if (correspondence) {
+    const corrItem: NavItem = { href: "/correspondence", label: "Correspondence", icon: StampIcon, sub: [
+      { label: "Letters", href: "/correspondence" },
+      { label: "My approvals", href: "/correspondence/inbox" },
+      { label: "Dashboard", href: "/correspondence/dashboard" },
+      { label: "Company directory", href: "/correspondence/directory" },
+      { label: "Signatures and stamps", href: "/correspondence/signatures" },
+      ...(has("corr.template") || has("corr.admin") || has("users.manage") ? [{ label: "Templates", href: "/correspondence/templates" }] : []),
+      ...(has("corr.admin") || has("corr.audit") || has("users.manage") ? [{ label: "Organisation and authority", href: "/correspondence/organisation" }] : []),
+      ...(has("corr.workflow") || has("corr.admin") || has("users.manage") ? [{ label: "Workflows and rules", href: "/correspondence/workflows" }] : []),
+      ...(has("corr.admin") || has("corr.audit") || has("users.manage") ? [{ label: "Setup and numbering", href: "/correspondence/setup" }] : []),
+    ] };
+    const g = groups.find((x) => x.label === "Tools");
+    if (g) g.items.push(corrItem);
+    else groups.splice(Math.min(1, groups.length), 0, { label: "Tools", items: [corrItem] });
   }
   if (peopleOps && !groups.some((g) => g.items.some((i) => i.href === "/operations/people" || i.sub?.some((x) => x.href === "/operations/people")))) {
     const g = groups.find((x) => x.label === "Tools") ?? groups[0]!;

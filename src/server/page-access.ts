@@ -63,6 +63,8 @@ const RULES: Rule[] = [
   { prefix: "/sales", check: dept("sales") },
   { prefix: "/operations/people", check: async (u) => (await (await import("./people-ops")).peopleOpsAccess(u)).allowed },
   { prefix: "/operations", check: dept("operations") },
+  { prefix: "/correspondence/setup", check: async (u) => { const c = await import("./corr/core"); return c.corrCan(u, "admin") || c.corrCan(u, "audit"); } },
+  { prefix: "/correspondence", check: async (u) => (await import("./corr/core")).hasCorrespondence(u) },
   { prefix: "/tools", check: async (u) => (await (await import("./tools")).toolsFor(u)).apps.length > 0 },
   { prefix: "/studio", check: (u) => can(u, "studio.access") || can(u, "owners.view") },
   { prefix: "/kiosk", any: ["attendance.manage", "attendance.capture"] },

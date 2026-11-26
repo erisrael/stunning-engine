@@ -25,12 +25,26 @@ export async function POST(req: Request) {
     const file = form.get("file");
     if (!(file instanceof File) || !file.size) throw new WorkflowError("VALIDATION", "Choose a file.");
     if (file.size > MAX_BYTES) throw new WorkflowError("VALIDATION", "Files up to 10 MB.");
-    if (!/\.(xlsx|csv|txt|json)$/i.test(file.name)) throw new WorkflowError("VALIDATION", "Open a .xlsx, .csv or .json file.");
+    if (!/\.(xlsx|csv|tsv|txt|json)$/i.test(file.name)) throw new WorkflowError("VALIDATION", "Open a .xlsx, .csv, .tsv or .json file.");
     const buf = await file.arrayBuffer();
     // An .xlsx is a zip: it must start with PK.
     if (/\.xlsx$/i.test(file.name) && !(new Uint8Array(buf.slice(0, 2))[0] === 0x50 && new Uint8Array(buf.slice(0, 2))[1] === 0x4b)) throw new WorkflowError("VALIDATION", "This is not a real .xlsx file.");
-    const { parseUpload } = await import("@/server/importer");
-    const sheet = await parseUpload(file.name, buf);
+    // ?book=1: the whole workbook (every sheet, formulas, styles, widths, merged cells) for the spreadsheet.
+    if (new URL(req.url).searchParams.get("book") === "1" && /\.xlsx$/i.test(file.name)) {
+      const { readWorkbook } = await import("@/server/workbook-xlsx");
+      const book = await readWorkbook(buf, file.name).catch(() => null);
+      if (!book) throw new WorkflowError("VALIDATION", "The workbook could not be read.");
+      return Response.json(book, { headers: { "Cache-Control": "no-store" } });
+    }
+    let sheet: { sheetName?: string; headers: string[]; rows: string[][] };
+    if (/\.tsv$/i.test(file.name)) {
+      const Papa = (await import("papaparse")).default;
+      const [headers = [], ...rows] = Papa.parse<string[]>(new TextDecoder("utf-8").decode(buf).replace(/^﻿/, ""), { delimiter: "\t", skipEmptyLines: "greedy" }).data;
+      sheet = { headers: headers.map((h) => String(h ?? "").trim()), rows: rows.map((r) => r.map((c) => String(c ?? ""))) };
+    } else {
+      const { parseUpload } = await import("@/server/importer");
+      sheet = await parseUpload(file.name, buf);
+    }
     if (sheet.rows.length > MAX_ROWS) throw new WorkflowError("VALIDATION", `Up to ${MAX_ROWS.toLocaleString()} rows (this file has ${sheet.rows.length.toLocaleString()}).`);
     const width = Math.min(MAX_COLS, Math.max(sheet.headers.length, ...sheet.rows.slice(0, 1000).map((r) => r.length)));
     const headers = Array.from({ length: width }, (_, i) => clean(sheet.headers[i] ?? "") || `Column ${i + 1}`);
@@ -40,12 +54,19 @@ export async function POST(req: Request) {
   }
 }
 
-type Out = { title?: string; sheets: { name: string; headers: string[]; rows: string[][]; fills?: (string | null)[]; notes?: string[] }[] };
+type Out = { title?: string; book?: unknown; sheets: { name: string; headers: string[]; rows: string[][]; fills?: (string | null)[]; notes?: string[] }[] };
 
 export async function PUT(req: Request) {
   try {
     await gate();
     const body = (await req.json().catch(() => null)) as Out | null;
+    // A whole workbook from the spreadsheet: formulas, styles, widths, frozen panes, merged cells.
+    if (body?.book) {
+      const { writeWorkbook } = await import("@/server/workbook-xlsx");
+      const out = await writeWorkbook(body.book, clean(String(body.title ?? "Workbook")).slice(0, 120));
+      const file = (clean(String(body.title || "workbook")).replace(/[^\w.-]+/g, "-").slice(0, 80) || "workbook") + ".xlsx";
+      return new Response(new Uint8Array(out as ArrayBuffer), { headers: { "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "Content-Disposition": `attachment; filename="${file}"`, "Cache-Control": "no-store" } });
+    }
     if (!body || !Array.isArray(body.sheets) || !body.sheets.length || body.sheets.length > 10) throw new WorkflowError("VALIDATION", "Nothing to export.");
     const ExcelJS = (await import("exceljs")).default;
     const wb = new ExcelJS.Workbook();

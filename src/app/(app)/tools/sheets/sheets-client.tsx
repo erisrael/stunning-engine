@@ -3,7 +3,7 @@
 import * as React from "react";
 import Papa from "papaparse";
 import { toast } from "sonner";
-import { ArrowDownIcon, ArrowUpIcon, ClipboardPasteIcon, DownloadIcon, FileSpreadsheetIcon, FolderOpenIcon, Loader2Icon, PlusIcon, SaveIcon, ScanSearchIcon, SearchIcon, Trash2Icon, XIcon } from "lucide-react";
+import { ClipboardPasteIcon, DownloadIcon, FileSpreadsheetIcon, FolderOpenIcon, LayoutTemplateIcon, Loader2Icon, PlusIcon, PrinterIcon, SaveIcon, ScanSearchIcon, Trash2Icon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -11,15 +11,19 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { crossCheckAction, deleteFileAction, getFileAction, saveFileAction } from "@/app/actions/tools";
 import { CopyAiButton, downloadBlob, safeName, toCsv } from "@/components/app/tools/shared";
+import { cellCss, display, Spreadsheet, usedRange } from "@/components/app/tools/spreadsheet";
+import { blankBook, fromTable, toBook, type BookData } from "@/lib/sheet-book";
+import { Calc } from "@/lib/formula";
+import { esc, printHtml } from "@/components/app/tools/doc-model";
+import { SHEET_TEMPLATES } from "@/lib/sheet-templates";
 import type { CrossResult } from "@/server/tools-data";
 import { cn } from "@/lib/utils";
 
-type Sheet = { name: string; headers: string[]; rows: string[][] };
 type Saved = { id: string; title: string; updated_at: string };
 type Check = { results: CrossResult[]; summary: { total: number; match: number; mismatch: number; missing: number; invalid: number } };
-const PAGE = 200;
 const STATUS_LABEL: Record<CrossResult["status"], string> = { match: "Matches", mismatch: "Differs", missing: "Not in production", invalid: "Invalid" };
 const FILL: Record<CrossResult["status"], string> = { match: "DCFCE7", mismatch: "FEE2E2", missing: "FEE2E2", invalid: "FECACA" };
 
@@ -30,74 +34,106 @@ function guess(headers: string[]) {
 }
 
 export function SheetsClient({ saved: initialSaved, canCrossCheck, aiOn, workspace, who }: { saved: Saved[]; canCrossCheck: boolean; aiOn: boolean; workspace: string; who: string }) {
-  const [sheet, setSheet] = React.useState<Sheet | null>(null);
+  const [book, setBook] = React.useState<BookData | null>(null);
+  const [title, setTitle] = React.useState("Untitled workbook");
   const [fileId, setFileId] = React.useState<string | null>(null);
   const [saved, setSaved] = React.useState(initialSaved);
   const [busy, setBusy] = React.useState<string | null>(null);
-  const [q, setQ] = React.useState("");
-  const [colFilter, setColFilter] = React.useState<{ col: number; value: string } | null>(null);
-  const [sort, setSort] = React.useState<{ col: number; dir: 1 | -1 } | null>(null);
-  const [page, setPage] = React.useState(0);
+  const [dirty, setDirty] = React.useState(false);
+  const [view, setView] = React.useState<"sheet" | "check">("sheet");
   const [paste, setPaste] = React.useState(false);
   const [check, setCheck] = React.useState<Check | null>(null);
   const [map, setMap] = React.useState({ code: -1, title: -1, teacher: -1 });
   const [statusFilter, setStatusFilter] = React.useState<"all" | "problems" | CrossResult["status"]>("all");
   const fileRef = React.useRef<HTMLInputElement>(null);
 
-  const load = (s: Sheet, id: string | null = null) => {
-    setSheet(s);
+  const load = (b: BookData, name: string, id: string | null = null) => {
+    if (dirty && !confirm("Leave this workbook without saving?")) return;
+    setBook(b);
+    setTitle(name);
     setFileId(id);
     setCheck(null);
-    setSort(null);
-    setColFilter(null);
-    setQ("");
-    setPage(0);
-    setMap(guess(s.headers));
+    setDirty(false);
+    setView("sheet");
+    const s = b.sheets[b.active]!;
+    setMap(guess((s.cells[0] ?? []).map(String)));
+  };
+  const change = (b: BookData) => {
+    setBook(b);
+    setDirty(true);
   };
 
   const open = async (file: File) => {
     setBusy("open");
     const fd = new FormData();
     fd.set("file", file);
-    const res = await fetch("/api/tools/sheet", { method: "POST", body: fd });
+    const xlsx = /\.xlsx$/i.test(file.name);
+    const res = await fetch(`/api/tools/sheet${xlsx ? "?book=1" : ""}`, { method: "POST", body: fd });
     const j = await res.json().catch(() => ({ error: "The file could not be read." }));
     setBusy(null);
     if (!res.ok) return toast.error(j.error);
-    load(j as Sheet);
-    toast.success(`${(j as Sheet).rows.length.toLocaleString()} rows opened`);
+    const name = file.name.replace(/\.[^.]+$/, "");
+    if (xlsx) load(toBook(j), name);
+    else load(fromTable(j.name ?? name, j.headers, j.rows), name);
+    toast.success("Opened");
   };
 
-  // The rows shown, by index into sheet.rows, after search, column filter and sort.
-  const view = React.useMemo(() => {
-    if (!sheet) return [];
-    const needle = q.toLowerCase();
-    let idx = sheet.rows.map((_, i) => i);
-    if (needle) idx = idx.filter((i) => sheet.rows[i]!.some((c) => c.toLowerCase().includes(needle)));
-    if (colFilter?.value) idx = idx.filter((i) => (sheet.rows[i]![colFilter.col] ?? "").toLowerCase().includes(colFilter.value.toLowerCase()));
-    if (check && statusFilter !== "all") idx = idx.filter((i) => (statusFilter === "problems" ? check.results[i]?.status !== "match" : check.results[i]?.status === statusFilter));
-    if (sort) {
-      const coll = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
-      idx.sort((a, b) => sort.dir * coll.compare(sheet.rows[a]![sort.col] ?? "", sheet.rows[b]![sort.col] ?? ""));
-    }
-    return idx;
-  }, [sheet, q, colFilter, sort, check, statusFilter]);
-  const pages = Math.max(1, Math.ceil(view.length / PAGE));
+  // The active sheet as a table (first row = column names) with values worked out, for the cross-check and exports.
+  const calc = React.useMemo(() => (book ? new Calc(book.sheets.map((s) => ({ name: s.name, cells: s.cells }))) : null), [book]);
+  const table = React.useMemo(() => {
+    if (!book || !calc) return null;
+    const s = book.sheets[book.active]!;
+    const { r2, c2 } = usedRange(s);
+    const rows = Array.from({ length: r2 + 1 }, (_, r) => Array.from({ length: c2 + 1 }, (_, c) => display(calc, book.active, s, r, c)));
+    return { name: s.name, headers: (rows[0] ?? []).map((h, i) => h || `Column ${i + 1}`), rows: rows.slice(1) };
+  }, [book, calc]);
 
-  const setCell = (r: number, c: number, v: string) =>
-    setSheet((s) => {
-      if (!s) return s;
-      const rows = s.rows.slice();
-      const row = rows[r]!.slice();
-      row[c] = v;
-      rows[r] = row;
-      return { ...s, rows };
-    });
+  const save = async () => {
+    if (!book) return;
+    setBusy("save");
+    const r = await saveFileAction("sheet", { id: fileId ?? undefined, title, data: book });
+    setBusy(null);
+    if (!r.ok) return toast.error(r.error);
+    const id = r.data as string;
+    setFileId(id);
+    setSaved((all) => [{ id, title, updated_at: new Date().toISOString() }, ...all.filter((f) => f.id !== id)]);
+    setDirty(false);
+    toast.success("Saved to your sheets");
+  };
+
+  const exportXlsx = async (name: string, body: unknown) => {
+    setBusy("xlsx");
+    const res = await fetch("/api/tools/sheet", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    setBusy(null);
+    if (!res.ok) return toast.error((await res.json().catch(() => ({ error: "Export failed." }))).error);
+    downloadBlob(await res.blob(), safeName(name, "xlsx"));
+  };
+  const sheetHtml = () => {
+    if (!book || !calc) return "";
+    const s = book.sheets[book.active]!;
+    const { r2, c2 } = usedRange(s);
+    const rows: string[] = [];
+    for (let r = 0; r <= r2; r++) {
+      const tds: string[] = [];
+      for (let c = 0; c <= c2; c++) {
+        const st = s.styles[`${r}:${c}`];
+        const css = cellCss(st, calc.value(book.active, r, c));
+        const style = Object.entries(css)
+          .filter(([, v]) => v !== undefined && v !== "")
+          .map(([k, v]) => `${k.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`)}:${String(v).replace(/[<>"]/g, "")}`)
+          .join(";");
+        tds.push(`<td style="${style}">${esc(display(calc, book.active, s, r, c))}</td>`);
+      }
+      rows.push(`<tr>${tds.join("")}</tr>`);
+    }
+    return `<h2>${esc(title)} · ${esc(s.name)}</h2><table class="sheet">${rows.join("")}</table>`;
+  };
 
   const runCheck = async () => {
-    if (!sheet) return;
+    if (!table) return;
     if (map.code < 0 && map.title < 0) return toast.error("Choose the column with the code (or at least the title).");
     setBusy("check");
-    const rows = sheet.rows.map((r, i) => ({ row: i + 2, code: map.code >= 0 ? (r[map.code] ?? "") : "", title: map.title >= 0 ? (r[map.title] ?? "") : "", teacher: map.teacher >= 0 ? (r[map.teacher] ?? "") : "" }));
+    const rows = table.rows.map((r, i) => ({ row: i + 2, code: map.code >= 0 ? (r[map.code] ?? "") : "", title: map.title >= 0 ? (r[map.title] ?? "") : "", teacher: map.teacher >= 0 ? (r[map.teacher] ?? "") : "" }));
     const r = await crossCheckAction(rows);
     setBusy(null);
     if (!r.ok) return toast.error(r.error);
@@ -106,25 +142,15 @@ export function SheetsClient({ saved: initialSaved, canCrossCheck, aiOn, workspa
     const s = (r.data as Check).summary;
     toast.success(`${s.match} match, ${s.mismatch + s.missing + s.invalid} need a look`);
   };
-
   const reportRows = () =>
     check!.results.map((r) => [String(r.row), STATUS_LABEL[r.status], r.input.code, r.input.title, r.input.teacher, r.ops?.code ?? "", r.ops?.title ?? "", r.ops?.teacher ?? "", r.ops?.stage ?? "", r.ops?.lifecycle ?? "", [r.ops?.grade, r.ops?.subject].filter(Boolean).join(" · "), r.issues.join(" ")]);
   const REPORT_HEAD = ["Row", "Result", "Sheet code", "Sheet title", "Sheet teacher", "Production code", "Production title", "Production teacher", "Stage", "Lifecycle", "Grade · subject", "What differs"];
-
-  const exportXlsx = async (title: string, sheets: { name: string; headers: string[]; rows: string[][]; fills?: (string | null)[]; notes?: string[] }[]) => {
-    setBusy("xlsx");
-    const res = await fetch("/api/tools/sheet", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title, sheets }) });
-    setBusy(null);
-    if (!res.ok) return toast.error((await res.json().catch(() => ({ error: "Export failed." }))).error);
-    downloadBlob(await res.blob(), safeName(title, "xlsx"));
-  };
-
   const aiText = (ask: string) => {
-    if (!check || !sheet) return "";
+    if (!check || !table) return "";
     const s = check.summary;
     const problems = check.results.filter((r) => r.status !== "match").slice(0, 300);
     return [
-      `# Cross-check of "${sheet.name}" against ${workspace} production data`,
+      `# Cross-check of "${table.name}" against ${workspace} production data`,
       "",
       `Checked by ${who} on ${new Date().toISOString().slice(0, 10)}. ${s.total} rows: ${s.match} match, ${s.mismatch} differ, ${s.missing} not in production, ${s.invalid} invalid.`,
       "",
@@ -133,7 +159,6 @@ export function SheetsClient({ saved: initialSaved, canCrossCheck, aiOn, workspa
       "| Row | Result | Sheet code | Sheet title | Sheet teacher | Production | What differs |",
       "|---|---|---|---|---|---|---|",
       ...problems.map((r) => `| ${r.row} | ${STATUS_LABEL[r.status]} | ${r.input.code} | ${r.input.title.replace(/\|/g, "/")} | ${r.input.teacher} | ${r.ops ? `${r.ops.code} · ${r.ops.title.replace(/\|/g, "/")} · ${r.ops.teacher ?? ""} · ${r.ops.stage ?? r.ops.lifecycle}` : "—"} | ${r.issues.join(" ").replace(/\|/g, "/")} |`),
-      problems.length < check.results.filter((r) => r.status !== "match").length ? "\n_(First 300 shown.)_" : "",
       "",
       "## Request",
       "",
@@ -142,17 +167,32 @@ export function SheetsClient({ saved: initialSaved, canCrossCheck, aiOn, workspa
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <input ref={fileRef} type="file" accept=".xlsx,.csv,.txt,.json" className="hidden" onChange={(e) => e.target.files?.[0] && open(e.target.files[0]).finally(() => (e.target.value = ""))} />
-        <Button onClick={() => fileRef.current?.click()} disabled={!!busy}>
+        <input ref={fileRef} type="file" accept=".xlsx,.csv,.tsv,.txt,.json" className="hidden" onChange={(e) => e.target.files?.[0] && open(e.target.files[0]).finally(() => (e.target.value = ""))} />
+        <Button size="sm" onClick={() => fileRef.current?.click()} disabled={!!busy}>
           {busy === "open" ? <Loader2Icon className="animate-spin" /> : <FolderOpenIcon />} Open .xlsx / .csv
         </Button>
-        <Button variant="outline" onClick={() => setPaste(true)}>
-          <ClipboardPasteIcon /> Paste data
+        <Button size="sm" variant="outline" onClick={() => load(blankBook(), "Untitled workbook")}>
+          <PlusIcon /> New workbook
         </Button>
-        <Button variant="outline" onClick={() => load({ name: "New sheet", headers: ["Code", "Title", "Teacher"], rows: [["", "", ""]] })}>
-          <PlusIcon /> New sheet
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button size="sm" variant="outline">
+              <LayoutTemplateIcon /> Templates
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-72 p-1" align="start">
+            {SHEET_TEMPLATES.map((t) => (
+              <button key={t.key} type="button" className="block w-full rounded px-2 py-1.5 text-left hover:bg-muted" onClick={() => load(t.book(), t.label)}>
+                <span className="block text-sm font-medium">{t.label}</span>
+                <span className="block text-xs text-muted-foreground">{t.hint}</span>
+              </button>
+            ))}
+          </PopoverContent>
+        </Popover>
+        <Button size="sm" variant="outline" onClick={() => setPaste(true)}>
+          <ClipboardPasteIcon /> Paste data
         </Button>
         {saved.length > 0 && (
           <Select
@@ -160,12 +200,12 @@ export function SheetsClient({ saved: initialSaved, canCrossCheck, aiOn, workspa
             onValueChange={async (id) => {
               const r = await getFileAction("sheet", id);
               if (!r.ok) return toast.error(r.error);
-              const f = r.data as { id: string; data: Sheet };
-              load(f.data, f.id);
+              const f = r.data as { id: string; title: string; data: unknown };
+              load(toBook(f.data), f.title, f.id);
             }}
           >
-            <SelectTrigger className="w-56" aria-label="Open a saved sheet">
-              <SelectValue placeholder="Saved sheets" />
+            <SelectTrigger className="h-8 w-56" aria-label="Open a saved workbook">
+              <SelectValue placeholder={`Saved workbooks (${saved.length})`} />
             </SelectTrigger>
             <SelectContent>
               {saved.map((f) => (
@@ -178,260 +218,208 @@ export function SheetsClient({ saved: initialSaved, canCrossCheck, aiOn, workspa
         )}
       </div>
 
-      {!sheet ? (
+      {!book ? (
         <Card>
           <CardContent className="flex flex-col items-center gap-2 py-16 text-center text-sm text-muted-foreground">
             <FileSpreadsheetIcon className="size-8" />
-            Open an Excel or CSV file, paste rows copied from a spreadsheet, or start a new sheet.
-            {canCrossCheck && <span>Then cross-check its codes, titles and teachers against production.</span>}
+            Open an Excel or CSV file, paste rows from a spreadsheet, start from a template, or start a new workbook.
+            <span>Formulas work as in Excel (SUM, IF, VLOOKUP, XLOOKUP, SUMIFS and more than 100 others); styles, charts and several sheets are saved and exported to .xlsx.</span>
+            {canCrossCheck && <span>Then cross-check codes, titles and teachers against production.</span>}
           </CardContent>
         </Card>
       ) : (
         <>
-          <Card>
-            <CardContent className="space-y-3 p-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <Input value={sheet.name} onChange={(e) => setSheet({ ...sheet, name: e.target.value })} className="h-8 w-56 font-medium" aria-label="Sheet name" />
-                <div className="relative">
-                  <SearchIcon className="pointer-events-none absolute top-1/2 left-2 size-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input value={q} onChange={(e) => (setQ(e.target.value), setPage(0))} placeholder="Search all cells" className="h-8 w-52 pl-7" aria-label="Search" />
-                </div>
-                <Select value={colFilter ? String(colFilter.col) : "none"} onValueChange={(v) => setColFilter(v === "none" ? null : { col: Number(v), value: colFilter?.value ?? "" })}>
-                  <SelectTrigger className="h-8 w-40" aria-label="Filter column">
-                    <SelectValue placeholder="Filter column" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">No column filter</SelectItem>
-                    {sheet.headers.map((h, i) => (
-                      <SelectItem key={i} value={String(i)}>
-                        {h}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {colFilter && <Input value={colFilter.value} onChange={(e) => (setColFilter({ ...colFilter, value: e.target.value }), setPage(0))} placeholder="contains…" className="h-8 w-36" aria-label="Column filter" />}
-                <span className="text-xs text-muted-foreground tabular">
-                  {view.length.toLocaleString()} of {sheet.rows.length.toLocaleString()} rows
-                </span>
-                <div className="ml-auto flex flex-wrap gap-2">
-                  <Button size="sm" variant="outline" onClick={() => setSheet({ ...sheet, rows: [...sheet.rows, sheet.headers.map(() => "")] })}>
-                    <PlusIcon /> Row
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => setSheet({ ...sheet, headers: [...sheet.headers, `Column ${sheet.headers.length + 1}`], rows: sheet.rows.map((r) => [...r, ""]) })}>
-                    <PlusIcon /> Column
-                  </Button>
-                  <Button size="sm" variant="outline" disabled={busy === "xlsx"} onClick={() => exportXlsx(sheet.name, [{ name: sheet.name, headers: sheet.headers, rows: view.map((i) => sheet.rows[i]!) }])}>
-                    <DownloadIcon /> .xlsx
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => downloadBlob(new Blob([toCsv(sheet.headers, view.map((i) => sheet.rows[i]!))], { type: "text/csv" }), safeName(sheet.name, "csv"))}>
-                    <DownloadIcon /> .csv
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={busy === "save"}
-                    onClick={async () => {
-                      setBusy("save");
-                      const r = await saveFileAction("sheet", { id: fileId ?? undefined, title: sheet.name, data: sheet });
-                      setBusy(null);
-                      if (!r.ok) return toast.error(r.error);
-                      const id = r.data as string;
-                      setFileId(id);
-                      setSaved((all) => [{ id, title: sheet.name, updated_at: new Date().toISOString() }, ...all.filter((f) => f.id !== id)]);
-                      toast.success("Saved to your sheets");
-                    }}
-                  >
-                    <SaveIcon /> Save
-                  </Button>
-                  {fileId && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      aria-label="Delete saved sheet"
-                      onClick={async () => {
-                        if (!confirm("Delete this saved sheet?")) return;
-                        const r = await deleteFileAction("sheet", fileId);
-                        if (!r.ok) return toast.error(r.error);
-                        setSaved((all) => all.filter((f) => f.id !== fileId));
-                        setFileId(null);
-                      }}
-                    >
-                      <Trash2Icon />
-                    </Button>
-                  )}
-                </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Input value={title} onChange={(e) => (setTitle(e.target.value), setDirty(true))} className="h-8 w-64 font-medium" aria-label="Workbook name" />
+            {dirty && <span className="text-xs text-amber-700 dark:text-amber-300">Not saved</span>}
+            {canCrossCheck && (
+              <div className="inline-flex rounded-md border p-0.5 text-xs" role="tablist" aria-label="View">
+                <button type="button" role="tab" aria-selected={view === "sheet"} className={cn("rounded px-2 py-1", view === "sheet" && "bg-primary text-primary-foreground")} onClick={() => setView("sheet")}>
+                  Spreadsheet
+                </button>
+                <button type="button" role="tab" aria-selected={view === "check"} className={cn("rounded px-2 py-1", view === "check" && "bg-primary text-primary-foreground")} onClick={() => setView("check")}>
+                  Check against production
+                </button>
               </div>
-
-              <div className="max-h-[60vh] overflow-auto rounded-md border">
-                <table className="w-full border-collapse text-xs">
-                  <thead className="sticky top-0 z-10 bg-muted">
-                    <tr>
-                      <th className="w-12 border-b px-2 py-1 text-right text-muted-foreground">#</th>
-                      {check && <th className="border-b px-2 py-1 text-left">Result</th>}
-                      {sheet.headers.map((h, c) => (
-                        <th key={c} className="min-w-32 border-b border-l px-1 py-1 text-left">
-                          <div className="flex items-center gap-1">
-                            <input value={h} onChange={(e) => setSheet({ ...sheet, headers: sheet.headers.map((x, j) => (j === c ? e.target.value : x)) })} className="w-full min-w-0 bg-transparent px-1 font-semibold outline-none focus:bg-background" aria-label={`Column ${c + 1} name`} />
-                            <button type="button" aria-label={`Sort by ${h}`} className="rounded p-0.5 hover:bg-background" onClick={() => setSort(sort?.col === c ? (sort.dir === 1 ? { col: c, dir: -1 } : null) : { col: c, dir: 1 })}>
-                              {sort?.col === c ? sort.dir === 1 ? <ArrowUpIcon className="size-3" /> : <ArrowDownIcon className="size-3" /> : <ArrowUpIcon className="size-3 opacity-30" />}
-                            </button>
-                            <button
-                              type="button"
-                              aria-label={`Delete column ${h}`}
-                              className="rounded p-0.5 opacity-40 hover:bg-background hover:opacity-100"
-                              onClick={() => sheet.headers.length > 1 && setSheet({ ...sheet, headers: sheet.headers.filter((_, j) => j !== c), rows: sheet.rows.map((r) => r.filter((_, j) => j !== c)) })}
-                            >
-                              <XIcon className="size-3" />
-                            </button>
-                          </div>
-                        </th>
-                      ))}
-                      <th className="w-8 border-b" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {view.slice(page * PAGE, page * PAGE + PAGE).map((i) => {
-                      const res = check?.results[i];
-                      return (
-                        <tr key={i} className={cn(res && (res.status === "match" ? "bg-green-500/10" : "bg-red-500/10"))}>
-                          <td className="border-b px-2 text-right text-muted-foreground tabular">{i + 2}</td>
-                          {check && (
-                            <td className="max-w-72 border-b px-2 py-1" title={res?.issues.join("\n")}>
-                              <span className={cn("font-medium", res?.status === "match" ? "text-green-700 dark:text-green-400" : "text-red-700 dark:text-red-400")}>{res ? STATUS_LABEL[res.status] : ""}</span>
-                              {res?.issues.length ? <span className="block truncate text-[11px] text-muted-foreground">{res.issues[0]}</span> : null}
-                            </td>
-                          )}
-                          {sheet.headers.map((_, c) => (
-                            <td key={c} className="border-b border-l p-0">
-                              <input value={sheet.rows[i]![c] ?? ""} onChange={(e) => setCell(i, c, e.target.value)} className="w-full bg-transparent px-2 py-1 outline-none focus:bg-background focus:ring-1 focus:ring-primary" aria-label={`Row ${i + 2}, ${sheet.headers[c]}`} />
-                            </td>
-                          ))}
-                          <td className="border-b text-center">
-                            <button type="button" aria-label={`Delete row ${i + 2}`} className="rounded p-0.5 opacity-40 hover:opacity-100" onClick={() => (setSheet({ ...sheet, rows: sheet.rows.filter((_, j) => j !== i) }), setCheck(null))}>
-                              <Trash2Icon className="size-3" />
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-              {pages > 1 && (
-                <div className="flex items-center justify-end gap-2 text-xs">
-                  <Button size="sm" variant="ghost" disabled={page === 0} onClick={() => setPage(page - 1)}>
-                    Previous
+            )}
+            <div className="ml-auto flex flex-wrap gap-2">
+              <Button size="sm" onClick={save} disabled={busy === "save"}>
+                {busy === "save" ? <Loader2Icon className="animate-spin" /> : <SaveIcon />} Save
+              </Button>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button size="sm" variant="outline">
+                    <DownloadIcon /> Export
                   </Button>
-                  <span className="tabular">
-                    Page {page + 1} of {pages}
-                  </span>
-                  <Button size="sm" variant="ghost" disabled={page >= pages - 1} onClick={() => setPage(page + 1)}>
-                    Next
-                  </Button>
-                </div>
+                </PopoverTrigger>
+                <PopoverContent className="w-64 p-1" align="end">
+                  <ExportItem label="Excel workbook (.xlsx)" hint="Every sheet, formulas, styles, widths" onClick={() => exportXlsx(title, { title, book })} />
+                  <ExportItem label="CSV, this sheet (.csv)" hint="Values as shown" onClick={() => table && downloadBlob(new Blob([toCsv(table.headers, table.rows)], { type: "text/csv" }), safeName(`${title} ${table.name}`, "csv"))} />
+                  <ExportItem
+                    label="Tab-separated (.tsv)"
+                    onClick={() => table && downloadBlob(new Blob([[table.headers, ...table.rows].map((r) => r.map((c) => c.replace(/[\t\r\n]+/g, " ")).join("\t")).join("\r\n")], { type: "text/tab-separated-values" }), safeName(`${title} ${table.name}`, "tsv"))}
+                  />
+                  <ExportItem label="Web page (.html)" onClick={() => downloadBlob(new Blob([`<!doctype html><meta charset="utf-8"><title>${esc(title)}</title><style>${SHEET_CSS}</style>${sheetHtml()}`], { type: "text/html" }), safeName(title, "html"))} />
+                  <ExportItem label="JSON (.json)" hint="Rows as objects, by column name" onClick={() => table && downloadBlob(new Blob([JSON.stringify(table.rows.map((r) => Object.fromEntries(table.headers.map((h, i) => [h, r[i] ?? ""]))), null, 2)], { type: "application/json" }), safeName(title, "json"))} />
+                  <ExportItem label="PDF (print)" hint="Save as PDF in the print dialog" icon={<PrinterIcon className="size-3.5" />} onClick={() => printHtml(title, sheetHtml(), `@page{size:A4 landscape;margin:12mm}${SHEET_CSS}`)} />
+                </PopoverContent>
+              </Popover>
+              {fileId && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  aria-label="Delete saved workbook"
+                  onClick={async () => {
+                    if (!confirm("Delete this saved workbook?")) return;
+                    const r = await deleteFileAction("sheet", fileId);
+                    if (!r.ok) return toast.error(r.error);
+                    setSaved((all) => all.filter((f) => f.id !== fileId));
+                    setFileId(null);
+                  }}
+                >
+                  <Trash2Icon />
+                </Button>
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </div>
 
-          {canCrossCheck && (
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <ScanSearchIcon className="size-4" /> Cross-check against Ops data
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <p className="text-sm text-muted-foreground">Each row is looked up by its code in production (or by its title when it has no code), then the title and teacher are compared. Green matches; red needs a look.</p>
-                <div className="flex flex-wrap items-end gap-3">
-                  {(["code", "title", "teacher"] as const).map((k) => (
-                    <label key={k} className="space-y-1 text-xs">
-                      <span className="block font-medium capitalize">{k} column</span>
-                      <Select value={String(map[k])} onValueChange={(v) => setMap({ ...map, [k]: Number(v) })}>
-                        <SelectTrigger className="h-8 w-44">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="-1">Not in this sheet</SelectItem>
-                          {sheet.headers.map((h, i) => (
-                            <SelectItem key={i} value={String(i)}>
-                              {h}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </label>
-                  ))}
-                  <Button onClick={runCheck} disabled={busy === "check"}>
-                    {busy === "check" ? <Loader2Icon className="animate-spin" /> : <ScanSearchIcon />} Cross-check {sheet.rows.length.toLocaleString()} rows
-                  </Button>
-                </div>
-                {check && (
-                  <div className="space-y-3 border-t pt-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      {(
-                        [
-                          ["all", `All ${check.summary.total}`],
-                          ["problems", `Need a look ${check.summary.total - check.summary.match}`],
-                          ["match", `Match ${check.summary.match}`],
-                          ["mismatch", `Differ ${check.summary.mismatch}`],
-                          ["missing", `Not in production ${check.summary.missing}`],
-                          ["invalid", `Invalid ${check.summary.invalid}`],
-                        ] as const
-                      ).map(([k, l]) => (
-                        <Button key={k} size="sm" variant={statusFilter === k ? "secondary" : "ghost"} onClick={() => (setStatusFilter(k), setPage(0))}>
-                          {k === "match" ? <Badge className="mr-1 size-2 rounded-full bg-green-600 p-0" /> : k !== "all" && k !== "problems" ? <Badge className="mr-1 size-2 rounded-full bg-red-600 p-0" /> : null}
-                          {l}
-                        </Button>
-                      ))}
-                      <div className="ml-auto flex flex-wrap gap-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() =>
-                            exportXlsx(`${sheet.name} cross-check`, [
-                              { name: "Cross-check", headers: REPORT_HEAD, rows: reportRows(), fills: check.results.map((r) => FILL[r.status]), notes: [`Cross-check of ${sheet.name} against ${workspace} production data, ${new Date().toLocaleString()}.`, `${check.summary.match} match, ${check.summary.mismatch} differ, ${check.summary.missing} not in production, ${check.summary.invalid} invalid.`] },
-                              { name: "Sheet", headers: ["Result", ...sheet.headers], rows: sheet.rows.map((r, i) => [STATUS_LABEL[check.results[i]!.status], ...r]), fills: check.results.map((r) => FILL[r.status]) },
-                            ])
-                          }
-                        >
-                          <DownloadIcon /> Report .xlsx
-                        </Button>
-                        <Button size="sm" variant="outline" onClick={() => downloadBlob(new Blob([toCsv(REPORT_HEAD, reportRows())], { type: "text/csv" }), safeName(`${sheet.name} cross-check`, "csv"))}>
-                          <DownloadIcon /> Report .csv
-                        </Button>
-                        {aiOn && <CopyAiButton build={aiText} />}
-                      </div>
-                    </div>
-                    <ul className="max-h-72 space-y-1 overflow-auto text-sm">
-                      {check.results
-                        .filter((r) => r.status !== "match")
-                        .slice(0, 200)
-                        .map((r) => (
-                          <li key={r.row} className="rounded-md border-l-4 border-red-500 bg-red-500/5 px-3 py-1.5">
-                            <span className="font-medium">Row {r.row}</span> <span className="text-xs text-muted-foreground">({STATUS_LABEL[r.status]})</span>
-                            <ul className="list-disc pl-5 text-xs text-muted-foreground">
-                              {r.issues.map((x, j) => (
-                                <li key={j}>{x}</li>
-                              ))}
-                            </ul>
-                          </li>
-                        ))}
-                      {check.summary.match === check.summary.total && <li className="rounded-md border-l-4 border-green-600 bg-green-500/5 px-3 py-2">Every row matches production.</li>}
-                    </ul>
+          {view === "sheet" ? (
+            <Spreadsheet book={book} onChange={change} />
+          ) : (
+            table && (
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <ScanSearchIcon className="size-4" /> Cross-check {table.name} against Ops data
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <p className="text-sm text-muted-foreground">The first row holds the column names. Each row is looked up by its code in production (or by its title when it has no code), then the title and teacher are compared.</p>
+                  <div className="flex flex-wrap items-end gap-3">
+                    {(["code", "title", "teacher"] as const).map((k) => (
+                      <label key={k} className="space-y-1 text-xs">
+                        <span className="block font-medium capitalize">{k} column</span>
+                        <Select value={String(map[k])} onValueChange={(v) => setMap({ ...map, [k]: Number(v) })}>
+                          <SelectTrigger className="h-8 w-44">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="-1">Not in this sheet</SelectItem>
+                            {table.headers.map((h, i) => (
+                              <SelectItem key={i} value={String(i)}>
+                                {h}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </label>
+                    ))}
+                    <Button onClick={runCheck} disabled={busy === "check"}>
+                      {busy === "check" ? <Loader2Icon className="animate-spin" /> : <ScanSearchIcon />} Cross-check {table.rows.length.toLocaleString()} rows
+                    </Button>
                   </div>
-                )}
-              </CardContent>
-            </Card>
+                  {check && (
+                    <div className="space-y-3 border-t pt-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        {(
+                          [
+                            ["all", `All ${check.summary.total}`],
+                            ["problems", `Need a look ${check.summary.total - check.summary.match}`],
+                            ["match", `Match ${check.summary.match}`],
+                            ["mismatch", `Differ ${check.summary.mismatch}`],
+                            ["missing", `Not in production ${check.summary.missing}`],
+                            ["invalid", `Invalid ${check.summary.invalid}`],
+                          ] as const
+                        ).map(([k, l]) => (
+                          <Button key={k} size="sm" variant={statusFilter === k ? "secondary" : "ghost"} onClick={() => setStatusFilter(k)}>
+                            {k === "match" ? <Badge className="mr-1 size-2 rounded-full bg-green-600 p-0" /> : k !== "all" && k !== "problems" ? <Badge className="mr-1 size-2 rounded-full bg-red-600 p-0" /> : null}
+                            {l}
+                          </Button>
+                        ))}
+                        <div className="ml-auto flex flex-wrap gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={busy === "xlsx"}
+                            onClick={() =>
+                              exportXlsx(`${table.name} cross-check`, {
+                                title: `${table.name} cross-check`,
+                                sheets: [
+                                  { name: "Cross-check", headers: REPORT_HEAD, rows: reportRows(), fills: check.results.map((r) => FILL[r.status]), notes: [`Cross-check of ${table.name} against ${workspace} production data, ${new Date().toLocaleString()}.`, `${check.summary.match} match, ${check.summary.mismatch} differ, ${check.summary.missing} not in production, ${check.summary.invalid} invalid.`] },
+                                  { name: "Sheet", headers: ["Result", ...table.headers], rows: table.rows.map((r, i) => [STATUS_LABEL[check.results[i]?.status ?? "invalid"], ...r]), fills: check.results.map((r) => FILL[r.status]) },
+                                ],
+                              })
+                            }
+                          >
+                            <DownloadIcon /> Report .xlsx
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={() => downloadBlob(new Blob([toCsv(REPORT_HEAD, reportRows())], { type: "text/csv" }), safeName(`${table.name} cross-check`, "csv"))}>
+                            <DownloadIcon /> Report .csv
+                          </Button>
+                          {aiOn && <CopyAiButton build={aiText} />}
+                        </div>
+                      </div>
+                      <div className="max-h-[50vh] overflow-auto rounded-md border">
+                        <table className="w-full border-collapse text-xs">
+                          <thead className="sticky top-0 bg-muted">
+                            <tr>
+                              <th className="px-2 py-1 text-right">Row</th>
+                              <th className="px-2 py-1 text-left">Result</th>
+                              {table.headers.map((h, i) => (
+                                <th key={i} className="border-l px-2 py-1 text-left">{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {check.results
+                              .map((r, i) => ({ r, i }))
+                              .filter(({ r }) => (statusFilter === "all" ? true : statusFilter === "problems" ? r.status !== "match" : r.status === statusFilter))
+                              .slice(0, 500)
+                              .map(({ r, i }) => (
+                                <tr key={i} className={r.status === "match" ? "bg-green-500/10" : "bg-red-500/10"} title={r.issues.join("\n")}>
+                                  <td className="px-2 py-1 text-right tabular-nums">{r.row}</td>
+                                  <td className="max-w-72 px-2 py-1">
+                                    <span className={cn("font-medium", r.status === "match" ? "text-green-700 dark:text-green-400" : "text-red-700 dark:text-red-400")}>{STATUS_LABEL[r.status]}</span>
+                                    {r.issues[0] && <span className="block truncate text-[11px] text-muted-foreground">{r.issues[0]}</span>}
+                                  </td>
+                                  {table.headers.map((_, c) => (
+                                    <td key={c} className="border-l px-2 py-1">{table.rows[i]?.[c]}</td>
+                                  ))}
+                                </tr>
+                              ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      {check.summary.match === check.summary.total && <p className="rounded-md border-l-4 border-green-600 bg-green-500/5 px-3 py-2 text-sm">Every row matches production.</p>}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )
           )}
         </>
       )}
 
-      <PasteDialog open={paste} onClose={() => setPaste(false)} onLoad={(s) => (load(s), setPaste(false))} />
+      <PasteDialog open={paste} onClose={() => setPaste(false)} onLoad={(headers, rows) => (load(fromTable("Pasted data", headers, rows), "Pasted data"), setPaste(false))} />
     </div>
   );
 }
 
-function PasteDialog({ open, onClose, onLoad }: { open: boolean; onClose: () => void; onLoad: (s: Sheet) => void }) {
+const SHEET_CSS = `table.sheet{border-collapse:collapse;font-size:9.5pt}table.sheet td{border:1px solid #d1d5db;padding:2pt 4pt;white-space:nowrap}h2{font-size:13pt;margin:0 0 6pt}`;
+
+function ExportItem({ label, hint, onClick, icon }: { label: string; hint?: string; onClick: () => void; icon?: React.ReactNode }) {
+  return (
+    <button type="button" onClick={onClick} className="flex w-full items-start gap-2 rounded px-2 py-1.5 text-left hover:bg-muted">
+      <span className="mt-0.5">{icon ?? <DownloadIcon className="size-3.5" />}</span>
+      <span>
+        <span className="block text-sm">{label}</span>
+        {hint && <span className="block text-xs text-muted-foreground">{hint}</span>}
+      </span>
+    </button>
+  );
+}
+
+function PasteDialog({ open, onClose, onLoad }: { open: boolean; onClose: () => void; onLoad: (headers: string[], rows: string[][]) => void }) {
   const [text, setText] = React.useState("");
   const [header, setHeader] = React.useState(true);
   return (
@@ -454,8 +442,7 @@ function PasteDialog({ open, onClose, onLoad }: { open: boolean; onClose: () => 
               if (!data.length) return toast.error("Nothing to read.");
               const width = Math.min(200, Math.max(...data.map((r) => r.length)));
               const headers = header ? Array.from({ length: width }, (_, i) => data[0]![i] || `Column ${i + 1}`) : Array.from({ length: width }, (_, i) => `Column ${i + 1}`);
-              const rows = (header ? data.slice(1) : data).map((r) => headers.map((_, i) => r[i] ?? ""));
-              onLoad({ name: "Pasted data", headers, rows });
+              onLoad(headers, (header ? data.slice(1) : data).map((r) => headers.map((_, i) => r[i] ?? "")));
               setText("");
             }}
           >

@@ -41,6 +41,7 @@ import { GeofenceWatch } from "@/components/app/attendance/geofence-watch";
 import { PresencePing } from "@/components/app/presence-ping";
 
 import { RoleLabels } from "@/components/app/role-labels";
+import { hasCorrespondence } from "@/server/corr/core";
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const viewer = await requireViewer();
   // Alert checks run after the page is sent, so no visitor waits for them (hosts also call /api/cron/checks).
@@ -142,6 +143,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <AppSidebar
         tools={tools?.apps.map((a) => ({ label: a.label, href: a.href })) ?? []}
         peopleOps={peopleOps}
+        correspondence={hasCorrespondence(viewer)}
         cmsAccess={cmsAccess}
         chapaAccess={chapaAccess}
         home={home}

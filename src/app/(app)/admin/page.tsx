@@ -449,7 +449,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
                 />
               )}
             </TabsContent>
-            <TabsContent value="tools">{tab === "tools" && <ToolsAdmin initial={await (await import("@/server/tools")).toolsConfig()} roles={(await roleCatalog()).map((r) => ({ key: r.key, label: r.label }))} gptClients={await (await import("@/server/oauth")).gptClients()} />}</TabsContent>
+            <TabsContent value="tools">{tab === "tools" && <ToolsAdmin initial={await (await import("@/server/tools")).toolsConfig()} roles={(await roleCatalog()).map((r) => ({ key: r.key, label: r.label }))} gptClients={await (await import("@/server/oauth")).gptClients()} people={(await (await import("@/server/db")).all<{ id: string; name: string; roles: string | null }>("SELECT u.id, u.name, string_agg(r.role, ',') AS roles FROM users u LEFT JOIN role_assignments r ON r.user_id = u.id WHERE u.active = 1 GROUP BY u.id, u.name ORDER BY u.name LIMIT 2000")).map((u) => ({ id: u.id, name: u.name, roles: (u.roles ?? "").split(",").filter(Boolean) }))} />}</TabsContent>
             <TabsContent value="chapa-access">{tab === "chapa-access" && <ChapaAccessAdmin />}</TabsContent>
             <TabsContent value="legacy-cms">
               {tab === "legacy-cms" && (

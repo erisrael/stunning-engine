@@ -13,6 +13,9 @@ import { ConnectionsClient } from "./connections-client";
 export const metadata = { title: "Tools hub" };
 
 const ICONS = { notes: NotebookPenIcon, calendar: BellIcon, sheets: FileSpreadsheetIcon, docs: FileTextIcon, decks: PresentationIcon, letters: MailIcon } as const;
+// Each app's colour (icon tile) and what it opens and saves.
+const TONE = { notes: "bg-amber-500/15 text-amber-700 dark:text-amber-300", calendar: "bg-sky-500/15 text-sky-700 dark:text-sky-300", sheets: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300", docs: "bg-blue-500/15 text-blue-700 dark:text-blue-300", decks: "bg-orange-500/15 text-orange-700 dark:text-orange-300", letters: "bg-violet-500/15 text-violet-700 dark:text-violet-300" } as const;
+const FORMATS: Record<string, string[]> = { notes: ["Markdown", "Tasks"], calendar: [".ics feed"], sheets: [".xlsx", ".csv", ".tsv", "PDF", "Charts"], docs: [".docx", "PDF", ".md", ".html"], decks: [".pptx", "PDF", "PNG", "Present"], letters: ["PDF", "Word", "PNG", "Design"] };
 
 // The Tools hub: the apps Admin gave this person, and the optional connections (none is needed to use the apps).
 export default async function ToolsHubPage({ searchParams }: { searchParams: Promise<{ notion?: string }> }) {
@@ -34,14 +37,21 @@ export default async function ToolsHubPage({ searchParams }: { searchParams: Pro
           const Icon = ICONS[a.key];
           return (
             <Link key={a.key} href={a.href} className="group">
-              <Card className="h-full transition-colors group-hover:border-primary">
+              <Card className="h-full transition-all group-hover:-translate-y-0.5 group-hover:border-primary group-hover:shadow-md">
                 <CardContent className="flex gap-3 p-4">
-                  <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <span className={`flex size-11 shrink-0 items-center justify-center rounded-xl ${TONE[a.key]}`}>
                     <Icon className="size-5" />
                   </span>
-                  <span>
+                  <span className="min-w-0">
                     <span className="block font-medium">{a.label}</span>
                     <span className="block text-sm text-muted-foreground">{a.hint}</span>
+                    <span className="mt-2 flex flex-wrap gap-1">
+                      {(FORMATS[a.key] ?? []).map((x) => (
+                        <span key={x} className="rounded border px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                          {x}
+                        </span>
+                      ))}
+                    </span>
                   </span>
                 </CardContent>
               </Card>

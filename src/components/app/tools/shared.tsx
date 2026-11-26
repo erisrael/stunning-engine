@@ -16,7 +16,7 @@ import { cn } from "@/lib/utils";
 // The tab bar across the six apps.
 export function ToolsNav({ apps, active }: { apps: { key: string; label: string; href: string }[]; active: string }) {
   return (
-    <nav aria-label="Tools" className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1">
+    <nav aria-label="Tools" data-page-tabs className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1">
       <Link href="/tools" className={cn("shrink-0 rounded-md px-3 py-1.5 text-sm", active === "hub" ? "bg-primary text-primary-foreground" : "hover:bg-muted")}>
         All tools
       </Link>

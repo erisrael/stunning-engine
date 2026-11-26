@@ -12,6 +12,7 @@ async function _GET(request: Request) {
   await (await import("@/server/chapa-hub")).scheduledChapa();
   await (await import("@/server/cms-metrics")).scheduledCmsMetrics();
   await (await import("@/server/cms-fields")).scheduledCmsMirror().catch((e) => console.error("Noor mirror failed", e));
+  await (await import("@/server/corr/delivery")).scheduledCorrespondence(new URL(request.url).origin).catch((e) => console.error("Correspondence checks failed", e));
   return Response.json({ ok: true, at: new Date().toISOString(), counts });
 }
 

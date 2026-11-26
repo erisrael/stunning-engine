@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { ArrowDownIcon, ArrowUpIcon, CopyIcon, FileDownIcon, ImageIcon, Loader2Icon, PlusIcon, SaveIcon, Trash2Icon } from "lucide-react";
+import { ArrowDownIcon, ArrowUpIcon, CopyIcon, FileDownIcon, FileUpIcon, ImageIcon, LayoutListIcon, Loader2Icon, PencilRulerIcon, PlayIcon, PlusIcon, SaveIcon, Trash2Icon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -14,8 +14,15 @@ import { exportPowerPoint } from "@/components/app/deck/pptx-export";
 import type { Slide, SlideBody } from "@/lib/deck";
 import type { DeckTemplate } from "@/lib/deck-templates";
 import { cn } from "@/lib/utils";
+import { DesignEditor } from "@/components/app/design/design-editor";
+import { DesignPresenter } from "@/components/app/design/presenter";
+import { deckToDesign } from "@/components/app/design/deck-design";
+import { importPptx } from "@/components/app/design/pptx-import";
+import { cleanDesign, type Design, type DesignOptions } from "@/lib/design";
+import { designGallery, type Brand } from "@/lib/design-templates";
 
-type Deck = { title: string; subtitle: string; template: string; slides: Slide[] };
+// free: the deck as free-design slides (the Canva-style editor), once someone switches to it.
+type Deck = { title: string; subtitle: string; template: string; slides: Slide[]; free?: Design | null; mode?: "layouts" | "free" };
 const KINDS: { kind: SlideBody["kind"]; label: string }[] = [
   { kind: "section", label: "Section title" },
   { kind: "bullets", label: "Bullet points" },
@@ -233,7 +240,9 @@ function SlideFields({ s, onChange }: { s: Slide; onChange: (s: Slide) => void }
   }
 }
 
-export function DecksClient({ files: initialFiles, templates, defaultTemplate, workspace }: { files: SavedFile[]; templates: DeckTemplate[]; defaultTemplate: string; workspace: string }) {
+export function DecksClient({ files: initialFiles, templates, defaultTemplate, workspace, design: designOpts = null, brand }: { files: SavedFile[]; templates: DeckTemplate[]; defaultTemplate: string; workspace: string; design?: DesignOptions | null; brand?: Brand }) {
+  const [presenting, setPresenting] = React.useState(false);
+  const importRef = React.useRef<HTMLInputElement>(null);
   const [files, setFiles] = React.useState(initialFiles);
   const [id, setId] = React.useState<string | null>(null);
   const [deck, setDeck] = React.useState<Deck | null>(null);
@@ -257,12 +266,44 @@ export function DecksClient({ files: initialFiles, templates, defaultTemplate, w
             if (!r.ok) return toast.error(r.error);
             const f = r.data as { id: string; data: Deck };
             setId(f.id);
-            setDeck({ title: f.data.title ?? "Presentation", subtitle: f.data.subtitle ?? "", template: f.data.template ?? defaultTemplate, slides: f.data.slides ?? [] });
+            setDeck({ title: f.data.title ?? "Presentation", subtitle: f.data.subtitle ?? "", template: f.data.template ?? defaultTemplate, slides: f.data.slides ?? [], free: f.data.free ? cleanDesign(f.data.free) : null, mode: f.data.free && designOpts ? (f.data.mode ?? "free") : "layouts" });
             setCur(0);
           }}
         />
         <div className="space-y-3">
-          <p className="text-sm font-medium">Start from</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-medium">Start from</p>
+            {designOpts && (
+              <>
+                <input
+                  ref={importRef}
+                  type="file"
+                  accept=".pptx"
+                  className="hidden"
+                  onChange={async (e) => {
+                    const f = e.target.files?.[0];
+                    e.target.value = "";
+                    if (!f) return;
+                    if (f.size > 40_000_000) return toast.error("Open a file under 40 MB.");
+                    try {
+                      const free = await importPptx(f);
+                      setId(null);
+                      setDeck({ title: f.name.replace(/\.pptx$/i, ""), subtitle: workspace, template: defaultTemplate, slides: [], free, mode: "free" });
+                      toast.success(`${free.pages.length} slides opened`);
+                    } catch {
+                      toast.error("This PowerPoint file could not be read.");
+                    }
+                  }}
+                />
+                <Button size="sm" variant="outline" className="ml-auto" onClick={() => importRef.current?.click()}>
+                  <FileUpIcon /> Open a PowerPoint (.pptx)
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => (setId(null), setDeck({ title: "Presentation", subtitle: workspace, template: defaultTemplate, slides: [], free: designGallery(brand ?? { company: workspace, primary: "#16a34a", accent: "#0f172a", hasLogo: true }).find((g) => g.key === "slide-title")!.design(), mode: "free" }))}>
+                  <PencilRulerIcon /> Blank free design
+                </Button>
+              </>
+            )}
+          </div>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {STARTERS.map((s) => (
               <button key={s.key} type="button" onClick={() => (setId(null), setDeck({ title: s.key === "blank" ? "Presentation" : s.label, subtitle: workspace, template: defaultTemplate, slides: s.slides() }), setCur(0))} className="rounded-lg border p-4 text-left hover:border-primary hover:bg-primary/5">
@@ -276,15 +317,28 @@ export function DecksClient({ files: initialFiles, templates, defaultTemplate, w
     );
 
   const s = deck.slides[cur];
+  const free = deck.mode === "free" && designOpts && deck.free;
+  const toFree = () => setDeck({ ...deck, free: deck.free ?? deckToDesign(deck, t), mode: "free" });
   return (
     <div className="space-y-3">
+      {presenting && deck.free && <DesignPresenter design={deck.free} onClose={() => setPresenting(false)} extras={{ logo: "/api/branding/logo" }} />}
       <div className="flex flex-wrap items-center gap-2">
         <Button variant="ghost" size="sm" onClick={() => setDeck(null)}>
           ← Decks
         </Button>
         <Input value={deck.title} onChange={(e) => setDeck({ ...deck, title: e.target.value })} className="w-60 font-medium" aria-label="Deck title" />
         <Input value={deck.subtitle} onChange={(e) => setDeck({ ...deck, subtitle: e.target.value })} className="w-60" placeholder="Subtitle" aria-label="Subtitle" />
-        <Select value={t.id} onValueChange={(v) => setDeck({ ...deck, template: v })}>
+        {designOpts && (
+          <div className="inline-flex rounded-md border p-0.5 text-sm" role="tablist" aria-label="Editing">
+            <button type="button" role="tab" aria-selected={!free} className={cn("inline-flex items-center gap-1 rounded px-2 py-1", !free && "bg-primary text-primary-foreground")} onClick={() => setDeck({ ...deck, mode: "layouts" })} disabled={!deck.slides.length && !!deck.free}>
+              <LayoutListIcon className="size-4" /> Layouts
+            </button>
+            <button type="button" role="tab" aria-selected={!!free} className={cn("inline-flex items-center gap-1 rounded px-2 py-1", free && "bg-primary text-primary-foreground")} onClick={toFree}>
+              <PencilRulerIcon className="size-4" /> Free design
+            </button>
+          </div>
+        )}
+        {!free && <Select value={t.id} onValueChange={(v) => setDeck({ ...deck, template: v })}>
           <SelectTrigger className="w-48" aria-label="Design">
             <SelectValue />
           </SelectTrigger>
@@ -295,14 +349,24 @@ export function DecksClient({ files: initialFiles, templates, defaultTemplate, w
               </SelectItem>
             ))}
           </SelectContent>
-        </Select>
+        </Select>}
         <div className="ml-auto flex gap-2">
+          {free && (
+            <>
+              <Button variant="outline" onClick={() => setPresenting(true)}>
+                <PlayIcon /> Present
+              </Button>
+              <Button variant="ghost" onClick={() => confirm("Rebuild the free design from the layout slides? Changes in the free design are replaced.") && setDeck({ ...deck, free: deckToDesign(deck, t) })} disabled={!deck.slides.length}>
+                Rebuild from layouts
+              </Button>
+            </>
+          )}
           <Button
             variant="outline"
             disabled={busy === "save"}
             onClick={async () => {
               setBusy("save");
-              const r = await saveFileAction("deck", { id: id ?? undefined, title: deck.title, data: deck });
+              const r = await saveFileAction("deck", { id: id ?? undefined, title: deck.title, data: { ...deck, free: deck.free ? cleanDesign(deck.free) : null } });
               setBusy(null);
               if (!r.ok) return toast.error(r.error);
               const nid = r.data as string;
@@ -313,7 +377,7 @@ export function DecksClient({ files: initialFiles, templates, defaultTemplate, w
           >
             <SaveIcon /> Save
           </Button>
-          <Button
+          {!free && <Button
             disabled={busy === "pptx" || !deck.slides.length}
             onClick={async () => {
               setBusy("pptx");
@@ -326,9 +390,20 @@ export function DecksClient({ files: initialFiles, templates, defaultTemplate, w
             }}
           >
             {busy === "pptx" ? <Loader2Icon className="animate-spin" /> : <FileDownIcon />} PowerPoint (.pptx)
-          </Button>
+          </Button>}
         </div>
       </div>
+      {free ? (
+        <DesignEditor
+          design={deck.free!}
+          onChange={(d) => setDeck({ ...deck, free: d })}
+          options={{ ...designOpts!, allowModeSwitch: true }}
+          templates={designGallery(brand ?? { company: workspace, primary: t.colors.primary, accent: t.colors.text, hasLogo: true }).filter((g) => g.key.startsWith("slide") || g.key === "post")}
+          title={deck.title}
+          notes
+          extras={{ logo: "/api/branding/logo" }}
+        />
+      ) : (
       <div className="grid gap-4 lg:grid-cols-[13rem_minmax(0,1fr)]">
         <ol className="max-h-[70vh] space-y-2 overflow-auto pr-1">
           <li>
@@ -394,6 +469,7 @@ export function DecksClient({ files: initialFiles, templates, defaultTemplate, w
           )}
         </div>
       </div>
+      )}
     </div>
   );
 }

@@ -69,7 +69,7 @@ async function main() {
   // --- Tools access, set by Admin ---
   check("everyone gets the six apps by default", (await toolsFor(sales)).apps.length === 6);
   const cfg = await toolsConfig();
-  await saveToolsAccess(admin, { enabled: true, apps: { ...cfg.apps, letters: { on: true, roles: ["operations"] } }, features: cfg.features });
+  await saveToolsAccess(admin, { enabled: true, apps: { ...cfg.apps, letters: { on: true, roles: ["operations"], users: [], blocked: [] } }, features: cfg.features });
   check("an app limited to a role is hidden from others", !(await toolsFor(sales)).apps.some((a) => a.key === "letters") && (await toolsFor(ops)).apps.some((a) => a.key === "letters"));
   check("Admin always has every app", (await toolsFor(admin)).apps.length === 6);
   check("someone without the app cannot use it", !!(await throws(() => D.listFiles(sales, "letter"))));
@@ -126,7 +126,7 @@ async function main() {
   check("a new link stops the old one", (await D.icsForToken(token, "https://ops.example")) === null && !!(await D.icsForToken(token2, "https://ops.example")));
   await run("UPDATE tool_calendar_tokens SET expires_at = ? WHERE user_id = ?", new Date(Date.now() - 1000).toISOString(), sales.id);
   check("an expired link gives nothing", (await D.icsForToken(token2, "https://ops.example")) === null);
-  await saveToolsAccess(admin, { enabled: true, apps: cfg.apps, features: { ...cfg.features, ics: { on: false, roles: [] } } });
+  await saveToolsAccess(admin, { enabled: true, apps: cfg.apps, features: { ...cfg.features, ics: { on: false, roles: [], users: [], blocked: [] } } });
   const token3 = await D.regenerateCalendarFeed(admin);
   check("the feed stops for people Admin switched it off for", (await D.icsForToken(token3, "https://ops.example")) !== null && !!(await throws(() => D.regenerateCalendarFeed(sales))));
   await saveToolsAccess(admin, { enabled: true, apps: cfg.apps, features: cfg.features });
@@ -155,7 +155,7 @@ async function main() {
   check("an old refresh token used again withdraws everything", !!(await throws(() => O.tokenEndpoint(form({ grant_type: "refresh_token", refresh_token: t2.refresh_token, client_id: reg.client_id }), null))) && (await O.bearerUser(req(t3.access_token), "mcp")) === null);
   const code3 = await O.issueCode(sales, { clientId: reg.client_id, redirectUri: cb, codeChallenge: challenge, method: "S256", scope: "tools", resource: null });
   const t4 = await O.tokenEndpoint(form({ grant_type: "authorization_code", code: code3, client_id: reg.client_id, code_verifier: verifier }), null);
-  await saveToolsAccess(admin, { enabled: true, apps: cfg.apps, features: { ...cfg.features, mcp: { on: false, roles: [] } } });
+  await saveToolsAccess(admin, { enabled: true, apps: cfg.apps, features: { ...cfg.features, mcp: { on: false, roles: [], users: [], blocked: [] } } });
   check("a token stops working when Admin switches the connection off", (await O.bearerUser(req(t4.access_token), "mcp")) === null);
   await saveToolsAccess(admin, { enabled: true, apps: cfg.apps, features: cfg.features });
   check("…and works again when it is back on", (await O.bearerUser(req(t4.access_token), "mcp"))?.id === sales.id);

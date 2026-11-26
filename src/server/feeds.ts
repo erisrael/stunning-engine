@@ -18,6 +18,7 @@ export const DATASETS = {
   leave: { label: "HR: approved and requested leave", needs: "hr.access" },
   scorecards: { label: "Performance: closed months' scorecards, by person and KPI", needs: "perf.view_company" },
   okrs: { label: "Performance: objectives and key results", needs: "perf.view_company" },
+  correspondence: { label: "Correspondence: letters, drafts, incoming mail and verification (the key's owner's rights)", needs: "corr.create" },
 } as const;
 export type Dataset = keyof typeof DATASETS;
 export const isDataset = (k: string): k is Dataset => k in DATASETS;
@@ -136,6 +137,17 @@ export async function datasetRows(user: AppUser, dataset: Dataset): Promise<Row[
       return all<Row>(
         "SELECT e.code, e.full_name AS name, e.department, r.type_key AS leave_type, r.start_date, r.end_date, r.days, r.status, r.created_at FROM leave_requests r JOIN employees e ON e.id = r.employee_id ORDER BY r.start_date DESC",
       );
+    case "correspondence": {
+      // The registry as the key's owner may see it (restricted letters only with setup or audit rights).
+      const { visibleSql } = await import("./corr/core");
+      const v = visibleSql(user, "d");
+      return all<Row>(
+        `SELECT d.ref_number AS reference, d.id AS document_id, d.direction, d.status, c.name AS category, d.subject, d.classification, d.department, d.issued_at, d.dispatched_at, d.delivered_at, d.due_at,
+           (SELECT STRING_AGG(COALESCE(r.organisation, r.name), '; ') FROM corr_recipients r WHERE r.document_id = d.id AND r.kind = 'to') AS recipients
+         FROM corr_documents d LEFT JOIN corr_categories c ON c.id = d.category_id WHERE ${v.sql} ORDER BY d.updated_at DESC LIMIT 5000`,
+        ...v.params,
+      );
+    }
   }
 }
 
