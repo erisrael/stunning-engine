@@ -66,6 +66,7 @@ import { CompassIcon,
   PhoneCallIcon,
   ChevronDownIcon,
   ChevronRightIcon,
+  ClapperboardIcon,
   CalendarDaysIcon,
   LaptopIcon,
   AlertTriangleIcon,
@@ -390,6 +391,36 @@ export function AppSidebar({
       : undefined;
   // Settings' pages, one list for every role (it was written out twice).
   const settingsSub = [{ label: "Curriculum", href: "/settings" }, { label: "Workflow", href: "/settings?tab=workflow" }, { label: "Teams", href: "/settings?tab=teams" }, { label: "Destinations", href: "/settings?tab=destinations" }, { label: "Calendar and alerts", href: "/settings?tab=calendar" }, { label: "Lists", href: "/settings?tab=lists" }, { label: "Workspace", href: "/settings?tab=workspace" }, { label: "Calls", href: "/settings?tab=calls" }];
+  // Production as one department: its pages (each only for those allowed to open it) are the tab bar on the page.
+  const viewLabel = (h: string) => (h === "/content" ? "List" : h === "/sheet" ? "Sheet" : h === "/pipeline" ? "Board" : "Calendar");
+  const productionSub: { label: string; href: string; keepFilters?: boolean }[] = [
+    ...(has("nav.overview") || overviewTeam ? [{ label: overviewTeam && !has("nav.overview") ? "Team overview" : "Overview", href: "/overview", keepFilters: true }] : []),
+    ...views.map((v) => ({ label: viewLabel(v.href), href: v.href, keepFilters: true })),
+    ...(has("nav.handovers") ? [{ label: "Handovers", href: "/handovers" }] : []),
+    ...(studioBooking !== "off" && (sessionsManager || has("items.plan") || has("team.view") || has("sessions.view") || has("sessions.book") || activeRole === "recording") ? [{ label: "Studio sessions", href: "/sessions" }] : []),
+    ...(has("items.plan") || has("hr.access") || has("finance.access") || has("presenters.view") || has("presenters.register") || has("presenters.assign") || ((["recording", "editing", "uploading"] as Role[]).includes(activeRole) && lead) ? [{ label: "Presenters", href: "/presenters" }] : []),
+    ...(legacy && (has("items.plan") || has("import.run") || has("data.manage") || activeRole === "recording") ? [{ label: "Legacy catalog", href: "/legacy" }] : []),
+    ...(lead || has("curriculum.manage") ? [{ label: "Curriculum", href: "/curriculum" }] : []),
+    ...(has("nav.coverage") ? [{ label: "Coverage", href: "/coverage", keepFilters: true }] : []),
+    ...(has("reports.view") ? [{ label: "Reports", href: "/reports", keepFilters: true }] : []),
+    ...(lead && has("team.view") ? [{ label: "Team", href: "/team" }] : []),
+    ...(has("checklists.manage") ? [{ label: "Checklists", href: "/checklists" }] : []),
+    ...(has("assign.bulk") ? [{ label: "Assign work", href: "/assign" }] : []),
+  ];
+  const productionItem: NavItem | null = productionSub.length
+    ? {
+        id: "production",
+        href: productionSub[0]!.href,
+        label: "Production",
+        icon: ClapperboardIcon,
+        gather: true,
+        keepFilters: productionSub[0]!.keepFilters,
+        badge: counts.incoming + (lead && has("corrections.approve") ? counts.corrections : 0),
+        // Pages under these count as being in Production too (the handover pages, an item's pages under a view).
+        also: [...productionSub.map((x) => x.href.split("?")[0]!), "/handovers/rejected", "/handovers/report"],
+        sub: productionSub,
+      }
+    : null;
   const groups: { label: string; items: NavItem[] }[] = [
     {
       label: "My space",
@@ -409,33 +440,17 @@ export function AppSidebar({
         ...(approver || counts.approvals > 0 ? [{ href: "/approvals", label: "Approvals", icon: CheckCheckIcon, badge: counts.approvals }] : []),
         ...(!lead && !home ? [{ href: "/team", label: "My effort", icon: UsersIcon, cap: "nav.team" as Capability }] : []),
         { href: "/questions", label: "Questions", icon: MessageCircleQuestionIcon, badge: counts.questions, cap: "nav.questions" },
+        ...(counts.mailbox ? [{ href: "/email", label: "Email", icon: MailIcon, badge: counts.mail ?? 0, sub: emailSub }] : [{ href: "/email", label: "Email", icon: MailIcon, cap: ["email.send", "email.manage"] as Capability[], sub: emailSub }]),
         ...(home ? [{ href: "/people", label: "People", icon: UsersRoundIcon }] : []),
       ],
     },
     ...(home ? homeGroups(home, viewerId) : []),
-    {
-      label: "Workflow",
-      items: [
-        ...(has("nav.overview") || overviewTeam ? [{ href: "/overview", label: overviewTeam && !has("nav.overview") ? "Team overview" : "Overview", icon: ListTreeIcon, keepFilters: true }] : []),
-        ...(views.length
-          ? [{ id: "views", href: views[0]!.href, label: "Work views", icon: LayersIcon, keepFilters: true, also: views.map((v) => v.href), badge: counts.myWork, gather:true, sub:views.map(v=>({href:v.href,label:v.href==="/content"?"List":v.href==="/sheet"?"Sheet":v.href==="/pipeline"?"Board":"Calendar",keepFilters:true})) }]
-          : []),
-        { href: "/handovers", label: "Handovers", icon: PackageCheckIcon, badge: counts.incoming, cap: "nav.handovers", sub: [{ label: "Handovers", href: "/handovers" }, { label: "Rejected", href: "/handovers/rejected" }, { label: "Report", href: "/handovers/report" }] },
-        ...(studioBooking !== "off" && (sessionsManager || has("items.plan") || has("team.view") || has("sessions.view") || has("sessions.book") || activeRole === "recording") ? [{ href: "/sessions", label: "Studio sessions", icon: VideoIcon }] : []),
-        ...(has("items.plan") || has("hr.access") || has("finance.access") || has("presenters.view") || has("presenters.register") || has("presenters.assign") || ((["recording", "editing", "uploading"] as Role[]).includes(activeRole) && lead)
-          ? [{ href: "/presenters", label: "Presenters", icon: MicIcon, sub: has("hr.access") || has("finance.access") ? [{ label: "Presenters", href: "/presenters" }, { label: "Fees", href: "/presenters?tab=fees" }] : undefined }]
-          : []),
-        ...(legacy && (has("items.plan") || has("import.run") || has("data.manage") || activeRole === "recording") ? [{ href: "/legacy", label: "Legacy catalog", icon: FilmIcon }] : []),
-        ...(lead || has("curriculum.manage") ? [{ href: "/curriculum", label: "Curriculum", icon: ListChecksIcon, sub: [{ label: "Fix", href: "/curriculum" }, { label: "Browse and edit", href: "/curriculum?tab=browse" }, { label: "Auto-assign", href: "/curriculum?tab=auto" }, { label: "Changes", href: "/curriculum?tab=changes" }] }] : []),
-        { href: "/coverage", label: "Coverage", icon: GridIcon, keepFilters: true, cap: "nav.coverage" },
-        { href: "/reports", label: "Reports", icon: ChartColumnIcon, keepFilters: true, cap: "reports.view" },
-        ...(lead ? [{ href: "/team", label: "Team", icon: UsersIcon, badge: has("corrections.approve") ? counts.corrections : 0, cap: "team.view" as Capability }] : []),
-        ...(counts.mailbox ? [{ href: "/email", label: "Email", icon: MailIcon, badge: counts.mail ?? 0, sub: emailSub }] : [{ href: "/email", label: "Email", icon: MailIcon, cap: ["email.send", "email.manage"] as Capability[], sub: emailSub }]),
-      ],
-    },
+    // A person with their own department sidebar keeps Production as one entry (its heading is left out).
+    ...(home && productionItem ? [{ label: "Production", items: [productionItem] }] : []),
     {
       label: "Departments",
       items: [
+        ...(productionItem ? [productionItem] : []),
         { href: "/company", label: "Company overview", icon: Building2Icon, cap: "company.view" },
         { href: "/present", label: "Company presentation", icon: PresentationIcon, cap: "company.view" },
         { href: "/dev", label: "Dev team", icon: CodeIcon, cap: ["dev.access", "owners.view"], sub: deptViews("/dev", [{ label: "Sprint", view: "sprint" }, { label: "Repositories", view: "repos" }, { label: "Roadmap", view: "roadmap" }, { label: "Specs and docs", view: "docs" }, { label: "Releases and quality", view: "tools" }], has("users.manage")) },
@@ -503,8 +518,6 @@ export function AppSidebar({
       label: "Manage",
       items: [
         { href: "/items/new", label: "New item", icon: FilePlus2Icon, cap: "items.create" },
-        { href: "/assign", label: "Assign work", icon: UserPlusIcon, cap: "assign.bulk" },
-        { href: "/checklists", label: "Checklists", icon: ListChecksIcon, cap: "checklists.manage" },
         { href: "/import-export", label: "Import and export", icon: ArrowLeftRightIcon, cap: ["import.run", "import.stage", "import.tracker", "export.run", "export.report", "export.tracker", "export.audit"] },
         { href: "/settings", label: "Settings", icon: SettingsIcon, cap: "settings.manage", sub: settingsSub },
         // View as is one of Admin's pages (adminSub), not a second entry.
@@ -568,34 +581,6 @@ export function AppSidebar({
           { href: "/admin/data", label: "Data manager", icon: DatabaseIcon, cap: "data.manage" },
           { href: "/import-export", label: "Import and export", icon: ArrowLeftRightIcon, cap: ["import.run", "import.stage", "import.tracker", "export.run", "export.report", "export.tracker", "export.audit"] },
           { href: "/audit", label: "Audit log", icon: ShieldCheckIcon, cap: ["users.manage", "items.plan"] },
-        ],
-      },
-      {
-        label: "Production",
-        items: [
-          {
-            href: "/overview",
-            label: "Production",
-            icon: ListTreeIcon,
-            cap: "nav.overview",
-            gather: true,
-            sub: [
-              { label: "Overview", href: "/overview" },
-              ...views.map((v) => ({ label: v.href === "/content" ? "List" : v.href === "/sheet" ? "Sheet" : v.href === "/pipeline" ? "Board" : "Calendar", href: v.href, keepFilters:true })),
-              { label: "Handovers", href: "/handovers" },
-              { label: "Rejected", href: "/handovers/rejected" },
-              { label: "Handover report", href: "/handovers/report" },
-              ...(studioBooking !== "off" ? [{ label: "Studio sessions", href: "/sessions" }] : []),
-              { label: "Presenters", href: "/presenters" },
-              ...(legacy ? [{ label: "Legacy catalog", href: "/legacy" }] : []),
-              ...(lead || has("curriculum.manage") ? [{ label: "Curriculum", href: "/curriculum" }] : []),
-              { label: "Coverage", href: "/coverage" },
-              { label: "Reports", href: "/reports" },
-              { label: "Team", href: "/team" },
-              { label: "Checklists", href: "/checklists" },
-              { label: "Assign work", href: "/assign" },
-            ],
-          },
         ],
       },
       { ...dept, items: dept.items.filter((i) => !["/people", "/requests"].includes(i.href)) },

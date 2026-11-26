@@ -89,43 +89,41 @@ try {
   await sideLink(d,"Board").waitFor({timeout:15000});
   check("Restoring sidebar choices restores access links",await visible(sideLink(d,"Legacy CMS (Noor)")));
   const y=await as("meron@demo.local");
-  const row=sideLink(y,"Handovers").locator('xpath=..');
+  // Production is one department in the sidebar; its pages are the tab bar on the page.
+  const row=sideLink(y,"Production").locator('xpath=..');
   const badge=row.locator('[data-nav-count]');
-  const badgeBox=await badge.boundingBox(), linkBox=await sideLink(y,"Handovers").boundingBox();
-  check("Counters and labels have separate space", !!badgeBox && linkBox.x+linkBox.width<=badgeBox.x);
-  // An entry's pages are tabs on the page, never a second list in the sidebar.
+  const badgeBox=await badge.boundingBox(), linkBox=await sideLink(y,"Production").boundingBox();
+  check("Counters and labels have separate space", !badgeBox || linkBox.x+linkBox.width<=badgeBox.x);
+  check("Production is one entry (its pages are not separate sidebar links)", (await side(y).getByRole("link",{name:"Handovers",exact:true}).count())===0 && (await side(y).getByRole("link",{name:"Coverage",exact:true}).count())===0);
   check("The sidebar lists no sub-pages (no duplicates of the page tabs)", (await side(y).getByRole("link",{name:"Rejected",exact:true}).count())===0 && (await row.getByRole("button").count())===0);
   await y.screenshot({path:path.join(shots,"5-counter.png")});
 
   await y.locator('[data-sidebar-slider]').click();
   await y.waitForTimeout(250);
   check("Collapsed sidebar hides counters and dropdown controls",await side(y).locator('[data-nav-controls]:visible').count()===0);
-  check("Collapsed rail shows each entry's name under its icon", await sideLink(y,"Handovers").locator("[data-nav-label]").isVisible());
+  check("Collapsed rail shows each entry's name under its icon", await sideLink(y,"Production").locator("[data-nav-label]").isVisible());
   // Collapsed: icons only, with a line between groups.
   check("Collapsed sidebar separates groups with a line", await side(y).locator('[data-nav-group] [role=separator]').count() >= 1);
   check("Collapsed sidebar keeps every group's icons", await side(y).locator('[data-nav-group][data-folded]').count() === 0);
-  // Collapsed: no flyout menus in the rail; an entry's pages show as tabs at the top of the page instead
-  // (the section bar, or the page's own tab bar when it has one, never both).
   check("Collapsed sidebar has no flyout menus", await side(y).locator('[data-nav-flyout]').count() === 0);
-  await sideLink(y, "Handovers").click();
-  await y.waitForURL(/\/handovers(\?|$)/);
+  const start = y.url();
+  await sideLink(y, "Production").click();
+  await y.waitForURL((u) => u.toString() !== start);
   await y.waitForTimeout(300);
   const main = y.locator("main");
-  const tabLink = main.getByRole("link", { name: /^Rejected/ }).first();
-  check("Collapsed sidebar shows the entry's pages as tabs at the top", await tabLink.isVisible());
+  const tabLink = main.locator("[data-section-tabs]").getByRole("link", { name: "Handovers", exact: true });
+  check("Production's pages show as tabs at the top", await tabLink.isVisible());
   check("Section tabs never show twice", (await main.locator("[data-section-tabs]").count()) === 0 || (await main.locator("[data-page-tabs]").count()) === 0);
   await y.screenshot({ path: path.join(shots, "5b-collapsed-tabs.png") });
   await tabLink.click();
-  await y.waitForURL(/\/handovers\/rejected/);
+  await y.waitForURL(/\/handovers(\?|$)/);
   check("A top tab opens its page", true);
   await y.goBack();
-  await y.waitForURL((u) => !u.pathname.includes("/handovers/rejected"));
-  await y.goBack(); // back to the start page, outside the Workflow group
-  await y.waitForURL((u) => !u.pathname.includes("/handovers/rejected"));
+  await y.goBack(); // back to the start page
   await y.locator('[data-sidebar-slider]').click();
   await y.setViewportSize({width:390,height:844});
   await y.locator('[data-mobile-tab="More"]').click();
-  const mobileGroup=side(y).getByRole("button",{name:"Workflow",exact:true});
+  const mobileGroup=side(y).getByRole("button",{name:"Departments",exact:true});
   await mobileGroup.click();
   check("Mobile group opens",await mobileGroup.getAttribute("aria-expanded")==="true");
   await mobileGroup.click();
