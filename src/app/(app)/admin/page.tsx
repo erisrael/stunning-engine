@@ -261,7 +261,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           </Link>
         )}
         {ADMIN_TAB_GROUPS.length > 1 && (
-          <div className="flex flex-wrap items-center gap-1.5 border-b border-border/60 pb-2.5">
+          <div className="flex flex-wrap items-center gap-1.5 border-b border-border/60 pb-2.5" data-page-tabs>
             {ADMIN_TAB_GROUPS.map((g) => {
               const isCurrent = g.key === currentGroup?.key;
               return (

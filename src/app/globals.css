@@ -549,3 +549,11 @@ html[data-helplinks="off"] [data-help-link] {
 @media (prefers-reduced-motion: reduce) {
   .global-progress-bar { animation: none; width: 70%; }
 }
+
+/* A tab row that repeats the sidebar's entries (marked by app-sidebar.tsx) hides while the sidebar is open on a
+   computer; collapsed to icons and on phones it shows, so every page stays one tap away. */
+@media (min-width: 1024px) {
+  [data-slot="sidebar"][data-state="expanded"] ~ [data-slot="sidebar-inset"] [data-sidebar-dupe] {
+    display: none !important;
+  }
+}

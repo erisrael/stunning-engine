@@ -723,28 +723,35 @@ export function AppSidebar({
   const visibleItems = groups.flatMap((g) => prune(g.items.filter((i) => allowed(i.cap))));
   const sectionItem = visibleItems.find((i) => i.sub && i.sub.some((s) => subActive(s.href))) ?? visibleItems.find((i) => i.sub && inSectionOf(i));
   const sectionKey = sectionItem ? JSON.stringify([sectionItem.label, sectionItem.sub, search]) : "";
-  // Does the page you are on draw these pages as its own tabs (Admin, Attendance, Email)? Then the sidebar keeps the
-  // section folded, so they never show twice; otherwise it opens the section you are in. No tab bar is added to pages.
-  // Pages known to draw their own tab bar (so nothing flashes open before the check below has run).
-  const ownTabsGuess = ["/admin", "/attendance", "/email", "/settings", "/finance/chapa", "/legacy-cms", "/curriculum", "/owners"].includes(pathname);
-  const pageKey = `${sectionKey}|${pathname}|${tabParam ?? ""}`;
-  const [detected, setDetected] = React.useState<{ key: string; value: boolean } | null>(null);
-  const pageTabs = detected?.key === pageKey ? detected.value : ownTabsGuess;
-  // Moving to another page folds what was opened by hand, so the rule above holds on every page.
+  // A tab row on the page that repeats the sidebar's entries (Admin's sections and their pages, Attendance, Email…) is
+  // marked data-sidebar-dupe; while the sidebar is open on a computer it is hidden (globals.css), so nothing shows twice.
+  // Collapsed to icons, and on phones (the sidebar is the More menu), those rows show again so every page stays reachable.
+  const norm = (href: string) => {
+    try {
+      const u = new URL(href, "https://x.local");
+      const t = u.searchParams.get("tab") ?? u.searchParams.get("view");
+      return u.pathname + (t ? `?${u.searchParams.has("tab") ? "tab" : "view"}=${t}` : "");
+    } catch {
+      return href;
+    }
+  };
+  const sidebarHrefs = visibleItems.flatMap((i) => [i.href, ...(i.sub ?? []).map((x) => x.href)]).map(norm);
+  const hrefKey = sidebarHrefs.join(" ");
+  // Moving to another page folds what was opened by hand; the section you are in opens by itself.
   React.useEffect(() => {
     setOpenGroups((o) => (o.some((k) => k.startsWith("item:") || k.startsWith("closed:")) ? o.filter((k) => !k.startsWith("item:") && !k.startsWith("closed:")) : o));
   }, [pathname, tabParam]);
   React.useLayoutEffect(() => {
-    const subs = sectionItem?.sub;
-    const main = document.querySelector("[data-app-main]") ?? document.querySelector("main");
-    const setPageTabs = (value: boolean) => setDetected((d) => (d?.key === pageKey && d.value === value ? d : { key: pageKey, value }));
-    if (!subs || subs.length < 2 || !main) return setPageTabs(false);
+    const main = document.querySelector("[data-app-main]");
+    if (!main) return;
+    const known = new Set(hrefKey.split(" "));
+    const labels = new Set((sectionItem?.sub ?? []).map((x) => x.label.toLowerCase()));
     const check = () => {
-      if (main.querySelector("[data-page-tabs]")) return setPageTabs(true);
-      const hrefs = new Set([...main.querySelectorAll<HTMLAnchorElement>("a[href]")].map((a) => (a.getAttribute("href") ?? "").split("&")[0]));
-      const names = new Set([...main.querySelectorAll<HTMLElement>('[role="tab"], [data-slot="tabs-trigger"]')].map((el) => (el.textContent ?? "").replace(/\s*\d+$/, "").trim().toLowerCase()));
-      const half = Math.ceil(subs.length / 2);
-      setPageTabs(subs.filter((x) => hrefs.has(x.href)).length >= half || subs.filter((x) => names.has(x.label.toLowerCase())).length >= half);
+      for (const row of main.querySelectorAll<HTMLElement>('[data-page-tabs], [role="tablist"], [data-slot="tabs-list"]')) {
+        const links = [...row.querySelectorAll<HTMLAnchorElement>("a[href]")].filter((a) => known.has(norm(a.getAttribute("href") ?? "")));
+        const tabs = [...row.querySelectorAll<HTMLElement>('[role="tab"], [data-slot="tabs-trigger"]')].filter((el) => labels.has((el.textContent ?? "").replace(/\s*\d+$/, "").trim().toLowerCase()));
+        row.toggleAttribute("data-sidebar-dupe", links.length >= 2 || tabs.length >= 2);
+      }
     };
     check();
     let frame = 0;
@@ -760,7 +767,7 @@ export function AppSidebar({
       if (frame) window.cancelAnimationFrame(frame);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sectionKey, pathname, tabParam]);
+  }, [sectionKey, hrefKey, pathname, tabParam]);
 
   return (
     <Sidebar collapsible="icon" variant="sidebar">
@@ -821,9 +828,9 @@ export function AppSidebar({
                     {items.map((item) => {
                       const active = isActive(item);
                       const inSection = inSectionOf(item);
-                      // The section you are in opens by itself, unless the page shows the same pages as its own tabs; the arrow
+                      // The section you are in opens by itself (its pages are not repeated as tabs on the page); the arrow
                       // opens or folds any section.
-                      const expanded = openGroups.includes(`item:${item.href}`) || (inSection && !pageTabs && !!sectionItem && keyOf(item) === keyOf(sectionItem) && !openGroups.includes(`closed:${item.href}`));
+                      const expanded = openGroups.includes(`item:${item.href}`) || (inSection && !openGroups.includes(`closed:${item.href}`));
                       const href = item.keepFilters ? item.href + scopeQueryString(search) : item.href;
                       const tip = NAV_TIPS[keyOf(item)] ?? NAV_TIPS[item.href.split("?")[0]!];
                       return (
