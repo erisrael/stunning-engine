@@ -7,7 +7,7 @@ import { effectiveStyle } from "@/lib/ui-styles";
 
 // Colour theme preset, accent colour, corner style, text size and colourful or plain icons. Stored per browser; applied
 // to <html> before paint. preset: "" follows the workspace's (Admin), "none" is plain Light or Dark.
-export type Appearance = { style: string; preset: string; accent: string; radius: string; text: string; icons: string; iconPack: string; iconWeight: string; motion: string; font: string; contrast: string; lite: string; lang: string; calendar: string; helpLinks: string; tips: string };
+export type Appearance = { style: string; preset: string; accent: string; radius: string; text: string; icons: string; iconPack: string; iconWeight: string; motion: string; font: string; contrast: string; lite: string; plain: string; lang: string; calendar: string; helpLinks: string; tips: string };
 
 export const FONTS = [
   { key: "app", label: "Jakarta (default)" },
@@ -34,7 +34,7 @@ export const ACCENTS = [
 ];
 
 const KEY = APPEARANCE_KEY;
-const DEFAULTS: Appearance = { style: "", preset: "", accent: "violet", radius: "default", text: "normal", icons: "colour", iconPack: "default", iconWeight: "regular", motion: "auto", font: "app", contrast: "normal", lite: "off", lang: "en", calendar: "", helpLinks: "on", tips: "on" };
+const DEFAULTS: Appearance = { style: "", preset: "", accent: "violet", radius: "default", text: "normal", icons: "colour", iconPack: "default", iconWeight: "regular", motion: "auto", font: "app", contrast: "normal", lite: "off", plain: "", lang: "en", calendar: "", helpLinks: "on", tips: "on" };
 
 export function readAppearance(): Appearance {
   try {
@@ -93,6 +93,14 @@ function apply(a: Appearance) {
   el.dataset.font = a.font;
   el.dataset.contrast = a.contrast;
   el.dataset.lite = a.lite;
+  // Simple look: the person's choice ("on" or "off"), else the workspace's (Admin, Configure whole system). Plain
+  // surfaces (the Classic style), no glass, no motion, no effects (globals.css).
+  const plain = a.plain === "on" || (a.plain !== "off" && el.dataset.plainDefault === "1");
+  if (plain) {
+    el.dataset.plain = "";
+    if (el.dataset.style) el.dataset.style = "classic";
+    el.dataset.motion = "off";
+  } else delete el.dataset.plain;
   el.dataset.lang = a.lang;
   el.dataset.helplinks = a.helpLinks;
   el.dataset.tips = a.tips;

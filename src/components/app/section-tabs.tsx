@@ -4,7 +4,6 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { useSidebar } from "@/components/ui/sidebar";
 
 // The sub-pages of the sidebar entry you are in. With the sidebar expanded they sit under the entry; with it
 // collapsed to icons, and on phones and tablets (where the sidebar is the More menu), they are a tab bar at the top
@@ -23,14 +22,14 @@ const subscribe = (l: () => void) => (listeners.add(l), () => void listeners.del
 const snapshot = () => current;
 
 export function CollapsedSectionTabs() {
-  const { state, isMobile } = useSidebar();
   const section = React.useSyncExternalStore(subscribe, snapshot, () => null);
   const pathname = usePathname();
   const search = useSearchParams().toString();
   const ref = React.useRef<HTMLDivElement>(null);
   // A page that draws its own tab bar keeps it; the section bar then stays away so tabs never show twice.
   const [pageHasTabs, setPageHasTabs] = React.useState(false);
-  const possible = (state === "collapsed" || isMobile) && !!section && section.tabs.length > 1;
+  // Always, when the page has no tab bar of its own: the sidebar keeps a section's pages folded (app-sidebar.tsx).
+  const possible = !!section && section.tabs.length > 1;
   React.useEffect(() => {
     const main = ref.current?.closest("main");
     // Watching the page costs time on every change: only while the bar could show.
@@ -45,7 +44,14 @@ export function CollapsedSectionTabs() {
           .filter((a) => !a.closest("[data-section-tabs]"))
           .map((a) => a.getAttribute("href")!),
       );
-      setPageHasTabs(tabs.filter((t) => own.has(t.href)).length >= Math.ceil(tabs.length / 2));
+      if (tabs.filter((t) => own.has(t.href)).length >= Math.ceil(tabs.length / 2)) return setPageHasTabs(true);
+      // Or its own tabs are buttons (a tab list) with most of the same names.
+      const names = new Set(
+        [...main.querySelectorAll<HTMLElement>('[role="tab"], [data-slot="tabs-trigger"]')]
+          .filter((el) => !el.closest("[data-section-tabs]"))
+          .map((el) => (el.textContent ?? "").replace(/\s*\d+$/, "").trim().toLowerCase()),
+      );
+      setPageHasTabs(tabs.filter((t) => names.has(t.label.toLowerCase())).length >= Math.ceil(tabs.length / 2));
     };
     check();
     // Batched: a busy page (a long table re-rendering) checks once per frame at most.

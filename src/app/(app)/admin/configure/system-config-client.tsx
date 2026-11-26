@@ -51,6 +51,7 @@ export function SystemConfigClient({ value, packs }: { value: SystemConfig; pack
     motionDefault: value.motionDefault,
     cinematicAllowed: value.cinematicAllowed,
     iconPack: value.iconPack,
+    plainDefault: value.plainDefault,
   };
   const [f, setF] = React.useState(start);
   const [logo, setLogo] = React.useState<string | null | undefined>(undefined);
@@ -67,6 +68,7 @@ export function SystemConfigClient({ value, packs }: { value: SystemConfig; pack
     motionDefault: "Motion for everyone",
     cinematicAllowed: "People may switch cinematic on",
     iconPack: "Icon pack for everyone",
+    plainDefault: "Simple look for everyone",
   };
   const show = (k: string, v: unknown) =>
     k === "motionDefault" ? (MOTION.find((m) => m.value === v)?.label ?? String(v)) : k === "iconPack" ? (packs.find((p) => p.value === v)?.label ?? String(v)) : typeof v === "boolean" ? (v ? "Yes" : "No") : String(v || "(empty)");
@@ -207,6 +209,13 @@ export function SystemConfigClient({ value, packs }: { value: SystemConfig; pack
                 aria-label="Allow the cinematic mode"
               />
               Allow the cinematic mode (people can switch it on for themselves)
+            </label>
+            <label className="flex items-start gap-2 text-sm" data-plain-default>
+              <Switch checked={f.plainDefault} onCheckedChange={(v) => setF({ ...f, plainDefault: v })} aria-label="Simple look for everyone" className="mt-0.5" />
+              <span>
+                Simple look for everyone
+                <span className="block text-xs text-muted-foreground">Plain and calm: no glass, blur, animations or effects, and lighter on slow phones and connections. Each person can still turn it on or off for themselves (Settings, Appearance).</span>
+              </span>
             </label>
           </CardContent>
         </Card>

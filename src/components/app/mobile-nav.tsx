@@ -134,7 +134,7 @@ function useRefraction(ref: React.RefObject<HTMLElement | null>) {
     const root = document.documentElement;
     const chromium = !!(navigator as Navigator & { userAgentData?: { brands?: { brand: string }[] } }).userAgentData?.brands?.some((b) => /Chromium/.test(b.brand));
     // Not in Lite mode, with Reduce Transparency, or on low-power phones and the Android app (redrawn on every scroll frame).
-    const calm = () => root.dataset.lite === "on" || "lowPower" in root.dataset || window.matchMedia("(prefers-reduced-transparency: reduce)").matches;
+    const calm = () => root.dataset.lite === "on" || "lowPower" in root.dataset || "plain" in root.dataset || window.matchMedia("(prefers-reduced-transparency: reduce)").matches;
     if (!el || !chromium || calm()) return;
     const draw = () => {
       const { width, height } = el.getBoundingClientRect();

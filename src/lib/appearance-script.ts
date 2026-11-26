@@ -8,7 +8,7 @@ const KEY = APPEARANCE_KEY;
 
 // def: the workspace's preset (Admin), used when the person has not chosen. ui: the workspace's UI style and the
 // styles people may pick (empty: all); the person's own style applies when allowed.
-export function appearanceScript(def: string, ui: { style?: string; allowed?: string[]; motion?: string; cinematic?: boolean; iconPack?: string } = {}) {
+export function appearanceScript(def: string, ui: { style?: string; allowed?: string[]; motion?: string; cinematic?: boolean; iconPack?: string; plain?: boolean } = {}) {
   const modes = JSON.stringify(Object.fromEntries(THEME_PRESETS.map((p) => [p.key, p.mode])));
   const free = JSON.stringify(PRESET_FREE_PATHS);
   const preset = `var M=${modes},F=${free},w=${JSON.stringify(isPreset(def) ? def : "")};d.dataset.presetDefault=w;var p=a.preset||w;if(M[p]&&!F.some(function(x){return location.pathname.indexOf(x)===0})){d.dataset.preset=p;d.dataset.mode=M[p];}`;
@@ -19,7 +19,9 @@ export function appearanceScript(def: string, ui: { style?: string; allowed?: st
   const md = ["off", "subtle", "cinematic"].includes(ui.motion ?? "") ? ui.motion! : "subtle";
   const ip = /^[a-z]{2,12}$/.test(ui.iconPack ?? "") ? ui.iconPack! : "lucide";
   const motion = `d.dataset.motionDefault=${JSON.stringify(md)};d.dataset.motionAllowed=${ui.cinematic === false ? '"0"' : '"1"'};d.dataset.iconPackDefault=${JSON.stringify(ip)};var mo=a.motion&&a.motion!=="auto"?a.motion:${JSON.stringify(md)};if(mo==="cinematic"&&d.dataset.motionAllowed==="0")mo="subtle";d.dataset.motion=mo;`;
-  return `try{var a=JSON.parse(localStorage.getItem("${KEY}")||"{}");var d=document.documentElement;${preset}${style}${motion}` + BODY;
+  // Simple look (the person's choice, else the workspace's): plain surfaces, no motion (globals.css).
+  const plain = `d.dataset.plainDefault=${ui.plain ? '"1"' : '""'};if(a.plain==="on"||(a.plain!=="off"&&d.dataset.plainDefault==="1")){d.dataset.plain="";if(d.dataset.style)d.dataset.style="classic";d.dataset.motion="off";}`;
+  return `try{var a=JSON.parse(localStorage.getItem("${KEY}")||"{}");var d=document.documentElement;${preset}${style}${motion}${plain}` + BODY;
 }
 // Low power (the Android app, phones with 4 GB or less): glass without live blur or refraction (glass.css), the
 // costliest drawing while scrolling. The person's Lite setting still turns off the rest.

@@ -16,7 +16,6 @@ import { THEME_PRESETS } from "@/lib/themes";
 import { UI_STYLES } from "@/lib/ui-styles";
 import { FunLauncher } from "@/components/app/fun/fun-mode";
 import { Button } from "@/components/ui/button";
-import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
@@ -179,7 +178,7 @@ export function Topbar({ user, activeRole, unread, chatUnread, qrScan, fun = fal
 
   return (
     <header data-topbar className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b bg-background/85 px-3 backdrop-blur supports-[backdrop-filter]:bg-background/70 sm:px-4 no-print">
-      <Hint tip={NAV_TIPS["top.sidebar"]}><SidebarTrigger className="-ml-1 max-md:hidden" /></Hint>
+      {/* The sidebar opens and closes from its own button, at the bottom of the sidebar (app-sidebar.tsx). */}
       {/* Phones: the page's name, like an app's navigation bar (the menu is the More tab). */}
       <span className="min-w-0 flex-1 truncate text-[17px] font-semibold tracking-tight md:hidden" data-mobile-title>
         {phoneTitle}

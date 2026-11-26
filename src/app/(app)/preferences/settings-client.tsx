@@ -175,6 +175,17 @@ export function PersonalSettings({ muted, emailed, geofence, assistant }: { mute
         />
         <Choice id="font" label="Font" value={look.font} onChange={(v) => setLook({ font: v })} options={FONTS.map((f) => ({ value: f.key, label: f.label }))} />
         <Choice id="text" label="Text size" value={look.text} onChange={(v) => setLook({ text: v })} options={[{ value: "small", label: "Small" }, { value: "normal", label: "Normal" }, { value: "large", label: "Large" }]} />
+        <Choice
+          id="plain"
+          label="Simple look"
+          value={look.plain || "auto"}
+          onChange={(v) => setLook({ plain: v === "auto" ? "" : v })}
+          options={[
+            { value: "auto", label: "Workspace default" },
+            { value: "on", label: "On: plain and calm, no glass, animations or effects" },
+            { value: "off", label: "Off: the full look" },
+          ]}
+        />
         <Choice id="contrast" label="Contrast" value={look.contrast} onChange={(v) => setLook({ contrast: v })} options={[{ value: "normal", label: "Normal" }, { value: "high", label: "High contrast" }]} />
         <Choice id="radius" label="Corners" value={look.radius} onChange={(v) => setLook({ radius: v })} options={[{ value: "sharp", label: "Sharp" }, { value: "default", label: "Default" }, { value: "round", label: "Rounded" }]} />
         <Choice id="icons" label="Icons" value={look.icons} onChange={(v) => setLook({ icons: v })} options={[{ value: "colour", label: "Colourful" }, { value: "plain", label: "One colour" }]} />

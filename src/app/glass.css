@@ -534,25 +534,42 @@
    The Android app and phones with 4 GB or less (appearance-script.ts sets data-low-power): the same glass look, but
    nothing blurs what is behind it live. Blur on the fixed tab bar, the sticky top bar and open menus is redrawn on
    every frame while the page scrolls, which made those phones lag. Surfaces are a little more opaque instead. */
-:root[data-low-power] :is(.glass, header[data-topbar], [data-slot="sidebar"][data-mobile="true"], [data-slot="dialog-content"], [data-slot="alert-dialog-content"], [data-slot="sheet-content"], [data-slot="popover-content"], [data-slot="dropdown-menu-content"], [data-slot="select-content"], [data-slot="context-menu-content"]),
-:root[data-low-power] :is(header[data-topbar], [data-slot="sidebar"][data-mobile="true"], [data-slot="sidebar-inner"], [data-slot="popover-content"], [data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"], [data-slot="select-content"], [data-slot="context-menu-content"], [data-slot="hover-card-content"])::before {
+:root:is([data-low-power], [data-plain]) :is(.glass, header[data-topbar], [data-slot="sidebar"][data-mobile="true"], [data-slot="dialog-content"], [data-slot="alert-dialog-content"], [data-slot="sheet-content"], [data-slot="popover-content"], [data-slot="dropdown-menu-content"], [data-slot="select-content"], [data-slot="context-menu-content"]),
+:root:is([data-low-power], [data-plain]) :is(header[data-topbar], [data-slot="sidebar"][data-mobile="true"], [data-slot="sidebar-inner"], [data-slot="popover-content"], [data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"], [data-slot="select-content"], [data-slot="context-menu-content"], [data-slot="hover-card-content"])::before {
   -webkit-backdrop-filter: none !important;
   backdrop-filter: none !important;
 }
-:root[data-low-power] .glass {
+:root:is([data-low-power], [data-plain]) .glass {
   background: color-mix(in oklab, var(--glass-solid) 94%, transparent);
 }
-:root[data-low-power] {
+:root:is([data-low-power], [data-plain]) {
   --glass-tint: rgb(255 255 255 / 0.9);
   --glass-tint-strong: rgb(250 250 252 / 0.96);
 }
-:root.dark[data-low-power] {
+:root.dark:is([data-low-power], [data-plain]) {
   --glass-tint: rgb(44 44 48 / 0.9);
   --glass-tint-strong: rgb(30 30 34 / 0.96);
 }
-:root[data-low-power] :is([data-slot="dialog-content"], [data-slot="alert-dialog-content"], [data-slot="sheet-content"]) {
+:root:is([data-low-power], [data-plain]) :is([data-slot="dialog-content"], [data-slot="alert-dialog-content"], [data-slot="sheet-content"]) {
   background: var(--popover) !important;
 }
-:root[data-low-power] [data-slot="sidebar"][data-mobile="true"] {
+:root:is([data-low-power], [data-plain]) [data-slot="sidebar"][data-mobile="true"] {
   background: var(--sidebar) !important;
+}
+
+/* ------------------------------------------------------------------ Simple look
+   Plain and calm (Settings, Appearance; Admin's default for everyone): with the low-power rules above and the Classic
+   style, nothing moves, nothing shines and nothing blurs. Spinners and the loading bar still move, so waiting shows. */
+:root[data-plain] *:not(.animate-spin):not(.global-progress-bar),
+:root[data-plain] *::before,
+:root[data-plain] *::after {
+  animation: none !important;
+  transition: none !important;
+}
+:root[data-plain] .glass::before,
+:root[data-plain] body::before {
+  display: none !important;
+}
+:root[data-plain] .glass {
+  box-shadow: 0 0 0 1px var(--border) !important;
 }

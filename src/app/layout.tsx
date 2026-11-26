@@ -16,9 +16,11 @@ import { ErrorReporter } from "@/components/app/error-reporter";
 import { AndroidBridge } from "@/components/app/android-bridge";
 
 const sans = Plus_Jakarta_Sans({ variable: "--font-app", subsets: ["latin"] });
-const mono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
+// Not preloaded (Lighthouse): only the main font is fetched before the page shows; the code font and the Amharic
+// font (about 200 KB) come when text needs them, so a slow connection does not wait for them on every page.
+const mono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"], preload: false });
 // Every weight (variable font), so bold Amharic is drawn bold rather than faked.
-const ethiopic = Noto_Sans_Ethiopic({ variable: "--font-ethiopic", subsets: ["ethiopic"] });
+const ethiopic = Noto_Sans_Ethiopic({ variable: "--font-ethiopic", subsets: ["ethiopic"], preload: false });
 // Fonts a person can choose (account menu); not preloaded, so only the chosen one is downloaded.
 const inter = Inter({ variable: "--font-inter", subsets: ["latin"], preload: false });
 const readable = Atkinson_Hyperlegible({ variable: "--font-readable", subsets: ["latin"], weight: ["400", "700"], preload: false });
@@ -78,7 +80,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html lang="en" suppressHydrationWarning className={`${FONT_VARS} h-full antialiased`}>
       <head>
-        <script dangerouslySetInnerHTML={{ __html: appearanceScript(preset, { style: ws?.uiStyle ?? "", allowed: ws?.uiStyles ?? [], motion: ws?.motionDefault, cinematic: ws?.cinematicAllowed !== false, iconPack: ws?.iconPack }) }} />
+        <script dangerouslySetInnerHTML={{ __html: appearanceScript(preset, { style: ws?.uiStyle ?? "", allowed: ws?.uiStyles ?? [], motion: ws?.motionDefault, cinematic: ws?.cinematicAllowed !== false, iconPack: ws?.iconPack, plain: ws?.plainDefault === true }) }} />
       </head>
       <body className="min-h-full">
         <ErrorReporter />

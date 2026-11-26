@@ -196,7 +196,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         {viewer.roles.includes("developer") && (
           <script
             dangerouslySetInnerHTML={{
-              __html: `try{var d=document.documentElement,a=JSON.parse(localStorage.getItem("myseed.appearance")||"{}"),SA=(d.dataset.styleAllowed||"").split(",").filter(Boolean);if(!a.style&&d.dataset.style&&(!SA.length||SA.indexOf("terminal")>=0)){d.dataset.styleDefault="terminal";d.dataset.style="terminal";}}catch(e){}`,
+              __html: `try{var d=document.documentElement,a=JSON.parse(localStorage.getItem("myseed.appearance")||"{}"),SA=(d.dataset.styleAllowed||"").split(",").filter(Boolean);if(!a.style&&d.dataset.style&&!("plain" in d.dataset)&&(!SA.length||SA.indexOf("terminal")>=0)){d.dataset.styleDefault="terminal";d.dataset.style="terminal";}}catch(e){}`,
             }}
           />
         )}

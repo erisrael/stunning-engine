@@ -90,7 +90,7 @@ export function StyleEffects() {
     const on = (e: PointerEvent) => {
       const root = document.documentElement;
       const style = root.dataset.style;
-      if (!style || style === "zen" || reduce.matches || root.dataset.lite === "on" || root.dataset.clickFx === "off") return;
+      if (!style || style === "zen" || reduce.matches || root.dataset.lite === "on" || "plain" in root.dataset || root.dataset.clickFx === "off") return;
       if (e.button !== 0 || !(e.target as Element | null)?.closest?.(PRESSABLE)) return;
       if (layer.childElementCount > 40) return;
       spawn(layer, style, e.clientX, e.clientY);

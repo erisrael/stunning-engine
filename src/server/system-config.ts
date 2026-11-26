@@ -24,6 +24,7 @@ export type SystemConfig = {
   motionDefault: MotionMode;
   cinematicAllowed: boolean;
   iconPack: string;
+  plainDefault: boolean;
 };
 
 export const canConfigureSystem = (user: AppUser) => can(user, "users.manage");
@@ -37,6 +38,7 @@ export async function systemConfig(): Promise<SystemConfig> {
     motionDefault: MOTION_MODES.includes(w.motionDefault as MotionMode) ? (w.motionDefault as MotionMode) : "subtle",
     cinematicAllowed: w.cinematicAllowed !== false,
     iconPack: isIconPack(w.iconPack) ? w.iconPack : "lucide",
+    plainDefault: w.plainDefault === true,
   };
 }
 
@@ -52,6 +54,7 @@ export type SystemConfigInput = {
   motionDefault: MotionMode;
   cinematicAllowed: boolean;
   iconPack: string;
+  plainDefault?: boolean;
 };
 
 export async function saveSystemConfig(user: AppUser, input: SystemConfigInput) {
@@ -67,9 +70,9 @@ export async function saveSystemConfig(user: AppUser, input: SystemConfigInput) 
   const before = await systemConfig();
   await saveIdentity(user, { name: input.name, tagline: input.tagline, shortName: input.shortName, color: input.color, ...(input.logo !== undefined ? { logo: input.logo } : {}), ...(input.favicon !== undefined ? { favicon: input.favicon } : {}) });
   const s = await getSettings();
-  await saveSetting("workspace", { ...s.workspace, name: reportName, motionDefault: input.motionDefault, cinematicAllowed: !!input.cinematicAllowed, iconPack: input.iconPack }, user.id);
+  await saveSetting("workspace", { ...s.workspace, name: reportName, motionDefault: input.motionDefault, cinematicAllowed: !!input.cinematicAllowed, iconPack: input.iconPack, plainDefault: input.plainDefault === undefined ? s.workspace.plainDefault === true : !!input.plainDefault }, user.id);
   const after = await systemConfig();
-  const summary = (c: SystemConfig) => ({ name: c.identity.name, tagline: c.identity.tagline, shortName: c.identity.shortName, color: c.identity.color, logo: c.identity.logo, favicon: c.identity.favicon, reportName: c.reportName, motionDefault: c.motionDefault, cinematicAllowed: c.cinematicAllowed, iconPack: c.iconPack });
+  const summary = (c: SystemConfig) => ({ name: c.identity.name, tagline: c.identity.tagline, shortName: c.identity.shortName, color: c.identity.color, logo: c.identity.logo, favicon: c.identity.favicon, reportName: c.reportName, motionDefault: c.motionDefault, cinematicAllowed: c.cinematicAllowed, iconPack: c.iconPack, plainDefault: c.plainDefault });
   await audit({ actor: user }, { action: "settings.system", summary: `${user.name} configured the whole system`, oldValue: summary(before), newValue: summary(after) });
   return after;
 }

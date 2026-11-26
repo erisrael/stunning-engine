@@ -37,6 +37,8 @@ export type Settings = {
     motionDefault?: "off" | "subtle" | "cinematic";
     cinematicAllowed?: boolean;
     iconPack?: string;
+    // Simple look for everyone who has not chosen (Configure whole system): plain surfaces, no glass, no motion.
+    plainDefault?: boolean;
   };
   calendar: {
     workdays: number[];

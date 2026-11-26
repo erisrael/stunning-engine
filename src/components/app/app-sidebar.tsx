@@ -93,6 +93,7 @@ import {
   SidebarMenuSubButton,
   SidebarMenuSubItem,
   SidebarRail,
+  SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -790,7 +791,8 @@ export function AppSidebar({
                     {items.map((item) => {
                       const active = isActive(item);
                       const inSection = inSectionOf(item);
-                      const expanded = openGroups.includes(`item:${item.href}`) || (inSection && !openGroups.includes(`closed:${item.href}`));
+                      // Folded unless opened with the arrow: a section's pages are the tab bar on the page, so they never show twice.
+                      const expanded = openGroups.includes(`item:${item.href}`);
                       const href = item.keepFilters ? item.href + scopeQueryString(search) : item.href;
                       const tip = NAV_TIPS[keyOf(item)] ?? NAV_TIPS[item.href.split("?")[0]!];
                       return (
@@ -851,13 +853,15 @@ export function AppSidebar({
         </SidebarContent>
         <SidebarFooter className="border-t border-sidebar-border">
           <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton asChild isActive={pathname === "/profile"} tooltip="Profile: my record, leave, pay and claims, account" className="h-8 font-medium">
+            <SidebarMenuItem className="flex items-center gap-1 group-data-[collapsible=icon]:flex-col">
+              <SidebarMenuButton asChild isActive={pathname === "/profile"} tooltip="Profile: my record, leave, pay and claims, account" className="h-8 min-w-0 flex-1 font-medium">
                 <NavLink href="/profile" onClick={close}>
                   <AppIcon icon={CircleUserIcon} />
                   <span>Profile</span>
                 </NavLink>
               </SidebarMenuButton>
+              {/* Collapse to the icon rail and open again, on the sidebar itself (also Ctrl+B). Phones use More. */}
+              {!isMobile && <SidebarTrigger className="size-8 shrink-0" title={iconOnly ? "Open the sidebar (Ctrl+B)" : "Collapse the sidebar (Ctrl+B)"} />}
             </SidebarMenuItem>
           </SidebarMenu>
           <div className="flex items-center gap-1 px-2 group-data-[collapsible=icon]:hidden">
