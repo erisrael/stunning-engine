@@ -725,10 +725,19 @@ export function AppSidebar({
   const sectionKey = sectionItem ? JSON.stringify([sectionItem.label, sectionItem.sub, search]) : "";
   // Does the page you are on draw these pages as its own tabs (Admin, Attendance, Email)? Then the sidebar keeps the
   // section folded, so they never show twice; otherwise it opens the section you are in. No tab bar is added to pages.
-  const [pageTabs, setPageTabs] = React.useState(false);
+  // Pages known to draw their own tab bar (so nothing flashes open before the check below has run).
+  const ownTabsGuess = ["/admin", "/attendance", "/email", "/settings", "/finance/chapa", "/legacy-cms", "/curriculum", "/owners"].includes(pathname);
+  const pageKey = `${sectionKey}|${pathname}|${tabParam ?? ""}`;
+  const [detected, setDetected] = React.useState<{ key: string; value: boolean } | null>(null);
+  const pageTabs = detected?.key === pageKey ? detected.value : ownTabsGuess;
+  // Moving to another page folds what was opened by hand, so the rule above holds on every page.
   React.useEffect(() => {
+    setOpenGroups((o) => (o.some((k) => k.startsWith("item:") || k.startsWith("closed:")) ? o.filter((k) => !k.startsWith("item:") && !k.startsWith("closed:")) : o));
+  }, [pathname, tabParam]);
+  React.useLayoutEffect(() => {
     const subs = sectionItem?.sub;
-    const main = document.querySelector("main");
+    const main = document.querySelector("[data-app-main]") ?? document.querySelector("main");
+    const setPageTabs = (value: boolean) => setDetected((d) => (d?.key === pageKey && d.value === value ? d : { key: pageKey, value }));
     if (!subs || subs.length < 2 || !main) return setPageTabs(false);
     const check = () => {
       if (main.querySelector("[data-page-tabs]")) return setPageTabs(true);
