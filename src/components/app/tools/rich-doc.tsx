@@ -28,7 +28,7 @@ import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
 import Placeholder from "@tiptap/extension-placeholder";
 import {
-  AlignCenterIcon, AlignJustifyIcon, AlignLeftIcon, AlignRightIcon, BoldIcon, CaseUpperIcon, ColumnsIcon, EraserIcon, FootprintsIcon, HighlighterIcon, ImageIcon, IndentDecreaseIcon, IndentIncreaseIcon, ItalicIcon, LinkIcon, ListChecksIcon, ListIcon, ListOrderedIcon, ListTreeIcon, MinusIcon, PencilIcon, QuoteIcon, RectangleHorizontalIcon, Redo2Icon, ScissorsIcon, SeparatorHorizontalIcon, StrikethroughIcon, SubscriptIcon, SuperscriptIcon, TableIcon, Trash2Icon, UnderlineIcon, Undo2Icon,
+  AArrowDownIcon, AArrowUpIcon, CalendarIcon, PaintbrushIcon, AlignCenterIcon, AlignJustifyIcon, AlignLeftIcon, AlignRightIcon, BoldIcon, CaseUpperIcon, ColumnsIcon, EraserIcon, FootprintsIcon, HighlighterIcon, ImageIcon, IndentDecreaseIcon, IndentIncreaseIcon, ItalicIcon, LinkIcon, ListChecksIcon, ListIcon, ListOrderedIcon, ListTreeIcon, MinusIcon, PencilIcon, QuoteIcon, RectangleHorizontalIcon, Redo2Icon, ScissorsIcon, SeparatorHorizontalIcon, StrikethroughIcon, SubscriptIcon, SuperscriptIcon, TableIcon, Trash2Icon, UnderlineIcon, Undo2Icon,
 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
@@ -201,23 +201,94 @@ function useTick(editor: Editor) {
   }, [editor]);
 }
 
-function Ribbon({ editor, simple, sticky }: { editor: Editor; simple: boolean; sticky: boolean }) {
-  useTick(editor);
-  const c = () => editor.chain().focus();
-  const ts = editor.getAttributes("textStyle") as { fontFamily?: string; fontSize?: string; color?: string };
-  const style = editor.isActive("heading", { level: 1 }) ? "h1" : editor.isActive("heading", { level: 2 }) ? "h2" : editor.isActive("heading", { level: 3 }) ? "h3" : editor.isActive("blockquote") ? "quote" : "p";
-  const inTable = editor.isActive("table");
-  const pstyle = (editor.getAttributes("paragraph").pstyle ?? {}) as ParaStyle;
-  const imgRef = React.useRef<HTMLInputElement>(null);
-  const B = ({ icon: Icon, label, on, run, disabled }: { icon: React.ComponentType<{ className?: string }>; label: string; on?: boolean; run: () => void; disabled?: boolean }) => (
+// Symbols people use in letters and reports (inserted as text).
+const SYMBOLS = ["©", "®", "™", "°", "±", "×", "÷", "≤", "≥", "≠", "≈", "→", "←", "↑", "↓", "•", "…", "—", "–", "§", "¶", "½", "¼", "¾", "€", "£", "$", "¥", "ብር", "№", "✓", "✗", "α", "β", "π", "Σ", "µ", "Ω", "∞", "√"];
+
+// Changing the case of the selected words (each piece of text keeps its own formatting).
+function changeCase(editor: Editor, how: "upper" | "lower" | "sentence" | "title") {
+  const { from, to } = editor.state.selection;
+  if (from === to) return;
+  const tr = editor.state.tr;
+  const parts: { pos: number; text: string }[] = [];
+  editor.state.doc.nodesBetween(from, to, (node, pos) => {
+    if (!node.isText || !node.text) return;
+    const a = Math.max(from, pos);
+    const b = Math.min(to, pos + node.text.length);
+    parts.push({ pos: a, text: node.text.slice(a - pos, b - pos) });
+  });
+  let first = true;
+  for (const p of parts.reverse()) {
+    let t = p.text;
+    if (how === "upper") t = t.toUpperCase();
+    else if (how === "lower") t = t.toLowerCase();
+    else if (how === "title") t = t.toLowerCase().replace(/(^|\s)(\S)/g, (_, a: string, b: string) => a + b.toUpperCase());
+    else t = t.toLowerCase();
+    tr.insertText(t, p.pos, p.pos + p.text.length);
+    first = false;
+  }
+  void first;
+  if (how === "sentence") tr.insertText(editor.state.doc.textBetween(from, from + 1).toUpperCase(), from, from + 1);
+  editor.view.dispatch(tr);
+}
+
+// A ribbon button (small, or big with its label under it).
+const B = ({ icon: Icon, label, on, run, disabled, big }: { icon: React.ComponentType<{ className?: string }>; label: string; on?: boolean; run: () => void; disabled?: boolean; big?: boolean }) =>
+  big ? (
+    <button type="button" title={label} disabled={disabled} onMouseDown={(e) => e.preventDefault()} onClick={run} className={cn("flex h-14 w-14 shrink-0 flex-col items-center justify-center gap-1 rounded px-0.5 text-[10.5px] leading-tight hover:bg-muted disabled:opacity-40", on && "bg-primary/10 text-primary")}>
+      <Icon className="size-5" />
+      <span className="line-clamp-2 text-center">{label}</span>
+    </button>
+  ) : (
     <button type="button" title={label} aria-label={label} aria-pressed={on} disabled={disabled} onMouseDown={(e) => e.preventDefault()} onClick={run} className={cn("inline-flex size-7 items-center justify-center rounded hover:bg-muted disabled:opacity-40", on && "bg-primary/15 text-primary")}>
       <Icon className="size-4" />
     </button>
   );
-  const Sep = () => <span className="mx-1 h-5 w-px bg-border" />;
+// A ribbon group with its label under it.
+const G = ({ label, children }: { label: string; children: React.ReactNode }) => (
+  <div className="flex shrink-0 flex-col border-r px-2 last:border-r-0">
+    <div className="flex flex-1 items-center gap-1">{children}</div>
+    <span className="pt-0.5 text-center text-[10px] text-muted-foreground">{label}</span>
+  </div>
+);
+
+function Ribbon({ editor, simple, sticky }: { editor: Editor; simple: boolean; sticky: boolean }) {
+  useTick(editor);
+  const [tab, setTab] = React.useState<"home" | "insert" | "layout" | "review" | "table">("home");
+  const painter = React.useRef<{ marks: { type: string; attrs: Record<string, unknown> }[] } | null>(null);
+  const [painting, setPainting] = React.useState(false);
+  const c = () => editor.chain().focus();
+  const ts = editor.getAttributes("textStyle") as { fontFamily?: string; fontSize?: string; color?: string; textTransform?: string };
+  const style = editor.isActive("heading", { level: 1 }) ? "h1" : editor.isActive("heading", { level: 2 }) ? "h2" : editor.isActive("heading", { level: 3 }) ? "h3" : editor.isActive("blockquote") ? "quote" : "p";
+  const inTable = editor.isActive("table");
+  const pstyle = (editor.getAttributes("paragraph").pstyle ?? {}) as ParaStyle;
+  const setP = (p: Partial<ParaStyle>) => c().updateAttributes("paragraph", { pstyle: { ...pstyle, ...p } }).run();
+  const imgRef = React.useRef<HTMLInputElement>(null);
+  const size = Number(ts.fontSize?.replace("pt", "")) || 11;
+  React.useEffect(() => {
+    if (inTable) setTab((t) => (t === "home" ? t : t));
+  }, [inTable]);
+  // Format painter: the marks where the caret is, painted on the next selection.
+  React.useEffect(() => {
+    if (!painting) return;
+    const on = () => {
+      const { from, to } = editor.state.selection;
+      if (from === to || !painter.current) return;
+      let ch = editor.chain().focus().unsetAllMarks();
+      for (const m of painter.current.marks) ch = ch.setMark(m.type, m.attrs);
+      ch.run();
+      setPainting(false);
+    };
+    editor.on("selectionUpdate", on);
+    return () => void editor.off("selectionUpdate", on);
+  }, [painting, editor]);
+  const text = editor.state.doc.textContent;
+  const words = text.split(/\s+/).filter(Boolean).length;
+
   const insertBlock = (type: Block["type"]) => c().insertContent({ type: "myseedBlock", attrs: { block: newBlock(type) } }).run();
+  const TABS = simple ? (["home", "insert"] as const) : inTable ? (["home", "insert", "layout", "review", "table"] as const) : (["home", "insert", "layout", "review"] as const);
+
   return (
-    <div className={cn("z-20 flex flex-wrap items-center gap-0.5 border-b bg-background/95 px-2 py-1 backdrop-blur", sticky && "sticky top-0")} role="toolbar" aria-label="Formatting">
+    <div className={cn("z-20 border-b bg-background/95 backdrop-blur", sticky && "sticky top-0")} role="toolbar" aria-label="Formatting">
       <input
         ref={imgRef}
         type="file"
@@ -233,137 +304,325 @@ function Ribbon({ editor, simple, sticky }: { editor: Editor; simple: boolean; s
           r.readAsDataURL(f);
         }}
       />
-      <B icon={Undo2Icon} label="Undo (Ctrl+Z)" run={() => c().undo().run()} disabled={!editor.can().undo()} />
-      <B icon={Redo2Icon} label="Redo (Ctrl+Y)" run={() => c().redo().run()} disabled={!editor.can().redo()} />
-      <Sep />
-      {!simple && (
-        <select
-          className="h-7 w-28 rounded border bg-background px-1 text-xs"
-          aria-label="Style"
-          value={style}
-          onChange={(e) => {
-            const v = e.target.value;
-            if (v === "p") c().setParagraph().run();
-            else if (v === "quote") c().toggleBlockquote().run();
-            else c().setHeading({ level: Number(v.slice(1)) as 1 | 2 | 3 }).run();
-          }}
-        >
-          <option value="p">Normal</option>
-          <option value="h1">Title</option>
-          <option value="h2">Heading 1</option>
-          <option value="h3">Heading 2</option>
-          <option value="quote">Quote</option>
-        </select>
-      )}
-      <select className="h-7 w-32 rounded border bg-background px-1 text-xs" aria-label="Font" value={ts.fontFamily ?? ""} onChange={(e) => (e.target.value ? c().setFontFamily(e.target.value).run() : c().unsetFontFamily().run())}>
-        <option value="">Default font</option>
-        {FONTS.filter((f) => f.label !== "Default").map((f) => <option key={f.label} value={f.label}>{f.label}</option>)}
-      </select>
-      <select className="h-7 w-16 rounded border bg-background px-1 text-xs" aria-label="Size" value={ts.fontSize?.replace("pt", "") ?? ""} onChange={(e) => c().setMark("textStyle", { fontSize: e.target.value ? `${e.target.value}pt` : null }).run()}>
-        <option value="">Size</option>
-        {SIZES.map((s) => <option key={s} value={s}>{s}</option>)}
-      </select>
-      <Sep />
-      <B icon={BoldIcon} label="Bold (Ctrl+B)" on={editor.isActive("bold")} run={() => c().toggleBold().run()} />
-      <B icon={ItalicIcon} label="Italic (Ctrl+I)" on={editor.isActive("italic")} run={() => c().toggleItalic().run()} />
-      <B icon={UnderlineIcon} label="Underline (Ctrl+U)" on={editor.isActive("underline")} run={() => c().toggleUnderline().run()} />
-      <B icon={StrikethroughIcon} label="Strike through" on={editor.isActive("strike")} run={() => c().toggleStrike().run()} />
-      <B icon={SuperscriptIcon} label="Superscript" on={editor.isActive("superscript")} run={() => c().toggleSuperscript().run()} />
-      <B icon={SubscriptIcon} label="Subscript" on={editor.isActive("subscript")} run={() => c().toggleSubscript().run()} />
-      <B icon={CaseUpperIcon} label="Capitals" on={editor.getAttributes("textStyle").textTransform === "uppercase"} run={() => c().setMark("textStyle", { textTransform: editor.getAttributes("textStyle").textTransform === "uppercase" ? null : "uppercase" }).run()} />
-      <Colors label="Font colour" value={ts.color} swatches={SWATCH} onPick={(v) => (v ? c().setColor(v).run() : c().unsetColor().run())}>
-        <span className="text-sm font-bold leading-none">A</span>
-      </Colors>
-      <Colors label="Highlight" value={editor.getAttributes("highlight").color} swatches={MARKERS} onPick={(v) => (v ? c().setHighlight({ color: v }).run() : c().unsetHighlight().run())}>
-        <HighlighterIcon className="size-3.5" />
-      </Colors>
-      <B icon={EraserIcon} label="Clear formatting" run={() => c().unsetAllMarks().run()} />
-      <Sep />
-      {([["left", AlignLeftIcon], ["center", AlignCenterIcon], ["right", AlignRightIcon], ["justify", AlignJustifyIcon]] as const).map(([a, I]) => (
-        <B key={a} icon={I} label={`Align ${a}`} on={editor.isActive({ textAlign: a })} run={() => c().setTextAlign(a).run()} />
-      ))}
-      {!simple && (
-        <>
-          <B icon={ListIcon} label="Bullets" on={editor.isActive("bulletList")} run={() => c().toggleBulletList().run()} />
-          <B icon={ListOrderedIcon} label="Numbering" on={editor.isActive("orderedList")} run={() => c().toggleOrderedList().run()} />
-          <B icon={ListChecksIcon} label="Checklist" on={editor.isActive("taskList")} run={() => c().toggleTaskList().run()} />
-          <B icon={IndentDecreaseIcon} label="Decrease indent" run={() => (editor.isActive("listItem") ? c().liftListItem("listItem").run() : c().updateAttributes("paragraph", { pstyle: { ...pstyle, indent: Math.max(0, (pstyle.indent ?? 0) - 10) || undefined } }).run())} />
-          <B icon={IndentIncreaseIcon} label="Increase indent" run={() => (editor.isActive("listItem") ? c().sinkListItem("listItem").run() : c().updateAttributes("paragraph", { pstyle: { ...pstyle, indent: (pstyle.indent ?? 0) + 10 } }).run())} />
-        </>
-      )}
-      <select className="h-7 w-[4.5rem] rounded border bg-background px-1 text-xs" aria-label="Line spacing" title="Line spacing" value={pstyle.lineHeight ?? ""} onChange={(e) => c().updateAttributes("paragraph", { pstyle: { ...pstyle, lineHeight: e.target.value ? Number(e.target.value) : undefined } }).run()}>
-        <option value="">Spacing</option>
-        {[1, 1.15, 1.5, 2].map((n) => <option key={n} value={n}>{n.toFixed(2)}</option>)}
-      </select>
-      {!simple && (
-        <>
-          <Sep />
-          <TableGrid onPick={(rows, cols) => c().insertTable({ rows, cols, withHeaderRow: true }).run()} />
-          <B icon={ImageIcon} label="Picture" run={() => imgRef.current?.click()} />
-        </>
-      )}
-      <B
-        icon={LinkIcon}
-        label="Link"
-        on={editor.isActive("link")}
-        run={() => {
-          const href = prompt("Link address (https://… or mailto:…)", editor.getAttributes("link").href ?? "");
-          if (href === null) return;
-          if (!href) return c().unsetLink().run();
-          if (/^(https?:\/\/|mailto:)/i.test(href)) c().setLink({ href }).run();
-        }}
-      />
-      {!simple && (
-        <>
-          <B icon={FootprintsIcon} label="Footnote" run={() => { const t = prompt("Footnote text"); if (t) c().insertContent(`^[${t.replace(/\]/g, ")")}]`).run(); }} />
-          <B icon={QuoteIcon} label="Quote" on={editor.isActive("blockquote")} run={() => c().toggleBlockquote().run()} />
-          <B icon={MinusIcon} label="Line" run={() => c().setHorizontalRule().run()} />
-          <Popover>
-            <PopoverTrigger asChild>
-              <button type="button" className="inline-flex h-7 items-center rounded px-1.5 text-xs hover:bg-muted">More…</button>
-            </PopoverTrigger>
-            <PopoverContent className="w-56 p-1" align="start">
-              {(
-                [
-                  ["pagebreak", ScissorsIcon, "Page break"],
-                  ["section", SeparatorHorizontalIcon, "Section break"],
-                  ["toc", ListTreeIcon, "Table of contents"],
-                  ["columns", ColumnsIcon, "Two columns"],
-                  ["textbox", RectangleHorizontalIcon, "Text box"],
-                ] as const
-              ).map(([t, I, l]) => (
-                <button key={t} type="button" onClick={() => insertBlock(t)} className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted">
-                  <I className="size-4" /> {l}
-                </button>
-              ))}
-            </PopoverContent>
-          </Popover>
-        </>
-      )}
-      {inTable && (
-        <div className="flex w-full flex-wrap items-center gap-1 border-t pt-1 text-xs">
-          <span className="font-medium text-primary">Table:</span>
-          {(
-            [
-              ["Row above", () => c().addRowBefore().run()],
-              ["Row below", () => c().addRowAfter().run()],
-              ["Column left", () => c().addColumnBefore().run()],
-              ["Column right", () => c().addColumnAfter().run()],
-              ["Delete row", () => c().deleteRow().run()],
-              ["Delete column", () => c().deleteColumn().run()],
-              ["Merge cells", () => c().mergeCells().run()],
-              ["Split cell", () => c().splitCell().run()],
-              ["Header row", () => c().toggleHeaderRow().run()],
-              ["Delete table", () => c().deleteTable().run()],
-            ] as const
-          ).map(([l, run]) => (
-            <Button key={l} type="button" size="sm" variant="ghost" className="h-6 px-2 text-xs" onMouseDown={(e) => e.preventDefault()} onClick={run}>
-              {l}
-            </Button>
-          ))}
-          <span className="text-muted-foreground">A cell starting with = is a formula, such as =SUM(ABOVE).</span>
-        </div>
-      )}
+      <div className="flex items-center gap-0.5 border-b bg-muted/40 px-1.5">
+        <B icon={Undo2Icon} label="Undo (Ctrl+Z)" run={() => c().undo().run()} disabled={!editor.can().undo()} />
+        <B icon={Redo2Icon} label="Redo (Ctrl+Y)" run={() => c().redo().run()} disabled={!editor.can().redo()} />
+        <span className="mx-1 h-4 w-px bg-border" />
+        {TABS.map((k) => (
+          <button key={k} type="button" role="tab" aria-selected={tab === k} onMouseDown={(e) => e.preventDefault()} onClick={() => setTab(k)} className={cn("-mb-px border-b-2 px-3 py-1.5 text-[13px] capitalize", tab === k ? "border-primary font-medium text-primary" : "border-transparent text-muted-foreground hover:text-foreground", k === "table" && "text-primary/80")}>
+            {k === "table" ? "Table design" : k}
+          </button>
+        ))}
+        <span className="ml-auto pr-1 text-[11px] text-muted-foreground tabular-nums">{words.toLocaleString()} words</span>
+      </div>
+      <div className="flex min-h-[4.25rem] items-stretch overflow-x-auto px-1 py-1">
+        {tab === "home" && (
+          <>
+            <G label="Clipboard">
+              <B big icon={PaintbrushIcon} label={painting ? "Select text" : "Format painter"} on={painting} run={() => {
+                if (painting) return setPainting(false);
+                painter.current = { marks: editor.state.selection.$from.marks().map((m) => ({ type: m.type.name, attrs: m.attrs as Record<string, unknown> })) };
+                setPainting(true);
+              }} />
+            </G>
+            <G label="Font">
+              <div className="flex flex-col gap-1">
+                <div className="flex gap-1">
+                  <select className="h-7 w-36 rounded border bg-background px-1 text-xs" aria-label="Font" value={ts.fontFamily ?? ""} onChange={(e) => (e.target.value ? c().setFontFamily(e.target.value).run() : c().unsetFontFamily().run())}>
+                    <option value="">Default font</option>
+                    {FONTS.filter((f) => f.label !== "Default").map((f) => <option key={f.label} value={f.label}>{f.label}</option>)}
+                  </select>
+                  <select className="h-7 w-16 rounded border bg-background px-1 text-xs" aria-label="Size" value={ts.fontSize?.replace("pt", "") ?? ""} onChange={(e) => c().setMark("textStyle", { fontSize: e.target.value ? `${e.target.value}pt` : null }).run()}>
+                    <option value="">Size</option>
+                    {SIZES.map((s) => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                  <B icon={AArrowUpIcon} label="Grow font" run={() => c().setMark("textStyle", { fontSize: `${Math.min(72, Math.round(size * 1.15 + 0.5))}pt` }).run()} />
+                  <B icon={AArrowDownIcon} label="Shrink font" run={() => c().setMark("textStyle", { fontSize: `${Math.max(6, Math.round(size / 1.15))}pt` }).run()} />
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <button type="button" title="Change case" aria-label="Change case" onMouseDown={(e) => e.preventDefault()} className="inline-flex h-7 items-center rounded px-1.5 text-xs font-semibold hover:bg-muted">
+                        Aa
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-48 p-1" align="start" onOpenAutoFocus={(e) => e.preventDefault()}>
+                      {(
+                        [
+                          ["sentence", "Sentence case."],
+                          ["lower", "lowercase"],
+                          ["upper", "UPPERCASE"],
+                          ["title", "Capitalise Each Word"],
+                        ] as const
+                      ).map(([k, l]) => (
+                        <button key={k} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => changeCase(editor, k)} className="block w-full rounded px-2 py-1.5 text-left text-sm hover:bg-muted">
+                          {l}
+                        </button>
+                      ))}
+                    </PopoverContent>
+                  </Popover>
+                </div>
+                <div className="flex items-center gap-0.5">
+                  <B icon={BoldIcon} label="Bold (Ctrl+B)" on={editor.isActive("bold")} run={() => c().toggleBold().run()} />
+                  <B icon={ItalicIcon} label="Italic (Ctrl+I)" on={editor.isActive("italic")} run={() => c().toggleItalic().run()} />
+                  <B icon={UnderlineIcon} label="Underline (Ctrl+U)" on={editor.isActive("underline")} run={() => c().toggleUnderline().run()} />
+                  <B icon={StrikethroughIcon} label="Strike through" on={editor.isActive("strike")} run={() => c().toggleStrike().run()} />
+                  <B icon={SubscriptIcon} label="Subscript" on={editor.isActive("subscript")} run={() => c().toggleSubscript().run()} />
+                  <B icon={SuperscriptIcon} label="Superscript" on={editor.isActive("superscript")} run={() => c().toggleSuperscript().run()} />
+                  <B icon={CaseUpperIcon} label="Small capitals" on={ts.textTransform === "uppercase"} run={() => c().setMark("textStyle", { textTransform: ts.textTransform === "uppercase" ? null : "uppercase" }).run()} />
+                  <Colors label="Font colour" value={ts.color} swatches={SWATCH} onPick={(v) => (v ? c().setColor(v).run() : c().unsetColor().run())}>
+                    <span className="text-sm leading-none font-bold">A</span>
+                  </Colors>
+                  <Colors label="Highlight" value={editor.getAttributes("highlight").color} swatches={MARKERS} onPick={(v) => (v ? c().setHighlight({ color: v }).run() : c().unsetHighlight().run())}>
+                    <HighlighterIcon className="size-3.5" />
+                  </Colors>
+                  <B icon={EraserIcon} label="Clear formatting" run={() => c().unsetAllMarks().clearNodes().run()} />
+                </div>
+              </div>
+            </G>
+            <G label="Paragraph">
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center gap-0.5">
+                  {!simple && (
+                    <>
+                      <B icon={ListIcon} label="Bullets" on={editor.isActive("bulletList")} run={() => c().toggleBulletList().run()} />
+                      <B icon={ListOrderedIcon} label="Numbering" on={editor.isActive("orderedList")} run={() => c().toggleOrderedList().run()} />
+                      <select className="h-7 w-14 rounded border bg-background px-0.5 text-[11px]" aria-label="Numbering style" title="Numbering style" disabled={!editor.isActive("orderedList")} value={editor.getAttributes("orderedList").listType ?? "1"} onChange={(e) => c().updateAttributes("orderedList", { listType: e.target.value === "1" ? null : e.target.value }).run()}>
+                        <option value="1">1.</option>
+                        <option value="a">a.</option>
+                        <option value="A">A.</option>
+                        <option value="i">i.</option>
+                        <option value="I">I.</option>
+                      </select>
+                      <B icon={ListChecksIcon} label="Checklist" on={editor.isActive("taskList")} run={() => c().toggleTaskList().run()} />
+                    </>
+                  )}
+                  <B icon={IndentDecreaseIcon} label="Decrease indent" run={() => (editor.isActive("listItem") ? c().liftListItem("listItem").run() : setP({ indent: Math.max(0, (pstyle.indent ?? 0) - 10) || undefined }))} />
+                  <B icon={IndentIncreaseIcon} label="Increase indent" run={() => (editor.isActive("listItem") ? c().sinkListItem("listItem").run() : setP({ indent: (pstyle.indent ?? 0) + 10 }))} />
+                </div>
+                <div className="flex items-center gap-0.5">
+                  {([["left", AlignLeftIcon], ["center", AlignCenterIcon], ["right", AlignRightIcon], ["justify", AlignJustifyIcon]] as const).map(([a, I]) => (
+                    <B key={a} icon={I} label={`Align ${a}`} on={editor.isActive({ textAlign: a })} run={() => c().setTextAlign(a).run()} />
+                  ))}
+                  <select className="h-7 w-[4.5rem] rounded border bg-background px-1 text-xs" aria-label="Line spacing" title="Line spacing" value={pstyle.lineHeight ?? ""} onChange={(e) => setP({ lineHeight: e.target.value ? Number(e.target.value) : undefined })}>
+                    <option value="">Spacing</option>
+                    {[1, 1.15, 1.5, 2, 2.5, 3].map((n) => <option key={n} value={n}>{n.toFixed(2)}</option>)}
+                  </select>
+                </div>
+              </div>
+            </G>
+            {!simple && (
+              <G label="Styles">
+                <div className="grid grid-cols-3 gap-1">
+                  {(
+                    [
+                      ["p", "Normal", "text-xs"],
+                      ["h1", "Title", "text-sm font-bold"],
+                      ["h2", "Heading 1", "text-xs font-bold"],
+                      ["h3", "Heading 2", "text-xs font-semibold"],
+                      ["quote", "Quote", "text-xs italic"],
+                    ] as const
+                  ).map(([k, l, cls]) => (
+                    <button
+                      key={k}
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => (k === "p" ? c().setParagraph().run() : k === "quote" ? c().toggleBlockquote().run() : c().setHeading({ level: Number(k.slice(1)) as 1 | 2 | 3 }).run())}
+                      className={cn("h-7 w-20 truncate rounded border bg-background px-1.5 text-left hover:border-primary", cls, style === k && "border-primary bg-primary/10")}
+                    >
+                      {l}
+                    </button>
+                  ))}
+                </div>
+              </G>
+            )}
+          </>
+        )}
+        {tab === "insert" && (
+          <>
+            {!simple && (
+              <G label="Tables and pictures">
+                <TableGrid onPick={(rows, cols) => c().insertTable({ rows, cols, withHeaderRow: true }).run()} big />
+                <B big icon={ImageIcon} label="Picture" run={() => imgRef.current?.click()} />
+              </G>
+            )}
+            <G label="Links">
+              <B
+                big
+                icon={LinkIcon}
+                label="Link"
+                on={editor.isActive("link")}
+                run={() => {
+                  const href = prompt("Link address (https://… or mailto:…)", editor.getAttributes("link").href ?? "");
+                  if (href === null) return;
+                  if (!href) return c().unsetLink().run();
+                  if (/^(https?:\/\/|mailto:)/i.test(href)) c().setLink({ href }).run();
+                }}
+              />
+              {!simple && <B big icon={FootprintsIcon} label="Footnote" run={() => { const t = prompt("Footnote text"); if (t) c().insertContent(`^[${t.replace(/\]/g, ")")}]`).run(); }} />}
+            </G>
+            <G label="Text">
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button type="button" onMouseDown={(e) => e.preventDefault()} className="flex h-14 w-14 flex-col items-center justify-center gap-1 rounded text-[10.5px] hover:bg-muted">
+                    <span className="text-lg leading-none">Ω</span> Symbol
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-64 p-2" align="start" onOpenAutoFocus={(e) => e.preventDefault()}>
+                  <div className="grid grid-cols-8 gap-1">
+                    {SYMBOLS.map((s) => (
+                      <button key={s} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => c().insertContent(s).run()} className="flex h-7 items-center justify-center rounded border text-sm hover:border-primary hover:bg-primary/5">
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button type="button" onMouseDown={(e) => e.preventDefault()} className="flex h-14 w-14 flex-col items-center justify-center gap-1 rounded text-[10.5px] hover:bg-muted">
+                    <CalendarIcon className="size-5" /> Date
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-60 p-1" align="start" onOpenAutoFocus={(e) => e.preventDefault()}>
+                  {[
+                    new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" }),
+                    new Date().toLocaleDateString("en-GB"),
+                    new Date().toISOString().slice(0, 10),
+                    new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" }),
+                    new Date().toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }),
+                  ].map((d) => (
+                    <button key={d} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => c().insertContent(d).run()} className="block w-full rounded px-2 py-1.5 text-left text-sm hover:bg-muted">
+                      {d}
+                    </button>
+                  ))}
+                </PopoverContent>
+              </Popover>
+              {!simple && <B big icon={QuoteIcon} label="Quote" on={editor.isActive("blockquote")} run={() => c().toggleBlockquote().run()} />}
+              <B big icon={MinusIcon} label="Line" run={() => c().setHorizontalRule().run()} />
+            </G>
+            {!simple && (
+              <G label="Pages and layout">
+                <B big icon={ScissorsIcon} label="Page break" run={() => insertBlock("pagebreak")} />
+                <B big icon={SeparatorHorizontalIcon} label="Section break" run={() => insertBlock("section")} />
+                <B big icon={ListTreeIcon} label="Contents" run={() => insertBlock("toc")} />
+                <B big icon={ColumnsIcon} label="Two columns" run={() => insertBlock("columns")} />
+                <B big icon={RectangleHorizontalIcon} label="Text box" run={() => insertBlock("textbox")} />
+              </G>
+            )}
+          </>
+        )}
+        {tab === "layout" && (
+          <>
+            <G label="Indent (mm)">
+              <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-[11px]">
+                <label className="flex items-center gap-1">Left <input type="number" min={0} max={100} className="h-7 w-14 rounded border bg-background px-1" value={pstyle.indent ?? 0} onChange={(e) => setP({ indent: Number(e.target.value) || undefined })} /></label>
+                <label className="flex items-center gap-1">First line <input type="number" min={-20} max={50} className="h-7 w-14 rounded border bg-background px-1" value={pstyle.firstLine ?? 0} onChange={(e) => setP({ firstLine: Number(e.target.value) || undefined })} /></label>
+              </div>
+            </G>
+            <G label="Spacing (pt)">
+              <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-[11px]">
+                <label className="flex items-center gap-1">Before <input type="number" min={0} max={72} className="h-7 w-14 rounded border bg-background px-1" value={pstyle.before ?? 0} onChange={(e) => setP({ before: e.target.value === "" ? undefined : Number(e.target.value) })} /></label>
+                <label className="flex items-center gap-1">After <input type="number" min={0} max={72} className="h-7 w-14 rounded border bg-background px-1" value={pstyle.after ?? 6} onChange={(e) => setP({ after: e.target.value === "" ? undefined : Number(e.target.value) })} /></label>
+              </div>
+            </G>
+            <G label="Paragraph text">
+              <div className="flex flex-col gap-1">
+                <select className="h-7 w-36 rounded border bg-background px-1 text-xs" aria-label="Paragraph font" value={pstyle.font ?? ""} onChange={(e) => setP({ font: e.target.value || undefined })}>
+                  <option value="">Paragraph font</option>
+                  {FONTS.filter((f) => f.label !== "Default").map((f) => <option key={f.label} value={f.label}>{f.label}</option>)}
+                </select>
+                <select className="h-7 w-36 rounded border bg-background px-1 text-xs" aria-label="Paragraph size" value={pstyle.size ?? ""} onChange={(e) => setP({ size: e.target.value ? Number(e.target.value) : undefined })}>
+                  <option value="">Paragraph size</option>
+                  {SIZES.map((s) => <option key={s} value={s}>{s} pt</option>)}
+                </select>
+              </div>
+            </G>
+            <G label="Reset">
+              <B big icon={EraserIcon} label="Clear paragraph settings" run={() => c().updateAttributes("paragraph", { pstyle: null }).run()} />
+            </G>
+          </>
+        )}
+        {tab === "review" && (
+          <>
+            <G label="Counts">
+              <div className="grid grid-cols-2 gap-x-4 text-xs">
+                <span className="text-muted-foreground">Words</span>
+                <span className="font-medium tabular-nums">{words.toLocaleString()}</span>
+                <span className="text-muted-foreground">Characters</span>
+                <span className="font-medium tabular-nums">{text.length.toLocaleString()}</span>
+                <span className="text-muted-foreground">Reading time</span>
+                <span className="font-medium tabular-nums">{Math.max(1, Math.round(words / 230))} min</span>
+              </div>
+            </G>
+            <G label="Find and replace">
+              <FindInEditor editor={editor} />
+            </G>
+          </>
+        )}
+        {tab === "table" && inTable && (
+          <>
+            <G label="Rows and columns">
+              <div className="grid grid-cols-3 gap-1">
+                {(
+                  [
+                    ["Row above", () => c().addRowBefore().run()],
+                    ["Row below", () => c().addRowAfter().run()],
+                    ["Delete row", () => c().deleteRow().run()],
+                    ["Column left", () => c().addColumnBefore().run()],
+                    ["Column right", () => c().addColumnAfter().run()],
+                    ["Delete column", () => c().deleteColumn().run()],
+                  ] as const
+                ).map(([l, run]) => (
+                  <button key={l} type="button" onMouseDown={(e) => e.preventDefault()} onClick={run} className="h-7 rounded border bg-background px-2 text-[11px] hover:border-primary">
+                    {l}
+                  </button>
+                ))}
+              </div>
+            </G>
+            <G label="Merge">
+              <B big icon={TableIcon} label="Merge cells" run={() => c().mergeCells().run()} disabled={!editor.can().mergeCells()} />
+              <B big icon={ColumnsIcon} label="Split cell" run={() => c().splitCell().run()} disabled={!editor.can().splitCell()} />
+            </G>
+            <G label="Table">
+              <B big icon={ListIcon} label="Header row" on={editor.isActive("tableHeader")} run={() => c().toggleHeaderRow().run()} />
+              <B big icon={Trash2Icon} label="Delete table" run={() => c().deleteTable().run()} />
+              <span className="max-w-40 text-[11px] text-muted-foreground">A cell starting with = is a formula, such as =SUM(ABOVE).</span>
+            </G>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function FindInEditor({ editor }: { editor: Editor }) {
+  const [q, setQ] = React.useState("");
+  const [r, setR] = React.useState("");
+  const count = q ? editor.state.doc.textContent.toLowerCase().split(q.toLowerCase()).length - 1 : 0;
+  const replaceAll = () => {
+    if (!q) return;
+    const tr = editor.state.tr;
+    const hits: { from: number; to: number }[] = [];
+    const needle = q.toLowerCase();
+    editor.state.doc.descendants((node, pos) => {
+      if (!node.isText || !node.text) return;
+      const t = node.text.toLowerCase();
+      let i = t.indexOf(needle);
+      while (i >= 0) {
+        hits.push({ from: pos + i, to: pos + i + q.length });
+        i = t.indexOf(needle, i + q.length);
+      }
+    });
+    for (const h of hits.reverse()) tr.insertText(r, h.from, h.to);
+    editor.view.dispatch(tr);
+  };
+  return (
+    <div className="flex items-center gap-1">
+      <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find" className="h-7 w-32 rounded border bg-background px-2 text-xs" />
+      <input value={r} onChange={(e) => setR(e.target.value)} placeholder="Replace with" className="h-7 w-32 rounded border bg-background px-2 text-xs" />
+      <span className="w-14 text-[11px] text-muted-foreground">{q ? `${count} found` : ""}</span>
+      <button type="button" disabled={!count} onClick={replaceAll} className="h-7 rounded bg-primary px-2 text-[11px] text-primary-foreground disabled:opacity-40">
+        Replace all
+      </button>
     </div>
   );
 }
@@ -392,14 +651,15 @@ function Colors({ label, value, swatches, onPick, children }: { label: string; v
   );
 }
 
-function TableGrid({ onPick }: { onPick: (rows: number, cols: number) => void }) {
+function TableGrid({ onPick, big }: { onPick: (rows: number, cols: number) => void; big?: boolean }) {
   const [h, setH] = React.useState({ r: 0, c: 0 });
   const [open, setOpen] = React.useState(false);
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button type="button" title="Table" aria-label="Insert a table" onMouseDown={(e) => e.preventDefault()} className="inline-flex size-7 items-center justify-center rounded hover:bg-muted">
-          <TableIcon className="size-4" />
+        <button type="button" title="Table" aria-label="Insert a table" onMouseDown={(e) => e.preventDefault()} className={big ? "flex h-14 w-14 flex-col items-center justify-center gap-1 rounded text-[10.5px] hover:bg-muted" : "inline-flex size-7 items-center justify-center rounded hover:bg-muted"}>
+          <TableIcon className={big ? "size-5" : "size-4"} />
+          {big && "Table"}
         </button>
       </PopoverTrigger>
       <PopoverContent className="w-auto p-2" align="start" onOpenAutoFocus={(e) => e.preventDefault()}>

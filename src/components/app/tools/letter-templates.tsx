@@ -23,27 +23,27 @@ export function LetterTemplatePicker({ onPick, label = "Choose a kind of letter"
         <BookTextIcon /> {label}
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-5xl">
+        <DialogContent className="flex h-[90vh] w-[96vw] max-w-[1320px] flex-col gap-4 p-6 sm:max-w-[1320px]">
           <DialogHeader>
-            <DialogTitle>Letter templates</DialogTitle>
+            <DialogTitle className="text-xl">Letter templates</DialogTitle>
             <DialogDescription>{LETTER_LIBRARY.length} kinds of letter, each with its subject, wording and the details it needs. Picking one fills the letter; everything stays editable.</DialogDescription>
           </DialogHeader>
           <div className="relative">
-            <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search: offer, warning, invitation, tax, የሥራ ልምድ…" className="pl-8" autoFocus />
+            <SearchIcon className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search: offer, warning, invitation, tax, የሥራ ልምድ…" className="h-11 pl-9 text-base" autoFocus />
           </div>
           <div className="flex flex-wrap gap-1">
-            <button type="button" className={cn("rounded-full border px-2.5 py-0.5 text-xs", !group && "border-primary bg-primary/10 text-primary")} onClick={() => setGroup(null)}>
+            <button type="button" className={cn("rounded-full border px-3.5 py-1.5 text-sm", !group && "border-primary bg-primary/10 font-medium text-primary")} onClick={() => setGroup(null)}>
               All
             </button>
             {LETTER_GROUPS.map((g) => (
-              <button key={g} type="button" className={cn("rounded-full border px-2.5 py-0.5 text-xs", group === g && "border-primary bg-primary/10 text-primary")} onClick={() => setGroup(g)}>
+              <button key={g} type="button" className={cn("rounded-full border px-3.5 py-1.5 text-sm", group === g && "border-primary bg-primary/10 font-medium text-primary")} onClick={() => setGroup(g)}>
                 {g}
               </button>
             ))}
           </div>
-          <div className="grid max-h-[60vh] gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
-            <ul className="space-y-1 overflow-y-auto pr-1">
+          <div className="grid min-h-0 flex-1 gap-5 md:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
+            <ul className="grid content-start gap-2 overflow-y-auto pr-2 xl:grid-cols-2">
               {list.map((t) => (
                 <li key={t.key}>
                   <button
@@ -51,14 +51,14 @@ export function LetterTemplatePicker({ onPick, label = "Choose a kind of letter"
                     onMouseEnter={() => setHover(t)}
                     onFocus={() => setHover(t)}
                     onClick={() => (onPick(t), setOpen(false))}
-                    className={cn("w-full rounded-md border px-3 py-2 text-left hover:border-primary hover:bg-primary/5", shown?.key === t.key && "border-primary/60")}
+                    className={cn("h-full w-full rounded-lg border bg-card px-4 py-3 text-left transition-colors hover:border-primary hover:bg-primary/5", shown?.key === t.key && "border-primary bg-primary/5 ring-1 ring-primary/30")}
                   >
-                    <span className="flex items-center gap-2 text-sm font-medium">
+                    <span className="flex items-center gap-2 text-[15px] font-semibold">
                       {t.label}
                       {t.needsSignature && <SignatureIcon className="size-3.5 text-muted-foreground" aria-label="Signed" />}
                       {t.needsStamp && <StampIcon className="size-3.5 text-muted-foreground" aria-label="Stamped" />}
                     </span>
-                    <span className="block text-xs text-muted-foreground">
+                    <span className="mt-1 block text-[13px] leading-snug text-muted-foreground">
                       {t.group} · {t.hint}
                     </span>
                   </button>
@@ -67,7 +67,7 @@ export function LetterTemplatePicker({ onPick, label = "Choose a kind of letter"
               {!list.length && <li className="p-4 text-sm text-muted-foreground">No letter matches.</li>}
             </ul>
             {shown && (
-              <div className="hidden overflow-y-auto rounded-md border bg-white p-5 text-[12.5px] leading-relaxed text-slate-900 shadow-sm md:block">
+              <div className="hidden overflow-y-auto rounded-lg border bg-[#e9ebee] p-5 md:block dark:bg-slate-900"><div className="mx-auto max-w-[170mm] bg-white px-10 py-9 text-[14px] leading-relaxed text-slate-900 shadow-md">
                 <p className="mb-3 font-bold underline underline-offset-2">Subject: {shown.subject}</p>
                 <p className="mb-2">{shown.salutation}</p>
                 {shown.body.split(/\n\s*\n/).map((p, i) => (
@@ -76,8 +76,9 @@ export function LetterTemplatePicker({ onPick, label = "Choose a kind of letter"
                   </p>
                 ))}
                 <p className="mt-3">{shown.closing}</p>
-                <p className="mt-4 text-xs text-slate-500">Asks for: {shown.fields.map((f) => f.label).join(", ") || "nothing extra"}.</p>
-              </div>
+                <p className="mt-6 border-t pt-3 text-[13px] text-slate-500">Asks for: {shown.fields.map((f) => f.label).join(", ") || "nothing extra"}.</p>
+                <Button className="mt-4" onClick={() => (onPick(shown), setOpen(false))}>Use this template</Button>
+              </div></div>
             )}
           </div>
         </DialogContent>

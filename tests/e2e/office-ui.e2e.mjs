@@ -66,6 +66,7 @@ try {
   await page.keyboard.press("Control+b");
   await page.keyboard.type("Bold words");
   check("Ctrl+B makes bold text as you type", (await ed.locator("strong", { hasText: "Bold words" }).count()) === 1);
+  await page.getByRole("tab", { name: "insert", exact: true }).click();
   await page.getByRole("button", { name: "Insert a table" }).click();
   await page.getByRole("button", { name: "2 by 3" }).click();
   check("a table is inserted from the grid", (await ed.locator("table").count()) >= 2);
@@ -90,6 +91,14 @@ try {
   await page.getByRole("button", { name: /Blank free design/ }).click();
   await page.waitForSelector('[role="tablist"][aria-label="Ribbon"]', { timeout: 20000 });
   check("slides open in the free-design editor", true);
+  await page.getByRole("tab", { name: "insert", exact: true }).click();
+  await page.getByRole("button", { name: /New slide/ }).click();
+  await page.getByRole("button", { name: /Two content/ }).click();
+  check("a new slide is added from a layout", (await page.getByText("Page 2", { exact: false }).count()) >= 0 && (await page.locator('[aria-label="Delete page"]').count()) >= 1);
+  await page.getByRole("tab", { name: "design", exact: true }).click();
+  await page.getByRole("button", { name: "Midnight" }).click();
+  check("a theme restyles the slides", (await page.locator("[data-page-bg]").first().evaluate((el) => getComputedStyle(el).backgroundColor)) === "rgb(15, 23, 42)");
+  await shot(page, "slides-theme");
   await shot(page, "slides");
 
   // Sticky notes over every page: Alt+N, a note, a to-do ticked off, still there on another page.
@@ -113,6 +122,26 @@ try {
   await shot(page, "sticky");
   await page.keyboard.press("Alt+n");
   check("Alt+N closes them", (await page.getByRole("dialog", { name: "Sticky notes" }).count()) === 0);
+  // The letter templates window is large enough to read.
+  await page.goto(`${base}/tools/letters`);
+  await page.getByRole("button", { name: /Choose a kind of letter/ }).click();
+  const dlg = page.getByRole("dialog");
+  await dlg.waitFor();
+  const box = await dlg.boundingBox();
+  check("the letter templates window uses most of the screen", !!box && box.width > 1100 && box.height > 700, box);
+  await shot(page, "letter-templates");
+  await page.keyboard.press("Escape");
+
+  // Phones: the sticky notes open from the top bar as a sheet.
+  const phone = await (await browser.newContext({ viewport: { width: 390, height: 844 }, storageState: await ctx.storageState() })).newPage();
+  await phone.goto(`${base}/dashboard`);
+  await phone.getByRole("button", { name: "Sticky notes" }).click();
+  const sheet = phone.getByRole("dialog", { name: "Sticky notes" });
+  await sheet.waitFor({ timeout: 15000 });
+  const sb = await sheet.boundingBox();
+  check("on a phone the sticky notes open as a full-width sheet", !!sb && sb.width > 350, sb);
+  if (shots) await phone.screenshot({ path: `${shots}/sticky-phone.png` });
+
   check("no page errors", errors.length === 0, errors);
 } catch (e) {
   console.error(e);

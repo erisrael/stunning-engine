@@ -86,6 +86,8 @@ export function StickyNotes() {
   }, [s?.open, load]);
 
   if (!s?.open) return null;
+  // Phones: a sheet over the bottom of the screen (no dragging).
+  const phone = window.innerWidth < 768;
   const x = s.x < 0 ? Math.max(8, window.innerWidth - s.w - 24) : Math.min(s.x, window.innerWidth - 80);
   const y = Math.min(Math.max(8, s.y), window.innerHeight - 48);
 
@@ -150,10 +152,10 @@ export function StickyNotes() {
     <div
       role="dialog"
       aria-label="Sticky notes"
-      className="fixed z-[70] flex flex-col overflow-hidden rounded-xl border bg-background/95 shadow-2xl ring-1 ring-black/5 backdrop-blur"
-      style={{ left: x, top: y, width: s.w, height: s.min ? undefined : s.h }}
+      className={cn("fixed z-[70] flex flex-col overflow-hidden border bg-background/95 shadow-2xl ring-1 ring-black/5 backdrop-blur", phone ? "inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+4.5rem)] rounded-2xl" : "rounded-xl")}
+      style={phone ? { height: s.min ? undefined : "min(70vh, 34rem)" } : { left: x, top: y, width: s.w, height: s.min ? undefined : s.h }}
     >
-      <div onPointerDown={drag} className="flex cursor-grab items-center gap-1.5 border-b bg-amber-100/70 px-2 py-1.5 active:cursor-grabbing dark:bg-amber-500/15">
+      <div onPointerDown={phone ? undefined : drag} className="flex cursor-grab items-center gap-1.5 border-b bg-amber-100/70 px-2 py-1.5 active:cursor-grabbing dark:bg-amber-500/15">
         <StickyNoteIcon className="size-4 text-amber-600" />
         <span className="text-sm font-semibold">Sticky notes</span>
         <GripHorizontalIcon className="mx-auto size-4 text-muted-foreground/50" />
@@ -192,7 +194,7 @@ export function StickyNotes() {
                   <div key={n.id} className="group rounded-lg p-2.5 text-[13px] text-slate-800 shadow-sm" style={{ background: color }}>
                     <div className="flex items-start gap-1">
                       <p className="min-w-0 flex-1 font-semibold break-words">{n.title || "Untitled"}</p>
-                      <div className="flex shrink-0 gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                      <div className={cn("flex shrink-0 gap-0.5 transition-opacity", phone ? "opacity-100" : "opacity-0 group-hover:opacity-100")}>
                         <button type="button" aria-label="Colour" title="Colour" className="size-4 rounded-full border border-black/20" style={{ background: COLORS[(COLORS.indexOf(color) + 1) % COLORS.length] }} onClick={() => save({ colors: { ...s.colors, [n.id]: COLORS[(COLORS.indexOf(color) + 1) % COLORS.length]! } })} />
                         <button type="button" aria-label="Unpin" title="Take off the sticky notes" onClick={() => putNote(n, { pinned: false })} className="rounded p-0.5 hover:bg-black/10">
                           <PinOffIcon className="size-3.5" />
@@ -267,7 +269,7 @@ export function StickyNotes() {
               <PlusIcon className="size-4" />
             </button>
           </div>
-          <span onPointerDown={resize} aria-hidden className="absolute right-0 bottom-0 size-3 cursor-nwse-resize" style={{ background: "linear-gradient(135deg, transparent 50%, rgba(100,116,139,.5) 50%)" }} />
+          {!phone && <span onPointerDown={resize} aria-hidden className="absolute right-0 bottom-0 size-3 cursor-nwse-resize" style={{ background: "linear-gradient(135deg, transparent 50%, rgba(100,116,139,.5) 50%)" }} />}
         </>
       )}
     </div>

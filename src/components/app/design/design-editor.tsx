@@ -20,6 +20,7 @@ import {
   DEFAULT_DESIGN_OPTIONS, DESIGN_FONTS, DESIGN_SIZES, did, elementInner, ICONS, pageBackground, pageHtml, shapeEl, textCss, textEl, WEB_FONTS, fontStack,
   type DElement, type Design, type DesignOptions, type DPage, type DShape, type DText, type Extras,
 } from "@/lib/design";
+import { applyTheme, LAYOUT_LABELS, setSlideNumbers, SLIDE_LAYOUTS, SLIDE_THEMES, slideLayout, type SlideTheme } from "@/lib/slide-layouts";
 import { download, exportDocx, exportImages, exportPptx, exportSvg, printDesign } from "./design-export";
 import { cn } from "@/lib/utils";
 
@@ -67,6 +68,7 @@ export function DesignEditor({ design, onChange, options = DEFAULT_DESIGN_OPTION
   const [tplOpen, setTplOpen] = React.useState(false);
   const [painting, setPainting] = React.useState(false);
   const painter = React.useRef<Partial<DElement> | null>(null);
+  const [theme, setTheme] = React.useState<SlideTheme>(SLIDE_THEMES[0]!);
   const past = React.useRef<Design[]>([]);
   const future = React.useRef<Design[]>([]);
   const clip = React.useRef<DElement[]>([]);
@@ -466,6 +468,9 @@ export function DesignEditor({ design, onChange, options = DEFAULT_DESIGN_OPTION
   const insertAt = (e: DElement) => add(e);
   const fileRef = React.useRef<HTMLInputElement>(null);
   const RTAB = ["home", "insert", "design", "arrange", "view"] as const;
+  // Slide-shaped pages get PowerPoint's new-slide layouts, themes and slide numbers.
+  const slideShaped = d.w > d.h * 1.2;
+  const hasNumbers = d.pages.some((p) => p.elements.some((e) => e.name === "Slide number"));
 
   return (
     <div className="flex flex-col overflow-hidden rounded-xl border bg-background shadow-sm" onKeyDown={onKey} tabIndex={-1}>
@@ -605,8 +610,32 @@ export function DesignEditor({ design, onChange, options = DEFAULT_DESIGN_OPTION
           )}
           {tab === "insert" && (
             <>
-              <RGroup label="Pages">
-                <RBig icon={FilePlusIcon} label="New page" onClick={() => setPages([...d.pages.slice(0, page + 1), { id: did(), bg: cur.bg, bgGradient: cur.bgGradient, elements: cur.elements.filter((e) => e.name?.startsWith("Letterhead")).map((e) => ({ ...structuredClone(e), id: did() })) }, ...d.pages.slice(page + 1)], page + 1)} disabled={d.pages.length >= options.maxPages} />
+              <RGroup label={slideShaped ? "Slides" : "Pages"}>
+                {slideShaped && (
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <button type="button" disabled={d.pages.length >= options.maxPages} className="flex h-14 w-16 shrink-0 flex-col items-center justify-center gap-1 rounded px-1 text-[11px] leading-tight hover:bg-muted disabled:opacity-40">
+                        <FilePlusIcon className="size-5" />
+                        New slide
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[30rem] p-3" align="start">
+                      <p className="mb-2 text-xs font-medium text-muted-foreground">Layout</p>
+                      <div className="grid grid-cols-3 gap-2">
+                        {SLIDE_LAYOUTS.map((k) => {
+                          const pg = slideLayout(k, d.w, d.h, theme);
+                          return (
+                            <button key={k} type="button" className="space-y-1 text-left" onClick={() => setPages([...d.pages.slice(0, page + 1), pg, ...d.pages.slice(page + 1)], page + 1)}>
+                              <span className="block rounded border hover:border-primary"><Thumb d={d} p={pg} width={138} values={values} extras={ex} /></span>
+                              <span className="block text-[11px]">{LAYOUT_LABELS[k]}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                )}
+                <RBig icon={FilePlusIcon} label={slideShaped ? "Copy layout" : "New page"} onClick={() => setPages([...d.pages.slice(0, page + 1), { id: did(), bg: cur.bg, bgGradient: cur.bgGradient, elements: cur.elements.filter((e) => e.name?.startsWith("Letterhead")).map((e) => ({ ...structuredClone(e), id: did() })) }, ...d.pages.slice(page + 1)], page + 1)} disabled={d.pages.length >= options.maxPages} />
                 <RBig icon={CopyIcon} label="Duplicate page" onClick={() => setPages([...d.pages.slice(0, page + 1), { ...structuredClone(cur), id: did(), elements: cur.elements.map((e) => ({ ...structuredClone(e), id: did() })) }, ...d.pages.slice(page + 1)], page + 1)} disabled={d.pages.length >= options.maxPages} />
               </RGroup>
               <RGroup label="Text">
@@ -683,6 +712,26 @@ export function DesignEditor({ design, onChange, options = DEFAULT_DESIGN_OPTION
                     </select>
                     <span className="text-[11px] text-muted-foreground">{Math.round(d.w)} × {Math.round(d.h)} mm</span>
                   </div>
+                </RGroup>
+              )}
+              {slideShaped && (
+                <RGroup label="Themes">
+                  <div className="flex gap-1.5">
+                    {SLIDE_THEMES.map((t) => (
+                      <button key={t.key} type="button" title={t.label} aria-label={t.label} onClick={() => (commit(applyTheme(design, t, theme)), setTheme(t))} className={cn("flex h-12 w-16 flex-col overflow-hidden rounded border text-left hover:border-primary", theme.key === t.key && "ring-2 ring-primary")} style={{ background: t.bg }}>
+                        <span className="px-1 pt-1 text-[10px] font-bold" style={{ color: t.title, fontFamily: fontStack(t.font) }}>Aa</span>
+                        <span className="mt-auto flex h-2">
+                          <span className="flex-1" style={{ background: t.accent }} />
+                          <span className="flex-1" style={{ background: t.soft }} />
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </RGroup>
+              )}
+              {slideShaped && (
+                <RGroup label="Slide numbers">
+                  <RBig icon={HashIcon} label={hasNumbers ? "Remove numbers" : "Number slides"} active={hasNumbers} onClick={() => commit(setSlideNumbers(design, !hasNumbers, theme.text))} />
                 </RGroup>
               )}
               <RGroup label="Background">

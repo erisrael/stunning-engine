@@ -227,7 +227,7 @@ export function Topbar({ user, activeRole, unread, chatUnread, qrScan, fun = fal
           </span>
         )}
         <FocusMode />
-        {sticky && <StickyButton className="max-md:hidden" />}
+        {sticky && <StickyButton />}
         {assistant && (
           <Button variant="ghost" size="icon" className="max-md:hidden" aria-label="Assistant" title="Assistant (Alt+A)" onClick={() => window.dispatchEvent(new Event("myseed:assistant"))} data-assistant-toggle>
             <SparklesIcon className="text-[#9334E6] dark:text-[#C58AF9]" />
