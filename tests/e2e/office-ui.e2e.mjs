@@ -92,6 +92,27 @@ try {
   check("slides open in the free-design editor", true);
   await shot(page, "slides");
 
+  // Sticky notes over every page: Alt+N, a note, a to-do ticked off, still there on another page.
+  await page.goto(`${base}/dashboard`);
+  await page.keyboard.press("Alt+n");
+  const panel = page.getByRole("dialog", { name: "Sticky notes" });
+  await panel.waitFor({ timeout: 15000 });
+  await panel.getByPlaceholder(/New sticky note/).fill("Call the printer\n- [ ] Send the proof");
+  await panel.getByPlaceholder(/New sticky note/).press("Enter");
+  await panel.getByText("Call the printer").waitFor({ timeout: 15000 });
+  check("a sticky note is added and shown", true);
+  await panel.getByRole("tab", { name: /To-do/ }).click();
+  await panel.getByPlaceholder(/New to-do/).fill("Review Grade 9 videos");
+  await panel.getByPlaceholder(/New to-do/).press("Enter");
+  await panel.getByText("Review Grade 9 videos").waitFor({ timeout: 15000 });
+  await panel.getByRole("button", { name: /Mark Review Grade 9 videos done/ }).click();
+  await page.waitForTimeout(800);
+  check("a to-do is ticked off from the sticky notes", (await panel.getByText("Review Grade 9 videos").count()) === 0);
+  await page.goto(`${base}/tools/notes`);
+  check("the sticky notes stay open on other pages", await page.getByRole("dialog", { name: "Sticky notes" }).waitFor({ timeout: 15000 }).then(() => true, () => false));
+  await shot(page, "sticky");
+  await page.keyboard.press("Alt+n");
+  check("Alt+N closes them", (await page.getByRole("dialog", { name: "Sticky notes" }).count()) === 0);
   check("no page errors", errors.length === 0, errors);
 } catch (e) {
   console.error(e);

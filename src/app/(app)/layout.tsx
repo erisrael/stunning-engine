@@ -13,6 +13,7 @@ import { ActionCenter } from "@/components/app/action-center";
 import { isManager, userDirectory } from "@/server/users";
 import { ChatKeyBootstrap } from "./chat/secure";
 import { CallLayer } from "@/components/app/call-layer";
+import { StickyNotes } from "@/components/app/sticky-notes";
 import { reportDepartments } from "@/server/owners";
 import { myCustomDepartments } from "@/server/departments";
 import { can } from "@/server/users";
@@ -169,7 +170,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       />
       <SidebarInset className="min-w-0">
         {viewer.previewBy && <PreviewBanner name={viewer.name} role={roleLabel(viewer.activeRole)} />}
-        <Topbar user={{ name: viewer.name, email: viewer.email, roles: viewer.roles, avatar: avatars[viewer.id] ?? null }} activeRole={viewer.activeRole} unread={counts.notifications} chatUnread={counts.chat} assistant={assistantOn} fun={funOn} qrScan={qrScan} />
+        <Topbar user={{ name: viewer.name, email: viewer.email, roles: viewer.roles, avatar: avatars[viewer.id] ?? null }} activeRole={viewer.activeRole} unread={counts.notifications} chatUnread={counts.chat} assistant={assistantOn} fun={funOn} qrScan={qrScan} sticky={!!tools?.apps.some((a) => a.key === "notes")} />
+        {!!tools?.apps.some((a) => a.key === "notes") && <StickyNotes />}
         <OfflineCheckinSync />
         {!viewer.previewBy && <AskAnywhere />}
         <GeofenceWatch />

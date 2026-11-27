@@ -50,6 +50,14 @@ export async function sheetSourcesAction() {
 export async function sheetSourceRowsAction(key: string) {
   return wrap(async () => (await import("@/server/sheet-data")).sheetSourceRows(await requireViewer(), String(key)), quiet);
 }
+// The sticky notes over every page: pinned notes and open to-dos.
+export async function stickyAction() {
+  return wrap(async () => {
+    const u = await requireViewer();
+    const [notes, tasks] = await Promise.all([d.listNotes(u), d.listTasks(u)]);
+    return { notes: notes.filter((n) => n.pinned).slice(0, 30), tasks: tasks.filter((t) => !t.done).slice(0, 60) };
+  }, quiet);
+}
 export async function listFilesAction(kind: d.FileKind) {
   return wrap(async () => d.listFiles(await requireViewer(), kind), quiet);
 }

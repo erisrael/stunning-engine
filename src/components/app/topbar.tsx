@@ -36,6 +36,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DEPT_VIEW_LABELS } from "@/lib/work";
 import { TOOL_APPS } from "@/lib/tools";
+import { StickyButton } from "@/components/app/sticky-notes";
 import { Breadcrumb, BreadcrumbItem, BreadcrumbList, BreadcrumbPage, BreadcrumbLink, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
 import { Hint, UserAvatar } from "@/components/app/primitives";
 import { NAV_TIPS } from "@/lib/help";
@@ -126,7 +127,7 @@ function crumb(p: string, parent?: string) {
     .join(" ");
 }
 
-export function Topbar({ user, activeRole, unread, chatUnread, qrScan, fun = false, assistant = false }: { user: { name: string; email: string; roles: Role[]; avatar?: string | null }; activeRole: Role; unread: number; chatUnread: number; qrScan?: boolean; fun?: boolean; assistant?: boolean }) {
+export function Topbar({ user, activeRole, unread, chatUnread, qrScan, fun = false, assistant = false, sticky = false }: { user: { name: string; email: string; roles: Role[]; avatar?: string | null }; activeRole: Role; unread: number; chatUnread: number; qrScan?: boolean; fun?: boolean; assistant?: boolean; sticky?: boolean }) {
   const pathname = usePathname();
   const parts = pathname.split("/").filter(Boolean);
   const phoneTitle = (() => {
@@ -226,6 +227,7 @@ export function Topbar({ user, activeRole, unread, chatUnread, qrScan, fun = fal
           </span>
         )}
         <FocusMode />
+        {sticky && <StickyButton className="max-md:hidden" />}
         {assistant && (
           <Button variant="ghost" size="icon" className="max-md:hidden" aria-label="Assistant" title="Assistant (Alt+A)" onClick={() => window.dispatchEvent(new Event("myseed:assistant"))} data-assistant-toggle>
             <SparklesIcon className="text-[#9334E6] dark:text-[#C58AF9]" />
