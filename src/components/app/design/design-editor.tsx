@@ -1,6 +1,7 @@
 "use client";
 
-// The design editor (Canva style): pages you draw on with text, pictures, shapes, lines, icons, tables, QR codes and
+// The design editor, laid out as Word and PowerPoint (a ribbon with Home, Insert, Design, Arrange and View, a pages
+// pane, a Format pane and a status bar with zoom), with Canva's ease: pages you draw on with text, pictures, shapes, lines, icons, tables, QR codes and
 // the letter's signature and stamp places. Drag to move (with smart guides that snap to the page and to other
 // elements), handles to resize and rotate, double-click to type, layers, grouping, alignment and distribution,
 // copy and paste, undo and redo, zoom, pages, backgrounds and brand colours, and a preview that shows the design as
@@ -8,8 +9,9 @@
 
 import * as React from "react";
 import {
-  AlignCenterHorizontalIcon, AlignCenterVerticalIcon, AlignEndHorizontalIcon, AlignEndVerticalIcon, AlignStartHorizontalIcon, AlignStartVerticalIcon, ArrowDownIcon, ArrowUpIcon, BoldIcon, BringToFrontIcon, CopyIcon, DownloadIcon, EyeIcon, EyeOffIcon, FileImageIcon, GridIcon, GroupIcon, ImageIcon, ImagePlusIcon, ItalicIcon, LayersIcon, LayoutTemplateIcon, LinkIcon, LockIcon, MagnetIcon, MinusIcon, MousePointer2Icon, PaintBucketIcon, PencilRulerIcon, PlusIcon, QrCodeIcon, Redo2Icon, SendToBackIcon, ShapesIcon, SignatureIcon, SquareIcon, StampIcon, StrikethroughIcon, TableIcon, Trash2Icon, TypeIcon, UnderlineIcon, UngroupIcon, Undo2Icon, UnlockIcon, ZoomInIcon, ZoomOutIcon, FilesIcon, StarIcon,
+  AArrowDownIcon, AArrowUpIcon, AlignCenterHorizontalIcon, AlignCenterIcon, AlignCenterVerticalIcon, AlignEndHorizontalIcon, AlignEndVerticalIcon, AlignHorizontalSpaceAroundIcon, AlignJustifyIcon, AlignLeftIcon, AlignRightIcon, AlignStartHorizontalIcon, AlignStartVerticalIcon, AlignVerticalSpaceAroundIcon, ArrowDownIcon, ArrowDownToLineIcon, ArrowUpIcon, ArrowUpToLineIcon, BoldIcon, BringToFrontIcon, CalendarIcon, CaseUpperIcon, CopyIcon, DownloadIcon, EyeIcon, EyeOffIcon, FileImageIcon, FilePlusIcon, FlipHorizontalIcon, FlipVerticalIcon, FoldVerticalIcon, FrameIcon, GridIcon, GroupIcon, HashIcon, HeadingIcon, HighlighterIcon, ImageIcon, ImagePlusIcon, ItalicIcon, LayoutTemplateIcon, ListIcon, ListOrderedIcon, LockIcon, MagnetIcon, MinusIcon, MoveLeftIcon, MoveRightIcon, PaintBucketIcon, PaintbrushIcon, PanelLeftIcon, PanelRightIcon, PencilRulerIcon, PlusIcon, QrCodeIcon, QuoteIcon, Redo2Icon, ReplaceIcon, RotateCcwIcon, RotateCwIcon, ScanIcon, SendToBackIcon, ShapesIcon, SignatureIcon, SparklesIcon, SquareIcon, StampIcon, StarIcon, StrikethroughIcon, TableIcon, Trash2Icon, TypeIcon, UnderlineIcon, UngroupIcon, Undo2Icon, UnlockIcon, XIcon, ZoomInIcon, ZoomOutIcon,
 } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -59,6 +61,12 @@ export function DesignEditor({ design, onChange, options = DEFAULT_DESIGN_OPTION
   const [grid, setGrid] = React.useState(options.grid);
   const [marquee, setMarquee] = React.useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
   const [busy, setBusy] = React.useState<string | null>(null);
+  const [tab, setTab] = React.useState<"home" | "insert" | "design" | "arrange" | "view" | "format">("home");
+  const [showFormat, setShowFormat] = React.useState(true);
+  const [showPages, setShowPages] = React.useState(true);
+  const [tplOpen, setTplOpen] = React.useState(false);
+  const [painting, setPainting] = React.useState(false);
+  const painter = React.useRef<Partial<DElement> | null>(null);
   const past = React.useRef<Design[]>([]);
   const future = React.useRef<Design[]>([]);
   const clip = React.useRef<DElement[]>([]);
@@ -72,7 +80,7 @@ export function DesignEditor({ design, onChange, options = DEFAULT_DESIGN_OPTION
   const fonts = options.allowAllFonts ? DESIGN_FONTS : DESIGN_FONTS.filter((f) => options.fonts.includes(f));
   const palette = [...new Set([...options.palette, ...(d.palette ?? [])])];
   // A template's letterhead parts stay put when Admin locks them.
-  const frozen = (e: DElement) => !!e.locked && options.lockLetterhead && e.name?.startsWith("Letterhead");
+  const frozen = (e: DElement) => !!e.locked && options.lockLetterhead && !!e.name?.startsWith("Letterhead");
 
   const commit = React.useCallback(
     (next: Design) => {
@@ -335,7 +343,7 @@ export function DesignEditor({ design, onChange, options = DEFAULT_DESIGN_OPTION
     if (mod && k === "a") return e.preventDefault(), setSel(cur.elements.filter((x) => !x.hidden).map((x) => x.id));
     if (mod && k === "g") return e.preventDefault(), e.shiftKey ? ungroup() : group();
     if (k === "delete" || k === "backspace") return e.preventDefault(), removeSel();
-    if (k === "escape") return setSel([]);
+    if (k === "escape") return void (setSel([]), setPainting(false));
     if (k === "]") return arrange(mod ? "front" : "forward");
     if (k === "[") return arrange(mod ? "back" : "backward");
     if (k.startsWith("arrow") && sel.length) {
@@ -379,14 +387,27 @@ export function DesignEditor({ design, onChange, options = DEFAULT_DESIGN_OPTION
     if (el && el.kind === "text" && el.text !== text) commit(setPageEls(cur.elements.map((x) => (x.id === id ? ({ ...x, text } as DElement) : x))));
   };
 
+  // Fit the page to the canvas width (and height for wide pages such as slides), leaving room around it.
   const fitZoom = () => {
-    const w = scroller.current?.clientWidth ?? 800;
-    setZoom(Math.max(0.2, Math.min(2.5, Math.round(((w - 48) / (d.w * MM)) * 20) / 20)));
+    const el = scroller.current;
+    const w = (el?.clientWidth ?? 800) - 72;
+    const h = (el?.clientHeight ?? 600) - 72;
+    const byW = w / (d.w * MM);
+    const byH = d.w > d.h ? h / (d.h * MM) : byW;
+    setZoom(Math.max(0.2, Math.min(2.5, Math.floor(Math.min(byW, byH) * 20) / 20)));
   };
   React.useEffect(() => {
     fitZoom();
+    const el = scroller.current;
+    if (!el) return;
+    let last = el.clientWidth;
+    const ro = new ResizeObserver(() => {
+      if (Math.abs(el.clientWidth - last) > 40) (last = el.clientWidth), fitZoom();
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [d.w]);
+  }, [d.w, d.h, showPages, showFormat, mode]);
   React.useEffect(() => setSel([]), [mode]);
 
   const exportAs = async (kind: "png" | "jpeg" | "pdf" | "svg" | "pptx" | "docx" | "pagepng") => {
@@ -405,321 +426,388 @@ export function DesignEditor({ design, onChange, options = DEFAULT_DESIGN_OPTION
     setBusy(null);
   };
 
-  const tb = "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md hover:bg-muted disabled:opacity-40";
   const ex = { ...extras, editing: mode === "design" };
+  const txt = one?.kind === "text" ? (one as DText & DElement) : null;
+  const patchText = (p: Partial<DText>) => txt && updateOne(p as Partial<DElement>);
+  // Text styles, as Word's Styles gallery.
+  const STYLES: { label: string; p: Partial<DText> }[] = [
+    { label: "Title", p: { size: 30, weight: 700, italic: false, color: palette[1] ?? "#0f172a" } },
+    { label: "Heading 1", p: { size: 20, weight: 700, italic: false, color: palette[1] ?? "#0f172a" } },
+    { label: "Heading 2", p: { size: 15, weight: 600, italic: false, color: palette[0] ?? "#16a34a" } },
+    { label: "Normal", p: { size: 11, weight: 400, italic: false, color: "#111827", lineHeight: 1.45 } },
+    { label: "Caption", p: { size: 8.5, weight: 400, italic: false, color: "#64748b" } },
+    { label: "Quote", p: { size: 14, weight: 400, italic: true, color: "#475569" } },
+  ];
+  // Format painter: copy how one element looks and paint it on the next one clicked.
+  const STYLE_KEYS = ["font", "size", "weight", "italic", "underline", "strike", "color", "align", "valign", "lineHeight", "letterSpacing", "uppercase", "bg", "padding", "shadow", "outline", "fill", "stroke", "strokeWidth", "radius", "dash", "gradient", "opacity", "filter", "border", "borderWidth", "headFill", "headColor", "stripe"];
+  const pickStyle = () => {
+    if (!one) return;
+    painter.current = Object.fromEntries(Object.entries(one).filter(([k]) => STYLE_KEYS.includes(k))) as Partial<DElement>;
+    setPainting(true);
+  };
+  const paintOn = (e: DElement) => {
+    const st = painter.current;
+    setPainting(false);
+    if (!st || frozen(e)) return;
+    const keep = Object.fromEntries(Object.entries(st).filter(([k]) => k in e || ["bg", "shadow", "outline", "gradient", "dash", "filter", "border", "borderWidth", "stripe"].includes(k)));
+    update([e.id], (x) => ({ ...x, ...keep }) as DElement);
+    setSel([e.id]);
+  };
+  // Find and replace across every text box and table in the design.
+  const replaceText = (q: string, r: string) => {
+    if (!q) return 0;
+    let n = 0;
+    const re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
+    const fix = (t: string) => t.replace(re, () => (n++, r));
+    commit({ ...design, pages: design.pages.map((p) => ({ ...p, elements: p.elements.map((e) => (e.kind === "text" ? { ...e, text: fix(e.text) } : e.kind === "table" ? { ...e, rows: e.rows.map((row) => row.map(fix)) } : e)) })) });
+    return n;
+  };
+  const rotateSel = (deg: number) => update(sel, (e) => ({ ...e, rotate: ((((e.rotate + deg) % 360) + 540) % 360) - 180 }));
+  const insertAt = (e: DElement) => add(e);
+  const fileRef = React.useRef<HTMLInputElement>(null);
+  const RTAB = ["home", "insert", "design", "arrange", "view"] as const;
 
   return (
-    <div className="flex flex-col overflow-hidden rounded-lg border bg-background" onKeyDown={onKey} tabIndex={-1}>
+    <div className="flex flex-col overflow-hidden rounded-xl border bg-background shadow-sm" onKeyDown={onKey} tabIndex={-1}>
       {options.webFonts && <style>{`@import url("https://fonts.googleapis.com/css2?${WEB_FONTS.map((f) => `family=${encodeURIComponent(f).replace(/%20/g, "+")}:ital,wght@0,400;0,600;0,700;1,400`).join("&")}&display=swap");`}</style>}
-      {/* Top bar */}
-      <div className="flex flex-wrap items-center gap-1 border-b bg-muted/30 px-2 py-1">
-        {options.allowModeSwitch && (
-          <div className="mr-1 inline-flex rounded-md border bg-background p-0.5 text-xs" role="tablist" aria-label="Mode">
-            <button type="button" role="tab" aria-selected={mode === "design"} className={cn("inline-flex items-center gap-1 rounded px-2 py-1", mode === "design" && "bg-primary text-primary-foreground")} onClick={() => setMode("design")}>
-              <PencilRulerIcon className="size-3.5" /> Edit
-            </button>
-            <button type="button" role="tab" aria-selected={mode === "preview"} className={cn("inline-flex items-center gap-1 rounded px-2 py-1", mode === "preview" && "bg-primary text-primary-foreground")} onClick={() => setMode("preview")}>
-              <EyeIcon className="size-3.5" /> Preview
-            </button>
-          </div>
-        )}
+      <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" className="hidden" onChange={(e) => (e.target.files?.[0] && upload(e.target.files[0], addImage), (e.target.value = ""))} />
+
+      {/* Title bar: quick access, tabs, mode and download (as Office) */}
+      <div className="flex items-center gap-1 border-b bg-muted/40 px-2">
         {mode === "design" && (
           <>
-            <button type="button" className={tb} onClick={undo} disabled={!past.current.length} title="Undo (Ctrl+Z)" aria-label="Undo"><Undo2Icon className="size-4" /></button>
-            <button type="button" className={tb} onClick={redo} disabled={!future.current.length} title="Redo (Ctrl+Y)" aria-label="Redo"><Redo2Icon className="size-4" /></button>
+            <button type="button" className={qa} onClick={undo} disabled={!past.current.length} title="Undo (Ctrl+Z)" aria-label="Undo"><Undo2Icon className="size-4" /></button>
+            <button type="button" className={qa} onClick={redo} disabled={!future.current.length} title="Redo (Ctrl+Y)" aria-label="Redo"><Redo2Icon className="size-4" /></button>
             <span className="mx-1 h-5 w-px bg-border" />
-            <button type="button" className={cn(tb, snap && "bg-muted text-primary")} onClick={() => setSnap(!snap)} title="Snap to guides (hold Alt to move freely)" aria-label="Snap"><MagnetIcon className="size-4" /></button>
-            <button type="button" className={cn(tb, grid && "bg-muted text-primary")} onClick={() => setGrid(!grid)} title={`Grid (${options.gridSize} mm)`} aria-label="Grid"><GridIcon className="size-4" /></button>
+            <div role="tablist" aria-label="Ribbon" className="flex">
+              {RTAB.map((k) => (
+                <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setTab(k)} className={cn("-mb-px border-b-2 px-3 py-2 text-[13px] capitalize", tab === k ? "border-primary font-medium text-primary" : "border-transparent text-muted-foreground hover:text-foreground")}>
+                  {k}
+                </button>
+              ))}
+              {selected.length > 0 && (
+                <button type="button" role="tab" aria-selected={tab === "format"} onClick={() => setTab("format")} className={cn("-mb-px border-b-2 px-3 py-2 text-[13px]", tab === "format" ? "border-primary font-medium text-primary" : "border-transparent text-primary/80 hover:text-primary")}>
+                  {txt ? "Text format" : one?.kind === "image" ? "Picture format" : one?.kind === "table" ? "Table design" : "Shape format"}
+                </button>
+              )}
+            </div>
           </>
         )}
-        {options.allowPageSize && mode === "design" && (
-          <select
-            className="h-8 rounded-md border bg-background px-1 text-xs"
-            aria-label="Page size"
-            value={DESIGN_SIZES.find((s) => Math.abs(s.w - d.w) < 0.5 && Math.abs(s.h - d.h) < 0.5)?.key ?? "custom"}
-            onChange={(e) => {
-              const s = DESIGN_SIZES.find((x) => x.key === e.target.value);
-              if (!s) return;
-              // Elements keep their place in proportion to the new size.
-              const kx = s.w / d.w;
-              const ky = s.h / d.h;
-              commit({ ...design, w: s.w, h: s.h, pages: design.pages.map((p) => ({ ...p, elements: p.elements.map((el) => ({ ...el, x: round(el.x * kx), y: round(el.y * ky), w: round(el.w * kx), h: round(el.h * ky) }) as DElement) })) });
-            }}
-          >
-            {DESIGN_SIZES.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
-            <option value="custom" hidden>Custom {Math.round(d.w)} × {Math.round(d.h)} mm</option>
-          </select>
-        )}
-        <div className="ml-auto flex items-center gap-1">
-          <button type="button" className={tb} onClick={() => setZoom((z) => Math.max(0.2, Math.round((z - 0.1) * 10) / 10))} aria-label="Zoom out"><ZoomOutIcon className="size-4" /></button>
-          <button type="button" className="h-8 rounded-md px-1 text-xs tabular-nums hover:bg-muted" onClick={fitZoom} title="Fit to width">{Math.round(zoom * 100)}%</button>
-          <button type="button" className={tb} onClick={() => setZoom((z) => Math.min(3, Math.round((z + 0.1) * 10) / 10))} aria-label="Zoom in"><ZoomInIcon className="size-4" /></button>
+        <div className="ml-auto flex items-center gap-1.5 py-1">
+          {options.allowModeSwitch && (
+            <div className="inline-flex rounded-md border bg-background p-0.5 text-xs" role="tablist" aria-label="Mode">
+              <button type="button" role="tab" aria-selected={mode === "design"} className={cn("inline-flex items-center gap-1 rounded px-2 py-1", mode === "design" && "bg-primary text-primary-foreground")} onClick={() => setMode("design")}>
+                <PencilRulerIcon className="size-3.5" /> Edit
+              </button>
+              <button type="button" role="tab" aria-selected={mode === "preview"} className={cn("inline-flex items-center gap-1 rounded px-2 py-1", mode === "preview" && "bg-primary text-primary-foreground")} onClick={() => setMode("preview")}>
+                <EyeIcon className="size-3.5" /> Preview
+              </button>
+            </div>
+          )}
           <Popover>
             <PopoverTrigger asChild>
-              <Button size="sm" variant="outline" className="h-8" disabled={!!busy}>
+              <Button size="sm" className="h-8" disabled={!!busy}>
                 <DownloadIcon /> {busy ? "Exporting…" : "Download"}
               </Button>
             </PopoverTrigger>
-            <PopoverContent align="end" className="w-60 p-1">
-              {options.exports.pdf && <MenuBtn onClick={() => exportAs("pdf")} label="PDF (print, Save as PDF)" />}
+            <PopoverContent align="end" className="w-64 p-1">
+              {options.exports.pdf && <MenuBtn onClick={() => exportAs("pdf")} label="PDF document (print, Save as PDF)" />}
+              {options.exports.docx && <MenuBtn onClick={() => exportAs("docx")} label="Word document (.docx)" />}
+              {options.exports.pptx && <MenuBtn onClick={() => exportAs("pptx")} label="PowerPoint (.pptx), editable" />}
               {options.exports.png && <MenuBtn onClick={() => exportAs("png")} label={d.pages.length > 1 ? "PNG, every page (.zip)" : "PNG picture"} />}
               {options.exports.png && d.pages.length > 1 && <MenuBtn onClick={() => exportAs("pagepng")} label={`PNG, page ${page + 1} only`} />}
               {options.exports.jpeg && <MenuBtn onClick={() => exportAs("jpeg")} label="JPEG picture" />}
               {options.exports.svg && <MenuBtn onClick={() => exportAs("svg")} label={`SVG, page ${page + 1}`} />}
-              {options.exports.pptx && <MenuBtn onClick={() => exportAs("pptx")} label="PowerPoint (.pptx), editable" />}
-              {options.exports.docx && <MenuBtn onClick={() => exportAs("docx")} label="Word (.docx)" />}
               <MenuBtn onClick={() => download(new Blob([JSON.stringify(design)], { type: "application/json" }), `${title.replace(/[^\w\- ]+/g, "") || "design"}.myseed-design.json`)} label="Design file (.json), to open again" />
             </PopoverContent>
           </Popover>
         </div>
       </div>
 
-      <div className="flex min-h-0" style={{ height }}>
-        {/* Left panel */}
-        {mode === "design" && (
-          <div className="flex w-[19rem] shrink-0 border-r max-md:hidden">
-            <nav className="flex w-14 shrink-0 flex-col items-center gap-1 border-r bg-muted/20 py-2" aria-label="Design panels">
-              {(
-                [
-                  ...(templates.length ? [["templates", LayoutTemplateIcon, "Templates"] as const] : []),
-                  ["elements", ShapesIcon, "Elements"],
-                  ["text", TypeIcon, "Text"],
-                  ...(options.allowUploads ? [["uploads", ImagePlusIcon, "Uploads"] as const] : []),
-                  ["background", PaintBucketIcon, "Background"],
-                  ["layers", LayersIcon, "Layers"],
-                  ["pages", FilesIcon, "Pages"],
-                ] as const
-              ).map(([k, Icon, label]) => (
-                <button key={k} type="button" onClick={() => setPanel(k)} className={cn("flex w-12 flex-col items-center gap-0.5 rounded-md py-1.5 text-[10px]", panel === k ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted")}>
-                  <Icon className="size-4" />
-                  {label}
-                </button>
-              ))}
-            </nav>
-            <div className="min-w-0 flex-1 space-y-3 overflow-y-auto p-3 text-sm">
-              {panel === "templates" && (
-                <div className="space-y-2">
-                  <p className="text-xs text-muted-foreground">Starting a template replaces this design (undo brings it back).</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    {templates.map((t) => {
-                      const td = t.design();
-                      return (
-                        <button key={t.key} type="button" className="space-y-1 text-left" onClick={() => (commit(td), setPage(0), setSel([]))} title={t.hint}>
-                          <Thumb d={td} p={td.pages[0]!} width={116} values={values} extras={ex} />
-                          <span className="block truncate text-xs font-medium">{t.label}</span>
-                        </button>
-                      );
-                    })}
+      {/* Ribbon */}
+      {mode === "design" && (
+        <div className="flex min-h-[5.25rem] items-stretch gap-0 overflow-x-auto border-b bg-background px-1 py-1">
+          {tab === "home" && (
+            <>
+              <RGroup label="Clipboard">
+                <RBig icon={CopyIcon} label="Duplicate" onClick={() => duplicate()} disabled={!selected.length} />
+                <div className="flex flex-col gap-0.5">
+                  <RSmall icon={PaintbrushIcon} label={painting ? "Click a target" : "Format painter"} onClick={pickStyle} active={painting} disabled={!one} />
+                  <RSmall icon={Trash2Icon} label="Delete" onClick={removeSel} disabled={!selected.length} />
+                </div>
+              </RGroup>
+              <RGroup label="Font">
+                <div className="flex flex-col gap-1">
+                  <div className="flex gap-1">
+                    <select className="h-7 w-36 rounded border bg-background px-1 text-xs disabled:opacity-50" disabled={!txt} value={txt?.font ?? "Inter"} onChange={(e) => patchText({ font: e.target.value })} aria-label="Font">
+                      {[...new Set([txt?.font ?? "Inter", ...fonts])].map((f) => <option key={f} value={f} style={{ fontFamily: fontStack(f) }}>{f}</option>)}
+                    </select>
+                    <select className="h-7 w-16 rounded border bg-background px-1 text-xs disabled:opacity-50" disabled={!txt} value={txt?.size ?? 12} onChange={(e) => patchText({ size: Number(e.target.value) })} aria-label="Font size">
+                      {[...new Set([txt?.size ?? 12, 8, 9, 10, 10.5, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 40, 48, 60, 72, 96])].sort((a, b) => a - b).map((n) => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                    <RIcon icon={AArrowUpIcon} label="Grow font" onClick={() => txt && patchText({ size: Math.round(txt.size * 1.1 + 0.5) })} disabled={!txt} />
+                    <RIcon icon={AArrowDownIcon} label="Shrink font" onClick={() => txt && patchText({ size: Math.max(4, Math.round(txt.size / 1.1)) })} disabled={!txt} />
+                  </div>
+                  <div className="flex items-center gap-0.5">
+                    <RIcon icon={BoldIcon} label="Bold (Ctrl+B)" active={!!txt && txt.weight >= 700} onClick={() => txt && patchText({ weight: txt.weight >= 700 ? 400 : 700 })} disabled={!txt} />
+                    <RIcon icon={ItalicIcon} label="Italic" active={!!txt?.italic} onClick={() => patchText({ italic: !txt?.italic })} disabled={!txt} />
+                    <RIcon icon={UnderlineIcon} label="Underline" active={!!txt?.underline} onClick={() => patchText({ underline: !txt?.underline })} disabled={!txt} />
+                    <RIcon icon={StrikethroughIcon} label="Strike through" active={!!txt?.strike} onClick={() => patchText({ strike: !txt?.strike })} disabled={!txt} />
+                    <RIcon icon={CaseUpperIcon} label="Capitals" active={!!txt?.uppercase} onClick={() => patchText({ uppercase: !txt?.uppercase })} disabled={!txt} />
+                    <ColorPop icon={TypeIcon} label="Font colour" value={txt?.color} palette={palette} custom={options.allowCustomColors} onPick={(c) => c && patchText({ color: c })} />
+                    <ColorPop icon={HighlighterIcon} label="Highlight" value={txt?.bg} palette={palette} custom={options.allowCustomColors} onPick={(c) => patchText({ bg: c })} none />
                   </div>
                 </div>
-              )}
-              {panel === "text" && (
-                <div className="space-y-2">
-                  <Button className="w-full" size="sm" onClick={() => add(textEl("Add a heading", 0, 0, Math.min(150, d.w - 20), 16, { size: 28, weight: 700 }))}>Add a heading</Button>
-                  <Button className="w-full" size="sm" variant="outline" onClick={() => add(textEl("Add a subheading", 0, 0, Math.min(130, d.w - 20), 11, { size: 18, weight: 600 }))}>Add a subheading</Button>
-                  <Button className="w-full" size="sm" variant="outline" onClick={() => add(textEl("Add a little body text. Double-click to type.", 0, 0, Math.min(120, d.w - 20), 20, { size: 11 }))}>Add body text</Button>
-                  <p className="pt-2 text-xs font-medium text-muted-foreground">Styles</p>
-                  {[
-                    { label: "Bold title", t: textEl("BOLD TITLE", 0, 0, 140, 18, { font: "Montserrat", size: 32, weight: 800, letterSpacing: 2 }) },
-                    { label: "Elegant serif", t: textEl("Elegant heading", 0, 0, 140, 16, { font: "Playfair Display", size: 30, italic: true }) },
-                    { label: "Quote", t: textEl("“A quote that matters.”", 0, 0, 130, 18, { font: "Georgia", size: 18, italic: true, color: "#475569", align: "center" }) },
-                    { label: "Label", t: textEl("LABEL", 0, 0, 40, 8, { size: 9, weight: 700, color: "#ffffff", bg: "#16a34a", align: "center", valign: "middle", padding: 1, letterSpacing: 1.5 }) },
-                    { label: "Bullet list", t: textEl("First point\nSecond point\nThird point", 0, 0, 100, 24, { size: 12, list: "bullet" }) },
-                    { label: "Amharic heading", t: textEl("የምስክር ወረቀት", 0, 0, 120, 16, { font: "Noto Sans Ethiopic", size: 26, weight: 700 }) },
-                  ].map((s) => (
-                    <button key={s.label} type="button" className="block w-full rounded-md border px-2 py-2 text-left hover:border-primary" onClick={() => add({ ...s.t, id: did() } as DElement)}>
-                      <span style={{ fontFamily: fontStack((s.t as DText).font), fontWeight: (s.t as DText).weight, fontStyle: (s.t as DText).italic ? "italic" : undefined }} className="text-sm">{s.label}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-              {panel === "elements" && (
-                <div className="space-y-3">
-                  {options.allowShapes && (
-                    <Section title="Shapes">
-                      <div className="grid grid-cols-5 gap-1">
-                        {(["rect", "ellipse", "triangle", "diamond", "star", "arrow", "hexagon", "speech", "pill"] as DShape["shape"][]).map((s) => (
-                          <button key={s} type="button" title={s} className="flex aspect-square items-center justify-center rounded border hover:border-primary" onClick={() => add(shapeEl(s, 0, 0, s === "pill" ? 50 : 40, s === "pill" ? 14 : s === "arrow" ? 22 : 40, { fill: palette[0] ?? "#16a34a" }))}>
-                            <span className="block size-6" dangerouslySetInnerHTML={{ __html: elementInner(shapeEl(s, 0, 0, 24, 24, { fill: "#64748b" })) }} />
-                          </button>
-                        ))}
-                        <button type="button" title="Rounded rectangle" className="flex aspect-square items-center justify-center rounded border hover:border-primary" onClick={() => add(shapeEl("rect", 0, 0, 60, 30, { fill: palette[0] ?? "#16a34a", radius: 4 }))}>
-                          <span className="block h-4 w-6 rounded bg-slate-500" />
-                        </button>
-                      </div>
-                    </Section>
-                  )}
-                  <Section title="Lines">
-                    <div className="grid grid-cols-4 gap-1">
-                      {[
-                        { label: "Line", p: {} },
-                        { label: "Dashed", p: { dash: true } },
-                        { label: "Arrow", p: { arrowEnd: true } },
-                        { label: "Both ends", p: { arrowEnd: true, arrowStart: true } },
-                      ].map((l) => (
-                        <button key={l.label} type="button" className="rounded border px-1 py-2 text-[10px] hover:border-primary" onClick={() => add({ id: did(), kind: "line", stroke: "#0f172a", strokeWidth: 0.6, x: (d.w - 80) / 2, y: d.h / 2, w: 80, h: 2, rotate: 0, opacity: 1, ...l.p } as DElement)}>
-                          {l.label}
-                        </button>
-                      ))}
-                    </div>
-                  </Section>
-                  {options.allowIcons && (
-                    <Section title="Icons">
-                      <div className="grid grid-cols-6 gap-1">
-                        {Object.entries(ICONS).map(([k, path]) => (
-                          <button key={k} type="button" title={k} className="flex aspect-square items-center justify-center rounded border hover:border-primary" onClick={() => add({ id: did(), kind: "icon", icon: k, color: palette[0] ?? "#16a34a", x: (d.w - 14) / 2, y: (d.h - 14) / 2, w: 14, h: 14, rotate: 0, opacity: 1 } as DElement)}>
-                            <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d={path} /></svg>
-                          </button>
-                        ))}
-                      </div>
-                    </Section>
-                  )}
-                  <Section title="More">
-                    <div className="grid grid-cols-2 gap-1">
-                      {options.allowTables && (
-                        <Button size="sm" variant="outline" onClick={() => add({ id: did(), kind: "table", rows: [["Item", "Detail", "Amount"], ["", "", ""], ["", "", ""]], header: true, font: "Inter", size: 10, color: "#111827", headFill: palette[1] ?? "#0f172a", headColor: "#ffffff", border: "#cbd5e1", stripe: "#f8fafc", x: (d.w - 150) / 2, y: (d.h - 30) / 2, w: 150, h: 30, rotate: 0, opacity: 1 } as DElement)}>
-                          <TableIcon /> Table
-                        </Button>
-                      )}
-                      {options.allowQr && (
-                        <Button size="sm" variant="outline" onClick={() => add({ id: did(), kind: "qr", x: (d.w - 22) / 2, y: (d.h - 22) / 2, w: 22, h: 22, rotate: 0, opacity: 1 } as DElement)}>
-                          <QrCodeIcon /> QR code
-                        </Button>
-                      )}
-                      <Button size="sm" variant="outline" onClick={() => extras.logo && add({ id: did(), kind: "image", src: "logo", fit: "contain", x: 20, y: 15, w: 25, h: 25, rotate: 0, opacity: 1 } as DElement)} disabled={!extras.logo}>
-                        <StarIcon /> Logo
-                      </Button>
-                    </div>
-                  </Section>
-                  {slots && (
-                    <Section title="Letter places">
-                      <p className="text-xs text-muted-foreground">Filled when the letter is signed, stamped or issued.</p>
-                      <div className="grid grid-cols-2 gap-1">
-                        {(
-                          [
-                            ["signature", SignatureIcon, "Signature", 50, 18],
-                            ["stamp", StampIcon, "Stamp", 32, 32],
-                            ["date", MousePointer2Icon, "Date", 50, 6],
-                            ["reference", MousePointer2Icon, "Reference", 60, 6],
-                          ] as const
-                        ).map(([slot, Icon, label, w, h]) => (
-                          <Button key={slot} size="sm" variant="outline" onClick={() => add({ id: did(), kind: "slot", slot, label, x: (d.w - w) / 2, y: (d.h - h) / 2, w, h, rotate: 0, opacity: 1 } as DElement)}>
-                            <Icon /> {label}
-                          </Button>
-                        ))}
-                      </div>
-                    </Section>
-                  )}
-                </div>
-              )}
-              {panel === "uploads" && (
-                <div className="space-y-2">
-                  <label className="flex cursor-pointer items-center justify-center gap-2 rounded-md border border-dashed px-3 py-6 text-sm hover:border-primary">
-                    <ImagePlusIcon className="size-4" /> Upload a picture
-                    <input type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" className="hidden" onChange={(e) => e.target.files?.[0] && upload(e.target.files[0], addImage)} />
-                  </label>
-                  <p className="text-xs text-muted-foreground">Up to {options.maxUploadKb} KB. You can also paste a picture or drop it on the page.</p>
-                  <div className="grid grid-cols-3 gap-1">
-                    {[...new Set(d.pages.flatMap((p) => p.elements.filter((e) => e.kind === "image" && e.src !== "logo").map((e) => (e as { src: string }).src)))].slice(0, 30).map((src, i) => (
-                      <button key={i} type="button" className="aspect-square overflow-hidden rounded border" onClick={() => addImage(src)}>
-                        <img src={src} alt="" className="size-full object-cover" />
-                      </button>
+              </RGroup>
+              <RGroup label="Paragraph">
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center gap-0.5">
+                    <RIcon icon={ListIcon} label="Bullets" active={txt?.list === "bullet"} onClick={() => patchText({ list: txt?.list === "bullet" ? "none" : "bullet" })} disabled={!txt} />
+                    <RIcon icon={ListOrderedIcon} label="Numbering" active={txt?.list === "number"} onClick={() => patchText({ list: txt?.list === "number" ? "none" : "number" })} disabled={!txt} />
+                    <select className="h-7 rounded border bg-background px-1 text-xs disabled:opacity-50" disabled={!txt} value={txt?.lineHeight ?? 1.35} onChange={(e) => patchText({ lineHeight: Number(e.target.value) })} aria-label="Line spacing" title="Line spacing">
+                      {[...new Set([txt?.lineHeight ?? 1.35, 1, 1.15, 1.35, 1.5, 2, 2.5])].sort((a, b) => a - b).map((n) => <option key={n} value={n}>{n.toFixed(2)}</option>)}
+                    </select>
+                  </div>
+                  <div className="flex items-center gap-0.5">
+                    {([["left", AlignLeftIcon], ["center", AlignCenterIcon], ["right", AlignRightIcon], ["justify", AlignJustifyIcon]] as const).map(([a, I]) => (
+                      <RIcon key={a} icon={I} label={`Align ${a}`} active={txt?.align === a} onClick={() => patchText({ align: a })} disabled={!txt} />
+                    ))}
+                    {([["top", ArrowUpToLineIcon], ["middle", FoldVerticalIcon], ["bottom", ArrowDownToLineIcon]] as const).map(([a, I]) => (
+                      <RIcon key={a} icon={I} label={`Text to the ${a}`} active={(txt?.valign ?? "top") === a && !!txt} onClick={() => patchText({ valign: a })} disabled={!txt} />
                     ))}
                   </div>
                 </div>
+              </RGroup>
+              <RGroup label="Styles">
+                <div className="grid grid-cols-3 gap-1">
+                  {STYLES.map((s) => (
+                    <button key={s.label} type="button" disabled={!txt} onClick={() => patchText(s.p)} className="h-7 w-[4.6rem] truncate rounded border bg-background px-1 text-left disabled:opacity-40 hover:border-primary" style={{ fontSize: Math.min(13, Math.max(9, (s.p.size ?? 11) / 2 + 4)), fontWeight: s.p.weight, fontStyle: s.p.italic ? "italic" : undefined, color: s.p.color }}>
+                      {s.label}
+                    </button>
+                  ))}
+                </div>
+              </RGroup>
+              <RGroup label="Drawing">
+                <ShapeGallery onPick={(s) => insertAt(shapeEl(s, 0, 0, s === "pill" ? 50 : 40, s === "pill" ? 14 : s === "arrow" ? 22 : 40, { fill: palette[0] ?? "#16a34a" }))} disabled={!options.allowShapes} />
+                <div className="flex flex-col gap-0.5">
+                  <ColorPop icon={PaintBucketIcon} label="Shape fill" value={one && one.kind === "shape" ? one.fill : null} palette={palette} custom={options.allowCustomColors} onPick={(c) => one?.kind === "shape" && updateOne({ fill: c, gradient: null } as Partial<DElement>)} none />
+                  <ColorPop icon={SquareIcon} label="Shape outline" value={one && one.kind === "shape" ? one.stroke : null} palette={palette} custom={options.allowCustomColors} onPick={(c) => one?.kind === "shape" && updateOne({ stroke: c } as Partial<DElement>)} none />
+                </div>
+                <div className="flex flex-col gap-0.5">
+                  <RSmall icon={BringToFrontIcon} label="Bring to front" onClick={() => arrange("front")} disabled={!selected.length} />
+                  <RSmall icon={SendToBackIcon} label="Send to back" onClick={() => arrange("back")} disabled={!selected.length} />
+                </div>
+              </RGroup>
+              <RGroup label="Editing">
+                <FindReplace onReplace={replaceText} />
+              </RGroup>
+            </>
+          )}
+          {tab === "insert" && (
+            <>
+              <RGroup label="Pages">
+                <RBig icon={FilePlusIcon} label="New page" onClick={() => setPages([...d.pages.slice(0, page + 1), { id: did(), bg: cur.bg, bgGradient: cur.bgGradient, elements: cur.elements.filter((e) => e.name?.startsWith("Letterhead")).map((e) => ({ ...structuredClone(e), id: did() })) }, ...d.pages.slice(page + 1)], page + 1)} disabled={d.pages.length >= options.maxPages} />
+                <RBig icon={CopyIcon} label="Duplicate page" onClick={() => setPages([...d.pages.slice(0, page + 1), { ...structuredClone(cur), id: did(), elements: cur.elements.map((e) => ({ ...structuredClone(e), id: did() })) }, ...d.pages.slice(page + 1)], page + 1)} disabled={d.pages.length >= options.maxPages} />
+              </RGroup>
+              <RGroup label="Text">
+                <RBig icon={TypeIcon} label="Text box" onClick={() => insertAt(textEl("Click twice to type", 0, 0, Math.min(110, d.w - 30), 14, { size: 12 }))} />
+                <div className="flex flex-col gap-0.5">
+                  <RSmall icon={HeadingIcon} label="Heading" onClick={() => insertAt(textEl("Heading", 0, 0, Math.min(150, d.w - 30), 14, { size: 24, weight: 700, color: palette[1] ?? "#0f172a" }))} />
+                  <RSmall icon={ListIcon} label="Bulleted list" onClick={() => insertAt(textEl("First point\nSecond point\nThird point", 0, 0, 110, 24, { size: 12, list: "bullet", lineHeight: 1.5 }))} />
+                  <RSmall icon={QuoteIcon} label="Quote" onClick={() => insertAt(textEl("“A sentence worth remembering.”", 0, 0, 120, 16, { size: 15, italic: true, color: "#475569", align: "center" }))} />
+                </div>
+              </RGroup>
+              <RGroup label="Illustrations">
+                {options.allowUploads && <RBig icon={ImagePlusIcon} label="Picture" onClick={() => fileRef.current?.click()} />}
+                {extras.logo && <RBig icon={StarIcon} label="Logo" onClick={() => insertAt({ id: did(), kind: "image", src: "logo", fit: "contain", x: 20, y: 15, w: 25, h: 25, rotate: 0, opacity: 1 } as DElement)} />}
+                {options.allowShapes && <ShapeGallery big onPick={(s) => insertAt(shapeEl(s, 0, 0, s === "pill" ? 50 : 40, s === "pill" ? 14 : s === "arrow" ? 22 : 40, { fill: palette[0] ?? "#16a34a" }))} />}
+                {options.allowIcons && <IconGallery onPick={(k) => insertAt({ id: did(), kind: "icon", icon: k, color: palette[0] ?? "#16a34a", x: 0, y: 0, w: 14, h: 14, rotate: 0, opacity: 1 } as DElement)} />}
+                <div className="flex flex-col gap-0.5">
+                  <RSmall icon={MinusIcon} label="Line" onClick={() => insertAt({ id: did(), kind: "line", stroke: "#0f172a", strokeWidth: 0.5, x: (d.w - 80) / 2, y: d.h / 2, w: 80, h: 2, rotate: 0, opacity: 1 } as DElement)} />
+                  <RSmall icon={MoveRightIcon} label="Arrow" onClick={() => insertAt({ id: did(), kind: "line", stroke: "#0f172a", strokeWidth: 0.6, arrowEnd: true, x: (d.w - 60) / 2, y: d.h / 2, w: 60, h: 2, rotate: 0, opacity: 1 } as DElement)} />
+                </div>
+              </RGroup>
+              {(options.allowTables || options.allowQr) && (
+                <RGroup label="Tables and codes">
+                  {options.allowTables && <TableGrid onPick={(r, c) => insertAt({ id: did(), kind: "table", rows: Array.from({ length: r }, (_, i) => Array.from({ length: c }, (_, j) => (i === 0 ? `Heading ${j + 1}` : ""))), header: true, font: "Inter", size: 10, color: "#111827", headFill: palette[1] ?? "#0f172a", headColor: "#ffffff", border: "#cbd5e1", stripe: "#f8fafc", x: 0, y: 0, w: Math.min(d.w - 30, c * 40), h: r * 8, rotate: 0, opacity: 1 } as DElement)} />}
+                  {options.allowQr && <RBig icon={QrCodeIcon} label="QR code" onClick={() => insertAt({ id: did(), kind: "qr", x: 0, y: 0, w: 22, h: 22, rotate: 0, opacity: 1 } as DElement)} />}
+                </RGroup>
               )}
-              {panel === "background" && (
-                <div className="space-y-3">
-                  <Section title="Colour">
-                    <Swatches palette={palette} custom={options.allowCustomColors} value={cur.bg} onPick={(c) => setPages(design.pages.map((p, i) => (i === page ? { ...p, bg: c ?? "#ffffff", bgGradient: null } : p)))} />
-                  </Section>
-                  <Section title="Gradient">
-                    <div className="grid grid-cols-4 gap-1">
-                      {GRADIENTS.map((g) => (
-                        <button key={g} type="button" className="aspect-square rounded border" style={{ background: g }} aria-label={g} onClick={() => setPages(design.pages.map((p, i) => (i === page ? { ...p, bgGradient: g } : p)))} />
-                      ))}
-                    </div>
-                  </Section>
+              {slots && (
+                <RGroup label="Letter places">
+                  <RBig icon={SignatureIcon} label="Signature" onClick={() => insertAt({ id: did(), kind: "slot", slot: "signature", label: "Signature", x: 0, y: 0, w: 50, h: 18, rotate: 0, opacity: 1 } as DElement)} />
+                  <RBig icon={StampIcon} label="Stamp" onClick={() => insertAt({ id: did(), kind: "slot", slot: "stamp", label: "Stamp", x: 0, y: 0, w: 32, h: 32, rotate: 0, opacity: 1 } as DElement)} />
+                  <div className="flex flex-col gap-0.5">
+                    <RSmall icon={CalendarIcon} label="Date" onClick={() => insertAt({ id: did(), kind: "slot", slot: "date", label: "Date", x: 0, y: 0, w: 50, h: 6, rotate: 0, opacity: 1 } as DElement)} />
+                    <RSmall icon={HashIcon} label="Reference" onClick={() => insertAt({ id: did(), kind: "slot", slot: "reference", label: "Reference", x: 0, y: 0, w: 60, h: 6, rotate: 0, opacity: 1 } as DElement)} />
+                  </div>
+                </RGroup>
+              )}
+            </>
+          )}
+          {tab === "design" && (
+            <>
+              {templates.length > 0 && (
+                <RGroup label="Templates">
+                  <div className="flex gap-1.5">
+                    {templates.slice(0, 6).map((t) => {
+                      const td = t.design();
+                      return (
+                        <button key={t.key} type="button" title={t.hint ?? t.label} className="group flex flex-col items-center gap-0.5" onClick={() => confirm(`Start from "${t.label}"? This page set is replaced (Undo brings it back).`) && (commit(td), setPage(0), setSel([]))}>
+                          <span className="rounded border group-hover:border-primary"><Thumb d={td} p={td.pages[0]!} height={46} values={values} extras={ex} /></span>
+                          <span className="max-w-20 truncate text-[10px] text-muted-foreground">{t.label}</span>
+                        </button>
+                      );
+                    })}
+                    {templates.length > 6 && <RBig icon={LayoutTemplateIcon} label="More" onClick={() => setTplOpen(true)} />}
+                  </div>
+                </RGroup>
+              )}
+              {options.allowPageSize && (
+                <RGroup label="Page">
+                  <div className="flex flex-col gap-1">
+                    <select
+                      className="h-7 w-44 rounded border bg-background px-1 text-xs"
+                      aria-label="Page size"
+                      value={DESIGN_SIZES.find((s) => Math.abs(s.w - d.w) < 0.5 && Math.abs(s.h - d.h) < 0.5)?.key ?? "custom"}
+                      onChange={(e) => {
+                        const s = DESIGN_SIZES.find((x) => x.key === e.target.value);
+                        if (!s) return;
+                        const kx = s.w / d.w;
+                        const ky = s.h / d.h;
+                        commit({ ...design, w: s.w, h: s.h, pages: design.pages.map((p) => ({ ...p, elements: p.elements.map((el) => ({ ...el, x: round(el.x * kx), y: round(el.y * ky), w: round(el.w * kx), h: round(el.h * ky) }) as DElement) })) });
+                      }}
+                    >
+                      {DESIGN_SIZES.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+                      <option value="custom" hidden>Custom {Math.round(d.w)} × {Math.round(d.h)} mm</option>
+                    </select>
+                    <span className="text-[11px] text-muted-foreground">{Math.round(d.w)} × {Math.round(d.h)} mm</span>
+                  </div>
+                </RGroup>
+              )}
+              <RGroup label="Background">
+                <div className="flex flex-col gap-1">
+                  <Swatches palette={palette} custom={options.allowCustomColors} value={cur.bg} onPick={(c) => setPages(design.pages.map((p, i) => (i === page ? { ...p, bg: c ?? "#ffffff", bgGradient: null } : p)))} />
+                  <div className="flex gap-1">
+                    {GRADIENTS.slice(0, 6).map((g) => <button key={g} type="button" className="size-5 rounded border" style={{ background: g }} aria-label="Gradient" onClick={() => setPages(design.pages.map((p, i) => (i === page ? { ...p, bgGradient: g } : p)))} />)}
+                  </div>
+                </div>
+                <div className="flex flex-col gap-0.5">
                   {options.allowBackgroundImage && (
-                    <Section title="Picture">
-                      <div className="flex gap-2">
-                        <label className="inline-flex cursor-pointer items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted">
-                          <ImageIcon className="size-3.5" /> Choose
-                          <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => e.target.files?.[0] && upload(e.target.files[0], (src) => setPages(design.pages.map((p, i) => (i === page ? { ...p, bgImage: src } : p))))} />
-                        </label>
-                        {cur.bgImage && <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setPages(design.pages.map((p, i) => (i === page ? { ...p, bgImage: null } : p)))}>Remove</Button>}
-                      </div>
-                    </Section>
+                    <label className="inline-flex cursor-pointer items-center gap-1.5 rounded px-1.5 py-1 text-xs hover:bg-muted">
+                      <ImageIcon className="size-3.5" /> Picture
+                      <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => e.target.files?.[0] && upload(e.target.files[0], (src) => setPages(design.pages.map((p, i) => (i === page ? { ...p, bgImage: src } : p))))} />
+                    </label>
                   )}
-                  <Button size="sm" variant="outline" className="w-full" onClick={() => setPages(design.pages.map((p) => ({ ...p, bg: cur.bg, bgGradient: cur.bgGradient, bgImage: cur.bgImage })))}>Use on every page</Button>
+                  {cur.bgImage && <RSmall icon={XIcon} label="Remove picture" onClick={() => setPages(design.pages.map((p, i) => (i === page ? { ...p, bgImage: null } : p)))} />}
+                  <RSmall icon={CopyIcon} label="Apply to all pages" onClick={() => setPages(design.pages.map((p) => ({ ...p, bg: cur.bg, bgGradient: cur.bgGradient, bgImage: cur.bgImage })))} />
                 </div>
-              )}
-              {panel === "layers" && (
-                <ul className="space-y-1">
-                  {[...cur.elements].reverse().map((e) => (
-                    <li key={e.id} className={cn("flex items-center gap-1 rounded border px-2 py-1 text-xs", sel.includes(e.id) && "border-primary bg-primary/5")}>
-                      <button type="button" className="min-w-0 flex-1 truncate text-left" onClick={(ev) => pick(e, ev.shiftKey)}>
-                        {e.name ?? layerName(e)}
-                      </button>
-                      <button type="button" aria-label={e.hidden ? "Show" : "Hide"} onClick={() => update([e.id], (x) => ({ ...x, hidden: !x.hidden }))}>{e.hidden ? <EyeOffIcon className="size-3.5" /> : <EyeIcon className="size-3.5" />}</button>
-                      <button type="button" aria-label={e.locked ? "Unlock" : "Lock"} disabled={frozen(e)} onClick={() => update([e.id], (x) => ({ ...x, locked: !x.locked }))}>{e.locked ? <LockIcon className="size-3.5" /> : <UnlockIcon className="size-3.5 opacity-40" />}</button>
-                    </li>
-                  ))}
-                  {!cur.elements.length && <li className="text-xs text-muted-foreground">Nothing on this page yet.</li>}
-                </ul>
-              )}
-              {panel === "pages" && (
-                <div className="space-y-2">
-                  {d.pages.map((p, i) => (
-                    <div key={p.id} className={cn("rounded-md border p-1", i === page && "border-primary")}>
-                      <button type="button" className="block w-full" onClick={() => (setPage(i), pageRefs.current[i]?.scrollIntoView({ behavior: "smooth", block: "center" }))}>
-                        <Thumb d={d} p={p} width={220} values={values} extras={ex} />
-                      </button>
-                      <div className="mt-1 flex items-center gap-0.5 text-xs">
-                        <span className="flex-1 px-1">Page {i + 1}</span>
-                        <button type="button" className="rounded p-1 hover:bg-muted" aria-label="Move up" disabled={i === 0} onClick={() => setPages(d.pages.map((x, j) => (j === i - 1 ? p : j === i ? d.pages[i - 1]! : x)), i - 1)}><ArrowUpIcon className="size-3.5" /></button>
-                        <button type="button" className="rounded p-1 hover:bg-muted" aria-label="Move down" disabled={i === d.pages.length - 1} onClick={() => setPages(d.pages.map((x, j) => (j === i + 1 ? p : j === i ? d.pages[i + 1]! : x)), i + 1)}><ArrowDownIcon className="size-3.5" /></button>
-                        <button type="button" className="rounded p-1 hover:bg-muted" aria-label="Duplicate page" disabled={d.pages.length >= options.maxPages} onClick={() => setPages([...d.pages.slice(0, i + 1), { ...structuredClone(p), id: did(), elements: p.elements.map((e) => ({ ...structuredClone(e), id: did() })) }, ...d.pages.slice(i + 1)], i + 1)}><CopyIcon className="size-3.5" /></button>
-                        <button type="button" className="rounded p-1 hover:bg-muted" aria-label="Delete page" disabled={d.pages.length < 2} onClick={() => confirm(`Delete page ${i + 1}?`) && setPages(d.pages.filter((_, j) => j !== i), Math.min(i, d.pages.length - 2))}><Trash2Icon className="size-3.5" /></button>
+              </RGroup>
+            </>
+          )}
+          {tab === "arrange" && (
+            <>
+              <RGroup label="Arrange">
+                <div className="flex flex-col gap-0.5">
+                  <RSmall icon={BringToFrontIcon} label="Bring to front" onClick={() => arrange("front")} disabled={!selected.length} />
+                  <RSmall icon={ArrowUpIcon} label="Bring forward" onClick={() => arrange("forward")} disabled={!selected.length} />
+                </div>
+                <div className="flex flex-col gap-0.5">
+                  <RSmall icon={SendToBackIcon} label="Send to back" onClick={() => arrange("back")} disabled={!selected.length} />
+                  <RSmall icon={ArrowDownIcon} label="Send backward" onClick={() => arrange("backward")} disabled={!selected.length} />
+                </div>
+              </RGroup>
+              <RGroup label={selected.length > 1 ? "Align to each other" : "Align to page"}>
+                <div className="grid grid-cols-3 gap-0.5">
+                  <RIcon icon={AlignStartVerticalIcon} label="Align left" onClick={() => alignSel("left")} disabled={!selected.length} />
+                  <RIcon icon={AlignCenterVerticalIcon} label="Centre" onClick={() => alignSel("hcenter")} disabled={!selected.length} />
+                  <RIcon icon={AlignEndVerticalIcon} label="Align right" onClick={() => alignSel("right")} disabled={!selected.length} />
+                  <RIcon icon={AlignStartHorizontalIcon} label="Align top" onClick={() => alignSel("top")} disabled={!selected.length} />
+                  <RIcon icon={AlignCenterHorizontalIcon} label="Middle" onClick={() => alignSel("vmiddle")} disabled={!selected.length} />
+                  <RIcon icon={AlignEndHorizontalIcon} label="Align bottom" onClick={() => alignSel("bottom")} disabled={!selected.length} />
+                </div>
+                <div className="flex flex-col gap-0.5">
+                  <RSmall icon={AlignHorizontalSpaceAroundIcon} label="Space across" onClick={() => distribute("x")} disabled={selected.length < 3} />
+                  <RSmall icon={AlignVerticalSpaceAroundIcon} label="Space down" onClick={() => distribute("y")} disabled={selected.length < 3} />
+                </div>
+              </RGroup>
+              <RGroup label="Group and rotate">
+                <div className="flex flex-col gap-0.5">
+                  <RSmall icon={GroupIcon} label="Group (Ctrl+G)" onClick={group} disabled={selected.length < 2} />
+                  <RSmall icon={UngroupIcon} label="Ungroup" onClick={ungroup} disabled={!selected.some((e) => e.group)} />
+                </div>
+                <div className="flex flex-col gap-0.5">
+                  <RSmall icon={RotateCwIcon} label="Rotate right 90°" onClick={() => rotateSel(90)} disabled={!selected.length} />
+                  <RSmall icon={RotateCcwIcon} label="Rotate left 90°" onClick={() => rotateSel(-90)} disabled={!selected.length} />
+                </div>
+                <div className="flex flex-col gap-0.5">
+                  <RSmall icon={selected.length && selected.every((x) => x.locked) ? UnlockIcon : LockIcon} label={selected.length && selected.every((x) => x.locked) ? "Unlock" : "Lock"} onClick={() => update(sel, (e) => ({ ...e, locked: !selected.every((x) => x.locked) }))} disabled={!selected.length || selected.some(frozen)} />
+                  <RSmall icon={EyeOffIcon} label="Hide" onClick={() => update(sel, (e) => ({ ...e, hidden: true }))} disabled={!selected.length} />
+                </div>
+              </RGroup>
+            </>
+          )}
+          {tab === "view" && (
+            <>
+              <RGroup label="Zoom">
+                <RBig icon={ZoomOutIcon} label="Smaller" onClick={() => setZoom((z) => Math.max(0.2, Math.round((z - 0.1) * 10) / 10))} />
+                <RBig icon={ScanIcon} label="Fit" onClick={fitZoom} />
+                <RBig icon={ZoomInIcon} label="Bigger" onClick={() => setZoom((z) => Math.min(3, Math.round((z + 0.1) * 10) / 10))} />
+              </RGroup>
+              <RGroup label="Show">
+                <div className="flex flex-col gap-0.5">
+                  <RSmall icon={GridIcon} label={`Grid (${options.gridSize} mm)`} active={grid} onClick={() => setGrid(!grid)} />
+                  <RSmall icon={MagnetIcon} label="Snap to guides" active={snap} onClick={() => setSnap(!snap)} />
+                </div>
+                <div className="flex flex-col gap-0.5">
+                  <RSmall icon={PanelLeftIcon} label="Pages pane" active={showPages} onClick={() => setShowPages(!showPages)} />
+                  <RSmall icon={PanelRightIcon} label="Format pane" active={showFormat} onClick={() => setShowFormat(!showFormat)} />
+                </div>
+              </RGroup>
+            </>
+          )}
+          {tab === "format" && one && (
+            <FormatRibbon el={one} palette={palette} custom={options.allowCustomColors} onPatch={updateOne} onReplaceImage={() => fileRef.current?.click()} />
+          )}
+        </div>
+      )}
+
+      <div className="flex min-h-0" style={{ height }}>
+        {/* Pages pane (as PowerPoint's slide thumbnails) */}
+        {showPages && (
+          <div className="flex w-44 shrink-0 flex-col border-r bg-muted/20 max-md:hidden">
+            <div className="flex-1 space-y-3 overflow-y-auto p-3">
+              {d.pages.map((p, i) => (
+                <div key={p.id} className="flex gap-1.5">
+                  <span className="w-4 pt-1 text-right text-[11px] text-muted-foreground tabular-nums">{i + 1}</span>
+                  <div className="min-w-0 flex-1">
+                    <button type="button" className={cn("block w-full overflow-hidden rounded ring-offset-1", i === page ? "ring-2 ring-primary" : "ring-1 ring-border hover:ring-primary/50")} onClick={() => (setPage(i), pageRefs.current[i]?.scrollIntoView({ behavior: "smooth", block: "center" }))}>
+                      <Thumb d={d} p={p} width={128} values={values} extras={ex} />
+                    </button>
+                    {i === page && mode === "design" && (
+                      <div className="mt-1 flex justify-end gap-0.5">
+                        <button type="button" className="rounded p-0.5 hover:bg-muted" aria-label="Move up" disabled={i === 0} onClick={() => setPages(d.pages.map((x, j) => (j === i - 1 ? p : j === i ? d.pages[i - 1]! : x)), i - 1)}><ArrowUpIcon className="size-3.5" /></button>
+                        <button type="button" className="rounded p-0.5 hover:bg-muted" aria-label="Move down" disabled={i === d.pages.length - 1} onClick={() => setPages(d.pages.map((x, j) => (j === i + 1 ? p : j === i ? d.pages[i + 1]! : x)), i + 1)}><ArrowDownIcon className="size-3.5" /></button>
+                        <button type="button" className="rounded p-0.5 hover:bg-muted" aria-label="Delete page" disabled={d.pages.length < 2} onClick={() => confirm(`Delete page ${i + 1}?`) && setPages(d.pages.filter((_, j) => j !== i), Math.min(i, d.pages.length - 2))}><Trash2Icon className="size-3.5" /></button>
                       </div>
-                    </div>
-                  ))}
-                  <Button size="sm" variant="outline" className="w-full" disabled={d.pages.length >= options.maxPages} onClick={() => setPages([...d.pages.slice(0, page + 1), { id: did(), bg: cur.bg, bgGradient: cur.bgGradient, elements: cur.elements.filter((e) => e.name?.startsWith("Letterhead")).map((e) => ({ ...structuredClone(e), id: did() })) }, ...d.pages.slice(page + 1)], page + 1)}>
-                    <PlusIcon /> Add a page
-                  </Button>
+                    )}
+                  </div>
                 </div>
-              )}
+              ))}
             </div>
+            {mode === "design" && (
+              <button type="button" className="flex items-center justify-center gap-1 border-t py-2 text-xs hover:bg-muted disabled:opacity-40" disabled={d.pages.length >= options.maxPages} onClick={() => setPages([...d.pages, { id: did(), bg: cur.bg, elements: [] }], d.pages.length)}>
+                <PlusIcon className="size-3.5" /> New page
+              </button>
+            )}
           </div>
         )}
 
         {/* Canvas */}
         <div className="relative min-w-0 flex-1">
-          {mode === "design" && selected.length > 0 && (
-            <ContextBar
-              el={one}
-              count={selected.length}
-              fonts={fonts}
-              palette={palette}
-              custom={options.allowCustomColors}
-              onPatch={updateOne}
-              onDuplicate={() => duplicate()}
-              onDelete={removeSel}
-              onArrange={arrange}
-              onAlign={alignSel}
-              onDistribute={distribute}
-              onGroup={group}
-              onUngroup={ungroup}
-              grouped={selected.some((e) => e.group)}
-              frozen={selected.some(frozen)}
-              onToggleLock={() => update(sel, (e) => ({ ...e, locked: !selected.every((x) => x.locked) }))}
-              locked={selected.every((x) => x.locked)}
-            />
-          )}
           <div
             ref={scroller}
-            className="absolute inset-0 overflow-auto bg-slate-100 p-6 dark:bg-slate-900"
-            style={{ top: mode === "design" && selected.length ? 44 : 0 }}
+            className={cn("absolute inset-0 overflow-auto bg-[#e9ebee] p-8 dark:bg-slate-900", painting && "cursor-copy")}
             onPointerDown={(e) => e.target === e.currentTarget && (setSel([]), setEditing(null))}
             onDragOver={(e) => e.preventDefault()}
             onDrop={(e) => {
@@ -735,18 +823,14 @@ export function DesignEditor({ design, onChange, options = DEFAULT_DESIGN_OPTION
               }
             }}
           >
-            <div className="mx-auto flex w-max flex-col items-center gap-6">
+            <div className="mx-auto flex w-max flex-col items-center gap-8">
               {d.pages.map((p, pi) => (
-                <div key={p.id} className="space-y-1">
-                  <div className="flex items-center justify-between text-xs text-muted-foreground">
-                    <span>Page {pi + 1}{d.pages.length > 1 ? ` of ${d.pages.length}` : ""}</span>
-                    {mode === "design" && pi === page && <span>{Math.round(d.w)} × {Math.round(d.h)} mm</span>}
-                  </div>
+                <div key={p.id} className="space-y-1.5">
                   <div
                     ref={(el) => {
                       pageRefs.current[pi] = el;
                     }}
-                    className={cn("relative shadow-md ring-1 ring-black/5", mode === "design" && pi === page && "ring-2 ring-primary/40")}
+                    className="relative bg-white shadow-[0_1px_3px_rgba(0,0,0,.12),0_8px_24px_rgba(0,0,0,.08)]"
                     style={{ width: d.w * MM * zoom, height: d.h * MM * zoom }}
                     onPointerDown={(e) => {
                       if (e.target === e.currentTarget || (e.target as HTMLElement).dataset.pageBg) startMarquee(e, pi);
@@ -761,56 +845,89 @@ export function DesignEditor({ design, onChange, options = DEFAULT_DESIGN_OPTION
                         return (
                           <div
                             key={e.id}
-                            className={cn("absolute", mode === "design" && !isEdit && "cursor-move", e.hidden && "opacity-30", isSel && "outline outline-[0.35mm] outline-primary")}
+                            className={cn("absolute", mode === "design" && !isEdit && (painting ? "cursor-copy" : "cursor-move"), e.hidden && "opacity-30", isSel && "outline outline-[0.3mm] outline-primary", mode === "design" && !isSel && !isEdit && "hover:outline hover:outline-[0.25mm] hover:outline-primary/40")}
                             style={{ left: `${e.x}mm`, top: `${e.y}mm`, width: `${e.w}mm`, height: `${Math.max(e.h, e.kind === "line" ? 0.01 : 0)}mm`, transform: e.rotate ? `rotate(${e.rotate}deg)` : undefined, opacity: e.hidden ? undefined : e.opacity }}
                             onPointerDown={(ev) => {
                               if (pi !== page) setPage(pi);
+                              if (painting && mode === "design") return (ev.stopPropagation(), paintOn(e));
                               startMove(ev, e);
                             }}
                             onDoubleClick={() => mode === "design" && e.kind === "text" && !e.locked && setEditing(e.id)}
                           >
-                            {isEdit ? (
-                              <EditableText el={e as DText & DElement} onDone={(t) => commitText(e.id, t)} />
-                            ) : (
-                              <div className="pointer-events-none size-full" dangerouslySetInnerHTML={{ __html: elementInner(e, mode === "preview" ? values : values, ex) }} />
-                            )}
-                            {isSel && one?.id === e.id && !e.locked && !frozen(e) && !isEdit && (
-                              <Handles kind={e.kind} zoom={zoom} onResize={(ev, h) => startResize(ev, e, h)} onRotate={(ev) => startRotate(ev, e)} />
-                            )}
-                            {isSel && (e.locked || frozen(e)) && <span className="absolute -top-[4mm] left-0 rounded bg-slate-700 px-1 text-[2.6mm] text-white">{frozen(e) ? "Letterhead (locked by Admin)" : "Locked"}</span>}
+                            {isEdit ? <EditableText el={e as DText & DElement} onDone={(t) => commitText(e.id, t)} /> : <div className="pointer-events-none size-full" dangerouslySetInnerHTML={{ __html: elementInner(e, values, ex) }} />}
+                            {isSel && one?.id === e.id && !e.locked && !frozen(e) && !isEdit && <Handles kind={e.kind} zoom={zoom} onResize={(ev, h) => startResize(ev, e, h)} onRotate={(ev) => startRotate(ev, e)} />}
+                            {isSel && (e.locked || frozen(e)) && <span className="absolute -top-[4.5mm] left-0 rounded bg-slate-700 px-1 text-[2.6mm] whitespace-nowrap text-white">{frozen(e) ? "Letterhead (locked by Admin)" : "Locked"}</span>}
                           </div>
                         );
                       })}
-                      {pi === page &&
-                        guides.map((g, i) => (
-                          <div key={i} aria-hidden className="pointer-events-none absolute bg-pink-500" style={g.axis === "x" ? { left: `${g.at}mm`, top: 0, width: "0.25mm", height: "100%" } : { top: `${g.at}mm`, left: 0, height: "0.25mm", width: "100%" }} />
-                        ))}
-                      {pi === page && marquee && (
-                        <div aria-hidden className="pointer-events-none absolute border border-primary bg-primary/10" style={{ left: `${Math.min(marquee.x0, marquee.x1)}mm`, top: `${Math.min(marquee.y0, marquee.y1)}mm`, width: `${Math.abs(marquee.x1 - marquee.x0)}mm`, height: `${Math.abs(marquee.y1 - marquee.y0)}mm` }} />
-                      )}
+                      {pi === page && guides.map((g, i) => <div key={i} aria-hidden className="pointer-events-none absolute bg-pink-500" style={g.axis === "x" ? { left: `${g.at}mm`, top: 0, width: "0.25mm", height: "100%" } : { top: `${g.at}mm`, left: 0, height: "0.25mm", width: "100%" }} />)}
+                      {pi === page && marquee && <div aria-hidden className="pointer-events-none absolute border border-primary bg-primary/10" style={{ left: `${Math.min(marquee.x0, marquee.x1)}mm`, top: `${Math.min(marquee.y0, marquee.y1)}mm`, width: `${Math.abs(marquee.x1 - marquee.x0)}mm`, height: `${Math.abs(marquee.y1 - marquee.y0)}mm` }} />}
                     </div>
                   </div>
                   {notes && mode === "design" && (
-                    <Textarea
-                      className="text-xs"
-                      rows={2}
-                      style={{ width: d.w * MM * zoom }}
-                      placeholder="Speaker notes"
-                      value={p.notes ?? ""}
-                      onChange={(e) => onChange({ ...design, pages: design.pages.map((x, i) => (i === pi ? { ...x, notes: e.target.value } : x)) })}
-                    />
+                    <Textarea className="bg-background text-xs" rows={2} style={{ width: d.w * MM * zoom }} placeholder="Click to add speaker notes" value={p.notes ?? ""} onChange={(e) => onChange({ ...design, pages: design.pages.map((x, i) => (i === pi ? { ...x, notes: e.target.value } : x)) })} />
                   )}
                 </div>
               ))}
-              {mode === "design" && (
-                <Button size="sm" variant="outline" disabled={d.pages.length >= options.maxPages} onClick={() => setPages([...d.pages, { id: did(), bg: cur.bg, elements: [] }], d.pages.length)}>
-                  <PlusIcon /> Add a page
-                </Button>
-              )}
             </div>
           </div>
         </div>
+
+        {/* Format pane (as Office's Format Shape pane) */}
+        {showFormat && mode === "design" && (
+          <aside className="w-64 shrink-0 overflow-y-auto border-l bg-background max-lg:hidden" aria-label="Format">
+            <FormatPane
+              el={one}
+              count={selected.length}
+              page={cur}
+              palette={palette}
+              custom={options.allowCustomColors}
+              onPatch={updateOne}
+              onPage={(p) => setPages(design.pages.map((x, i) => (i === page ? { ...x, ...p } : x)))}
+              layers={[...cur.elements].reverse()}
+              selected={sel}
+              onPick={(e, add2) => pick(e, add2)}
+              onToggle={(id, k) => update([id], (x) => ({ ...x, [k]: !x[k] }))}
+              frozen={frozen}
+            />
+          </aside>
+        )}
       </div>
+
+      {/* Status bar */}
+      <div className="flex items-center gap-3 border-t bg-muted/40 px-3 py-1 text-[11px] text-muted-foreground">
+        <span>Page {page + 1} of {d.pages.length}</span>
+        <span>{selected.length ? (selected.length > 1 ? `${selected.length} selected` : layerName(selected[0]!)) : "Nothing selected"}</span>
+        {painting && <span className="text-primary">Format painter: click the element to paint (Esc cancels)</span>}
+        <span className="ml-auto flex items-center gap-1">
+          <button type="button" aria-label="Zoom out" onClick={() => setZoom((z) => Math.max(0.2, Math.round((z - 0.1) * 10) / 10))}><MinusIcon className="size-3" /></button>
+          <input type="range" min={20} max={300} value={Math.round(zoom * 100)} onChange={(e) => setZoom(Number(e.target.value) / 100)} className="w-24 accent-[var(--primary)]" aria-label="Zoom" />
+          <button type="button" aria-label="Zoom in" onClick={() => setZoom((z) => Math.min(3, Math.round((z + 0.1) * 10) / 10))}><PlusIcon className="size-3" /></button>
+          <button type="button" className="w-10 tabular-nums" onClick={fitZoom} title="Fit">{Math.round(zoom * 100)}%</button>
+        </span>
+      </div>
+
+      {tplOpen && (
+        <Dialog open onOpenChange={setTplOpen}>
+          <DialogContent className="max-w-4xl">
+            <DialogHeader>
+              <DialogTitle>Templates</DialogTitle>
+            </DialogHeader>
+            <div className="grid max-h-[70vh] grid-cols-2 gap-4 overflow-y-auto sm:grid-cols-3 md:grid-cols-4">
+              {templates.map((t) => {
+                const td = t.design();
+                return (
+                  <button key={t.key} type="button" className="space-y-1 text-left" onClick={() => (commit(td), setPage(0), setSel([]), setTplOpen(false))}>
+                    <span className="flex h-40 items-center justify-center rounded border bg-muted/30 p-2 hover:border-primary"><Thumb d={td} p={td.pages[0]!} height={140} values={values} extras={ex} /></span>
+                    <span className="block text-sm font-medium">{t.label}</span>
+                    {t.hint && <span className="block text-xs text-muted-foreground">{t.hint}</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }
@@ -844,10 +961,10 @@ function cssOf(s: string): React.CSSProperties {
   return out as React.CSSProperties;
 }
 
-function Thumb({ d, p, width, values, extras }: { d: Design; p: DPage; width: number; values: Record<string, string>; extras: Extras }) {
-  const k = width / (d.w * MM);
+function Thumb({ d, p, width, height, values, extras }: { d: Design; p: DPage; width?: number; height?: number; values: Record<string, string>; extras: Extras }) {
+  const k = width ? width / (d.w * MM) : (height ?? 60) / (d.h * MM);
   return (
-    <div className="overflow-hidden rounded border bg-white" style={{ width, height: d.h * MM * k }}>
+    <div className="overflow-hidden bg-white" style={{ width: d.w * MM * k, height: d.h * MM * k }}>
       <div style={{ transform: `scale(${k})`, transformOrigin: "0 0", width: `${d.w}mm`, height: `${d.h}mm` }} dangerouslySetInnerHTML={{ __html: pageHtml(d, p, values, { ...extras, editing: true }) }} />
     </div>
   );
@@ -971,167 +1088,338 @@ function Num({ label, value, onChange, step = 1, min, max, w = "w-16" }: { label
   );
 }
 
-// The bar above the page for what is selected.
-function ContextBar(p: {
+// --- The ribbon's parts (as Office): groups with a label under them, big and small buttons, icon buttons. ---
+const qa = "inline-flex h-7 w-7 items-center justify-center rounded hover:bg-muted disabled:opacity-40";
+function RGroup({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex shrink-0 flex-col border-r px-2 last:border-r-0">
+      <div className="flex flex-1 items-start gap-1.5">{children}</div>
+      <span className="pt-0.5 text-center text-[10px] text-muted-foreground">{label}</span>
+    </div>
+  );
+}
+function RBig({ icon: Icon, label, onClick, disabled, active }: { icon: React.ComponentType<{ className?: string }>; label: string; onClick: () => void; disabled?: boolean; active?: boolean }) {
+  return (
+    <button type="button" onClick={onClick} disabled={disabled} className={cn("flex h-14 w-14 shrink-0 flex-col items-center justify-center gap-1 rounded px-1 text-[11px] leading-tight hover:bg-muted disabled:opacity-40", active && "bg-primary/10 text-primary")}>
+      <Icon className="size-5" />
+      <span className="line-clamp-2 text-center">{label}</span>
+    </button>
+  );
+}
+function RSmall({ icon: Icon, label, onClick, disabled, active }: { icon: React.ComponentType<{ className?: string }>; label: string; onClick: () => void; disabled?: boolean; active?: boolean }) {
+  return (
+    <button type="button" onClick={onClick} disabled={disabled} className={cn("flex h-6 items-center gap-1.5 rounded px-1.5 text-xs whitespace-nowrap hover:bg-muted disabled:opacity-40", active && "bg-primary/10 text-primary")}>
+      <Icon className="size-3.5" /> {label}
+    </button>
+  );
+}
+function RIcon({ icon: Icon, label, onClick, disabled, active }: { icon: React.ComponentType<{ className?: string }>; label: string; onClick: () => void; disabled?: boolean; active?: boolean }) {
+  return (
+    <button type="button" title={label} aria-label={label} aria-pressed={active} onClick={onClick} disabled={disabled} className={cn("inline-flex h-7 w-7 items-center justify-center rounded hover:bg-muted disabled:opacity-40", active && "bg-primary/15 text-primary")}>
+      <Icon className="size-4" />
+    </button>
+  );
+}
+
+const SHAPES: DShape["shape"][] = ["rect", "ellipse", "triangle", "diamond", "star", "arrow", "hexagon", "speech", "pill"];
+function ShapeGallery({ onPick, big, disabled }: { onPick: (s: DShape["shape"]) => void; big?: boolean; disabled?: boolean }) {
+  const [open, setOpen] = React.useState(false);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        {big ? (
+          <button type="button" disabled={disabled} className="flex h-14 w-14 flex-col items-center justify-center gap-1 rounded text-[11px] hover:bg-muted disabled:opacity-40">
+            <ShapesIcon className="size-5" /> Shapes
+          </button>
+        ) : (
+          <button type="button" disabled={disabled} className="grid h-14 grid-cols-3 gap-0.5 rounded border bg-background p-1 hover:border-primary disabled:opacity-40" aria-label="Shapes">
+            {SHAPES.slice(0, 6).map((s) => (
+              <span key={s} className="block size-4" dangerouslySetInnerHTML={{ __html: elementInner(shapeEl(s, 0, 0, 16, 16, { fill: null, stroke: "#475569", strokeWidth: 1.2 })) }} />
+            ))}
+          </button>
+        )}
+      </PopoverTrigger>
+      <PopoverContent className="w-60 p-2" align="start">
+        <p className="mb-1 text-xs font-medium text-muted-foreground">Shapes</p>
+        <div className="grid grid-cols-5 gap-1">
+          {SHAPES.map((s) => (
+            <button key={s} type="button" title={s} className="flex aspect-square items-center justify-center rounded border hover:border-primary hover:bg-primary/5" onClick={() => (onPick(s), setOpen(false))}>
+              <span className="block size-6" dangerouslySetInnerHTML={{ __html: elementInner(shapeEl(s, 0, 0, 24, 24, { fill: "#94a3b8" })) }} />
+            </button>
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+function IconGallery({ onPick }: { onPick: (k: string) => void }) {
+  const [open, setOpen] = React.useState(false);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button type="button" className="flex h-14 w-14 flex-col items-center justify-center gap-1 rounded text-[11px] hover:bg-muted">
+          <StarIcon className="size-5" /> Icons
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-72 p-2" align="start">
+        <div className="grid grid-cols-7 gap-1">
+          {Object.entries(ICONS).map(([k, path]) => (
+            <button key={k} type="button" title={k} className="flex aspect-square items-center justify-center rounded border hover:border-primary" onClick={() => (onPick(k), setOpen(false))}>
+              <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d={path} /></svg>
+            </button>
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+// Choosing a table's size by hovering a grid (as Word's Insert Table).
+function TableGrid({ onPick }: { onPick: (rows: number, cols: number) => void }) {
+  const [open, setOpen] = React.useState(false);
+  const [h, setH] = React.useState({ r: 0, c: 0 });
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button type="button" className="flex h-14 w-14 flex-col items-center justify-center gap-1 rounded text-[11px] hover:bg-muted">
+          <TableIcon className="size-5" /> Table
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-auto p-2" align="start">
+        <p className="mb-1 text-xs text-muted-foreground">{h.r ? `${h.r} × ${h.c} table` : "Insert a table"}</p>
+        <div className="grid grid-cols-8 gap-0.5" onMouseLeave={() => setH({ r: 0, c: 0 })}>
+          {Array.from({ length: 64 }, (_, i) => {
+            const r = Math.floor(i / 8) + 1;
+            const c = (i % 8) + 1;
+            return <button key={i} type="button" aria-label={`${r} by ${c}`} onMouseEnter={() => setH({ r, c })} onClick={() => (onPick(r, c), setOpen(false))} className={cn("size-4 border", r <= h.r && c <= h.c ? "border-primary bg-primary/20" : "bg-background")} />;
+          })}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+function FindReplace({ onReplace }: { onReplace: (q: string, r: string) => number }) {
+  const [q, setQ] = React.useState("");
+  const [r, setR] = React.useState("");
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button type="button" className="flex h-14 w-14 flex-col items-center justify-center gap-1 rounded text-[11px] hover:bg-muted">
+          <ReplaceIcon className="size-5" /> Replace
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-72 space-y-2" align="start">
+        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find" />
+        <Input value={r} onChange={(e) => setR(e.target.value)} placeholder="Replace with" />
+        <Button size="sm" className="w-full" disabled={!q} onClick={() => alert(`${onReplace(q, r)} replaced.`)}>
+          Replace all
+        </Button>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+// The contextual tab for what is selected (Shape format, Picture format, Table design, Text format).
+function FormatRibbon({ el, palette, custom, onPatch, onReplaceImage }: { el: DElement; palette: string[]; custom: boolean; onPatch: (x: Partial<DElement>) => void; onReplaceImage: () => void }) {
+  const p = (x: Record<string, unknown>) => onPatch(x as Partial<DElement>);
+  if (el.kind === "image")
+    return (
+      <>
+        <RGroup label="Adjust">
+          <RBig icon={ImagePlusIcon} label="Change picture" onClick={onReplaceImage} />
+          <div className="grid grid-cols-3 gap-1">
+            {(["none", "grayscale", "sepia", "bright", "dark", "blur"] as const).map((f) => (
+              <button key={f} type="button" onClick={() => p({ filter: f })} className={cn("h-6 rounded border px-1 text-[11px] capitalize", el.filter === f && "border-primary bg-primary/10")}>
+                {f === "none" ? "Original" : f}
+              </button>
+            ))}
+          </div>
+        </RGroup>
+        <RGroup label="Picture style">
+          <div className="flex flex-col gap-0.5">
+            <RSmall icon={FrameIcon} label={el.fit === "cover" ? "Fill the frame" : "Fit inside"} onClick={() => p({ fit: el.fit === "cover" ? "contain" : "cover" })} />
+            <RSmall icon={FlipHorizontalIcon} label="Flip across" onClick={() => p({ flipX: !el.flipX })} />
+            <RSmall icon={FlipVerticalIcon} label="Flip up and down" onClick={() => p({ flipY: !el.flipY })} />
+          </div>
+          <div className="flex flex-col gap-1">
+            <Num label="Corners" value={el.radius ?? 0} min={0} onChange={(v) => p({ radius: v })} />
+            <ColorPop icon={SquareIcon} label="Picture border" value={el.border} palette={palette} custom={custom} onPick={(c) => p({ border: c, borderWidth: c ? Math.max(0.5, el.borderWidth ?? 0) : 0 })} none />
+          </div>
+        </RGroup>
+      </>
+    );
+  if (el.kind === "table")
+    return (
+      <>
+        <RGroup label="Table styles">
+          <div className="flex gap-1">
+            {[
+              ["#0f172a", "#ffffff", "#f8fafc"],
+              [palette[0] ?? "#16a34a", "#ffffff", "#f0fdf4"],
+              ["#1d4ed8", "#ffffff", "#eff6ff"],
+              ["#f1f5f9", "#0f172a", null],
+              ["#ffffff", "#0f172a", "#f8fafc"],
+            ].map(([hf, hc, st], i) => (
+              <button key={i} type="button" onClick={() => p({ headFill: hf, headColor: hc, stripe: st })} className="flex h-12 w-12 flex-col overflow-hidden rounded border hover:border-primary" aria-label="Table style">
+                <span className="h-3" style={{ background: hf! }} />
+                {[0, 1, 2].map((r) => <span key={r} className="h-3 border-t" style={{ background: r % 2 === 0 && st ? st : "#fff" }} />)}
+              </button>
+            ))}
+          </div>
+        </RGroup>
+        <RGroup label="Cells">
+          <TableEdit el={el} palette={palette} custom={custom} onPatch={p} />
+        </RGroup>
+      </>
+    );
+  if (el.kind === "text") return (
+    <RGroup label="Text effects">
+      <div className="flex flex-col gap-0.5">
+        <RSmall icon={SparklesIcon} label="Shadow" active={!!el.shadow} onClick={() => p({ shadow: !el.shadow })} />
+        <RSmall icon={CaseUpperIcon} label="Capitals" active={!!el.uppercase} onClick={() => p({ uppercase: !el.uppercase })} />
+      </div>
+      <div className="flex flex-col gap-1">
+        <Num label="Letter spacing" value={el.letterSpacing ?? 0} step={0.5} onChange={(v) => p({ letterSpacing: v })} />
+        <Num label="Inner margin" value={el.padding ?? 0} step={0.5} min={0} onChange={(v) => p({ padding: v })} />
+      </div>
+      <div className="flex flex-col gap-1">
+        <ColorPop icon={SquareIcon} label="Text outline" value={el.outline} palette={palette} custom={custom} onPick={(c) => p({ outline: c })} none />
+      </div>
+    </RGroup>
+  );
+  if (el.kind === "shape" || el.kind === "line")
+    return (
+      <>
+        <RGroup label="Shape styles">
+          <div className="flex gap-1">
+            {[palette[0] ?? "#16a34a", palette[1] ?? "#0f172a", "#2563eb", "#f59e0b", "#dc2626", "#ffffff"].map((c) => (
+              <button key={c} type="button" className="size-7 rounded border" style={{ background: c }} aria-label={c} onClick={() => p(el.kind === "line" ? { stroke: c } : { fill: c, gradient: null })} />
+            ))}
+          </div>
+        </RGroup>
+        <RGroup label="Outline">
+          <Num label="Width" value={el.strokeWidth} step={0.1} min={0} onChange={(v) => p({ strokeWidth: v })} />
+          <RSmall icon={MinusIcon} label={el.dash ? "Solid" : "Dashed"} onClick={() => p({ dash: !el.dash })} />
+          {el.kind === "line" && (
+            <div className="flex flex-col gap-0.5">
+              <RSmall icon={MoveRightIcon} label="End arrow" active={!!el.arrowEnd} onClick={() => p({ arrowEnd: !el.arrowEnd })} />
+              <RSmall icon={MoveLeftIcon} label="Start arrow" active={!!el.arrowStart} onClick={() => p({ arrowStart: !el.arrowStart })} />
+            </div>
+          )}
+        </RGroup>
+      </>
+    );
+  return <span className="self-center px-3 text-xs text-muted-foreground">Use the pane on the right for this element.</span>;
+}
+
+// The pane on the right: what is selected (position, size, fill, line, text, picture), or the page; and the layers.
+function FormatPane(p: {
   el: DElement | null;
   count: number;
-  fonts: string[];
+  page: DPage;
   palette: string[];
   custom: boolean;
   onPatch: (x: Partial<DElement>) => void;
-  onDuplicate: () => void;
-  onDelete: () => void;
-  onArrange: (h: "front" | "back" | "forward" | "backward") => void;
-  onAlign: (h: "left" | "hcenter" | "right" | "top" | "vmiddle" | "bottom") => void;
-  onDistribute: (a: "x" | "y") => void;
-  onGroup: () => void;
-  onUngroup: () => void;
-  grouped: boolean;
-  frozen: boolean;
-  locked: boolean;
-  onToggleLock: () => void;
+  onPage: (x: Partial<DPage>) => void;
+  layers: DElement[];
+  selected: string[];
+  onPick: (e: DElement, add: boolean) => void;
+  onToggle: (id: string, k: "hidden" | "locked") => void;
+  frozen: (e: DElement) => boolean;
 }) {
   const e = p.el;
-  const tb = "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md hover:bg-muted disabled:opacity-40";
-  const patch = (x: Record<string, unknown>) => p.onPatch(x as Partial<DElement>);
+  const set = (x: Record<string, unknown>) => p.onPatch(x as Partial<DElement>);
+  const H = ({ children }: { children: React.ReactNode }) => <p className="border-b px-3 py-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">{children}</p>;
   return (
-    <div className="absolute inset-x-0 top-0 z-20 flex h-11 items-center gap-0.5 overflow-x-auto border-b bg-background px-2">
-      {e?.kind === "text" && (
+    <div className="text-sm">
+      {!e && p.count === 0 && (
         <>
-          <select className="h-8 w-36 rounded-md border bg-background px-1 text-xs" value={e.font} onChange={(x) => patch({ font: x.target.value })} aria-label="Font">
-            {[...new Set([e.font, ...p.fonts])].map((f) => <option key={f} value={f} style={{ fontFamily: fontStack(f) }}>{f}</option>)}
-          </select>
-          <div className="flex items-center">
-            <button type="button" className={tb} aria-label="Smaller" onClick={() => patch({ size: Math.max(3, Math.round(e.size - 1)) })}><MinusIcon className="size-3.5" /></button>
-            <Input type="number" className="h-8 w-14 px-1 text-center text-xs" value={e.size} onChange={(x) => patch({ size: Number(x.target.value) || e.size })} aria-label="Font size" />
-            <button type="button" className={tb} aria-label="Bigger" onClick={() => patch({ size: Math.round(e.size + 1) })}><PlusIcon className="size-3.5" /></button>
+          <H>Page</H>
+          <div className="space-y-2 p-3">
+            <p className="text-xs text-muted-foreground">Fill</p>
+            <Swatches palette={p.palette} custom={p.custom} value={p.page.bg} onPick={(c) => p.onPage({ bg: c ?? "#ffffff", bgGradient: null })} />
+            <p className="pt-1 text-xs text-muted-foreground">Select something on the page to format it. Double-click text to type.</p>
           </div>
-          <ColorPop icon={TypeIcon} label="Text colour" value={e.color} palette={p.palette} custom={p.custom} onPick={(c) => c && patch({ color: c })} />
-          <button type="button" className={cn(tb, e.weight >= 700 && "bg-muted")} aria-label="Bold" onClick={() => patch({ weight: e.weight >= 700 ? 400 : 700 })}><BoldIcon className="size-4" /></button>
-          <button type="button" className={cn(tb, e.italic && "bg-muted")} aria-label="Italic" onClick={() => patch({ italic: !e.italic })}><ItalicIcon className="size-4" /></button>
-          <button type="button" className={cn(tb, e.underline && "bg-muted")} aria-label="Underline" onClick={() => patch({ underline: !e.underline })}><UnderlineIcon className="size-4" /></button>
-          <button type="button" className={cn(tb, e.strike && "bg-muted")} aria-label="Strike through" onClick={() => patch({ strike: !e.strike })}><StrikethroughIcon className="size-4" /></button>
-          <select className="h-8 rounded-md border bg-background px-1 text-xs" value={e.align} onChange={(x) => patch({ align: x.target.value })} aria-label="Alignment">
-            <option value="left">Left</option>
-            <option value="center">Centre</option>
-            <option value="right">Right</option>
-            <option value="justify">Justify</option>
-          </select>
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button size="sm" variant="ghost" className="h-8 text-xs">Spacing and effects</Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-72 space-y-2 text-xs" align="start">
-              <div className="grid grid-cols-2 gap-2">
-                <Num label="Line" value={e.lineHeight} step={0.05} min={0.7} max={4} onChange={(v) => patch({ lineHeight: v })} />
-                <Num label="Letters" value={e.letterSpacing ?? 0} step={0.5} onChange={(v) => patch({ letterSpacing: v })} />
-                <Num label="Padding mm" value={e.padding ?? 0} step={0.5} min={0} onChange={(v) => patch({ padding: v })} />
-                <select className="h-7 rounded border bg-background px-1" value={e.weight} onChange={(x) => patch({ weight: Number(x.target.value) })} aria-label="Weight">
-                  {[400, 500, 600, 700, 800].map((w) => <option key={w} value={w}>Weight {w}</option>)}
-                </select>
-                <select className="h-7 rounded border bg-background px-1" value={e.valign ?? "top"} onChange={(x) => patch({ valign: x.target.value })} aria-label="Vertical position">
-                  <option value="top">Top</option>
-                  <option value="middle">Middle</option>
-                  <option value="bottom">Bottom</option>
-                </select>
-                <select className="h-7 rounded border bg-background px-1" value={e.list ?? "none"} onChange={(x) => patch({ list: x.target.value })} aria-label="List">
-                  <option value="none">No list</option>
-                  <option value="bullet">Bullets</option>
-                  <option value="number">Numbers</option>
-                </select>
-              </div>
-              <label className="flex items-center gap-2"><input type="checkbox" checked={!!e.uppercase} onChange={(x) => patch({ uppercase: x.target.checked })} /> Capital letters</label>
-              <label className="flex items-center gap-2"><input type="checkbox" checked={!!e.shadow} onChange={(x) => patch({ shadow: x.target.checked })} /> Shadow</label>
-              <div className="flex items-center gap-2">Highlight <Swatches palette={p.palette} custom={p.custom} value={e.bg} onPick={(c) => patch({ bg: c })} none /></div>
-              <div className="flex items-center gap-2">Outline <Swatches palette={p.palette} custom={p.custom} value={e.outline} onPick={(c) => patch({ outline: c })} none /></div>
-            </PopoverContent>
-          </Popover>
         </>
       )}
-      {e?.kind === "shape" && (
+      {p.count > 1 && (
         <>
-          <ColorPop icon={PaintBucketIcon} label="Fill" value={e.fill} palette={p.palette} custom={p.custom} onPick={(c) => patch({ fill: c, gradient: null })} none />
-          <ColorPop icon={SquareIcon} label="Border" value={e.stroke} palette={p.palette} custom={p.custom} onPick={(c) => patch({ stroke: c })} none />
-          <Num label="Border" value={e.strokeWidth} step={0.1} min={0} onChange={(v) => patch({ strokeWidth: v })} />
-          {e.shape === "rect" && <Num label="Corners" value={e.radius ?? 0} step={0.5} min={0} onChange={(v) => patch({ radius: v })} />}
-          <label className="flex items-center gap-1 px-1 text-xs"><input type="checkbox" checked={!!e.dash} onChange={(x) => patch({ dash: x.target.checked })} /> Dashed</label>
-          <select className="h-8 rounded-md border bg-background px-1 text-xs" value={e.gradient ?? ""} onChange={(x) => patch({ gradient: x.target.value || null })} aria-label="Gradient">
-            <option value="">No gradient</option>
-            {GRADIENTS.map((g) => <option key={g} value={g}>{g.replace("linear-gradient(", "").replace(")", "")}</option>)}
-          </select>
+          <H>{p.count} selected</H>
+          <p className="p-3 text-xs text-muted-foreground">Use Arrange to align, space or group them.</p>
         </>
       )}
-      {e?.kind === "line" && (
-        <>
-          <ColorPop icon={SquareIcon} label="Colour" value={e.stroke} palette={p.palette} custom={p.custom} onPick={(c) => c && patch({ stroke: c })} />
-          <Num label="Width" value={e.strokeWidth} step={0.1} min={0.1} onChange={(v) => patch({ strokeWidth: v })} />
-          <label className="flex items-center gap-1 px-1 text-xs"><input type="checkbox" checked={!!e.dash} onChange={(x) => patch({ dash: x.target.checked })} /> Dashed</label>
-          <label className="flex items-center gap-1 px-1 text-xs"><input type="checkbox" checked={!!e.arrowStart} onChange={(x) => patch({ arrowStart: x.target.checked })} /> Start arrow</label>
-          <label className="flex items-center gap-1 px-1 text-xs"><input type="checkbox" checked={!!e.arrowEnd} onChange={(x) => patch({ arrowEnd: x.target.checked })} /> End arrow</label>
-        </>
-      )}
-      {e?.kind === "image" && (
-        <>
-          <select className="h-8 rounded-md border bg-background px-1 text-xs" value={e.fit} onChange={(x) => patch({ fit: x.target.value })} aria-label="Fit">
-            <option value="cover">Fill the box</option>
-            <option value="contain">Fit inside</option>
-          </select>
-          <Num label="Corners" value={e.radius ?? 0} step={0.5} min={0} onChange={(v) => patch({ radius: v })} />
-          <select className="h-8 rounded-md border bg-background px-1 text-xs" value={e.filter ?? "none"} onChange={(x) => patch({ filter: x.target.value })} aria-label="Filter">
-            {["none", "grayscale", "sepia", "bright", "dark", "blur"].map((f) => <option key={f} value={f}>{f === "none" ? "No filter" : f}</option>)}
-          </select>
-          <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => patch({ flipX: !e.flipX })}>Flip across</Button>
-          <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => patch({ flipY: !e.flipY })}>Flip up and down</Button>
-          <ColorPop icon={SquareIcon} label="Frame" value={e.border} palette={p.palette} custom={p.custom} onPick={(c) => patch({ border: c, borderWidth: c ? Math.max(0.5, e.borderWidth ?? 0) : 0 })} none />
-        </>
-      )}
-      {e?.kind === "icon" && <ColorPop icon={StarIcon} label="Colour" value={e.color} palette={p.palette} custom={p.custom} onPick={(c) => c && patch({ color: c })} />}
-      {e?.kind === "table" && <TableEdit el={e} palette={p.palette} custom={p.custom} onPatch={patch} />}
-      {e?.kind === "qr" && <Input className="h-8 w-64 text-xs" placeholder="Link or text (empty: the letter's verification code)" value={e.value ?? ""} onChange={(x) => patch({ value: x.target.value })} />}
-      {e?.kind === "slot" && <Input className="h-8 w-48 text-xs" value={e.label ?? ""} onChange={(x) => patch({ label: x.target.value })} aria-label="Label" />}
       {e && (
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button size="sm" variant="ghost" className="h-8 text-xs">Position</Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-72 space-y-2" align="start">
-            <div className="grid grid-cols-2 gap-2">
-              <Num label="X mm" value={e.x} onChange={(v) => patch({ x: v })} />
-              <Num label="Y mm" value={e.y} onChange={(v) => patch({ y: v })} />
-              <Num label="Width" value={e.w} min={1} onChange={(v) => patch({ w: v })} />
-              <Num label="Height" value={e.h} min={0} onChange={(v) => patch({ h: v })} />
-              <Num label="Rotate°" value={e.rotate} onChange={(v) => patch({ rotate: v })} />
-              <Num label="Opacity %" value={Math.round(e.opacity * 100)} min={0} max={100} onChange={(v) => patch({ opacity: Math.min(1, Math.max(0, v / 100)) })} />
-            </div>
-            <label className="flex items-center gap-2 text-xs">
-              <LinkIcon className="size-3.5" />
-              <Input className="h-7 text-xs" placeholder="Link (https://…)" value={e.link ?? ""} onChange={(x) => patch({ link: /^(https?:\/\/|mailto:|tel:)/i.test(x.target.value) ? x.target.value : x.target.value ? e.link : null })} />
-            </label>
-          </PopoverContent>
-        </Popover>
-      )}
-      <span className="mx-1 h-5 w-px shrink-0 bg-border" />
-      <button type="button" className={tb} title="Align left" aria-label="Align left" onClick={() => p.onAlign("left")}><AlignStartVerticalIcon className="size-4" /></button>
-      <button type="button" className={tb} title="Centre across" aria-label="Centre across" onClick={() => p.onAlign("hcenter")}><AlignCenterVerticalIcon className="size-4" /></button>
-      <button type="button" className={tb} title="Align right" aria-label="Align right" onClick={() => p.onAlign("right")}><AlignEndVerticalIcon className="size-4" /></button>
-      <button type="button" className={tb} title="Align top" aria-label="Align top" onClick={() => p.onAlign("top")}><AlignStartHorizontalIcon className="size-4" /></button>
-      <button type="button" className={tb} title="Centre up and down" aria-label="Centre up and down" onClick={() => p.onAlign("vmiddle")}><AlignCenterHorizontalIcon className="size-4" /></button>
-      <button type="button" className={tb} title="Align bottom" aria-label="Align bottom" onClick={() => p.onAlign("bottom")}><AlignEndHorizontalIcon className="size-4" /></button>
-      {p.count >= 3 && (
         <>
-          <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => p.onDistribute("x")}>Space across</Button>
-          <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => p.onDistribute("y")}>Space down</Button>
+          <H>Size and position</H>
+          <div className="grid grid-cols-2 gap-2 p-3">
+            <Num label="Width" value={e.w} min={1} onChange={(v) => set({ w: v })} w="w-full" />
+            <Num label="Height" value={e.h} min={0} onChange={(v) => set({ h: v })} w="w-full" />
+            <Num label="Left" value={e.x} onChange={(v) => set({ x: v })} w="w-full" />
+            <Num label="Top" value={e.y} onChange={(v) => set({ y: v })} w="w-full" />
+            <Num label="Rotation" value={e.rotate} onChange={(v) => set({ rotate: v })} w="w-full" />
+            <Num label="Opacity %" value={Math.round(e.opacity * 100)} min={0} max={100} onChange={(v) => set({ opacity: Math.min(1, Math.max(0, v / 100)) })} w="w-full" />
+          </div>
+          {e.kind === "text" && (
+            <>
+              <H>Text box</H>
+              <div className="space-y-2 p-3">
+                <div className="flex items-center gap-2 text-xs">Fill <Swatches palette={p.palette} custom={p.custom} value={e.bg} onPick={(c) => set({ bg: c })} none /></div>
+                <Num label="Inner margin (mm)" value={e.padding ?? 0} step={0.5} min={0} onChange={(v) => set({ padding: v })} w="w-full" />
+                <Num label="Line spacing" value={e.lineHeight} step={0.05} min={0.7} max={4} onChange={(v) => set({ lineHeight: v })} w="w-full" />
+              </div>
+            </>
+          )}
+          {e.kind === "shape" && (
+            <>
+              <H>Fill and line</H>
+              <div className="space-y-2 p-3">
+                <div className="flex items-center gap-2 text-xs">Fill <Swatches palette={p.palette} custom={p.custom} value={e.fill} onPick={(c) => set({ fill: c, gradient: null })} none /></div>
+                <select className="h-8 w-full rounded-md border bg-background px-1 text-xs" value={e.gradient ?? ""} onChange={(x) => set({ gradient: x.target.value || null })} aria-label="Gradient">
+                  <option value="">No gradient</option>
+                  {GRADIENTS.map((g) => <option key={g} value={g}>{g.replace("linear-gradient(", "").replace(")", "")}</option>)}
+                </select>
+                <div className="flex items-center gap-2 text-xs">Line <Swatches palette={p.palette} custom={p.custom} value={e.stroke} onPick={(c) => set({ stroke: c })} none /></div>
+                <Num label="Line width" value={e.strokeWidth} step={0.1} min={0} onChange={(v) => set({ strokeWidth: v })} w="w-full" />
+                {e.shape === "rect" && <Num label="Rounded corners" value={e.radius ?? 0} step={0.5} min={0} onChange={(v) => set({ radius: v })} w="w-full" />}
+              </div>
+            </>
+          )}
+          {e.kind === "icon" && (
+            <>
+              <H>Icon</H>
+              <div className="p-3"><Swatches palette={p.palette} custom={p.custom} value={e.color} onPick={(c) => c && set({ color: c })} /></div>
+            </>
+          )}
+          {e.kind === "qr" && (
+            <>
+              <H>QR code</H>
+              <div className="p-3"><Input className="h-8 text-xs" placeholder="Link or text (empty: the letter's check code)" value={e.value ?? ""} onChange={(x) => set({ value: x.target.value })} /></div>
+            </>
+          )}
+          {e.kind === "slot" && (
+            <>
+              <H>Place</H>
+              <div className="p-3"><Input className="h-8 text-xs" value={e.label ?? ""} onChange={(x) => set({ label: x.target.value })} aria-label="Label" /></div>
+            </>
+          )}
+          <H>Link</H>
+          <div className="p-3">
+            <Input className="h-8 text-xs" placeholder="https://… (optional)" value={e.link ?? ""} onChange={(x) => set({ link: /^(https?:\/\/|mailto:|tel:)/i.test(x.target.value) ? x.target.value : x.target.value ? e.link : null })} />
+          </div>
         </>
       )}
-      <span className="mx-1 h-5 w-px shrink-0 bg-border" />
-      <button type="button" className={tb} title="Bring to front (Ctrl+])" aria-label="Bring to front" onClick={() => p.onArrange("front")}><BringToFrontIcon className="size-4" /></button>
-      <button type="button" className={tb} title="Send to back (Ctrl+[)" aria-label="Send to back" onClick={() => p.onArrange("back")}><SendToBackIcon className="size-4" /></button>
-      {p.count > 1 && !p.grouped && <button type="button" className={tb} title="Group (Ctrl+G)" aria-label="Group" onClick={p.onGroup}><GroupIcon className="size-4" /></button>}
-      {p.grouped && <button type="button" className={tb} title="Ungroup (Ctrl+Shift+G)" aria-label="Ungroup" onClick={p.onUngroup}><UngroupIcon className="size-4" /></button>}
-      <button type="button" className={tb} title={p.locked ? "Unlock" : "Lock"} aria-label={p.locked ? "Unlock" : "Lock"} onClick={p.onToggleLock} disabled={p.frozen}>{p.locked ? <LockIcon className="size-4" /> : <UnlockIcon className="size-4" />}</button>
-      <button type="button" className={tb} title="Duplicate (Ctrl+D)" aria-label="Duplicate" onClick={p.onDuplicate} disabled={p.frozen}><CopyIcon className="size-4" /></button>
-      <button type="button" className={tb} title="Delete" aria-label="Delete" onClick={p.onDelete} disabled={p.frozen}><Trash2Icon className="size-4" /></button>
-      <span className="ml-auto shrink-0 pl-2 text-xs text-muted-foreground">{p.count > 1 ? `${p.count} selected` : e ? layerName(e) : ""}</span>
+      <H>Layers</H>
+      <ul className="space-y-0.5 p-2">
+        {p.layers.map((l) => (
+          <li key={l.id} className={cn("flex items-center gap-1 rounded px-1.5 py-1 text-xs", p.selected.includes(l.id) ? "bg-primary/10 text-primary" : "hover:bg-muted")}>
+            <button type="button" className="min-w-0 flex-1 truncate text-left" onClick={(ev) => p.onPick(l, ev.shiftKey)}>
+              {l.name ?? layerName(l)}
+            </button>
+            <button type="button" aria-label={l.hidden ? "Show" : "Hide"} onClick={() => p.onToggle(l.id, "hidden")}>{l.hidden ? <EyeOffIcon className="size-3.5" /> : <EyeIcon className="size-3.5 opacity-50" />}</button>
+            <button type="button" aria-label={l.locked ? "Unlock" : "Lock"} disabled={p.frozen(l)} onClick={() => p.onToggle(l.id, "locked")}>{l.locked ? <LockIcon className="size-3.5" /> : <UnlockIcon className="size-3.5 opacity-30" />}</button>
+          </li>
+        ))}
+        {!p.layers.length && <li className="px-1.5 py-1 text-xs text-muted-foreground">Nothing on this page yet.</li>}
+      </ul>
     </div>
   );
 }

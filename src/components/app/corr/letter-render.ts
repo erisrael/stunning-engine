@@ -64,6 +64,7 @@ export function fieldValues(m: LetterModel): Record<string, string> {
   const last = signed.at(-1);
   return {
     company_name: m.entity.legalName || m.letterhead.company || "",
+    company_tagline: m.letterhead.tagline ?? "",
     company_address: m.entity.address ?? m.letterhead.address ?? "",
     company_phone: m.entity.phone ?? m.letterhead.phone ?? "",
     company_email: m.entity.email ?? m.letterhead.email ?? "",
@@ -144,7 +145,7 @@ export function letterCss(m: LetterModel) {
 .cl-body-cell{padding:0 ${l.page.margins.right}mm 0 ${l.page.margins.left}mm}
 .cl-meta{display:flex;justify-content:space-between;gap:12pt;font-size:${Math.max(8, l.font.size - 1)}pt;margin:0 0 4mm;color:#334155}
 .cl-class{display:inline-block;border:1px solid #b91c1c;color:#b91c1c;font-size:7.5pt;font-weight:700;letter-spacing:.5pt;padding:0 4pt;text-transform:uppercase}
-.cl-to{margin-bottom:4mm;line-height:1.4}.cl-subj{font-weight:700;margin:0 0 4mm;text-decoration:underline;text-underline-offset:2pt}
+.cl-to{margin-bottom:4mm;line-height:1.4}.cl-subj{font-weight:700;margin:0 0 4mm}
 .cl-text p{text-align:justify;margin:0 0 2.5mm}.cl-text h1{font-size:${l.font.size + 6}pt;margin:3mm 0 2mm}.cl-text h2{font-size:${l.font.size + 3}pt;margin:3mm 0 1.5mm}.cl-text h3{font-size:${l.font.size + 1}pt;margin:2mm 0 1mm}
 .cl-text ul,.cl-text ol{margin:0 0 2.5mm 6mm;padding:0}.cl-text table{border-collapse:collapse;width:100%;margin:2mm 0 3mm}.cl-text th,.cl-text td{border:1px solid #cbd5e1;padding:1mm 2mm;text-align:left;vertical-align:top}.cl-text th{background:#f1f5f9}
 .cl-text blockquote{border-left:1mm solid #94a3b8;margin:2mm 0;padding:0 3mm;color:#475569}.cl-text hr{border:0;border-top:1px solid #cbd5e1;margin:3mm 0}

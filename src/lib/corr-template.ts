@@ -73,6 +73,7 @@ export type TemplateLayout = {
 
 export const STANDARD_FIELDS: { key: string; label: string }[] = [
   { key: "company_name", label: "Company name" },
+  { key: "company_tagline", label: "Company tagline" },
   { key: "company_address", label: "Company address" },
   { key: "company_phone", label: "Company phone" },
   { key: "company_email", label: "Company email" },
@@ -116,9 +117,9 @@ export function defaultLayout(size = "A4"): TemplateLayout {
   const W = p.w;
   const H = p.h;
   return {
-    page: { size, orientation: "portrait", w: W, h: H, unit: "mm", margins: { top: 20, right: 20, bottom: 18, left: 20 } },
+    page: { size, orientation: "portrait", w: W, h: H, unit: "mm", margins: { top: 20, right: 22, bottom: 18, left: 22 } },
     header: { first: 38, rest: 16 },
-    footer: { first: 18, rest: 14 },
+    footer: { first: 40, rest: 15 },
     differentFirst: true,
     font: { family: "Segoe UI, Arial, 'Noto Sans Ethiopic', sans-serif", size: 11, color: "#111827", lineHeight: 1.5 },
     colors: { primary: "#16a34a", accent: "#0f172a" },
@@ -126,17 +127,23 @@ export function defaultLayout(size = "A4"): TemplateLayout {
     border: { style: "none", width: 0.5, color: "#94a3b8", inset: 8 },
     background: null,
     elements: [
-      { id: eid(), kind: "image", zone: "header-first", x: 20, y: 10, w: 18, h: 18, src: "logo", locked: true },
-      { id: eid(), kind: "text", zone: "header-first", x: 41, y: 11, w: 90, h: 9, text: "{{company_name}}", size: 16, weight: 700, color: "#0f172a", locked: true },
-      { id: eid(), kind: "text", zone: "header-first", x: 41, y: 20, w: 90, h: 6, text: "", size: 8.5, color: "#64748b" },
-      { id: eid(), kind: "text", zone: "header-first", x: W - 90, y: 11, w: 70, h: 18, text: "{{company_address}}\n{{company_phone}}\n{{company_email}}\n{{company_website}}", size: 8, align: "right", color: "#475569" },
-      { id: eid(), kind: "line", zone: "header-first", x: 20, y: 31, w: W - 40, h: 0, stroke: "#16a34a", strokeWidth: 1, locked: true },
-      { id: eid(), kind: "text", zone: "header-rest", x: 20, y: 8, w: W - 40, h: 5, text: "{{company_name}} · {{document_number}}", size: 8, color: "#64748b" },
-      { id: eid(), kind: "line", zone: "header-rest", x: 20, y: 14, w: W - 40, h: 0, stroke: "#cbd5e1", strokeWidth: 0.4 },
-      { id: eid(), kind: "line", zone: "footer-first", x: 20, y: H - 16, w: W - 40, h: 0, stroke: "#16a34a", strokeWidth: 0.6 },
-      { id: eid(), kind: "text", zone: "footer-first", x: 20, y: H - 14, w: W - 62, h: 9, text: "{{company_name}} · {{company_address}}\nDocument ID {{document_id}} · {{document_number}}", size: 7, color: "#64748b" },
-      { id: eid(), kind: "qr", zone: "footer-first", x: W - 36, y: H - 15.5, w: 14, h: 14 },
-      { id: eid(), kind: "text", zone: "footer-rest", x: 20, y: H - 10, w: W - 40, h: 5, text: "{{document_number}} · page {{page}}", size: 7, align: "right", color: "#64748b" },
+      // First page: logo, name and tagline on the left, contacts on the right, a fine brand rule.
+      { id: eid(), kind: "image", zone: "header-first", x: 22, y: 11, w: 17, h: 17, src: "logo", locked: true },
+      { id: eid(), kind: "text", zone: "header-first", x: 43, y: 12, w: 96, h: 9, text: "{{company_name}}", size: 15.5, weight: 700, color: "#0f172a", locked: true },
+      { id: eid(), kind: "text", zone: "header-first", x: 43, y: 21, w: 96, h: 5, text: "{{company_tagline}}", size: 7.8, color: "#64748b" },
+      { id: eid(), kind: "text", zone: "header-first", x: W - 88, y: 11, w: 66, h: 18, text: "{{company_address}}\n{{company_phone}}\n{{company_email}}\n{{company_website}}", size: 7.2, align: "right", color: "#475569" },
+      { id: eid(), kind: "line", zone: "header-first", x: 22, y: 32, w: W - 44, h: 0, stroke: "#16a34a", strokeWidth: 0.7, locked: true },
+      // Later pages: a slim running header.
+      { id: eid(), kind: "text", zone: "header-rest", x: 22, y: 8, w: W - 44, h: 5, text: "{{company_name}} · {{document_number}}", size: 7.5, color: "#64748b" },
+      { id: eid(), kind: "line", zone: "header-rest", x: 22, y: 14, w: W - 44, h: 0, stroke: "#cbd5e1", strokeWidth: 0.3 },
+      // First-page footer: the verification code, then three columns (company and document, address, contacts).
+      { id: eid(), kind: "qr", zone: "footer-first", x: W - 36, y: H - 37, w: 14, h: 14 },
+      { id: eid(), kind: "line", zone: "footer-first", x: 22, y: H - 20, w: W - 44, h: 0, stroke: "#cbd5e1", strokeWidth: 0.3 },
+      { id: eid(), kind: "text", zone: "footer-first", x: 22, y: H - 17, w: 62, h: 10, text: "{{company_name}}\nDocument ID {{document_id}}", size: 6.5, color: "#64748b" },
+      { id: eid(), kind: "text", zone: "footer-first", x: 86, y: H - 17, w: 46, h: 10, text: "{{company_address}}", size: 6.5, align: "center", color: "#64748b" },
+      { id: eid(), kind: "text", zone: "footer-first", x: 134, y: H - 17, w: W - 156, h: 10, text: "{{company_phone}}\n{{company_email}}\n{{company_website}}", size: 6.5, align: "right", color: "#64748b" },
+      { id: eid(), kind: "line", zone: "footer-rest", x: 22, y: H - 13, w: W - 44, h: 0, stroke: "#cbd5e1", strokeWidth: 0.3 },
+      { id: eid(), kind: "text", zone: "footer-rest", x: 22, y: H - 11, w: W - 44, h: 5, text: "{{company_name}} · {{document_number}}", size: 6.5, color: "#64748b" },
     ],
     blocks: { refDate: true, recipient: true, subject: true, classificationLabel: true, pageNumbers: true },
     signatures: { layout: "row", placement: "end", showDate: true, showCapacity: true },

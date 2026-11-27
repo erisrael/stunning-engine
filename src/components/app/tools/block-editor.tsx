@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { FONTS, newBlock, type Block, type ListStyle, type ParaStyle, type TableStyle } from "./doc-model";
+import { FONTS, inlineHtml, newBlock, type Block, type ListStyle, type ParaStyle, type TableStyle } from "./doc-model";
 import { FUNCTION_NAMES } from "@/lib/formula";
 import { cn } from "@/lib/utils";
 
@@ -26,6 +26,9 @@ const ADD: { type: Block["type"]; label: string; icon: React.ComponentType<{ cla
   { type: "toc", label: "Contents", icon: ListTreeIcon },
   { type: "columns", label: "Two columns", icon: ColumnsIcon },
 ];
+
+// Page mode (Document Builder): no boxes around blocks; formatting bars show only in the block being edited.
+const PageMode = React.createContext(false);
 
 export function AddBlockBar({ onAdd }: { onAdd: (b: Block) => void }) {
   return (
@@ -75,9 +78,26 @@ function RichText({ value, onChange, rows = 3, label, style }: { value: string; 
       <Icon className="size-3.5" />
     </button>
   );
+  const page = React.useContext(PageMode);
+  const [typing, setTyping] = React.useState(false);
+  // On the page, text shows formatted (as it prints); a click turns it into the text being typed.
+  if (page && !typing)
+    return (
+      <div
+        role="textbox"
+        tabIndex={0}
+        aria-label={label}
+        onClick={() => setTyping(true)}
+        onFocus={() => setTyping(true)}
+        className={cn("min-h-[1.6em] cursor-text rounded-sm text-[11pt] leading-relaxed break-words whitespace-pre-wrap text-slate-900 hover:bg-sky-50/60 [&_a]:text-blue-700 [&_a]:underline [&_mark]:bg-yellow-200", !value && "text-slate-400")}
+        style={style}
+        // Every piece of text is escaped by inlineHtml.
+        dangerouslySetInnerHTML={{ __html: value ? inlineHtml(value) : "Type here" }}
+      />
+    );
   return (
-    <div className="rounded-md border focus-within:ring-1 focus-within:ring-ring">
-      <div className="flex flex-wrap items-center gap-0.5 border-b px-1 py-0.5">
+    <div className={cn(page ? "group/rt rounded-sm focus-within:bg-sky-50/40" : "rounded-md border focus-within:ring-1 focus-within:ring-ring")}>
+      <div className={cn("flex flex-wrap items-center gap-0.5 px-1 py-0.5", page ? "sticky top-0 z-10 -mx-1 mb-1 hidden rounded-md border bg-background shadow-sm group-focus-within/rt:flex" : "border-b")}>
         <B title="Bold" icon={BoldIcon} onClick={() => wrap("**", "**")} />
         <B title="Italic" icon={ItalicIcon} onClick={() => wrap("*", "*")} />
         <B title="Underline" icon={UnderlineIcon} onClick={() => wrap("__", "__")} />
@@ -139,7 +159,7 @@ function RichText({ value, onChange, rows = 3, label, style }: { value: string; 
           }}
         />
       </div>
-      <Textarea ref={ref} value={value} onChange={(e) => onChange(e.target.value)} rows={Math.max(rows, value.split("\n").length)} aria-label={label} className="rounded-none border-0 shadow-none focus-visible:ring-0" style={style} />
+      <Textarea ref={ref} value={value} onChange={(e) => onChange(e.target.value)} rows={page ? Math.max(1, value.split("\n").length) : Math.max(rows, value.split("\n").length)} aria-label={label} autoFocus={page} onBlur={(e) => page && !e.currentTarget.parentElement?.contains(e.relatedTarget as Node) && setTyping(false)} className={cn("rounded-none border-0 shadow-none focus-visible:ring-0", page && "min-h-0 resize-none bg-transparent p-0 text-[11pt] leading-relaxed text-slate-900 dark:bg-transparent")} style={{ ...style, ...(page ? ({ fieldSizing: "content" } as React.CSSProperties) : {}) }} placeholder={page ? "Type here" : undefined} />
     </div>
   );
 }
@@ -175,7 +195,7 @@ function StyleMenu({ value, onChange }: { value: ParaStyle; onChange: (s: ParaSt
   );
 }
 
-export function BlockEditor({ blocks, onChange }: { blocks: Block[]; onChange: (b: Block[]) => void }) {
+export function BlockEditor({ blocks, onChange, page = false }: { blocks: Block[]; onChange: (b: Block[]) => void; page?: boolean }) {
   const set = (i: number, b: Block) => onChange(blocks.map((x, j) => (j === i ? b : x)));
   const move = (i: number, d: -1 | 1) => {
     const j = i + d;
@@ -185,10 +205,11 @@ export function BlockEditor({ blocks, onChange }: { blocks: Block[]; onChange: (
     onChange(next);
   };
   return (
-    <div className="space-y-2">
+    <PageMode.Provider value={page}>
+    <div className={page ? "space-y-1" : "space-y-2"}>
       {blocks.map((b, i) => (
-        <div key={b.id} className="group relative rounded-md border bg-background p-2 pr-10">
-          <div className="absolute top-1 right-1 flex flex-col gap-0.5 opacity-60 group-focus-within:opacity-100 group-hover:opacity-100">
+        <div key={b.id} className={cn("group relative", page ? "rounded-sm py-0.5 pr-0 hover:bg-slate-50/70" : "rounded-md border bg-background p-2 pr-10")}>
+          <div className={cn("absolute flex flex-col gap-0.5", page ? "top-0 -left-9 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100" : "top-1 right-1 opacity-60 group-focus-within:opacity-100 group-hover:opacity-100")}>
             <button type="button" aria-label="Move up" className="rounded p-0.5 hover:bg-muted" onClick={() => move(i, -1)}>
               <ArrowUpIcon className="size-3.5" />
             </button>
@@ -205,9 +226,12 @@ export function BlockEditor({ blocks, onChange }: { blocks: Block[]; onChange: (
           </button>
         </div>
       ))}
-      <AddBlockBar onAdd={(b) => onChange([...blocks, b])} />
-      <p className="text-xs text-muted-foreground">Select text and use the bar above a paragraph for bold, italic, underline, colours, font, size, superscript, links and footnotes; the slider icon sets a paragraph&apos;s font, size and spacing. In tables, a cell starting with = is a formula (=SUM(ABOVE), =B2*C2) and a cell holding &lt; joins the cell on its left.</p>
+      <div className={page ? "pt-4 opacity-60 hover:opacity-100" : ""}>
+        <AddBlockBar onAdd={(b) => onChange([...blocks, b])} />
+      </div>
+      {!page && <p className="text-xs text-muted-foreground">Select text and use the bar above a paragraph for bold, italic, underline, colours, font, size, superscript, links and footnotes; the slider icon sets a paragraph&apos;s font, size and spacing. In tables, a cell starting with = is a formula (=SUM(ABOVE), =B2*C2) and a cell holding &lt; joins the cell on its left.</p>}
     </div>
+    </PageMode.Provider>
   );
 }
 
@@ -228,7 +252,7 @@ function BlockFields({ b, onChange }: { b: Block; onChange: (b: Block) => void }
             <option value={2}>H2</option>
             <option value={3}>H3</option>
           </select>
-          <Input value={b.text} onChange={(e) => onChange({ ...b, text: e.target.value })} className={cn("font-semibold", b.level === 1 ? "text-lg" : "text-base")} aria-label="Heading" style={{ textAlign: b.align ?? "left" }} />
+          <HeadingInput b={b} onChange={onChange} />
           <select value={b.align ?? "left"} onChange={(e) => onChange({ ...b, align: e.target.value as "left" })} className="rounded-md border bg-background px-1 text-xs" aria-label="Heading alignment">
             <option value="left">Left</option>
             <option value="center">Centre</option>
@@ -447,5 +471,19 @@ function TableFields({ b, width, onChange }: { b: Extract<Block, { type: "table"
         </label>
       </div>
     </div>
+  );
+}
+
+function HeadingInput({ b, onChange }: { b: Extract<Block, { type: "heading" }>; onChange: (b: Block) => void }) {
+  const page = React.useContext(PageMode);
+  return (
+    <Input
+      value={b.text}
+      onChange={(e) => onChange({ ...b, text: e.target.value })}
+      placeholder={page ? `Heading ${b.level}` : undefined}
+      className={cn("font-semibold", page ? cn("h-auto border-0 bg-transparent px-0 shadow-none focus-visible:ring-0 dark:bg-transparent", b.level === 1 ? "text-[22pt] leading-tight" : b.level === 2 ? "text-[15pt]" : "text-[12.5pt]", "text-slate-900") : b.level === 1 ? "text-lg" : "text-base")}
+      aria-label="Heading"
+      style={{ textAlign: b.align ?? "left" }}
+    />
   );
 }

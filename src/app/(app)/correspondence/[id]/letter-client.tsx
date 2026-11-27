@@ -104,7 +104,7 @@ export function LetterClient({
   const textOf = (b: unknown[]) => (b as Block[]).map((x) => ("text" in x && typeof x.text === "string" ? x.text : "items" in x && Array.isArray(x.items) ? x.items.map((i) => `• ${i}`).join("\n") : "")).filter(Boolean).join("\n\n").replace(/\*\*|__|~~|==/g, "");
   const buildDesign = (): Design => {
     const to = recipients.find((r) => r.kind === "to");
-    return letterDesign(brand, { ref: "{{document_number}}", date: "{{issue_date}}", to: [to?.name, to?.title, to?.organisation, to?.address].filter(Boolean).join("\n") || "{{recipient_name}}", subject, salutation: data.salutation ?? "", body: textOf(data.blocks ?? []), closing: data.closing ?? "", signName: data.signName ?? "{{signatory_name}}", signTitle: data.signTitle ?? "{{signatory_position}}", enclosures: data.enclosures }, (LETTER_LIBRARY.find((t) => t.key === data.libraryKey)?.design as "classic") ?? "classic");
+    return letterDesign(brand, { ref: "{{document_number}}", date: "{{issue_date}}", to: [to?.name, to?.title, to?.organisation, to?.address].filter(Boolean).join("\n") || "{{recipient_name}}", subject, salutation: data.salutation ?? "", body: textOf(data.blocks ?? []), closing: data.closing ?? "", signName: data.signName ?? "{{signatory_name}}", signTitle: data.signTitle ?? "{{signatory_position}}", enclosures: data.enclosures }, (LETTER_LIBRARY.find((t) => t.key === data.libraryKey)?.design as "classic") ?? "classic", true);
   };
   const goMode = (m: "write" | "design" | "preview") => {
     if (m === "design" && !data.design) (setData({ ...data, design: buildDesign() }), mark());
@@ -340,7 +340,7 @@ export function LetterClient({
         <DesignEditor
           design={data.design}
           onChange={(d) => (setData({ ...data, design: d }), mark())}
-          options={designOpts}
+          options={{ ...designOpts, allowModeSwitch: false }}
           values={{ ...(data.fields ?? {}), subject, company_name: brand.company, recipient_name: recipients.find((r) => r.kind === "to")?.name ?? "", recipient_company: recipients.find((r) => r.kind === "to")?.organisation ?? "" }}
           extras={{ logo: letterhead.logo || "/api/branding/logo" }}
           templates={designGallery(brand).filter((g) => g.key.startsWith("letter") || g.key === "memo" || g.key === "notice" || g.key === "certificate")}

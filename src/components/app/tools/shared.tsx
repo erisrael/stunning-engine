@@ -12,21 +12,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { searchRecordsAction } from "@/app/actions/tools";
 import type { LinkRef } from "@/lib/tools";
 import { cn } from "@/lib/utils";
+import { SectionTabs } from "@/components/app/section-tabs";
 
-// The tab bar across the six apps.
+// The tab row across the apps (hidden while the sidebar, which lists them, is open).
 export function ToolsNav({ apps, active }: { apps: { key: string; label: string; href: string }[]; active: string }) {
-  return (
-    <nav aria-label="Tools" data-page-tabs className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1">
-      <Link href="/tools" className={cn("shrink-0 rounded-md px-3 py-1.5 text-sm", active === "hub" ? "bg-primary text-primary-foreground" : "hover:bg-muted")}>
-        All tools
-      </Link>
-      {apps.map((a) => (
-        <Link key={a.key} href={a.href} aria-current={active === a.key ? "page" : undefined} className={cn("shrink-0 rounded-md px-3 py-1.5 text-sm", active === a.key ? "bg-primary text-primary-foreground" : "hover:bg-muted")}>
-          {a.label}
-        </Link>
-      ))}
-    </nav>
-  );
+  return <SectionTabs label="Tools" active={active} tabs={[{ key: "hub", label: "All tools", href: "/tools" }, ...apps]} />;
 }
 
 export function downloadBlob(blob: Blob, name: string) {

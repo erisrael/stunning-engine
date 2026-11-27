@@ -10,7 +10,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { ToolsNav } from "@/components/app/tools/shared";
 import { ConnectionsClient } from "./connections-client";
 
-export const metadata = { title: "Tools hub" };
+export const metadata = { title: "Tools" };
 
 const ICONS = { notes: NotebookPenIcon, calendar: BellIcon, sheets: FileSpreadsheetIcon, docs: FileTextIcon, decks: PresentationIcon, letters: MailIcon } as const;
 // Each app's colour (icon tile) and what it opens and saves.
@@ -30,7 +30,7 @@ export default async function ToolsHubPage({ searchParams }: { searchParams: Pro
   ]);
   return (
     <div className="space-y-5">
-      <PageHeader title="Tools hub" description="Everyday tools inside Myseed. They work on their own; connecting Notion, a calendar or an AI assistant is optional." />
+      <PageHeader title="Tools" description="Everyday tools inside Myseed. They work on their own; connecting Notion, a calendar or an AI assistant is optional." />
       <ToolsNav apps={nav} active="hub" />
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {tools.apps.map((a) => {

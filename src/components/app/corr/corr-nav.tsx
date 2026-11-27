@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { cn } from "@/lib/utils";
+import { SectionTabs } from "@/components/app/section-tabs";
 
 type Rights = { admin: boolean; audit: boolean; template?: boolean; workflow?: boolean; create?: boolean; issue?: boolean };
 
@@ -10,24 +10,13 @@ export function CorrNav({ active, rights }: { active: string; rights: Rights }) 
     { key: "inbox", label: "My approvals", href: "/correspondence/inbox" },
     { key: "dashboard", label: "Dashboard", href: "/correspondence/dashboard" },
     { key: "directory", label: "Directory", href: "/correspondence/directory" },
-    { key: "signatures", label: "Signatures and stamps", href: "/correspondence/signatures" },
+    { key: "signatures", label: "Signatures", href: "/correspondence/signatures" },
     ...(rights.template || rights.admin ? [{ key: "templates", label: "Templates", href: "/correspondence/templates" }] : []),
-    ...(rights.admin || rights.audit ? [{ key: "organisation", label: "Organisation and authority", href: "/correspondence/organisation" }] : []),
-    ...(rights.workflow || rights.admin ? [{ key: "workflows", label: "Workflows and rules", href: "/correspondence/workflows" }] : []),
-    ...(rights.admin || rights.audit ? [{ key: "setup", label: rights.admin ? "Setup and numbering" : "Number register", href: "/correspondence/setup" }] : []),
+    ...(rights.admin || rights.audit ? [{ key: "organisation", label: "Organisation", href: "/correspondence/organisation" }] : []),
+    ...(rights.workflow || rights.admin ? [{ key: "workflows", label: "Workflows", href: "/correspondence/workflows" }] : []),
+    ...(rights.admin || rights.audit ? [{ key: "setup", label: rights.admin ? "Setup" : "Number register", href: "/correspondence/setup" }] : []),
   ];
-  return (
-    <nav aria-label="Correspondence" data-page-tabs className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1">
-      {tabs.map((t) => (
-        <Link key={t.key} href={t.href} aria-current={active === t.key ? "page" : undefined} className={cn("shrink-0 rounded-md px-3 py-1.5 text-sm", active === t.key ? "bg-primary text-primary-foreground" : "hover:bg-muted")}>
-          {t.label}
-        </Link>
-      ))}
-      <Link href="/verify" className="ml-auto shrink-0 rounded-md px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted">
-        Verify a letter
-      </Link>
-    </nav>
-  );
+  return <SectionTabs label="Correspondence" active={active} tabs={tabs} end={<Link href="/verify" className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted">Verify a letter</Link>} />;
 }
 
 export const STATUS_TONE: Record<string, string> = {

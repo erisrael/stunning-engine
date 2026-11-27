@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { DownloadIcon, FileDownIcon, FileUpIcon, Loader2Icon, PrinterIcon, ReplaceIcon, SaveIcon, Settings2Icon } from "lucide-react";
+import { FolderOpenIcon, DownloadIcon, FileDownIcon, FileUpIcon, Loader2Icon, PrinterIcon, ReplaceIcon, SaveIcon, Settings2Icon } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { docxToBlocks } from "@/components/app/corr/docx-import";
 import { Button } from "@/components/ui/button";
@@ -162,6 +162,7 @@ export function DocsClient({ files: initialFiles, author, letterhead, notion }: 
   const [branded, setBranded] = React.useState(true);
   const [busy, setBusy] = React.useState<string | null>(null);
   const [dirty, setDirty] = React.useState(false);
+  const [reading, setReading] = React.useState(false);
   const [find, setFind] = React.useState({ open: false, q: "", r: "", cs: false });
   const importRef = React.useRef<HTMLInputElement>(null);
   const page: DocPage = data?.page ?? DEFAULT_PAGE;
@@ -243,31 +244,34 @@ export function DocsClient({ files: initialFiles, author, letterhead, notion }: 
       ? `<div style="display:flex;align-items:center;gap:12pt;border-bottom:2.5pt solid ${esc(letterhead.primary)};padding-bottom:8pt;margin-bottom:14pt"><img src="${esc(letterhead.logo || "/api/branding/logo")}" style="height:40pt" alt=""><div><div style="font-size:15pt;font-weight:700;color:${esc(letterhead.accent)}">${esc(letterhead.company)}</div><div style="font-size:8.5pt;color:#64748b">${esc([letterhead.address, letterhead.phone, letterhead.email, letterhead.website].filter(Boolean).join(" · "))}</div></div></div>`
       : "";
 
-  return (
-    <div className="grid gap-4 lg:grid-cols-[15rem_minmax(0,1fr)]">
-      <input ref={importRef} type="file" accept=".docx,.md,.markdown,.txt,.html,.htm" className="hidden" onChange={(e) => (e.target.files?.[0] && openFile(e.target.files[0]), (e.target.value = ""))} />
+  const shelf = (
       <FileShelf
-        kind="doc"
-        files={files}
-        setFiles={setFiles}
-        current={id}
-        newLabel="New document"
-        onNew={() => {
-          if (dirty && !confirm("Leave this document without saving?")) return;
-          setData(null);
-          setId(null);
-        }}
-        onOpen={async (fid) => {
-          if (dirty && !confirm("Leave this document without saving?")) return;
-          const r = await getFileAction("doc", fid);
-          if (!r.ok) return toast.error(r.error);
-          const f = r.data as { id: string; title: string; data: DocData };
-          setId(f.id);
-          setTitle(f.title);
-          setData({ template: f.data.template ?? "blank", blocks: f.data.blocks ?? [], meta: f.data.meta, page: f.data.page });
-          setDirty(false);
-        }}
-      />
+      kind="doc"
+      files={files}
+      setFiles={setFiles}
+      current={id}
+      newLabel="New document"
+      onNew={() => {
+        if (dirty && !confirm("Leave this document without saving?")) return;
+        setData(null);
+        setId(null);
+      }}
+      onOpen={async (fid) => {
+        if (dirty && !confirm("Leave this document without saving?")) return;
+        const r = await getFileAction("doc", fid);
+        if (!r.ok) return toast.error(r.error);
+        const f = r.data as { id: string; title: string; data: DocData };
+        setId(f.id);
+        setTitle(f.title);
+        setData({ template: f.data.template ?? "blank", blocks: f.data.blocks ?? [], meta: f.data.meta, page: f.data.page });
+        setDirty(false);
+      }}
+    />
+  );
+  return (
+    <div className={cn("gap-4", data ? "space-y-3" : "grid lg:grid-cols-[15rem_minmax(0,1fr)]")}>
+      <input ref={importRef} type="file" accept=".docx,.md,.markdown,.txt,.html,.htm" className="hidden" onChange={(e) => (e.target.files?.[0] && openFile(e.target.files[0]), (e.target.value = ""))} />
+      {!data && shelf}
       {!data ? (
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">
@@ -286,10 +290,19 @@ export function DocsClient({ files: initialFiles, author, letterhead, notion }: 
           </div>
         </div>
       ) : (
-        <div className="grid gap-4 2xl:grid-cols-2">
-          <Card>
-            <CardContent className="space-y-3 p-3">
+        <div className="space-y-2">
+          <div className="space-y-2">
               <div className="flex flex-wrap items-center gap-2">
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button size="sm" variant="outline">
+                      <FolderOpenIcon /> My documents ({files.length})
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-72 p-2" align="start">
+                    {shelf}
+                  </PopoverContent>
+                </Popover>
                 <Input value={title} onChange={(e) => (setTitle(e.target.value), setDirty(true))} className="min-w-48 flex-1 font-medium" aria-label="Document title" />
                 <Button size="sm" onClick={save} disabled={busy === "save"}>
                   {busy === "save" ? <Loader2Icon className="animate-spin" /> : <SaveIcon />} Save
@@ -355,11 +368,17 @@ export function DocsClient({ files: initialFiles, author, letterhead, notion }: 
                   </Button>
                 </div>
               )}
-              <BlockEditor blocks={data.blocks} onChange={(blocks) => (setData({ ...data, blocks }), setDirty(true))} />
-            </CardContent>
-          </Card>
+          </div>
           <div className="space-y-2">
             <div className="flex flex-wrap items-center gap-2">
+              <div className="inline-flex rounded-md border p-0.5 text-xs" role="tablist" aria-label="View">
+                <button type="button" role="tab" aria-selected={!reading} onClick={() => setReading(false)} className={cn("rounded px-2.5 py-1", !reading && "bg-primary text-primary-foreground")}>
+                  Edit
+                </button>
+                <button type="button" role="tab" aria-selected={reading} onClick={() => setReading(true)} className={cn("rounded px-2.5 py-1", reading && "bg-primary text-primary-foreground")}>
+                  Read (as printed)
+                </button>
+              </div>
               <label className="flex items-center gap-2 text-xs">
                 <input type="checkbox" checked={branded} onChange={(e) => setBranded(e.target.checked)} /> Company header and footer
               </label>
@@ -406,14 +425,23 @@ export function DocsClient({ files: initialFiles, author, letterhead, notion }: 
                 {notion && <NotionButton title={title} markdown={toMarkdown(title, data.blocks)} />}
               </div>
             </div>
-            <div style={{ maxWidth: page.orientation === "landscape" ? "297mm" : page.size === "A5" ? "148mm" : "216mm" }} className={cn("mx-auto rounded-md border bg-white p-8 text-[13px] leading-relaxed text-slate-900 shadow-sm", "[&_blockquote]:border-l-4 [&_blockquote]:pl-3 [&_blockquote]:text-slate-600 [&_h1]:mb-2 [&_h1]:text-2xl [&_h1]:font-bold [&_h2]:mt-4 [&_h2]:mb-1 [&_h2]:text-lg [&_h2]:font-semibold [&_h3]:mt-3 [&_h3]:font-semibold [&_hr]:my-3 [&_ol]:ml-5 [&_ol]:list-decimal [&_p]:mb-2 [&_table]:my-2 [&_table]:w-full [&_td]:border [&_td]:px-2 [&_td]:py-1 [&_th]:border [&_th]:bg-slate-100 [&_th]:px-2 [&_th]:py-1 [&_th]:text-left [&_ul]:ml-5 [&_ul]:list-disc")}>
+            <div className="overflow-x-auto rounded-xl border bg-[#e9ebee] px-4 py-6 pl-12 dark:bg-slate-900">
+            <div style={{ width: page.orientation === "landscape" ? "297mm" : page.size === "A5" ? "148mm" : "210mm", maxWidth: "100%", paddingLeft: `${page.margins.left}mm`, paddingRight: `${page.margins.right}mm`, paddingTop: `${page.margins.top}mm`, paddingBottom: `${page.margins.bottom}mm` }} className={cn("mx-auto min-h-[200mm] bg-white text-[13px] shadow-[0_1px_3px_rgba(0,0,0,.12),0_8px_24px_rgba(0,0,0,.08)] leading-relaxed text-slate-900 shadow-sm", "[&_blockquote]:border-l-4 [&_blockquote]:pl-3 [&_blockquote]:text-slate-600 [&_h1]:mb-2 [&_h1]:text-2xl [&_h1]:font-bold [&_h2]:mt-4 [&_h2]:mb-1 [&_h2]:text-lg [&_h2]:font-semibold [&_h3]:mt-3 [&_h3]:font-semibold [&_hr]:my-3 [&_ol]:ml-5 [&_ol]:list-decimal [&_p]:mb-2 [&_table]:my-2 [&_table]:w-full [&_td]:border [&_td]:px-2 [&_td]:py-1 [&_th]:border [&_th]:bg-slate-100 [&_th]:px-2 [&_th]:py-1 [&_th]:text-left [&_ul]:ml-5 [&_ul]:list-disc")}>
               {/* Every piece of text is escaped in blocksHtml; only our own tags are added. */}
               {page.header && <p className="mb-2 text-center text-[10px] text-slate-500">{page.header}</p>}
               <div className="relative">
                 {page.watermark && <span aria-hidden className="pointer-events-none absolute inset-x-0 top-1/3 -rotate-[30deg] text-center text-6xl font-extrabold text-slate-400/15">{page.watermark}</span>}
-                <div dangerouslySetInnerHTML={{ __html: header() + blocksHtml(data.blocks) }} />
+                {reading ? (
+                  <div dangerouslySetInnerHTML={{ __html: header() + blocksHtml(data.blocks) }} />
+                ) : (
+                  <>
+                    <div dangerouslySetInnerHTML={{ __html: header() }} />
+                    <BlockEditor page blocks={data.blocks} onChange={(blocks) => (setData({ ...data, blocks }), setDirty(true))} />
+                  </>
+                )}
               </div>
               {page.footer && <p className="mt-6 text-center text-[10px] text-slate-500">{page.footer}</p>}
+            </div>
             </div>
           </div>
         </div>

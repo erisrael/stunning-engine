@@ -850,6 +850,11 @@ PREPS["ui-tour"] = async () => {
     await run("INSERT INTO sup_ratings (id, ticket_id, ticket_number, session_at, agent_id, customer_name, rating, comment, channel, created_at, updated_at) VALUES (?, NULL, ?, ?, ?, 'Meron', ?, ?, 'telegram', ?, ?)", uid("srt_"), n, nowIso(), a.id, r, c, nowIso(), nowIso());
 };
 
+// The office tools test signs in as Admin with a password only.
+PREPS["office-ui"] = async () => {
+  await passwordOnly();
+};
+
 async function main() {
   const name = process.argv[2]!;
   const prep = PREPS[name];

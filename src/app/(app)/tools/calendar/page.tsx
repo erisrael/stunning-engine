@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/app/primitives";
 import { ToolsNav } from "@/components/app/tools/shared";
 import { CalendarClient } from "./calendar-client";
 
-export const metadata = { title: "Reminder Calendar" };
+export const metadata = { title: "Calendar" };
 
 export default async function CalendarToolPage({ searchParams }: { searchParams: Promise<{ d?: string }> }) {
   const { viewer, tools, nav } = await toolsPage("calendar");
@@ -23,7 +23,7 @@ export default async function CalendarToolPage({ searchParams }: { searchParams:
   ]);
   return (
     <div className="space-y-4">
-      <PageHeader title="Reminder Calendar" description="Your reminders and every task with a due date, by month or week. Subscribe from Google Calendar, Outlook or Apple Calendar." />
+      <PageHeader title="Calendar" description="Your reminders and every task with a due date, by month or week. Subscribe from Google Calendar, Outlook or Apple Calendar." />
       <ToolsNav apps={nav} active="calendar" />
       <CalendarClient
         initialReminders={reminders}

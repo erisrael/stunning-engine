@@ -19,6 +19,7 @@ import { blankBook, fromTable, toBook, type BookData } from "@/lib/sheet-book";
 import { Calc } from "@/lib/formula";
 import { esc, printHtml } from "@/components/app/tools/doc-model";
 import { SHEET_TEMPLATES } from "@/lib/sheet-templates";
+import { SheetCompare } from "@/components/app/tools/sheet-compare";
 import type { CrossResult } from "@/server/tools-data";
 import { cn } from "@/lib/utils";
 
@@ -40,7 +41,7 @@ export function SheetsClient({ saved: initialSaved, canCrossCheck, aiOn, workspa
   const [saved, setSaved] = React.useState(initialSaved);
   const [busy, setBusy] = React.useState<string | null>(null);
   const [dirty, setDirty] = React.useState(false);
-  const [view, setView] = React.useState<"sheet" | "check">("sheet");
+  const [view, setView] = React.useState<"sheet" | "compare" | "check">("sheet");
   const [paste, setPaste] = React.useState(false);
   const [check, setCheck] = React.useState<Check | null>(null);
   const [map, setMap] = React.useState({ code: -1, title: -1, teacher: -1 });
@@ -232,16 +233,19 @@ export function SheetsClient({ saved: initialSaved, canCrossCheck, aiOn, workspa
           <div className="flex flex-wrap items-center gap-2">
             <Input value={title} onChange={(e) => (setTitle(e.target.value), setDirty(true))} className="h-8 w-64 font-medium" aria-label="Workbook name" />
             {dirty && <span className="text-xs text-amber-700 dark:text-amber-300">Not saved</span>}
-            {canCrossCheck && (
-              <div className="inline-flex rounded-md border p-0.5 text-xs" role="tablist" aria-label="View">
-                <button type="button" role="tab" aria-selected={view === "sheet"} className={cn("rounded px-2 py-1", view === "sheet" && "bg-primary text-primary-foreground")} onClick={() => setView("sheet")}>
-                  Spreadsheet
+            <div className="inline-flex rounded-md border p-0.5 text-xs" role="tablist" aria-label="View">
+              {(
+                [
+                  ["sheet", "Spreadsheet"],
+                  ["compare", "Compare with Myseed data"],
+                  ...(canCrossCheck ? [["check", "Production cross-check"] as const] : []),
+                ] as const
+              ).map(([k, l]) => (
+                <button key={k} type="button" role="tab" aria-selected={view === k} className={cn("rounded px-2 py-1", view === k && "bg-primary text-primary-foreground")} onClick={() => setView(k)}>
+                  {l}
                 </button>
-                <button type="button" role="tab" aria-selected={view === "check"} className={cn("rounded px-2 py-1", view === "check" && "bg-primary text-primary-foreground")} onClick={() => setView("check")}>
-                  Check against production
-                </button>
-              </div>
-            )}
+              ))}
+            </div>
             <div className="ml-auto flex flex-wrap gap-2">
               <Button size="sm" onClick={save} disabled={busy === "save"}>
                 {busy === "save" ? <Loader2Icon className="animate-spin" /> : <SaveIcon />} Save
@@ -285,6 +289,8 @@ export function SheetsClient({ saved: initialSaved, canCrossCheck, aiOn, workspa
 
           {view === "sheet" ? (
             <Spreadsheet book={book} onChange={change} />
+          ) : view === "compare" ? (
+            table && <SheetCompare table={table} onAddSheets={(sheets) => (change({ ...book, sheets: [...book.sheets, ...sheets.map((sh, i) => ({ ...sh, name: uniqueName(book.sheets.map((x) => x.name), sh.name || `Sheet${book.sheets.length + i + 1}`) }))], active: book.sheets.length }), setView("sheet"))} />
           ) : (
             table && (
               <Card>
@@ -452,4 +458,13 @@ function PasteDialog({ open, onClose, onLoad }: { open: boolean; onClose: () => 
       </DialogContent>
     </Dialog>
   );
+}
+
+// A sheet name not yet used in the workbook (Excel needs them unique, up to 31 characters).
+function uniqueName(taken: string[], base: string) {
+  const b = base.replace(/[*?:\/[\]]/g, " ").slice(0, 28).trim() || "Sheet";
+  let n = b;
+  let i = 2;
+  while (taken.some((t) => t.toLowerCase() === n.toLowerCase())) n = `${b} ${i++}`;
+  return n;
 }

@@ -43,6 +43,13 @@ export async function revokeFeedAction() {
 export async function crossCheckAction(rows: d.CrossRow[]) {
   return wrap(async () => d.crossCheck(await requireViewer(), rows), quiet);
 }
+// Myseed data for Sheets Studio (what the person may see), to compare with or load as a sheet.
+export async function sheetSourcesAction() {
+  return wrap(async () => (await import("@/server/sheet-data")).sheetSources(await requireViewer()), quiet);
+}
+export async function sheetSourceRowsAction(key: string) {
+  return wrap(async () => (await import("@/server/sheet-data")).sheetSourceRows(await requireViewer(), String(key)), quiet);
+}
 export async function listFilesAction(kind: d.FileKind) {
   return wrap(async () => d.listFiles(await requireViewer(), kind), quiet);
 }

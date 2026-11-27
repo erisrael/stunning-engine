@@ -669,7 +669,7 @@ export function AppSidebar({
   // The Tools hub (every app Admin allows for the person), and People operations for the Operations head when
   // their sidebar has no Operations entry (a department sidebar of their own).
   if (tools.length) {
-    const toolsItem: NavItem = { href: "/tools", label: "Tools hub", icon: ToolCaseIcon, sub: [{ label: "All tools", href: "/tools" }, ...tools] };
+    const toolsItem: NavItem = { href: "/tools", label: "Tools", icon: ToolCaseIcon, sub: [{ label: "All tools", href: "/tools" }, ...tools] };
     const g = groups.find((x) => x.label === "Tools");
     if (g) g.items.unshift(toolsItem);
     else groups.splice(Math.min(1, groups.length), 0, { label: "Tools", items: [toolsItem] });
@@ -679,12 +679,12 @@ export function AppSidebar({
       { label: "Letters", href: "/correspondence" },
       { label: "My approvals", href: "/correspondence/inbox" },
       { label: "Dashboard", href: "/correspondence/dashboard" },
-      { label: "Company directory", href: "/correspondence/directory" },
-      { label: "Signatures and stamps", href: "/correspondence/signatures" },
+      { label: "Directory", href: "/correspondence/directory" },
+      { label: "Signatures", href: "/correspondence/signatures" },
       ...(has("corr.template") || has("corr.admin") || has("users.manage") ? [{ label: "Templates", href: "/correspondence/templates" }] : []),
-      ...(has("corr.admin") || has("corr.audit") || has("users.manage") ? [{ label: "Organisation and authority", href: "/correspondence/organisation" }] : []),
-      ...(has("corr.workflow") || has("corr.admin") || has("users.manage") ? [{ label: "Workflows and rules", href: "/correspondence/workflows" }] : []),
-      ...(has("corr.admin") || has("corr.audit") || has("users.manage") ? [{ label: "Setup and numbering", href: "/correspondence/setup" }] : []),
+      ...(has("corr.admin") || has("corr.audit") || has("users.manage") ? [{ label: "Organisation", href: "/correspondence/organisation" }] : []),
+      ...(has("corr.workflow") || has("corr.admin") || has("users.manage") ? [{ label: "Workflows", href: "/correspondence/workflows" }] : []),
+      ...(has("corr.admin") || has("corr.audit") || has("users.manage") ? [{ label: "Setup", href: "/correspondence/setup" }] : []),
     ] };
     const g = groups.find((x) => x.label === "Tools");
     if (g) g.items.push(corrItem);

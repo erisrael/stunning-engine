@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { EyeIcon, FileDownIcon, HashIcon, ImageIcon, Loader2Icon, LockIcon, PencilLineIcon, PencilRulerIcon, PrinterIcon, RefreshCwIcon, SaveIcon, UploadIcon } from "lucide-react";
+import { BoldIcon, FolderOpenIcon, HighlighterIcon, ItalicIcon, UnderlineIcon, EyeIcon, FileDownIcon, HashIcon, ImageIcon, Loader2Icon, LockIcon, PencilLineIcon, PencilRulerIcon, PrinterIcon, RefreshCwIcon, SaveIcon, UploadIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -23,6 +23,7 @@ import { fillLetter, LETTER_LIBRARY, type LetterTemplate } from "@/lib/letter-li
 import type { Letterhead } from "@/lib/tools";
 import type { SealPolicy } from "@/server/tools";
 import { cn } from "@/lib/utils";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 type Letter = {
   ref: string;
@@ -99,37 +100,47 @@ function sealOn(l: Letter, seal: Seal) {
   return { signature: !!seal.signature && (forced || !!l.seal?.signature), stamp: !!seal.stamp && (forced || !!l.seal?.stamp) };
 }
 
+// The letterhead and footer of the official layout (all text escaped).
+function headHtml(lh: Letterhead) {
+  const logo = lh.logo || "/api/branding/logo";
+  return `<div class="ltr-lh"><img src="${esc(logo)}" alt=""><div class="ltr-co"><div class="ltr-name">${esc(lh.company)}</div>${lh.tagline ? `<div class="ltr-tag">${esc(lh.tagline)}</div>` : ""}</div>
+<div class="ltr-contact">${[lh.address, lh.phone, lh.email, lh.website].filter(Boolean).map(esc).join("<br>")}</div></div><div class="ltr-rule"><span></span></div>`;
+}
+function footHtml(lh: Letterhead) {
+  return `<div class="ltr-foot"><div>${[lh.company, lh.footer].filter(Boolean).map(esc).join("<br>")}</div><div style="text-align:center">${esc(lh.address)}</div><div style="text-align:right">${[lh.phone, lh.email, lh.website].filter(Boolean).map(esc).join("<br>")}</div></div>`;
+}
+
 // The letter in the locked official layout, as HTML (all text escaped).
 function letterHtml(l: Letter, lh: Letterhead, seal: Seal, on: { signature: boolean; stamp: boolean }) {
-  const logo = lh.logo || "/api/branding/logo";
   const v = valuesOf(l, lh);
   const f = (s: string) => fillLetter(s, v);
   const sig = on.signature && seal?.signature ? `<img class="ltr-sig" src="${esc(seal.signature)}" alt="Signature" style="height:${seal.signHeight}mm">` : "";
   const stamp = on.stamp && seal?.stamp ? `<img class="ltr-stamp ${seal.placement === "over" ? "ltr-over" : ""}" src="${esc(seal.stamp)}" alt="Stamp" style="height:${seal.stampSize}mm;opacity:${seal.stampOpacity}">` : "";
-  return `
-<div class="ltr-lh"><img src="${esc(logo)}" alt=""><div class="ltr-co"><div class="ltr-name">${esc(lh.company)}</div>${lh.tagline ? `<div class="ltr-tag">${esc(lh.tagline)}</div>` : ""}</div>
-<div class="ltr-contact">${[lh.address, lh.phone, lh.email, lh.website].filter(Boolean).map(esc).join("<br>")}</div></div>
-<div class="ltr-meta"><div>Ref: <b>${esc(l.ref || "—")}</b></div><div>Date: <b>${esc(longDate(l.date))}</b></div></div>
+  return `${headHtml(lh)}
+<div class="ltr-meta"><div>Ref: ${esc(l.ref || "—")}</div><div>Date: ${esc(longDate(l.date))}</div></div>
 <div class="ltr-to">${[l.recipientName && `<b>${esc(l.recipientName)}</b>`, l.recipientTitle && esc(l.recipientTitle), l.organisation && esc(l.organisation), ...l.address.split("\n").filter(Boolean).map(esc)].filter(Boolean).join("<br>")}</div>
 ${l.subject ? `<div class="ltr-subj">Subject: ${esc(f(l.subject))}</div>` : ""}
 <p>${esc(f(l.salutation))}</p>
 ${paragraphs(f(l.body)).map((p) => `<p class="ltr-body">${inlineHtml(p)}</p>`).join("")}
 <p class="ltr-close">${esc(l.closing)}</p>
-<div class="ltr-sign"><div class="ltr-mark">${sig}${stamp}</div><div class="ltr-line"></div><b>${esc(l.signName)}</b><br>${esc(l.signTitle)}<br>${esc(lh.company)}${on.signature && seal?.note ? `<div class="ltr-small">${esc(seal.note)}</div>` : ""}</div>
+<div class="ltr-sign"><div class="ltr-mark">${sig}${stamp}</div><div class="ltr-line"></div><b>${esc(l.signName)}</b><br>${esc(l.signTitle)}${on.signature && seal?.note ? `<div class="ltr-small">${esc(seal.note)}</div>` : ""}</div>
 ${l.enclosures ? `<p class="ltr-small">Enclosures: ${esc(l.enclosures)}</p>` : ""}${l.cc ? `<p class="ltr-small">CC: ${esc(l.cc)}</p>` : ""}
-<div class="ltr-foot">${esc(lh.footer || [lh.company, lh.address, lh.website].filter(Boolean).join(" · "))}</div>`;
+${footHtml(lh)}`;
 }
 const letterCss = (lh: Letterhead) => `
-.ltr-lh{display:flex;align-items:center;gap:12pt;border-bottom:3pt solid ${lh.primary};padding-bottom:8pt;margin-bottom:6pt}
-.ltr-lh img{height:46pt;width:auto}.ltr-co{flex:1}.ltr-name{font-size:17pt;font-weight:700;color:${lh.accent};letter-spacing:.2pt}.ltr-tag{font-size:9pt;color:#64748b}
-.ltr-contact{text-align:right;font-size:8.5pt;color:#475569;line-height:1.35}
-.ltr-meta{display:flex;justify-content:space-between;font-size:10pt;margin:10pt 0 14pt;color:#334155}
-.ltr-to{margin-bottom:12pt;line-height:1.4}.ltr-subj{font-weight:700;margin:0 0 10pt;text-decoration:underline;text-underline-offset:2pt}
-.ltr-body{text-align:justify}.ltr-close{margin-top:14pt}.ltr-sign{margin-top:14pt;line-height:1.4;break-inside:avoid}.ltr-sign .ltr-line{width:150pt;border-top:1px solid #0f172a;margin-bottom:4pt}
+@page{size:A4;margin:16mm 22mm 26mm}
+body{font-family:Inter,"Segoe UI",Arial,"Noto Sans Ethiopic",sans-serif;font-size:10.5pt;line-height:1.5;color:#1f2937}
+.ltr-lh{display:flex;align-items:center;gap:10pt}
+.ltr-lh img{height:17mm;width:auto}.ltr-co{flex:1}.ltr-name{font-size:15.5pt;font-weight:700;color:${lh.accent};line-height:1.2}.ltr-tag{font-size:7.8pt;color:#64748b;margin-top:2pt}
+.ltr-contact{text-align:right;font-size:7.2pt;color:#475569;line-height:1.45}
+.ltr-rule{height:0.7mm;background:${lh.primary};margin:4mm 0 0;position:relative}.ltr-rule span{position:absolute;left:0;top:0.7mm;width:34mm;height:0.7mm;background:${lh.accent}}
+.ltr-meta{display:flex;justify-content:space-between;font-size:9pt;margin:7mm 0 5mm;color:#475569}
+.ltr-to{margin-bottom:8mm;line-height:1.45}.ltr-subj{font-weight:700;margin:0 0 4mm;font-size:11pt}
+p{margin:0 0 3mm}.ltr-body{text-align:left}.ltr-close{margin-top:5mm}.ltr-sign{margin-top:3mm;line-height:1.4;break-inside:avoid}.ltr-sign .ltr-line{width:58mm;border-top:0.25mm solid #334155;margin:1mm 0 2mm}
 .ltr-mark{position:relative;min-height:16mm;display:flex;align-items:flex-end;gap:4mm}.ltr-stamp.ltr-over{position:absolute;left:18mm;bottom:-6mm}
-.ltr-small{font-size:9pt;color:#475569;margin:2pt 0}
-.ltr-foot{position:fixed;bottom:0;left:0;right:0;border-top:1.5pt solid ${lh.primary};padding-top:4pt;font-size:8pt;color:#64748b;text-align:center}
-@media screen{.ltr-foot{position:static;margin-top:28pt}}`;
+.ltr-small{font-size:8.5pt;color:#64748b;margin:1.5mm 0}
+.ltr-foot{position:fixed;bottom:-18mm;left:0;right:0;border-top:0.3mm solid #cbd5e1;padding-top:2.5mm;font-size:6.8pt;color:#64748b;line-height:1.4;display:grid;grid-template-columns:1fr 1fr 1fr;gap:4mm}
+@media screen{.ltr-foot{position:static;margin-top:20mm}}`;
 
 const brandOf = (lh: Letterhead): Brand => ({ company: lh.company, tagline: lh.tagline, address: lh.address, phone: lh.phone, email: lh.email, website: lh.website, footer: lh.footer, primary: lh.primary, accent: lh.accent, hasLogo: true });
 
@@ -140,6 +151,7 @@ export function LettersClient({ files: initialFiles, letterhead: initialLh, canE
   const [l, setL] = React.useState<Letter>(() => blank(initialLh, author));
   const [busy, setBusy] = React.useState<string | null>(null);
   const [tab, setTab] = React.useState(initialTab);
+  const bodyRef = React.useRef<HTMLTextAreaElement>(null);
   const canDesign = !!designOpts?.surfaces.letters;
   const startMode: Mode = canDesign && designOpts!.defaultMode === "design" ? "design" : designOpts?.defaultMode === "preview" ? "preview" : "write";
   const [mode, setModeRaw] = React.useState<Mode>(startMode);
@@ -251,27 +263,34 @@ export function LettersClient({ files: initialFiles, letterhead: initialLh, canE
         </TabsList>
       )}
       <TabsContent value="write" className="mt-3">
-        <div className={cn("grid gap-4", mode === "write" && "lg:grid-cols-[15rem_minmax(0,1fr)]")}>
-          {mode === "write" && (
-            <FileShelf
-              kind="letter"
-              files={files}
-              setFiles={setFiles}
-              current={id}
-              newLabel="New letter"
-              onNew={() => (setId(null), setL(blank(lh, author)))}
-              onOpen={async (fid) => {
-                const r = await getFileAction("letter", fid);
-                if (!r.ok) return toast.error(r.error);
-                const f = r.data as { id: string; data: Letter };
-                setId(f.id);
-                setL({ ...blank(lh, author), ...f.data, design: f.data.design ? cleanDesign(f.data.design) : null });
-              }}
-            />
-          )}
+        <div className="grid gap-4">
           <div className="min-w-0 space-y-3">
             <div className="flex flex-wrap items-center gap-2">
               {modeBar}
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button size="sm" variant="outline">
+                    <FolderOpenIcon /> My letters ({files.length})
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-72 p-2" align="start">
+                  <FileShelf
+                    kind="letter"
+                    files={files}
+                    setFiles={setFiles}
+                    current={id}
+                    newLabel="New letter"
+                    onNew={() => (setId(null), setL(blank(lh, author)))}
+                    onOpen={async (fid) => {
+                      const r = await getFileAction("letter", fid);
+                      if (!r.ok) return toast.error(r.error);
+                      const f = r.data as { id: string; data: Letter };
+                      setId(f.id);
+                      setL({ ...blank(lh, author), ...f.data, design: f.data.design ? cleanDesign(f.data.design) : null });
+                    }}
+                  />
+                </PopoverContent>
+              </Popover>
               <LetterTemplatePicker onPick={applyTemplate} label={tmpl ? `Template: ${tmpl.label}` : "Choose a kind of letter"} />
               {sealHere && seal && (
                 <span className="inline-flex items-center gap-3 rounded-md border px-2 py-1 text-xs">
@@ -345,10 +364,49 @@ export function LettersClient({ files: initialFiles, letterhead: initialLh, canE
             {tmpl && missing.length > 0 && mode === "write" && <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-900 dark:text-amber-100">Still to fill: {missing.map((f) => f.label).join(", ")}.</p>}
 
             {mode === "write" && (
-              <div className="grid gap-4 2xl:grid-cols-2">
-                <Card>
-                  <CardContent className="space-y-3 p-4">
-                    <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
+                <div className="min-w-0 overflow-hidden rounded-xl border bg-[#e9ebee] dark:bg-slate-900">
+                  <WordBar target={bodyRef} value={l.body} onChange={(body) => set({ body })} />
+                  <div className="overflow-x-auto p-6">
+                    <div className="mx-auto w-[210mm] max-w-full bg-white px-[22mm] pt-[14mm] pb-[12mm] text-[10.5pt] leading-[1.5] text-[#1f2937] shadow-[0_1px_3px_rgba(0,0,0,.12),0_8px_24px_rgba(0,0,0,.08)]" style={{ fontFamily: "Inter, 'Segoe UI', Arial, 'Noto Sans Ethiopic', sans-serif" }}>
+                      <style>{letterCss(lh)}</style>
+                      <div dangerouslySetInnerHTML={{ __html: headHtml(lh) }} />
+                      <div className="mt-[7mm] mb-[5mm] flex justify-between text-[9pt] text-slate-600">
+                        <span>Ref: {l.ref || "—"}</span>
+                        <span>Date: {longDate(l.date)}</span>
+                      </div>
+                      <PageField area value={[l.recipientName, l.recipientTitle, l.organisation, l.address].filter((x, i) => x || i < 3).join("\n").replace(/\n+$/, "")} placeholder={"Recipient's name\nPosition\nOrganisation\nAddress"} className="mb-[6mm] leading-[1.45]" onChange={(v) => {
+                        const [n = "", t = "", o = "", ...a] = v.split("\n");
+                        set({ recipientName: n, recipientTitle: t, organisation: o, address: a.join("\n") });
+                      }} />
+                      <div className="mb-[4mm] flex items-baseline gap-1 text-[11pt] font-bold">
+                        <span>Subject:</span>
+                        <PageField value={l.subject} placeholder="What the letter is about" onChange={(subject) => set({ subject })} className="font-bold" />
+                      </div>
+                      <PageField value={l.salutation} placeholder="Dear Sir/Madam," onChange={(salutation) => set({ salutation })} className="mb-[3mm]" />
+                      <PageField area refEl={bodyRef} value={l.body} placeholder={"Type the letter here. Leave an empty line between paragraphs.\nSelect words and use the bar above for bold, italic, colours and sizes."} onChange={(body) => set({ body })} className="min-h-[60mm]" />
+                      <PageField value={l.closing} placeholder="Yours sincerely," onChange={(closing) => set({ closing })} className="mt-[5mm]" />
+                      <div className="mt-[3mm]">
+                        <div className="relative flex min-h-[16mm] items-end gap-[4mm]">
+                          {on.signature && seal?.signature && <img src={seal.signature} alt="Signature" style={{ height: `${seal.signHeight}mm` }} />}
+                          {on.stamp && seal?.stamp && <img src={seal.stamp} alt="Stamp" style={{ height: `${seal.stampSize}mm`, opacity: seal.stampOpacity }} className={seal.placement === "over" ? "absolute bottom-[-6mm] left-[18mm]" : ""} />}
+                        </div>
+                        <div className="mt-[1mm] mb-[2mm] w-[58mm] border-t border-slate-700" />
+                        <PageField value={l.signName} placeholder="Name" onChange={(signName) => set({ signName })} className="font-semibold" />
+                        <PageField value={l.signTitle} placeholder="Position" onChange={(signTitle) => set({ signTitle })} />
+                      </div>
+                      <div className="mt-[4mm] space-y-0.5 text-[8.5pt] text-slate-500">
+                        <PageField value={l.enclosures} placeholder="Enclosures (optional)" onChange={(enclosures) => set({ enclosures })} />
+                        <PageField value={l.cc} placeholder="CC (optional)" onChange={(cc) => set({ cc })} />
+                      </div>
+                      <div dangerouslySetInnerHTML={{ __html: footHtml(lh) }} />
+                    </div>
+                  </div>
+                </div>
+                <aside className="space-y-3">
+                  <Card>
+                    <CardContent className="space-y-3 p-4">
+                      <p className="text-sm font-semibold">Letter details</p>
                       <div className="space-y-1">
                         <Label htmlFor="l-ref">Reference number</Label>
                         <div className="flex gap-1">
@@ -358,6 +416,7 @@ export function LettersClient({ files: initialFiles, letterhead: initialLh, canE
                             variant="outline"
                             size="icon"
                             aria-label="Next reference number"
+                            title="Next reference number"
                             onClick={async () => {
                               const r = await nextLetterRefAction(lh.refPrefix);
                               if (!r.ok) return toast.error(r.error);
@@ -372,66 +431,35 @@ export function LettersClient({ files: initialFiles, letterhead: initialLh, canE
                         <Label htmlFor="l-date">Date</Label>
                         <Input id="l-date" type="date" value={l.date} onChange={(e) => set({ date: e.target.value })} />
                       </div>
-                    </div>
-                    <fieldset className="grid gap-3 rounded-md border p-3 sm:grid-cols-2">
-                      <legend className="px-1 text-xs font-medium text-muted-foreground">Recipient</legend>
-                      <Input value={l.recipientName} onChange={(e) => set({ recipientName: e.target.value })} placeholder="Name" aria-label="Recipient name" />
-                      <Input value={l.recipientTitle} onChange={(e) => set({ recipientTitle: e.target.value })} placeholder="Title or position" aria-label="Recipient title" />
-                      <Input value={l.organisation} onChange={(e) => set({ organisation: e.target.value })} placeholder="Organisation" aria-label="Organisation" className="sm:col-span-2" />
-                      <Textarea value={l.address} onChange={(e) => set({ address: e.target.value })} placeholder="Address (one line each)" rows={2} aria-label="Address" className="sm:col-span-2" />
-                    </fieldset>
-                    {tmpl && tmpl.fields.length > 0 && (
-                      <fieldset className="grid gap-3 rounded-md border border-amber-500/40 p-3 sm:grid-cols-2">
-                        <legend className="px-1 text-xs font-medium text-muted-foreground">Details for {tmpl.label.toLowerCase()}</legend>
-                        {tmpl.fields.map((f) =>
-                          f.kind === "long" ? (
-                            <Textarea key={f.key} className="sm:col-span-2" rows={2} value={l.fields?.[f.key] ?? ""} placeholder={f.placeholder ?? f.label} aria-label={f.label} onChange={(e) => set({ fields: { ...l.fields, [f.key]: e.target.value } })} />
-                          ) : (
-                            <Input key={f.key} value={l.fields?.[f.key] ?? ""} placeholder={f.placeholder ?? f.label} aria-label={f.label} title={f.label} onChange={(e) => set({ fields: { ...l.fields, [f.key]: e.target.value } })} />
-                          ),
-                        )}
-                      </fieldset>
-                    )}
-                    <div className="space-y-1">
-                      <Label htmlFor="l-subj">Subject</Label>
-                      <Input id="l-subj" value={l.subject} onChange={(e) => set({ subject: e.target.value })} />
-                    </div>
-                    <Input value={l.salutation} onChange={(e) => set({ salutation: e.target.value })} aria-label="Salutation" />
-                    <div className="space-y-1">
-                      <Label htmlFor="l-body">Letter</Label>
-                      <Textarea id="l-body" value={l.body} onChange={(e) => set({ body: e.target.value })} rows={12} placeholder={"Type the message. Leave an empty line between paragraphs.\n**bold**, *italic*, __underline__ and {{fields}} work."} />
-                    </div>
-                    <div className="grid gap-3 sm:grid-cols-3">
-                      <Input value={l.closing} onChange={(e) => set({ closing: e.target.value })} aria-label="Closing" />
-                      <Input value={l.signName} onChange={(e) => set({ signName: e.target.value })} placeholder="Signed by" aria-label="Signed by" />
-                      <Input value={l.signTitle} onChange={(e) => set({ signTitle: e.target.value })} placeholder="Position" aria-label="Signer's position" />
-                    </div>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <Input value={l.enclosures} onChange={(e) => set({ enclosures: e.target.value })} placeholder="Enclosures (optional)" aria-label="Enclosures" />
-                      <Input value={l.cc} onChange={(e) => set({ cc: e.target.value })} placeholder="CC (optional)" aria-label="CC" />
-                    </div>
-                  </CardContent>
-                </Card>
-                <div className="space-y-1">
-                  <p className="flex items-center gap-1 text-xs text-muted-foreground">
-                    <LockIcon className="size-3" /> Official letterhead (locked){l.design ? " · this letter also has a design (Design or Preview)" : ""}
-                  </p>
-                  <div className="mx-auto max-w-[210mm] rounded-md border bg-white p-8 text-[13px] leading-relaxed text-slate-900 shadow-sm">
-                    <style>{letterCss(lh)}</style>
-                    {/* All text is escaped in letterHtml. */}
-                    <div dangerouslySetInnerHTML={{ __html: letterHtml(l, lh, seal, on) }} />
-                  </div>
-                </div>
+                      {tmpl && tmpl.fields.length > 0 && (
+                        <div className="space-y-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-2.5">
+                          <p className="text-xs font-medium">Details for {tmpl.label.toLowerCase()}</p>
+                          {tmpl.fields.map((f) => (
+                            <label key={f.key} className="block space-y-0.5 text-xs">
+                              <span className="text-muted-foreground">{f.label}</span>
+                              {f.kind === "long" ? (
+                                <Textarea rows={2} value={l.fields?.[f.key] ?? ""} placeholder={f.placeholder} onChange={(e) => set({ fields: { ...l.fields, [f.key]: e.target.value } })} />
+                              ) : (
+                                <Input className="h-8" value={l.fields?.[f.key] ?? ""} placeholder={f.placeholder} onChange={(e) => set({ fields: { ...l.fields, [f.key]: e.target.value } })} />
+                              )}
+                            </label>
+                          ))}
+                        </div>
+                      )}
+                      <p className="text-xs text-muted-foreground">{"{{fields}}"} in the text are filled from these details when the letter is saved as PDF, Word or a picture.</p>
+                    </CardContent>
+                  </Card>
+                </aside>
               </div>
             )}
             {mode !== "write" && canDesign && l.design && (
               <DesignEditor
                 design={l.design}
                 onChange={(design) => set({ design })}
-                options={designOpts!}
+                options={{ ...designOpts!, allowModeSwitch: false }}
                 values={values}
                 extras={extras}
-                templates={designGallery(brandOf(lh))}
+                templates={designGallery(brandOf(lh)).filter((g) => !g.key.startsWith("slide") && g.key !== "post" && g.key !== "card")}
                 title={title}
                 slots
                 mode={mode === "preview" ? "preview" : "design"}
@@ -531,5 +559,59 @@ function LetterheadEditor({ value, onSaved }: { value: Letterhead; onSaved: (l: 
         </Button>
       </CardContent>
     </Card>
+  );
+}
+
+// A field typed straight onto the letter page (no box until it is focused), growing with its text.
+function PageField({ value, onChange, placeholder, className, area, refEl }: { value: string; onChange: (v: string) => void; placeholder?: string; className?: string; area?: boolean; refEl?: React.RefObject<HTMLTextAreaElement | null> }) {
+  const cls = cn("block w-full resize-none rounded-sm border-0 bg-transparent p-0 outline-none placeholder:text-slate-400 hover:bg-sky-50/60 focus:bg-sky-50 focus:ring-1 focus:ring-sky-300", className);
+  if (area) return <textarea ref={refEl} rows={Math.max(1, value.split("\n").length)} value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} className={cls} style={{ fieldSizing: "content" } as React.CSSProperties} />;
+  return <input value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} className={cls} />;
+}
+
+// The formatting bar above the page (as Word's Home tab): marks go around the selected words of the letter text.
+function WordBar({ target, value, onChange }: { target: React.RefObject<HTMLTextAreaElement | null>; value: string; onChange: (v: string) => void }) {
+  const [color, setColor] = React.useState("#c00000");
+  const wrap = (a: string, b: string) => {
+    const el = target.current;
+    if (!el) return;
+    const s0 = el.selectionStart;
+    const e0 = el.selectionEnd;
+    const sel = value.slice(s0, e0) || "text";
+    onChange(value.slice(0, s0) + a + sel + b + value.slice(e0));
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(s0 + a.length, s0 + a.length + sel.length);
+    });
+  };
+  const B = ({ icon: Icon, label, onClick }: { icon: React.ComponentType<{ className?: string }>; label: string; onClick: () => void }) => (
+    <button type="button" title={label} aria-label={label} onMouseDown={(e) => e.preventDefault()} onClick={onClick} className="inline-flex size-8 items-center justify-center rounded hover:bg-muted">
+      <Icon className="size-4" />
+    </button>
+  );
+  return (
+    <div className="flex flex-wrap items-center gap-0.5 border-b bg-background px-2 py-1">
+      <select className="h-8 rounded border bg-background px-1 text-xs" aria-label="Font of the selected words" value="" onMouseDown={(e) => e.stopPropagation()} onChange={(e) => e.target.value && wrap(`{f:${e.target.value}|`, "}")}>
+        <option value="">Font</option>
+        {["Calibri", "Arial", "Times New Roman", "Georgia", "Cambria", "Garamond", "Nyala", "Noto Sans Ethiopic"].map((f) => <option key={f} value={f}>{f}</option>)}
+      </select>
+      <select className="h-8 rounded border bg-background px-1 text-xs" aria-label="Size of the selected words" value="" onChange={(e) => e.target.value && wrap(`{${e.target.value}pt|`, "}")}>
+        <option value="">Size</option>
+        {[9, 10, 11, 12, 14, 16, 18, 20, 24].map((n) => <option key={n} value={n}>{n}</option>)}
+      </select>
+      <span className="mx-1 h-5 w-px bg-border" />
+      <B icon={BoldIcon} label="Bold" onClick={() => wrap("**", "**")} />
+      <B icon={ItalicIcon} label="Italic" onClick={() => wrap("*", "*")} />
+      <B icon={UnderlineIcon} label="Underline" onClick={() => wrap("__", "__")} />
+      <B icon={HighlighterIcon} label="Highlight" onClick={() => wrap("==", "==")} />
+      <span className="inline-flex items-center">
+        <button type="button" title="Colour" aria-label="Colour" onMouseDown={(e) => e.preventDefault()} onClick={() => wrap(`{${color}|`, "}")} className="inline-flex size-8 flex-col items-center justify-center rounded hover:bg-muted">
+          <span className="text-sm font-semibold">A</span>
+          <span className="h-1 w-4 rounded-sm" style={{ background: color }} />
+        </button>
+        <input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="size-5 cursor-pointer border-0 bg-transparent p-0" aria-label="Choose the colour" />
+      </span>
+      <span className="ml-auto pr-1 text-xs text-muted-foreground">Type on the page. The letterhead is locked.</span>
+    </div>
   );
 }

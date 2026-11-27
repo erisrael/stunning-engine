@@ -56,7 +56,8 @@ export const DESIGN_SIZES: { key: string; label: string; w: number; h: number }[
 export const DESIGN_FONTS = ["Inter", "Calibri", "Arial", "Helvetica", "Georgia", "Times New Roman", "Garamond", "Cambria", "Verdana", "Trebuchet MS", "Courier New", "Nyala", "Abyssinica SIL", "Noto Sans Ethiopic", "Noto Serif Ethiopic", "Segoe UI", "Montserrat", "Poppins", "Playfair Display", "Merriweather", "Roboto", "Open Sans", "Lato", "Oswald", "Raleway"];
 // Fonts offered from Google Fonts in the editor and the preview (loaded on demand; the rest are on the computer).
 export const WEB_FONTS = ["Inter", "Montserrat", "Poppins", "Playfair Display", "Merriweather", "Roboto", "Open Sans", "Lato", "Oswald", "Raleway", "Noto Sans Ethiopic", "Noto Serif Ethiopic"];
-export const fontStack = (f: string) => `"${f.replace(/["\\]/g, "")}", ${/serif|georgia|times|garamond|cambria|merriweather|playfair|abyssinica/i.test(f) ? "'Noto Serif Ethiopic', serif" : "'Noto Sans Ethiopic', Arial, sans-serif"}`;
+// Single quotes only: the stack goes inside style="…" attributes.
+export const fontStack = (f: string) => `'${f.replace(/["'\\;<>]/g, "")}',${/serif|georgia|times|garamond|cambria|merriweather|playfair|abyssinica/i.test(f) ? "'Noto Serif Ethiopic', serif" : "'Noto Sans Ethiopic', Arial, sans-serif"}`;
 
 export const ICONS: Record<string, string> = {
   check: "M20 6 9 17l-5-5",

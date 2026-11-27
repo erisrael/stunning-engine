@@ -142,8 +142,8 @@ function DesignAdmin({ c, setC, roles, people, onSave, busy }: { c: ToolsConfig;
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
             <p className="text-sm font-medium">Where</p>
-            <Check label="Company Letter Generator (Tools)" checked={d.surfaces.letters} onChange={(v) => set({ surfaces: { ...d.surfaces, letters: v } })} />
-            <Check label="Deck Maker (free-design slides)" checked={d.surfaces.decks} onChange={(v) => set({ surfaces: { ...d.surfaces, decks: v } })} />
+            <Check label="Letters (Tools)" checked={d.surfaces.letters} onChange={(v) => set({ surfaces: { ...d.surfaces, letters: v } })} />
+            <Check label="Slides (free design)" checked={d.surfaces.decks} onChange={(v) => set({ surfaces: { ...d.surfaces, decks: v } })} />
             <Check label="Correspondence letters" checked={d.surfaces.correspondence} onChange={(v) => set({ surfaces: { ...d.surfaces, correspondence: v } })} />
           </div>
           <div className="space-y-2">

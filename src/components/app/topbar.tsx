@@ -35,6 +35,7 @@ import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, Comma
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DEPT_VIEW_LABELS } from "@/lib/work";
+import { TOOL_APPS } from "@/lib/tools";
 import { Breadcrumb, BreadcrumbItem, BreadcrumbList, BreadcrumbPage, BreadcrumbLink, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
 import { Hint, UserAvatar } from "@/components/app/primitives";
 import { NAV_TIPS } from "@/lib/help";
@@ -106,6 +107,11 @@ const ACRONYMS: Record<string, string> = { cms: "CMS", api: "API", apis: "APIs",
 function isRecordId(s: string) {
   return /^[a-z]{2,5}_[A-Za-z0-9_-]{6,}$/.test(s) || (/\d/.test(s) && s.length > 14) || /^[0-9a-f-]{20,}$/i.test(s);
 }
+// The Tools and Correspondence pages by their own names (a department's view of the same name, such as the Dev
+// team's "docs", must not be borrowed).
+const TOOL_CRUMBS: Record<string, string> = Object.fromEntries(TOOL_APPS.map((a) => [a.href.split("/").pop()!, a.label]));
+const CORR_CRUMBS: Record<string, string> = { inbox: "My approvals", dashboard: "Dashboard", directory: "Directory", signatures: "Signatures", templates: "Templates", organisation: "Organisation", workflows: "Workflows", setup: "Setup" };
+
 function crumb(p: string, parent?: string) {
   let s = p;
   try {
@@ -128,7 +134,7 @@ export function Topbar({ user, activeRole, unread, chatUnread, qrScan, fun = fal
     if (i < 0) return "Home";
     const p = parts[i]!;
     if (p === "dashboard") return "Home";
-    return parts[i - 2] === "hr" && parts[i - 1] === "people" ? "Employee" : TITLES[p] ?? (parts[i - 1] === "items" ? "Item detail" : parts[i - 1] === "routines" ? "Routine" : (DEPT_VIEW_LABELS as Record<string, string>)[p] ?? crumb(p, parts[i - 1]));
+    return parts[i - 2] === "hr" && parts[i - 1] === "people" ? "Employee" : (parts[i - 1] === "tools" ? TOOL_CRUMBS[p] : parts[i - 1] === "correspondence" ? CORR_CRUMBS[p] : undefined) ?? TITLES[p] ?? (parts[i - 1] === "items" ? "Item detail" : parts[i - 1] === "routines" ? "Routine" : (DEPT_VIEW_LABELS as Record<string, string>)[p] ?? crumb(p, parts[i - 1]));
   })();
   const [searchOpen, setSearchOpen] = React.useState(false);
   const [bellOpen, setBellOpen] = React.useState(false);
@@ -188,7 +194,7 @@ export function Topbar({ user, activeRole, unread, chatUnread, qrScan, fun = fal
         <BreadcrumbList>
           {parts.map((p, i) => {
             const href = "/" + parts.slice(0, i + 1).join("/");
-            const label = parts[i - 2] === "hr" && parts[i - 1] === "people" ? "Employee" : TITLES[p] ?? (parts[i - 1] === "items" ? "Item detail" : parts[i - 1] === "routines" ? "Routine" : (DEPT_VIEW_LABELS as Record<string, string>)[p] ?? crumb(p, parts[i - 1]));
+            const label = parts[i - 2] === "hr" && parts[i - 1] === "people" ? "Employee" : (parts[i - 1] === "tools" ? TOOL_CRUMBS[p] : parts[i - 1] === "correspondence" ? CORR_CRUMBS[p] : undefined) ?? TITLES[p] ?? (parts[i - 1] === "items" ? "Item detail" : parts[i - 1] === "routines" ? "Routine" : (DEPT_VIEW_LABELS as Record<string, string>)[p] ?? crumb(p, parts[i - 1]));
             const last = i === parts.length - 1;
             return (
               <React.Fragment key={href}>
