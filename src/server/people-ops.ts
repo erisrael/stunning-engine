@@ -153,6 +153,9 @@ export async function setManagedRoles(user: AppUser, userId: string, wanted: str
   const added = next.filter((r) => !current.includes(r));
   const removed = current.filter((r) => !next.includes(r));
   if (!added.length && !removed.length) return;
+  const rc = await import("./role-change");
+  if (removed.length && (await rc.needsImpactPage(userId, { roles: removed, leads: [] })))
+    throw new WorkflowError("IMPACT", "See the impact before taking a role.", { url: await rc.impactUrl(userId, { roles: removed, leads: [] }) });
   await tx(async () => {
     if (removed.length) await run(`DELETE FROM role_assignments WHERE user_id = ? AND role IN (${placeholders(removed.length)})`, userId, ...removed);
     for (const r of added) await run("INSERT INTO role_assignments (user_id, role) VALUES (?, ?) ON CONFLICT DO NOTHING", userId, r);
@@ -160,6 +163,7 @@ export async function setManagedRoles(user: AppUser, userId: string, wanted: str
     for (const r of removed) if ((STAGES as readonly string[]).includes(r)) await run("DELETE FROM team_leads WHERE user_id = ? AND stage = ?", userId, r);
   });
   (await import("./auth")).forgetFastViewers();
+  if (added.length) await rc.onRolesGiven(user, userId, { roles: added });
   await audit(
     { actor: user },
     { action: "people_ops.roles", summary: `${user.name} (People operations) ${[added.length && `gave ${target.name} ${added.map(roleLabel).join(", ")}`, removed.length && `took ${removed.map(roleLabel).join(", ")} from ${target.name}`].filter(Boolean).join(" and ")}`, oldValue: current, newValue: next },
@@ -195,9 +199,13 @@ export async function setManagedStageLead(user: AppUser, stage: Stage, userId: s
   if (!STAGES.includes(stage)) throw new WorkflowError("VALIDATION", "Unknown team.");
   const target = await guardTarget(a, userId);
   if (lead && !(await get("SELECT 1 AS x FROM role_assignments WHERE user_id = ? AND role = ?", userId, stage))) throw new WorkflowError("VALIDATION", "Give the person this team's role first.");
+  const rc = await import("./role-change");
+  if (!lead && (await rc.needsImpactPage(userId, { roles: [], leads: [stage] })))
+    throw new WorkflowError("IMPACT", "See the impact before taking the lead position.", { url: await rc.impactUrl(userId, { roles: [], leads: [stage] }) });
   if (lead) {
     await run("INSERT INTO team_leads (stage, user_id) VALUES (?, ?) ON CONFLICT DO NOTHING", stage, userId);
     await run("UPDATE users SET own_work_only = 0 WHERE id = ?", userId);
+    await rc.onRolesGiven(user, userId, { leads: [stage] });
   } else await run("DELETE FROM team_leads WHERE stage = ? AND user_id = ?", stage, userId);
   (await import("./auth")).forgetFastViewers();
   await audit({ actor: user }, { action: "people_ops.lead", summary: `${user.name} (People operations) ${lead ? "made" : "removed"} ${target.name} ${lead ? "a" : "as"} ${stage} team lead` });

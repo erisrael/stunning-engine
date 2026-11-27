@@ -50,7 +50,8 @@ export const FONTS: { label: string; css: string; word: string }[] = [
 const fontCss = (f?: string) => FONTS.find((x) => x.label === f)?.css ?? "";
 const fontWord = (f?: string) => FONTS.find((x) => x.label === f)?.word || undefined;
 
-export type DocData = { template: string; blocks: Block[]; meta?: { subtitle?: string; author?: string; date?: string }; page?: DocPage };
+// layout: the cover, header and footer and page numbering (page-layout.ts); older documents have none.
+export type DocData = { template: string; blocks: Block[]; meta?: { subtitle?: string; author?: string; date?: string }; page?: DocPage; layout?: import("./page-layout").DocLayout };
 
 export const bid = () => Math.random().toString(36).slice(2, 10);
 const h = (level: 1 | 2 | 3, text: string): Block => ({ id: bid(), type: "heading", level, text });
@@ -287,9 +288,10 @@ export function listMarker(style: ListStyle | undefined, ordered: boolean, n: nu
   return `${k}. `;
 }
 
-export function blocksHtml(blocks: Block[]) {
+// headsFrom: the whole document, when only one part of it is drawn (the contents lists every heading).
+export function blocksHtml(blocks: Block[], headsFrom?: Block[]) {
   const notes: string[] = [];
-  const heads = blocks.filter((b): b is Extract<Block, { type: "heading" }> => b.type === "heading");
+  const heads = (headsFrom ?? blocks).filter((b): b is Extract<Block, { type: "heading" }> => b.type === "heading");
   const html = blocks
     .map((b) => {
       switch (b.type) {
@@ -358,9 +360,23 @@ ${css}
 export type DocxBand = { text: string; align: "left" | "center" | "right"; size: number; bold: boolean; color: string }[];
 export type DocxPage = { w: number; h: number; margins: { top: number; right: number; bottom: number; left: number }; differentFirst: boolean; header: { first: DocxBand; rest: DocxBand; even?: DocxBand }; footer: { first: DocxBand; rest: DocxBand; even?: DocxBand }; pageNumbers: boolean; footerNote?: string; oddEven?: boolean; mirror?: boolean };
 
-export async function blocksDocx(opts: { title: string; blocks: Block[]; letterhead?: Letterhead & { logoData?: Uint8Array | null; logoType?: "png" | "jpg" }; before?: Block[]; after?: Block[]; page?: DocxPage }) {
+// layout: the Document Builder's cover, header and footer and numbering (real Word sections; see page-layout.ts).
+export type DocxLayout = {
+  layout: import("./page-layout").DocLayout;
+  hf: import("./page-layout").HeaderFooter | null;
+  fields: { title: string; author: string; date: string; company: string };
+  page: { w: number; h: number; margins: { top: number; right: number; bottom: number; left: number } };
+  pageNumbers: boolean;
+};
+export async function blocksDocx(opts: { title: string; blocks: Block[]; letterhead?: Letterhead & { logoData?: Uint8Array | null; logoType?: "png" | "jpg" }; before?: Block[]; after?: Block[]; page?: DocxPage; layout?: DocxLayout }) {
   const d = await import("docx");
-  const { AlignmentType, BorderStyle, Document, ExternalHyperlink, Footer, FootnoteReferenceRun, Header, HeadingLevel, ImageRun, Packer, PageBreak, PageNumber, Paragraph, Table, TableCell, TableRow, TextRun, WidthType, ShadingType, TableOfContents } = d;
+  const { AlignmentType, BorderStyle, Bookmark, Document, ExternalHyperlink, Footer, FootnoteReferenceRun, Header, HeadingLevel, ImageRun, InternalHyperlink, LeaderType, NumberFormat, Packer, PageBreak, PageNumber, PageReference, Paragraph, Table, TableCell, TableRow, TabStopType, TextRun, VerticalAlign, WidthType, ShadingType } = d;
+  // Headings carry bookmarks so the contents links to them and shows their page numbers (PAGEREF fields), which
+  // Word, LibreOffice and other Word-compatible apps fill in; Word's own TOC field stays empty outside Word.
+  const all = [...(opts.before ?? []), ...opts.blocks, ...(opts.after ?? [])];
+  const withToc = all.some((b) => b.type === "toc");
+  const anchor = (id: string) => `toc_${id.replace(/[^A-Za-z0-9]/g, "")}`;
+  const headings = all.filter((b): b is Extract<Block, { type: "heading" }> => b.type === "heading" && !!b.text.trim());
   const color = (hex: string) => hex.replace("#", "");
   // Footnotes are numbered across the document, as Word does.
   const footnotes: Record<number, { children: InstanceType<typeof Paragraph>[] }> = {};
@@ -390,7 +406,7 @@ export async function blocksDocx(opts: { title: string; blocks: Block[]; letterh
   const para = (b: Block): (InstanceType<typeof Paragraph> | InstanceType<typeof Table> | typeof SECTION)[] => {
     switch (b.type) {
       case "heading":
-        return [new Paragraph({ heading: [HeadingLevel.HEADING_1, HeadingLevel.HEADING_2, HeadingLevel.HEADING_3][b.level - 1], alignment: b.align ? align[b.align] : undefined, children: runs(b.text) })];
+        return [new Paragraph({ heading: [HeadingLevel.HEADING_1, HeadingLevel.HEADING_2, HeadingLevel.HEADING_3][b.level - 1], alignment: b.align ? align[b.align] : undefined, children: withToc ? [new Bookmark({ id: anchor(b.id), children: runs(b.text) })] : runs(b.text) })];
       case "paragraph": {
         const st = b.style ?? {};
         const extra: Record<string, unknown> = {};
@@ -408,8 +424,23 @@ export async function blocksDocx(opts: { title: string; blocks: Block[]; letterh
       }
       case "list":
         return b.items.map((i, n) => new Paragraph({ children: [new TextRun(listMarker(b.style, b.ordered, n, b.checked?.[n])), ...runs(i)], indent: { left: 360, hanging: 260 }, spacing: { after: 60 } }));
-      case "toc":
-        return [...(b.title ? [new Paragraph({ heading: HeadingLevel.HEADING_2, children: [new TextRun(b.title)] })] : []), new TableOfContents(b.title || "Contents", { hyperlink: true, headingStyleRange: "1-3" }) as unknown as InstanceType<typeof Paragraph>, new Paragraph("")];
+      case "toc": {
+        // The text width, for the right-aligned page numbers with dotted leaders.
+        const width = opts.layout ? mmTw(opts.layout.page.w - opts.layout.page.margins.left - opts.layout.page.margins.right) : 9026;
+        return [
+          new Paragraph({ spacing: { after: 160 }, children: [new TextRun({ text: b.title || "Contents", bold: true, size: 32 })] }),
+          ...headings.map(
+            (x) =>
+              new Paragraph({
+                tabStops: [{ type: TabStopType.RIGHT, position: width, leader: LeaderType.DOT }],
+                indent: { left: (x.level - 1) * 360 },
+                spacing: { after: x.level === 1 ? 80 : 40 },
+                children: [new InternalHyperlink({ anchor: anchor(x.id), children: [new TextRun({ text: x.text.replace(/\*\*|__|~~|==/g, "").replace(/\{[^|{}]{1,80}\|(.+?)\}/g, "$1"), bold: x.level === 1 })] }), new TextRun("\t"), new PageReference(anchor(x.id), { hyperlink: true })],
+              }),
+          ),
+          new Paragraph(""),
+        ];
+      }
       case "columns": {
         const none = { style: BorderStyle.NONE, size: 0, color: "FFFFFF" };
         const cell = (t: string) => new TableCell({ width: { size: 50, type: WidthType.PERCENTAGE }, borders: { top: none, bottom: none, left: none, right: none }, margins: { left: 80, right: 160 }, children: t.split(/\n\s*\n/).map((p) => new Paragraph({ spacing: { after: 100 }, children: runs(p) })) });
@@ -477,6 +508,127 @@ export async function blocksDocx(opts: { title: string; blocks: Block[]; letterh
     }
   };
   const lh = opts.letterhead;
+  if (opts.layout) return layoutDocx(opts.layout);
+  // Cover, front matter (i, ii, iii), main pages (1, 2, 3); each part its own Word section with its header, footer
+  // and numbering, so it works as it does in a document made in Word.
+  async function layoutDocx(L: DocxLayout) {
+    const pl = await import("./page-layout");
+    const { layout, fields } = L;
+    const tw = (mm: number) => Math.round(mm * 56.6929);
+    const textW = tw(L.page.w - L.page.margins.left - L.page.margins.right);
+    const pageProps = { size: { width: tw(L.page.w), height: tw(L.page.h) }, margin: { top: tw(L.page.margins.top), right: tw(L.page.margins.right), bottom: tw(L.page.margins.bottom), left: tw(L.page.margins.left), header: tw(Math.max(6, L.page.margins.top / 2 - 2)), footer: tw(Math.max(6, L.page.margins.bottom / 2 - 2)) } };
+    const parts = pl.splitParts(opts.blocks, layout);
+    const hasFront = parts.front.length > 0;
+    const zoneRuns = (t: string, hf: import("./page-layout").HeaderFooter, inMain: boolean) => {
+      const out: InstanceType<typeof TextRun>[] = [];
+      const filled = pl.fillText(t, fields, "\u0001", "\u0002");
+      for (const piece of filled.split(/(\u0001|\u0002)/)) {
+        if (!piece) continue;
+        const base = { size: Math.round(hf.size * 2), color: color(hf.color) };
+        if (piece === "\u0001") out.push(new TextRun({ ...base, children: [PageNumber.CURRENT] }));
+        else if (piece === "\u0002") out.push(new TextRun({ ...base, children: [hasFront || layout.cover ? PageNumber.TOTAL_PAGES_IN_SECTION : PageNumber.TOTAL_PAGES] }));
+        else out.push(new TextRun({ ...base, text: piece }));
+      }
+      return out;
+    };
+    const logoRun = () => (lh?.logoData ? [new ImageRun({ type: lh.logoType ?? "png", data: lh.logoData, transformation: { width: 34, height: 34 } })] : []);
+    // One line: left, centre and right zones on tab stops, as Word's own header and footer styles do.
+    const band = (z: import("./page-layout").HFZones, hf: import("./page-layout").HeaderFooter, where: "header" | "footer", inMain: boolean) => {
+      const logo = where === "header" && hf.logo !== "none" ? logoRun() : [];
+      const rule = where === "header" ? (hf.ruleUnderHeader ? { bottom: { style: BorderStyle.SINGLE, size: 6, color: color(hf.color), space: 4 } } : undefined) : hf.ruleOverFooter ? { top: { style: BorderStyle.SINGLE, size: 6, color: color(hf.color), space: 4 } } : undefined;
+      return new Paragraph({
+        border: rule,
+        tabStops: [{ type: TabStopType.CENTER, position: Math.round(textW / 2) }, { type: TabStopType.RIGHT, position: textW }],
+        children: [
+          ...(hf.logo === "left" ? logo : []),
+          ...(hf.logo === "left" && logo.length && z.left ? [new TextRun("  ")] : []),
+          ...zoneRuns(z.left, hf, inMain),
+          new TextRun("\t"),
+          ...zoneRuns(z.center, hf, inMain),
+          new TextRun("\t"),
+          ...zoneRuns(z.right, hf, inMain),
+          ...(hf.logo === "right" && logo.length ? [new TextRun("  "), ...logo] : []),
+        ],
+      });
+    };
+    const empty = () => ({ default: new Header({ children: [new Paragraph("")] }) });
+    const emptyF = () => ({ default: new Footer({ children: [new Paragraph("")] }) });
+    const chrome = (hf: import("./page-layout").HeaderFooter | null, inMain: boolean, first: boolean) => {
+      if (!hf) return { headers: empty(), footers: emptyF() };
+      const df = first && hf.differentFirst;
+      return {
+        headers: { default: new Header({ children: [band(hf.header, hf, "header", inMain)] }), ...(df ? { first: new Header({ children: [band(hf.firstHeader ?? pl.EMPTY_ZONES, hf, "header", inMain)] }) } : {}) },
+        footers: { default: new Footer({ children: [band(hf.footer, hf, "footer", inMain)] }), ...(df ? { first: new Footer({ children: [band(hf.firstFooter ?? pl.EMPTY_ZONES, hf, "footer", inMain)] }) } : {}) },
+        titlePage: df,
+      };
+    };
+    const sections: Record<string, unknown>[] = [];
+    // The cover: its own section, no header, footer or number.
+    const c = layout.cover;
+    if (c) {
+      const col = /^#[0-9a-f]{6}$/i.test(c.color) ? color(c.color) : "16A34A";
+      const center = c.style === "classic" || c.style === "framed";
+      const al = center ? AlignmentType.CENTER : AlignmentType.LEFT;
+      const kids: InstanceType<typeof Paragraph>[] = [];
+      if (c.logo && lh?.logoData) kids.push(new Paragraph({ alignment: al, spacing: { after: 600 }, children: [new ImageRun({ type: lh.logoType ?? "png", data: lh.logoData, transformation: { width: 90, height: 90 } })] }));
+      if (c.style === "minimal") kids.push(new Paragraph({ spacing: { before: 4200 }, children: [] }));
+      const band2 = c.style === "band" ? { shading: { type: ShadingType.CLEAR, fill: col, color: "auto" } } : {};
+      const ink = c.style === "band" ? "FFFFFF" : "0F172A";
+      if (center) kids.push(new Paragraph({ alignment: al, spacing: { before: 2400, after: 240 }, border: { bottom: { style: BorderStyle.SINGLE, size: 18, color: col, space: 1 } }, children: [] }));
+      kids.push(new Paragraph({ alignment: al, ...band2, spacing: { before: c.style === "band" ? 1800 : 240, after: 120 }, border: c.style === "minimal" || c.style === "split" ? { left: { style: BorderStyle.SINGLE, size: 36, color: col, space: 12 } } : undefined, children: [new TextRun({ text: c.title || opts.title, bold: true, size: 64, color: ink })] }));
+      if (c.subtitle) kids.push(new Paragraph({ alignment: al, ...band2, spacing: { after: 240 }, children: [new TextRun({ text: c.subtitle, size: 30, color: c.style === "band" ? "FFFFFF" : "475569" })] }));
+      kids.push(new Paragraph({ alignment: al, spacing: { before: 2400 }, children: [c.author, c.org, c.date, c.note].filter(Boolean).flatMap((t, i) => [...(i ? [new TextRun({ text: "", break: 1 })] : []), new TextRun({ text: t, size: 22, color: "334155" })]) }));
+      sections.push({
+        properties: { page: { ...pageProps, ...(c.style === "framed" || c.style === "split" ? { borders: { pageBorderTop: { style: BorderStyle.DOUBLE, size: 12, color: col, space: 24 }, pageBorderBottom: { style: BorderStyle.DOUBLE, size: 12, color: col, space: 24 }, pageBorderLeft: { style: BorderStyle.DOUBLE, size: c.style === "split" ? 48 : 12, color: col, space: 24 }, pageBorderRight: { style: BorderStyle.DOUBLE, size: 12, color: col, space: 24 } } } : {}) }, verticalAlign: c.style === "classic" || c.style === "framed" ? VerticalAlign.TOP : undefined },
+        headers: empty(),
+        footers: emptyF(),
+        children: kids,
+      });
+    }
+    // Each part is one Word section (so "of {pages}" counts the part's pages); a section break inside a part
+    // starts a new page.
+    const flat = (list: Block[]) => {
+      const out: (InstanceType<typeof Paragraph> | InstanceType<typeof Table>)[] = [];
+      for (const x of list.flatMap(para)) {
+        if (x === SECTION) {
+          if (out.length) out.push(new Paragraph({ children: [new PageBreak()] }));
+        } else out.push(x);
+      }
+      return [out];
+    };
+    const shownMain = pl.withNumber(L.hf, layout.numbering, L.pageNumbers);
+    if (hasFront) {
+      const front = layout.numbering.front;
+      const fh = !L.pageNumbers || front === "none" ? L.hf : pl.withNumber(L.hf, layout.numbering, true);
+      flat(parts.front).forEach((g, i) =>
+        sections.push({
+          properties: { page: { ...pageProps, ...(i === 0 ? { pageNumbers: { start: 1, formatType: front === "arabic" ? NumberFormat.DECIMAL : NumberFormat.LOWER_ROMAN } } : {}) }, ...(i === 0 && !c && fh?.differentFirst ? { titlePage: true } : {}) },
+          ...chrome(fh, false, i === 0 && !c),
+          children: g.length ? g : [new Paragraph("")],
+        }),
+      );
+    }
+    flat(parts.main).forEach((g, i) => {
+      const ch = chrome(shownMain, true, i === 0 && !c && !hasFront);
+      sections.push({
+        properties: { page: { ...pageProps, ...(i === 0 ? { pageNumbers: { start: 1, formatType: NumberFormat.DECIMAL } } : {}) }, ...(ch.titlePage ? { titlePage: true } : {}) },
+        headers: ch.headers,
+        footers: ch.footers,
+        children: g.length ? g : [new Paragraph("")],
+      });
+    });
+    const doc = new Document({
+      creator: fields.author || lh?.company || "Myseed",
+      title: opts.title,
+      description: fields.company,
+      styles: { default: { document: { run: { font: "Calibri", size: 22 } } } },
+      footnotes,
+      // Word fills the contents' page numbers when the file opens.
+      features: { updateFields: withToc },
+      sections: sections as never,
+    });
+    return Packer.toBlob(doc);
+  }
   const header = lh
     ? new Header({
         children: [

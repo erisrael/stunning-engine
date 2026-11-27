@@ -13,7 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { getFileAction, nextLetterRefAction, saveFileAction, saveLetterheadAction } from "@/app/actions/tools";
 import { bid, blocksDocx, esc, inlineHtml, logoBytes, printHtml, type Block } from "@/components/app/tools/doc-model";
 import { FileShelf, type SavedFile } from "@/components/app/tools/file-shelf";
-import { downloadBlob, safeName } from "@/components/app/tools/shared";
+import { downloadBlob, safeName, useOpenFromLink } from "@/components/app/tools/shared";
 import { LetterTemplatePicker } from "@/components/app/tools/letter-templates";
 import { RichBody } from "@/components/app/tools/rich-doc";
 import { DesignEditor } from "@/components/app/design/design-editor";
@@ -25,6 +25,28 @@ import type { Letterhead } from "@/lib/tools";
 import type { SealPolicy } from "@/server/tools";
 import { cn } from "@/lib/utils";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { TemplateShelf } from "@/components/app/tools/template-shelf";
+import { docxToBlocks } from "@/components/app/corr/docx-import";
+
+// A Word letter (.docx or .dotx) read as a letter template: the subject, salutation and closing found by their
+// usual words, the rest as the body. The letterhead stays the company's.
+async function letterFromWord(f: File): Promise<Partial<Letter>> {
+  const blocks = await docxToBlocks(f);
+  const lines = blocks.flatMap((b) => (b.type === "paragraph" || b.type === "heading" ? [b.text.trim()] : b.type === "list" ? b.items.map((i) => `- ${i}`) : [])).filter(Boolean);
+  const plain = (t: string) => t.replace(/\*\*|__|~~|==/g, "").trim();
+  const idx = (re: RegExp) => lines.findIndex((t) => re.test(plain(t)));
+  const sub = idx(/^(subject|re)\s*[:\-]/i);
+  const sal = idx(/^(dear|to whom|hello|sir|madam)\b/i);
+  const clo = lines.findLastIndex((t) => /^(sincerely|yours|regards|best regards|respectfully|kind regards|with thanks)\b/i.test(plain(t)));
+  const from = sal >= 0 ? sal + 1 : sub >= 0 ? sub + 1 : 0;
+  const to = clo > from ? clo : lines.length;
+  return {
+    subject: sub >= 0 ? plain(lines[sub]!).replace(/^(subject|re)\s*[:\-]\s*/i, "") : "",
+    salutation: sal >= 0 ? plain(lines[sal]!) : "Dear Sir/Madam,",
+    body: lines.slice(from, to).join("\n\n"),
+    closing: clo >= 0 ? plain(lines[clo]!) : "Sincerely,",
+  };
+}
 
 type Letter = {
   ref: string;
@@ -158,6 +180,14 @@ export function LettersClient({ files: initialFiles, letterhead: initialLh, canE
   const [mode, setModeRaw] = React.useState<Mode>(startMode);
   const lockedMode = canDesign && !designOpts!.allowModeSwitch;
   const set = (p: Partial<Letter>) => setL((cur) => ({ ...cur, ...p }));
+  const openSaved = async (fid: string) => {
+    const r = await getFileAction("letter", fid);
+    if (!r.ok) return toast.error(r.error);
+    const f = r.data as { id: string; data: Letter };
+    setId(f.id);
+    setL({ ...blank(lh, author), ...f.data, design: f.data.design ? cleanDesign(f.data.design) : null });
+  };
+  useOpenFromLink(openSaved);
   const tmpl = LETTER_LIBRARY.find((t) => t.key === l.template) ?? null;
   const values = valuesOf(l, lh);
   const title = fillLetter(l.subject, values) || `Letter to ${l.recipientName || "recipient"}`;
@@ -282,17 +312,29 @@ export function LettersClient({ files: initialFiles, letterhead: initialLh, canE
                     current={id}
                     newLabel="New letter"
                     onNew={() => (setId(null), setL(blank(lh, author)))}
-                    onOpen={async (fid) => {
-                      const r = await getFileAction("letter", fid);
-                      if (!r.ok) return toast.error(r.error);
-                      const f = r.data as { id: string; data: Letter };
-                      setId(f.id);
-                      setL({ ...blank(lh, author), ...f.data, design: f.data.design ? cleanDesign(f.data.design) : null });
-                    }}
+                    onOpen={openSaved}
                   />
                 </PopoverContent>
               </Popover>
               <LetterTemplatePicker onPick={applyTemplate} label={tmpl ? `Template: ${tmpl.label}` : "Choose a kind of letter"} />
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button size="sm" variant="outline">Your templates</Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[min(36rem,92vw)] p-2" align="start">
+                  <TemplateShelf<Partial<Letter>>
+                    kind="tpl_letter"
+                    accept=".docx,.dotx"
+                    label="Import a Word letter (.docx, .dotx)"
+                    saveCurrent={{ title: title || l.subject || "Letter template", data: { subject: l.subject, salutation: l.salutation, body: l.body, closing: l.closing, signName: l.signName, signTitle: l.signTitle, cc: l.cc, enclosures: l.enclosures, template: l.template, fields: l.fields, design: l.design ? cleanDesign(l.design) : null, seal: l.seal } }}
+                    onImport={async (f) => ({ title: f.name.replace(/\.[^.]+$/, ""), data: await letterFromWord(f) })}
+                    onUse={(d) => {
+                      setId(null);
+                      setL({ ...blank(lh, author), ...d, design: d.design ? cleanDesign(d.design) : null });
+                    }}
+                  />
+                </PopoverContent>
+              </Popover>
               {sealHere && seal && (
                 <span className="inline-flex items-center gap-3 rounded-md border px-2 py-1 text-xs">
                   {seal.signature && (

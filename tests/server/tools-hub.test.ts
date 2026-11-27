@@ -195,7 +195,9 @@ async function main() {
   check("the head cannot give Admin", !!(await throws(() => P.setManagedRoles(opsHead, mkt.id, ["admin"]))));
   check("the head cannot change an Admin account", !!(await throws(() => P.setManagedRoles(opsHead, admin.id, ["sales"]))));
   check("the head cannot change their own roles", !!(await throws(() => P.setManagedRoles(opsHead, ops.id, ["sales"]))));
-  await P.setManagedRoles(opsHead, mkt.id, ["marketing"]);
+  // Taking a role goes through its impact page, then the head confirms it there.
+  check("taking a role asks for its impact first", /impact/i.test((await throws(() => P.setManagedRoles(opsHead, mkt.id, ["marketing"]))) ?? ""));
+  await (await import("../../src/server/role-change")).applyRoleChange(opsHead, mkt.id, { roles: ["cfo"], leads: [] }, {}, mkt.name);
   check("removing a managed role keeps the others", JSON.stringify((await loadUser(mkt.id))!.roles.sort()) === JSON.stringify(["marketing"]));
   await P.setManagedPosition(opsHead, "marketing", mkt.id, "lead");
   check("the head names a lead", (await get<{ position: string }>("SELECT position FROM department_positions WHERE department = 'marketing' AND user_id = ?", mkt.id))?.position === "lead");

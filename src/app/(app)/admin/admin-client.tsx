@@ -465,6 +465,7 @@ function UserDialog({
 }) {
   const roleCatalog = React.useContext(AdminRoles);
   const roleKeys = roleCatalog.map(r=>r.key);
+  const router = useRouter();
   const [u, setU] = React.useState(user);
   const [password, setPassword] = React.useState("");
   const [mustChange, setMustChange] = React.useState(true);
@@ -630,7 +631,13 @@ function UserDialog({
               });
               setBusy(false);
               if (!r.ok) return toast.error(r.error);
-              const d = r.data as { tempPassword: string | null };
+              const d = r.data as { tempPassword: string | null; impact?: string | null };
+              // Roles being taken wait on their impact page; everything else is saved.
+              if (d.impact) {
+                toast.info("Saved. Review the impact of taking the role before it changes.");
+                onClose();
+                return router.push(d.impact);
+              }
               toast.success(user.id ? "Saved" : "Person added");
               onSaved(d.tempPassword ? { email: u.email, password: d.tempPassword } : null);
             }}
@@ -1518,10 +1525,11 @@ export type TeamPerson = { id: string; name: string; roles: Role[]; leads: Stage
 export function TeamsAdmin({ people }: { people: TeamPerson[] }) {
   const router = useRouter();
   const [busy, setBusy] = React.useState<string | null>(null);
-  const act = async (key: string, fn: () => Promise<{ ok: boolean; error?: string }>) => {
+  const act = async (key: string, fn: () => Promise<{ ok: boolean; error?: string; code?: string; details?: unknown }>) => {
     setBusy(key);
     const r = await fn();
     setBusy(null);
+    if (!r.ok && r.code === "IMPACT") return router.push((r.details as { url: string }).url);
     if (!r.ok) return toast.error(r.error);
     router.refresh();
   };

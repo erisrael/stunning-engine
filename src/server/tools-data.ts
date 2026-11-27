@@ -297,7 +297,9 @@ export async function deleteReminder(user: AppUser, id: string) {
 // Saved files: documents, decks, letters and sheets
 // ---------------------------------------------------------------------------
 
-export const FILE_KINDS = { doc: "docs", deck: "decks", letter: "letters", sheet: "sheets" } as const;
+// tpl_*: templates people import or save (a Word, PowerPoint or Excel file kept to start new ones from); hf: headers
+// and footers saved from the designer or from an opened Word file.
+export const FILE_KINDS = { doc: "docs", deck: "decks", letter: "letters", sheet: "sheets", tpl_doc: "docs", tpl_deck: "decks", tpl_sheet: "sheets", tpl_letter: "letters", hf: "docs" } as const;
 export type FileKind = keyof typeof FILE_KINDS;
 const MAX_FILE = 4_000_000;
 

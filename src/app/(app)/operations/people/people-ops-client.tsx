@@ -49,10 +49,12 @@ export function PeopleOpsClient({
     return p.roles.some((r) => roles.find((x) => x.key === r)?.dept === dept) || !!p.positions[dept];
   });
 
-  const act = async (key: string, fn: () => Promise<{ ok: boolean; error?: string }>, ok: string) => {
+  const act = async (key: string, fn: () => Promise<{ ok: boolean; error?: string; code?: string; details?: unknown }>, ok: string) => {
     setBusy(key);
     const r = await fn();
     setBusy(null);
+    // Taking a role opens its impact page first.
+    if (!r.ok && r.code === "IMPACT") return router.push((r.details as { url: string }).url);
     if (!r.ok) return toast.error(r.error ?? "Could not save.");
     toast.success(ok);
     router.refresh();

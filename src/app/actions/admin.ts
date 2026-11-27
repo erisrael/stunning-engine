@@ -229,6 +229,14 @@ export async function saveUserAction(input: UserInput) {
     }
     let tempPassword: string | null = null;
     const id = input.id ?? uid("usr_");
+    // Taking a role goes through its impact page (open work, the team's queue, pages and rights lost): the other
+    // changes are saved, the roles being taken stay until the change is confirmed there.
+    const rc = await import("@/server/role-change");
+    const heldBefore = input.id ? (await all<{ role: Role }>("SELECT role FROM role_assignments WHERE user_id = ?", id)).map((r) => r.role) : [];
+    const removedRoles = heldBefore.filter((r) => !input.roles.includes(r));
+    const impact = removedRoles.length && (await rc.needsImpactPage(id, { roles: removedRoles, leads: [] })) ? await rc.impactUrl(id, { roles: removedRoles, leads: [] }) : null;
+    const savedRoles = impact ? [...new Set([...input.roles, ...removedRoles])] : input.roles;
+    const addedRoles = input.roles.filter((r) => !heldBefore.includes(r));
     await tx(async () => {
       if (input.id) {
         const before = await get("SELECT name, email, handle, title, phone, bio, active FROM users WHERE id = ?", id);
@@ -268,13 +276,15 @@ export async function saveUserAction(input: UserInput) {
         await audit({ actor: viewer }, { action: "user.invited", summary: `${viewer.name} added ${input.name} (${input.roles.join(", ")})` });
       }
       await run("DELETE FROM role_assignments WHERE user_id = ?", id);
-      for (const r of input.roles) await run("INSERT INTO role_assignments (user_id, role) VALUES (?, ?)", id, r);
+      for (const r of savedRoles) await run("INSERT INTO role_assignments (user_id, role) VALUES (?, ?)", id, r);
       await run("DELETE FROM access_scopes WHERE user_id = ?", id);
       for (const s of input.scopes) if (s.gradeId || s.subjectId) await run("INSERT INTO access_scopes (user_id, grade_id, subject_id) VALUES (?, ?, ?)", id, s.gradeId, s.subjectId);
       await run("DELETE FROM user_capacity WHERE user_id = ?", id);
-      for (const [st, h] of Object.entries(input.capacity)) if (h && h > 0 && input.roles.includes(st as Role)) await run("INSERT INTO user_capacity (user_id, stage, hours_per_week) VALUES (?, ?, ?)", id, st, h);
+      for (const [st, h] of Object.entries(input.capacity)) if (h && h > 0 && savedRoles.includes(st as Role)) await run("INSERT INTO user_capacity (user_id, stage, hours_per_week) VALUES (?, ?, ?)", id, st, h);
     });
-    return { id, tempPassword };
+    if (input.id && addedRoles.length) await rc.onRolesGiven(viewer, id, { roles: addedRoles });
+    (await import("@/server/auth")).forgetFastViewers();
+    return { id, tempPassword, impact };
   });
 }
 
@@ -468,10 +478,15 @@ export async function setTeamLeadAction(stage: Stage, userId: string, lead: bool
     if (!STAGES.includes(stage)) throw new WorkflowError("VALIDATION", "Unknown team.");
     const holds = await get("SELECT 1 AS x FROM role_assignments WHERE user_id = ? AND role = ?", userId, stage);
     if (lead && !holds) throw new WorkflowError("VALIDATION", "Give the person this team's role first.");
+    const rc = await import("@/server/role-change");
+    if (!lead && (await rc.needsImpactPage(userId, { roles: [], leads: [stage] })))
+      throw new WorkflowError("IMPACT", "See the impact before taking the lead position.", { url: await rc.impactUrl(userId, { roles: [], leads: [stage] }) });
     if (lead) await run("INSERT INTO team_leads (stage, user_id) VALUES (?, ?) ON CONFLICT DO NOTHING", stage, userId);
     else await run("DELETE FROM team_leads WHERE stage = ? AND user_id = ?", stage, userId);
     // Leads see their whole team, so they are never limited to their own work.
     if (lead) await run("UPDATE users SET own_work_only = 0 WHERE id = ?", userId);
+    if (lead) await rc.onRolesGiven(viewer, userId, { leads: [stage] });
+    (await import("@/server/auth")).forgetFastViewers();
     const name = (await get<{ name: string }>("SELECT name FROM users WHERE id = ?", userId))?.name;
     await audit({ actor: viewer }, { action: "team.lead", summary: `${viewer.name} ${lead ? "made" : "removed"} ${name} ${lead ? "a" : "as"} ${stage} team lead` });
   });

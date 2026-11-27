@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { FolderOpenIcon, DownloadIcon, FileDownIcon, FileUpIcon, Loader2Icon, PrinterIcon, ReplaceIcon, SaveIcon, Settings2Icon } from "lucide-react";
+import { BookOpenIcon, FolderOpenIcon, DownloadIcon, FileDownIcon, FileUpIcon, ListOrderedIcon, Loader2Icon, PanelTopIcon, PrinterIcon, ReplaceIcon, SaveIcon, Settings2Icon } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { docxToBlocks } from "@/components/app/corr/docx-import";
 import { Button } from "@/components/ui/button";
@@ -10,111 +10,17 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { getFileAction, saveFileAction } from "@/app/actions/tools";
 import { RichDoc } from "@/components/app/tools/rich-doc";
-import { bid, blocksDocx, blocksHtml, DEFAULT_PAGE, DOC_TEMPLATES, docxPageOf, logoBytes, pageChrome, pageCss, printHtml, esc, type Block, type DocData, type DocPage } from "@/components/app/tools/doc-model";
+import { bid, blocksDocx, blocksHtml, DEFAULT_PAGE, DOC_PAPER, DOC_TEMPLATES, logoBytes, printHtml, esc, type Block, type DocData, type DocPage } from "@/components/app/tools/doc-model";
+import { coverHtml, DEFAULT_HF, effectiveHF, headerFooterOfDocx, layoutCss, layoutOf, splitParts, withNumber, type DocLayout, type HeaderFooter, type HFSource } from "@/components/app/tools/page-layout";
+import { CoverDialog, FileHFPrompt, HeaderFooterDialog, NumberingDialog, ZonesPreview } from "@/components/app/tools/doc-layout-panel";
+import { TemplateShelf } from "@/components/app/tools/template-shelf";
+import { markdownToBlocks, toMarkdown } from "@/components/app/tools/doc-markdown";
 import { FileShelf, type SavedFile } from "@/components/app/tools/file-shelf";
-import { downloadBlob, safeName } from "@/components/app/tools/shared";
+import { downloadBlob, safeName, useOpenFromLink } from "@/components/app/tools/shared";
 import { NotionButton } from "@/components/app/tools/notion-button";
 import type { Letterhead } from "@/lib/tools";
 import { cn } from "@/lib/utils";
 
-// Blocks back to Markdown, for Notion and for a .md download.
-function toMarkdown(title: string, blocks: Block[]) {
-  return [
-    `# ${title}`,
-    "",
-    ...blocks.map((b) => {
-      switch (b.type) {
-        case "heading":
-          return `${"#".repeat(b.level + (b.level < 3 ? 1 : 0))} ${b.text}`;
-        case "paragraph":
-          return b.text;
-        case "list":
-          return b.items.map((i, n) => (b.ordered ? `${n + 1}. ${i}` : `- ${i}`)).join("\n");
-        case "table":
-          return b.rows.map((r, i) => `| ${r.join(" | ")} |${i === 0 && b.header ? `\n|${r.map(() => "---").join("|")}|` : ""}`).join("\n");
-        case "quote":
-          return `> ${b.text}`;
-        case "toc":
-          return `**${b.title || "Contents"}**`;
-        case "columns":
-          return `${b.left}\n\n${b.right}`;
-        case "image":
-          return `![${b.caption ?? ""}](picture)`;
-        case "textbox":
-          return `> ${b.text}`;
-        case "pagebreak":
-        case "section":
-          return "\n---\n";
-        default:
-          return "---";
-      }
-    }),
-  ].join("\n\n");
-}
-
-// Markdown (or plain text) to blocks: headings, lists, tables, quotes, rules, paragraphs.
-function markdownToBlocks(md: string): Block[] {
-  const out: Block[] = [];
-  const lines = md.replace(/\r/g, "").split("\n");
-  let para: string[] = [];
-  const flush = () => {
-    if (para.join("").trim()) out.push({ id: bid(), type: "paragraph", text: para.join("\n").trim() });
-    para = [];
-  };
-  for (let i = 0; i < lines.length; i++) {
-    const l = lines[i]!;
-    const h = /^(#{1,6})\s+(.*)$/.exec(l);
-    if (h) {
-      flush();
-      out.push({ id: bid(), type: "heading", level: Math.min(3, h[1]!.length) as 1 | 2 | 3, text: h[2]! });
-      continue;
-    }
-    if (/^\s*([-*+]|\d+[.)])\s+/.test(l)) {
-      flush();
-      const ordered = /^\s*\d/.test(l);
-      const items: string[] = [];
-      const checked: boolean[] = [];
-      let boxes = 0;
-      while (i < lines.length && /^\s*([-*+]|\d+[.)])\s+/.test(lines[i]!)) {
-        const t = lines[i]!.replace(/^\s*([-*+]|\d+[.)])\s+/, "");
-        const c = /^\[( |x|X)\]\s*/.exec(t);
-        items.push(c ? t.slice(c[0].length) : t);
-        checked.push(!!c && c[1] !== " ");
-        if (c) boxes++;
-        i++;
-      }
-      i--;
-      const isCheck = boxes > 0 && boxes === items.length;
-      out.push({ id: bid(), type: "list", ordered: ordered && !isCheck, items, ...(isCheck ? { style: "check" as const, checked } : {}) });
-      continue;
-    }
-    if (/^\|.*\|\s*$/.test(l)) {
-      flush();
-      const rows: string[][] = [];
-      while (i < lines.length && /^\|.*\|\s*$/.test(lines[i]!)) {
-        if (!/^\|[\s:|-]+\|\s*$/.test(lines[i]!)) rows.push(lines[i]!.trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim()));
-        i++;
-      }
-      i--;
-      out.push({ id: bid(), type: "table", header: true, rows });
-      continue;
-    }
-    if (/^>\s?/.test(l)) {
-      flush();
-      out.push({ id: bid(), type: "quote", text: l.replace(/^>\s?/, "") });
-      continue;
-    }
-    if (/^(-{3,}|\*{3,})\s*$/.test(l)) {
-      flush();
-      out.push({ id: bid(), type: "divider" });
-      continue;
-    }
-    if (!l.trim()) flush();
-    else para.push(l);
-  }
-  flush();
-  return out.length ? out : [{ id: bid(), type: "paragraph", text: "" }];
-}
 // HTML (a saved web page, or from Google Docs) to Markdown first, then blocks.
 function htmlToBlocks(html: string): Block[] {
   const doc = new DOMParser().parseFromString(html, "text/html");
@@ -159,7 +65,6 @@ export function DocsClient({ files: initialFiles, author, letterhead, notion }: 
   const [id, setId] = React.useState<string | null>(null);
   const [title, setTitle] = React.useState("");
   const [data, setData] = React.useState<DocData | null>(null);
-  const [branded, setBranded] = React.useState(true);
   const [busy, setBusy] = React.useState<string | null>(null);
   const [dirty, setDirty] = React.useState(false);
   const [reading, setReading] = React.useState(false);
@@ -167,21 +72,38 @@ export function DocsClient({ files: initialFiles, author, letterhead, notion }: 
   const importRef = React.useRef<HTMLInputElement>(null);
   const page: DocPage = data?.page ?? DEFAULT_PAGE;
   const setPage = (p: Partial<DocPage>) => data && (setData({ ...data, page: { ...page, ...p } }), setDirty(true));
+  // Cover, header and footer, numbering. A document from before them keeps its old header and footer text.
+  const layout: DocLayout = React.useMemo(() => {
+    if (data?.layout) return layoutOf(data.layout);
+    const l = layoutOf(null);
+    if (data?.page && (data.page.header || data.page.footer)) return { ...l, source: "custom" as const, hf: { ...DEFAULT_HF, header: { left: "", center: data.page.header, right: "" }, footer: { left: "", center: data.page.footer, right: "" }, logo: "none" as const } };
+    return l;
+  }, [data?.layout, data?.page]);
+  const setLayout = (l: DocLayout) => data && (setData({ ...data, layout: l }), setDirty(true));
+  const [panel, setPanel] = React.useState<null | "hf" | "cover" | "numbers">(null);
+  const [filePrompt, setFilePrompt] = React.useState<HeaderFooter | null>(null);
+  const fields = { title, author: data?.meta?.author ?? author, date: data?.meta?.date ?? new Date().toISOString().slice(0, 10), company: letterhead.company };
+  const hf = effectiveHF(layout, letterhead);
+  const branded = layout.source === "company";
+  const logoUrl = letterhead.logo || "/api/branding/logo";
   const words = React.useMemo(() => (data ? plainText(data.blocks).split(/\s+/).filter(Boolean).length : 0), [data]);
 
   const openFile = async (f: File) => {
     if (dirty && !confirm("Leave this document without saving?")) return;
     try {
       let blocks: Block[];
-      if (/\.docx$/i.test(f.name)) blocks = await docxToBlocks(f);
+      let fromFile: HeaderFooter | null = null;
+      if (/\.(docx|dotx)$/i.test(f.name)) ((blocks = await docxToBlocks(f)), (fromFile = await headerFooterOfDocx(f).catch(() => null)));
       else if (/\.html?$/i.test(f.name)) blocks = htmlToBlocks(await f.text());
       else if (/\.(md|markdown|txt)$/i.test(f.name)) blocks = markdownToBlocks(await f.text());
-      else return toast.error("Open a .docx, .md, .html or .txt file.");
+      else return toast.error("Open a .docx, .dotx, .md, .html or .txt file.");
       setId(null);
       setTitle(f.name.replace(/\.[^.]+$/, ""));
-      setData({ template: "blank", blocks, meta: { author, date: new Date().toISOString().slice(0, 10) } });
+      setData({ template: "blank", blocks, meta: { author, date: new Date().toISOString().slice(0, 10) }, layout: { ...layoutOf(null), fromFile } });
       setDirty(true);
       toast.success(`${blocks.length} parts opened`);
+      // Ask which header and footer to use: the file's own or the company's.
+      if (fromFile) setFilePrompt(fromFile);
     } catch {
       toast.error("The file could not be read.");
     }
@@ -218,6 +140,38 @@ export function DocsClient({ files: initialFiles, author, letterhead, notion }: 
     return (find.cs ? hay : hay.toLowerCase()).split(find.cs ? find.q : find.q.toLowerCase()).length - 1;
   }, [data, find.q, find.cs]);
 
+  const insertToc = () => {
+    if (!data) return;
+    const toc: Block = { id: bid(), type: "toc", title: "Contents" };
+    const brk: Block = { id: bid(), type: "pagebreak" };
+    const firstHead = data.blocks.find((b) => b.type === "heading");
+    // The contents goes first, on its own page; the main pages start after it (unless set otherwise).
+    setData({ ...data, blocks: [toc, brk, ...data.blocks], layout: { ...layout, numbering: { ...layout.numbering, mainStartsAt: layout.numbering.mainStartsAt ?? firstHead?.id ?? brk.id } } });
+    setDirty(true);
+    toast.success("Contents page added; the main pages start after it");
+  };
+  const paper = DOC_PAPER[page.size] ?? DOC_PAPER.A4;
+  const [pw, ph] = page.orientation === "landscape" ? [paper.h, paper.w] : [paper.w, paper.h];
+  const pdf = () => {
+    if (!data) return;
+    const parts = splitParts(data.blocks, layout);
+    const body = `${layout.cover ? coverHtml(layout.cover, logoUrl) : ""}${parts.front.length ? `<div class="doc-front">${header()}${blocksHtml(parts.front, data.blocks)}</div>` : ""}<div class="doc-main">${parts.front.length ? "" : header()}${blocksHtml(parts.main, data.blocks)}</div>${page.watermark ? `<div style="position:fixed;top:40%;left:0;right:0;text-align:center;font-size:72pt;font-weight:800;color:rgba(100,116,139,.12);transform:rotate(-30deg)">${esc(page.watermark)}</div>` : ""}`;
+    printHtml(title, body, layoutCss(layout, branded ? { ...hf!, header: { left: "", center: "", right: "" } } : hf, fields, { w: pw, h: ph }, page.margins, page.pageNumbers));
+  };
+  const word = async () => {
+    if (!data) return;
+    setBusy("docx");
+    try {
+      const needsLogo = (hf && hf.logo !== "none") || !!layout.cover?.logo;
+      const logo = needsLogo ? await logoBytes(letterhead) : null;
+      const blob = await blocksDocx({ title, blocks: data.blocks, letterhead: { ...letterhead, logoData: logo?.data ?? null, logoType: logo?.type }, layout: { layout, hf, fields, page: { w: pw, h: ph, margins: page.margins }, pageNumbers: page.pageNumbers } });
+      downloadBlob(blob, safeName(title, "docx"));
+    } catch {
+      toast.error("The Word file could not be made.");
+    }
+    setBusy(null);
+  };
+
   const start = (key: string) => {
     const t = DOC_TEMPLATES.find((x) => x.key === key)!;
     setId(null);
@@ -239,11 +193,22 @@ export function DocsClient({ files: initialFiles, author, letterhead, notion }: 
     toast.success("Document saved");
   };
 
-  const header = () =>
-    branded
+  function header() {
+    return branded
       ? `<div style="display:flex;align-items:center;gap:12pt;border-bottom:2.5pt solid ${esc(letterhead.primary)};padding-bottom:8pt;margin-bottom:14pt"><img src="${esc(letterhead.logo || "/api/branding/logo")}" style="height:40pt" alt=""><div><div style="font-size:15pt;font-weight:700;color:${esc(letterhead.accent)}">${esc(letterhead.company)}</div><div style="font-size:8.5pt;color:#64748b">${esc([letterhead.address, letterhead.phone, letterhead.email, letterhead.website].filter(Boolean).join(" · "))}</div></div></div>`
       : "";
+  }
 
+  const openSaved = async (fid: string) => {
+    const r = await getFileAction("doc", fid);
+    if (!r.ok) return toast.error(r.error);
+    const f = r.data as { id: string; title: string; data: DocData };
+    setId(f.id);
+    setTitle(f.title);
+    setData({ template: f.data.template ?? "blank", blocks: f.data.blocks ?? [], meta: f.data.meta, page: f.data.page, layout: f.data.layout });
+    setDirty(false);
+  };
+  useOpenFromLink(openSaved);
   const shelf = (
       <FileShelf
       kind="doc"
@@ -258,28 +223,39 @@ export function DocsClient({ files: initialFiles, author, letterhead, notion }: 
       }}
       onOpen={async (fid) => {
         if (dirty && !confirm("Leave this document without saving?")) return;
-        const r = await getFileAction("doc", fid);
-        if (!r.ok) return toast.error(r.error);
-        const f = r.data as { id: string; title: string; data: DocData };
-        setId(f.id);
-        setTitle(f.title);
-        setData({ template: f.data.template ?? "blank", blocks: f.data.blocks ?? [], meta: f.data.meta, page: f.data.page });
-        setDirty(false);
+        await openSaved(fid);
       }}
     />
   );
   return (
     <div className={cn("gap-4", data ? "space-y-3" : "grid lg:grid-cols-[15rem_minmax(0,1fr)]")}>
-      <input ref={importRef} type="file" accept=".docx,.md,.markdown,.txt,.html,.htm" className="hidden" onChange={(e) => (e.target.files?.[0] && openFile(e.target.files[0]), (e.target.value = ""))} />
+      <input ref={importRef} type="file" accept=".docx,.dotx,.md,.markdown,.txt,.html,.htm" className="hidden" onChange={(e) => (e.target.files?.[0] && openFile(e.target.files[0]), (e.target.value = ""))} />
       {!data && shelf}
       {!data ? (
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-sm font-medium">Start from a layout</p>
             <Button size="sm" variant="outline" className="ml-auto" onClick={() => importRef.current?.click()}>
-              <FileUpIcon /> Open a file (.docx, .md, .html, .txt)
+              <FileUpIcon /> Open a file (.docx, .dotx, .md, .html, .txt)
             </Button>
           </div>
+          <TemplateShelf<DocData>
+            kind="tpl_doc"
+            accept=".docx,.dotx,.md,.markdown,.html,.htm,.txt"
+            label="Import a template (.docx, .dotx)"
+            onImport={async (f) => {
+              const word = /\.(docx|dotx)$/i.test(f.name);
+              const blocks = word ? await docxToBlocks(f) : /\.html?$/i.test(f.name) ? htmlToBlocks(await f.text()) : markdownToBlocks(await f.text());
+              const fromFile = word ? await headerFooterOfDocx(f).catch(() => null) : null;
+              return { title: f.name.replace(/\.[^.]+$/, ""), data: { template: "imported", blocks, layout: { ...layoutOf(null), fromFile, source: fromFile ? "document" : "company" } } };
+            }}
+            onUse={(d, t) => {
+              setId(null);
+              setTitle(t);
+              setData({ ...d, blocks: (d.blocks ?? []).map((b) => ({ ...b, id: bid() })), meta: { author, date: new Date().toISOString().slice(0, 10) }, layout: d.layout ? { ...d.layout, numbering: { ...layoutOf(d.layout).numbering, mainStartsAt: null } } : undefined });
+              setDirty(true);
+            }}
+          />
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {DOC_TEMPLATES.map((t) => (
               <button key={t.key} type="button" onClick={() => start(t.key)} className="rounded-lg border p-4 text-left hover:border-primary hover:bg-primary/5">
@@ -340,8 +316,7 @@ export function DocsClient({ files: initialFiles, author, letterhead, notion }: 
                         </label>
                       ))}
                     </div>
-                    <Input value={page.header} onChange={(e) => setPage({ header: e.target.value })} placeholder="Header text (every page)" />
-                    <Input value={page.footer} onChange={(e) => setPage({ footer: e.target.value })} placeholder="Footer text (every page)" />
+                    <Button size="sm" variant="outline" className="w-full" onClick={() => setPanel("hf")}>Header and footer…</Button>
                     <Input value={page.watermark} onChange={(e) => setPage({ watermark: e.target.value })} placeholder="Watermark, e.g. DRAFT or CONFIDENTIAL" />
                     <label className="flex items-center gap-2">
                       <input type="checkbox" checked={page.pageNumbers} onChange={(e) => setPage({ pageNumbers: e.target.checked })} /> Page numbers
@@ -379,29 +354,27 @@ export function DocsClient({ files: initialFiles, author, letterhead, notion }: 
                   Read (as printed)
                 </button>
               </div>
-              <label className="flex items-center gap-2 text-xs">
-                <input type="checkbox" checked={branded} onChange={(e) => setBranded(e.target.checked)} /> Company header and footer
-              </label>
+              <div className="flex flex-wrap gap-1">
+                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setPanel("hf")} data-open-hf>
+                  <PanelTopIcon /> Header and footer: {layout.source === "company" ? "company" : layout.source === "document" ? "the file's" : layout.source === "custom" ? "my own" : "none"}
+                </Button>
+                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setPanel("cover")} data-open-cover>
+                  <BookOpenIcon /> {layout.cover ? "Cover page" : "Add a cover page"}
+                </Button>
+                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setPanel("numbers")} data-open-numbering>
+                  <ListOrderedIcon /> Page numbering
+                </Button>
+              </div>
               <div className="ml-auto flex flex-wrap gap-2">
                 <Button
                   size="sm"
                   variant="outline"
                   disabled={busy === "docx"}
-                  onClick={async () => {
-                    setBusy("docx");
-                    try {
-                      const logo = branded ? await logoBytes(letterhead) : null;
-                      const blob = await blocksDocx({ title, blocks: data.blocks, letterhead: branded ? { ...letterhead, logoData: logo?.data ?? null, logoType: logo?.type } : undefined, page: !branded && data.page ? docxPageOf(page) : undefined });
-                      downloadBlob(blob, safeName(title, "docx"));
-                    } catch {
-                      toast.error("The Word file could not be made.");
-                    }
-                    setBusy(null);
-                  }}
+                  onClick={word}
                 >
                   {busy === "docx" ? <Loader2Icon className="animate-spin" /> : <FileDownIcon />} Word (.docx)
                 </Button>
-                <Button size="sm" variant="outline" onClick={() => printHtml(title, `${pageChrome(page)}${header()}${blocksHtml(data.blocks)}${branded && letterhead.footer ? `<div style="margin-top:24pt;border-top:1px solid ${esc(letterhead.primary)};padding-top:4pt;font-size:8pt;color:#64748b;text-align:center">${esc(letterhead.footer)}</div>` : ""}`, pageCss(page))}>
+                <Button size="sm" variant="outline" onClick={pdf}>
                   <PrinterIcon /> PDF
                 </Button>
                 <Popover>
@@ -415,6 +388,14 @@ export function DocsClient({ files: initialFiles, author, letterhead, notion }: 
                       { label: "Markdown (.md)", run: () => downloadBlob(new Blob([toMarkdown(title, data.blocks)], { type: "text/markdown" }), safeName(title, "md")) },
                       { label: "Web page (.html)", run: () => downloadBlob(new Blob([`<!doctype html><meta charset="utf-8"><title>${esc(title)}</title><style>body{font-family:Calibri,Arial,sans-serif;max-width:800px;margin:30px auto;line-height:1.5}table{border-collapse:collapse}th,td{border:1px solid #cbd5e1;padding:4px 8px}</style>${header()}${blocksHtml(data.blocks)}`], { type: "text/html" }), safeName(title, "html")) },
                       { label: "Plain text (.txt)", run: () => downloadBlob(new Blob([`${title}\n\n${plainText(data.blocks)}`], { type: "text/plain" }), safeName(title, "txt")) },
+                      {
+                        label: "Save as a template",
+                        run: async () => {
+                          const r = await saveFileAction("tpl_doc", { title: title || "Template", data: { ...data, layout } });
+                          if (r.ok) toast.success("Kept as a template: start new documents from it under Your templates");
+                          else toast.error(r.error);
+                        },
+                      },
                     ].map((x) => (
                       <button key={x.label} type="button" onClick={x.run} className="block w-full rounded px-2 py-1.5 text-left text-sm hover:bg-muted">
                         {x.label}
@@ -425,10 +406,15 @@ export function DocsClient({ files: initialFiles, author, letterhead, notion }: 
                 {notion && <NotionButton title={title} markdown={toMarkdown(title, data.blocks)} />}
               </div>
             </div>
-            <div className="overflow-x-auto rounded-xl border bg-[#e9ebee] px-4 py-6 pl-12 dark:bg-slate-900">
+            <div className="space-y-6 overflow-x-auto rounded-xl border bg-[#e9ebee] px-4 py-6 pl-12 dark:bg-slate-900">
+            {layout.cover && (
+              <button type="button" onClick={() => setPanel("cover")} title="Edit the cover page" className="mx-auto block bg-white text-left text-slate-900 shadow-[0_1px_3px_rgba(0,0,0,.12),0_8px_24px_rgba(0,0,0,.08)]" style={{ width: `${pw}mm`, maxWidth: "100%", padding: `${page.margins.top}mm ${page.margins.right}mm ${page.margins.bottom}mm ${page.margins.left}mm` }} data-cover-preview>
+                <div dangerouslySetInnerHTML={{ __html: coverHtml(layout.cover, logoUrl) }} />
+              </button>
+            )}
             <div style={{ width: page.orientation === "landscape" ? "297mm" : page.size === "A5" ? "148mm" : "210mm", maxWidth: "100%", paddingLeft: `${page.margins.left}mm`, paddingRight: `${page.margins.right}mm`, paddingTop: `${page.margins.top}mm`, paddingBottom: `${page.margins.bottom}mm` }} className={cn("mx-auto min-h-[200mm] bg-white text-[13px] shadow-[0_1px_3px_rgba(0,0,0,.12),0_8px_24px_rgba(0,0,0,.08)] leading-relaxed text-slate-900 shadow-sm", "[&_blockquote]:border-l-4 [&_blockquote]:pl-3 [&_blockquote]:text-slate-600 [&_h1]:mb-2 [&_h1]:text-2xl [&_h1]:font-bold [&_h2]:mt-4 [&_h2]:mb-1 [&_h2]:text-lg [&_h2]:font-semibold [&_h3]:mt-3 [&_h3]:font-semibold [&_hr]:my-3 [&_ol]:ml-5 [&_ol]:list-decimal [&_p]:mb-2 [&_table]:my-2 [&_table]:w-full [&_td]:border [&_td]:px-2 [&_td]:py-1 [&_th]:border [&_th]:bg-slate-100 [&_th]:px-2 [&_th]:py-1 [&_th]:text-left [&_ul]:ml-5 [&_ul]:list-disc")}>
               {/* Every piece of text is escaped in blocksHtml; only our own tags are added. */}
-              {page.header && <p className="mb-2 text-center text-[10px] text-slate-500">{page.header}</p>}
+              {hf && !branded && <div className="-mt-[8mm] mb-4"><ZonesPreview z={hf.header} hf={hf} f={fields} where="header" logo={logoUrl} /></div>}
               <div className="relative">
                 {page.watermark && <span aria-hidden className="pointer-events-none absolute inset-x-0 top-1/3 -rotate-[30deg] text-center text-6xl font-extrabold text-slate-400/15">{page.watermark}</span>}
                 {reading ? (
@@ -440,12 +426,31 @@ export function DocsClient({ files: initialFiles, author, letterhead, notion }: 
                   </>
                 )}
               </div>
-              {page.footer && <p className="mt-6 text-center text-[10px] text-slate-500">{page.footer}</p>}
+              {(() => {
+                const f = withNumber(hf, layout.numbering, page.pageNumbers);
+                return f ? <div className="mt-8"><ZonesPreview z={f.footer} hf={f} f={fields} where="footer" /></div> : null;
+              })()}
             </div>
             </div>
           </div>
+          <HeaderFooterDialog open={panel === "hf"} onOpenChange={(v) => setPanel(v ? "hf" : null)} layout={layout} setLayout={setLayout} letterhead={letterhead} fields={fields} />
+          <CoverDialog open={panel === "cover"} onOpenChange={(v) => setPanel(v ? "cover" : null)} layout={layout} setLayout={setLayout} fields={fields} color={letterhead.primary} logo={logoUrl} />
+          <NumberingDialog open={panel === "numbers"} onOpenChange={(v) => setPanel(v ? "numbers" : null)} layout={layout} setLayout={setLayout} blocks={data.blocks} pageNumbers={page.pageNumbers} setPageNumbers={(v) => setPage({ pageNumbers: v })} onAddCover={() => setPanel("cover")} onInsertToc={insertToc} />
         </div>
       )}
+      <FileHFPrompt
+        hf={filePrompt}
+        fields={fields}
+        onChoose={async (src: HFSource, keep) => {
+          const got = filePrompt;
+          setFilePrompt(null);
+          if (data) setLayout({ ...layout, fromFile: got, source: src });
+          if (keep && got) {
+            const r = await saveFileAction("hf", { title: `${title || "Document"}: header and footer`, data: got });
+            if (r.ok) toast.success("The file's header and footer were saved as a template");
+          }
+        }}
+      />
     </div>
   );
 }

@@ -15,7 +15,17 @@ const DEVICE_COOKIE = "myseed_device";
 // Admin's "View as": the person whose view is shown. Read only, and only honoured for people who manage users.
 export const PREVIEW_COOKIE = "myseed_preview";
 
-export type Viewer = AppUser & { activeRole: Role; sessionId: string; previewBy?: { id: string; name: string } };
+// With several roles, `roles`, `leads` and `perms` are the active role's only (so every check, the sidebar and the
+// pages follow the role chosen in the switcher); `allRoles` keeps every role the person holds, for the switcher.
+export type Viewer = AppUser & { activeRole: Role; allRoles: Role[]; sessionId: string; previewBy?: { id: string; name: string } };
+
+// Narrows a person with several roles to the one they work as: its permissions, that team's lead rights, that role.
+async function asRole(user: AppUser, activeRole: Role): Promise<Omit<Viewer, "sessionId" | "previewBy">> {
+  if (user.roles.length <= 1) return { ...user, activeRole, allRoles: user.roles };
+  const { permsFor } = await import("./users");
+  const leads = user.leads.filter((st) => st === activeRole);
+  return { ...user, roles: [activeRole], leads, perms: await permsFor([activeRole], leads), activeRole, allRoles: user.roles };
+}
 
 export const secure = () => process.env.NODE_ENV === "production" && process.env.MYSEED_INSECURE_COOKIES !== "1";
 
@@ -152,18 +162,13 @@ export const getViewer = cache(async (): Promise<Viewer | null> => {
     const [targetId, role] = preview.split(":");
     const target = targetId && targetId !== user.id ? await loadUser(targetId) : null;
     if (target?.active) {
-      const asRole = role && target.roles.includes(role as Role) ? (role as Role) : pickDefaultRole(target.roles);
-      return { ...target, activeRole: asRole, sessionId: session.id, previewBy: { id: user.id, name: user.name } };
+      const chosen = role && target.roles.includes(role as Role) ? (role as Role) : pickDefaultRole(target.roles);
+      return { ...(await asRole(target, chosen)), sessionId: session.id, previewBy: { id: user.id, name: user.name } };
     }
   }
   // Someone with several roles works as the role chosen in the switcher: its permissions only (and the lead rights of
   // that team), so Admin switched to Assistant Manager sees and can do exactly what an Assistant Manager can.
-  if (user.roles.length > 1) {
-    const { permsFor } = await import("./users");
-    const leads = user.leads.filter((st) => st === activeRole);
-    return { ...user, perms: await permsFor([activeRole], leads), activeRole, sessionId: session.id };
-  }
-  return { ...user, activeRole, sessionId: session.id };
+  return { ...(await asRole(user, activeRole)), sessionId: session.id };
 });
 
 // True while Admin is looking through someone else's eyes; nothing may be changed then.
@@ -193,11 +198,11 @@ export async function setActiveRole(role: Role) {
   const viewer = await requireViewer();
   // View as: the switcher shows the viewed person's other role (their own session is never touched).
   if (viewer.previewBy) {
-    if (!viewer.roles.includes(role)) throw new Error("They do not hold that role.");
+    if (!viewer.allRoles.includes(role)) throw new Error("They do not hold that role.");
     (await cookies()).set(PREVIEW_COOKIE, `${viewer.id}:${role}`, { httpOnly: true, sameSite: "lax", secure: secure(), path: "/", maxAge: 4 * 3600 });
     return;
   }
-  if (!viewer.roles.includes(role)) throw new Error("You do not hold that role.");
+  if (!viewer.allRoles.includes(role)) throw new Error("You do not hold that role.");
   await run("UPDATE sessions SET active_role = ? WHERE id = ?", role, viewer.sessionId);
   forgetFastViewers();
 }

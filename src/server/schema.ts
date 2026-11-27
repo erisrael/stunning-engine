@@ -2,7 +2,7 @@
 // All instants are stored as ISO-8601 UTC strings. Boolean flags are integers (0 or 1).
 // Statements are idempotent so the schema can be applied on every start.
 
-export const SCHEMA_VERSION = 97;
+export const SCHEMA_VERSION = 98;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -4999,6 +4999,23 @@ CREATE INDEX IF NOT EXISTS idx_corr_dispatch_token ON corr_dispatches(token_hash
 ALTER TABLE corr_attachments ADD COLUMN IF NOT EXISTS ocr_text TEXT;
 ALTER TABLE corr_attachments ADD COLUMN IF NOT EXISTS ocr_at TEXT;
 ALTER TABLE corr_attachments ADD COLUMN IF NOT EXISTS ocr_lang TEXT;
+-- v98: role changes with their impact (finish first, forced with work forwarded, restored and resumed).
+CREATE TABLE IF NOT EXISTS role_changes (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  roles TEXT NOT NULL DEFAULT '[]',
+  leads TEXT NOT NULL DEFAULT '[]',
+  status TEXT NOT NULL,
+  forward_to TEXT,
+  moved TEXT NOT NULL DEFAULT '[]',
+  note TEXT,
+  requested_by TEXT,
+  requested_at TEXT NOT NULL,
+  applied_at TEXT,
+  restored_at TEXT,
+  resumed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_role_changes_user ON role_changes(user_id, status);
 
 `;
 
@@ -5324,4 +5341,5 @@ export const TABLES = [
   "corr_blobs",
   "corr_attachments",
   "corr_dispatches",
+  "role_changes",
 ] as const;

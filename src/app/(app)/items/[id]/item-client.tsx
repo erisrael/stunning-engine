@@ -815,64 +815,136 @@ export function SessionStatusSelect({ item, sessionId, status }: { item: ItemRef
   );
 }
 
-export function HistoryFilter({ categories, value, onChange }: { categories: string[]; value: string; onChange: (v: string) => void }) {
+// "attempt.lead_returned" reads "Lead returned"; the group "attempt" reads "Work".
+const GROUP_LABELS: Record<string, string> = { item: "Item", attempt: "Work", handoff: "Handover", handover: "Handover", asset: "Files", assignment: "Assignment", checklist: "Checklist", question: "Questions", comment: "Discussion", session: "Timer", publication: "Publication", release: "Release", correction: "Corrections" };
+const words = (k: string) => k.replace(/[_.-]+/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2").trim().replace(/^./, (c) => c.toUpperCase());
+const groupLabel = (g: string) => GROUP_LABELS[g] ?? words(g);
+const actionLabel = (a: string) => words(a.split(".").slice(1).join(" ") || a);
+
+export function HistoryFilter({ categories, value, onChange, counts }: { categories: string[]; value: string; onChange: (v: string) => void; counts?: Record<string, number> }) {
   return (
-    <div className="flex flex-wrap gap-1.5">
+    <div className="flex flex-wrap gap-1.5" role="group" aria-label="Show">
       {["all", ...categories].map((c) => (
-        <button key={c} onClick={() => onChange(c)} className={cn("h-6 rounded-full border px-2.5 text-xs capitalize", value === c ? "border-primary bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground")}>
-          {c}
+        <button key={c} type="button" aria-pressed={value === c} onClick={() => onChange(c)} className={cn("h-6 rounded-full border px-2.5 text-xs", value === c ? "border-primary bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground")}>
+          {c === "all" ? "All" : groupLabel(c)}{counts?.[c] !== undefined ? ` (${counts[c]})` : ""}
         </button>
       ))}
     </div>
   );
 }
 
+// The item's history, newest first: when, who, what, and what changed (only the fields that changed, with people's
+// names rather than their ids). Grouped by day so a long history stays readable.
 export function HistoryList({
   events,
   tz,
+  names = {},
 }: {
   events: { id: string; actor: string; action: string; summary: string; old_value: string | null; new_value: string | null; reason: string | null; occurred_at: string; source_occurred_at: string | null; stage: string | null; request_id: string | null; job_id: string | null }[];
   tz: string;
+  names?: Record<string, string>;
 }) {
   const [cat, setCat] = React.useState("all");
-  const categories = [...new Set(events.map((e) => e.action.split(".")[0]))];
-  const shown = events.filter((e) => cat === "all" || e.action.startsWith(cat + "."));
-  const pretty = (v: string | null) => {
-    if (v === null) return "empty";
+  const [limit, setLimit] = React.useState(100);
+  const categories = [...new Set(events.map((e) => e.action.split(".")[0]!))];
+  const counts: Record<string, number> = { all: events.length };
+  for (const e of events) {
+    const g = e.action.split(".")[0]!;
+    counts[g] = (counts[g] ?? 0) + 1;
+  }
+  const shown = events.filter((e) => cat === "all" || e.action.split(".")[0] === cat);
+  const parse = (v: string | null): unknown => {
+    if (v === null) return null;
     try {
-      const j = JSON.parse(v);
-      if (j === null) return "empty";
-      if (typeof j === "string") return j.includes("T") && !Number.isNaN(Date.parse(j)) ? fmtDateTime(j, tz) : j;
-      if (typeof j === "boolean" || typeof j === "number") return String(j);
-      return Object.entries(j).filter(([, x]) => x !== null && x !== undefined).map(([k, x]) => `${k}: ${typeof x === "object" ? JSON.stringify(x) : x}`).join(", ");
+      return JSON.parse(v);
     } catch {
       return v;
     }
   };
+  const scalar = (x: unknown): string => {
+    if (x === null || x === undefined || x === "") return "empty";
+    if (typeof x === "string") {
+      if (names[x]) return names[x]!;
+      if (/^\d{4}-\d{2}-\d{2}T/.test(x) && !Number.isNaN(Date.parse(x))) return fmtDateTime(x, tz);
+      return x.replace(/_/g, " ");
+    }
+    if (typeof x === "boolean") return x ? "yes" : "no";
+    if (typeof x === "number") return String(x);
+    if (Array.isArray(x)) return x.length ? x.map(scalar).join(", ") : "none";
+    return Object.entries(x as Record<string, unknown>)
+      .filter(([, y]) => y !== null && y !== undefined)
+      .map(([k, y]) => `${words(k)}: ${scalar(y)}`)
+      .join(", ");
+  };
+  // One line per changed field; an object compared with an object shows only the keys whose values differ.
+  const changes = (e: (typeof events)[number]): { field: string | null; from: string; to: string }[] => {
+    const o = parse(e.old_value);
+    const n = parse(e.new_value);
+    const isObj = (x: unknown) => !!x && typeof x === "object" && !Array.isArray(x);
+    if (isObj(o) || isObj(n)) {
+      const a = (isObj(o) ? o : {}) as Record<string, unknown>;
+      const b = (isObj(n) ? n : {}) as Record<string, unknown>;
+      return [...new Set([...Object.keys(a), ...Object.keys(b)])]
+        .filter((k) => JSON.stringify(a[k] ?? null) !== JSON.stringify(b[k] ?? null))
+        .map((k) => ({ field: words(k), from: scalar(a[k]), to: scalar(b[k]) }));
+    }
+    return [{ field: null, from: scalar(o), to: scalar(n) }];
+  };
+  const day = (iso: string) => new Intl.DateTimeFormat("en-GB", { timeZone: tz, weekday: "short", day: "numeric", month: "short", year: "numeric" }).format(new Date(iso));
+  const time = (iso: string) => new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }).format(new Date(iso));
+  const visible = shown.slice(0, limit);
+  const days: { day: string; list: typeof visible }[] = [];
+  for (const e of visible) {
+    const d = day(e.occurred_at);
+    const last = days.at(-1);
+    if (last && last.day === d) last.list.push(e);
+    else days.push({ day: d, list: [e] });
+  }
+  if (!events.length) return <p className="py-6 text-center text-sm text-muted-foreground">No history yet.</p>;
   return (
-    <div className="space-y-3">
-      <HistoryFilter categories={categories} value={cat} onChange={setCat} />
-      <ol className="relative space-y-0 border-l pl-5">
-        {shown.map((e) => (
-          <li key={e.id} className="relative pb-4">
-            <span className="absolute top-1.5 -left-[25px] size-2.5 rounded-full border-2 border-background bg-primary" aria-hidden />
-            <div className="flex flex-wrap items-baseline gap-x-2 text-xs text-muted-foreground">
-              <time dateTime={e.occurred_at} className="font-medium text-foreground tabular">{fmtDateTime(e.occurred_at, tz, { seconds: true })}</time>
-              {e.stage && <span className="rounded bg-muted px-1">{e.stage}</span>}
-              <span className="font-mono text-[10px]">{e.action}</span>
-            </div>
-            <p className="text-sm">{e.summary}</p>
-            {(e.old_value !== null || e.new_value !== null) && e.action !== "item.created" && (
-              <p className="text-xs text-muted-foreground">
-                Changed from <span className="text-foreground">{pretty(e.old_value)}</span> to <span className="text-foreground">{pretty(e.new_value)}</span>
-              </p>
-            )}
-            {e.reason && <p className="text-xs">Reason: {e.reason}</p>}
-            {e.source_occurred_at && <p className="text-xs text-muted-foreground">Occurred at source {fmtDateTime(e.source_occurred_at, tz)}; recorded {fmtDateTime(e.occurred_at, tz)}</p>}
-            {(e.request_id || e.job_id) && <p className="font-mono text-[10px] text-muted-foreground">{e.job_id ? `job ${e.job_id}` : `request ${e.request_id}`}</p>}
-          </li>
-        ))}
-      </ol>
+    <div className="space-y-4" data-history>
+      <HistoryFilter categories={categories} value={cat} onChange={(c) => { setCat(c); setLimit(100); }} counts={counts} />
+      {days.map((g) => (
+        <section key={g.day} className="space-y-2">
+          <h4 className="text-xs font-semibold text-muted-foreground">{g.day}</h4>
+          <ol className="border-l border-border">
+            {g.list.map((e) => {
+              const ch = (e.old_value !== null || e.new_value !== null) && e.action !== "item.created" ? changes(e) : [];
+              return (
+                <li key={e.id} className="relative pb-3 pl-5" data-history-event={e.action}>
+                  <span className="absolute top-1.5 -left-[5px] size-2.5 rounded-full border-2 border-background bg-primary" aria-hidden />
+                  <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+                    <time dateTime={e.occurred_at} className="font-medium text-foreground tabular" title={fmtDateTime(e.occurred_at, tz, { seconds: true })}>{time(e.occurred_at)}</time>
+                    <span className="font-medium text-foreground" data-history-actor>{e.actor}</span>
+                    <span>{actionLabel(e.action)}</span>
+                    {e.stage && <span className="rounded bg-muted px-1.5 py-px">{STAGE_LABELS[e.stage as Stage] ?? words(e.stage)}</span>}
+                  </div>
+                  <p className="text-sm break-words">{e.summary}</p>
+                  {ch.length > 0 && (
+                    <ul className="mt-0.5 space-y-0.5 text-xs text-muted-foreground">
+                      {ch.map((c, i) => (
+                        <li key={i} className="break-words">
+                          {c.field && <span className="font-medium text-foreground">{c.field}: </span>}
+                          <span className="line-through decoration-muted-foreground/50">{c.from}</span> <span aria-hidden>→</span>
+                          <span className="sr-only">changed to</span> <span className="text-foreground">{c.to}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {e.reason && <p className="text-xs">Reason: {e.reason}</p>}
+                  {e.source_occurred_at && <p className="text-xs text-muted-foreground">Happened {fmtDateTime(e.source_occurred_at, tz)}; recorded {fmtDateTime(e.occurred_at, tz)}</p>}
+                  {(e.request_id || e.job_id) && <p className="font-mono text-[10px] text-muted-foreground/70">{e.job_id ? `job ${e.job_id}` : `request ${e.request_id}`}</p>}
+                </li>
+              );
+            })}
+          </ol>
+        </section>
+      ))}
+      {shown.length > limit && (
+        <Button variant="outline" size="sm" onClick={() => setLimit((l) => l + 200)}>
+          Show older ({shown.length - limit} more)
+        </Button>
+      )}
     </div>
   );
 }

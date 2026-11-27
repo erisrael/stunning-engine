@@ -1,4 +1,4 @@
-// Production, Overview: which teams' columns each role sees (Admin sets it on the Overview page). Roles listed here
+// Production, Overview: which teams' columns each role's members see (Admin sets it on the Overview page). Roles listed here
 // open the Overview even without the Overview permission and see only those teams; roles not listed (managers,
 // Admin, owners) see every team, as before. By default each production team sees its own column.
 
@@ -23,7 +23,10 @@ export async function overviewTeams(): Promise<OverviewTeams> {
 }
 
 // The teams this person sees on the Overview: null for all of them, [] for none (no access).
+// Team leads see the whole production (every team's column), as before this setting existed; what they may change is
+// still only their own team's work (stage ownership is checked on the server for every change).
 export async function overviewStagesFor(user: AppUser & { activeRole: string }): Promise<Stage[] | null> {
+  if (user.leads.length > 0) return null;
   const cfg = await overviewTeams();
   const listed = cfg[user.activeRole];
   if (listed !== undefined) return listed.length ? listed : can(user, "nav.overview") ? null : [];

@@ -41,6 +41,8 @@ export type WorkflowErrorCode =
   | "ACTIVE_SESSION_ELSEWHERE"
   // A connected account (Google) is needed first.
   | "NOT_CONNECTED"
+  // Taking a role goes through its impact page first (details.url).
+  | "IMPACT"
   | "VALIDATION";
 
 export class WorkflowError extends Error {

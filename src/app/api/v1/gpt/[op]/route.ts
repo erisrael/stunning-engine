@@ -9,6 +9,15 @@ const ROUTES: Record<string, Partial<Record<"GET" | "POST", Operation>>> = {
   reminders: { GET: "list_reminders" },
   "checklist-items": { POST: "add_checklist_item" },
   crosscheck: { GET: "crosscheck_code_or_teacher" },
+  files: { GET: "list_files" },
+  documents: { POST: "create_document" },
+  "documents-read": { POST: "read_document" },
+  "documents-update": { POST: "update_document" },
+  presentations: { POST: "create_presentation" },
+  "presentations-read": { POST: "read_presentation" },
+  sheets: { POST: "create_sheet" },
+  "sheets-read": { POST: "read_sheet" },
+  letters: { POST: "create_letter" },
 };
 
 async function run(req: Request, method: "GET" | "POST", op: string) {

@@ -30,7 +30,7 @@ export function OverviewTeamsAdmin({ value, roles }: { value: Record<string, Sta
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Who sees which teams on the Overview</DialogTitle>
-            <DialogDescription>Tick the teams each role sees. A ticked role opens the Overview with only those columns, for every grade and subject. Leave a role empty to keep its usual access: all teams for managers and Admin.</DialogDescription>
+            <DialogDescription>Tick the teams each role sees. A ticked role opens the Overview with only those columns, for every grade and subject. Leave a role empty to keep its usual access: all teams for managers and Admin. Team leads always see every team (the full production) and can change only their own team's work.</DialogDescription>
           </DialogHeader>
           <div className="overflow-x-auto">
             <table className="w-full text-sm" data-overview-grid>

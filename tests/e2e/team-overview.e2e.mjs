@@ -75,6 +75,10 @@ try {
   check("no script errors", errors.length === 0, errors.join(" | "));
 
   const l = await signIn("hana@demo.local");
+  await l.goto(`${base}/overview`);
+  await l.waitForTimeout(800);
+  const lh = await heads(l);
+  check("the team lead sees the full production (every team)", /Recording/i.test(lh) && /Editing/i.test(lh) && /Uploading/i.test(lh) && /Publication/i.test(lh), lh);
   await l.goto(`${base}/curriculum`);
   check("the team lead opens Curriculum", /\/curriculum/.test(l.url()), l.url());
 } finally {

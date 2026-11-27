@@ -200,6 +200,11 @@ const PREPS: Record<string, () => Promise<unknown>> = {
     await passwordOnly();
     return {};
   },
+  // Taking a role through its impact page; Documents' header and footer, cover page and numbering.
+  async "role-impact-docs"() {
+    await passwordOnly();
+    return {};
+  },
   // Members' tools: accept or reject work, right-click Ask a question, Focus mode, the assistant put away and back,
   // the Assistant Manager without imports, and a member's request to Finance going to their team lead first.
   // Roadmap project packs, infographics, the project book and diagrams in documents (Admin in Dev).

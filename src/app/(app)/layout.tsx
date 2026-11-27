@@ -96,6 +96,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     peopleOps,
     roleNames,
     assistantOn,
+    roleChanges,
   ] = await Promise.all([
     shellCounts(viewer),
     cookies(),
@@ -126,6 +127,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     import("@/server/people-ops").then((m) => m.peopleOpsAccess(viewer)).then((a) => a.allowed).catch(() => false),
     import("@/server/role-catalog").then((m) => m.customRoleLabels()).catch(() => ({}) as Record<string, string>),
     !quiet ? Promise.resolve(false) : viewer.prefs.assistantShown != null ? Promise.resolve(!!viewer.prefs.assistantShown) : mod.assistant.then(async (m) => !!(await m.roleOptions(viewer.activeRole)).shown),
+    viewer.previewBy ? Promise.resolve(0) : import("@/server/role-change").then((m) => m.myRoleChangeCount(viewer.id)).catch(() => 0),
   ]);
   const sidebarCookie = cookieStore.get("sidebar_state")?.value;
   const funOn = !!fun;
@@ -164,13 +166,18 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         workspaceName={settings.workspace.name}
         brand={brand}
         recognition={recognition.enabled}
-        overviewTeam={!!overviewStages?.length}
+        overviewTeam={overviewStages === null ? viewer.leads.length > 0 : overviewStages.length > 0}
         support={support}
         callRecords={callRecords}
       />
       <SidebarInset className="min-w-0">
         {viewer.previewBy && <PreviewBanner name={viewer.name} role={roleLabel(viewer.activeRole)} />}
-        <Topbar user={{ name: viewer.name, email: viewer.email, roles: viewer.roles, avatar: avatars[viewer.id] ?? null }} activeRole={viewer.activeRole} unread={counts.notifications} chatUnread={counts.chat} assistant={assistantOn} fun={funOn} qrScan={qrScan} sticky={!!tools?.apps.some((a) => a.key === "notes")} />
+        {roleChanges > 0 && (
+          <Link href="/role-change" className="block border-b border-amber-500/40 bg-amber-500/10 px-4 py-2 text-center text-sm hover:bg-amber-500/15" data-role-change-banner>
+            A change to your roles needs you: finish your work first, or continue where you stopped. Open it
+          </Link>
+        )}
+        <Topbar user={{ name: viewer.name, email: viewer.email, roles: viewer.allRoles, avatar: avatars[viewer.id] ?? null }} activeRole={viewer.activeRole} unread={counts.notifications} chatUnread={counts.chat} assistant={assistantOn} fun={funOn} qrScan={qrScan} sticky={!!tools?.apps.some((a) => a.key === "notes")} />
         {!!tools?.apps.some((a) => a.key === "notes") && <StickyNotes />}
         <OfflineCheckinSync />
         {!viewer.previewBy && <AskAnywhere />}
@@ -195,7 +202,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           alerts={counts.notifications}
           approvals={counts.approvals}
           appName={ident.shortName}
-          roles={viewer.roles}
+          roles={viewer.allRoles}
           activeRole={viewer.activeRole}
           qrScan={qrScan}
           fun={funOn}

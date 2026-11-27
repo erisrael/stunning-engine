@@ -22,7 +22,7 @@ async function handle(m: Msg, user: NonNullable<Awaited<ReturnType<typeof bearer
         protocolVersion: VERSIONS.includes(asked) ? asked : VERSIONS[0],
         capabilities: { tools: { listChanged: false } },
         serverInfo: { name: "myseed-tools", title: "Myseed Tools hub", version: "1.0.0" },
-        instructions: `You are connected to ${user.name}'s private Myseed Tools hub: their notes, checklists, tasks and reminders, and a lookup of production lesson parts they may see. Ask before creating notes on their behalf when the request is unclear.`,
+        instructions: `You are connected to ${user.name}'s private Myseed Tools hub: their notes, checklists, tasks and reminders; their documents, presentations, sheets and letters (and their templates); and a lookup of production lesson parts they may see. Use list_files to find a file by kind, then read_document, read_presentation or read_sheet. Write documents as Markdown with create_document (it can add a cover page, a contents page, the company or a custom header and footer, and book-style page numbering: cover without a number, front matter i, ii, iii, main pages from 1) and change them with update_document. Each result has a url_path the person can open. Ask before creating or changing files on their behalf when the request is unclear, and never replace a document's content (update_document with markdown) without saying so first.`,
       });
     }
     case "ping":
@@ -33,7 +33,7 @@ async function handle(m: Msg, user: NonNullable<Awaited<ReturnType<typeof bearer
           name,
           description: o.description,
           inputSchema: o.input,
-          annotations: { readOnlyHint: !["create_note", "add_checklist_item"].includes(name), destructiveHint: false, openWorldHint: false },
+          annotations: { title: name.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase()), readOnlyHint: !/^(create|add|update)_/.test(name), destructiveHint: name === "update_document", idempotentHint: false, openWorldHint: false },
         })),
       });
     case "tools/call": {

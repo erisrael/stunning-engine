@@ -160,3 +160,16 @@ export function RecordPicker({ value, onChange, disabled }: { value: LinkRef; on
     </Popover>
   );
 }
+
+// Opens the saved file named in the address (?file=…), once: links from the Claude and ChatGPT connectors and from
+// elsewhere in the app land on the file itself.
+export function useOpenFromLink(open: (id: string) => void) {
+  const done = React.useRef(false);
+  React.useEffect(() => {
+    if (done.current) return;
+    done.current = true;
+    const id = new URLSearchParams(window.location.search).get("file");
+    if (id && /^[\w-]{3,64}$/.test(id)) open(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+}

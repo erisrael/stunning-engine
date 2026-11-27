@@ -14,7 +14,7 @@ export async function GET() {
   return json(
     {
       openapi: "3.1.0",
-      info: { title: "Myseed Tools hub", version: "1.0.0", description: "The signed-in person's own notes, checklists, tasks and reminders, and a lookup of production lesson parts they may see." },
+      info: { title: "Myseed Tools hub", version: "1.0.0", description: "The signed-in person's own notes, checklists, tasks and reminders; their documents, presentations, sheets and letters; and a lookup of production lesson parts they may see." },
       servers: [{ url: origin }],
       components: {
         securitySchemes: {
@@ -31,6 +31,19 @@ export async function GET() {
         "/api/v1/gpt/reminders": { get: { operationId: "listReminders", summary: OPERATIONS.list_reminders.description, parameters: query("list_reminders"), responses: ok, security: sec } },
         "/api/v1/gpt/checklist-items": { post: { operationId: "addChecklistItem", summary: OPERATIONS.add_checklist_item.description, requestBody: { required: true, content: { "application/json": { schema: obj("add_checklist_item") } } }, responses: ok, security: sec } },
         "/api/v1/gpt/crosscheck": { get: { operationId: "crosscheckCodeOrTeacher", summary: OPERATIONS.crosscheck_code_or_teacher.description, parameters: query("crosscheck_code_or_teacher"), responses: ok, security: sec } },
+        "/api/v1/gpt/files": { get: { operationId: "listFiles", summary: OPERATIONS.list_files.description, parameters: query("list_files"), responses: ok, security: sec } },
+        ...Object.fromEntries(
+          ([
+            ["documents", "createDocument", "create_document"],
+            ["documents-read", "readDocument", "read_document"],
+            ["documents-update", "updateDocument", "update_document"],
+            ["presentations", "createPresentation", "create_presentation"],
+            ["presentations-read", "readPresentation", "read_presentation"],
+            ["sheets", "createSheet", "create_sheet"],
+            ["sheets-read", "readSheet", "read_sheet"],
+            ["letters", "createLetter", "create_letter"],
+          ] as const).map(([path, id, op]) => [`/api/v1/gpt/${path}`, { post: { operationId: id, summary: OPERATIONS[op].description.slice(0, 300), description: OPERATIONS[op].description, requestBody: { required: true, content: { "application/json": { schema: obj(op) } } }, responses: ok, security: sec } }]),
+        ),
       },
     },
     200,

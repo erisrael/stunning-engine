@@ -22,6 +22,8 @@ import { SHEET_TEMPLATES } from "@/lib/sheet-templates";
 import { SheetCompare } from "@/components/app/tools/sheet-compare";
 import type { CrossResult } from "@/server/tools-data";
 import { cn } from "@/lib/utils";
+import { TemplateShelf } from "@/components/app/tools/template-shelf";
+import { useOpenFromLink } from "@/components/app/tools/shared";
 
 type Saved = { id: string; title: string; updated_at: string };
 type Check = { results: CrossResult[]; summary: { total: number; match: number; mismatch: number; missing: number; invalid: number } };
@@ -59,13 +61,32 @@ export function SheetsClient({ saved: initialSaved, canCrossCheck, aiOn, workspa
     const s = b.sheets[b.active]!;
     setMap(guess((s.cells[0] ?? []).map(String)));
   };
+  useOpenFromLink(async (fid) => {
+    const r = await getFileAction("sheet", fid);
+    if (!r.ok) return toast.error(r.error);
+    const f = r.data as { id: string; title: string; data: unknown };
+    load(toBook(f.data), f.title, f.id);
+  });
   const change = (b: BookData) => {
     setBook(b);
     setDirty(true);
   };
 
-  const open = async (file: File) => {
+  // An Excel workbook or template (.xltx is the same format) as a book.
+  const readBook = async (input: File): Promise<{ book: BookData; name: string } | { error: string }> => {
+    const file = /\.xltx$/i.test(input.name) ? new File([input], input.name.replace(/\.xltx$/i, ".xlsx"), { type: input.type }) : input;
+    const fd = new FormData();
+    fd.set("file", file);
+    const xlsx = /\.xlsx$/i.test(file.name);
+    const res = await fetch(`/api/tools/sheet${xlsx ? "?book=1" : ""}`, { method: "POST", body: fd });
+    const j = await res.json().catch(() => ({ error: "The file could not be read." }));
+    if (!res.ok) return { error: j.error };
+    const name = input.name.replace(/\.[^.]+$/, "");
+    return { book: xlsx ? toBook(j) : fromTable(j.name ?? name, j.headers, j.rows), name };
+  };
+  const open = async (input: File) => {
     setBusy("open");
+    const file = /\.xltx$/i.test(input.name) ? new File([input], input.name.replace(/\.xltx$/i, ".xlsx"), { type: input.type }) : input;
     const fd = new FormData();
     fd.set("file", file);
     const xlsx = /\.xlsx$/i.test(file.name);
@@ -170,7 +191,7 @@ export function SheetsClient({ saved: initialSaved, canCrossCheck, aiOn, workspa
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <input ref={fileRef} type="file" accept=".xlsx,.csv,.tsv,.txt,.json" className="hidden" onChange={(e) => e.target.files?.[0] && open(e.target.files[0]).finally(() => (e.target.value = ""))} />
+        <input ref={fileRef} type="file" accept=".xlsx,.xltx,.csv,.tsv,.txt,.json" className="hidden" onChange={(e) => e.target.files?.[0] && open(e.target.files[0]).finally(() => (e.target.value = ""))} />
         <Button size="sm" onClick={() => fileRef.current?.click()} disabled={!!busy}>
           {busy === "open" ? <Loader2Icon className="animate-spin" /> : <FolderOpenIcon />} Open .xlsx / .csv
         </Button>
@@ -227,6 +248,22 @@ export function SheetsClient({ saved: initialSaved, canCrossCheck, aiOn, workspa
             <span>Formulas work as in Excel (SUM, IF, VLOOKUP, XLOOKUP, SUMIFS and more than 100 others); styles, charts and several sheets are saved and exported to .xlsx.</span>
             {canCrossCheck && <span>Then cross-check codes, titles and teachers against production.</span>}
           </CardContent>
+          <CardContent>
+            <TemplateShelf<BookData>
+              kind="tpl_sheet"
+              accept=".xlsx,.xltx,.csv"
+              label="Import a template (.xlsx, .xltx)"
+              onImport={async (f) => {
+                const r = await readBook(f);
+                if ("error" in r) {
+                  toast.error(r.error);
+                  return null;
+                }
+                return { title: r.name, data: r.book };
+              }}
+              onUse={(b, t) => load(toBook(b), t)}
+            />
+          </CardContent>
         </Card>
       ) : (
         <>
@@ -249,6 +286,18 @@ export function SheetsClient({ saved: initialSaved, canCrossCheck, aiOn, workspa
             <div className="ml-auto flex flex-wrap gap-2">
               <Button size="sm" onClick={save} disabled={busy === "save"}>
                 {busy === "save" ? <Loader2Icon className="animate-spin" /> : <SaveIcon />} Save
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                title="Keep this workbook as a template to start new ones from"
+                onClick={async () => {
+                  const r = await saveFileAction("tpl_sheet", { title: title || "Template", data: book });
+                  if (r.ok) toast.success("Kept as a template: start new workbooks from it under Your templates");
+                  else toast.error(r.error);
+                }}
+              >
+                Save as template
               </Button>
               <Popover>
                 <PopoverTrigger asChild>

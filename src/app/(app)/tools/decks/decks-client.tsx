@@ -20,6 +20,8 @@ import { deckToDesign } from "@/components/app/design/deck-design";
 import { importPptx } from "@/components/app/design/pptx-import";
 import { cleanDesign, type Design, type DesignOptions } from "@/lib/design";
 import { designGallery, type Brand } from "@/lib/design-templates";
+import { TemplateShelf } from "@/components/app/tools/template-shelf";
+import { useOpenFromLink } from "@/components/app/tools/shared";
 
 // free: the deck as free-design slides (the Canva-style editor), once someone switches to it.
 type Deck = { title: string; subtitle: string; template: string; slides: Slide[]; free?: Design | null; mode?: "layouts" | "free" };
@@ -250,6 +252,15 @@ export function DecksClient({ files: initialFiles, templates, defaultTemplate, w
   const [busy, setBusy] = React.useState<string | null>(null);
   const t = templates.find((x) => x.id === deck?.template) ?? templates.find((x) => x.id === defaultTemplate) ?? templates[0]!;
   const setSlides = (slides: Slide[]) => deck && setDeck({ ...deck, slides });
+  const openSaved = async (fid: string) => {
+    const r = await getFileAction("deck", fid);
+    if (!r.ok) return toast.error(r.error);
+    const f = r.data as { id: string; data: Deck };
+    setId(f.id);
+    setDeck({ title: f.data.title ?? "Presentation", subtitle: f.data.subtitle ?? "", template: f.data.template ?? defaultTemplate, slides: f.data.slides ?? [], free: f.data.free ? cleanDesign(f.data.free) : null, mode: f.data.free && designOpts ? (f.data.mode ?? "free") : "layouts" });
+    setCur(0);
+  };
+  useOpenFromLink(openSaved);
 
   if (!deck)
     return (
@@ -261,14 +272,7 @@ export function DecksClient({ files: initialFiles, templates, defaultTemplate, w
           current={id}
           newLabel="New deck"
           onNew={() => setDeck(null)}
-          onOpen={async (fid) => {
-            const r = await getFileAction("deck", fid);
-            if (!r.ok) return toast.error(r.error);
-            const f = r.data as { id: string; data: Deck };
-            setId(f.id);
-            setDeck({ title: f.data.title ?? "Presentation", subtitle: f.data.subtitle ?? "", template: f.data.template ?? defaultTemplate, slides: f.data.slides ?? [], free: f.data.free ? cleanDesign(f.data.free) : null, mode: f.data.free && designOpts ? (f.data.mode ?? "free") : "layouts" });
-            setCur(0);
-          }}
+          onOpen={openSaved}
         />
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">
@@ -278,7 +282,7 @@ export function DecksClient({ files: initialFiles, templates, defaultTemplate, w
                 <input
                   ref={importRef}
                   type="file"
-                  accept=".pptx"
+                  accept=".pptx,.potx"
                   className="hidden"
                   onChange={async (e) => {
                     const f = e.target.files?.[0];
@@ -288,7 +292,7 @@ export function DecksClient({ files: initialFiles, templates, defaultTemplate, w
                     try {
                       const free = await importPptx(f);
                       setId(null);
-                      setDeck({ title: f.name.replace(/\.pptx$/i, ""), subtitle: workspace, template: defaultTemplate, slides: [], free, mode: "free" });
+                      setDeck({ title: f.name.replace(/\.(pptx|potx)$/i, ""), subtitle: workspace, template: defaultTemplate, slides: [], free, mode: "free" });
                       toast.success(`${free.pages.length} slides opened`);
                     } catch {
                       toast.error("This PowerPoint file could not be read.");
@@ -296,7 +300,7 @@ export function DecksClient({ files: initialFiles, templates, defaultTemplate, w
                   }}
                 />
                 <Button size="sm" variant="outline" className="ml-auto" onClick={() => importRef.current?.click()}>
-                  <FileUpIcon /> Open a PowerPoint (.pptx)
+                  <FileUpIcon /> Open a PowerPoint (.pptx, .potx)
                 </Button>
                 <Button size="sm" variant="outline" onClick={() => (setId(null), setDeck({ title: "Presentation", subtitle: workspace, template: defaultTemplate, slides: [], free: designGallery(brand ?? { company: workspace, primary: "#16a34a", accent: "#0f172a", hasLogo: true }).find((g) => g.key === "slide-title")!.design(), mode: "free" }))}>
                   <PencilRulerIcon /> Blank free design
@@ -312,6 +316,25 @@ export function DecksClient({ files: initialFiles, templates, defaultTemplate, w
               </button>
             ))}
           </div>
+          <TemplateShelf<Deck>
+            kind="tpl_deck"
+            accept={designOpts ? ".pptx,.potx" : ".none"}
+            label={designOpts ? "Import a template (.pptx, .potx)" : "Templates"}
+            onImport={async (f) => {
+              if (!designOpts) return null;
+              if (f.size > 40_000_000) {
+                toast.error("Use a file under 40 MB.");
+                return null;
+              }
+              const free = await importPptx(f);
+              return { title: f.name.replace(/\.(pptx|potx)$/i, ""), data: { title: f.name.replace(/\.(pptx|potx)$/i, ""), subtitle: workspace, template: defaultTemplate, slides: [], free: cleanDesign(free), mode: "free" } };
+            }}
+            onUse={(d) => {
+              setId(null);
+              setDeck({ ...d, title: d.title || "Presentation", free: d.free ? cleanDesign(d.free) : null, mode: d.free && designOpts ? (d.mode ?? "free") : "layouts" });
+              setCur(0);
+            }}
+          />
         </div>
       </div>
     );
@@ -376,6 +399,17 @@ export function DecksClient({ files: initialFiles, templates, defaultTemplate, w
             }}
           >
             <SaveIcon /> Save
+          </Button>
+          <Button
+            variant="ghost"
+            title="Keep this deck as a template to start new decks from"
+            onClick={async () => {
+              const r = await saveFileAction("tpl_deck", { title: deck.title || "Template", data: { ...deck, free: deck.free ? cleanDesign(deck.free) : null } });
+              if (r.ok) toast.success("Kept as a template: start new decks from it under Your templates");
+              else toast.error(r.error);
+            }}
+          >
+            Save as template
           </Button>
           {!free && <Button
             disabled={busy === "pptx" || !deck.slides.length}

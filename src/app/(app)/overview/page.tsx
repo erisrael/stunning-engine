@@ -20,7 +20,8 @@ export default async function OverviewPage() {
   if (stages && !stages.length) redirect("/dashboard?denied=permission");
   const tax = await taxonomy();
   // A team's overview is the whole team's work, whatever grades or subjects the person works on.
-  const rows = await structureRows(stages ? { ...viewer, scopes: [], ownWorkOnly: false } : viewer);
+  // Team leads see the full production (every grade, subject and team); they change only their own team's work.
+  const rows = await structureRows(stages || viewer.leads.length ? { ...viewer, scopes: [], ownWorkOnly: false } : viewer);
   const grades = tax.grades.filter((g) => rows.some((r) => r.gradeId === g.id)).map((g) => ({ id: g.id, name: g.name }));
   const subjects = tax.subjects.filter((s) => rows.some((r) => r.subjectId === s.id)).map((s) => ({ id: s.id, name: s.name }));
   const shown = stages ?? [...STAGES];

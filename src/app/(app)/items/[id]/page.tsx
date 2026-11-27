@@ -6,6 +6,7 @@ import { ExternalLinkIcon, FileTextIcon } from "lucide-react";
 import { requireViewer } from "@/server/auth";
 import { itemDetail, taxonomy } from "@/server/queries";
 import { can, canViewItem, userDirectory } from "@/server/users";
+import { userNames } from "@/server/rows";
 import { evaluateRequirements, workChecklistItems, type AttemptRow } from "@/server/workflow";
 import { canAssign, canVerify, listTemplates } from "@/server/editorial";
 import { get as dbGet } from "@/server/db";
@@ -78,7 +79,8 @@ export default async function ItemPage({ params, searchParams }: { params: Promi
   const now = nowIso();
   const it = d.item as Record<string, string | number | null> & { id: string };
   const users = await userDirectory();
-  const names = Object.fromEntries(users.map((u) => [u.id, u.name]));
+  // Everyone who ever touched the item, also people who have since left (the history must never say "Unknown").
+  const names: Record<string, string> = { ...(await userNames()), ...Object.fromEntries(users.map((u) => [u.id, u.name])) };
   // Managers view only: stage data needs Edit any stage (work.override), planning fields need items.plan.
   const isManager = viewer.roles.includes("manager");
   const override = can(viewer, "work.override");
@@ -762,7 +764,8 @@ export default async function ItemPage({ params, searchParams }: { params: Promi
             <CardContent>
               <HistoryList
                 tz={tz}
-                events={d.events.map((e) => ({ id: e.id, actor: e.actor_id ? names[e.actor_id] ?? "Unknown" : "System", action: e.action, summary: e.summary, old_value: e.old_value, new_value: e.new_value, reason: e.reason, occurred_at: e.occurred_at, source_occurred_at: e.source_occurred_at, stage: e.stage, request_id: e.request_id, job_id: e.job_id }))}
+                names={names}
+                events={d.events.map((e) => ({ id: e.id, actor: e.actor_id ? names[e.actor_id] ?? "A removed account" : "System", action: e.action, summary: e.summary, old_value: e.old_value, new_value: e.new_value, reason: e.reason, occurred_at: e.occurred_at, source_occurred_at: e.source_occurred_at, stage: e.stage, request_id: e.request_id, job_id: e.job_id }))}
               />
             </CardContent>
           </Card>
