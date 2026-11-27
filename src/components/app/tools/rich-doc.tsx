@@ -202,7 +202,7 @@ function useTick(editor: Editor) {
 }
 
 // Symbols people use in letters and reports (inserted as text).
-const SYMBOLS = ["©", "®", "™", "°", "±", "×", "÷", "≤", "≥", "≠", "≈", "→", "←", "↑", "↓", "•", "…", "—", "–", "§", "¶", "½", "¼", "¾", "€", "£", "$", "¥", "ብር", "№", "✓", "✗", "α", "β", "π", "Σ", "µ", "Ω", "∞", "√"];
+const SYMBOLS = ["°", "±", "×", "÷", "≤", "≥", "≠", "≈", "→", "←", "↑", "↓", "•", "…", "—", "–", "§", "¶", "½", "¼", "¾", "€", "£", "$", "¥", "ብር", "№", "✓", "✗", "α", "β", "π", "Σ", "µ", "Ω", "∞", "√"];
 
 // Changing the case of the selected words (each piece of text keeps its own formatting).
 function changeCase(editor: Editor, how: "upper" | "lower" | "sentence" | "title") {
