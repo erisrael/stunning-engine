@@ -8,7 +8,7 @@
     "start": "next start",
     "templates": "tsx scripts/generate-templates.ts",
     "checks": "tsx scripts/run-checks.ts",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "next typegen && tsc --noEmit",
     "test": "tsx tests/run.ts",
     "test:e2e": "tsx tests/run.ts --e2e",
     "test:all": "tsx tests/run.ts --all",
