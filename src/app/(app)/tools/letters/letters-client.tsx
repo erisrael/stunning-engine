@@ -15,6 +15,7 @@ import { bid, blocksDocx, esc, inlineHtml, logoBytes, printHtml, type Block } fr
 import { FileShelf, type SavedFile } from "@/components/app/tools/file-shelf";
 import { downloadBlob, safeName } from "@/components/app/tools/shared";
 import { LetterTemplatePicker } from "@/components/app/tools/letter-templates";
+import { RichBody } from "@/components/app/tools/rich-doc";
 import { DesignEditor } from "@/components/app/design/design-editor";
 import { exportImages } from "@/components/app/design/design-export";
 import { cleanDesign, type Design, type DesignOptions } from "@/lib/design";
@@ -366,7 +367,6 @@ export function LettersClient({ files: initialFiles, letterhead: initialLh, canE
             {mode === "write" && (
               <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
                 <div className="min-w-0 overflow-hidden rounded-xl border bg-[#e9ebee] dark:bg-slate-900">
-                  <WordBar target={bodyRef} value={l.body} onChange={(body) => set({ body })} />
                   <div className="overflow-x-auto p-6">
                     <div className="mx-auto w-[210mm] max-w-full bg-white px-[22mm] pt-[14mm] pb-[12mm] text-[10.5pt] leading-[1.5] text-[#1f2937] shadow-[0_1px_3px_rgba(0,0,0,.12),0_8px_24px_rgba(0,0,0,.08)]" style={{ fontFamily: "Inter, 'Segoe UI', Arial, 'Noto Sans Ethiopic', sans-serif" }}>
                       <style>{letterCss(lh)}</style>
@@ -384,7 +384,7 @@ export function LettersClient({ files: initialFiles, letterhead: initialLh, canE
                         <PageField value={l.subject} placeholder="What the letter is about" onChange={(subject) => set({ subject })} className="font-bold" />
                       </div>
                       <PageField value={l.salutation} placeholder="Dear Sir/Madam," onChange={(salutation) => set({ salutation })} className="mb-[3mm]" />
-                      <PageField area refEl={bodyRef} value={l.body} placeholder={"Type the letter here. Leave an empty line between paragraphs.\nSelect words and use the bar above for bold, italic, colours and sizes."} onChange={(body) => set({ body })} className="min-h-[60mm]" />
+                      <div className="-mx-2 rounded-sm px-2 focus-within:bg-sky-50/40"><RichBody value={l.body} onChange={(body) => set({ body })} placeholder="Type the letter here…" /></div>
                       <PageField value={l.closing} placeholder="Yours sincerely," onChange={(closing) => set({ closing })} className="mt-[5mm]" />
                       <div className="mt-[3mm]">
                         <div className="relative flex min-h-[16mm] items-end gap-[4mm]">

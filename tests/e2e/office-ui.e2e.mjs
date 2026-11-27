@@ -29,6 +29,13 @@ try {
   await page.goto(`${base}/tools/letters`);
   await page.waitForSelector("text=Letter details", { timeout: 30000 });
   check("letters open on the page, with the details beside it", (await page.locator("textarea").count()) > 0);
+  const body = page.locator(".ProseMirror").first();
+  await body.click();
+  await page.keyboard.type("We are pleased to write.");
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Control+i");
+  await page.keyboard.type("Second paragraph");
+  check("the letter body is typed in the rich editor", (await body.locator("em", { hasText: "Second paragraph" }).count()) === 1);
   check("the tools tab row is hidden while the sidebar is open", (await page.locator('nav[aria-label="Tools"]').count()) === 0);
   await shot(page, "letters-write");
 
@@ -51,7 +58,19 @@ try {
   await page.goto(`${base}/tools/docs`);
   await page.getByRole("button", { name: /Report/ }).first().click();
   await page.waitForSelector("text=Page setup", { timeout: 20000 });
-  check("documents are edited on the page", (await page.locator('input[aria-label="Heading"]').count()) > 0);
+  const ed = page.locator(".ProseMirror").first();
+  check("documents are typed in the rich editor on the page", (await ed.count()) === 1);
+  await ed.click();
+  await page.keyboard.press("Control+End");
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Control+b");
+  await page.keyboard.type("Bold words");
+  check("Ctrl+B makes bold text as you type", (await ed.locator("strong", { hasText: "Bold words" }).count()) === 1);
+  await page.getByRole("button", { name: "Insert a table" }).click();
+  await page.getByRole("button", { name: "2 by 3" }).click();
+  check("a table is inserted from the grid", (await ed.locator("table").count()) >= 2);
+  await page.getByRole("tab", { name: /Read \(as printed\)/ }).click();
+  check("what was typed is kept in the document", (await page.getByText("Bold words").count()) >= 1);
   await shot(page, "docs");
 
   // Sheets: a template, the grid, and Compare with Myseed data.

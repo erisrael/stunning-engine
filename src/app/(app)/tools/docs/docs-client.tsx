@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { getFileAction, saveFileAction } from "@/app/actions/tools";
-import { BlockEditor } from "@/components/app/tools/block-editor";
+import { RichDoc } from "@/components/app/tools/rich-doc";
 import { bid, blocksDocx, blocksHtml, DEFAULT_PAGE, DOC_TEMPLATES, docxPageOf, logoBytes, pageChrome, pageCss, printHtml, esc, type Block, type DocData, type DocPage } from "@/components/app/tools/doc-model";
 import { FileShelf, type SavedFile } from "@/components/app/tools/file-shelf";
 import { downloadBlob, safeName } from "@/components/app/tools/shared";
@@ -436,7 +436,7 @@ export function DocsClient({ files: initialFiles, author, letterhead, notion }: 
                 ) : (
                   <>
                     <div dangerouslySetInnerHTML={{ __html: header() }} />
-                    <BlockEditor page blocks={data.blocks} onChange={(blocks) => (setData({ ...data, blocks }), setDirty(true))} />
+                    <RichDoc blocks={data.blocks} onChange={(blocks) => (setData({ ...data, blocks }), setDirty(true))} placeholder="Start typing your document…" minHeight="150mm" />
                   </>
                 )}
               </div>

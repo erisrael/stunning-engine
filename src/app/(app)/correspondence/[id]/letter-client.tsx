@@ -16,7 +16,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import {
   actOnStepAction, advanceLetterAction, ocrAttachmentAction, bulkLettersAction, dispatchLetterAction, duplicateLetterAction, issueLetterAction, recordExportAction, removeAttachmentAction, retryDispatchAction, saveLetterAction, searchOrgsAction, setLegalHoldAction, submitLetterAction, voidLetterAction, withdrawLetterAction,
 } from "@/app/actions/correspondence";
-import { BlockEditor } from "@/components/app/tools/block-editor";
+import { RichDoc } from "@/components/app/tools/rich-doc";
 import { printHtml, type Block } from "@/components/app/tools/doc-model";
 import { copyText, downloadBlob, safeName } from "@/components/app/tools/shared";
 import { forOutput, letterCss, letterDocx, letterHtml, type LetterModel, type SignatureBlock, type SignLook } from "@/components/app/corr/letter-render";
@@ -492,7 +492,9 @@ export function LetterClient({
                     />
                   </label>
                 </div>
-                <BlockEditor blocks={(data.blocks ?? []) as Block[]} onChange={(blocks) => (setData({ ...data, blocks }), mark())} />
+                <div className="rounded-md border">
+                  <RichDoc blocks={(data.blocks ?? []) as Block[]} onChange={(blocks) => (setData({ ...data, blocks }), mark())} placeholder="Type the letter…" minHeight="40mm" className="px-4 py-3" />
+                </div>
                 <p className="text-[11px] text-muted-foreground">
                   Fields like <span className="font-mono">{"{{recipient_name}}"}</span>, <span className="font-mono">{"{{company_name}}"}</span> or <span className="font-mono">{"{{document_number}}"}</span> are filled in automatically.
                 </p>
