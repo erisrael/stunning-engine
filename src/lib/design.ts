@@ -196,8 +196,8 @@ export function cleanDesign(input: unknown, maxPages = 60): Design {
   );
   return {
     v: 1,
-    w: num(d.w, 210, 20, 2000),
-    h: num(d.h, 297, 20, 2000),
+    w: num(d.w, 210, 8, 2000),
+    h: num(d.h, 297, 8, 2000),
     unit: "mm",
     pages: pages.length ? pages : blankDesign().pages,
     palette: (Array.isArray(d.palette) ? d.palette : []).filter((c) => typeof c === "string" && HEX.test(c)).slice(0, 24),
@@ -457,7 +457,7 @@ export function elementHtml(e: DElement, values: Record<string, string> = {}, ex
 }
 
 export function pageBackground(p: DPage) {
-  return `${p.bgGradient ? `background:${p.bgGradient};` : `background:${p.bg};`}${p.bgImage ? `background-image:url("${p.bgImage}");background-size:cover;background-position:center;` : ""}`;
+  return `${p.bgGradient ? `background:${p.bgGradient};` : `background:${p.bg};`}${p.bgImage ? `background-image:url('${p.bgImage}');background-size:cover;background-position:center;` : ""}`;
 }
 
 export function pageHtml(d: Design, p: DPage, values: Record<string, string> = {}, extras: Extras = {}) {

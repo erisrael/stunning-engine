@@ -77,6 +77,26 @@ try {
   const z2 = await JSZip.loadAsync(fs.readFileSync(await dl2.path()));
   const h2 = await Promise.all(Object.keys(z2.files).filter((n) => /^word\/header\d*\.xml$/.test(n)).map((n) => z2.file(n).async("string")));
   check("the banner goes into Word as a picture behind the text", h2.some((x) => x.includes('behindDoc="1"')));
+  // The ribbon is in the window above the page, as in Word, not on the page.
+  check("the ribbon sits above the page", (await a.locator('[data-doc-ribbon] [role="toolbar"]').count()) === 1);
+  check("and not on the page", (await a.locator('.bg-white [role="toolbar"]').count()) === 0);
+
+  // The header and footer designer: layers on a band, the band's height, saved back to the page and to Word.
+  await a.click("[data-open-designer]");
+  await a.waitForSelector("[data-hf-designer] .dz-page, [data-hf-designer] [data-design-page], [data-hf-designer] canvas, [data-hf-designer] svg", { timeout: 20000 });
+  check("the designer opens on the header", (await a.locator('[data-hf-band="header"][aria-selected="true"]').count()) === 1);
+  await a.fill("[data-hf-height]", "34");
+  await a.click('[data-hf-band="footer"]');
+  await a.screenshot({ path: path.join(shots, "designer.png") });
+  await a.click("[data-hf-designer-save]");
+  await a.waitForTimeout(600);
+  const designed = await a.locator('[data-hf-preview="header"][data-hf-designed] .dz-page').first().boundingBox();
+  check("the designed header shows on the page, 34 mm tall", !!designed && Math.abs(designed.height - (34 * 96) / 25.4) < 3, JSON.stringify(designed));
+  await a.screenshot({ path: path.join(shots, "designed-page.png"), fullPage: true });
+  const [dl3] = await Promise.all([a.waitForEvent("download", { timeout: 30000 }), a.getByRole("button", { name: /Word \(\.docx\)/ }).click()]);
+  const z3 = await JSZip.loadAsync(fs.readFileSync(await dl3.path()));
+  const h3 = await Promise.all(Object.keys(z3.files).filter((n) => /^word\/header\d*\.xml$/.test(n)).map((n) => z3.file(n).async("string")));
+  check("the designed header goes into Word as a picture behind the text", h3.some((x) => x.includes('behindDoc="1"')));
   check("no script errors", errors.length === 0, errors.join(" | "));
 } finally {
   await browser.close();

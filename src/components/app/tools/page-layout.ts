@@ -5,6 +5,7 @@
 
 import type { Letterhead } from "@/lib/tools";
 import { esc } from "./doc-model";
+import { cleanDesign, did, type DElement, type Design } from "@/lib/design";
 
 // Fields in a zone's text: {page}, {pages}, {title}, {author}, {date}, {company}.
 export type HFZones = { left: string; center: string; right: string };
@@ -25,6 +26,9 @@ export type HeaderFooter = {
   art?: { header?: HFArt; footer?: HFArt };
   // A Word file's own header and footer parts, put back unchanged in Word files made from it.
   raw?: { header?: HFRaw; footer?: HFRaw };
+  // Header and footer designed as pictures in the designer (layers: pictures, text, shapes, a background), one page
+  // each, as wide as the paper and as tall as the band. They win over the banner and the Word file's own.
+  design?: { header?: Design; footer?: Design };
   // The Word file's page margins (mm), so the text clears its banner.
   margins?: { top: number; bottom: number; left: number; right: number; header: number; footer: number };
 };
@@ -119,6 +123,7 @@ export function layoutOf(raw: unknown): DocLayout {
       art: y.art && typeof y.art === "object" ? y.art : undefined,
       raw: y.raw && typeof y.raw === "object" ? y.raw : undefined,
       margins: y.margins && typeof y.margins === "object" ? y.margins : undefined,
+      design: y.design && typeof y.design === "object" ? { header: y.design.header ? cleanDesign(y.design.header, 1) : undefined, footer: y.design.footer ? cleanDesign(y.design.footer, 1) : undefined } : undefined,
     };
   };
   const n = (x.numbering ?? {}) as Partial<Numbering>;
@@ -545,4 +550,60 @@ export async function transplantHF(blob: Blob, raw: { header?: HFRaw; footer?: H
   }
   zip.file("[Content_Types].xml", types);
   return zip.generateAsync({ type: "blob", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" });
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Header and footer as designs (the designer): fields as {{company}} and the like, built from what the header or
+// footer had (its banner, logo and text) the first time it is opened in the designer.
+// ---------------------------------------------------------------------------------------------------------------
+
+export function hfValues(f: Fields): Record<string, string> {
+  return { title: f.title, author: f.author, date: f.date, company: f.company, address: f.address ?? "", phone: f.phone ?? "", email: f.email ?? "", website: f.website ?? "" };
+}
+const toDesignFields = (t: string) => t.replace(/\{(title|author|date|company|address|phone|email|website)\}/g, "{{$1}}").replace(/\{page\}|\{pages\}/g, "");
+
+export function hfDesign(hf: HeaderFooter, where: "header" | "footer", pageW: number): Design {
+  const have = hf.design?.[where];
+  if (have) return { ...have, w: pageW };
+  const art = hf.art?.[where] ? safeArt(hf.art[where]!) : null;
+  const z = where === "header" ? hf.header : hf.footer;
+  const h = art?.heightMm ?? (where === "header" ? 22 : 14);
+  const ink = art?.textColor ?? hf.color;
+  const els: DElement[] = [];
+  const text = (t: string, x: number, w: number, align: "left" | "center" | "right", size: number, weight: 400 | 600 | 800 = art?.bold ? 600 : 400): DElement =>
+    ({ id: did(), kind: "text", text: toDesignFields(t), font: "Segoe UI", size, weight, color: ink, align, valign: "middle", lineHeight: 1.3, x, y: 2, w, h: h - 4, rotate: 0, opacity: 1 }) as DElement;
+  let left = 14;
+  const logo = art?.logo ?? (where === "header" && hf.logo !== "none" ? "brand" : null);
+  if (logo && !art?.bg) {
+    const lh = Math.min(h - 6, 20);
+    els.push({ id: did(), kind: "image", src: logo === "brand" || logo.startsWith("/") ? "logo" : logo, fit: "contain", x: 14, y: (h - lh) / 2, w: lh, h: lh, rotate: 0, opacity: 1, name: "Logo" } as DElement);
+    left += lh + 5;
+  }
+  const third = (pageW - 28) / 3;
+  const lines = z.left.split("\n");
+  if (where === "header" && lines.length > 1) {
+    els.push({ ...text(lines[0]!, left, third + 20, "left", 20, 800), y: h / 2 - 9, h: 10, name: "Name" } as DElement);
+    els.push({ ...text(lines.slice(1).join("\n"), left, third + 20, "left", 11), y: h / 2 + 1, h: 7, name: "Tagline" } as DElement);
+  } else if (z.left.trim()) els.push({ ...text(z.left, left, third, "left", where === "header" ? 10 : 8.5), name: "Left" } as DElement);
+  if (z.center.trim()) els.push({ ...text(z.center, 14 + (where === "footer" && !z.left.trim() && !z.right.trim() ? 0 : third), where === "footer" && !z.left.trim() && !z.right.trim() ? pageW - 28 : third, "center", where === "header" ? 10 : 8.5), name: "Centre" } as DElement);
+  if (z.right.trim()) els.push({ ...text(z.right, pageW - 14 - third, third, "right", where === "header" ? 10 : 8.5), name: "Right" } as DElement);
+  return cleanDesign(
+    {
+      v: 1,
+      w: pageW,
+      h,
+      unit: "mm",
+      pages: [
+        {
+          id: did(),
+          bg: art ? art.colors[0]! : "#ffffff",
+          bgImage: art?.bg ?? null,
+          bgGradient: art && !art.bg && art.colors.length > 1 ? `linear-gradient(${Math.round((90 + art.angle) % 360)}deg, ${art.colors[0]}, ${art.colors.at(-1)})` : null,
+          elements: els,
+          name: where === "header" ? "Header" : "Footer",
+        },
+      ],
+    },
+    1,
+  );
 }

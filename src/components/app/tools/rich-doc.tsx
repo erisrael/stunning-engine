@@ -7,6 +7,7 @@
 // the caret is in a table. Keyboard shortcuts as in Word (Ctrl+B, Ctrl+I, Ctrl+U, Ctrl+Z, Ctrl+Y, Ctrl+Shift+7…).
 
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { Extension, Node, mergeAttributes, type Editor } from "@tiptap/core";
 import { EditorContent, NodeViewWrapper, ReactNodeViewRenderer, useEditor, type NodeViewProps } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
@@ -163,7 +164,7 @@ const SIZES = [8, 9, 10, 10.5, 11, 12, 14, 16, 18, 20, 24, 28, 36, 48];
 const SWATCH = ["#000000", "#334155", "#64748b", "#c00000", "#dc2626", "#ea580c", "#ca8a04", "#16a34a", "#0891b2", "#1d4ed8", "#7c3aed", "#db2777"];
 const MARKERS = ["#fef08a", "#bbf7d0", "#bae6fd", "#fbcfe8", "#fed7aa", "#e9d5ff"];
 
-export function RichDoc({ blocks, onChange, simple = false, placeholder = "Type here…", className, minHeight = "60mm", sticky = true, barOnFocus = false }: { blocks: Block[]; onChange: (b: Block[]) => void; simple?: boolean; placeholder?: string; className?: string; minHeight?: string; sticky?: boolean; barOnFocus?: boolean }) {
+export function RichDoc({ blocks, onChange, simple = false, placeholder = "Type here…", className, minHeight = "60mm", sticky = true, barOnFocus = false, toolbarHost = null }: { blocks: Block[]; onChange: (b: Block[]) => void; simple?: boolean; placeholder?: string; className?: string; minHeight?: string; sticky?: boolean; barOnFocus?: boolean; toolbarHost?: HTMLElement | null }) {
   const last = React.useRef<string>("");
   const editor = useEditor({
     immediatelyRender: false,
@@ -211,7 +212,8 @@ export function RichDoc({ blocks, onChange, simple = false, placeholder = "Type 
   return (
     <div className="rich-doc group/rd relative">
       <style>{RICH_CSS}</style>
-      {editor && (
+      {editor && toolbarHost && createPortal(<Ribbon editor={editor} simple={simple} sticky={false} />, toolbarHost)}
+      {editor && !toolbarHost && (
         <div className={barOnFocus ? "pointer-events-none absolute inset-x-0 bottom-full z-30 mb-1 opacity-0 transition-opacity group-focus-within/rd:pointer-events-auto group-focus-within/rd:opacity-100 [&>div]:rounded-md [&>div]:border [&>div]:shadow-md" : undefined}>
           <Ribbon editor={editor} simple={simple} sticky={sticky && !barOnFocus} />
         </div>

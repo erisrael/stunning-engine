@@ -8,8 +8,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { deleteFileAction, getFileAction, listFilesAction, saveFileAction } from "@/app/actions/tools";
-import { bandHtml, COVER_STYLES, DEFAULT_HF, EMPTY_ZONES, HF_PRESETS, coverHtml, fillText, newCover, numberText, type Cover, type DocLayout, type HeaderFooter, type HFSource, type HFZones, type Numbering } from "@/components/app/tools/page-layout";
+import { bandHtml, hfDesign, hfValues, COVER_STYLES, DEFAULT_HF, EMPTY_ZONES, HF_PRESETS, coverHtml, fillText, newCover, numberText, type Cover, type DocLayout, type HeaderFooter, type HFSource, type HFZones, type Numbering } from "@/components/app/tools/page-layout";
 import type { Block } from "@/components/app/tools/doc-model";
+import { pageHtml, webFontsCss, type Design } from "@/lib/design";
+import dynamic from "next/dynamic";
+
+// The Canva-style editor, loaded when the designer opens.
+const DesignEditor = dynamic(() => import("@/components/app/design/design-editor").then((m) => m.DesignEditor), { ssr: false, loading: () => <p className="p-6 text-sm text-muted-foreground">Loading the designer…</p> });
 import type { Letterhead } from "@/lib/tools";
 import { cn } from "@/lib/utils";
 
@@ -29,9 +34,24 @@ const FIELDS = [
 
 // The header or footer as it shows on the page (fields filled in; page 1 of 3 as a sample): a banner when it has
 // one, else a line of three zones. Text wraps; nothing is cut off.
-export function ZonesPreview({ z, hf, f, where, logo }: { z: HFZones; hf: HeaderFooter; f: Fields; where: "header" | "footer"; logo?: string }) {
+export function ZonesPreview({ z, hf, f, where, logo, onClick }: { z: HFZones; hf: HeaderFooter; f: Fields; where: "header" | "footer"; logo?: string; onClick?: () => void }) {
+  const d = hf.design?.[where];
+  if (d?.pages[0])
+    return (
+      <div
+        data-hf-preview={where}
+        data-hf-designed
+        role={onClick ? "button" : undefined}
+        tabIndex={onClick ? 0 : undefined}
+        title={onClick ? "Edit in the header and footer designer" : undefined}
+        onClick={onClick}
+        onKeyDown={(e) => onClick && (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onClick())}
+        className={onClick ? "cursor-pointer outline-offset-2 hover:outline hover:outline-2 hover:outline-primary/50" : undefined}
+        dangerouslySetInnerHTML={{ __html: `<style>${webFontsCss(d)}</style>${pageHtml(d, d.pages[0], hfValues(f), { logo: logo ?? "/api/branding/logo" })}` }}
+      />
+    );
   const art = hf.art?.[where];
-  if (art) return <div data-hf-preview={where} dangerouslySetInnerHTML={{ __html: bandHtml(art, z, f, logo ?? "/api/branding/logo", where, "1", "3") }} />;
+  if (art) return <div data-hf-preview={where} role={onClick ? "button" : undefined} title={onClick ? "Edit in the header and footer designer" : undefined} onClick={onClick} className={onClick ? "cursor-pointer hover:outline hover:outline-2 hover:outline-primary/50" : undefined} dangerouslySetInnerHTML={{ __html: bandHtml(art, z, f, logo ?? "/api/branding/logo", where, "1", "3") }} />;
   const t = (x: string) => fillText(x, f, "1", "3");
   if (!z.left && !z.center && !z.right && (where === "footer" || hf.logo === "none")) return null;
   return (
@@ -391,6 +411,83 @@ export function NumberingDialog({ open, onOpenChange, layout, setLayout, blocks,
         </div>
         <DialogFooter>
           <Button onClick={() => onOpenChange(false)}>Done</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// The header and footer designer: each band is a picture made of layers (pictures, text, shapes and a background),
+// edited as in the design editor: drag, resize, rotate, line up, reorder layers, show or hide them, fit pictures,
+// change the text (fields such as {{company}} fill in). Starts from the header and footer in use, banner and all.
+export function HFDesignerDialog({ open, onOpenChange, hf, pageW, fields, logo, onSave }: { open: boolean; onOpenChange: (v: boolean) => void; hf: HeaderFooter; pageW: number; fields: Fields; logo: string; onSave: (hf: HeaderFooter) => void }) {
+  const [tab, setTab] = React.useState<"header" | "footer">("header");
+  const [d, setD] = React.useState<{ header: Design; footer: Design } | null>(null);
+  const [name, setName] = React.useState("");
+  React.useEffect(() => {
+    if (!open) return;
+    let live = true;
+    // A banner's logo given as a site picture (the MYSEED mark) is put into the design itself, as designs keep
+    // their pictures.
+    const build = async (where: "header" | "footer") => {
+      const d = hfDesign(hf, where, pageW);
+      const path = hf.art?.[where]?.logo;
+      if (hf.design?.[where] || !path || !path.startsWith("/")) return d;
+      const url = await fetch(path)
+        .then((r) => (r.ok ? r.blob() : null))
+        .then((b) => (b ? new Promise<string>((ok) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result)); fr.readAsDataURL(b); }) : null))
+        .catch(() => null);
+      return url ? { ...d, pages: d.pages.map((p) => ({ ...p, elements: p.elements.map((e) => (e.kind === "image" && e.src === "logo" ? { ...e, src: url } : e)) })) } : d;
+    };
+    void Promise.all([build("header"), build("footer")]).then(([header, footer]) => live && setD({ header, footer }));
+    return () => void (live = false);
+  }, [open, hf, pageW]);
+  if (!d) return null;
+  const cur = d[tab];
+  const setCur = (x: Design) => setD({ ...d, [tab]: { ...x, w: pageW } });
+  const values = hfValues(fields);
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[96vh] overflow-y-auto sm:max-w-[min(96vw,1400px)]" data-hf-designer>
+        <DialogHeader>
+          <DialogTitle>Header and footer designer</DialogTitle>
+          <DialogDescription>Drag, resize and layer pictures, text and shapes; set a background colour, gradient or picture. Text fields like {"{{company}}"}, {"{{phone}}"} and {"{{title}}"} fill in from the letterhead and the document.</DialogDescription>
+        </DialogHeader>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex rounded-md border p-0.5 text-sm" role="tablist" aria-label="Band">
+            {(["header", "footer"] as const).map((k) => (
+              <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setTab(k)} className={cn("rounded px-3 py-1", tab === k && "bg-primary text-primary-foreground")} data-hf-band={k}>
+                {k === "header" ? "Header" : "Footer"}
+              </button>
+            ))}
+          </div>
+          <label className="flex items-center gap-2 text-xs">
+            Height (mm)
+            <Input className="h-8 w-20" type="number" min={8} max={80} value={Math.round(cur.h)} onChange={(e) => setCur({ ...cur, h: Math.min(80, Math.max(8, Number(e.target.value) || cur.h)) })} data-hf-height />
+          </label>
+          <Button size="sm" variant="ghost" onClick={() => confirm(`Start the ${tab} again from the original?`) && setD({ ...d, [tab]: hfDesign({ ...hf, design: undefined }, tab, pageW) })}>Start again from the original</Button>
+          <Button size="sm" variant="ghost" onClick={() => confirm(`Clear the ${tab}?`) && setCur({ ...cur, pages: [{ ...cur.pages[0]!, bg: "#ffffff", bgImage: null, bgGradient: null, elements: [] }] })}>Clear</Button>
+          <div className="ml-auto flex items-center gap-2">
+            <Input className="h-8 w-56" placeholder="Name, to save as a template" value={name} onChange={(e) => setName(e.target.value)} />
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={!name.trim()}
+              onClick={async () => {
+                const r = await saveFileAction("hf", { title: name.trim(), data: { ...hf, design: d, raw: undefined } });
+                if (!r.ok) return toast.error(r.error);
+                toast.success(`"${name.trim()}" saved as a header and footer template`);
+                setName("");
+              }}
+            >
+              <SaveIcon /> Save as template
+            </Button>
+          </div>
+        </div>
+        <DesignEditor key={tab} design={cur} onChange={setCur} values={values} extras={{ logo }} title={tab === "header" ? "Header" : "Footer"} height="62vh" />
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button onClick={() => (onSave({ ...hf, design: d }), onOpenChange(false))} data-hf-designer-save>Use this header and footer</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
