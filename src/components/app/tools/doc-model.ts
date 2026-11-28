@@ -365,12 +365,14 @@ export type DocxLayout = {
   layout: import("./page-layout").DocLayout;
   hf: import("./page-layout").HeaderFooter | null;
   fields: { title: string; author: string; date: string; company: string };
-  page: { w: number; h: number; margins: { top: number; right: number; bottom: number; left: number } };
+  page: { w: number; h: number; margins: { top: number; right: number; bottom: number; left: number; header?: number; footer?: number } };
   pageNumbers: boolean;
+  // Designed banners as pictures (PNG) and their heights in mm.
+  bands?: { header: Uint8Array | null; footer: Uint8Array | null; headerMm: number; footerMm: number };
 };
 export async function blocksDocx(opts: { title: string; blocks: Block[]; letterhead?: Letterhead & { logoData?: Uint8Array | null; logoType?: "png" | "jpg" }; before?: Block[]; after?: Block[]; page?: DocxPage; layout?: DocxLayout }) {
   const d = await import("docx");
-  const { AlignmentType, BorderStyle, Bookmark, Document, ExternalHyperlink, Footer, FootnoteReferenceRun, Header, HeadingLevel, ImageRun, InternalHyperlink, LeaderType, NumberFormat, Packer, PageBreak, PageNumber, PageReference, Paragraph, Table, TableCell, TableRow, TabStopType, TextRun, VerticalAlign, WidthType, ShadingType } = d;
+  const { AlignmentType, BorderStyle, Bookmark, Document, HorizontalPositionRelativeFrom, VerticalPositionRelativeFrom, ExternalHyperlink, Footer, FootnoteReferenceRun, Header, HeadingLevel, ImageRun, InternalHyperlink, LeaderType, NumberFormat, Packer, PageBreak, PageNumber, PageReference, Paragraph, Table, TableCell, TableRow, TabStopType, TextRun, VerticalAlign, WidthType, ShadingType } = d;
   // Headings carry bookmarks so the contents links to them and shows their page numbers (PAGEREF fields), which
   // Word, LibreOffice and other Word-compatible apps fill in; Word's own TOC field stays empty outside Word.
   const all = [...(opts.before ?? []), ...opts.blocks, ...(opts.after ?? [])];
@@ -516,7 +518,7 @@ export async function blocksDocx(opts: { title: string; blocks: Block[]; letterh
     const { layout, fields } = L;
     const tw = (mm: number) => Math.round(mm * 56.6929);
     const textW = tw(L.page.w - L.page.margins.left - L.page.margins.right);
-    const pageProps = { size: { width: tw(L.page.w), height: tw(L.page.h) }, margin: { top: tw(L.page.margins.top), right: tw(L.page.margins.right), bottom: tw(L.page.margins.bottom), left: tw(L.page.margins.left), header: tw(Math.max(6, L.page.margins.top / 2 - 2)), footer: tw(Math.max(6, L.page.margins.bottom / 2 - 2)) } };
+    const pageProps = { size: { width: tw(L.page.w), height: tw(L.page.h) }, margin: { top: tw(L.page.margins.top), right: tw(L.page.margins.right), bottom: tw(L.page.margins.bottom), left: tw(L.page.margins.left), header: tw(L.page.margins.header ?? Math.max(6, L.page.margins.top / 2 - 2)), footer: tw(L.page.margins.footer ?? Math.max(6, L.page.margins.bottom / 2 - 2)) } };
     const parts = pl.splitParts(opts.blocks, layout);
     const hasFront = parts.front.length > 0;
     const zoneRuns = (t: string, hf: import("./page-layout").HeaderFooter, inMain: boolean) => {
@@ -533,7 +535,23 @@ export async function blocksDocx(opts: { title: string; blocks: Block[]; letterh
     };
     const logoRun = () => (lh?.logoData ? [new ImageRun({ type: lh.logoType ?? "png", data: lh.logoData, transformation: { width: 34, height: 34 } })] : []);
     // One line: left, centre and right zones on tab stops, as Word's own header and footer styles do.
+    const px = (mm: number) => Math.round((mm / 25.4) * 96);
     const band = (z: import("./page-layout").HFZones, hf: import("./page-layout").HeaderFooter, where: "header" | "footer", inMain: boolean) => {
+      // The Word file's own header or footer: a marker, replaced by the original part once the file is made.
+      if (hf.raw?.[where]) return new Paragraph({ children: [new TextRun(where === "header" ? "@@RAW_HEADER@@" : "@@RAW_FOOTER@@")] });
+      // A designed banner: a page-wide picture behind the text, at the top or the bottom of the page.
+      const png = where === "header" ? L.bands?.header : L.bands?.footer;
+      if (png) {
+        const hmm = where === "header" ? L.bands!.headerMm : L.bands!.footerMm;
+        const num = where === "footer" && L.pageNumbers && !pl.hasPageField(hf);
+        return new Paragraph({
+          alignment: AlignmentType.RIGHT,
+          children: [
+            new ImageRun({ type: "png", data: png, transformation: { width: px(L.page.w), height: px(hmm) }, floating: { horizontalPosition: { relative: HorizontalPositionRelativeFrom.PAGE, offset: 0 }, verticalPosition: { relative: VerticalPositionRelativeFrom.PAGE, offset: where === "header" ? 0 : Math.round((L.page.h - hmm) * 36000) }, behindDocument: true, allowOverlap: true } }),
+            ...(num ? zoneRuns("Page {page} of {pages}", { ...hf, color: "#ffffff" }, inMain) : []),
+          ],
+        });
+      }
       const logo = where === "header" && hf.logo !== "none" ? logoRun() : [];
       const rule = where === "header" ? (hf.ruleUnderHeader ? { bottom: { style: BorderStyle.SINGLE, size: 6, color: color(hf.color), space: 4 } } : undefined) : hf.ruleOverFooter ? { top: { style: BorderStyle.SINGLE, size: 6, color: color(hf.color), space: 4 } } : undefined;
       return new Paragraph({
@@ -627,7 +645,8 @@ export async function blocksDocx(opts: { title: string; blocks: Block[]; letterh
       features: { updateFields: withToc },
       sections: sections as never,
     });
-    return Packer.toBlob(doc);
+    const out = await Packer.toBlob(doc);
+    return L.hf?.raw && (L.hf.raw.header || L.hf.raw.footer) ? pl.transplantHF(out, L.hf.raw) : out;
   }
   const header = lh
     ? new Header({

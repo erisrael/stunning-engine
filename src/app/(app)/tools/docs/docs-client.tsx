@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { getFileAction, saveFileAction } from "@/app/actions/tools";
 import { RichDoc } from "@/components/app/tools/rich-doc";
 import { bid, blocksDocx, blocksHtml, DEFAULT_PAGE, DOC_PAPER, DOC_TEMPLATES, logoBytes, printHtml, esc, type Block, type DocData, type DocPage } from "@/components/app/tools/doc-model";
-import { coverHtml, DEFAULT_HF, effectiveHF, headerFooterOfDocx, layoutCss, layoutOf, splitParts, withNumber, type DocLayout, type HeaderFooter, type HFSource } from "@/components/app/tools/page-layout";
+import { bandHtml, bandPng, coverHtml, DEFAULT_HF, effectiveHF, fillText, headerFooterOfDocx, layoutCss, layoutOf, splitParts, withNumber, type DocLayout, type HeaderFooter, type HFSource } from "@/components/app/tools/page-layout";
 import { CoverDialog, FileHFPrompt, HeaderFooterDialog, NumberingDialog, ZonesPreview } from "@/components/app/tools/doc-layout-panel";
 import { TemplateShelf } from "@/components/app/tools/template-shelf";
 import { markdownToBlocks, toMarkdown } from "@/components/app/tools/doc-markdown";
@@ -82,10 +82,20 @@ export function DocsClient({ files: initialFiles, author, letterhead, notion }: 
   const setLayout = (l: DocLayout) => data && (setData({ ...data, layout: l }), setDirty(true));
   const [panel, setPanel] = React.useState<null | "hf" | "cover" | "numbers">(null);
   const [filePrompt, setFilePrompt] = React.useState<HeaderFooter | null>(null);
-  const fields = { title, author: data?.meta?.author ?? author, date: data?.meta?.date ?? new Date().toISOString().slice(0, 10), company: letterhead.company };
+  const fields = { title, author: data?.meta?.author ?? author, date: data?.meta?.date ?? new Date().toISOString().slice(0, 10), company: letterhead.company, address: letterhead.address, phone: letterhead.phone, email: letterhead.email, website: letterhead.website };
   const hf = effectiveHF(layout, letterhead);
   const branded = layout.source === "company";
   const logoUrl = letterhead.logo || "/api/branding/logo";
+  // The margins in effect: the opened Word file's own with its header and footer, and always enough to clear a banner.
+  const fileM = layout.source === "document" ? hf?.margins : undefined;
+  const headArt = hf?.art?.header;
+  const footArt = hf?.art?.footer;
+  const mg = {
+    top: Math.max(fileM?.top ?? page.margins.top, headArt ? headArt.heightMm + 8 : 0),
+    bottom: Math.max(fileM?.bottom ?? page.margins.bottom, footArt ? footArt.heightMm + 6 : 0),
+    left: fileM?.left ?? page.margins.left,
+    right: fileM?.right ?? page.margins.right,
+  };
   const words = React.useMemo(() => (data ? plainText(data.blocks).split(/\s+/).filter(Boolean).length : 0), [data]);
 
   const openFile = async (f: File) => {
@@ -156,7 +166,16 @@ export function DocsClient({ files: initialFiles, author, letterhead, notion }: 
     if (!data) return;
     const parts = splitParts(data.blocks, layout);
     const body = `${layout.cover ? coverHtml(layout.cover, logoUrl) : ""}${parts.front.length ? `<div class="doc-front">${header()}${blocksHtml(parts.front, data.blocks)}</div>` : ""}<div class="doc-main">${parts.front.length ? "" : header()}${blocksHtml(parts.main, data.blocks)}</div>${page.watermark ? `<div style="position:fixed;top:40%;left:0;right:0;text-align:center;font-size:72pt;font-weight:800;color:rgba(100,116,139,.12);transform:rotate(-30deg)">${esc(page.watermark)}</div>` : ""}`;
-    printHtml(title, body, layoutCss(layout, branded ? { ...hf!, header: { left: "", center: "", right: "" } } : hf, fields, { w: pw, h: ph }, page.margins, page.pageNumbers));
+    if (hf && (headArt || footArt)) {
+      // A banner repeats on every printed page: fixed bands, with the page's text kept clear of them by a table
+      // whose head and foot repeat on each page.
+      const plain = (z: { left: string; center: string; right: string }) => `<div style="display:flex;gap:4mm;padding:0 ${mg.right}mm 0 ${mg.left}mm;font-size:${hf.size}pt;color:${hf.color}"><div style="flex:1">${esc(fillText(z.left, fields))}</div><div style="flex:1;text-align:center">${esc(fillText(z.center, fields))}</div><div style="flex:1;text-align:right">${esc(fillText(z.right, fields))}</div></div>`;
+      const top = headArt ? bandHtml(headArt, hf.header, fields, logoUrl, "header") : plain(hf.header);
+      const bottom = footArt ? bandHtml(footArt, hf.footer, fields, logoUrl, "footer") : plain(hf.footer);
+      const framed = `<div class="hf-top">${top}</div><div class="hf-bottom">${bottom}</div><table class="hf-page"><thead><tr><td><div style="height:${mg.top}mm"></div></td></tr></thead><tfoot><tr><td><div style="height:${mg.bottom}mm"></div></td></tr></tfoot><tbody><tr><td style="padding:0 ${mg.right}mm 0 ${mg.left}mm">${body}</td></tr></tbody></table>`;
+      return printHtml(title, framed, `@page{size:${pw}mm ${ph}mm;margin:0}.hf-top{position:fixed;top:0;left:0;right:0}.hf-bottom{position:fixed;bottom:0;left:0;right:0}table.hf-page{width:100%;margin:0;border-collapse:collapse}table.hf-page>thead>tr>td,table.hf-page>tfoot>tr>td,table.hf-page>tbody>tr>td{border:0;padding:0}.doc-cover,.doc-front{break-after:page}sup.fn{font-size:7pt}`);
+    }
+    printHtml(title, body, layoutCss(layout, branded ? { ...hf!, header: { left: "", center: "", right: "" } } : hf, fields, { w: pw, h: ph }, mg, page.pageNumbers));
   };
   const word = async () => {
     if (!data) return;
@@ -164,7 +183,14 @@ export function DocsClient({ files: initialFiles, author, letterhead, notion }: 
     try {
       const needsLogo = (hf && hf.logo !== "none") || !!layout.cover?.logo;
       const logo = needsLogo ? await logoBytes(letterhead) : null;
-      const blob = await blocksDocx({ title, blocks: data.blocks, letterhead: { ...letterhead, logoData: logo?.data ?? null, logoType: logo?.type }, layout: { layout, hf, fields, page: { w: pw, h: ph, margins: page.margins }, pageNumbers: page.pageNumbers } });
+      // Banners: a Word file's own header and footer go back in unchanged; a designed banner goes in as a picture.
+      const bands = {
+        header: headArt && !hf?.raw?.header ? await bandPng(headArt, hf!.header, fields, logoUrl, "header", pw) : null,
+        footer: footArt && !hf?.raw?.footer ? await bandPng(footArt, hf!.footer, fields, logoUrl, "footer", pw) : null,
+        headerMm: headArt?.heightMm ?? 0,
+        footerMm: footArt?.heightMm ?? 0,
+      };
+      const blob = await blocksDocx({ title, blocks: data.blocks, letterhead: { ...letterhead, logoData: logo?.data ?? null, logoType: logo?.type }, layout: { layout, hf, fields, page: { w: pw, h: ph, margins: { ...mg, header: fileM?.header, footer: fileM?.footer } }, pageNumbers: page.pageNumbers, bands } });
       downloadBlob(blob, safeName(title, "docx"));
     } catch {
       toast.error("The Word file could not be made.");
@@ -408,13 +434,17 @@ export function DocsClient({ files: initialFiles, author, letterhead, notion }: 
             </div>
             <div className="space-y-6 overflow-x-auto rounded-xl border bg-[#e9ebee] px-4 py-6 pl-12 dark:bg-slate-900">
             {layout.cover && (
-              <button type="button" onClick={() => setPanel("cover")} title="Edit the cover page" className="mx-auto block bg-white text-left text-slate-900 shadow-[0_1px_3px_rgba(0,0,0,.12),0_8px_24px_rgba(0,0,0,.08)]" style={{ width: `${pw}mm`, maxWidth: "100%", padding: `${page.margins.top}mm ${page.margins.right}mm ${page.margins.bottom}mm ${page.margins.left}mm` }} data-cover-preview>
+              <button type="button" onClick={() => setPanel("cover")} title="Edit the cover page" className="mx-auto block bg-white text-left text-slate-900 shadow-[0_1px_3px_rgba(0,0,0,.12),0_8px_24px_rgba(0,0,0,.08)]" style={{ width: `${pw}mm`, maxWidth: "100%", padding: `${mg.top}mm ${mg.right}mm ${mg.bottom}mm ${mg.left}mm` }} data-cover-preview>
                 <div dangerouslySetInnerHTML={{ __html: coverHtml(layout.cover, logoUrl) }} />
               </button>
             )}
-            <div style={{ width: page.orientation === "landscape" ? "297mm" : page.size === "A5" ? "148mm" : "210mm", maxWidth: "100%", paddingLeft: `${page.margins.left}mm`, paddingRight: `${page.margins.right}mm`, paddingTop: `${page.margins.top}mm`, paddingBottom: `${page.margins.bottom}mm` }} className={cn("mx-auto min-h-[200mm] bg-white text-[13px] shadow-[0_1px_3px_rgba(0,0,0,.12),0_8px_24px_rgba(0,0,0,.08)] leading-relaxed text-slate-900 shadow-sm", "[&_blockquote]:border-l-4 [&_blockquote]:pl-3 [&_blockquote]:text-slate-600 [&_h1]:mb-2 [&_h1]:text-2xl [&_h1]:font-bold [&_h2]:mt-4 [&_h2]:mb-1 [&_h2]:text-lg [&_h2]:font-semibold [&_h3]:mt-3 [&_h3]:font-semibold [&_hr]:my-3 [&_ol]:ml-5 [&_ol]:list-decimal [&_p]:mb-2 [&_table]:my-2 [&_table]:w-full [&_td]:border [&_td]:px-2 [&_td]:py-1 [&_th]:border [&_th]:bg-slate-100 [&_th]:px-2 [&_th]:py-1 [&_th]:text-left [&_ul]:ml-5 [&_ul]:list-disc")}>
+            <div style={{ width: page.orientation === "landscape" ? "297mm" : page.size === "A5" ? "148mm" : "210mm", maxWidth: "100%", paddingLeft: `${mg.left}mm`, paddingRight: `${mg.right}mm`, paddingTop: `${mg.top}mm`, paddingBottom: `${mg.bottom}mm`, minHeight: `${ph}mm` }} className={cn("mx-auto flex flex-col bg-white text-[13px] shadow-[0_1px_3px_rgba(0,0,0,.12),0_8px_24px_rgba(0,0,0,.08)] leading-relaxed text-slate-900 shadow-sm", "[&_blockquote]:border-l-4 [&_blockquote]:pl-3 [&_blockquote]:text-slate-600 [&_h1]:mb-2 [&_h1]:text-2xl [&_h1]:font-bold [&_h2]:mt-4 [&_h2]:mb-1 [&_h2]:text-lg [&_h2]:font-semibold [&_h3]:mt-3 [&_h3]:font-semibold [&_hr]:my-3 [&_ol]:ml-5 [&_ol]:list-decimal [&_p]:mb-2 [&_table]:my-2 [&_table]:w-full [&_td]:border [&_td]:px-2 [&_td]:py-1 [&_th]:border [&_th]:bg-slate-100 [&_th]:px-2 [&_th]:py-1 [&_th]:text-left [&_ul]:ml-5 [&_ul]:list-disc")}>
               {/* Every piece of text is escaped in blocksHtml; only our own tags are added. */}
-              {hf && !branded && <div className="-mt-[8mm] mb-4"><ZonesPreview z={hf.header} hf={hf} f={fields} where="header" logo={logoUrl} /></div>}
+              {hf && !branded && (headArt ? (
+                <div style={{ margin: `-${mg.top}mm -${mg.right}mm ${mg.top - headArt.heightMm}mm -${mg.left}mm` }}><ZonesPreview z={hf.header} hf={hf} f={fields} where="header" logo={logoUrl} /></div>
+              ) : (
+                <div className="-mt-[8mm] mb-4"><ZonesPreview z={hf.header} hf={hf} f={fields} where="header" logo={logoUrl} /></div>
+              ))}
               <div className="relative">
                 {page.watermark && <span aria-hidden className="pointer-events-none absolute inset-x-0 top-1/3 -rotate-[30deg] text-center text-6xl font-extrabold text-slate-400/15">{page.watermark}</span>}
                 {reading ? (
@@ -428,7 +458,9 @@ export function DocsClient({ files: initialFiles, author, letterhead, notion }: 
               </div>
               {(() => {
                 const f = withNumber(hf, layout.numbering, page.pageNumbers);
-                return f ? <div className="mt-8"><ZonesPreview z={f.footer} hf={f} f={fields} where="footer" /></div> : null;
+                if (!f) return null;
+                if (footArt) return <div className="mt-auto" style={{ margin: `8mm -${mg.right}mm -${mg.bottom}mm -${mg.left}mm`, paddingTop: 0 }}><ZonesPreview z={f.footer} hf={f} f={fields} where="footer" logo={logoUrl} /></div>;
+                return <div className="mt-auto pt-8"><ZonesPreview z={f.footer} hf={f} f={fields} where="footer" /></div>;
               })()}
             </div>
             </div>

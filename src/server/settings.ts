@@ -449,6 +449,7 @@ export const CORR_DEFAULTS: Record<string, Capability[]> = {
   cfo: ["corr.create", "corr.directory"],
   cto: ["corr.create", "corr.directory"],
   cedo: ["corr.create", "corr.directory"],
+  coo: ["corr.create", "corr.directory"],
   owner: ["corr.view_all", "corr.audit"],
   manager: ["corr.create", "corr.directory"],
   hr_manager: ["corr.create", "corr.directory"],

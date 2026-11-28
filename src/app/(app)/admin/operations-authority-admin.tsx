@@ -23,6 +23,9 @@ export function OperationsAuthorityAdmin({ initial, departments, heads }: { init
       <CardHeader>
         <CardTitle className="text-base">Operations authority</CardTitle>
         <CardDescription>
+          <span className="mb-1 block font-medium text-amber-700 dark:text-amber-400">
+            Paused: People operations and role assignment are Admin&apos;s only, so these settings give the Operations head nothing for now.
+          </span>
           The Operations head manages the people of the departments ticked here: gives and takes their roles, names leads and production team leads, and (if you
           allow it) names heads. Admin and Owner accounts and roles are never managed from People operations. Name the Operations head in{" "}
           <Link className="underline" href="/admin?tab=departments">

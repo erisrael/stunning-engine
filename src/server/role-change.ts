@@ -41,17 +41,9 @@ export type RoleImpact = {
   blocking: number;
 };
 
-async function access(actor: AppUser, userId: string, removal: RoleRemoval) {
-  if (can(actor, "users.manage")) return;
-  const ops = await import("./people-ops");
-  const a = await ops.peopleOpsAccess(actor);
-  if (!a.allowed) throw new WorkflowError("FORBIDDEN", "Only Admin or the Operations head changes roles.");
-  const managed = new Set(a.roles.map((r) => r.key as string));
-  if (removal.roles.some((r) => !managed.has(r))) throw new WorkflowError("FORBIDDEN", "That role is outside what Operations manages.");
-  if (removal.leads.length && !a.config.departments.includes("production")) throw new WorkflowError("FORBIDDEN", "Production is outside what Operations manages.");
-  const held = await all<{ role: string }>("SELECT role FROM role_assignments WHERE user_id = ?", userId);
-  if (held.some((r) => r.role === "admin" || r.role === "owner")) throw new WorkflowError("FORBIDDEN", "Admin and Owner accounts are managed by Admin only.");
-  if (userId === actor.id) throw new WorkflowError("FORBIDDEN", "Ask Admin to change your own roles.");
+// Only Admin changes people's roles (and so sees a role change's impact).
+async function access(actor: AppUser, _userId: string, _removal: RoleRemoval) {
+  if (!can(actor, "users.manage")) throw new WorkflowError("FORBIDDEN", "Only Admin changes people's roles.");
 }
 
 // Taking a stage role takes that team's lead position with it.

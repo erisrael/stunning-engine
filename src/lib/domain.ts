@@ -1,7 +1,7 @@
 // Shared domain vocabulary used by both the server and the client.
 
 // Production roles first, then the department roles (Phase 5). Department positions (head, lead, member) are set in Admin.
-export const ROLES = ["recording", "editing", "uploading", "publication", "manager", "assistant_manager", "admin", "owner", "developer", "content", "marketing", "hr_manager", "hr_officer", "finance_manager", "accountant", "support", "sales", "operations", "ceo", "cfo", "cto", "cedo"] as const;
+export const ROLES = ["recording", "editing", "uploading", "publication", "manager", "assistant_manager", "admin", "owner", "developer", "content", "marketing", "hr_manager", "hr_officer", "finance_manager", "accountant", "support", "sales", "operations", "ceo", "cfo", "cto", "cedo", "coo"] as const;
 export type Role = (typeof ROLES)[number];
 
 export const ROLE_LABELS: Record<Role, string> = {
@@ -27,10 +27,11 @@ export const ROLE_LABELS: Record<Role, string> = {
   cfo: "Chief Financial Officer (CFO)",
   cto: "Chief Technology Officer (CTO)",
   cedo: "Chief Education & Development Officer (CEDO)",
+  coo: "Chief Operations Officer (COO)",
 };
 
 // The chief officers sit beside the owners: company-wide sight, managed by Admin and the Operations head.
-export const CHIEF_ROLES = ["ceo", "cfo", "cto", "cedo"] as const satisfies readonly Role[];
+export const CHIEF_ROLES = ["ceo", "cfo", "cto", "cedo", "coo"] as const satisfies readonly Role[];
 
 // Labels of roles that are not built in (presets and roles Admin created), so a role never shows blank or as a raw key.
 export const PRESET_ROLE_LABELS: Record<string, string> = {
@@ -72,6 +73,7 @@ export const ROLE_DESCRIPTIONS: Record<Role, string> = {
   cfo: "Chief Financial Officer: company overview plus finance reports, approvals and payroll sign-off.",
   cto: "Chief Technology Officer: company overview plus the Dev team, releases and integrations.",
   cedo: "Chief Education & Development Officer: company overview plus production, curriculum, Studio and performance.",
+  coo: "Chief Operations Officer: company overview plus Operations, production delivery, teams and performance (read only unless Admin adds rights).",
 };
 
 // Capabilities that can be granted per role in Admin, Roles and permissions.
@@ -266,6 +268,7 @@ export const DEFAULT_PERMISSIONS: Record<Role, Capability[]> = {
   cfo: ["company.view", "finance.view", "finance.approve", "finance.owner_approve", "reports.view", "export.run", "export.report", "chat.channels", "chat.contact_owners", "email.send", "tools.use"],
   cto: ["company.view", "dev.access", "reports.view", "team.view", "export.run", "export.report", "chat.channels", "chat.contact_owners", "email.send", "tools.use"],
   cedo: ["company.view", "studio.access", "perf.view_company", "nav.overview", "nav.coverage", "items.detail", "reports.view", "team.view", "curriculum.manage", "export.run", "export.report", "chat.channels", "chat.contact_owners", "email.send", "tools.use"],
+  coo: ["company.view", "owners.view", "operations.access", "perf.view_company", "nav.overview", "nav.coverage", "items.detail", "reports.view", "team.view", "export.run", "export.report", "chat.channels", "chat.contact_owners", "email.send", "tools.use"],
   admin: [
     ...FULL_VIEW,
     "items.create",

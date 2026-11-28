@@ -183,33 +183,24 @@ async function main() {
   check("crosscheck_code_or_teacher compares one record", look.result.status === "match" || look.result.status === "mismatch");
   check("crosscheck_code_or_teacher needs sight of production", !!(await throws(() => runOperation(sales, "crosscheck_code_or_teacher", { code: item.code }))));
 
-  // --- People operations ---
+  // --- People operations: Admin only ---
   await setPosition(admin, "operations", ops.id, "head");
-  await setPosition(admin, "operations", ops2.id, "lead");
   const opsHead = (await loadUser(ops.id))!;
-  check("the Operations head may manage people", (await P.peopleOpsAccess(opsHead)).allowed);
-  check("an Operations lead may not (by default)", !(await P.peopleOpsAccess((await loadUser(ops2.id))!)).allowed);
+  check("the Operations head may not manage people", !(await P.peopleOpsAccess(opsHead)).allowed);
   check("a Sales person may not", !(await P.peopleOpsAccess(sales)).allowed);
-  await P.setManagedRoles(opsHead, mkt.id, ["marketing", "cfo"]);
-  check("the head gives a managed role and a chief role", (await loadUser(mkt.id))!.roles.includes("cfo"));
-  check("the head cannot give Admin", !!(await throws(() => P.setManagedRoles(opsHead, mkt.id, ["admin"]))));
-  check("the head cannot change an Admin account", !!(await throws(() => P.setManagedRoles(opsHead, admin.id, ["sales"]))));
-  check("the head cannot change their own roles", !!(await throws(() => P.setManagedRoles(opsHead, ops.id, ["sales"]))));
-  // Taking a role goes through its impact page, then the head confirms it there.
-  check("taking a role asks for its impact first", /impact/i.test((await throws(() => P.setManagedRoles(opsHead, mkt.id, ["marketing"]))) ?? ""));
-  await (await import("../../src/server/role-change")).applyRoleChange(opsHead, mkt.id, { roles: ["cfo"], leads: [] }, {}, mkt.name);
-  check("removing a managed role keeps the others", JSON.stringify((await loadUser(mkt.id))!.roles.sort()) === JSON.stringify(["marketing"]));
-  await P.setManagedPosition(opsHead, "marketing", mkt.id, "lead");
-  check("the head names a lead", (await get<{ position: string }>("SELECT position FROM department_positions WHERE department = 'marketing' AND user_id = ?", mkt.id))?.position === "lead");
-  check("the head cannot name a head unless Admin allows it", !!(await throws(() => P.setManagedPosition(opsHead, "marketing", mkt.id, "head"))));
-  check("a department outside the chosen ones is refused", !!(await throws(() => P.setManagedPosition(opsHead, "dev", mkt.id, "lead"))));
-  await P.savePeopleOpsConfig(admin, { enabled: true, departments: ["marketing"], chiefs: false, who: "head_and_leads", assignHeads: true });
-  check("Admin widens it to leads", (await P.peopleOpsAccess((await loadUser(ops2.id))!)).allowed);
-  check("…and narrows the roles: chiefs off", !(await P.peopleOpsAccess(opsHead)).roles.some((r) => r.key === "cfo"));
-  check("nobody but Admin names the Operations head", !!(await throws(() => P.setManagedPosition(opsHead, "operations", ops2.id, "head"))));
-  check("only Admin changes what Operations manages", !!(await throws(() => P.savePeopleOpsConfig(opsHead, { enabled: true, departments: ["dev"], chiefs: true, who: "head", assignHeads: true }))));
-  await P.savePeopleOpsConfig(admin, { enabled: false, departments: [], chiefs: false, who: "head", assignHeads: false });
-  check("switched off, the head can do nothing", !(await P.peopleOpsAccess(opsHead)).allowed);
+  check("Admin may", (await P.peopleOpsAccess(admin)).allowed);
+  check("the head cannot give roles", !!(await throws(() => P.setManagedRoles(opsHead, mkt.id, ["marketing", "cfo"]))));
+  await P.setManagedRoles(admin, mkt.id, ["marketing", "cfo"]);
+  check("Admin gives a role and a chief role", (await loadUser(mkt.id))!.roles.includes("cfo"));
+  check("the COO is a chief role", (await P.peopleOpsAccess(admin)).roles.some((r) => r.key === "coo"));
+  // Taking a role goes through its impact page, then Admin confirms it there.
+  check("taking a role asks for its impact first", /impact/i.test((await throws(() => P.setManagedRoles(admin, mkt.id, ["marketing"]))) ?? ""));
+  check("the Operations head cannot see a role change's impact", !!(await throws(() => import("../../src/server/role-change").then((m) => m.roleImpact(opsHead, mkt.id, { roles: ["cfo"], leads: [] })))));
+  await (await import("../../src/server/role-change")).applyRoleChange(admin, mkt.id, { roles: ["cfo"], leads: [] }, {}, mkt.name);
+  check("removing a role keeps the others", JSON.stringify((await loadUser(mkt.id))!.roles.sort()) === JSON.stringify(["marketing"]));
+  check("the head cannot name a lead", !!(await throws(() => P.setManagedPosition(opsHead, "marketing", mkt.id, "lead"))));
+  await P.setManagedPosition(admin, "marketing", mkt.id, "lead");
+  check("Admin names a lead", (await get<{ position: string }>("SELECT position FROM department_positions WHERE department = 'marketing' AND user_id = ?", mkt.id))?.position === "lead");
 
   // --- Settings cache ---
   await run("INSERT INTO settings (key, value, updated_at) VALUES ('test.cache', '1', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value", nowIso());

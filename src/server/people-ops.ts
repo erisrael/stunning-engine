@@ -85,19 +85,13 @@ export type PeopleOpsAccess = { allowed: boolean; admin: boolean; config: People
 export async function peopleOpsAccess(user: AppUser): Promise<PeopleOpsAccess> {
   const config = await peopleOpsConfig();
   const admin = can(user, "users.manage");
-  let allowed = admin;
-  if (!allowed && config.enabled) {
-    if (can(user, "people.operations")) allowed = true;
-    else if (can(user, "operations.access")) {
-      const pos = await get<{ position: Position }>("SELECT position FROM department_positions WHERE department = 'operations' AND user_id = ?", user.id);
-      allowed = pos?.position === "head" || (config.who === "head_and_leads" && pos?.position === "lead");
-    }
-  }
+  // People operations and role assignment are Admin's only (the Operations head no longer manages people).
+  const allowed = admin;
   const depts = admin ? [...OPS_DEPARTMENTS] : config.departments;
   const roles: PeopleOpsAccess["roles"] = [];
   for (const d of depts) for (const r of await deptRoles(d)) if (!roles.some((x) => x.key === r)) roles.push({ key: r, label: roleLabel(r), dept: d });
   if (admin || config.chiefs) for (const r of CHIEF_ROLES) roles.push({ key: r, label: roleLabel(r), dept: "chief" });
-  return { allowed: allowed && (admin || config.enabled), admin, config, roles: roles.filter((r) => !PROTECTED.includes(r.key)), positionDepts: depts.filter((d) => POSITION_DEPTS.includes(d)) };
+  return { allowed, admin, config, roles: roles.filter((r) => !PROTECTED.includes(r.key)), positionDepts: depts.filter((d) => POSITION_DEPTS.includes(d)) };
 }
 
 async function requireOps(user: AppUser) {

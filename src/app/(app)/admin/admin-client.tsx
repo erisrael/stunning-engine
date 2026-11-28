@@ -98,6 +98,7 @@ const ROLE_TONE: Record<Role, string> = {
   cfo: "bg-yellow-500/15 text-yellow-800 dark:text-yellow-300",
   cto: "bg-yellow-500/15 text-yellow-800 dark:text-yellow-300",
   cedo: "bg-yellow-500/15 text-yellow-800 dark:text-yellow-300",
+  coo: "bg-teal-500/15 text-teal-800 dark:text-teal-300",
 };
 
 const AdminRoles = React.createContext<{key:Role;label:string}[]>(ROLES.map(key=>({key,label:roleLabel(key)})));

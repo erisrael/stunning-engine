@@ -8,12 +8,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { deleteFileAction, getFileAction, listFilesAction, saveFileAction } from "@/app/actions/tools";
-import { COVER_STYLES, DEFAULT_HF, EMPTY_ZONES, HF_PRESETS, coverHtml, fillText, newCover, numberText, type Cover, type DocLayout, type HeaderFooter, type HFSource, type HFZones, type Numbering } from "@/components/app/tools/page-layout";
+import { bandHtml, COVER_STYLES, DEFAULT_HF, EMPTY_ZONES, HF_PRESETS, coverHtml, fillText, newCover, numberText, type Cover, type DocLayout, type HeaderFooter, type HFSource, type HFZones, type Numbering } from "@/components/app/tools/page-layout";
 import type { Block } from "@/components/app/tools/doc-model";
 import type { Letterhead } from "@/lib/tools";
 import { cn } from "@/lib/utils";
 
-type Fields = { title: string; author: string; date: string; company: string };
+type Fields = import("@/components/app/tools/page-layout").Fields;
 const FIELDS = [
   { key: "{page}", label: "Page" },
   { key: "{pages}", label: "Pages" },
@@ -21,26 +21,33 @@ const FIELDS = [
   { key: "{author}", label: "Author" },
   { key: "{date}", label: "Date" },
   { key: "{company}", label: "Company" },
+  { key: "{address}", label: "Address" },
+  { key: "{phone}", label: "Phone" },
+  { key: "{email}", label: "Email" },
+  { key: "{website}", label: "Website" },
 ];
 
-// The header or footer line as it shows on the page (fields filled in; page 1 of 3 as a sample).
+// The header or footer as it shows on the page (fields filled in; page 1 of 3 as a sample): a banner when it has
+// one, else a line of three zones. Text wraps; nothing is cut off.
 export function ZonesPreview({ z, hf, f, where, logo }: { z: HFZones; hf: HeaderFooter; f: Fields; where: "header" | "footer"; logo?: string }) {
+  const art = hf.art?.[where];
+  if (art) return <div data-hf-preview={where} dangerouslySetInnerHTML={{ __html: bandHtml(art, z, f, logo ?? "/api/branding/logo", where, "1", "3") }} />;
   const t = (x: string) => fillText(x, f, "1", "3");
   if (!z.left && !z.center && !z.right && (where === "footer" || hf.logo === "none")) return null;
   return (
     <div
-      className={cn("grid grid-cols-3 items-center gap-2", where === "header" ? (hf.ruleUnderHeader ? "border-b pb-1" : "") : hf.ruleOverFooter ? "border-t pt-1" : "")}
+      className={cn("grid grid-cols-3 items-center gap-3 whitespace-pre-line break-words", where === "header" ? (hf.ruleUnderHeader ? "border-b pb-1" : "") : hf.ruleOverFooter ? "border-t pt-1" : "")}
       style={{ fontSize: `${hf.size}pt`, color: hf.color, borderColor: hf.color }}
       data-hf-preview={where}
     >
-      <span className="flex items-center gap-1.5 truncate">
-        {where === "header" && hf.logo === "left" && logo && <img src={logo} alt="" className="h-5" />}
-        {t(z.left)}
+      <span className="flex items-center gap-1.5">
+        {where === "header" && hf.logo === "left" && logo && <img src={logo} alt="" className="h-6" />}
+        <span>{t(z.left)}</span>
       </span>
-      <span className="truncate text-center">{t(z.center)}</span>
-      <span className="flex items-center justify-end gap-1.5 truncate text-right">
-        {t(z.right)}
-        {where === "header" && hf.logo === "right" && logo && <img src={logo} alt="" className="h-5" />}
+      <span className="text-center">{t(z.center)}</span>
+      <span className="flex items-center justify-end gap-1.5 text-right">
+        <span>{t(z.right)}</span>
+        {where === "header" && hf.logo === "right" && logo && <img src={logo} alt="" className="h-6" />}
       </span>
     </div>
   );
@@ -150,6 +157,12 @@ export function HeaderFooterDialog({ open, onOpenChange, layout, setLayout, lett
                 <button key={f.key} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => insert(f.key)} className="rounded-full border px-2 py-0.5 hover:bg-muted" data-hf-field={f.key}>{f.label}</button>
               ))}
             </div>
+            {(hf.art?.header || hf.art?.footer) && (
+              <p className="flex flex-wrap items-center gap-2 rounded-md border p-2 text-xs text-muted-foreground">
+                This design has a colour banner{hf.raw ? " from the Word file (kept exactly as it is in Word exports)" : ""}.
+                <button type="button" className="underline" onClick={() => setHf({ ...hf, art: undefined, raw: undefined })}>Remove the banner</button>
+              </p>
+            )}
             <ZoneInputs label="Header" z={hf.header} onChange={(z) => setHf({ ...hf, header: z })} focus={focus} />
             <ZoneInputs label="Footer" z={hf.footer} onChange={(z) => setHf({ ...hf, footer: z })} focus={focus} />
             <div className="grid gap-2 text-xs sm:grid-cols-4">

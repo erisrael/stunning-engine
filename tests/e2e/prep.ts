@@ -205,6 +205,11 @@ const PREPS: Record<string, () => Promise<unknown>> = {
     await passwordOnly();
     return {};
   },
+  // Documents: a Word letterhead's own header and footer, and the MYSEED banner.
+  async "docs-letterhead"() {
+    await passwordOnly();
+    return {};
+  },
   // Members' tools: accept or reject work, right-click Ask a question, Focus mode, the assistant put away and back,
   // the Assistant Manager without imports, and a member's request to Finance going to their team lead first.
   // Roadmap project packs, infographics, the project book and diagrams in documents (Admin in Dev).
