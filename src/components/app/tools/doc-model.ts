@@ -6,7 +6,8 @@ import type { Letterhead } from "@/lib/tools";
 import { computeTable } from "@/lib/formula";
 
 // Paragraph settings: font, size (pt), colour, line spacing, space before and after (pt), indents (mm).
-export type ParaStyle = { font?: string; size?: number; color?: string; lineHeight?: number; before?: number; after?: number; indent?: number; firstLine?: number };
+// fill: shading behind the paragraph; border: its colour, on the left (a band), all round or below.
+export type ParaStyle = { font?: string; size?: number; color?: string; lineHeight?: number; before?: number; after?: number; indent?: number; firstLine?: number; fill?: string; border?: string; borderSide?: "left" | "all" | "bottom" };
 
 export type Block =
   | { id: string; type: "heading"; level: 1 | 2 | 3; text: string; align?: "left" | "center" | "right" }
@@ -230,6 +231,9 @@ function paraStyle(s?: ParaStyle) {
   if (s.after != null) out.push(`margin-bottom:${Math.min(72, Math.max(0, s.after))}pt`);
   if (s.indent) out.push(`margin-left:${Math.min(100, Math.max(0, s.indent))}mm`);
   if (s.firstLine) out.push(`text-indent:${Math.min(50, Math.max(-20, s.firstLine))}mm`);
+  if (s.fill && HEX.test(s.fill)) out.push(`background:${s.fill}`);
+  if (s.border && HEX.test(s.border)) out.push(s.borderSide === "all" ? `border:0.75pt solid ${s.border}` : s.borderSide === "bottom" ? `border-bottom:0.75pt solid ${s.border}` : `border-left:3pt solid ${s.border}`);
+  if ((s.fill && HEX.test(s.fill)) || (s.border && HEX.test(s.border))) out.push("padding:6pt 10pt;-webkit-print-color-adjust:exact;print-color-adjust:exact");
   return out.join(";");
 }
 const IMG_SRC = /^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/;
@@ -420,6 +424,10 @@ export async function blocksDocx(opts: { title: string; blocks: Block[]; letterh
             alignment: align[b.align ?? "left"],
             spacing: { before: st.before != null ? Math.round(st.before * 20) : undefined, after: st.after != null ? Math.round(st.after * 20) : 120, line: st.lineHeight ? Math.round(st.lineHeight * 240) : undefined },
             indent: st.indent || st.firstLine ? { left: st.indent ? mmTw(st.indent) : undefined, firstLine: st.firstLine && st.firstLine > 0 ? mmTw(st.firstLine) : undefined, hanging: st.firstLine && st.firstLine < 0 ? mmTw(-st.firstLine) : undefined } : undefined,
+            ...(st.fill && /^#[0-9a-f]{6}$/i.test(st.fill) ? { shading: { type: ShadingType.CLEAR, fill: color(st.fill), color: "auto" } } : {}),
+            ...(st.border && /^#[0-9a-f]{6}$/i.test(st.border)
+              ? { border: st.borderSide === "all" ? { top: { style: BorderStyle.SINGLE, size: 6, color: color(st.border), space: 4 }, bottom: { style: BorderStyle.SINGLE, size: 6, color: color(st.border), space: 4 }, left: { style: BorderStyle.SINGLE, size: 6, color: color(st.border), space: 6 }, right: { style: BorderStyle.SINGLE, size: 6, color: color(st.border), space: 6 } } : st.borderSide === "bottom" ? { bottom: { style: BorderStyle.SINGLE, size: 6, color: color(st.border), space: 2 } } : { left: { style: BorderStyle.SINGLE, size: 36, color: color(st.border), space: 8 } } }
+              : {}),
             children: runs(b.text, extra),
           }),
         ];

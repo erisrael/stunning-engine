@@ -110,7 +110,10 @@ export function blocksToDoc(blocks: Block[]): JSONContent {
                 last.attrs = { ...last.attrs, colspan: Number(last.attrs?.colspan ?? 1) + 1 };
                 continue;
               }
-              cells.push({ type: i === 0 && b.header ? "tableHeader" : "tableCell", attrs: { colspan: 1, rowspan: 1 }, content: [para(v)] });
+              const head = i === 0 && b.header;
+              const st = b.style;
+              const tcell = st && (st.border || (head && (st.headFill || st.headColor))) ? { ...(head && st.headFill ? { fill: st.headFill } : {}), ...(head && st.headColor ? { color: st.headColor } : {}), ...(st.border ? { border: st.border } : {}) } : null;
+              cells.push({ type: head ? "tableHeader" : "tableCell", attrs: { colspan: 1, rowspan: 1, ...(tcell ? { tcell } : {}) }, content: [para(v)] });
             }
             return { type: "tableRow", content: cells };
           }),

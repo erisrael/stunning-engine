@@ -32,6 +32,13 @@ function runsText(p: Element) {
   return out.replace(/\*\*\*\*/g, "");
 }
 
+const attrW = (el: Element | undefined | null, name: string) => el?.getAttributeNS(W, name) ?? el?.getAttribute(`w:${name}`) ?? null;
+// A "#rrggbb" colour from a Word attribute (auto, none and white-on-nothing are not colours).
+const hexOf = (el: Element | undefined | null, name: string) => {
+  const v = attrW(el, name);
+  return v && /^[0-9a-f]{6}$/i.test(v) ? `#${v.toLowerCase()}` : undefined;
+};
+
 export async function docxToBlocks(file: File): Promise<Block[]> {
   const JSZip = (await import("jszip")).default;
   const zip = await JSZip.loadAsync(await file.arrayBuffer());
@@ -63,8 +70,22 @@ export async function docxToBlocks(file: File): Promise<Block[]> {
   for (const node of Array.from(body.children)) {
     if (node.localName === "tbl") {
       flush();
-      const rows = Array.from(node.getElementsByTagNameNS(W, "tr")).map((tr) => Array.from(tr.getElementsByTagNameNS(W, "tc")).map((tc) => Array.from(tc.getElementsByTagNameNS(W, "p")).map(runsText).join("\n")));
-      if (rows.length) blocks.push({ id: bid(), type: "table", header: true, rows });
+      const trs = Array.from(node.getElementsByTagNameNS(W, "tr"));
+      const rows = trs.map((tr) => Array.from(tr.getElementsByTagNameNS(W, "tc")).map((tc) => Array.from(tc.getElementsByTagNameNS(W, "p")).map(runsText).join("\n")));
+      if (!rows.length) continue;
+      // The first row is a header when it repeats on each page, is shaded, or is all bold.
+      const first = trs[0]!;
+      const headFill = hexOf(first.getElementsByTagNameNS(W, "shd")[0], "fill");
+      const headColor = hexOf(first.getElementsByTagNameNS(W, "color")[0], "val");
+      const header = !!first.getElementsByTagNameNS(W, "tblHeader")[0] || !!headFill || rows[0]!.every((c) => !c.trim() || /^\*\*[\s\S]*\*\*$/.test(c.trim()));
+      const bordersEl = node.getElementsByTagNameNS(W, "tblBorders")[0];
+      const border = hexOf(bordersEl ? Array.from(bordersEl.children).find((b) => hexOf(b, "color")) : node.getElementsByTagNameNS(W, "tcBorders")[0]?.firstElementChild ?? undefined, "color");
+      const grid = Array.from(node.getElementsByTagNameNS(W, "gridCol")).map((g) => Number(attrW(g, "w")) || 0);
+      const total = grid.reduce((a, b) => a + b, 0);
+      const widths = total > 0 && grid.length === Math.max(...rows.map((r) => r.length)) ? grid.map((g) => Math.round((g / total) * 100)) : undefined;
+      // A header's own colour mark is dropped: the header colour is the table's.
+      const clean = header && headColor ? [rows[0]!.map((c) => c.replace(/^\{#[0-9a-f]{6}\|([\s\S]*)\}$/i, "$1")), ...rows.slice(1)] : rows;
+      blocks.push({ id: bid(), type: "table", header, rows: clean, ...(headFill || headColor || border || widths ? { style: { ...(headFill ? { headFill } : {}), ...(headColor ? { headColor } : {}), ...(border ? { border } : {}), ...(widths ? { widths } : {}) } } : {}) });
       continue;
     }
     if (node.localName !== "p") continue;
@@ -93,7 +114,15 @@ export async function docxToBlocks(file: File): Promise<Block[]> {
     if (h && text.trim()) blocks.push({ id: bid(), type: "heading", level: Number(h[1]) as 1 | 2 | 3, text: text.replace(/\*\*/g, "") });
     else if (text.trim()) {
       const jc = node.getElementsByTagNameNS(W, "jc")[0]?.getAttributeNS(W, "val");
-      blocks.push({ id: bid(), type: "paragraph", text, align: jc === "center" ? "center" : jc === "right" ? "right" : jc === "both" ? "justify" : "left" });
+      // A shaded or bordered paragraph (a subject band, a note box) keeps its fill and border.
+      const pPr = Array.from(node.children).find((c) => c.localName === "pPr");
+      const fill = hexOf(pPr ? Array.from(pPr.children).find((c) => c.localName === "shd") : undefined, "fill");
+      const bdr = pPr ? Array.from(pPr.children).find((c) => c.localName === "pBdr") : undefined;
+      const sides = bdr ? Array.from(bdr.children).filter((b) => attrW(b, "val") && attrW(b, "val") !== "none" && attrW(b, "val") !== "nil") : [];
+      const borderColor = hexOf(sides[0], "color");
+      const borderSide = sides.length >= 3 ? ("all" as const) : sides.some((b) => b.localName === "left") ? ("left" as const) : sides.some((b) => b.localName === "bottom") ? ("bottom" as const) : undefined;
+      const style = fill || borderColor ? { ...(fill ? { fill } : {}), ...(borderColor && borderSide ? { border: borderColor, borderSide } : {}) } : undefined;
+      blocks.push({ id: bid(), type: "paragraph", text, align: jc === "center" ? "center" : jc === "right" ? "right" : jc === "both" ? "justify" : "left", ...(style ? { style } : {}) });
     }
   }
   flush();

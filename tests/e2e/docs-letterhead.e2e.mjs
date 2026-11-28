@@ -43,6 +43,7 @@ try {
   const page = await a.locator('[data-hf-preview="header"]').first().evaluate((el) => el.closest("[class*=bg-white]")?.getBoundingClientRect().width ?? 0);
   check("the file's header shows as a full-width banner", !!band && band.width >= page - 2 && band.height > 60, JSON.stringify({ band, page }));
   check("the footer banner shows too", (await a.locator('[data-hf-preview="footer"] .hf-band').count()) === 1);
+  check("the subject band keeps its fill and border in the editor", (await a.locator('.myseed-rich p[style*="background"][style*="border-left"]').count()) >= 1);
   await a.screenshot({ path: path.join(shots, "page.png") });
 
   const [dl] = await Promise.all([a.waitForEvent("download", { timeout: 30000 }), a.getByRole("button", { name: /Word \(\.docx\)/ }).click()]);
@@ -52,6 +53,16 @@ try {
   check("its pictures came with it", Object.keys(zip.files).some((n) => /^word\/media\/hf_header_/.test(n)) && Object.keys(zip.files).some((n) => /^word\/media\/hf_footer_/.test(n)));
   const types = await zip.file("[Content_Types].xml").async("string");
   check("the picture type is declared", /Extension="png"/i.test(types));
+
+  // A full letter: its table keeps the header colour.
+  a.on("dialog", (d) => d.accept());
+  await a.locator('input[type=file][accept*=".dotx"]').first().setInputFiles(path.join(here, "..", "fixtures", "myseed-letter.docx"));
+  await a.waitForSelector('[data-file-hf="document"]', { timeout: 20000 });
+  await a.click('[data-file-hf="document"]');
+  await a.waitForSelector(".myseed-rich table", { timeout: 10000 });
+  const th = await a.locator(".myseed-rich table th").first().evaluate((el) => getComputedStyle(el).backgroundColor);
+  check("the letter's table keeps its green header", th === "rgb(31, 107, 58)", th);
+  await a.screenshot({ path: path.join(shots, "letter.png"), fullPage: true });
 
   // The built-in MYSEED banner in the designer.
   await a.click("[data-open-hf]");

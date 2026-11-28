@@ -27,12 +27,12 @@ try {
   const m = await signIn("dawit@demo.local");
   const errors = [];
   m.on("pageerror", (e) => errors.push(e.message));
-  await m.goto(`${base}/dashboard`);
-  const side = await m.locator("[data-sidebar=sidebar]").first().innerText().catch(() => "");
-  check("the member's sidebar has the team overview", /Team overview/.test(side), side.slice(0, 300));
-  check("and no Curriculum", !/Curriculum/.test(side));
+  // Production is one department in the sidebar; its pages (Team overview among them) list under it while it is open.
   await m.goto(`${base}/overview`);
   await m.waitForTimeout(800);
+  const side = await m.locator("[data-sidebar=sidebar]").first().innerText().catch(() => "");
+  check("the member's sidebar has the team overview under Production", /Production/.test(side) && /Team overview/.test(side), side.slice(0, 400));
+  check("and no Curriculum", !/Curriculum/.test(side));
   check("the member opens the Overview: the Recording team overview", /Recording team overview/.test(await m.locator("h1").first().innerText()), m.url());
   let h = await heads(m);
   check("only the Recording team's column", /Recording/i.test(h) && !/Editing|Uploading|Publication/i.test(h), h);

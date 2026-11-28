@@ -55,6 +55,7 @@ const TextExtras = Extension.create({
   },
 });
 // A paragraph's own settings (font, size, colour, spacing, indents), and the letter style of numbered lists.
+const hex = (v: unknown): v is string => typeof v === "string" && /^#[0-9a-f]{6}$/i.test(v);
 const BlockExtras = Extension.create({
   name: "blockExtras",
   addGlobalAttributes() {
@@ -67,14 +68,42 @@ const BlockExtras = Extension.create({
             renderHTML: (a) => {
               const s = a.pstyle as ParaStyle | null;
               if (!s) return {};
-              const css = [s.font ? `font-family:${FONTS.find((f) => f.label === s.font)?.css ?? s.font}` : "", s.size ? `font-size:${s.size}pt` : "", s.color ? `color:${s.color}` : "", s.lineHeight ? `line-height:${s.lineHeight}` : "", s.before != null ? `margin-top:${s.before}pt` : "", s.after != null ? `margin-bottom:${s.after}pt` : "", s.indent ? `margin-left:${s.indent}mm` : "", s.firstLine ? `text-indent:${s.firstLine}mm` : ""].filter(Boolean).join(";");
+              const css = [s.font ? `font-family:${FONTS.find((f) => f.label === s.font)?.css ?? s.font}` : "", s.size ? `font-size:${s.size}pt` : "", s.color ? `color:${s.color}` : "", s.lineHeight ? `line-height:${s.lineHeight}` : "", s.before != null ? `margin-top:${s.before}pt` : "", s.after != null ? `margin-bottom:${s.after}pt` : "", s.indent ? `margin-left:${s.indent}mm` : "", s.firstLine ? `text-indent:${s.firstLine}mm` : "", hex(s.fill) ? `background:${s.fill}` : "", hex(s.border) ? (s.borderSide === "all" ? `border:1px solid ${s.border}` : s.borderSide === "bottom" ? `border-bottom:1px solid ${s.border}` : `border-left:4px solid ${s.border}`) : "", hex(s.fill) || hex(s.border) ? "padding:6pt 10pt" : ""].filter(Boolean).join(";");
               return css ? { style: css } : {};
             },
           },
         },
       },
       { types: ["orderedList"], attributes: { listType: { default: null, renderHTML: (a) => (a.listType ? { type: a.listType } : {}) } } },
-      { types: ["table"], attributes: { tstyle: { default: null, renderHTML: () => ({}) } } },
+      // A table's colours on its cells (resizable tables are drawn by their own view, which leaves out the table's
+      // attributes): the header's fill and text colour, and the border colour.
+      {
+        types: ["tableHeader", "tableCell"],
+        attributes: {
+          tcell: {
+            default: null,
+            renderHTML: (a) => {
+              const t = a.tcell as { fill?: string; color?: string; border?: string } | null;
+              const css = [hex(t?.fill) ? `background:${t!.fill}` : "", hex(t?.color) ? `color:${t!.color}` : "", hex(t?.border) ? `border-color:${t!.border}` : ""].filter(Boolean).join(";");
+              return css ? { style: css } : {};
+            },
+          },
+        },
+      },
+      {
+        types: ["table"],
+        attributes: {
+          tstyle: {
+            default: null,
+            // The table's colours as CSS variables (RICH_CSS uses them), so the editor shows them as the exports do.
+            renderHTML: (a) => {
+              const t = a.tstyle as { headFill?: string; headColor?: string; border?: string } | null;
+              const css = [hex(t?.headFill) ? `--th-fill:${t!.headFill}` : "", hex(t?.headColor) ? `--th-color:${t!.headColor}` : "", hex(t?.border) ? `--t-border:${t!.border}` : ""].filter(Boolean).join(";");
+              return css ? { style: css } : {};
+            },
+          },
+        },
+      },
     ];
   },
 });
@@ -678,6 +707,8 @@ function TableGrid({ onPick, big }: { onPick: (rows: number, cols: number) => vo
 
 // How the page looks while typing (the same as print: headings, lists, tables, quotes, checklists).
 const RICH_CSS = `
+.myseed-rich table th{background:var(--th-fill,#f1f5f9);color:var(--th-color,inherit)}
+.myseed-rich table td,.myseed-rich table th{border-color:var(--t-border,#cbd5e1)}
 .myseed-rich{font-size:11pt;line-height:1.55;color:#111827}
 .myseed-rich p{margin:0 0 6pt}
 .myseed-rich h1{font-size:22pt;font-weight:700;margin:8pt 0 6pt;line-height:1.2}
