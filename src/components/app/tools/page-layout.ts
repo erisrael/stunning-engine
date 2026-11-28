@@ -54,7 +54,10 @@ export type Numbering = {
 export type CoverStyle = "classic" | "band" | "minimal" | "framed" | "split";
 export type Cover = { style: CoverStyle; title: string; subtitle: string; author: string; org: string; date: string; note: string; logo: boolean; color: string };
 
-export type DocLayout = { source: HFSource; hf: HeaderFooter; numbering: Numbering; cover: Cover | null; fromFile?: HeaderFooter | null };
+// A page's background: a colour and/or a picture (filling, fitting or stretched over the page).
+export type PageBg = { color?: string | null; image?: string | null; fit?: "cover" | "contain" | "stretch" };
+// pageBg: every page's background, and single pages' own (by page number, the cover being page 1).
+export type DocLayout = { source: HFSource; hf: HeaderFooter; numbering: Numbering; cover: Cover | null; fromFile?: HeaderFooter | null; pageBg?: { all?: PageBg | null; pages?: Record<string, PageBg> } };
 
 export const EMPTY_ZONES: HFZones = { left: "", center: "", right: "" };
 export const DEFAULT_HF: HeaderFooter = {
@@ -139,6 +142,7 @@ export function layoutOf(raw: unknown): DocLayout {
       format: (["n", "page-n", "n-of-m", "dash"] as const).includes(n.format as Numbering["format"]) ? (n.format as Numbering["format"]) : "page-n",
     },
     cover: x.cover ? { ...newCover("", "", "", "#16a34a"), ...x.cover } : null,
+    pageBg: cleanPageBg(x.pageBg),
   };
 }
 
@@ -606,4 +610,23 @@ export function hfDesign(hf: HeaderFooter, where: "header" | "footer", pageW: nu
     },
     1,
   );
+}
+
+const BG_IMG = /^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/;
+function cleanOneBg(v: unknown): PageBg | null {
+  const b = (v ?? {}) as PageBg;
+  const color = typeof b.color === "string" && /^#[0-9a-f]{6}$/i.test(b.color) ? b.color : null;
+  const image = typeof b.image === "string" && BG_IMG.test(b.image) && b.image.length < 3_000_000 ? b.image : null;
+  if (!color && !image) return null;
+  return { color, image, fit: b.fit === "contain" || b.fit === "stretch" ? b.fit : "cover" };
+}
+function cleanPageBg(v: unknown): DocLayout["pageBg"] {
+  const x = (v ?? {}) as { all?: unknown; pages?: Record<string, unknown> };
+  const pages: Record<string, PageBg> = {};
+  for (const [k, b] of Object.entries(x.pages ?? {}).slice(0, 500)) {
+    const c = /^\d{1,4}$/.test(k) ? cleanOneBg(b) : null;
+    if (c) pages[k] = c;
+  }
+  const all = cleanOneBg(x.all);
+  return all || Object.keys(pages).length ? { all, pages } : undefined;
 }

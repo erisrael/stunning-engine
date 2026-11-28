@@ -15,6 +15,7 @@ import { bandHtml, bandPng, coverHtml, DEFAULT_HF, effectiveHF, fillText, hfValu
 import { CoverDialog, FileHFPrompt, HeaderFooterDialog, HFDesignerDialog, NumberingDialog, ZonesPreview } from "@/components/app/tools/doc-layout-panel";
 import { pageHtml, webFontsCss } from "@/lib/design";
 import { TemplateShelf } from "@/components/app/tools/template-shelf";
+import { buildSheets, PageView, PV_CSS, type SheetInput } from "@/components/app/tools/page-view";
 import { markdownToBlocks, toMarkdown } from "@/components/app/tools/doc-markdown";
 import { FileShelf, type SavedFile } from "@/components/app/tools/file-shelf";
 import { downloadBlob, safeName, useOpenFromLink } from "@/components/app/tools/shared";
@@ -170,8 +171,13 @@ export function DocsClient({ files: initialFiles, author, letterhead, notion }: 
   };
   const paper = DOC_PAPER[page.size] ?? DOC_PAPER.A4;
   const [pw, ph] = page.orientation === "landscape" ? [paper.h, paper.w] : [paper.w, paper.h];
+  const sheetInput = (): SheetInput | null =>
+    data ? { blocks: data.blocks, layout, hf, fields, logoUrl, w: pw, h: ph, mg, pageNumbers: page.pageNumbers, watermark: page.watermark, letterheadTop: header() } : null;
   const pdf = () => {
     if (!data) return;
+    // The pages as the page view shows them: each with its header, footer, number and background.
+    const input = sheetInput();
+    if (input) return printHtml(title, `<div class="pv">${buildSheets(input).map((x) => x.html).join("")}</div>`, `${PV_CSS}\n@page{size:${pw}mm ${ph}mm;margin:0}body{margin:0}.pv-sheet{break-after:page;page-break-after:always}.pv-sheet:last-child{break-after:auto;page-break-after:auto}`);
     const parts = splitParts(data.blocks, layout);
     const body = `${layout.cover ? coverHtml(layout.cover, logoUrl) : ""}${parts.front.length ? `<div class="doc-front">${header()}${blocksHtml(parts.front, data.blocks)}</div>` : ""}<div class="doc-main">${parts.front.length ? "" : header()}${blocksHtml(parts.main, data.blocks)}</div>${page.watermark ? `<div style="position:fixed;top:40%;left:0;right:0;text-align:center;font-size:72pt;font-weight:800;color:rgba(100,116,139,.12);transform:rotate(-30deg)">${esc(page.watermark)}</div>` : ""}`;
     if (hf && (headH || footH)) {
@@ -220,7 +226,7 @@ export function DocsClient({ files: initialFiles, author, letterhead, notion }: 
     const t = DOC_TEMPLATES.find((x) => x.key === key)!;
     setId(null);
     setTitle(t.key === "blank" ? "Untitled document" : t.label);
-    setData({ template: key, blocks: t.blocks(), meta: { author, date: new Date().toISOString().slice(0, 10) } });
+    setData({ template: key, blocks: t.blocks(), meta: { author, date: new Date().toISOString().slice(0, 10) }, ...(t.layout ? { layout: t.layout() } : {}) });
     setDirty(true);
   };
 
@@ -395,7 +401,7 @@ export function DocsClient({ files: initialFiles, author, letterhead, notion }: 
                   Edit
                 </button>
                 <button type="button" role="tab" aria-selected={reading} onClick={() => setReading(true)} className={cn("rounded px-2.5 py-1", reading && "bg-primary text-primary-foreground")}>
-                  Read (as printed)
+                  Page view
                 </button>
               </div>
               <div className="flex flex-wrap gap-1">
@@ -455,6 +461,8 @@ export function DocsClient({ files: initialFiles, author, letterhead, notion }: 
             </div>
             <div ref={setBarHost} className="sticky top-14 z-30 overflow-x-auto rounded-lg border bg-background shadow-sm empty:hidden" data-doc-ribbon />
             <div className="space-y-6 overflow-x-auto rounded-xl border bg-[#e9ebee] px-4 py-6 dark:bg-slate-900">
+            {reading && sheetInput() && <PageView input={sheetInput()!} setLayout={setLayout} onEditBand={() => setPanel("design")} />}
+            {!reading && (<>
             {layout.cover && (
               <button type="button" onClick={() => setPanel("cover")} title="Edit the cover page" className="mx-auto block bg-white text-left text-slate-900 shadow-[0_1px_3px_rgba(0,0,0,.12),0_8px_24px_rgba(0,0,0,.08)]" style={{ width: `${pw}mm`, maxWidth: "100%", padding: `${mg.top}mm ${mg.right}mm ${mg.bottom}mm ${mg.left}mm` }} data-cover-preview>
                 <div dangerouslySetInnerHTML={{ __html: coverHtml(layout.cover, logoUrl) }} />
@@ -485,6 +493,7 @@ export function DocsClient({ files: initialFiles, author, letterhead, notion }: 
                 return <div className="mt-auto pt-8"><ZonesPreview z={f.footer} hf={f} f={fields} where="footer" onClick={() => setPanel("design")} /></div>;
               })()}
             </div>
+            </>)}
             </div>
           </div>
           {hf !== undefined && (

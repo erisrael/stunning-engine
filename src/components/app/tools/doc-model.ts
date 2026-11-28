@@ -4,6 +4,8 @@
 
 import type { Letterhead } from "@/lib/tools";
 import { computeTable } from "@/lib/formula";
+// Used inside functions only (page-layout imports this file too).
+import { DEFAULT_LAYOUT, DEFAULT_NUMBERING, MYSEED_BANNER, type DocLayout } from "./page-layout";
 
 // Paragraph settings: font, size (pt), colour, line spacing, space before and after (pt), indents (mm).
 // fill: shading behind the paragraph; border: its colour, on the left (a band), all round or below.
@@ -61,7 +63,10 @@ const ul = (...items: string[]): Block => ({ id: bid(), type: "list", ordered: f
 const ol = (...items: string[]): Block => ({ id: bid(), type: "list", ordered: true, items });
 const table = (...rows: string[][]): Block => ({ id: bid(), type: "table", header: true, rows });
 
-export const DOC_TEMPLATES: { key: string; label: string; hint: string; blocks: () => Block[] }[] = [
+// layout: the template's own cover, header and footer (the MYSEED letters use the MYSEED banner).
+export const DOC_TEMPLATES: { key: string; label: string; hint: string; blocks: () => Block[]; layout?: () => DocLayout; brand?: boolean }[] = [
+  { key: "myseed-letter-am", label: "MYSEED official letter (Amharic)", hint: "MYSEED letterhead, reference and date, subject band, signature and stamp", brand: true, blocks: () => myseedLetter("am"), layout: () => myseedLayout() },
+  { key: "myseed-letter-en", label: "MYSEED official letter (English)", hint: "MYSEED letterhead, reference and date, subject band, signature and stamp", brand: true, blocks: () => myseedLetter("en"), layout: () => myseedLayout() },
   { key: "blank", label: "Blank", hint: "An empty page", blocks: () => [h(1, "Title"), p("")] },
   {
     key: "minutes",
@@ -645,6 +650,8 @@ export async function blocksDocx(opts: { title: string; blocks: Block[]; letterh
     });
     const doc = new Document({
       creator: fields.author || lh?.company || "Myseed",
+      // Word has one page colour for the whole document: the "every page" colour (a page's own shows in the PDF).
+      ...(layout.pageBg?.all?.color && /^#[0-9a-f]{6}$/i.test(layout.pageBg.all.color) ? { background: { color: layout.pageBg.all.color.slice(1) } } : {}),
       title: opts.title,
       description: fields.company,
       styles: { default: { document: { run: { font: "Calibri", size: 22 } } } },
@@ -781,4 +788,32 @@ sup.fn{font-size:7pt}`;
 }
 export function pageChrome(p: DocPage) {
   return `${p.header ? `<div class="pg-head">${esc(p.header)}</div>` : ""}${p.footer ? `<div class="pg-foot">${esc(p.footer)}</div>` : ""}${p.watermark ? `<div class="pg-wm">${esc(p.watermark)}</div>` : ""}`;
+}
+
+// The MYSEED official letter (the company's letterhead and layout).
+const R = (text: string, align?: "left" | "right" | "justify", style?: ParaStyle): Block => ({ id: bid(), type: "paragraph", text, align, ...(style ? { style } : {}) });
+function myseedLetter(lang: "am" | "en"): Block[] {
+  const am = lang === "am";
+  const tight: ParaStyle = { after: 0 };
+  return [
+    R(am ? "**ቁጥር፡** MS/........../.........." : "**Ref. No.:** MS/........../..........", "right", tight),
+    R(am ? "**ቀን፡** .............................." : "**Date:** ..............................", "right", { after: 18 }),
+    R(am ? "**ለ፡ [የተቀባዩ ድርጅት]**" : "**To: [Recipient organisation]**", undefined, tight),
+    R(am ? "[ክፍል / የሥራ ኃላፊነት]" : "[Department / position]", undefined, tight),
+    R(am ? "[አድራሻ]" : "[Address]", undefined, { after: 18 }),
+    R(am ? "{#0b3b2c|**ጉዳዩ፡ [የደብዳቤው ጉዳይ]**}" : "{#0b3b2c|**Subject: [Subject of the letter]**}", undefined, { fill: "#eef6ef", border: "#4f9d45", borderSide: "left", after: 14 }),
+    ...(am ? [] : [R("Dear Sir/Madam,")]),
+    R(am ? "[የደብዳቤው ዋና ጽሑፍ እዚህ ይገባል። ዓላማውን በመጀመሪያው አንቀጽ በግልጽ ያስቀምጡ።]" : "[State the purpose of the letter in the first paragraph.]", "justify"),
+    R(am ? "[ዝርዝሩን እና የሚጠየቀውን ተግባር በሚቀጥሉት አንቀጾች ይግለጹ።]" : "[Give the details and what you ask the reader to do in the following paragraphs.]", "justify"),
+    { id: bid(), type: "table", header: true, rows: am ? [["መረጃ", "ዝርዝር"], ["", ""], ["", ""]] : [["Item", "Details"], ["", ""], ["", ""]], style: { headFill: "#1f6b3a", headColor: "#ffffff", border: "#b7d3bc", widths: [40, 60] } },
+    R(am ? "ለምታደርጉልን ትብብር በቅድሚያ እናመሰግናለን።" : "Thank you for your cooperation.", "justify"),
+    R(am ? "ከሰላምታ ጋር፣" : "Yours sincerely,", undefined, { before: 12, after: 30 }),
+    R("..................................................          {#64748b|" + (am ? "ማኅተም" : "Stamp") + "}", undefined, tight),
+    R(am ? "**[የኃላፊው ሙሉ ስም]**" : "**[Full name]**", undefined, tight),
+    R(am ? "[የሥራ ኃላፊነት]" : "[Position]", undefined, tight),
+    R(am ? "{#1f6b3a|**ማይሲድ ኢድ ቴክ ኃ.የተ.የግ.ማ.**}" : "{#1f6b3a|**MYSEED EdTech PLC**}"),
+  ];
+}
+function myseedLayout(): DocLayout {
+  return { ...DEFAULT_LAYOUT, source: "custom", hf: MYSEED_BANNER, numbering: { ...DEFAULT_NUMBERING } };
 }

@@ -210,6 +210,11 @@ const PREPS: Record<string, () => Promise<unknown>> = {
     await passwordOnly();
     return {};
   },
+  // Documents: the MYSEED letter template, the page view and a page's own background.
+  async "docs-pageview"() {
+    await passwordOnly();
+    return {};
+  },
   // Members' tools: accept or reject work, right-click Ask a question, Focus mode, the assistant put away and back,
   // the Assistant Manager without imports, and a member's request to Finance going to their team lead first.
   // Roadmap project packs, infographics, the project book and diagrams in documents (Admin in Dev).
